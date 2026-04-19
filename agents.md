@@ -17,9 +17,11 @@ Before making any changes, read:
 3. `PLANS.md`
 If these files disagree, use this priority:
 1. `docs/memorii_spec.md`
-2. `docs/implementation_rules.md`
-3. `AGENTS.md`
-4. `PLANS.md`
+2. `docs/memorii_storage_details.md`
+3. `docs/event_model.md`
+4. `docs/implementation_rules.md`
+5. `AGENTS.md`
+6. `docs/plans/initial.md`
 ---
 ## Non-negotiable architecture rules
 Do not redesign the system.
@@ -880,7 +882,7 @@ Workflow for Codex
 
 Before editing code:
 
-1. Read docs/memorii_spec.md and docs/memorii_storage_details.md
+1. Read docs/memorii_spec.md, docs/memorii_storage_details.md and docs/event_model.md
 2. Read docs/implementation_rules.md
 3. Read docs/plans/initial.md
 4. Restate the exact task being implemented
