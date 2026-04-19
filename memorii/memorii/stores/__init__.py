@@ -1,0 +1,1 @@
+"""Store contracts for Memorii."""
