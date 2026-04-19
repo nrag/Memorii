@@ -880,9 +880,9 @@ Workflow for Codex
 
 Before editing code:
 
-1. Read docs/memorii_spec.md
+1. Read docs/memorii_spec.md and docs/memorii_storage_details.md
 2. Read docs/implementation_rules.md
-3. Read PLANS.md
+3. Read docs/plans/initial.md
 4. Restate the exact task being implemented
 5. Identify impacted packages and tests
 
