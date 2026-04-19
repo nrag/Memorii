@@ -952,7 +952,7 @@ The most important things to preserve are:
 
 A few optional companion files will make this work even better:
 - `docs/implementation_rules.md`
-- `PLANS.md`
+- `docs/plans/initial.md`
 - `skills/execution-graph/SKILL.md`
 - `skills/solver-graph/SKILL.md`
 - `skills/adapters/SKILL.md`
