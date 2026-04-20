@@ -8,10 +8,12 @@ from memorii.core.benchmark.baselines import BASELINE_SYSTEMS, all_systems
 from memorii.core.benchmark.fixtures import normalize_fixtures
 from memorii.core.benchmark.metrics import compute_metrics, aggregate_metrics, METRIC_FIELDS
 from memorii.core.benchmark.models import (
+    BaselinePolicy,
     BaselineDelta,
     BenchmarkRunConfig,
     BenchmarkRunReport,
     BenchmarkScenarioFixture,
+    BenchmarkScenarioType,
     BenchmarkSystem,
     ScenarioResult,
 )
@@ -37,6 +39,10 @@ class BenchmarkHarness:
         results: list[ScenarioResult] = []
         for fixture in normalized:
             for system in all_systems():
+                if system in BASELINE_SYSTEMS:
+                    policy = fixture.baseline_applicability.get(system)
+                    if policy is not None and policy.policy == BaselinePolicy.SKIP:
+                        continue
                 observation = self._executor.run(fixture=fixture, system=system)
                 metrics = compute_metrics(observation)
                 results.append(
@@ -50,6 +56,7 @@ class BenchmarkHarness:
                 )
 
         aggregate = self._aggregate_by_system(results)
+        aggregate_by_category = self._aggregate_by_category(results)
         baseline = self._compute_baseline_delta(results)
         return BenchmarkRunReport(
             run_id=run_id,
@@ -57,6 +64,7 @@ class BenchmarkHarness:
             config=run_config,
             scenario_results=results,
             aggregate_by_system=aggregate,
+            aggregate_by_category=aggregate_by_category,
             baseline_comparison=baseline,
         )
 
@@ -65,6 +73,24 @@ class BenchmarkHarness:
         for result in results:
             per_system[result.system].append(result.observation)
         return {system: aggregate_metrics(observations) for system, observations in per_system.items()}
+
+    def _aggregate_by_category(
+        self,
+        results: list[ScenarioResult],
+    ) -> dict[BenchmarkScenarioType, dict[BenchmarkSystem, object]]:
+        grouped: dict[BenchmarkScenarioType, dict[BenchmarkSystem, list[object]]] = {}
+        for result in results:
+            if result.category not in grouped:
+                grouped[result.category] = {system: [] for system in all_systems()}
+            grouped[result.category][result.system].append(result.observation)
+
+        return {
+            category: {
+                system: aggregate_metrics(observations)
+                for system, observations in per_system.items()
+            }
+            for category, per_system in grouped.items()
+        }
 
     def _compute_baseline_delta(self, results: list[ScenarioResult]) -> dict[str, list[BaselineDelta]]:
         grouped: dict[str, dict[BenchmarkSystem, ScenarioResult]] = {}
@@ -81,6 +107,14 @@ class BenchmarkHarness:
             for baseline_system in BASELINE_SYSTEMS:
                 baseline_result = by_system.get(baseline_system)
                 if baseline_result is None:
+                    deltas.append(
+                        BaselineDelta(
+                            baseline=baseline_system,
+                            metric_deltas={},
+                            skipped=True,
+                            skip_reason="baseline skipped by scenario policy or not available",
+                        )
+                    )
                     continue
                 metric_deltas: dict[str, float] = {}
                 for field in METRIC_FIELDS:
