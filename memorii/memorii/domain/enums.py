@@ -154,6 +154,13 @@ class ConfidenceClass(str, Enum):
     RETRACTED = "retracted"
 
 
+class TemporalValidityStatus(str, Enum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    INVALIDATED = "invalidated"
+    UNKNOWN = "unknown"
+
+
 class EventType(str, Enum):
     TASK_STARTED = "TASK_STARTED"
     TASK_RESUMED = "TASK_RESUMED"
