@@ -25,6 +25,20 @@ METRIC_FIELDS: tuple[str, ...] = (
     "writeback_candidate_correctness",
     "semantic_pollution_rate",
     "user_memory_pollution_rate",
+    "cross_episode_reuse_accuracy",
+    "performance_improvement_over_baseline",
+    "writeback_reuse_correctness",
+    "retrieval_recall_degradation",
+    "retrieval_latency_growth",
+    "resume_correctness_under_scale",
+    "noise_resilience",
+    "conflict_detection_rate",
+    "correct_preference_for_newer_or_valid_memory",
+    "stale_memory_rejection_rate",
+    "contradictory_memory_handling_correctness",
+    "implicit_recall_success_rate",
+    "retrieval_plan_relevance_accuracy",
+    "false_positive_retrieval_rate",
 )
 
 
@@ -78,6 +92,20 @@ def compute_metrics(observation: ScenarioObservation) -> ScenarioMetrics:
         user_memory_pollution_rate=_bool_metric(
             False if observation.user_memory_pollution is None else observation.user_memory_pollution
         ),
+        cross_episode_reuse_accuracy=_bool_metric(observation.cross_episode_reuse_correct),
+        performance_improvement_over_baseline=observation.performance_improvement_over_baseline,
+        writeback_reuse_correctness=_bool_metric(observation.writeback_reuse_correct),
+        retrieval_recall_degradation=observation.retrieval_recall_degradation,
+        retrieval_latency_growth=observation.retrieval_latency_growth,
+        resume_correctness_under_scale=_bool_metric(observation.resume_correctness_under_scale),
+        noise_resilience=observation.noise_resilience,
+        conflict_detection_rate=_bool_metric(observation.conflict_detected),
+        correct_preference_for_newer_or_valid_memory=_bool_metric(observation.conflict_resolution_correct),
+        stale_memory_rejection_rate=_bool_metric(observation.stale_memory_rejected),
+        contradictory_memory_handling_correctness=_bool_metric(observation.contradictory_handling_correct),
+        implicit_recall_success_rate=_bool_metric(observation.implicit_recall_success),
+        retrieval_plan_relevance_accuracy=_bool_metric(observation.retrieval_plan_relevance_accuracy),
+        false_positive_retrieval_rate=observation.false_positive_retrieval_rate,
     )
 
 
