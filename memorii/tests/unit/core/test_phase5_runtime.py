@@ -1,6 +1,9 @@
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
+from memorii.core.retrieval import RetrievalPlanner
+from memorii.core.router import MemoryRouter
 from memorii.core.solver import SolverDecision
 from memorii.domain.common import Provenance, RoutingInfo
 from memorii.domain.enums import (
@@ -247,3 +250,122 @@ def test_abstention_and_downgrade_do_not_commit_unsupported_claim() -> None:
     assert result.solver_decision == SolverDecision.INSUFFICIENT_EVIDENCE
     assert result.downgraded is True
     assert result.writeback_candidates == []
+
+
+def test_malformed_unresolved_output_is_invalid_and_does_not_mutate_solver_state() -> None:
+    task_id = "task-invalid"
+    execution_node_id = "exec-invalid"
+    solver_run_id = f"solver:{task_id}:{execution_node_id}"
+
+    execution_store = InMemoryExecutionGraphStore()
+    solver_store = InMemorySolverGraphStore()
+    overlay_store = InMemoryOverlayStore()
+    event_log = InMemoryEventLogStore()
+    execution_store.upsert_node(task_id, _make_execution_node(execution_node_id, ExecutionNodeStatus.RUNNING))
+
+    runtime = RuntimeStepService(
+        execution_store=execution_store,
+        solver_store=solver_store,
+        overlay_store=overlay_store,
+        event_log_store=event_log,
+    )
+
+    result = runtime.step(
+        task_id=task_id,
+        observation=RuntimeObservationInput(
+            event_id="evt-invalid",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "failed", "detail": "incomplete output"},
+        ),
+        model_output={
+            "decision": "NEEDS_TEST",
+            "evidence_ids": [],
+            "missing_evidence": ["traceback"],
+            "next_best_test": None,
+            "rationale_short": "Missing required next test",
+            "confidence_band": "low",
+        },
+    )
+
+    assert result.solver_decision == SolverDecision.INSUFFICIENT_EVIDENCE
+    assert result.event_ids == []
+    assert solver_store.list_nodes(solver_run_id) == []
+    assert overlay_store.list_versions(solver_run_id) == []
+
+
+def test_runtime_routes_observation_once_and_reuses_routing_decision() -> None:
+    task_id = "task-route-once"
+    execution_node_id = "exec-route-once"
+    execution_store = InMemoryExecutionGraphStore()
+    execution_store.upsert_node(task_id, _make_execution_node(execution_node_id, ExecutionNodeStatus.RUNNING))
+
+    router = MemoryRouter()
+    original = router.route_event
+    router.route_event = MagicMock(wraps=original)
+
+    runtime = RuntimeStepService(
+        execution_store=execution_store,
+        solver_store=InMemorySolverGraphStore(),
+        overlay_store=InMemoryOverlayStore(),
+        event_log_store=InMemoryEventLogStore(),
+        router=router,
+    )
+
+    runtime.step(
+        task_id=task_id,
+        observation=RuntimeObservationInput(
+            event_id="evt-route-once",
+            event_class=InboundEventClass.TOOL_RESULT,
+            payload={"status": "failed", "detail": "assertion mismatch"},
+        ),
+        model_output={
+            "decision": "INSUFFICIENT_EVIDENCE",
+            "evidence_ids": [],
+            "missing_evidence": ["debug logs"],
+            "next_best_test": "collect_debug_logs",
+            "rationale_short": "Need more grounding",
+            "confidence_band": "low",
+        },
+    )
+
+    assert router.route_event.call_count == 1
+
+
+def test_runtime_does_not_append_manual_debug_queries_outside_planner() -> None:
+    task_id = "task-planner-owned"
+    execution_node_id = "exec-planner-owned"
+    execution_store = InMemoryExecutionGraphStore()
+    execution_store.upsert_node(task_id, _make_execution_node(execution_node_id, ExecutionNodeStatus.RUNNING))
+
+    class MinimalPlanner(RetrievalPlanner):
+        def build_plan(self, **kwargs):  # type: ignore[override]
+            scope = kwargs["scope"]
+            return super().build_plan(intent=kwargs["intent"], scope=scope, include_raw_transcript=False)
+
+    runtime = RuntimeStepService(
+        execution_store=execution_store,
+        solver_store=InMemorySolverGraphStore(),
+        overlay_store=InMemoryOverlayStore(),
+        event_log_store=InMemoryEventLogStore(),
+        retrieval_planner=MinimalPlanner(),
+    )
+
+    result = runtime.step(
+        task_id=task_id,
+        observation=RuntimeObservationInput(
+            event_id="evt-planner-owned",
+            event_class=InboundEventClass.TOOL_RESULT,
+            payload={"status": "failed", "detail": "debug me"},
+        ),
+        model_output={
+            "decision": "INSUFFICIENT_EVIDENCE",
+            "evidence_ids": [],
+            "missing_evidence": ["more logs"],
+            "next_best_test": "collect_logs",
+            "rationale_short": "Need more evidence",
+            "confidence_band": "low",
+        },
+    )
+
+    domains = [query.domain.value for query in result.retrieval_plan.queries]
+    assert domains == ["solver", "episodic", "semantic", "execution", "transcript"]

@@ -22,7 +22,13 @@ def test_retrieval_planner_chooses_solver_episodic_semantic_for_debug() -> None:
     )
 
     domains = [query.domain for query in plan.queries]
-    assert domains == [MemoryDomain.SOLVER, MemoryDomain.EPISODIC, MemoryDomain.SEMANTIC]
+    assert domains == [
+        MemoryDomain.SOLVER,
+        MemoryDomain.EPISODIC,
+        MemoryDomain.SEMANTIC,
+        MemoryDomain.EXECUTION,
+        MemoryDomain.TRANSCRIPT,
+    ]
 
 
 def test_retrieval_planner_includes_namespace_and_scope_filters() -> None:
