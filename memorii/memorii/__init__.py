@@ -3,4 +3,7 @@
 __all__ = [
     "domain",
     "stores",
+    "core",
+    "api",
+    "adapters",
 ]
