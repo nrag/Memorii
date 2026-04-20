@@ -6,6 +6,7 @@ from memorii.domain.events import EventRecord
 from memorii.domain.execution_graph.edges import ExecutionEdge
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.memory_object import MemoryObject
+from memorii.domain.directory import WritebackSourceLink
 from memorii.domain.solver_graph.edges import SolverEdge
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverOverlayVersion
@@ -173,4 +174,47 @@ class DirectoryStore(ABC):
 
     @abstractmethod
     def get_execution_graph_id(self, task_id: str) -> str | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def map_execution_node_to_solver_run(self, task_id: str, execution_node_id: str, solver_run_id: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_solver_runs_for_execution_node(self, execution_node_id: str) -> list[str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def map_transcript_to_task(self, task_id: str, *, thread_id: str | None = None, session_id: str | None = None) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_task_for_thread(self, thread_id: str) -> str | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_task_for_session(self, session_id: str) -> str | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def map_agent_partition(self, agent_id: str, partition_key: str) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_partitions_for_agent(self, agent_id: str) -> list[str]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def map_writeback_source(
+        self,
+        candidate_id: str,
+        task_id: str,
+        *,
+        solver_run_id: str | None = None,
+        execution_node_id: str | None = None,
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_writeback_source(self, candidate_id: str) -> WritebackSourceLink | None:
         raise NotImplementedError
