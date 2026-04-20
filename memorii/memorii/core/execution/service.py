@@ -1,5 +1,6 @@
-"""Minimal deterministic runtime service for Phase 5 orchestration."""
+"""Runtime orchestration service for harness-driven task execution."""
 
+import logging
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -9,7 +10,14 @@ from memorii.core.directory.directory import MemoryDirectory
 from memorii.core.persistence.resume import ResumeService
 from memorii.core.retrieval.planner import RetrievalPlanner
 from memorii.core.router.router import MemoryRouter
-from memorii.core.solver import SolverDecision, SolverUpdateEngine, SolverUpdateInput
+from memorii.core.solver import (
+    SolverContextItem,
+    SolverDecision,
+    SolverModelInput,
+    SolverModelProvider,
+    SolverUpdateEngine,
+    SolverUpdateInput,
+)
 from memorii.domain.enums import EventType, ExecutionNodeStatus, MemoryDomain
 from memorii.domain.events import EventRecord
 from memorii.domain.memory_object import MemoryObject
@@ -17,6 +25,8 @@ from memorii.domain.retrieval import DomainRetrievalQuery, RetrievalIntent, Retr
 from memorii.domain.routing import InboundEvent, InboundEventClass, RoutingDecision
 from memorii.domain.writebacks import WritebackCandidate
 from memorii.stores.base.interfaces import EventLogStore, ExecutionGraphStore, OverlayStore, SolverGraphStore
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeObservationInput(BaseModel):
@@ -38,6 +48,11 @@ class RuntimeStepResult(BaseModel):
     solver_decision: SolverDecision
     follow_up_required: bool
     downgraded: bool
+    next_action: str | None = None
+    solver_state_summary: str = ""
+    unresolved_questions: list[str] = Field(default_factory=list)
+    required_tests: list[str] = Field(default_factory=list)
+    candidate_decisions: list[str] = Field(default_factory=list)
     writeback_candidates: list[WritebackCandidate] = Field(default_factory=list)
     event_ids: list[str] = Field(default_factory=list)
 
@@ -84,6 +99,7 @@ class RuntimeStepService:
         directory: MemoryDirectory | None = None,
         solver_update_engine: SolverUpdateEngine | None = None,
         memory_plane: InMemoryMemoryPlane | None = None,
+        model_provider: SolverModelProvider | None = None,
     ) -> None:
         self._execution_store = execution_store
         self._solver_store = solver_store
@@ -96,6 +112,7 @@ class RuntimeStepService:
         self._solver_update_engine = solver_update_engine or SolverUpdateEngine()
         self._memory_plane = memory_plane or InMemoryMemoryPlane()
         self._resume_service = ResumeService(execution_store, solver_store, overlay_store)
+        self._model_provider = model_provider
 
     def seed_memory_object(self, memory_object: MemoryObject) -> None:
         self._memory_plane.put(memory_object)
@@ -108,6 +125,8 @@ class RuntimeStepService:
         execution_node_id: str | None = None,
         model_output: dict[str, object] | None = None,
     ) -> RuntimeStepResult:
+        logger.info("runtime_step_start task_id=%s event_id=%s", task_id, observation.event_id)
+
         execution_state = self._resume_service.load_execution_graph(task_id)
         target_node_id = execution_node_id or self._pick_execution_node(task_id, execution_state.status_by_node)
 
@@ -117,6 +136,12 @@ class RuntimeStepService:
             execution_node_id=target_node_id,
             solver_run_id=solver_run_id,
             observation=observation,
+        )
+        logger.info(
+            "routing_decision task_id=%s event_id=%s domains=%s",
+            task_id,
+            observation.event_id,
+            [item.domain.value for item in routing_decision.routed_objects],
         )
 
         intent = self._resolve_intent(observation)
@@ -128,7 +153,23 @@ class RuntimeStepService:
         )
 
         retrieved = self._execute_retrieval(retrieval_plan)
+        logger.info(
+            "retrieval_plan task_id=%s event_id=%s queries=%s retrieved=%d",
+            task_id,
+            observation.event_id,
+            [query.domain.value for query in retrieval_plan.queries],
+            len(retrieved),
+        )
         available_evidence_ids = sorted({item.memory_id for item in retrieved})
+
+        effective_model_output = model_output or self._call_model_provider(
+            task_id=task_id,
+            execution_node_id=target_node_id,
+            solver_run_id=solver_run_id,
+            observation=observation,
+            retrieved=retrieved,
+            available_evidence_ids=available_evidence_ids,
+        )
 
         update_input = SolverUpdateInput(
             task_id=task_id,
@@ -137,7 +178,7 @@ class RuntimeStepService:
             observation_text=str(observation.payload),
             observation_source_ref=observation.event_id,
             available_evidence_ids=available_evidence_ids,
-            model_output=model_output,
+            model_output=effective_model_output,
         )
 
         update_result = self._solver_update_engine.apply_update(
@@ -146,6 +187,13 @@ class RuntimeStepService:
             next_event_id=f"solver-update:{observation.event_id}",
             next_node_id=f"node:{observation.event_id}",
             next_edge_id=f"edge:{observation.event_id}",
+        )
+        logger.info(
+            "solver_decision task_id=%s event_id=%s decision=%s downgraded=%s",
+            task_id,
+            observation.event_id,
+            update_result.final_decision.value,
+            update_result.downgraded,
         )
 
         for node in update_result.created_nodes:
@@ -181,6 +229,13 @@ class RuntimeStepService:
             solver_decision=update_result.final_decision,
             follow_up_required=update_result.follow_up_required,
             downgraded=update_result.downgraded,
+            next_action=update_result.parsed_output.next_best_test,
+            solver_state_summary=update_result.parsed_output.rationale_short,
+            unresolved_questions=update_result.parsed_output.missing_evidence,
+            required_tests=[update_result.parsed_output.next_best_test]
+            if update_result.parsed_output.next_best_test
+            else [],
+            candidate_decisions=[update_result.parsed_output.decision.value],
             writeback_candidates=writebacks,
             event_ids=[item.event_id for item in update_result.generated_events],
         )
@@ -206,7 +261,46 @@ class RuntimeStepService:
             )
         )
 
+        logger.info(
+            "verification_result task_id=%s event_id=%s follow_up=%s writebacks=%d",
+            task_id,
+            observation.event_id,
+            update_result.follow_up_required,
+            len(writebacks),
+        )
         return result
+
+    def _call_model_provider(
+        self,
+        *,
+        task_id: str,
+        execution_node_id: str,
+        solver_run_id: str,
+        observation: RuntimeObservationInput,
+        retrieved: list[MemoryObject],
+        available_evidence_ids: list[str],
+    ) -> dict[str, object] | None:
+        if self._model_provider is None:
+            return None
+
+        model_input = SolverModelInput(
+            task_id=task_id,
+            execution_node_id=execution_node_id,
+            solver_run_id=solver_run_id,
+            observation_event_id=observation.event_id,
+            observation_text=str(observation.payload),
+            context_items=[
+                SolverContextItem(
+                    memory_id=item.memory_id,
+                    memory_domain=item.memory_type.value,
+                    content=item.content,
+                )
+                for item in retrieved
+            ],
+            available_evidence_ids=available_evidence_ids,
+        )
+        decision = self._model_provider.generate_decision(model_input)
+        return decision.model_dump(mode="python")
 
     def _route_observation(
         self,
