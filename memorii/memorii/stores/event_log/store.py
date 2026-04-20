@@ -23,8 +23,8 @@ class InMemoryEventLogStore(EventLogStore):
         self._events_in_order.append(event)
         self._by_id[event.event_id] = event
         self._by_task[event.task_id].append(event)
-        if event.solver_graph_id is not None:
-            self._by_solver[event.solver_graph_id].append(event)
+        if event.solver_run_id is not None:
+            self._by_solver[event.solver_run_id].append(event)
         return True
 
     def append_many(self, events: list[EventRecord]) -> list[bool]:

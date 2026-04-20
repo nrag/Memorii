@@ -11,6 +11,12 @@ class SolverDecision(str, Enum):
     MULTIPLE_PLAUSIBLE_OPTIONS = "MULTIPLE_PLAUSIBLE_OPTIONS"
 
 
+class ConfidenceBand(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 ABSTENTION_DECISIONS: set[SolverDecision] = {
     SolverDecision.INSUFFICIENT_EVIDENCE,
     SolverDecision.NEEDS_TEST,

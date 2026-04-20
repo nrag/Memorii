@@ -14,7 +14,7 @@ from memorii.domain.enums import EventType, ExecutionNodeStatus, MemoryDomain
 from memorii.domain.events import EventRecord
 from memorii.domain.memory_object import MemoryObject
 from memorii.domain.retrieval import DomainRetrievalQuery, RetrievalIntent, RetrievalPlan, RetrievalScope
-from memorii.domain.routing import InboundEvent, InboundEventClass
+from memorii.domain.routing import InboundEvent, InboundEventClass, RoutingDecision
 from memorii.domain.writebacks import WritebackCandidate
 from memorii.stores.base.interfaces import EventLogStore, ExecutionGraphStore, OverlayStore, SolverGraphStore
 
@@ -112,7 +112,12 @@ class RuntimeStepService:
         target_node_id = execution_node_id or self._pick_execution_node(task_id, execution_state.status_by_node)
 
         solver_run_id = self._resolve_solver_run(task_id, target_node_id)
-        self._route_observation(task_id=task_id, execution_node_id=target_node_id, solver_run_id=solver_run_id, observation=observation)
+        routing_decision = self._route_observation(
+            task_id=task_id,
+            execution_node_id=target_node_id,
+            solver_run_id=solver_run_id,
+            observation=observation,
+        )
 
         intent = self._resolve_intent(observation)
         scope = RetrievalScope(task_id=task_id, execution_node_id=target_node_id, solver_run_id=solver_run_id)
@@ -121,32 +126,6 @@ class RuntimeStepService:
             scope=scope,
             include_raw_transcript=True,
         )
-        if intent == RetrievalIntent.DEBUG_OR_INVESTIGATE:
-            retrieval_plan.queries.append(
-                DomainRetrievalQuery(
-                    domain=MemoryDomain.EXECUTION,
-                    scope=scope,
-                    namespace={
-                        "memory_domain": MemoryDomain.EXECUTION,
-                        "task_id": task_id,
-                        "execution_node_id": target_node_id,
-                        "solver_run_id": solver_run_id,
-                    },
-                )
-            )
-            retrieval_plan.queries.append(
-                DomainRetrievalQuery(
-                    domain=MemoryDomain.TRANSCRIPT,
-                    scope=scope,
-                    namespace={
-                        "memory_domain": MemoryDomain.TRANSCRIPT,
-                        "task_id": task_id,
-                        "execution_node_id": target_node_id,
-                        "solver_run_id": solver_run_id,
-                    },
-                    require_raw_transcript=True,
-                )
-            )
 
         retrieved = self._execute_retrieval(retrieval_plan)
         available_evidence_ids = sorted({item.memory_id for item in retrieved})
@@ -173,7 +152,8 @@ class RuntimeStepService:
             self._solver_store.upsert_node(solver_run_id, node)
         for edge in update_result.created_edges:
             self._solver_store.upsert_edge(solver_run_id, edge)
-        self._overlay_store.append_overlay_version(update_result.overlay_version)
+        if update_result.overlay_version is not None:
+            self._overlay_store.append_overlay_version(update_result.overlay_version)
 
         for event in update_result.generated_events:
             self._event_log_store.append(event)
@@ -197,17 +177,7 @@ class RuntimeStepService:
             solver_run_id=solver_run_id,
             retrieval_plan=retrieval_plan,
             retrieved_by_domain=self._retrieved_ids_by_domain(retrieval_plan),
-            routed_domains=[item.domain for item in self._router.route_event(
-                InboundEvent(
-                    event_id=f"peek:{observation.event_id}",
-                    event_class=observation.event_class,
-                    task_id=task_id,
-                    execution_node_id=target_node_id,
-                    solver_run_id=solver_run_id,
-                    payload=observation.payload,
-                    timestamp=datetime.now(UTC),
-                )
-            ).routed_objects],
+            routed_domains=[item.domain for item in routing_decision.routed_objects],
             solver_decision=update_result.final_decision,
             follow_up_required=update_result.follow_up_required,
             downgraded=update_result.downgraded,
@@ -222,7 +192,7 @@ class RuntimeStepService:
                 timestamp=datetime.now(UTC),
                 task_id=task_id,
                 execution_node_id=target_node_id,
-                solver_graph_id=solver_run_id,
+                solver_run_id=solver_run_id,
                 source="runtime_step_service",
                 payload={
                     "graph_type": "system",
@@ -245,7 +215,7 @@ class RuntimeStepService:
         execution_node_id: str,
         solver_run_id: str,
         observation: RuntimeObservationInput,
-    ) -> None:
+    ) -> RoutingDecision:
         inbound = InboundEvent(
             event_id=observation.event_id,
             event_class=observation.event_class,
@@ -258,6 +228,7 @@ class RuntimeStepService:
         decision = self._router.route_event(inbound)
         for routed in decision.routed_objects:
             self._memory_plane.put(routed.memory_object)
+        return decision
 
     def _resolve_intent(self, observation: RuntimeObservationInput) -> RetrievalIntent:
         failed = observation.payload.get("status") == "failed" or observation.payload.get("outcome") == "failed"

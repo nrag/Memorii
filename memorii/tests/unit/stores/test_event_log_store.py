@@ -13,7 +13,7 @@ def _event(event_id: str, task_id: str, solver_id: str | None = None) -> EventRe
         event_type=EventType.NODE_ADDED,
         timestamp=datetime.now(UTC),
         task_id=task_id,
-        solver_graph_id=solver_id,
+        solver_run_id=solver_id,
         actor_id="system",
         payload={"graph_type": "execution", "entity": {"id": event_id}},
         dedupe_key=event_id,
@@ -41,3 +41,23 @@ def test_event_idempotency_and_collision() -> None:
     mutated = e1.model_copy(update={"payload": {"graph_type": "execution", "entity": {"id": "different"}}})
     with pytest.raises(ValueError):
         store.append(mutated)
+
+
+def test_event_record_accepts_legacy_solver_graph_id_alias() -> None:
+    event = EventRecord.model_validate(
+        {
+            "event_id": "legacy-1",
+            "event_type": "NODE_ADDED",
+            "timestamp": datetime.now(UTC),
+            "task_id": "t1",
+            "solver_graph_id": "solver-legacy",
+            "actor_id": "system",
+            "payload": {"graph_type": "solver", "entity": {"id": "n1"}},
+            "dedupe_key": "legacy-1",
+        }
+    )
+
+    dumped = event.model_dump(mode="json")
+    assert event.solver_run_id == "solver-legacy"
+    assert dumped["solver_run_id"] == "solver-legacy"
+    assert "solver_graph_id" not in dumped

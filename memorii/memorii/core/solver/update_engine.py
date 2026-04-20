@@ -2,9 +2,9 @@
 
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from memorii.core.solver.abstention import SolverDecision
+from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
 from memorii.core.solver.verifier import SolverDecisionVerifier
 from memorii.domain.common import SolverEdgeMetadata, SolverNodeMetadata
 from memorii.domain.enums import CommitStatus, ConfidenceClass, SolverCreatedBy, SolverEdgeType, SolverNodeStatus, SolverNodeType
@@ -20,9 +20,22 @@ class SolverDecisionOutput(BaseModel):
     missing_evidence: list[str] = Field(default_factory=list)
     next_best_test: str | None = None
     rationale_short: str
-    confidence_band: str
+    confidence_band: ConfidenceBand
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def enforce_decision_invariants(self) -> "SolverDecisionOutput":
+        if self.decision in {SolverDecision.SUPPORTED, SolverDecision.REFUTED} and not self.evidence_ids:
+            raise ValueError("commitment_decisions_require_evidence_ids")
+        if self.decision == SolverDecision.INSUFFICIENT_EVIDENCE and not self.missing_evidence:
+            raise ValueError("insufficient_evidence_requires_missing_evidence")
+        if self.decision == SolverDecision.NEEDS_TEST:
+            if not self.missing_evidence:
+                raise ValueError("needs_test_requires_missing_evidence")
+            if self.next_best_test is None or not self.next_best_test.strip():
+                raise ValueError("needs_test_requires_next_best_test")
+        return self
 
 
 class SolverUpdateInput(BaseModel):
@@ -44,7 +57,7 @@ class SolverUpdateResult(BaseModel):
     created_edges: list[SolverEdge] = Field(default_factory=list)
     committed_node_ids: list[str] = Field(default_factory=list)
     committed_edge_ids: list[str] = Field(default_factory=list)
-    overlay_version: SolverOverlayVersion
+    overlay_version: SolverOverlayVersion | None = None
     generated_events: list[EventRecord] = Field(default_factory=list)
     follow_up_required: bool = False
     downgraded: bool = False
@@ -67,13 +80,39 @@ class SolverUpdateEngine:
         next_edge_id: str,
     ) -> SolverUpdateResult:
         now = datetime.now(UTC)
-        parsed = self._parse_output(update_input)
+        parsed, parse_errors = self._parse_output(update_input)
+        if parse_errors:
+            fallback = SolverDecisionOutput(
+                decision=SolverDecision.INSUFFICIENT_EVIDENCE,
+                evidence_ids=[],
+                missing_evidence=["invalid_model_output"],
+                next_best_test="emit_valid_structured_output",
+                rationale_short="Model output failed schema validation",
+                confidence_band=ConfidenceBand.LOW,
+            )
+            return SolverUpdateResult(
+                parsed_output=fallback,
+                final_decision=SolverDecision.INSUFFICIENT_EVIDENCE,
+                downgraded=False,
+                follow_up_required=True,
+                validation_notes=parse_errors,
+            )
 
         verification = self._verifier.verify(
             decision=parsed.decision,
             evidence_ids=parsed.evidence_ids,
+            missing_evidence=parsed.missing_evidence,
+            next_best_test=parsed.next_best_test,
             available_evidence_ids=set(update_input.available_evidence_ids),
         )
+        if not verification.is_valid:
+            return SolverUpdateResult(
+                parsed_output=parsed,
+                final_decision=SolverDecision.INSUFFICIENT_EVIDENCE,
+                downgraded=verification.downgraded,
+                follow_up_required=True,
+                validation_notes=list(verification.reasons),
+            )
         final_decision = verification.final_decision
 
         notes = list(verification.reasons)
@@ -232,7 +271,7 @@ class SolverUpdateEngine:
             validation_notes=notes,
         )
 
-    def _parse_output(self, update_input: SolverUpdateInput) -> SolverDecisionOutput:
+    def _parse_output(self, update_input: SolverUpdateInput) -> tuple[SolverDecisionOutput, list[str]]:
         if update_input.model_output is None:
             return SolverDecisionOutput(
                 decision=SolverDecision.INSUFFICIENT_EVIDENCE,
@@ -240,9 +279,22 @@ class SolverUpdateEngine:
                 missing_evidence=["model_output_missing"],
                 next_best_test="collect_additional_observation",
                 rationale_short="No model output provided",
-                confidence_band="low",
+                confidence_band=ConfidenceBand.LOW,
+            ), []
+        try:
+            return SolverDecisionOutput.model_validate(update_input.model_output), []
+        except ValidationError as error:
+            return (
+                SolverDecisionOutput(
+                    decision=SolverDecision.INSUFFICIENT_EVIDENCE,
+                    evidence_ids=[],
+                    missing_evidence=["invalid_model_output"],
+                    next_best_test="emit_valid_structured_output",
+                    rationale_short="Model output failed schema validation",
+                    confidence_band=ConfidenceBand.LOW,
+                ),
+                [f"invalid_solver_output:{error.errors()[0]['type']}"],
             )
-        return SolverDecisionOutput.model_validate(update_input.model_output)
 
     def _build_events(
         self,
@@ -268,7 +320,7 @@ class SolverUpdateEngine:
                     timestamp=now,
                     task_id=task_id,
                     execution_node_id=execution_node_id,
-                    solver_graph_id=solver_run_id,
+                    solver_run_id=solver_run_id,
                     source="solver_update_engine",
                     payload={
                         "graph_type": "solver",
@@ -294,7 +346,7 @@ class SolverUpdateEngine:
                     timestamp=now,
                     task_id=task_id,
                     execution_node_id=execution_node_id,
-                    solver_graph_id=solver_run_id,
+                    solver_run_id=solver_run_id,
                     source="solver_update_engine",
                     payload={
                         "graph_type": "solver",
@@ -320,7 +372,7 @@ class SolverUpdateEngine:
                     timestamp=now,
                     task_id=task_id,
                     execution_node_id=execution_node_id,
-                    solver_graph_id=solver_run_id,
+                    solver_run_id=solver_run_id,
                     source="solver_update_engine",
                     payload={"node_id": node_id},
                     dedupe_key=f"{solver_run_id}:node-commit:{node_id}",
@@ -335,7 +387,7 @@ class SolverUpdateEngine:
                     timestamp=now,
                     task_id=task_id,
                     execution_node_id=execution_node_id,
-                    solver_graph_id=solver_run_id,
+                    solver_run_id=solver_run_id,
                     source="solver_update_engine",
                     payload={"edge_id": edge_id},
                     dedupe_key=f"{solver_run_id}:edge-commit:{edge_id}",
@@ -349,7 +401,7 @@ class SolverUpdateEngine:
                 timestamp=now,
                 task_id=task_id,
                 execution_node_id=execution_node_id,
-                solver_graph_id=solver_run_id,
+                solver_run_id=solver_run_id,
                 source="solver_update_engine",
                 payload={
                     "graph_type": "solver",

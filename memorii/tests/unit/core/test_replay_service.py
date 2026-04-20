@@ -49,7 +49,7 @@ def test_event_append_and_deterministic_replay() -> None:
             event_type=EventType.NODE_ADDED,
             timestamp=datetime.now(UTC),
             task_id="t1",
-            solver_graph_id="solver-1",
+            solver_run_id="solver-1",
             actor_id="system",
             payload={"graph_type": "solver", "entity": solver_node.model_dump(mode="json")},
             dedupe_key="e2",
