@@ -44,3 +44,11 @@ def test_implicit_recall_benchmark_execution() -> None:
     assert result.category == BenchmarkScenarioType.IMPLICIT_RECALL
     assert result.metrics.implicit_recall_success_rate == 1.0
     assert result.metrics.retrieval_plan_relevance_accuracy == 1.0
+
+
+def test_semantic_retrieval_scenario_success_tracks_excluded_items() -> None:
+    report = BenchmarkHarness().run(fixtures=load_benchmark_fixture_set())
+    pass_result = _result(report, "retrieval_semantic_validated", BenchmarkSystem.MEMORII)
+    assert pass_result is not None
+    assert pass_result.observation.scenario_success is True
+    assert pass_result.metrics.scenario_success_rate == 1.0

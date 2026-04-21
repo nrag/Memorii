@@ -74,3 +74,81 @@ def test_metrics_use_explicit_routing_and_writeback_expectations() -> None:
     assert metrics.routing_accuracy == 1.0
     assert metrics.blocked_write_accuracy == 1.0
     assert metrics.writeback_candidate_correctness == 1.0
+
+
+def test_routing_metrics_score_zero_for_empty_observed_with_expectations() -> None:
+    observation = ScenarioObservation(
+        scenario_id="routing_miss",
+        category=BenchmarkScenarioType.ROUTING_CORRECTNESS,
+        system=BenchmarkSystem.MEMORII,
+        routed_domains=[],
+        blocked_domains=[],
+        expected_routed_domains=[MemoryDomain.TRANSCRIPT],
+        expected_blocked_domains=[MemoryDomain.SEMANTIC],
+    )
+
+    metrics = compute_metrics(observation)
+    assert metrics.routing_accuracy == 0.0
+    assert metrics.blocked_write_accuracy == 0.0
+
+
+def test_end_to_end_without_routing_expectations_keeps_routing_metrics_unset() -> None:
+    observation = ScenarioObservation(
+        scenario_id="e2e_without_routing_expectations",
+        category=BenchmarkScenarioType.END_TO_END,
+        system=BenchmarkSystem.MEMORII,
+        routed_domains=[],
+        blocked_domains=[],
+        expected_routed_domains=[],
+        expected_blocked_domains=[],
+    )
+
+    metrics = compute_metrics(observation)
+    assert metrics.routing_accuracy is None
+    assert metrics.blocked_write_accuracy is None
+
+
+def test_explicit_routed_expectation_with_empty_observed_scores_zero() -> None:
+    observation = ScenarioObservation(
+        scenario_id="explicit_routed_expectation",
+        category=BenchmarkScenarioType.END_TO_END,
+        system=BenchmarkSystem.MEMORII,
+        routed_domains=[],
+        expected_routed_domains=[MemoryDomain.TRANSCRIPT],
+    )
+    metrics = compute_metrics(observation)
+    assert metrics.routing_accuracy == 0.0
+
+
+def test_explicit_blocked_expectation_with_empty_observed_scores_zero() -> None:
+    observation = ScenarioObservation(
+        scenario_id="explicit_blocked_expectation",
+        category=BenchmarkScenarioType.END_TO_END,
+        system=BenchmarkSystem.MEMORII,
+        blocked_domains=[],
+        expected_blocked_domains=[MemoryDomain.SEMANTIC],
+    )
+    metrics = compute_metrics(observation)
+    assert metrics.blocked_write_accuracy == 0.0
+
+
+def test_multi_domain_fanout_only_applies_when_expected_fanout_is_multidomain() -> None:
+    single_domain_observation = ScenarioObservation(
+        scenario_id="fanout_single_domain",
+        category=BenchmarkScenarioType.ROUTING_CORRECTNESS,
+        system=BenchmarkSystem.MEMORII,
+        routed_domains=[MemoryDomain.TRANSCRIPT],
+        expected_routed_domains=[MemoryDomain.TRANSCRIPT],
+    )
+    multi_domain_observation = ScenarioObservation(
+        scenario_id="fanout_multi_domain_miss",
+        category=BenchmarkScenarioType.ROUTING_CORRECTNESS,
+        system=BenchmarkSystem.MEMORII,
+        routed_domains=[MemoryDomain.TRANSCRIPT],
+        expected_routed_domains=[MemoryDomain.TRANSCRIPT, MemoryDomain.EXECUTION],
+    )
+
+    single_metrics = compute_metrics(single_domain_observation)
+    multi_metrics = compute_metrics(multi_domain_observation)
+    assert single_metrics.multi_domain_fanout_correctness is None
+    assert multi_metrics.multi_domain_fanout_correctness == 0.0

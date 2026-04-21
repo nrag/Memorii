@@ -59,14 +59,17 @@ def compute_metrics(observation: ScenarioObservation) -> ScenarioMetrics:
     routing_accuracy = None
     blocked_write_accuracy = None
     fanout = None
-    if observation.routed_domains or observation.blocked_domains:
-        expected = {item.value for item in observation.expected_routed_domains}
-        routed = {item.value for item in observation.routed_domains}
-        blocked_expected = {item.value for item in observation.expected_blocked_domains}
-        blocked_observed = {item.value for item in observation.blocked_domains}
+    expected = {item.value for item in observation.expected_routed_domains}
+    routed = {item.value for item in observation.routed_domains}
+    blocked_expected = {item.value for item in observation.expected_blocked_domains}
+    blocked_observed = {item.value for item in observation.blocked_domains}
+    is_routing_correctness = observation.category.value == "routing_correctness"
+    if observation.expected_routed_domains or is_routing_correctness:
         routing_accuracy = 1.0 if expected == routed else 0.0
+    if observation.expected_blocked_domains or is_routing_correctness:
         blocked_write_accuracy = 1.0 if blocked_expected == blocked_observed else 0.0
-        fanout = 1.0 if len(routed) > 1 else 0.0
+    if len(observation.expected_routed_domains) > 1:
+        fanout = 1.0 if expected == routed else 0.0
 
     writeback_correctness = None
     expected_writeback_domains = {domain.value for domain in observation.expected_writeback_candidate_domains}
