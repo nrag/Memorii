@@ -197,7 +197,12 @@ def test_end_to_end_seeding_preserves_item_namespace_when_present(monkeypatch: p
     assert custom.namespace["task_id"] == "task:custom"
     assert custom.namespace["execution_node_id"] == "exec:custom"
     assert custom.namespace["solver_run_id"] == "solver:custom"
+    assert custom.scope.value == "execution_node"
     assert fallback.namespace["task_id"] == "task:e2e"
+    assert fallback.namespace["memory_domain"] == MemoryDomain.EPISODIC.value
+    assert "execution_node_id" not in fallback.namespace
+    assert "solver_run_id" not in fallback.namespace
+    assert fallback.scope.value == "task"
 
 
 def test_end_to_end_runtime_writeback_validation_metadata_is_used() -> None:

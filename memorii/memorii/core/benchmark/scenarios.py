@@ -487,7 +487,7 @@ class ScenarioExecutor:
                 model_provider=StaticSolverModelProvider(
                     SolverDecisionOutput(
                         decision="SUPPORTED",
-                        evidence_ids=["sem:fact"],
+                        evidence_ids=[f"{event.event_id}:transcript"],
                         missing_evidence=[],
                         next_best_test=None,
                         rationale_short="validated resolution path",
@@ -495,10 +495,17 @@ class ScenarioExecutor:
                     )
                 ),
             )
-            solver_run_id = f"solver:{fx.task_id}:exec:{fx.task_id}:root"
             for item in fixture.retrieval.corpus:
                 if not self._in_scope(item=item, retrieval=fixture.retrieval):
                     continue
+                namespace = {
+                    "task_id": item.task_id or fx.task_id,
+                    "memory_domain": item.domain.value,
+                }
+                if item.execution_node_id is not None:
+                    namespace["execution_node_id"] = item.execution_node_id
+                if item.solver_run_id is not None:
+                    namespace["solver_run_id"] = item.solver_run_id
                 seeded = MemoryObject(
                     memory_id=item.item_id,
                     memory_type=item.domain,
@@ -517,12 +524,7 @@ class ScenarioExecutor:
                         created_by="benchmark",
                     ),
                     routing=RoutingInfo(primary_store="in_memory", secondary_stores=[]),
-                    namespace={
-                        "task_id": item.task_id or fx.task_id,
-                        "execution_node_id": item.execution_node_id or f"exec:{fx.task_id}:root",
-                        "solver_run_id": item.solver_run_id or solver_run_id,
-                        "memory_domain": item.domain.value,
-                    },
+                    namespace=namespace,
                 )
                 runtime.seed_memory_object(seeded)
             result = runtime.step(
