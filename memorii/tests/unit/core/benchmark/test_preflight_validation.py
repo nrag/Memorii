@@ -47,3 +47,31 @@ def test_validate_report_rejects_missing_required_harness_metrics() -> None:
 
     with pytest.raises(ValueError, match="missing scenario_success_rate"):
         validate_report(report)
+
+
+def test_validate_report_rejects_missing_transcript_scenario_success_rate() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    transcript_result = next(
+        result
+        for result in report.scenario_results
+        if result.scenario_id == "retrieval_transcript_verbatim" and result.system == BenchmarkSystem.MEMORII
+    )
+    transcript_result.metrics.scenario_success_rate = None
+
+    with pytest.raises(ValueError, match="missing scenario_success_rate"):
+        validate_report(report)
+
+
+def test_validate_report_rejects_missing_episodic_scenario_success_rate() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    episodic_result = next(
+        result
+        for result in report.scenario_results
+        if result.scenario_id == "retrieval_episodic_prior_case" and result.system == BenchmarkSystem.MEMORII
+    )
+    episodic_result.metrics.scenario_success_rate = None
+
+    with pytest.raises(ValueError, match="missing scenario_success_rate"):
+        validate_report(report)

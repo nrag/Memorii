@@ -30,6 +30,8 @@ def test_end_to_end_observation_carries_expected_routing_fields() -> None:
     )
     assert memorii_result.observation.expected_routed_domains
     assert memorii_result.observation.expected_blocked_domains == []
+    assert memorii_result.observation.blocked_domains == []
+    assert memorii_result.metrics.blocked_write_accuracy is None
 
 
 def test_end_to_end_scenario_fails_when_routing_expectation_is_wrong() -> None:

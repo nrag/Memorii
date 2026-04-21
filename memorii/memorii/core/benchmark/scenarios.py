@@ -537,10 +537,13 @@ class ScenarioExecutor:
         expected_routed_domains = list(fixture.routing.expected_domains) if fixture.routing is not None else []
         expected_blocked_domains = list(fixture.routing.expected_blocked_domains) if fixture.routing is not None else []
         routed_domain_set = set(routed_domains)
-        blocked_domain_set: set[MemoryDomain] = set()
+        blocked_domain_set: set[MemoryDomain] | None = None
         if event is not None and system == BenchmarkSystem.MEMORII:
-            # blocked domains are returned by runtime routing result when applicable.
-            blocked_domain_set = set()
+            if expected_blocked_domains:
+                raise ValueError(
+                    "end-to-end blocked-domain expectations are unsupported for memorii runtime path: "
+                    "runtime step result does not expose blocked domains"
+                )
         elif event is not None:
             if system == BenchmarkSystem.TRANSCRIPT_ONLY_BASELINE:
                 blocked_domain_set = set()
@@ -552,7 +555,9 @@ class ScenarioExecutor:
 
         pipeline_success_ok = fx.expect_pipeline_success
         routing_ok = routed_domain_set == set(expected_routed_domains)
-        blocked_ok = blocked_domain_set == set(expected_blocked_domains)
+        blocked_ok = (not expected_blocked_domains) or (
+            blocked_domain_set is not None and blocked_domain_set == set(expected_blocked_domains)
+        )
         writeback_domains_ok = set(writeback_domains) == set(fx.expect_writeback_domains)
         expected_writeback_ids = set(fx.expect_writeback_candidate_ids)
         writeback_ids_ok = (not expected_writeback_ids) or (set(writeback_ids) == expected_writeback_ids)
@@ -571,7 +576,7 @@ class ScenarioExecutor:
             execution_level=ScenarioExecutionLevel.SYSTEM_LEVEL,
             scenario_success=scenario_success,
             routed_domains=sorted(set(routed_domains), key=lambda d: d.value),
-            blocked_domains=sorted(blocked_domain_set, key=lambda d: d.value),
+            blocked_domains=sorted(blocked_domain_set, key=lambda d: d.value) if blocked_domain_set is not None else [],
             expected_routed_domains=expected_routed_domains,
             expected_blocked_domains=expected_blocked_domains,
             writeback_candidate_domains=sorted(set(writeback_domains), key=lambda d: d.value),

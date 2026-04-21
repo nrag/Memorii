@@ -22,9 +22,9 @@ MIN_FIXTURES_BY_CATEGORY: dict[BenchmarkScenarioType, int] = {
 }
 
 REQUIRED_METRICS_BY_CATEGORY: dict[BenchmarkScenarioType, tuple[str, ...]] = {
-    BenchmarkScenarioType.TRANSCRIPT_RETRIEVAL: ("recall_at_k", "precision_at_k"),
+    BenchmarkScenarioType.TRANSCRIPT_RETRIEVAL: ("recall_at_k", "precision_at_k", "scenario_success_rate"),
     BenchmarkScenarioType.SEMANTIC_RETRIEVAL: ("recall_at_k", "precision_at_k", "scenario_success_rate"),
-    BenchmarkScenarioType.EPISODIC_RETRIEVAL: ("recall_at_k", "precision_at_k"),
+    BenchmarkScenarioType.EPISODIC_RETRIEVAL: ("recall_at_k", "precision_at_k", "scenario_success_rate"),
     BenchmarkScenarioType.ROUTING_CORRECTNESS: ("routing_accuracy", "blocked_write_accuracy"),
     BenchmarkScenarioType.EXECUTION_RESUME: ("execution_resume_correctness",),
     BenchmarkScenarioType.SOLVER_RESUME: (
@@ -154,13 +154,13 @@ def _validate_category_observation_contract(result: ScenarioResult) -> None:
             "missing scenario_success"
         )
 
-    if result.category == BenchmarkScenarioType.END_TO_END and observation.expected_routed_domains:
-        if result.metrics.routing_accuracy is None:
+    if result.category == BenchmarkScenarioType.END_TO_END:
+        if observation.expected_routed_domains and result.metrics.routing_accuracy is None:
             raise ValueError(
                 f"benchmark report failed validation: {result.scenario_id}/{result.system.value} "
                 "missing routing_accuracy"
             )
-        if result.metrics.blocked_write_accuracy is None:
+        if observation.expected_blocked_domains and result.metrics.blocked_write_accuracy is None:
             raise ValueError(
                 f"benchmark report failed validation: {result.scenario_id}/{result.system.value} "
                 "missing blocked_write_accuracy"
