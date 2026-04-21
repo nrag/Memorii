@@ -60,13 +60,23 @@ def compute_metrics(observation: ScenarioObservation) -> ScenarioMetrics:
     blocked_write_accuracy = None
     fanout = None
     if observation.routed_domains or observation.blocked_domains:
-        expected = set(observation.relevant_ids)
+        expected = {item.value for item in observation.expected_routed_domains}
         routed = {item.value for item in observation.routed_domains}
-        blocked_expected = set(observation.excluded_ids)
+        blocked_expected = {item.value for item in observation.expected_blocked_domains}
         blocked_observed = {item.value for item in observation.blocked_domains}
         routing_accuracy = 1.0 if expected == routed else 0.0
         blocked_write_accuracy = 1.0 if blocked_expected == blocked_observed else 0.0
         fanout = 1.0 if len(routed) > 1 else 0.0
+
+    writeback_correctness = None
+    expected_writeback_domains = {domain.value for domain in observation.expected_writeback_candidate_domains}
+    observed_writeback_domains = {domain.value for domain in observation.writeback_candidate_domains}
+    expected_writeback_ids = set(observation.expected_writeback_candidate_ids)
+    observed_writeback_ids = set(observation.writeback_candidate_ids)
+    if expected_writeback_domains or expected_writeback_ids:
+        domains_ok = expected_writeback_domains == observed_writeback_domains if expected_writeback_domains else True
+        ids_ok = expected_writeback_ids == observed_writeback_ids if expected_writeback_ids else True
+        writeback_correctness = _bool_metric(domains_ok and ids_ok)
 
     return ScenarioMetrics(
         recall_at_k=recall,
@@ -83,11 +93,7 @@ def compute_metrics(observation: ScenarioObservation) -> ScenarioMetrics:
         abstention_preservation_rate=_bool_metric(observation.abstention_preserved),
         invalid_output_rejection_rate=_bool_metric(observation.invalid_output_rejected),
         scenario_success_rate=_bool_metric(observation.scenario_success),
-        writeback_candidate_correctness=_bool_metric(
-            observation.scenario_success and bool(observation.writeback_candidate_domains)
-            if observation.scenario_success is not None
-            else None
-        ),
+        writeback_candidate_correctness=writeback_correctness,
         semantic_pollution_rate=_bool_metric(False if observation.semantic_pollution is None else observation.semantic_pollution),
         user_memory_pollution_rate=_bool_metric(
             False if observation.user_memory_pollution is None else observation.user_memory_pollution

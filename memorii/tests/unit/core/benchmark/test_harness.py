@@ -1,5 +1,6 @@
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkRunConfig, BenchmarkSystem
+from memorii.core.benchmark.reporting import to_markdown
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
 
 
@@ -13,3 +14,9 @@ def test_harness_executes_all_scenarios_for_all_systems() -> None:
     assert BenchmarkSystem.MEMORII in report.aggregate_by_system
     assert "retrieval_transcript_verbatim" in report.baseline_comparison
     assert report.aggregate_by_category
+
+
+def test_report_includes_execution_level_marker() -> None:
+    report = BenchmarkHarness().run(fixtures=load_benchmark_fixture_set())
+    markdown = to_markdown(report)
+    assert "system_level" in markdown

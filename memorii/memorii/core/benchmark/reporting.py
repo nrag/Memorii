@@ -36,7 +36,10 @@ def to_markdown(report: BenchmarkRunReport) -> str:
         lines.append("")
     lines.extend(["## Per-Scenario Results", ""])
     for result in sorted(report.scenario_results, key=lambda item: (item.scenario_id, item.system.value)):
-        lines.append(f"- `{result.scenario_id}` ({result.category.value}, {result.system.value})")
+        lines.append(
+            f"- `{result.scenario_id}` "
+            f"({result.category.value}, {result.system.value}, {result.observation.execution_level.value})"
+        )
         metric_map = result.metrics.model_dump(exclude_none=True)
         if not metric_map:
             lines.append("  - metrics: none")
