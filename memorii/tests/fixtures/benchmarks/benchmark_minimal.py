@@ -30,6 +30,45 @@ from memorii.domain.routing import InboundEvent, InboundEventClass
 
 def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
     now = datetime(2026, 1, 1, tzinfo=UTC)
+    long_horizon_noise_items = [
+        RetrievalFixtureMemoryItem(
+            item_id=f"tx:noise:{index:02d}",
+            domain=MemoryDomain.TRANSCRIPT,
+            text=f"irrelevant chatter entry {index}",
+            task_id="task:3",
+        )
+        for index in range(1, 48)
+    ]
+    long_horizon_delayed_corpus = [
+        RetrievalFixtureMemoryItem(
+            item_id="tx:key",
+            domain=MemoryDomain.TRANSCRIPT,
+            text="service token rotates at midnight",
+            task_id="task:3",
+        ),
+        RetrievalFixtureMemoryItem(
+            item_id="sem:key",
+            domain=MemoryDomain.SEMANTIC,
+            text="rotation policy token midnight schedule",
+            task_id="task:3",
+        ),
+        RetrievalFixtureMemoryItem(
+            item_id="epi:key",
+            domain=MemoryDomain.EPISODIC,
+            text="last incident fixed by midnight token rotation check",
+            task_id="task:3",
+        ),
+        *long_horizon_noise_items,
+    ]
+    long_horizon_early_corpus = [
+        RetrievalFixtureMemoryItem(
+            item_id="tx:key",
+            domain=MemoryDomain.TRANSCRIPT,
+            text="service token rotates at midnight",
+            task_id="task:3",
+        ),
+        *long_horizon_noise_items[:10],
+    ]
 
     retrieval_corpus = [
         RetrievalFixtureMemoryItem(
@@ -167,7 +206,8 @@ def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
             end_to_end=EndToEndFixture(
                 task_id="task:1",
                 expect_pipeline_success=True,
-                expect_writeback_domains=[MemoryDomain.TRANSCRIPT, MemoryDomain.EXECUTION],
+                expect_writeback_domains=[MemoryDomain.EPISODIC],
+                expect_writeback_candidate_ids=["wb:solver:task:1:exec:task:1:root:evt:tool:failed"],
             ),
         ),
         BenchmarkScenarioFixture(
@@ -194,6 +234,8 @@ def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
                 baseline_without_reuse_retrieved_ids=["tx:style"],
                 episode_one_writeback_domains=[MemoryDomain.USER, MemoryDomain.TRANSCRIPT],
                 expected_writeback_domain=MemoryDomain.USER,
+                expected_writeback_domains=[MemoryDomain.USER],
+                expected_writeback_candidate_ids=["wb:learning:pref:bullets"],
             ),
         ),
         BenchmarkScenarioFixture(
@@ -205,20 +247,7 @@ def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
                     intent=RetrievalIntent.RESUME_TASK,
                     scope=RetrievalScope(task_id="task:3"),
                     top_k=2,
-                    corpus=[
-                        RetrievalFixtureMemoryItem(
-                            item_id="tx:key",
-                            domain=MemoryDomain.TRANSCRIPT,
-                            text="service token rotates at midnight",
-                            task_id="task:3",
-                        ),
-                        RetrievalFixtureMemoryItem(
-                            item_id="tx:noise1",
-                            domain=MemoryDomain.TRANSCRIPT,
-                            text="small talk about lunch",
-                            task_id="task:3",
-                        ),
-                    ],
+                    corpus=long_horizon_early_corpus,
                     expected_relevant_ids=["tx:key"],
                 ),
                 delayed_retrieval=RetrievalFixture(
@@ -226,35 +255,11 @@ def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
                     intent=RetrievalIntent.RESUME_TASK,
                     scope=RetrievalScope(task_id="task:3"),
                     top_k=3,
-                    corpus=[
-                        RetrievalFixtureMemoryItem(
-                            item_id="tx:key",
-                            domain=MemoryDomain.TRANSCRIPT,
-                            text="service token rotates at midnight",
-                            task_id="task:3",
-                        ),
-                        RetrievalFixtureMemoryItem(
-                            item_id="sem:key",
-                            domain=MemoryDomain.SEMANTIC,
-                            text="rotation policy token midnight schedule",
-                            task_id="task:3",
-                        ),
-                        RetrievalFixtureMemoryItem(
-                            item_id="tx:noise2",
-                            domain=MemoryDomain.TRANSCRIPT,
-                            text="irrelevant calendar chit chat",
-                            task_id="task:3",
-                        ),
-                        RetrievalFixtureMemoryItem(
-                            item_id="tx:noise3",
-                            domain=MemoryDomain.TRANSCRIPT,
-                            text="another unrelated note",
-                            task_id="task:3",
-                        ),
-                    ],
-                    expected_relevant_ids=["tx:key", "sem:key"],
+                    corpus=long_horizon_delayed_corpus,
+                    expected_relevant_ids=["tx:key", "sem:key", "epi:key"],
                 ),
-                noise_ids=["tx:noise2", "tx:noise3"],
+                noise_ids=[item.item_id for item in long_horizon_noise_items],
+                delayed_depends_on_early_context=True,
             ),
         ),
         BenchmarkScenarioFixture(
@@ -266,21 +271,26 @@ def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
                         candidate_id="fact:old",
                         recency_rank=1,
                         validity_status="active",
+                        version=1,
                         preferred=False,
                     ),
                     ConflictCandidate(
                         candidate_id="fact:new",
                         recency_rank=3,
                         validity_status="active",
+                        version=3,
                         preferred=True,
                     ),
                     ConflictCandidate(
                         candidate_id="fact:stale",
                         recency_rank=4,
                         validity_status="expired",
+                        version=4,
                         preferred=False,
                     ),
                 ]
+                ,
+                expected_winner_candidate_id="fact:new",
             ),
         ),
         BenchmarkScenarioFixture(
@@ -311,6 +321,8 @@ def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
                     ),
                 ],
                 relevant_ids=["epi:handoff"],
+                relevant_memory_texts=["retrospective timeline for sprint transition checklist"],
+                lexical_overlap_score=0.18,
                 expected_domains=[MemoryDomain.EPISODIC, MemoryDomain.TRANSCRIPT],
             ),
         ),
@@ -331,6 +343,8 @@ def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
                     )
                 ],
                 relevant_ids=["sol:stale-assumption"],
+                relevant_memory_texts=["prior assumption invalidated by latest benchmark evidence"],
+                lexical_overlap_score=0.2,
                 expected_domains=[MemoryDomain.SOLVER],
             ),
             baseline_applicability={

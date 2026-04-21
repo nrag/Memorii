@@ -19,6 +19,7 @@ from memorii.core.benchmark.models import (
 )
 from memorii.core.benchmark.reproducibility import apply_seed, build_run_id
 from memorii.core.benchmark.scenarios import ScenarioExecutor
+from memorii.core.benchmark.validation import validate_preflight, validate_report
 
 
 class BenchmarkHarness:
@@ -34,6 +35,7 @@ class BenchmarkHarness:
         run_config = config or BenchmarkRunConfig()
         apply_seed(run_config.seed)
         normalized = normalize_fixtures(fixtures)
+        validate_preflight(fixtures=normalized, config=run_config)
         run_id = build_run_id(config=run_config, fixtures=normalized)
 
         results: list[ScenarioResult] = []
@@ -58,7 +60,7 @@ class BenchmarkHarness:
         aggregate = self._aggregate_by_system(results)
         aggregate_by_category = self._aggregate_by_category(results)
         baseline = self._compute_baseline_delta(results)
-        return BenchmarkRunReport(
+        report = BenchmarkRunReport(
             run_id=run_id,
             generated_at=datetime.now(UTC),
             config=run_config,
@@ -67,6 +69,8 @@ class BenchmarkHarness:
             aggregate_by_category=aggregate_by_category,
             baseline_comparison=baseline,
         )
+        validate_report(report)
+        return report
 
     def _aggregate_by_system(self, results: list[ScenarioResult]) -> dict[BenchmarkSystem, object]:
         per_system: dict[BenchmarkSystem, list[object]] = {system: [] for system in all_systems()}

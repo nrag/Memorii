@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
@@ -32,6 +32,11 @@ class BenchmarkSystem(str, Enum):
     TRANSCRIPT_ONLY_BASELINE = "transcript_only_baseline"
     FLAT_RETRIEVAL_BASELINE = "flat_retrieval_baseline"
     NO_SOLVER_GRAPH_BASELINE = "no_solver_graph_baseline"
+
+
+class ScenarioExecutionLevel(str, Enum):
+    SYSTEM_LEVEL = "system_level"
+    COMPONENT_LEVEL = "component_level"
 
 
 class BaselinePolicy(str, Enum):
@@ -114,6 +119,7 @@ class EndToEndFixture(BaseModel):
     task_id: str
     expect_pipeline_success: bool = True
     expect_writeback_domains: list[MemoryDomain] = Field(default_factory=list)
+    expect_writeback_candidate_ids: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -126,14 +132,23 @@ class LearningAcrossEpisodesFixture(BaseModel):
     baseline_without_reuse_retrieved_ids: list[str] = Field(default_factory=list)
     episode_one_writeback_domains: list[MemoryDomain] = Field(default_factory=list)
     expected_writeback_domain: MemoryDomain
+    expected_writeback_domains: list[MemoryDomain] = Field(default_factory=list)
+    expected_writeback_candidate_ids: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _validate_expected_writeback(self) -> "LearningAcrossEpisodesFixture":
+        if not self.expected_writeback_domains:
+            self.expected_writeback_domains = [self.expected_writeback_domain]
+        return self
 
 
 class LongHorizonDegradationFixture(BaseModel):
     early_retrieval: RetrievalFixture
     delayed_retrieval: RetrievalFixture
     noise_ids: list[str] = Field(default_factory=list)
+    delayed_depends_on_early_context: bool = True
 
     model_config = ConfigDict(extra="forbid")
 
@@ -143,12 +158,27 @@ class ConflictCandidate(BaseModel):
     recency_rank: int
     validity_status: str
     preferred: bool = False
+    timestamp: datetime | None = None
+    version: int | None = None
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _validate_temporal_semantics(self) -> "ConflictCandidate":
+        has_timestamp_or_version = self.timestamp is not None or self.version is not None
+        has_validity_window = self.valid_from is not None or self.valid_to is not None
+        if not has_timestamp_or_version and not has_validity_window:
+            raise ValueError(
+                "conflict candidate must include timestamp/version or explicit validity window"
+            )
+        return self
 
 
 class ConflictResolutionFixture(BaseModel):
     candidates: list[ConflictCandidate] = Field(default_factory=list)
+    expected_winner_candidate_id: str
 
     model_config = ConfigDict(extra="forbid")
 
@@ -159,9 +189,23 @@ class ImplicitRecallFixture(BaseModel):
     top_k: int = 3
     corpus: list[RetrievalFixtureMemoryItem] = Field(default_factory=list)
     relevant_ids: list[str] = Field(default_factory=list)
+    relevant_memory_texts: list[str] = Field(default_factory=list)
+    lexical_overlap_score: float
+    max_lexical_overlap: float = 0.25
     expected_domains: list[MemoryDomain] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def _validate_lexical_overlap(self) -> "ImplicitRecallFixture":
+        if self.lexical_overlap_score > self.max_lexical_overlap:
+            raise ValueError(
+                f"implicit recall lexical overlap {self.lexical_overlap_score} exceeds "
+                f"maximum {self.max_lexical_overlap}"
+            )
+        if not self.relevant_memory_texts:
+            raise ValueError("implicit recall fixture requires relevant_memory_texts")
+        return self
 
 
 class BenchmarkScenarioFixture(BaseModel):
@@ -181,17 +225,61 @@ class BenchmarkScenarioFixture(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="after")
+    def _validate_category_fixture_contract(self) -> "BenchmarkScenarioFixture":
+        fixture_fields = {
+            "retrieval": self.retrieval is not None,
+            "routing": self.routing is not None,
+            "execution_resume": self.execution_resume is not None,
+            "solver_resume": self.solver_resume is not None,
+            "solver_validation": self.solver_validation is not None,
+            "end_to_end": self.end_to_end is not None,
+            "learning_across_episodes": self.learning_across_episodes is not None,
+            "long_horizon_degradation": self.long_horizon_degradation is not None,
+            "conflict_resolution": self.conflict_resolution is not None,
+            "implicit_recall": self.implicit_recall is not None,
+        }
+        expected_field_by_category = {
+            BenchmarkScenarioType.TRANSCRIPT_RETRIEVAL: "retrieval",
+            BenchmarkScenarioType.SEMANTIC_RETRIEVAL: "retrieval",
+            BenchmarkScenarioType.EPISODIC_RETRIEVAL: "retrieval",
+            BenchmarkScenarioType.ROUTING_CORRECTNESS: "routing",
+            BenchmarkScenarioType.EXECUTION_RESUME: "execution_resume",
+            BenchmarkScenarioType.SOLVER_RESUME: "solver_resume",
+            BenchmarkScenarioType.SOLVER_VALIDATION: "solver_validation",
+            BenchmarkScenarioType.END_TO_END: "end_to_end",
+            BenchmarkScenarioType.LEARNING_ACROSS_EPISODES: "learning_across_episodes",
+            BenchmarkScenarioType.LONG_HORIZON_DEGRADATION: "long_horizon_degradation",
+            BenchmarkScenarioType.CONFLICT_RESOLUTION: "conflict_resolution",
+            BenchmarkScenarioType.IMPLICIT_RECALL: "implicit_recall",
+        }
+        expected_field = expected_field_by_category[self.category]
+        active_fields = [name for name, is_set in fixture_fields.items() if is_set]
+        if expected_field not in active_fields:
+            raise ValueError(f"{self.category.value} requires {expected_field} fixture data")
+        invalid_fields = [name for name in active_fields if name != expected_field and name != "routing"]
+        if self.category != BenchmarkScenarioType.END_TO_END:
+            invalid_fields = [name for name in active_fields if name != expected_field]
+        if invalid_fields:
+            raise ValueError(
+                f"{self.category.value} received invalid fixture subtype(s): {', '.join(sorted(invalid_fields))}"
+            )
+        return self
+
 
 class ScenarioObservation(BaseModel):
     scenario_id: str
     category: BenchmarkScenarioType
     system: BenchmarkSystem
+    execution_level: ScenarioExecutionLevel = ScenarioExecutionLevel.COMPONENT_LEVEL
     retrieved_ids: list[str] = Field(default_factory=list)
     relevant_ids: list[str] = Field(default_factory=list)
     excluded_ids: list[str] = Field(default_factory=list)
     retrieval_latency_ms: float = 0.0
     routed_domains: list[MemoryDomain] = Field(default_factory=list)
     blocked_domains: list[MemoryDomain] = Field(default_factory=list)
+    expected_routed_domains: list[MemoryDomain] = Field(default_factory=list)
+    expected_blocked_domains: list[MemoryDomain] = Field(default_factory=list)
     execution_resume_correct: bool | None = None
     solver_resume_correct: bool | None = None
     frontier_restore_correct: bool | None = None
@@ -201,6 +289,9 @@ class ScenarioObservation(BaseModel):
     invalid_output_rejected: bool | None = None
     scenario_success: bool | None = None
     writeback_candidate_domains: list[MemoryDomain] = Field(default_factory=list)
+    expected_writeback_candidate_domains: list[MemoryDomain] = Field(default_factory=list)
+    writeback_candidate_ids: list[str] = Field(default_factory=list)
+    expected_writeback_candidate_ids: list[str] = Field(default_factory=list)
     semantic_pollution: bool | None = None
     user_memory_pollution: bool | None = None
     cross_episode_reuse_correct: bool | None = None
@@ -285,6 +376,7 @@ class BaselineDelta(BaseModel):
 class BenchmarkRunConfig(BaseModel):
     seed: int = 7
     run_label: str = "benchmark"
+    run_reproducibility_check: bool = False
 
     model_config = ConfigDict(extra="forbid")
 

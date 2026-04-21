@@ -12,26 +12,37 @@ from memorii.core.benchmark.models import (
     ImplicitRecallFixture,
     RetrievalFixture,
     RetrievalFixtureMemoryItem,
+    ScenarioExecutionLevel,
     ScenarioObservation,
 )
+from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.persistence.resume import ResumeService
 from memorii.core.retrieval.planner import RetrievalPlanner
 from memorii.core.router.router import MemoryRouter
+from memorii.core.solver import SolverDecisionOutput, StaticSolverModelProvider
 from memorii.core.solver.abstention import SolverDecision
 from memorii.core.solver.verifier import SolverDecisionVerifier
 from memorii.domain.common import SolverNodeMetadata
 from memorii.domain.enums import (
     CommitStatus,
+    Durability,
     ExecutionNodeStatus,
     ExecutionNodeType,
+    MemoryDomain,
+    MemoryScope,
+    SourceType,
     SolverCreatedBy,
     SolverNodeStatus,
     SolverNodeType,
 )
+from memorii.domain.memory_object import MemoryObject
+from memorii.domain.common import Provenance, RoutingInfo
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
+from memorii.domain.routing import InboundEventClass
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
+from memorii.stores.event_log.store import InMemoryEventLogStore
 from memorii.stores.execution_graph.store import InMemoryExecutionGraphStore
 from memorii.stores.overlays.store import InMemoryOverlayStore
 from memorii.stores.solver_graph.store import InMemorySolverGraphStore
@@ -81,6 +92,7 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.COMPONENT_LEVEL,
             retrieved_ids=[item.item_id for item in top],
             relevant_ids=list(retrieval.expected_relevant_ids),
             excluded_ids=list(retrieval.expected_excluded_ids),
@@ -125,6 +137,7 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.COMPONENT_LEVEL,
             retrieved_ids=retrieved_ids,
             relevant_ids=[fx.expected_reuse_id],
             retrieval_latency_ms=latency_ms,
@@ -132,6 +145,10 @@ class ScenarioExecutor:
             baseline_without_reuse_success=baseline_without_reuse_success,
             performance_improvement_over_baseline=performance_delta,
             writeback_reuse_correct=writeback_correct,
+            writeback_candidate_domains=list(fx.episode_one_writeback_domains),
+            expected_writeback_candidate_domains=list(fx.expected_writeback_domains),
+            writeback_candidate_ids=[f"wb:learning:{fx.expected_reuse_id}"],
+            expected_writeback_candidate_ids=list(fx.expected_writeback_candidate_ids),
             scenario_success=reuse_correct and writeback_correct,
         )
 
@@ -161,6 +178,7 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.COMPONENT_LEVEL,
             retrieved_ids=[item.item_id for item in delayed_top],
             relevant_ids=list(fx.delayed_retrieval.expected_relevant_ids),
             retrieval_latency_ms=delayed_latency_ms,
@@ -188,14 +206,16 @@ class ScenarioExecutor:
         conflict_detected = len(fx.candidates) > 1 and system != BenchmarkSystem.TRANSCRIPT_ONLY_BASELINE
         correct_preference = selected.preferred if selected is not None else False
         stale_rejected = selected.validity_status not in {"expired", "invalidated"} if selected is not None else False
-        contradictory_correct = conflict_detected and correct_preference and stale_rejected
+        winner_matches = selected is not None and selected.candidate_id == fx.expected_winner_candidate_id
+        contradictory_correct = conflict_detected and correct_preference and stale_rejected and winner_matches
 
         return ScenarioObservation(
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.COMPONENT_LEVEL,
             conflict_detected=conflict_detected,
-            conflict_resolution_correct=correct_preference,
+            conflict_resolution_correct=winner_matches,
             stale_memory_rejected=stale_rejected,
             contradictory_handling_correct=contradictory_correct,
             scenario_success=contradictory_correct,
@@ -236,6 +256,7 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.COMPONENT_LEVEL,
             retrieved_ids=retrieved_ids,
             relevant_ids=list(fx.relevant_ids),
             implicit_recall_success=implicit_success,
@@ -269,10 +290,11 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.COMPONENT_LEVEL,
             routed_domains=routed,
             blocked_domains=blocked,
-            relevant_ids=[domain.value for domain in routing.expected_domains],
-            excluded_ids=[domain.value for domain in routing.expected_blocked_domains],
+            expected_routed_domains=list(routing.expected_domains),
+            expected_blocked_domains=list(routing.expected_blocked_domains),
         )
 
     def _run_execution_resume(self, fixture: BenchmarkScenarioFixture, system: BenchmarkSystem) -> ScenarioObservation:
@@ -310,6 +332,7 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.COMPONENT_LEVEL,
             execution_resume_correct=is_correct,
             scenario_success=is_correct,
         )
@@ -368,6 +391,7 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.COMPONENT_LEVEL,
             solver_resume_correct=solver_ok,
             frontier_restore_correct=frontier_ok,
             unresolved_restore_correct=unresolved_ok,
@@ -408,6 +432,7 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.COMPONENT_LEVEL,
             downgraded=downgraded,
             invalid_output_rejected=invalid,
             abstention_preserved=abstention,
@@ -420,16 +445,89 @@ class ScenarioExecutor:
 
         fx = fixture.end_to_end
         event = fixture.routing.inbound_event if fixture.routing is not None else None
-        routed_domains = []
-        if event is not None:
+        routed_domains: list[MemoryDomain] = []
+        writeback_domains: list[MemoryDomain] = []
+        writeback_ids: list[str] = []
+        if event is not None and system == BenchmarkSystem.MEMORII:
+            execution_store = InMemoryExecutionGraphStore()
+            solver_store = InMemorySolverGraphStore()
+            overlay_store = InMemoryOverlayStore()
+            event_log_store = InMemoryEventLogStore()
+            now = datetime.now(UTC)
+            execution_store.upsert_node(
+                fx.task_id,
+                ExecutionNode(
+                    id=f"exec:{fx.task_id}:root",
+                    type=ExecutionNodeType.WORK_ITEM,
+                    title="root",
+                    description="root",
+                    status=ExecutionNodeStatus.RUNNING,
+                    created_at=now,
+                    updated_at=now,
+                ),
+            )
+            runtime = RuntimeStepService(
+                execution_store=execution_store,
+                solver_store=solver_store,
+                overlay_store=overlay_store,
+                event_log_store=event_log_store,
+                model_provider=StaticSolverModelProvider(
+                    SolverDecisionOutput(
+                        decision="SUPPORTED",
+                        evidence_ids=["obs:bench"],
+                        missing_evidence=[],
+                        next_best_test=None,
+                        rationale_short="validated resolution path",
+                        confidence_band="high",
+                    )
+                ),
+            )
+            solver_run_id = f"solver:{fx.task_id}:exec:{fx.task_id}:root"
+            runtime.seed_memory_object(
+                MemoryObject(
+                    memory_id="obs:bench",
+                    memory_type=MemoryDomain.TRANSCRIPT,
+                    scope=MemoryScope.EXECUTION_NODE,
+                    durability=Durability.TASK_PERSISTENT,
+                    status=CommitStatus.COMMITTED,
+                    content={"text": "benchmark evidence"},
+                    provenance=Provenance(
+                        source_type=SourceType.SYSTEM,
+                        source_refs=[],
+                        created_at=now,
+                        created_by="benchmark",
+                    ),
+                    routing=RoutingInfo(primary_store="in_memory", secondary_stores=[]),
+                    namespace={
+                        "task_id": fx.task_id,
+                        "execution_node_id": f"exec:{fx.task_id}:root",
+                        "solver_run_id": solver_run_id,
+                    },
+                )
+            )
+            result = runtime.step(
+                task_id=fx.task_id,
+                observation=RuntimeObservationInput(
+                    event_id=event.event_id,
+                    event_class=InboundEventClass(event.event_class.value),
+                    payload=event.payload,
+                    source="benchmark",
+                ),
+                execution_node_id=f"exec:{fx.task_id}:root",
+            )
+            routed_domains = list(result.routed_domains)
+            writeback_domains = [candidate.target_domain for candidate in result.writeback_candidates]
+            writeback_ids = [candidate.candidate_id for candidate in result.writeback_candidates]
+        elif event is not None:
             decision = self._router.route_event(event)
             routed_domains = [item.domain for item in decision.routed_objects]
             if system == BenchmarkSystem.NO_SOLVER_GRAPH_BASELINE:
                 routed_domains = [domain for domain in routed_domains if domain.value != "solver"]
             if system == BenchmarkSystem.TRANSCRIPT_ONLY_BASELINE:
                 routed_domains = [domain for domain in routed_domains if domain.value == "transcript"]
+            writeback_domains = sorted(set(routed_domains), key=lambda d: d.value)
 
-        scenario_success = fx.expect_pipeline_success and set(fx.expect_writeback_domains).issubset(set(routed_domains))
+        scenario_success = fx.expect_pipeline_success and set(fx.expect_writeback_domains).issubset(set(writeback_domains))
         semantic_pollution = False
         user_pollution = False
         if system == BenchmarkSystem.FLAT_RETRIEVAL_BASELINE:
@@ -440,8 +538,13 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
+            execution_level=ScenarioExecutionLevel.SYSTEM_LEVEL,
             scenario_success=scenario_success,
-            writeback_candidate_domains=sorted(set(routed_domains), key=lambda d: d.value),
+            routed_domains=sorted(set(routed_domains), key=lambda d: d.value),
+            writeback_candidate_domains=sorted(set(writeback_domains), key=lambda d: d.value),
+            expected_writeback_candidate_domains=list(fx.expect_writeback_domains),
+            writeback_candidate_ids=sorted(set(writeback_ids)),
+            expected_writeback_candidate_ids=list(fx.expect_writeback_candidate_ids),
             semantic_pollution=semantic_pollution,
             user_memory_pollution=user_pollution,
         )
@@ -495,7 +598,13 @@ class ScenarioExecutor:
 
         active = [candidate for candidate in candidates if candidate.validity_status not in {"expired", "invalidated"}]
         pool = active if active else candidates
-        return sorted(pool, key=lambda c: (-c.recency_rank, c.candidate_id))[0]
+        return sorted(pool, key=lambda c: self._conflict_sort_key(c))[0]
+
+    def _conflict_sort_key(self, candidate: ConflictCandidate) -> tuple[int, float, int, str]:
+        validity_priority = 0 if candidate.validity_status not in {"expired", "invalidated"} else 1
+        timestamp_priority = -(candidate.timestamp.timestamp() if candidate.timestamp is not None else 0.0)
+        version_priority = -(candidate.version if candidate.version is not None else candidate.recency_rank)
+        return (validity_priority, timestamp_priority, version_priority, candidate.candidate_id)
 
     def _rank_implicit(
         self,
