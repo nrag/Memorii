@@ -1,0 +1,37 @@
+{
+  "validation": [
+    {
+      "_id": "hp1",
+      "question": "Which city is larger, Paris or Lyon?",
+      "answer": "Paris",
+      "type": "comparison",
+      "supporting_facts": [["Paris", 0], ["Lyon", 0]],
+      "context": [
+        ["Paris", ["Paris is the capital of France.", "Paris has over two million residents."]],
+        ["Lyon", ["Lyon is a city in France.", "Lyon has under one million residents."]]
+      ]
+    },
+    {
+      "_id": "hp2",
+      "question": "The author of Hamlet was born in which country?",
+      "answer": "England",
+      "type": "bridge",
+      "supporting_facts": [["Hamlet", 0], ["William Shakespeare", 0]],
+      "context": [
+        ["Hamlet", ["Hamlet is a play by William Shakespeare."]],
+        ["William Shakespeare", ["William Shakespeare was born in England."]]
+      ]
+    },
+    {
+      "_id": "hp3",
+      "question": "Which is longer, the Nile or the Amazon?",
+      "answer": "Nile",
+      "type": "comparison",
+      "supporting_facts": [["Nile", 0], ["Amazon River", 0]],
+      "context": [
+        ["Nile", ["The Nile is traditionally considered the longest river."]],
+        ["Amazon River", ["The Amazon has very high flow volume."]]
+      ]
+    }
+  ]
+}

@@ -53,3 +53,14 @@ Memorii treats memory as **part of the agent runtime**.
 ### Memory Plane + Execution vs Solver Graph
 
 <img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/44d7b3ee-1559-49d9-87e3-b070bb8185aa" />
+
+---
+
+## Benchmark report example
+
+If you want a concrete benchmark artifact for documentation/README usage, see:
+
+- Canonical JSON report: `docs/examples/benchmarks/hotpotqa_sample_report.json`
+- Markdown summary: `docs/examples/benchmarks/hotpotqa_sample_report.md`
+
+These files are generated from the local deterministic HotpotQA sample benchmark path (`seed=7`, `subset_size=2`).

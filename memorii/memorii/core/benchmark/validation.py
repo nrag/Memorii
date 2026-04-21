@@ -9,6 +9,7 @@ from memorii.core.benchmark.models import (
     BenchmarkRunReport,
     BenchmarkScenarioFixture,
     BenchmarkScenarioType,
+    CanonicalBenchmarkReport,
     ScenarioResult,
 )
 from memorii.core.benchmark.reproducibility import build_run_id
@@ -68,6 +69,22 @@ def validate_preflight(*, fixtures: list[BenchmarkScenarioFixture], config: Benc
 
 def validate_report(report: BenchmarkRunReport) -> None:
     _validate_required_metrics(report.scenario_results)
+
+
+def validate_canonical_report(report: CanonicalBenchmarkReport) -> None:
+    if not report.categories:
+        raise ValueError("canonical benchmark report requires categories")
+    if not report.scenarios:
+        raise ValueError("canonical benchmark report requires scenarios")
+    for scenario in report.scenarios:
+        if scenario.expected is None:
+            raise ValueError(f"{scenario.scenario_id} missing expected payload")
+        if scenario.observed is None:
+            raise ValueError(f"{scenario.scenario_id} missing observed payload")
+        if scenario.metrics is None:
+            raise ValueError(f"{scenario.scenario_id} missing metrics payload")
+        if scenario.execution_type is None:
+            raise ValueError(f"{scenario.scenario_id} missing execution_type")
 
 
 def _validate_min_fixture_counts(fixtures: list[BenchmarkScenarioFixture]) -> None:
