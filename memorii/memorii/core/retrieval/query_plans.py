@@ -16,6 +16,7 @@ def make_query(
     scope: RetrievalScope,
     *,
     require_raw_transcript: bool = False,
+    include_candidates: bool = False,
     include_time_range: TimeRange | None = None,
     freshness: FreshnessPolicy | None = None,
 ) -> DomainRetrievalQuery:
@@ -34,6 +35,7 @@ def make_query(
         time_range=include_time_range,
         freshness=freshness,
         require_raw_transcript=require_raw_transcript,
+        include_candidates=include_candidates,
     )
 
 

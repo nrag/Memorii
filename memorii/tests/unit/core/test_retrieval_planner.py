@@ -54,3 +54,24 @@ def test_retrieval_planner_can_request_raw_transcript_explicitly() -> None:
 
     transcript_query = next(query for query in plan.queries if query.domain == MemoryDomain.TRANSCRIPT)
     assert transcript_query.require_raw_transcript is True
+
+
+def test_retrieval_planner_can_request_candidate_inclusion_explicitly() -> None:
+    planner = RetrievalPlanner()
+    plan = planner.build_plan(
+        intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+        scope=RetrievalScope(task_id="task-1", execution_node_id="exec-1"),
+        include_candidates=True,
+    )
+    assert plan.queries
+    assert all(query.include_candidates is True for query in plan.queries)
+
+
+def test_retrieval_planner_excludes_candidates_by_default() -> None:
+    planner = RetrievalPlanner()
+    plan = planner.build_plan(
+        intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+        scope=RetrievalScope(task_id="task-1", execution_node_id="exec-1"),
+    )
+    assert plan.queries
+    assert all(query.include_candidates is False for query in plan.queries)

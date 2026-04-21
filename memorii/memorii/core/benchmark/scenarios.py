@@ -40,6 +40,7 @@ from memorii.domain.memory_object import MemoryObject
 from memorii.domain.common import Provenance, RoutingInfo
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
 from memorii.domain.routing import InboundEventClass
+from memorii.domain.routing import ValidationState
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
@@ -486,7 +487,7 @@ class ScenarioExecutor:
                 model_provider=StaticSolverModelProvider(
                     SolverDecisionOutput(
                         decision="SUPPORTED",
-                        evidence_ids=["tx:err"],
+                        evidence_ids=["sem:fact"],
                         missing_evidence=[],
                         next_best_test=None,
                         rationale_short="validated resolution path",
@@ -501,7 +502,11 @@ class ScenarioExecutor:
                 seeded = MemoryObject(
                     memory_id=item.item_id,
                     memory_type=item.domain,
-                    scope=MemoryScope.EXECUTION_NODE,
+                    scope=(
+                        MemoryScope.EXECUTION_NODE
+                        if item.execution_node_id is not None or item.solver_run_id is not None
+                        else MemoryScope.TASK
+                    ),
                     durability=Durability.TASK_PERSISTENT,
                     status=item.status,
                     content={"text": item.text},
@@ -513,8 +518,8 @@ class ScenarioExecutor:
                     ),
                     routing=RoutingInfo(primary_store="in_memory", secondary_stores=[]),
                     namespace={
-                        "task_id": fx.task_id,
-                        "execution_node_id": f"exec:{fx.task_id}:root",
+                        "task_id": item.task_id or fx.task_id,
+                        "execution_node_id": item.execution_node_id or f"exec:{fx.task_id}:root",
                         "solver_run_id": item.solver_run_id or solver_run_id,
                         "memory_domain": item.domain.value,
                     },
@@ -546,7 +551,7 @@ class ScenarioExecutor:
                     domain=candidate.target_domain,
                     candidate_id=candidate.candidate_id,
                     status=candidate.status,
-                    validated=False,
+                    validated=(candidate.validation_state == ValidationState.VALIDATED),
                     source_kind="consolidated",
                 )
                 for candidate in result.writeback_candidates

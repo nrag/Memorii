@@ -15,6 +15,7 @@ class RetrievalPlanner:
         time_range: TimeRange | None = None,
         active_validity_only: bool = False,
         include_raw_transcript: bool = False,
+        include_candidates: bool = False,
     ) -> RetrievalPlan:
         queries = []
         included_domains: set[MemoryDomain] = set()
@@ -25,6 +26,7 @@ class RetrievalPlanner:
                     domain,
                     scope,
                     require_raw_transcript=include_raw_transcript and domain == MemoryDomain.TRANSCRIPT,
+                    include_candidates=include_candidates,
                     include_time_range=time_range,
                     freshness=freshness,
                 )
@@ -40,6 +42,7 @@ class RetrievalPlanner:
                         domain,
                         scope,
                         require_raw_transcript=include_raw_transcript and domain == MemoryDomain.TRANSCRIPT,
+                        include_candidates=include_candidates,
                         include_time_range=time_range,
                         freshness=freshness,
                     )
