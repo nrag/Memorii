@@ -54,6 +54,38 @@ def test_markdown_is_derived_from_canonical_report() -> None:
     assert "## Scenarios" in markdown
 
 
+def test_canonical_reporting_marks_semantic_retrieval_as_passed_when_success_true() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    canonical = to_canonical_report(report, fixtures=fixtures)
+    semantic_entry = next(
+        entry
+        for entry in canonical.scenarios
+        if entry.scenario_id == "retrieval_semantic_validated" and entry.system.value == "memorii"
+    )
+    assert semantic_entry.passed is True
+
+
+def test_expected_payload_prefers_fixture_contract_over_observation_shadow_data() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    target = next(
+        result
+        for result in report.scenario_results
+        if result.scenario_id == "e2e_fail_debug_resolve" and result.system.value == "memorii"
+    )
+    target.observation.expected_routed_domains = []
+    target.observation.expected_writeback_candidate_domains = []
+    canonical = to_canonical_report(report, fixtures=fixtures)
+    entry = next(
+        item
+        for item in canonical.scenarios
+        if item.scenario_id == "e2e_fail_debug_resolve" and item.system.value == "memorii"
+    )
+    assert entry.expected["expected_routed_domains"] == ["transcript", "execution", "solver"]
+    assert entry.expected["expected_writeback_candidate_domains"] == ["episodic"]
+
+
 def test_malformed_canonical_report_fails_validation() -> None:
     fixtures = load_benchmark_fixture_set()
     report = BenchmarkHarness().run(fixtures=fixtures)

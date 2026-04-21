@@ -23,7 +23,7 @@ MIN_FIXTURES_BY_CATEGORY: dict[BenchmarkScenarioType, int] = {
 
 REQUIRED_METRICS_BY_CATEGORY: dict[BenchmarkScenarioType, tuple[str, ...]] = {
     BenchmarkScenarioType.TRANSCRIPT_RETRIEVAL: ("recall_at_k", "precision_at_k"),
-    BenchmarkScenarioType.SEMANTIC_RETRIEVAL: ("recall_at_k", "precision_at_k"),
+    BenchmarkScenarioType.SEMANTIC_RETRIEVAL: ("recall_at_k", "precision_at_k", "scenario_success_rate"),
     BenchmarkScenarioType.EPISODIC_RETRIEVAL: ("recall_at_k", "precision_at_k"),
     BenchmarkScenarioType.ROUTING_CORRECTNESS: ("routing_accuracy", "blocked_write_accuracy"),
     BenchmarkScenarioType.EXECUTION_RESUME: ("execution_resume_correctness",),
@@ -37,7 +37,10 @@ REQUIRED_METRICS_BY_CATEGORY: dict[BenchmarkScenarioType, tuple[str, ...]] = {
         "invalid_output_rejection_rate",
         "abstention_preservation_rate",
     ),
-    BenchmarkScenarioType.END_TO_END: ("scenario_success_rate", "writeback_candidate_correctness"),
+    BenchmarkScenarioType.END_TO_END: (
+        "scenario_success_rate",
+        "writeback_candidate_correctness",
+    ),
     BenchmarkScenarioType.LEARNING_ACROSS_EPISODES: (
         "cross_episode_reuse_accuracy",
         "writeback_reuse_correctness",
@@ -121,6 +124,7 @@ def _validate_reproducibility_check(*, config: BenchmarkRunConfig, fixtures: lis
 
 def _validate_required_metrics(results: list[ScenarioResult]) -> None:
     for result in results:
+        _validate_category_observation_contract(result)
         required_metrics = REQUIRED_METRICS_BY_CATEGORY.get(result.category, ())
         for metric_name in required_metrics:
             if getattr(result.metrics, metric_name) is None:
@@ -128,3 +132,36 @@ def _validate_required_metrics(results: list[ScenarioResult]) -> None:
                     f"benchmark report failed validation: "
                     f"{result.scenario_id}/{result.system.value} missing {metric_name}"
                 )
+
+
+def _validate_category_observation_contract(result: ScenarioResult) -> None:
+    observation = result.observation
+    if result.category in {
+        BenchmarkScenarioType.TRANSCRIPT_RETRIEVAL,
+        BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+        BenchmarkScenarioType.EPISODIC_RETRIEVAL,
+        BenchmarkScenarioType.END_TO_END,
+        BenchmarkScenarioType.LEARNING_ACROSS_EPISODES,
+        BenchmarkScenarioType.LONG_HORIZON_DEGRADATION,
+        BenchmarkScenarioType.CONFLICT_RESOLUTION,
+        BenchmarkScenarioType.IMPLICIT_RECALL,
+        BenchmarkScenarioType.EXECUTION_RESUME,
+        BenchmarkScenarioType.SOLVER_RESUME,
+        BenchmarkScenarioType.SOLVER_VALIDATION,
+    } and observation.scenario_success is None:
+        raise ValueError(
+            f"benchmark report failed validation: {result.scenario_id}/{result.system.value} "
+            "missing scenario_success"
+        )
+
+    if result.category == BenchmarkScenarioType.END_TO_END and observation.expected_routed_domains:
+        if result.metrics.routing_accuracy is None:
+            raise ValueError(
+                f"benchmark report failed validation: {result.scenario_id}/{result.system.value} "
+                "missing routing_accuracy"
+            )
+        if result.metrics.blocked_write_accuracy is None:
+            raise ValueError(
+                f"benchmark report failed validation: {result.scenario_id}/{result.system.value} "
+                "missing blocked_write_accuracy"
+            )

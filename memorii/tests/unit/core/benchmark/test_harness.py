@@ -1,5 +1,5 @@
 from memorii.core.benchmark.harness import BenchmarkHarness
-from memorii.core.benchmark.models import BenchmarkRunConfig, BenchmarkSystem
+from memorii.core.benchmark.models import BenchmarkRunConfig, BenchmarkScenarioFixture, BenchmarkSystem
 from memorii.core.benchmark.reporting import to_markdown
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
 
@@ -20,3 +20,28 @@ def test_report_includes_execution_level_marker() -> None:
     report = BenchmarkHarness().run(fixtures=load_benchmark_fixture_set())
     markdown = to_markdown(report)
     assert "system_level" in markdown
+
+
+def test_retrieval_scenario_fails_when_excluded_item_is_retrieved() -> None:
+    fixtures = load_benchmark_fixture_set()
+    source = next(item for item in fixtures if item.scenario_id == "retrieval_semantic_validated")
+    failing_fixture = BenchmarkScenarioFixture.model_validate(
+        {
+            **source.model_dump(mode="python"),
+            "retrieval": {
+                **source.retrieval.model_dump(mode="python"),
+                "query": "null pointer dependency uninitialized unvalidated guess root cause",
+                "top_k": 4,
+            },
+        }
+    )
+    report = BenchmarkHarness().run(
+        fixtures=[failing_fixture] + [item for item in fixtures if item.scenario_id != source.scenario_id]
+    )
+    memorii_result = next(
+        result
+        for result in report.scenario_results
+        if result.system == BenchmarkSystem.MEMORII and result.scenario_id == source.scenario_id
+    )
+    assert "sem:speculative" in memorii_result.observation.retrieved_ids
+    assert memorii_result.observation.scenario_success is False

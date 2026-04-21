@@ -120,9 +120,31 @@ def to_markdown(report: BenchmarkRunReport, *, fixtures: list[BenchmarkScenarioF
                 lines.append(f"- {metric_name}: {value:.4f}")
         lines.append("")
 
-    lines.append("## Baseline Summary")
-    for baseline_name, deltas in sorted(canonical.summary.baseline_comparison_summary.items()):
-        lines.append(f"- {baseline_name}: {deltas}")
+    lines.append("## Baseline Summary (vs memorii)")
+    lower_is_better = {
+        "semantic_pollution_rate",
+        "user_memory_pollution_rate",
+        "retrieval_recall_degradation",
+        "retrieval_latency_growth",
+        "false_positive_retrieval_rate",
+    }
+    for baseline_name, entry in sorted(canonical.baselines.items(), key=lambda item: item[0].value):
+        lines.append(f"### {baseline_name.value}")
+        aggregate_metrics = {name: value for name, value in entry.aggregate_metrics.items() if value is not None}
+        if aggregate_metrics:
+            lines.append("- Baseline aggregate metrics:")
+            for metric_name, value in sorted(aggregate_metrics.items()):
+                lines.append(f"  - {metric_name}: {value:.4f}")
+        else:
+            lines.append("- Baseline aggregate metrics: (none)")
+        deltas = {name: value for name, value in entry.deltas_vs_memorii.items() if value is not None}
+        if deltas:
+            lines.append("- Delta (memorii - baseline):")
+            for metric_name, value in sorted(deltas.items()):
+                direction = "lower-is-better" if metric_name in lower_is_better else "higher-is-better"
+                lines.append(f"  - {metric_name}: {value:+.4f} ({direction})")
+        else:
+            lines.append("- Delta (memorii - baseline): (none)")
     lines.append("")
 
     lines.append("## Categories")
@@ -201,12 +223,35 @@ def _build_expected_payload(
     payload: dict[str, object] = {"scenario_id": scenario_id}
     if fixture is not None:
         payload["fixture"] = fixture.model_dump(mode="python", exclude_none=True)
-    payload["relevant_ids"] = observed.get("relevant_ids", [])
-    payload["excluded_ids"] = observed.get("excluded_ids", [])
-    payload["expected_routed_domains"] = observed.get("expected_routed_domains", [])
-    payload["expected_blocked_domains"] = observed.get("expected_blocked_domains", [])
-    payload["expected_writeback_candidate_domains"] = observed.get("expected_writeback_candidate_domains", [])
-    payload["expected_writeback_candidate_ids"] = observed.get("expected_writeback_candidate_ids", [])
+    if fixture is not None and fixture.retrieval is not None:
+        payload["relevant_ids"] = list(fixture.retrieval.expected_relevant_ids)
+        payload["excluded_ids"] = list(fixture.retrieval.expected_excluded_ids)
+    else:
+        payload["relevant_ids"] = observed.get("relevant_ids", [])
+        payload["excluded_ids"] = observed.get("excluded_ids", [])
+
+    if fixture is not None and fixture.routing is not None:
+        payload["expected_routed_domains"] = [domain.value for domain in fixture.routing.expected_domains]
+        payload["expected_blocked_domains"] = [domain.value for domain in fixture.routing.expected_blocked_domains]
+    else:
+        payload["expected_routed_domains"] = observed.get("expected_routed_domains", [])
+        payload["expected_blocked_domains"] = observed.get("expected_blocked_domains", [])
+
+    if fixture is not None and fixture.end_to_end is not None:
+        payload["expected_writeback_candidate_domains"] = [
+            domain.value for domain in fixture.end_to_end.expect_writeback_domains
+        ]
+        payload["expected_writeback_candidate_ids"] = list(fixture.end_to_end.expect_writeback_candidate_ids)
+    elif fixture is not None and fixture.learning_across_episodes is not None:
+        payload["expected_writeback_candidate_domains"] = [
+            domain.value for domain in fixture.learning_across_episodes.expected_writeback_domains
+        ]
+        payload["expected_writeback_candidate_ids"] = list(
+            fixture.learning_across_episodes.expected_writeback_candidate_ids
+        )
+    else:
+        payload["expected_writeback_candidate_domains"] = observed.get("expected_writeback_candidate_domains", [])
+        payload["expected_writeback_candidate_ids"] = observed.get("expected_writeback_candidate_ids", [])
     return payload
 
 

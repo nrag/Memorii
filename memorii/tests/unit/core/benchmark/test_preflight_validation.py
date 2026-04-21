@@ -8,6 +8,7 @@ from memorii.core.benchmark.models import (
     BenchmarkScenarioFixture,
     BenchmarkSystem,
 )
+from memorii.core.benchmark.validation import validate_report
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
 
 
@@ -32,3 +33,17 @@ def test_preflight_reproducibility_check_runs() -> None:
     fixtures = load_benchmark_fixture_set()
     report = BenchmarkHarness().run(fixtures=fixtures, config=BenchmarkRunConfig(run_reproducibility_check=True))
     assert report.run_id
+
+
+def test_validate_report_rejects_missing_required_harness_metrics() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    semantic_result = next(
+        result
+        for result in report.scenario_results
+        if result.scenario_id == "retrieval_semantic_validated" and result.system == BenchmarkSystem.MEMORII
+    )
+    semantic_result.metrics.scenario_success_rate = None
+
+    with pytest.raises(ValueError, match="missing scenario_success_rate"):
+        validate_report(report)
