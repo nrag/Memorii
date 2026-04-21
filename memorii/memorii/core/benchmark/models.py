@@ -391,3 +391,97 @@ class BenchmarkRunReport(BaseModel):
     baseline_comparison: dict[str, list[BaselineDelta]] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
+
+
+class BenchmarkEnvironmentInfo(BaseModel):
+    python_version: str
+    platform: str
+    architecture: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BenchmarkReportMetadata(BaseModel):
+    run_id: str
+    timestamp: datetime
+    git_commit: str | None = None
+    memorii_version: str | None = None
+    environment: BenchmarkEnvironmentInfo
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CanonicalBenchmarkConfig(BaseModel):
+    dataset: str | None = None
+    fixture_source: str | None = None
+    subset_size: int | None = None
+    seed: int
+    benchmark_categories: list[BenchmarkScenarioType] = Field(default_factory=list)
+    systems: list[BenchmarkSystem] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CanonicalBenchmarkSummary(BaseModel):
+    total_scenarios: int
+    passed: int
+    failed: int
+    aggregate_metrics: dict[str, dict[str, float | None]] = Field(default_factory=dict)
+    baseline_comparison_summary: dict[str, dict[str, float | None]] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CanonicalBenchmarkCategoryEntry(BaseModel):
+    category: BenchmarkScenarioType
+    scenario_count: int
+    metrics: dict[str, dict[str, float | None]] = Field(default_factory=dict)
+    baseline_delta: dict[str, dict[str, float | None]] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CanonicalScenarioTrace(BaseModel):
+    routing_result: dict[str, object] | None = None
+    retrieval_plan: dict[str, object] | None = None
+    retrieved_ids: list[str] = Field(default_factory=list)
+    solver_decision: dict[str, object] | None = None
+    verifier_result: dict[str, object] | None = None
+    writeback_candidates: dict[str, object] | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CanonicalScenarioEntry(BaseModel):
+    scenario_id: str
+    category: BenchmarkScenarioType
+    system: BenchmarkSystem
+    execution_type: ScenarioExecutionLevel
+    passed: bool
+    metrics: dict[str, float | None] = Field(default_factory=dict)
+    expected: dict[str, object] = Field(default_factory=dict)
+    observed: dict[str, object] = Field(default_factory=dict)
+    trace: CanonicalScenarioTrace
+    error: str | None = None
+    notes: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CanonicalBaselineEntry(BaseModel):
+    aggregate_metrics: dict[str, float | None] = Field(default_factory=dict)
+    deltas_vs_memorii: dict[str, float | None] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CanonicalBenchmarkReport(BaseModel):
+    metadata: BenchmarkReportMetadata
+    config: CanonicalBenchmarkConfig
+    summary: CanonicalBenchmarkSummary
+    categories: list[CanonicalBenchmarkCategoryEntry] = Field(default_factory=list)
+    scenarios: list[CanonicalScenarioEntry] = Field(default_factory=list)
+    baselines: dict[BenchmarkSystem, CanonicalBaselineEntry] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
