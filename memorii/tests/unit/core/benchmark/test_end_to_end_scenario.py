@@ -1,5 +1,9 @@
+import pytest
+
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkScenarioFixture, BenchmarkSystem, ScenarioExecutionLevel
+from memorii.domain.enums import MemoryDomain
+from memorii.core.benchmark.scenarios import ScenarioExecutor
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
 
 
@@ -55,3 +59,30 @@ def test_end_to_end_scenario_fails_when_routing_expectation_is_wrong() -> None:
         if result.system == BenchmarkSystem.MEMORII and result.scenario_id == target.scenario_id
     )
     assert memorii_result.observation.scenario_success is False
+
+
+def test_end_to_end_baseline_writebacks_are_not_copied_from_routed_domains() -> None:
+    report = BenchmarkHarness().run(fixtures=load_benchmark_fixture_set())
+    baseline = next(
+        result
+        for result in report.scenario_results
+        if result.scenario_id == "e2e_fail_debug_resolve" and result.system == BenchmarkSystem.FLAT_RETRIEVAL_BASELINE
+    )
+    assert set(baseline.observation.routed_domains) == {
+        MemoryDomain.TRANSCRIPT,
+        MemoryDomain.EXECUTION,
+        MemoryDomain.SOLVER,
+    }
+    assert set(baseline.observation.writeback_candidate_domains) == {MemoryDomain.SEMANTIC, MemoryDomain.USER}
+
+
+def test_end_to_end_requires_retrieval_fixture_for_storage_semantics() -> None:
+    target = next(item for item in load_benchmark_fixture_set() if item.scenario_id == "e2e_fail_debug_resolve")
+    invalid_fixture = BenchmarkScenarioFixture.model_validate(
+        {
+            **target.model_dump(mode="python"),
+            "retrieval": None,
+        }
+    )
+    with pytest.raises(ValueError, match="requires retrieval corpus"):
+        ScenarioExecutor().run(fixture=invalid_fixture, system=BenchmarkSystem.MEMORII)

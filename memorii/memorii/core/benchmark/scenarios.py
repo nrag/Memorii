@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from dataclasses import dataclass
 
 from memorii.core.benchmark.models import (
     BenchmarkScenarioFixture,
@@ -452,9 +453,13 @@ class ScenarioExecutor:
 
         fx = fixture.end_to_end
         event = fixture.routing.inbound_event if fixture.routing is not None else None
+        if fixture.retrieval is None:
+            raise ValueError("end-to-end fixture requires retrieval corpus for realistic storage-path seeding")
         routed_domains: list[MemoryDomain] = []
         writeback_domains: list[MemoryDomain] = []
         writeback_ids: list[str] = []
+        writeback_records: list[_ObservedWriteback] = []
+        routed_records: list[_ObservedRoutedMemory] = []
         if event is not None and system == BenchmarkSystem.MEMORII:
             execution_store = InMemoryExecutionGraphStore()
             solver_store = InMemorySolverGraphStore()
@@ -481,7 +486,7 @@ class ScenarioExecutor:
                 model_provider=StaticSolverModelProvider(
                     SolverDecisionOutput(
                         decision="SUPPORTED",
-                        evidence_ids=["obs:bench"],
+                        evidence_ids=["tx:err"],
                         missing_evidence=[],
                         next_best_test=None,
                         rationale_short="validated resolution path",
@@ -490,17 +495,19 @@ class ScenarioExecutor:
                 ),
             )
             solver_run_id = f"solver:{fx.task_id}:exec:{fx.task_id}:root"
-            runtime.seed_memory_object(
-                MemoryObject(
-                    memory_id="obs:bench",
-                    memory_type=MemoryDomain.TRANSCRIPT,
+            for item in fixture.retrieval.corpus:
+                if not self._in_scope(item=item, retrieval=fixture.retrieval):
+                    continue
+                seeded = MemoryObject(
+                    memory_id=item.item_id,
+                    memory_type=item.domain,
                     scope=MemoryScope.EXECUTION_NODE,
                     durability=Durability.TASK_PERSISTENT,
-                    status=CommitStatus.COMMITTED,
-                    content={"text": "benchmark evidence"},
+                    status=item.status,
+                    content={"text": item.text},
                     provenance=Provenance(
                         source_type=SourceType.SYSTEM,
-                        source_refs=[],
+                        source_refs=[item.item_id],
                         created_at=now,
                         created_by="benchmark",
                     ),
@@ -508,10 +515,11 @@ class ScenarioExecutor:
                     namespace={
                         "task_id": fx.task_id,
                         "execution_node_id": f"exec:{fx.task_id}:root",
-                        "solver_run_id": solver_run_id,
+                        "solver_run_id": item.solver_run_id or solver_run_id,
+                        "memory_domain": item.domain.value,
                     },
                 )
-            )
+                runtime.seed_memory_object(seeded)
             result = runtime.step(
                 task_id=fx.task_id,
                 observation=RuntimeObservationInput(
@@ -523,16 +531,44 @@ class ScenarioExecutor:
                 execution_node_id=f"exec:{fx.task_id}:root",
             )
             routed_domains = list(result.routed_domains)
+            routed_records = [
+                _ObservedRoutedMemory(
+                    domain=domain,
+                    status=CommitStatus.COMMITTED,
+                    is_raw_event=True,
+                )
+                for domain in routed_domains
+            ]
             writeback_domains = [candidate.target_domain for candidate in result.writeback_candidates]
             writeback_ids = [candidate.candidate_id for candidate in result.writeback_candidates]
+            writeback_records = [
+                _ObservedWriteback(
+                    domain=candidate.target_domain,
+                    candidate_id=candidate.candidate_id,
+                    status=candidate.status,
+                    validated=False,
+                    source_kind="consolidated",
+                )
+                for candidate in result.writeback_candidates
+            ]
         elif event is not None:
             decision = self._router.route_event(event)
             routed_domains = [item.domain for item in decision.routed_objects]
+            routed_records = [
+                _ObservedRoutedMemory(
+                    domain=item.domain,
+                    status=item.memory_object.status,
+                    is_raw_event=True,
+                )
+                for item in decision.routed_objects
+            ]
             if system == BenchmarkSystem.NO_SOLVER_GRAPH_BASELINE:
                 routed_domains = [domain for domain in routed_domains if domain.value != "solver"]
             if system == BenchmarkSystem.TRANSCRIPT_ONLY_BASELINE:
                 routed_domains = [domain for domain in routed_domains if domain.value == "transcript"]
-            writeback_domains = sorted(set(routed_domains), key=lambda d: d.value)
+            writeback_records = self._baseline_writeback_candidates(system=system, event_class=event.event_class)
+            writeback_domains = sorted({candidate.domain for candidate in writeback_records}, key=lambda d: d.value)
+            writeback_ids = sorted({candidate.candidate_id for candidate in writeback_records})
 
         expected_routed_domains = list(fixture.routing.expected_domains) if fixture.routing is not None else []
         expected_blocked_domains = list(fixture.routing.expected_blocked_domains) if fixture.routing is not None else []
@@ -563,11 +599,10 @@ class ScenarioExecutor:
         writeback_ids_ok = (not expected_writeback_ids) or (set(writeback_ids) == expected_writeback_ids)
         writeback_ok = writeback_domains_ok and writeback_ids_ok
         scenario_success = pipeline_success_ok and routing_ok and blocked_ok and writeback_ok
-        semantic_pollution = False
-        user_pollution = False
-        if system == BenchmarkSystem.FLAT_RETRIEVAL_BASELINE:
-            semantic_pollution = True
-            user_pollution = True
+        semantic_pollution, user_pollution = self._derive_pollution(
+            routed_records=routed_records,
+            writeback_records=writeback_records,
+        )
 
         return ScenarioObservation(
             scenario_id=fixture.scenario_id,
@@ -586,6 +621,67 @@ class ScenarioExecutor:
             semantic_pollution=semantic_pollution,
             user_memory_pollution=user_pollution,
         )
+
+    def _derive_pollution(
+        self,
+        *,
+        routed_records: list["_ObservedRoutedMemory"],
+        writeback_records: list["_ObservedWriteback"],
+    ) -> tuple[bool, bool]:
+        semantic_pollution = any(
+            (
+                (item.domain == MemoryDomain.SEMANTIC and item.is_raw_event)
+                for item in routed_records
+            )
+        ) or any(
+            (
+                candidate.domain == MemoryDomain.SEMANTIC
+                and (candidate.status == CommitStatus.CANDIDATE and not candidate.validated)
+                and candidate.source_kind == "raw"
+                for candidate in writeback_records
+            )
+        )
+        user_pollution = any(
+            (
+                (item.domain == MemoryDomain.USER and item.is_raw_event)
+                for item in routed_records
+            )
+        ) or any(
+            (
+                candidate.domain == MemoryDomain.USER
+                and (candidate.status == CommitStatus.CANDIDATE and not candidate.validated)
+                and candidate.source_kind == "raw"
+                for candidate in writeback_records
+            )
+        )
+        return semantic_pollution, user_pollution
+
+    def _baseline_writeback_candidates(
+        self,
+        *,
+        system: BenchmarkSystem,
+        event_class: InboundEventClass,
+    ) -> list["_ObservedWriteback"]:
+        if system != BenchmarkSystem.FLAT_RETRIEVAL_BASELINE:
+            return []
+        if event_class in {InboundEventClass.TOOL_RESULT, InboundEventClass.TOOL_STATE_UPDATE}:
+            return [
+                _ObservedWriteback(
+                    domain=MemoryDomain.SEMANTIC,
+                    candidate_id="wb:baseline:flat:semantic",
+                    status=CommitStatus.CANDIDATE,
+                    validated=False,
+                    source_kind="raw",
+                ),
+                _ObservedWriteback(
+                    domain=MemoryDomain.USER,
+                    candidate_id="wb:baseline:flat:user",
+                    status=CommitStatus.CANDIDATE,
+                    validated=False,
+                    source_kind="raw",
+                ),
+            ]
+        return []
 
     def _in_scope(self, *, item: object, retrieval: object) -> bool:
         item_task_id = getattr(item, "task_id", None)
@@ -669,3 +765,19 @@ def _safe_ratio(numerator: int, denominator: int) -> float | None:
     if denominator == 0:
         return None
     return float(numerator) / float(denominator)
+
+
+@dataclass(frozen=True)
+class _ObservedWriteback:
+    domain: MemoryDomain
+    candidate_id: str
+    status: CommitStatus
+    validated: bool
+    source_kind: str
+
+
+@dataclass(frozen=True)
+class _ObservedRoutedMemory:
+    domain: MemoryDomain
+    status: CommitStatus
+    is_raw_event: bool
