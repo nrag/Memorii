@@ -150,10 +150,18 @@ def build_hotpotqa_fixtures(examples: list[HotpotQAExample]) -> list[BenchmarkSc
             BenchmarkScenarioFixture(
                 scenario_id=f"hotpot_e2e_{example.example_id}",
                 category=BenchmarkScenarioType.END_TO_END,
+                retrieval=RetrievalFixture(
+                    query=example.question,
+                    intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                    scope=RetrievalScope(task_id=f"hotpot:{example.example_id}"),
+                    top_k=min(4, len(corpus)) if corpus else 1,
+                    corpus=corpus,
+                    expected_relevant_ids=relevant_ids[:2],
+                ),
                 routing=RoutingFixture(
                     inbound_event=InboundEvent(
                         event_id=f"evt:hotpot:{example.example_id}",
-                        event_class=InboundEventClass.TOOL_RESULT,
+                        event_class=InboundEventClass.TOOL_STATE_UPDATE,
                         task_id=f"hotpot:{example.example_id}",
                         execution_node_id=f"exec:hotpot:{example.example_id}:root",
                         solver_run_id=f"solver:hotpot:{example.example_id}",
