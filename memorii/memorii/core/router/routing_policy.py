@@ -11,6 +11,7 @@ class RoutingPolicy:
             InboundEventClass.USER_MESSAGE: [MemoryDomain.TRANSCRIPT],
             InboundEventClass.AGENT_MESSAGE: [MemoryDomain.TRANSCRIPT],
             InboundEventClass.TOOL_RESULT: [MemoryDomain.TRANSCRIPT],
+            InboundEventClass.TOOL_STATE_UPDATE: [MemoryDomain.TRANSCRIPT, MemoryDomain.EXECUTION, MemoryDomain.SOLVER],
             InboundEventClass.EXECUTION_STATE_UPDATE: [MemoryDomain.TRANSCRIPT, MemoryDomain.EXECUTION],
             InboundEventClass.SOLVER_OBSERVATION: [MemoryDomain.TRANSCRIPT, MemoryDomain.SOLVER],
             InboundEventClass.SOLVER_RESOLUTION: [MemoryDomain.TRANSCRIPT, MemoryDomain.SOLVER, MemoryDomain.EPISODIC],
@@ -21,19 +22,7 @@ class RoutingPolicy:
         }
         domains = list(policy[event_class])
 
-        if event_class == InboundEventClass.TOOL_RESULT and self._is_failure_signal(payload):
-            if MemoryDomain.EXECUTION not in domains:
-                domains.append(MemoryDomain.EXECUTION)
-            if MemoryDomain.SOLVER not in domains:
-                domains.append(MemoryDomain.SOLVER)
-
         return domains
-
-    def _is_failure_signal(self, payload: dict[str, object]) -> bool:
-        outcome = payload.get("outcome")
-        status = payload.get("status")
-        result = payload.get("result")
-        return outcome == "failed" or status == "failed" or result == "failed"
 
     def primary_store_for(self, domain: MemoryDomain) -> str:
         return domain.value

@@ -69,6 +69,7 @@ class DomainRetrievalQuery(BaseModel):
     time_range: TimeRange | None = None
     freshness: FreshnessPolicy | None = None
     require_raw_transcript: bool = False
+    include_candidates: bool = False
 
     model_config = ConfigDict(extra="forbid")
 

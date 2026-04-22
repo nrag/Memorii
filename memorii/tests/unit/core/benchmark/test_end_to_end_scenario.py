@@ -1,5 +1,20 @@
+import pytest
+
 from memorii.core.benchmark.harness import BenchmarkHarness
-from memorii.core.benchmark.models import BenchmarkScenarioFixture, BenchmarkSystem, ScenarioExecutionLevel
+from memorii.core.benchmark.models import (
+    BenchmarkScenarioFixture,
+    BenchmarkScenarioType,
+    BenchmarkSystem,
+    EndToEndFixture,
+    RetrievalFixture,
+    RetrievalFixtureMemoryItem,
+    RoutingFixture,
+    ScenarioExecutionLevel,
+)
+from memorii.domain.enums import MemoryDomain
+from memorii.core.benchmark.scenarios import ScenarioExecutor
+from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
+from memorii.domain.routing import InboundEvent, InboundEventClass
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
 
 
@@ -55,3 +70,147 @@ def test_end_to_end_scenario_fails_when_routing_expectation_is_wrong() -> None:
         if result.system == BenchmarkSystem.MEMORII and result.scenario_id == target.scenario_id
     )
     assert memorii_result.observation.scenario_success is False
+
+
+def test_end_to_end_baseline_writebacks_are_not_copied_from_routed_domains() -> None:
+    report = BenchmarkHarness().run(fixtures=load_benchmark_fixture_set())
+    baseline = next(
+        result
+        for result in report.scenario_results
+        if result.scenario_id == "e2e_fail_debug_resolve" and result.system == BenchmarkSystem.FLAT_RETRIEVAL_BASELINE
+    )
+    assert set(baseline.observation.routed_domains) == {
+        MemoryDomain.TRANSCRIPT,
+        MemoryDomain.EXECUTION,
+        MemoryDomain.SOLVER,
+    }
+    assert set(baseline.observation.writeback_candidate_domains) == {MemoryDomain.SEMANTIC, MemoryDomain.USER}
+
+
+def test_end_to_end_requires_retrieval_fixture_for_storage_semantics() -> None:
+    target = next(item for item in load_benchmark_fixture_set() if item.scenario_id == "e2e_fail_debug_resolve")
+    invalid_fixture = BenchmarkScenarioFixture.model_validate(
+        {
+            **target.model_dump(mode="python"),
+            "retrieval": None,
+        }
+    )
+    with pytest.raises(ValueError, match="requires retrieval corpus"):
+        ScenarioExecutor().run(fixture=invalid_fixture, system=BenchmarkSystem.MEMORII)
+
+
+def test_end_to_end_seeding_preserves_item_namespace_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_seeded: list[object] = []
+    from memorii.core.execution import RuntimeStepResult
+    from memorii.core.solver.abstention import SolverDecision
+    from memorii.domain.retrieval import RetrievalPlan
+    from memorii.domain.writebacks import WritebackCandidate, WritebackType
+    from memorii.domain.common import Provenance
+    from memorii.domain.enums import CommitStatus, SourceType
+    from memorii.domain.routing import ValidationState
+    from datetime import UTC, datetime
+
+    class FakeRuntimeStepService:
+        def __init__(self, **kwargs):
+            pass
+
+        def seed_memory_object(self, memory_object):
+            captured_seeded.append(memory_object)
+
+        def step(self, **kwargs):
+            return RuntimeStepResult(
+                task_id="task:e2e",
+                execution_node_id="exec:task:e2e:root",
+                solver_run_id="solver:task:e2e:exec:task:e2e:root",
+                retrieval_plan=RetrievalPlan(intent=RetrievalIntent.DEBUG_OR_INVESTIGATE),
+                routed_domains=[MemoryDomain.TRANSCRIPT, MemoryDomain.EXECUTION, MemoryDomain.SOLVER],
+                solver_decision=SolverDecision.SUPPORTED,
+                follow_up_required=False,
+                downgraded=False,
+                writeback_candidates=[
+                    WritebackCandidate(
+                        candidate_id="wb:1",
+                        writeback_type=WritebackType.EPISODIC,
+                        target_domain=MemoryDomain.EPISODIC,
+                        status=CommitStatus.CANDIDATE,
+                        content={"summary": "ok"},
+                        provenance=Provenance(
+                            source_type=SourceType.DERIVED,
+                            source_refs=["evt:1"],
+                            created_at=datetime.now(UTC),
+                            created_by="test",
+                        ),
+                        source_task_id="task:e2e",
+                        validation_state=ValidationState.VALIDATED,
+                        eligibility_reason="solver_resolved",
+                    )
+                ],
+            )
+
+    monkeypatch.setattr("memorii.core.benchmark.scenarios.RuntimeStepService", FakeRuntimeStepService)
+
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_namespace_preserve",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="question",
+            intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+            scope=RetrievalScope(),
+            top_k=2,
+            corpus=[
+                RetrievalFixtureMemoryItem(
+                    item_id="ctx:1",
+                    domain=MemoryDomain.SEMANTIC,
+                    text="fact",
+                    task_id="task:custom",
+                    execution_node_id="exec:custom",
+                    solver_run_id="solver:custom",
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="ctx:2",
+                    domain=MemoryDomain.EPISODIC,
+                    text="case",
+                ),
+            ],
+            expected_relevant_ids=["ctx:1"],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:1",
+                event_class=InboundEventClass.TOOL_STATE_UPDATE,
+                task_id="task:e2e",
+                payload={"status": "failed"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT, MemoryDomain.EXECUTION, MemoryDomain.SOLVER],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:e2e",
+            expect_pipeline_success=True,
+            expect_writeback_domains=[MemoryDomain.EPISODIC],
+        ),
+    )
+
+    ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    custom = next(item for item in captured_seeded if item.memory_id == "ctx:1")
+    fallback = next(item for item in captured_seeded if item.memory_id == "ctx:2")
+    assert custom.namespace["task_id"] == "task:custom"
+    assert custom.namespace["execution_node_id"] == "exec:custom"
+    assert custom.namespace["solver_run_id"] == "solver:custom"
+    assert custom.scope.value == "execution_node"
+    assert fallback.namespace["task_id"] == "task:e2e"
+    assert fallback.namespace["memory_domain"] == MemoryDomain.EPISODIC.value
+    assert "execution_node_id" not in fallback.namespace
+    assert "solver_run_id" not in fallback.namespace
+    assert fallback.scope.value == "task"
+
+
+def test_end_to_end_runtime_writeback_validation_metadata_is_used() -> None:
+    report = BenchmarkHarness().run(fixtures=load_benchmark_fixture_set())
+    memorii = next(
+        result
+        for result in report.scenario_results
+        if result.scenario_id == "e2e_fail_debug_resolve" and result.system == BenchmarkSystem.MEMORII
+    )
+    assert memorii.observation.semantic_pollution is False
+    assert memorii.observation.user_memory_pollution is False

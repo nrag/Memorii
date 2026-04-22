@@ -14,6 +14,7 @@ class InboundEventClass(str, Enum):
     USER_MESSAGE = "user_message"
     AGENT_MESSAGE = "agent_message"
     TOOL_RESULT = "tool_result"
+    TOOL_STATE_UPDATE = "tool_state_update"
     EXECUTION_STATE_UPDATE = "execution_state_update"
     SOLVER_OBSERVATION = "solver_observation"
     SOLVER_RESOLUTION = "solver_resolution"

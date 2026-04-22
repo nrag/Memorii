@@ -14,9 +14,11 @@ from memorii.domain.enums import (
     MemoryDomain,
     MemoryScope,
     SourceType,
+    TemporalValidityStatus,
 )
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.memory_object import MemoryObject
+from memorii.domain.retrieval import DomainRetrievalQuery, FreshnessPolicy, RetrievalNamespace, RetrievalScope, ValidityStatus
 from memorii.domain.routing import InboundEventClass
 from memorii.stores.event_log import InMemoryEventLogStore
 from memorii.stores.execution_graph import InMemoryExecutionGraphStore
@@ -369,3 +371,72 @@ def test_runtime_does_not_append_manual_debug_queries_outside_planner() -> None:
 
     domains = [query.domain.value for query in result.retrieval_plan.queries]
     assert domains == ["solver", "episodic", "semantic", "execution", "transcript"]
+
+
+def test_in_memory_query_excludes_candidates_by_default() -> None:
+    plane = _build_runtime()._memory_plane
+    task_id = "task-filter"
+    execution_node_id = "exec-filter"
+    solver_run_id = f"solver:{task_id}:{execution_node_id}"
+    plane.put(_make_memory("committed:1", MemoryDomain.SEMANTIC, task_id, execution_node_id, solver_run_id))
+    candidate = _make_memory("candidate:1", MemoryDomain.SEMANTIC, task_id, execution_node_id, solver_run_id)
+    candidate.status = CommitStatus.CANDIDATE
+    plane.put(candidate)
+    query = DomainRetrievalQuery(
+        domain=MemoryDomain.SEMANTIC,
+        scope=RetrievalScope(task_id=task_id, execution_node_id=execution_node_id, solver_run_id=solver_run_id),
+        namespace=RetrievalNamespace(
+            memory_domain=MemoryDomain.SEMANTIC,
+            task_id=task_id,
+            execution_node_id=execution_node_id,
+            solver_run_id=solver_run_id,
+        ),
+    )
+    assert [item.memory_id for item in plane.query(query)] == ["committed:1"]
+
+
+def test_in_memory_query_can_include_candidates_when_requested() -> None:
+    plane = _build_runtime()._memory_plane
+    task_id = "task-filter-candidates"
+    execution_node_id = "exec-filter-candidates"
+    solver_run_id = f"solver:{task_id}:{execution_node_id}"
+    plane.put(_make_memory("committed:2", MemoryDomain.SEMANTIC, task_id, execution_node_id, solver_run_id))
+    candidate = _make_memory("candidate:2", MemoryDomain.SEMANTIC, task_id, execution_node_id, solver_run_id)
+    candidate.status = CommitStatus.CANDIDATE
+    plane.put(candidate)
+    query = DomainRetrievalQuery(
+        domain=MemoryDomain.SEMANTIC,
+        scope=RetrievalScope(task_id=task_id, execution_node_id=execution_node_id, solver_run_id=solver_run_id),
+        namespace=RetrievalNamespace(
+            memory_domain=MemoryDomain.SEMANTIC,
+            task_id=task_id,
+            execution_node_id=execution_node_id,
+            solver_run_id=solver_run_id,
+        ),
+        include_candidates=True,
+    )
+    assert set(item.memory_id for item in plane.query(query)) == {"committed:2", "candidate:2"}
+
+
+def test_in_memory_query_respects_active_validity_filtering() -> None:
+    plane = _build_runtime()._memory_plane
+    task_id = "task-validity"
+    execution_node_id = "exec-validity"
+    solver_run_id = f"solver:{task_id}:{execution_node_id}"
+    active = _make_memory("active:1", MemoryDomain.SEMANTIC, task_id, execution_node_id, solver_run_id)
+    expired = _make_memory("expired:1", MemoryDomain.SEMANTIC, task_id, execution_node_id, solver_run_id)
+    expired.validity_status = TemporalValidityStatus.EXPIRED
+    plane.put(active)
+    plane.put(expired)
+    query = DomainRetrievalQuery(
+        domain=MemoryDomain.SEMANTIC,
+        scope=RetrievalScope(task_id=task_id, execution_node_id=execution_node_id, solver_run_id=solver_run_id),
+        namespace=RetrievalNamespace(
+            memory_domain=MemoryDomain.SEMANTIC,
+            task_id=task_id,
+            execution_node_id=execution_node_id,
+            solver_run_id=solver_run_id,
+        ),
+        freshness=FreshnessPolicy(required_validity=ValidityStatus.ACTIVE),
+    )
+    assert [item.memory_id for item in plane.query(query)] == ["active:1"]

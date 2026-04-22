@@ -56,6 +56,20 @@ def test_transcript_memory_preserves_verbatim_raw_payloads() -> None:
     assert transcript.content["raw"] == raw_payload
 
 
+def test_generic_tool_result_stays_in_transcript_domain() -> None:
+    router = MemoryRouter()
+    decision = router.route_event(
+        InboundEvent(
+            event_id="evt-tool-generic",
+            event_class=InboundEventClass.TOOL_RESULT,
+            task_id="task-1",
+            payload={"status": "failed", "message": "raw tool output"},
+            timestamp=datetime.now(UTC),
+        )
+    )
+    assert [item.domain for item in decision.routed_objects] == [MemoryDomain.TRANSCRIPT]
+
+
 def test_stable_user_preference_creates_candidate_without_auto_commit() -> None:
     router = MemoryRouter()
     decision = router.route_event(
@@ -72,12 +86,12 @@ def test_stable_user_preference_creates_candidate_without_auto_commit() -> None:
     assert user_object.status == CommitStatus.CANDIDATE
 
 
-def test_failing_test_routes_to_transcript_execution_and_solver() -> None:
+def test_structured_tool_state_update_routes_to_transcript_execution_and_solver() -> None:
     router = MemoryRouter()
     decision = router.route_event(
         InboundEvent(
             event_id="evt-5",
-            event_class=InboundEventClass.TOOL_RESULT,
+            event_class=InboundEventClass.TOOL_STATE_UPDATE,
             task_id="task-1",
             execution_node_id="exec-1",
             solver_run_id="solver-1",

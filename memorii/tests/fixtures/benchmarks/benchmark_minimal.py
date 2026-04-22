@@ -107,7 +107,7 @@ def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
 
     routing_event = InboundEvent(
         event_id="evt:tool:failed",
-        event_class=InboundEventClass.TOOL_RESULT,
+        event_class=InboundEventClass.TOOL_STATE_UPDATE,
         task_id="task:1",
         execution_node_id="exec:1",
         solver_run_id="solver:1",
@@ -198,6 +198,15 @@ def load_benchmark_fixture_set() -> list[BenchmarkScenarioFixture]:
         BenchmarkScenarioFixture(
             scenario_id="e2e_fail_debug_resolve",
             category=BenchmarkScenarioType.END_TO_END,
+            retrieval=RetrievalFixture(
+                query="failing test stack trace",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:1"),
+                top_k=4,
+                corpus=retrieval_corpus,
+                expected_relevant_ids=["tx:err", "sem:fact", "epi:case"],
+                expected_excluded_ids=["sem:speculative"],
+            ),
             routing=RoutingFixture(
                 inbound_event=routing_event,
                 expected_domains=[MemoryDomain.TRANSCRIPT, MemoryDomain.EXECUTION, MemoryDomain.SOLVER],

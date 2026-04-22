@@ -258,7 +258,11 @@ class BenchmarkScenarioFixture(BaseModel):
         if expected_field not in active_fields:
             raise ValueError(f"{self.category.value} requires {expected_field} fixture data")
         invalid_fields = [name for name in active_fields if name != expected_field and name != "routing"]
-        if self.category != BenchmarkScenarioType.END_TO_END:
+        if self.category == BenchmarkScenarioType.END_TO_END:
+            invalid_fields = [
+                name for name in active_fields if name not in {"end_to_end", "routing", "retrieval"}
+            ]
+        else:
             invalid_fields = [name for name in active_fields if name != expected_field]
         if invalid_fields:
             raise ValueError(

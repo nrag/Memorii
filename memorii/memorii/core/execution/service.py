@@ -18,7 +18,7 @@ from memorii.core.solver import (
     SolverUpdateEngine,
     SolverUpdateInput,
 )
-from memorii.domain.enums import EventType, ExecutionNodeStatus, MemoryDomain
+from memorii.domain.enums import CommitStatus, EventType, ExecutionNodeStatus, MemoryDomain
 from memorii.domain.events import EventRecord
 from memorii.domain.memory_object import MemoryObject
 from memorii.domain.retrieval import DomainRetrievalQuery, RetrievalIntent, RetrievalPlan, RetrievalScope
@@ -70,7 +70,7 @@ class InMemoryMemoryPlane:
 
     def query(self, query: DomainRetrievalQuery) -> list[MemoryObject]:
         items = self._by_domain[query.domain]
-        return [item for item in items if self._matches_scope(item, query)]
+        return [item for item in items if self._matches_scope(item, query) and self._matches_semantics(item, query)]
 
     def _matches_scope(self, item: MemoryObject, query: DomainRetrievalQuery) -> bool:
         ns = item.namespace or {}
@@ -82,6 +82,26 @@ class InMemoryMemoryPlane:
             return False
         if query.scope.agent_id is not None and ns.get("agent_id") != query.scope.agent_id:
             return False
+        return True
+
+    def _matches_semantics(self, item: MemoryObject, query: DomainRetrievalQuery) -> bool:
+        if not query.include_candidates and item.status == CommitStatus.CANDIDATE:
+            return False
+        freshness = query.freshness
+        if freshness is None or freshness.required_validity is None:
+            return True
+
+        required = freshness.required_validity.value
+        item_validity = item.validity_status.value if item.validity_status is not None else "active"
+        if item_validity != required:
+            return False
+
+        valid_at = freshness.valid_at
+        if valid_at is not None:
+            if item.valid_from is not None and item.valid_from > valid_at:
+                return False
+            if item.valid_to is not None and item.valid_to < valid_at:
+                return False
         return True
 
 
@@ -326,7 +346,11 @@ class RuntimeStepService:
 
     def _resolve_intent(self, observation: RuntimeObservationInput) -> RetrievalIntent:
         failed = observation.payload.get("status") == "failed" or observation.payload.get("outcome") == "failed"
-        if failed or observation.event_class in {InboundEventClass.TOOL_RESULT, InboundEventClass.SOLVER_OBSERVATION}:
+        if failed or observation.event_class in {
+            InboundEventClass.TOOL_RESULT,
+            InboundEventClass.TOOL_STATE_UPDATE,
+            InboundEventClass.SOLVER_OBSERVATION,
+        }:
             return RetrievalIntent.DEBUG_OR_INVESTIGATE
         return RetrievalIntent.CONTINUE_EXECUTION
 

@@ -11,9 +11,11 @@ from memorii.core.benchmark.hotpotqa import (
 )
 from memorii.core.benchmark.models import BenchmarkScenarioType
 
+HOTSPOT_FIXTURE_PATH = Path(__file__).resolve().parents[3] / "fixtures" / "benchmarks" / "hotpotqa_sample.json"
+
 
 def test_hotpotqa_adapter_parses_json_and_jsonl(tmp_path: Path) -> None:
-    source = Path("tests/fixtures/benchmarks/hotpotqa_sample.json")
+    source = HOTSPOT_FIXTURE_PATH
     examples = load_hotpotqa_examples(source, split="validation")
     assert len(examples) == 3
     assert examples[0].example_id == "hp1"
@@ -26,7 +28,7 @@ def test_hotpotqa_adapter_parses_json_and_jsonl(tmp_path: Path) -> None:
 
 
 def test_hotpotqa_subset_selection_is_deterministic() -> None:
-    source = Path("tests/fixtures/benchmarks/hotpotqa_sample.json")
+    source = HOTSPOT_FIXTURE_PATH
     examples = load_hotpotqa_examples(source, split="validation")
     subset_a = select_hotpotqa_subset(
         examples,
@@ -48,7 +50,7 @@ def test_hotpotqa_subset_selection_is_deterministic() -> None:
 
 
 def test_hotpotqa_fixture_transform_and_harness_run(tmp_path: Path) -> None:
-    source = Path("tests/fixtures/benchmarks/hotpotqa_sample.json")
+    source = HOTSPOT_FIXTURE_PATH
     examples = load_hotpotqa_examples(source, split="validation")
     subset = select_hotpotqa_subset(
         examples,
