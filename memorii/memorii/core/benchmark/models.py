@@ -39,6 +39,12 @@ class ScenarioExecutionLevel(str, Enum):
     COMPONENT_LEVEL = "component_level"
 
 
+class ScenarioOutcomeStatus(str, Enum):
+    PASSED = "passed"
+    FAILED = "failed"
+    UNSUPPORTED = "unsupported"
+
+
 class BaselinePolicy(str, Enum):
     RUN = "run"
     SKIP = "skip"
@@ -287,6 +293,8 @@ class ScenarioObservation(BaseModel):
     blocked_domains: list[MemoryDomain] = Field(default_factory=list)
     expected_routed_domains: list[MemoryDomain] = Field(default_factory=list)
     expected_blocked_domains: list[MemoryDomain] = Field(default_factory=list)
+    runtime_observability_status: str | None = None
+    runtime_observability_missing: list[str] = Field(default_factory=list)
     execution_resume_correct: bool | None = None
     solver_resume_correct: bool | None = None
     frontier_restore_correct: bool | None = None
@@ -465,6 +473,7 @@ class CanonicalScenarioEntry(BaseModel):
     system: BenchmarkSystem
     execution_type: ScenarioExecutionLevel
     passed: bool
+    outcome_status: ScenarioOutcomeStatus
     metrics: dict[str, float | None] = Field(default_factory=dict)
     expected: dict[str, object] = Field(default_factory=dict)
     observed: dict[str, object] = Field(default_factory=dict)

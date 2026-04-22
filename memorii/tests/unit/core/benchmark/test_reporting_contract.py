@@ -133,3 +133,26 @@ def test_write_artifacts_outputs_expected_contract_files(tmp_path: Path) -> None
 
     payload = json.loads(report_json.read_text(encoding="utf-8"))
     CanonicalBenchmarkReport.model_validate(payload)
+
+
+def test_canonical_reporting_marks_unsupported_without_counting_as_failed() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    target = next(
+        result
+        for result in report.scenario_results
+        if result.scenario_id == "e2e_fail_debug_resolve" and result.system.value == "memorii"
+    )
+    target.observation.runtime_observability_status = "unsupported"
+    target.observation.scenario_success = False
+    target.metrics.scenario_success_rate = None
+
+    canonical = to_canonical_report(report, fixtures=fixtures)
+    entry = next(
+        item
+        for item in canonical.scenarios
+        if item.scenario_id == "e2e_fail_debug_resolve" and item.system.value == "memorii"
+    )
+    assert entry.outcome_status.value == "unsupported"
+    assert entry.passed is False
+    assert canonical.summary.failed == sum(1 for item in canonical.scenarios if item.outcome_status.value == "failed")

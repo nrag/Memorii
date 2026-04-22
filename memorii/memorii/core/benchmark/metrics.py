@@ -81,6 +81,10 @@ def compute_metrics(observation: ScenarioObservation) -> ScenarioMetrics:
         ids_ok = expected_writeback_ids == observed_writeback_ids if expected_writeback_ids else True
         writeback_correctness = _bool_metric(domains_ok and ids_ok)
 
+    scenario_success_rate = _bool_metric(observation.scenario_success)
+    if observation.runtime_observability_status == "unsupported":
+        scenario_success_rate = None
+
     return ScenarioMetrics(
         recall_at_k=recall,
         precision_at_k=precision,
@@ -95,7 +99,7 @@ def compute_metrics(observation: ScenarioObservation) -> ScenarioMetrics:
         unsupported_commitment_downgrade_rate=_bool_metric(observation.downgraded),
         abstention_preservation_rate=_bool_metric(observation.abstention_preserved),
         invalid_output_rejection_rate=_bool_metric(observation.invalid_output_rejected),
-        scenario_success_rate=_bool_metric(observation.scenario_success),
+        scenario_success_rate=scenario_success_rate,
         writeback_candidate_correctness=writeback_correctness,
         semantic_pollution_rate=_bool_metric(False if observation.semantic_pollution is None else observation.semantic_pollution),
         user_memory_pollution_rate=_bool_metric(

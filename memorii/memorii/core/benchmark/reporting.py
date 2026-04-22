@@ -21,7 +21,10 @@ from memorii.core.benchmark.models import (
     CanonicalBenchmarkSummary,
     CanonicalScenarioEntry,
     CanonicalScenarioTrace,
+    ScenarioResult,
+    ScenarioExecutionLevel,
     ScenarioMetrics,
+    ScenarioOutcomeStatus,
 )
 from memorii.core.benchmark.validation import validate_canonical_report
 
@@ -42,7 +45,8 @@ def to_canonical_report(
         expected = _build_expected_payload(result.scenario_id, fixture=fixture, observed=result.observation.model_dump(mode="python"))
         observed = _build_observed_payload(result.observation.model_dump(mode="python"))
         trace = _build_trace_payload(result.observation.model_dump(mode="python"))
-        passed = bool(result.metrics.scenario_success_rate == 1.0)
+        outcome_status = _scenario_outcome_status(result)
+        passed = outcome_status == ScenarioOutcomeStatus.PASSED
         scenarios.append(
             CanonicalScenarioEntry(
                 scenario_id=result.scenario_id,
@@ -50,6 +54,7 @@ def to_canonical_report(
                 system=result.system,
                 execution_type=result.observation.execution_level,
                 passed=passed,
+                outcome_status=outcome_status,
                 metrics=result.metrics.model_dump(mode="python"),
                 expected=expected,
                 observed=observed,
@@ -66,8 +71,8 @@ def to_canonical_report(
     baseline_summary = _compute_baseline_summary(report)
     summary = CanonicalBenchmarkSummary(
         total_scenarios=len(scenarios),
-        passed=sum(1 for scenario in scenarios if scenario.passed),
-        failed=sum(1 for scenario in scenarios if not scenario.passed),
+        passed=sum(1 for scenario in scenarios if scenario.outcome_status == ScenarioOutcomeStatus.PASSED),
+        failed=sum(1 for scenario in scenarios if scenario.outcome_status == ScenarioOutcomeStatus.FAILED),
         aggregate_metrics=aggregate_metrics,
         baseline_comparison_summary=baseline_summary,
     )
@@ -158,9 +163,22 @@ def to_markdown(report: BenchmarkRunReport, *, fixtures: list[BenchmarkScenarioF
     for scenario in canonical.scenarios:
         lines.append(
             f"- `{scenario.scenario_id}` ({scenario.category.value}, {scenario.system.value}, {scenario.execution_type.value}) "
-            f"passed={scenario.passed}"
+            f"status={scenario.outcome_status.value}"
         )
     return "\n".join(lines)
+
+
+def _scenario_outcome_status(result: ScenarioResult) -> ScenarioOutcomeStatus:
+    observation = result.observation
+    metrics = result.metrics
+    if (
+        observation.execution_level == ScenarioExecutionLevel.SYSTEM_LEVEL
+        and observation.runtime_observability_status == "unsupported"
+    ):
+        return ScenarioOutcomeStatus.UNSUPPORTED
+    if metrics.scenario_success_rate == 1.0:
+        return ScenarioOutcomeStatus.PASSED
+    return ScenarioOutcomeStatus.FAILED
 
 
 def write_json(report: BenchmarkRunReport, path: str, *, fixtures: list[BenchmarkScenarioFixture] | None = None) -> None:

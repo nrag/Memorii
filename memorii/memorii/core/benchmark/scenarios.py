@@ -463,6 +463,9 @@ class ScenarioExecutor:
         writeback_ids: list[str] = []
         writeback_records: list[_ObservedWriteback] = []
         routed_records: list[_ObservedRoutedMemory] = []
+        blocked_domain_set: set[MemoryDomain] | None = None
+        observability_missing: list[str] = []
+        retrieved_ids: list[str] = []
         if event is not None and system == BenchmarkSystem.MEMORII:
             execution_store = InMemoryExecutionGraphStore()
             solver_store = InMemorySolverGraphStore()
@@ -543,6 +546,8 @@ class ScenarioExecutor:
                 execution_node_id=f"exec:{fx.task_id}:root",
             )
             routed_domains = list(result.routed_domains)
+            blocked_domain_set = set(result.blocked_domains)
+            retrieved_ids = list(result.retrieved_ids_deduped)
             routed_records = [
                 _ObservedRoutedMemory(
                     domain=domain,
@@ -551,21 +556,39 @@ class ScenarioExecutor:
                 )
                 for domain in routed_domains
             ]
-            writeback_domains = [candidate.target_domain for candidate in result.writeback_candidates]
-            writeback_ids = [candidate.candidate_id for candidate in result.writeback_candidates]
+            if result.writeback_trace:
+                writeback_trace = result.writeback_trace
+            else:
+                writeback_trace = [
+                    {
+                        "candidate_id": candidate.candidate_id,
+                        "target_domain": candidate.target_domain.value,
+                        "status": candidate.status.value,
+                        "validation_state": candidate.validation_state.value,
+                    }
+                    for candidate in result.writeback_candidates
+                ]
+                observability_missing.append("writeback_trace")
+            writeback_domains = [MemoryDomain(str(trace_entry["target_domain"])) for trace_entry in writeback_trace]
+            writeback_ids = [str(trace_entry["candidate_id"]) for trace_entry in writeback_trace]
             writeback_records = [
                 _ObservedWriteback(
-                    domain=candidate.target_domain,
-                    candidate_id=candidate.candidate_id,
-                    status=candidate.status,
-                    validated=(candidate.validation_state == ValidationState.VALIDATED),
+                    domain=MemoryDomain(str(trace_entry["target_domain"])),
+                    candidate_id=str(trace_entry["candidate_id"]),
+                    status=CommitStatus(str(trace_entry["status"])),
+                    validated=(str(trace_entry["validation_state"]) == ValidationState.VALIDATED.value),
                     source_kind="consolidated",
                 )
-                for candidate in result.writeback_candidates
+                for trace_entry in writeback_trace
             ]
+            if not result.retrieval_plan_queries:
+                observability_missing.append("retrieval_plan_queries")
+            if not result.retrieved_ids_by_domain_deduped:
+                observability_missing.append("retrieved_ids_by_domain_deduped")
         elif event is not None:
             decision = self._router.route_event(event)
             routed_domains = [item.domain for item in decision.routed_objects]
+            blocked_domain_set = set(decision.blocked_domains)
             routed_records = [
                 _ObservedRoutedMemory(
                     domain=item.domain,
@@ -581,25 +604,14 @@ class ScenarioExecutor:
             writeback_records = self._baseline_writeback_candidates(system=system, event_class=event.event_class)
             writeback_domains = sorted({candidate.domain for candidate in writeback_records}, key=lambda d: d.value)
             writeback_ids = sorted({candidate.candidate_id for candidate in writeback_records})
+            retrieved_ids = []
 
         expected_routed_domains = list(fixture.routing.expected_domains) if fixture.routing is not None else []
         expected_blocked_domains = list(fixture.routing.expected_blocked_domains) if fixture.routing is not None else []
         routed_domain_set = set(routed_domains)
-        blocked_domain_set: set[MemoryDomain] | None = None
-        if event is not None and system == BenchmarkSystem.MEMORII:
-            if expected_blocked_domains:
-                raise ValueError(
-                    "end-to-end blocked-domain expectations are unsupported for memorii runtime path: "
-                    "runtime step result does not expose blocked domains"
-                )
-        elif event is not None:
-            if system == BenchmarkSystem.TRANSCRIPT_ONLY_BASELINE:
-                blocked_domain_set = set()
-            elif system == BenchmarkSystem.FLAT_RETRIEVAL_BASELINE:
-                blocked_domain_set = set()
-            else:
-                decision = self._router.route_event(event)
-                blocked_domain_set = set(decision.blocked_domains)
+        runtime_observability_status: str | None = None
+        if system == BenchmarkSystem.MEMORII:
+            runtime_observability_status = "unsupported" if observability_missing else "supported"
 
         pipeline_success_ok = fx.expect_pipeline_success
         routing_ok = routed_domain_set == set(expected_routed_domains)
@@ -611,6 +623,8 @@ class ScenarioExecutor:
         writeback_ids_ok = (not expected_writeback_ids) or (set(writeback_ids) == expected_writeback_ids)
         writeback_ok = writeback_domains_ok and writeback_ids_ok
         scenario_success = pipeline_success_ok and routing_ok and blocked_ok and writeback_ok
+        if runtime_observability_status == "unsupported":
+            scenario_success = False
         semantic_pollution, user_pollution = self._derive_pollution(
             routed_records=routed_records,
             writeback_records=writeback_records,
@@ -622,10 +636,13 @@ class ScenarioExecutor:
             system=system,
             execution_level=ScenarioExecutionLevel.SYSTEM_LEVEL,
             scenario_success=scenario_success,
+            retrieved_ids=retrieved_ids,
             routed_domains=sorted(set(routed_domains), key=lambda d: d.value),
             blocked_domains=sorted(blocked_domain_set, key=lambda d: d.value) if blocked_domain_set is not None else [],
             expected_routed_domains=expected_routed_domains,
             expected_blocked_domains=expected_blocked_domains,
+            runtime_observability_status=runtime_observability_status,
+            runtime_observability_missing=observability_missing,
             writeback_candidate_domains=sorted(set(writeback_domains), key=lambda d: d.value),
             expected_writeback_candidate_domains=list(fx.expect_writeback_domains),
             writeback_candidate_ids=sorted(set(writeback_ids)),

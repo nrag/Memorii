@@ -75,3 +75,25 @@ def test_validate_report_rejects_missing_episodic_scenario_success_rate() -> Non
 
     with pytest.raises(ValueError, match="missing scenario_success_rate"):
         validate_report(report)
+
+
+def test_validate_report_allows_none_success_rate_for_unsupported_end_to_end_only() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    end_to_end_results = [
+        result
+        for result in report.scenario_results
+        if result.scenario_id == "e2e_fail_debug_resolve"
+    ]
+    for result in end_to_end_results:
+        result.observation.runtime_observability_status = "unsupported"
+        result.observation.scenario_success = False
+        result.metrics.scenario_success_rate = None
+
+    for system, metrics in report.aggregate_by_category[
+        next(item.category for item in end_to_end_results)
+    ].items():
+        if system.value in {result.system.value for result in end_to_end_results}:
+            metrics.scenario_success_rate = None
+
+    validate_report(report)

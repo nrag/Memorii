@@ -72,6 +72,7 @@ def validate_preflight(*, fixtures: list[BenchmarkScenarioFixture], config: Benc
 
 def validate_report(report: BenchmarkRunReport) -> None:
     _validate_required_metrics(report.scenario_results)
+    _validate_aggregate_success_metric_semantics(report)
 
 
 def validate_canonical_report(report: CanonicalBenchmarkReport) -> None:
@@ -127,6 +128,12 @@ def _validate_required_metrics(results: list[ScenarioResult]) -> None:
         _validate_category_observation_contract(result)
         required_metrics = REQUIRED_METRICS_BY_CATEGORY.get(result.category, ())
         for metric_name in required_metrics:
+            if (
+                metric_name == "scenario_success_rate"
+                and result.observation.runtime_observability_status == "unsupported"
+                and result.category == BenchmarkScenarioType.END_TO_END
+            ):
+                continue
             if getattr(result.metrics, metric_name) is None:
                 raise ValueError(
                     f"benchmark report failed validation: "
@@ -165,3 +172,28 @@ def _validate_category_observation_contract(result: ScenarioResult) -> None:
                 f"benchmark report failed validation: {result.scenario_id}/{result.system.value} "
                 "missing blocked_write_accuracy"
             )
+
+
+def _validate_aggregate_success_metric_semantics(report: BenchmarkRunReport) -> None:
+    for category, by_system in report.aggregate_by_category.items():
+        required_metrics = REQUIRED_METRICS_BY_CATEGORY.get(category, ())
+        if "scenario_success_rate" not in required_metrics:
+            continue
+        for system, metrics in by_system.items():
+            if metrics.scenario_success_rate is not None:
+                continue
+            results = [
+                item
+                for item in report.scenario_results
+                if item.category == category and item.system == system
+            ]
+            supported = [
+                item
+                for item in results
+                if item.observation.runtime_observability_status != "unsupported"
+            ]
+            if supported:
+                raise ValueError(
+                    "benchmark report failed validation: aggregate scenario_success_rate is None "
+                    f"for {category.value}/{system.value} despite supported scenarios"
+                )
