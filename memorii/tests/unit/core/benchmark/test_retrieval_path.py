@@ -27,6 +27,15 @@ def test_icu_tokenization_handles_en_es_fr() -> None:
     assert "maintenant" in icu_tokens("Atlas utilise maintenant Postgres.", "fr")
 
 
+def test_icu_tokenization_filters_unicode_punctuation_tokens() -> None:
+    tokens = icu_tokens("¿Atlas usa Postgres? ¡Sí! — ahora.", "es")
+    assert "¿" not in tokens
+    assert "¡" not in tokens
+    assert "—" not in tokens
+    assert "atlas" in tokens
+    assert "ahora" in tokens
+
+
 def test_char_ngrams_are_deterministic() -> None:
     source = "Atlas-now uses Postgres"
     first = mixed_char_ngrams(source)

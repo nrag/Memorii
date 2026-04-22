@@ -2,8 +2,7 @@ import json
 from pathlib import Path
 
 from memorii.core.benchmark.harness import BenchmarkHarness
-from memorii.core.benchmark.models import BenchmarkScenarioFixture, BenchmarkSystem, RetrievalFixtureMemoryItem
-from memorii.domain.enums import MemoryDomain
+from memorii.core.benchmark.models import BenchmarkScenarioFixture, BenchmarkSystem
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
 from tests.fixtures.benchmarks.long_horizon_templates import render_fact_statement
 
@@ -11,28 +10,7 @@ from tests.fixtures.benchmarks.long_horizon_templates import render_fact_stateme
 def _load_multilingual_fixtures() -> list[BenchmarkScenarioFixture]:
     path = Path(__file__).resolve().parents[3] / "fixtures" / "benchmarks" / "long_horizon_multilingual_sample.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
-    fixtures: list[BenchmarkScenarioFixture] = []
-    for raw in payload:
-        fixture = BenchmarkScenarioFixture.model_validate(raw)
-        long_horizon = fixture.long_horizon_degradation
-        assert long_horizon is not None
-        if not long_horizon.delayed_retrieval.corpus:
-            long_horizon.delayed_retrieval.corpus = list(long_horizon.early_retrieval.corpus)
-        needed = 50 - len(long_horizon.delayed_retrieval.corpus)
-        if needed > 0:
-            task_id = long_horizon.delayed_retrieval.scope.task_id or "task:lh"
-            for index in range(needed):
-                long_horizon.delayed_retrieval.corpus.append(
-                    RetrievalFixtureMemoryItem(
-                        item_id=f"{fixture.scenario_id}:extra_noise:{index}",
-                        domain=MemoryDomain.TRANSCRIPT,
-                        text=f"extra multilingual noise {index}",
-                        task_id=task_id,
-                        role="soft_noise",
-                    )
-                )
-        fixtures.append(fixture)
-    return fixtures
+    return [BenchmarkScenarioFixture.model_validate(raw) for raw in payload]
 
 
 def test_template_renderer_for_en_es_fr() -> None:
@@ -75,3 +53,12 @@ def test_multilingual_long_horizon_scenarios_run_in_benchmark_harness() -> None:
         )
         assert result.observation.precision_at_1 is not None
         assert result.observation.hard_distractor_outrank_rate is not None
+
+
+def test_multilingual_fixture_file_is_self_contained() -> None:
+    fixtures = _load_multilingual_fixtures()
+    for fixture in fixtures:
+        long_horizon = fixture.long_horizon_degradation
+        assert long_horizon is not None
+        assert long_horizon.delayed_retrieval.corpus
+        assert len(long_horizon.delayed_retrieval.corpus) >= 50

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import string
+import unicodedata
 
 from icu import BreakIterator, Locale
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -60,4 +61,7 @@ def tfidf_char_ngram_similarity(
 
 
 def _is_punctuation(token: str) -> bool:
-    return all((character in _PUNCT_CHARS) for character in token)
+    return all(
+        (character in _PUNCT_CHARS) or unicodedata.category(character).startswith("P")
+        for character in token
+    )
