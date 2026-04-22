@@ -1,4 +1,4 @@
-from memorii.core.benchmark.metrics import compute_metrics
+from memorii.core.benchmark.metrics import aggregate_metrics, compute_metrics
 from memorii.core.benchmark.models import BenchmarkScenarioType, BenchmarkSystem, ScenarioObservation
 from memorii.domain.enums import MemoryDomain
 
@@ -152,3 +152,46 @@ def test_multi_domain_fanout_only_applies_when_expected_fanout_is_multidomain() 
     multi_metrics = compute_metrics(multi_domain_observation)
     assert single_metrics.multi_domain_fanout_correctness is None
     assert multi_metrics.multi_domain_fanout_correctness == 0.0
+
+
+def test_unsupported_observation_excludes_scenario_success_rate() -> None:
+    unsupported = ScenarioObservation(
+        scenario_id="e2e-unsupported",
+        category=BenchmarkScenarioType.END_TO_END,
+        system=BenchmarkSystem.MEMORII,
+        scenario_success=False,
+        runtime_observability_status="unsupported",
+    )
+    supported = ScenarioObservation(
+        scenario_id="e2e-supported",
+        category=BenchmarkScenarioType.END_TO_END,
+        system=BenchmarkSystem.MEMORII,
+        scenario_success=True,
+        runtime_observability_status="supported",
+    )
+    unsupported_metrics = compute_metrics(unsupported)
+    assert unsupported_metrics.scenario_success_rate is None
+
+    aggregate = aggregate_metrics([unsupported, supported])
+    assert aggregate.scenario_success_rate == 1.0
+
+
+def test_all_unsupported_observations_yield_none_success_rate() -> None:
+    observations = [
+        ScenarioObservation(
+            scenario_id="e2e-unsupported-1",
+            category=BenchmarkScenarioType.END_TO_END,
+            system=BenchmarkSystem.MEMORII,
+            scenario_success=False,
+            runtime_observability_status="unsupported",
+        ),
+        ScenarioObservation(
+            scenario_id="e2e-unsupported-2",
+            category=BenchmarkScenarioType.END_TO_END,
+            system=BenchmarkSystem.MEMORII,
+            scenario_success=False,
+            runtime_observability_status="unsupported",
+        ),
+    ]
+    aggregate = aggregate_metrics(observations)
+    assert aggregate.scenario_success_rate is None

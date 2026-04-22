@@ -622,11 +622,9 @@ class ScenarioExecutor:
         expected_writeback_ids = set(fx.expect_writeback_candidate_ids)
         writeback_ids_ok = (not expected_writeback_ids) or (set(writeback_ids) == expected_writeback_ids)
         writeback_ok = writeback_domains_ok and writeback_ids_ok
-        scenario_success: bool | None
+        scenario_success = pipeline_success_ok and routing_ok and blocked_ok and writeback_ok
         if runtime_observability_status == "unsupported":
-            scenario_success = None
-        else:
-            scenario_success = pipeline_success_ok and routing_ok and blocked_ok and writeback_ok
+            scenario_success = False
         semantic_pollution, user_pollution = self._derive_pollution(
             routed_records=routed_records,
             writeback_records=writeback_records,

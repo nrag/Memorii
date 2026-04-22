@@ -449,4 +449,4 @@ def test_end_to_end_marks_runtime_observability_unsupported_when_trace_missing(
     observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
     assert observation.runtime_observability_status == "unsupported"
     assert "writeback_trace" in observation.runtime_observability_missing
-    assert observation.scenario_success is None
+    assert observation.scenario_success is False
