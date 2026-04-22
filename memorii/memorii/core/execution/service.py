@@ -43,8 +43,14 @@ class RuntimeStepResult(BaseModel):
     execution_node_id: str
     solver_run_id: str
     retrieval_plan: RetrievalPlan
+    retrieval_plan_queries: list[str] = Field(default_factory=list)
+    retrieved_ids_by_domain_raw: dict[str, list[str]] = Field(default_factory=dict)
+    retrieved_ids_by_domain_deduped: dict[str, list[str]] = Field(default_factory=dict)
+    retrieved_ids_deduped: list[str] = Field(default_factory=list)
     retrieved_by_domain: dict[str, list[str]] = Field(default_factory=dict)
     routed_domains: list[MemoryDomain] = Field(default_factory=list)
+    blocked_domains: list[MemoryDomain] = Field(default_factory=list)
+    blocked_reasons: dict[str, str] = Field(default_factory=dict)
     solver_decision: SolverDecision
     follow_up_required: bool
     downgraded: bool
@@ -54,6 +60,7 @@ class RuntimeStepResult(BaseModel):
     required_tests: list[str] = Field(default_factory=list)
     candidate_decisions: list[str] = Field(default_factory=list)
     writeback_candidates: list[WritebackCandidate] = Field(default_factory=list)
+    writeback_trace: list[dict[str, object]] = Field(default_factory=list)
     event_ids: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -173,7 +180,8 @@ class RuntimeStepService:
             include_raw_transcript=True,
         )
 
-        retrieved = self._execute_retrieval(retrieval_plan)
+        retrieval_result = self._execute_retrieval(retrieval_plan)
+        retrieved = retrieval_result.retrieved_items
         logger.info(
             "retrieval_plan task_id=%s event_id=%s queries=%s retrieved=%d",
             task_id,
@@ -245,8 +253,14 @@ class RuntimeStepService:
             execution_node_id=target_node_id,
             solver_run_id=solver_run_id,
             retrieval_plan=retrieval_plan,
-            retrieved_by_domain=self._retrieved_ids_by_domain(retrieval_plan),
+            retrieval_plan_queries=[query.domain.value for query in retrieval_plan.queries],
+            retrieved_ids_by_domain_raw=retrieval_result.retrieved_ids_by_domain_raw,
+            retrieved_ids_by_domain_deduped=retrieval_result.retrieved_ids_by_domain_deduped,
+            retrieved_ids_deduped=retrieval_result.retrieved_ids_deduped,
+            retrieved_by_domain=retrieval_result.retrieved_ids_by_domain_deduped,
             routed_domains=[item.domain for item in routing_decision.routed_objects],
+            blocked_domains=sorted(set(routing_decision.blocked_domains), key=lambda domain: domain.value),
+            blocked_reasons=self._blocked_reasons(routing_decision),
             solver_decision=update_result.final_decision,
             follow_up_required=update_result.follow_up_required,
             downgraded=update_result.downgraded,
@@ -258,6 +272,7 @@ class RuntimeStepService:
             else [],
             candidate_decisions=[update_result.parsed_output.decision.value],
             writeback_candidates=writebacks,
+            writeback_trace=self._writeback_trace(writebacks),
             event_ids=[item.event_id for item in update_result.generated_events],
         )
 
@@ -384,26 +399,57 @@ class RuntimeStepService:
             return ready[0]
         return sorted(node.id for node in nodes if node.id in status_by_node)[0]
 
-    def _execute_retrieval(self, plan: RetrievalPlan) -> list[MemoryObject]:
+    def _execute_retrieval(self, plan: RetrievalPlan) -> "_RuntimeRetrievalTrace":
         results: list[MemoryObject] = []
+        raw_by_domain: dict[str, list[str]] = {}
+        deduped_by_domain: dict[str, list[str]] = {}
         seen_ids: set[str] = set()
         for query in plan.queries:
+            raw_ids: list[str] = []
+            deduped_ids: list[str] = []
             for item in self._memory_plane.query(query):
+                raw_ids.append(item.memory_id)
                 if item.memory_id in seen_ids:
                     continue
                 seen_ids.add(item.memory_id)
                 results.append(item)
-        return results
+                deduped_ids.append(item.memory_id)
+            raw_by_domain.setdefault(query.domain.value, []).extend(raw_ids)
+            deduped_by_domain.setdefault(query.domain.value, []).extend(deduped_ids)
+        return _RuntimeRetrievalTrace(
+            retrieved_items=results,
+            retrieved_ids_by_domain_raw=raw_by_domain,
+            retrieved_ids_by_domain_deduped=deduped_by_domain,
+            retrieved_ids_deduped=[item.memory_id for item in results],
+        )
 
-    def _retrieved_ids_by_domain(self, plan: RetrievalPlan) -> dict[str, list[str]]:
-        by_domain: dict[str, list[str]] = {}
-        seen_ids: set[str] = set()
-        for query in plan.queries:
-            ids: list[str] = []
-            for item in self._memory_plane.query(query):
-                if item.memory_id in seen_ids:
-                    continue
-                seen_ids.add(item.memory_id)
-                ids.append(item.memory_id)
-            by_domain.setdefault(query.domain.value, []).extend(ids)
-        return by_domain
+    def _blocked_reasons(self, decision: RoutingDecision) -> dict[str, str]:
+        reasons: dict[str, str] = {}
+        for trace_item in decision.policy_trace:
+            if not trace_item.startswith("blocked:"):
+                continue
+            _, domain, reason = trace_item.split(":", maxsplit=2)
+            reasons[domain] = reason
+        return reasons
+
+    def _writeback_trace(self, writebacks: list[WritebackCandidate]) -> list[dict[str, object]]:
+        return [
+            {
+                "candidate_id": candidate.candidate_id,
+                "target_domain": candidate.target_domain.value,
+                "status": candidate.status.value,
+                "validation_state": candidate.validation_state.value,
+                "source_refs": list(candidate.provenance.source_refs),
+                "source_type": candidate.provenance.source_type.value,
+            }
+            for candidate in writebacks
+        ]
+
+
+class _RuntimeRetrievalTrace(BaseModel):
+    retrieved_items: list[MemoryObject] = Field(default_factory=list)
+    retrieved_ids_by_domain_raw: dict[str, list[str]] = Field(default_factory=dict)
+    retrieved_ids_by_domain_deduped: dict[str, list[str]] = Field(default_factory=dict)
+    retrieved_ids_deduped: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")

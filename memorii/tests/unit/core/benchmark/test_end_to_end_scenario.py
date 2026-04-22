@@ -331,3 +331,122 @@ def test_system_level_runtime_retrieval_path_applies_scope_candidate_validity_an
     assert "drop-expired" not in flattened
     assert "drop-out-of-scope" not in flattened
     assert flattened.count("dup-id") == 1
+
+
+def test_end_to_end_memorii_consumes_runtime_blocked_domains_and_writeback_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.execution import RuntimeStepResult
+    from memorii.core.solver.abstention import SolverDecision
+    from memorii.domain.retrieval import RetrievalPlan
+
+    class FakeRuntimeStepService:
+        def __init__(self, **kwargs):
+            pass
+
+        def seed_memory_object(self, memory_object):
+            return None
+
+        def step(self, **kwargs):
+            return RuntimeStepResult(
+                task_id="task:e2e",
+                execution_node_id="exec:task:e2e:root",
+                solver_run_id="solver:task:e2e:exec:task:e2e:root",
+                retrieval_plan=RetrievalPlan(intent=RetrievalIntent.DEBUG_OR_INVESTIGATE),
+                retrieval_plan_queries=["transcript", "execution"],
+                retrieved_ids_by_domain_raw={"transcript": ["tx:1"], "execution": ["tx:1"]},
+                retrieved_ids_by_domain_deduped={"transcript": ["tx:1"], "execution": []},
+                retrieved_ids_deduped=["tx:1"],
+                routed_domains=[MemoryDomain.TRANSCRIPT],
+                blocked_domains=[MemoryDomain.SEMANTIC],
+                blocked_reasons={"semantic": "raw_event"},
+                solver_decision=SolverDecision.SUPPORTED,
+                follow_up_required=False,
+                downgraded=False,
+                writeback_trace=[
+                    {
+                        "candidate_id": "wb:trace:1",
+                        "target_domain": "episodic",
+                        "status": "candidate",
+                        "validation_state": "validated",
+                    }
+                ],
+                writeback_candidates=[],
+            )
+
+    monkeypatch.setattr("memorii.core.benchmark.scenarios.RuntimeStepService", FakeRuntimeStepService)
+
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_runtime_observability",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="q",
+            intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+            scope=RetrievalScope(task_id="task:e2e"),
+            top_k=1,
+            corpus=[
+                RetrievalFixtureMemoryItem(
+                    item_id="tx:1",
+                    domain=MemoryDomain.TRANSCRIPT,
+                    text="context",
+                )
+            ],
+            expected_relevant_ids=["tx:1"],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:e2e",
+                event_class=InboundEventClass.TOOL_RESULT,
+                task_id="task:e2e",
+                payload={"status": "failed"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT],
+            expected_blocked_domains=[MemoryDomain.SEMANTIC],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:e2e",
+            expect_pipeline_success=True,
+            expect_writeback_domains=[MemoryDomain.EPISODIC],
+            expect_writeback_candidate_ids=["wb:trace:1"],
+        ),
+    )
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert observation.blocked_domains == [MemoryDomain.SEMANTIC]
+    assert observation.writeback_candidate_ids == ["wb:trace:1"]
+    assert observation.runtime_observability_status == "supported"
+    assert observation.scenario_success is True
+
+
+def test_end_to_end_marks_runtime_observability_unsupported_when_trace_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from memorii.core.execution import RuntimeStepResult
+    from memorii.core.solver.abstention import SolverDecision
+    from memorii.domain.retrieval import RetrievalPlan
+
+    class FakeRuntimeStepService:
+        def __init__(self, **kwargs):
+            pass
+
+        def seed_memory_object(self, memory_object):
+            return None
+
+        def step(self, **kwargs):
+            return RuntimeStepResult(
+                task_id="task:e2e",
+                execution_node_id="exec:task:e2e:root",
+                solver_run_id="solver:task:e2e:exec:task:e2e:root",
+                retrieval_plan=RetrievalPlan(intent=RetrievalIntent.DEBUG_OR_INVESTIGATE),
+                routed_domains=[MemoryDomain.TRANSCRIPT],
+                solver_decision=SolverDecision.SUPPORTED,
+                follow_up_required=False,
+                downgraded=False,
+            )
+
+    monkeypatch.setattr("memorii.core.benchmark.scenarios.RuntimeStepService", FakeRuntimeStepService)
+    fixture = next(item for item in load_benchmark_fixture_set() if item.scenario_id == "e2e_fail_debug_resolve")
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert observation.runtime_observability_status == "unsupported"
+    assert "writeback_trace" in observation.runtime_observability_missing
+    assert observation.scenario_success is None

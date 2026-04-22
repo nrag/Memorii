@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.retrieval import RetrievalPlanner
 from memorii.core.router import MemoryRouter
+from memorii.core.router.routing_policy import RoutingPolicy
 from memorii.core.solver import SolverDecision
 from memorii.domain.common import Provenance, RoutingInfo
 from memorii.domain.enums import (
@@ -471,3 +472,67 @@ def test_in_memory_query_respects_active_validity_filtering() -> None:
         freshness=FreshnessPolicy(required_validity=ValidityStatus.ACTIVE),
     )
     assert [item.memory_id for item in plane.query(query)] == ["active:1"]
+
+
+def test_runtime_step_exposes_blocked_domains_and_reasons() -> None:
+    class BlockingPolicy(RoutingPolicy):
+        def route_domains(self, event_class, payload=None):  # type: ignore[override]
+            return [MemoryDomain.TRANSCRIPT, MemoryDomain.SEMANTIC, MemoryDomain.USER]
+
+    runtime = _build_runtime(task_id="task-blocked", execution_node_id="exec-blocked")
+    runtime._router = MemoryRouter(policy=BlockingPolicy())  # noqa: SLF001 - test-only controlled wiring
+
+    result = runtime.step(
+        task_id="task-blocked",
+        observation=RuntimeObservationInput(
+            event_id="evt-blocked",
+            event_class=InboundEventClass.TOOL_RESULT,
+            payload={"status": "failed"},
+        ),
+        model_output={
+            "decision": "INSUFFICIENT_EVIDENCE",
+            "evidence_ids": [],
+            "missing_evidence": ["log"],
+            "next_best_test": "collect_log",
+            "rationale_short": "insufficient",
+            "confidence_band": "low",
+        },
+    )
+
+    assert set(result.blocked_domains) == {MemoryDomain.SEMANTIC, MemoryDomain.USER}
+    assert result.blocked_reasons == {"semantic": "raw_event", "user": "raw_event"}
+
+
+def test_runtime_step_exposes_retrieval_and_writeback_traces() -> None:
+    task_id = "task-trace"
+    execution_node_id = "exec-trace"
+    solver_run_id = f"solver:{task_id}:{execution_node_id}"
+    runtime = _build_runtime(task_id=task_id, execution_node_id=execution_node_id)
+    runtime.seed_memory_object(_make_memory("dup-id", MemoryDomain.TRANSCRIPT, task_id, execution_node_id, solver_run_id))
+    runtime.seed_memory_object(_make_memory("dup-id", MemoryDomain.EXECUTION, task_id, execution_node_id, solver_run_id))
+    runtime.seed_memory_object(_make_memory("uniq-id", MemoryDomain.SOLVER, task_id, execution_node_id, solver_run_id))
+
+    result = runtime.step(
+        task_id=task_id,
+        observation=RuntimeObservationInput(
+            event_id="evt-trace",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "passed"},
+        ),
+        model_output={
+            "decision": "SUPPORTED",
+            "evidence_ids": ["evt-trace:transcript"],
+            "missing_evidence": [],
+            "next_best_test": None,
+            "rationale_short": "resolved",
+            "confidence_band": "high",
+        },
+    )
+
+    assert result.retrieval_plan_queries
+    assert "transcript" in result.retrieved_ids_by_domain_raw
+    assert "execution" in result.retrieved_ids_by_domain_raw
+    assert result.retrieved_ids_deduped.count("dup-id") == 1
+    assert result.retrieved_by_domain == result.retrieved_ids_by_domain_deduped
+    assert len(result.writeback_trace) == 1
+    assert result.writeback_trace[0]["candidate_id"] == result.writeback_candidates[0].candidate_id

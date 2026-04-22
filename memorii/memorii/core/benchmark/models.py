@@ -287,6 +287,8 @@ class ScenarioObservation(BaseModel):
     blocked_domains: list[MemoryDomain] = Field(default_factory=list)
     expected_routed_domains: list[MemoryDomain] = Field(default_factory=list)
     expected_blocked_domains: list[MemoryDomain] = Field(default_factory=list)
+    runtime_observability_status: str | None = None
+    runtime_observability_missing: list[str] = Field(default_factory=list)
     execution_resume_correct: bool | None = None
     solver_resume_correct: bool | None = None
     frontier_restore_correct: bool | None = None
