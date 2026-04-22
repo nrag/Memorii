@@ -38,6 +38,8 @@ def test_metrics_compute_extended_benchmark_fields() -> None:
         implicit_recall_success=True,
         retrieval_plan_relevance_accuracy=True,
         false_positive_retrieval_rate=0.2,
+        precision_at_1=1.0,
+        hard_distractor_outrank_rate=0.0,
     )
     metrics = compute_metrics(observation)
     assert metrics.cross_episode_reuse_accuracy == 1.0
@@ -54,6 +56,8 @@ def test_metrics_compute_extended_benchmark_fields() -> None:
     assert metrics.implicit_recall_success_rate == 1.0
     assert metrics.retrieval_plan_relevance_accuracy == 1.0
     assert metrics.false_positive_retrieval_rate == 0.2
+    assert metrics.precision_at_1 == 1.0
+    assert metrics.hard_distractor_outrank_rate == 0.0
 
 
 def test_metrics_use_explicit_routing_and_writeback_expectations() -> None:

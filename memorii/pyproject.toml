@@ -9,6 +9,8 @@ description = "Memorii framework-neutral memory plane"
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.7,<3",
+  "PyICU>=2.13",
+  "scikit-learn>=1.5,<2",
 ]
 
 [project.optional-dependencies]

@@ -92,3 +92,18 @@ def test_conflict_fixture_requires_temporal_or_validity_window() -> None:
             ],
             expected_winner_candidate_id="c:1",
         )
+
+
+def test_long_horizon_backward_compat_without_multilingual_metadata() -> None:
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="long_horizon_backward_compat",
+        category=BenchmarkScenarioType.LONG_HORIZON_DEGRADATION,
+        long_horizon_degradation=LongHorizonDegradationFixture(
+            early_retrieval=_retrieval_fixture(corpus_size=5, relevant_ids=["item:0"]),
+            delayed_retrieval=_retrieval_fixture(corpus_size=50, relevant_ids=["item:0"]),
+            noise_ids=[f"item:{index}" for index in range(1, 49)],
+            delayed_depends_on_early_context=True,
+        ),
+    )
+    normalized = normalize_fixtures([fixture])
+    assert normalized[0].long_horizon_degradation is not None
