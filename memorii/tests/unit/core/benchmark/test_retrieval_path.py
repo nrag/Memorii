@@ -62,7 +62,7 @@ def test_benchmark_retrieval_excludes_candidate_items_by_default() -> None:
 
 
 def test_benchmark_retrieval_excludes_invalid_or_expired_for_active_intents() -> None:
-    now = datetime.now(UTC)
+    reference = datetime(2026, 1, 1, tzinfo=UTC)
     fixture = BenchmarkScenarioFixture(
         scenario_id="retrieval_exclude_invalid",
         category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
@@ -78,7 +78,7 @@ def test_benchmark_retrieval_excludes_invalid_or_expired_for_active_intents() ->
                     text="deploy policy active prod only",
                     task_id="task-2",
                     validity_status=TemporalValidityStatus.EXPIRED,
-                    valid_to=now - timedelta(days=2),
+                    valid_to=reference - timedelta(days=2),
                 ),
                 RetrievalFixtureMemoryItem(
                     item_id="active",
@@ -86,8 +86,8 @@ def test_benchmark_retrieval_excludes_invalid_or_expired_for_active_intents() ->
                     text="deploy policy active prod only",
                     task_id="task-2",
                     validity_status=TemporalValidityStatus.ACTIVE,
-                    valid_from=now - timedelta(days=3),
-                    valid_to=now + timedelta(days=1),
+                    valid_from=reference - timedelta(days=3),
+                    valid_to=reference + timedelta(days=1),
                 ),
             ],
             expected_relevant_ids=["active"],

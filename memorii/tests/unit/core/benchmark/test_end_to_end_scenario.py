@@ -306,13 +306,13 @@ def test_system_level_runtime_retrieval_path_applies_scope_candidate_validity_an
             expected_relevant_ids=["keep-active"],
         ),
         routing=RoutingFixture(
-            inbound_event=InboundEvent(
-                event_id="evt:rt",
-                event_class=InboundEventClass.TOOL_RESULT,
-                task_id="task:rt",
-                payload={"status": "failed"},
-                timestamp=now,
-            ),
+                inbound_event=InboundEvent(
+                    event_id="evt:rt",
+                    event_class=InboundEventClass.TOOL_STATE_UPDATE,
+                    task_id="task:rt",
+                    payload={"status": "failed"},
+                    timestamp=now,
+                ),
             expected_domains=[MemoryDomain.TRANSCRIPT, MemoryDomain.EXECUTION, MemoryDomain.SOLVER],
         ),
         end_to_end=EndToEndFixture(

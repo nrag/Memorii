@@ -50,6 +50,8 @@ from memorii.stores.execution_graph.store import InMemoryExecutionGraphStore
 from memorii.stores.overlays.store import InMemoryOverlayStore
 from memorii.stores.solver_graph.store import InMemorySolverGraphStore
 
+BENCHMARK_REFERENCE_TIME = datetime(2026, 1, 1, tzinfo=UTC)
+
 
 class ScenarioExecutor:
     def __init__(self) -> None:
@@ -726,7 +728,7 @@ class ScenarioExecutor:
             candidates = [item for item in candidates if self._in_scope(item=item, retrieval=fixture)]
             candidates = [item for item in candidates if item.status != CommitStatus.CANDIDATE]
             if _intent_requires_active_validity(fixture.intent):
-                candidates = [item for item in candidates if _is_active(item, valid_at=datetime.now(UTC))]
+                candidates = [item for item in candidates if _is_active(item, valid_at=BENCHMARK_REFERENCE_TIME)]
 
         ranked = sorted(candidates, key=lambda item: (-_retrieval_score(fixture.query, item.text), item.item_id))
         top = ranked[: fixture.top_k]
