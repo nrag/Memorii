@@ -1,4 +1,5 @@
 import pytest
+from datetime import UTC, datetime, timedelta
 
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import (
@@ -11,7 +12,7 @@ from memorii.core.benchmark.models import (
     RoutingFixture,
     ScenarioExecutionLevel,
 )
-from memorii.domain.enums import MemoryDomain
+from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 from memorii.core.benchmark.scenarios import ScenarioExecutor
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
 from memorii.domain.routing import InboundEvent, InboundEventClass
@@ -214,3 +215,119 @@ def test_end_to_end_runtime_writeback_validation_metadata_is_used() -> None:
     )
     assert memorii.observation.semantic_pollution is False
     assert memorii.observation.user_memory_pollution is False
+
+
+def test_system_level_runtime_retrieval_path_applies_scope_candidate_validity_and_dedupe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+    from memorii.core.execution.service import RuntimeStepService as RealRuntimeStepService
+
+    class SpyRuntimeStepService:
+        def __init__(self, **kwargs):
+            self._inner = RealRuntimeStepService(**kwargs)
+
+        def seed_memory_object(self, memory_object):
+            return self._inner.seed_memory_object(memory_object)
+
+        def step(self, **kwargs):
+            result = self._inner.step(**kwargs)
+            captured["retrieved_by_domain"] = result.retrieved_by_domain
+            return result
+
+    monkeypatch.setattr("memorii.core.benchmark.scenarios.RuntimeStepService", SpyRuntimeStepService)
+    now = datetime.now(UTC)
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_runtime_retrieval_filtering",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="query",
+            intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+            scope=RetrievalScope(task_id="task:rt"),
+            top_k=4,
+            corpus=[
+                RetrievalFixtureMemoryItem(
+                    item_id="keep-active",
+                    domain=MemoryDomain.EXECUTION,
+                    text="debug context",
+                    task_id="task:rt",
+                    execution_node_id="exec:task:rt:root",
+                    solver_run_id="solver:task:rt:exec:task:rt:root",
+                    status=CommitStatus.COMMITTED,
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="drop-candidate",
+                    domain=MemoryDomain.SOLVER,
+                    text="candidate memory",
+                    task_id="task:rt",
+                    execution_node_id="exec:task:rt:root",
+                    solver_run_id="solver:task:rt:exec:task:rt:root",
+                    status=CommitStatus.CANDIDATE,
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="drop-expired",
+                    domain=MemoryDomain.EPISODIC,
+                    text="old memory",
+                    task_id="task:rt",
+                    execution_node_id="exec:task:rt:root",
+                    solver_run_id="solver:task:rt:exec:task:rt:root",
+                    status=CommitStatus.COMMITTED,
+                    validity_status=TemporalValidityStatus.EXPIRED,
+                    valid_to=now - timedelta(days=1),
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="drop-out-of-scope",
+                    domain=MemoryDomain.EXECUTION,
+                    text="other task memory",
+                    task_id="task:other",
+                    execution_node_id="exec:task:other:root",
+                    solver_run_id="solver:task:other:exec:task:other:root",
+                    status=CommitStatus.COMMITTED,
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="dup-id",
+                    domain=MemoryDomain.TRANSCRIPT,
+                    text="dup in transcript",
+                    task_id="task:rt",
+                    execution_node_id="exec:task:rt:root",
+                    solver_run_id="solver:task:rt:exec:task:rt:root",
+                    status=CommitStatus.COMMITTED,
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="dup-id",
+                    domain=MemoryDomain.EXECUTION,
+                    text="dup in execution",
+                    task_id="task:rt",
+                    execution_node_id="exec:task:rt:root",
+                    solver_run_id="solver:task:rt:exec:task:rt:root",
+                    status=CommitStatus.COMMITTED,
+                ),
+            ],
+            expected_relevant_ids=["keep-active"],
+        ),
+        routing=RoutingFixture(
+                inbound_event=InboundEvent(
+                    event_id="evt:rt",
+                    event_class=InboundEventClass.TOOL_STATE_UPDATE,
+                    task_id="task:rt",
+                    payload={"status": "failed"},
+                    timestamp=now,
+                ),
+            expected_domains=[MemoryDomain.TRANSCRIPT, MemoryDomain.EXECUTION, MemoryDomain.SOLVER],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:rt",
+            expect_pipeline_success=True,
+            expect_writeback_domains=[MemoryDomain.EPISODIC],
+        ),
+    )
+
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert observation.execution_level == ScenarioExecutionLevel.SYSTEM_LEVEL
+    retrieved_by_domain = captured["retrieved_by_domain"]
+    flattened = [memory_id for ids in retrieved_by_domain.values() for memory_id in ids]
+    assert "keep-active" in flattened
+    assert "drop-candidate" not in flattened
+    assert "drop-expired" not in flattened
+    assert "drop-out-of-scope" not in flattened
+    assert flattened.count("dup-id") == 1
