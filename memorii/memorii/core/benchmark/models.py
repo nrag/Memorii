@@ -7,7 +7,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
 from memorii.domain.routing import InboundEvent
 
@@ -59,6 +59,9 @@ class RetrievalFixtureMemoryItem(BaseModel):
     execution_node_id: str | None = None
     solver_run_id: str | None = None
     status: CommitStatus = CommitStatus.COMMITTED
+    validity_status: TemporalValidityStatus = TemporalValidityStatus.ACTIVE
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
 
     model_config = ConfigDict(extra="forbid")
 

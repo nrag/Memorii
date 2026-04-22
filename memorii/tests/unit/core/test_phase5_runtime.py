@@ -203,6 +203,37 @@ def test_multi_memory_retrieval_combines_execution_solver_transcript_and_episodi
     assert "transcript" in result.retrieved_by_domain
 
 
+def test_runtime_retrieval_dedupes_memory_ids_across_queries() -> None:
+    task_id = "task-dedupe"
+    execution_node_id = "exec-dedupe"
+    solver_run_id = f"solver:{task_id}:{execution_node_id}"
+    runtime = _build_runtime(task_id=task_id, execution_node_id=execution_node_id)
+
+    runtime.seed_memory_object(_make_memory("dup-id", MemoryDomain.EXECUTION, task_id, execution_node_id, solver_run_id))
+    runtime.seed_memory_object(_make_memory("dup-id", MemoryDomain.TRANSCRIPT, task_id, execution_node_id, solver_run_id))
+    runtime.seed_memory_object(_make_memory("uniq-id", MemoryDomain.SOLVER, task_id, execution_node_id, solver_run_id))
+
+    result = runtime.step(
+        task_id=task_id,
+        observation=RuntimeObservationInput(
+            event_id="evt-dedupe",
+            event_class=InboundEventClass.TOOL_RESULT,
+            payload={"status": "failed", "detail": "debug me"},
+        ),
+        model_output={
+            "decision": "INSUFFICIENT_EVIDENCE",
+            "evidence_ids": [],
+            "missing_evidence": ["more_logs"],
+            "next_best_test": "collect_logs",
+            "rationale_short": "Not enough evidence",
+            "confidence_band": "low",
+        },
+    )
+
+    flattened = [memory_id for ids in result.retrieved_by_domain.values() for memory_id in ids]
+    assert flattened.count("dup-id") == 1
+
+
 def test_consolidation_emits_candidate_and_semantic_remains_gated() -> None:
     runtime = _build_runtime(task_id="task-cons", execution_node_id="exec-cons")
 

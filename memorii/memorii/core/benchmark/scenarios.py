@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from dataclasses import dataclass
+import re
 
 from memorii.core.benchmark.models import (
     BenchmarkScenarioFixture,
@@ -128,7 +129,7 @@ class ScenarioExecutor:
         if system == BenchmarkSystem.MEMORII:
             ranked = sorted(
                 fx.corpus,
-                key=lambda item: (-_keyword_overlap(fx.episode_two_query, item.text), item.item_id),
+                key=lambda item: (-_retrieval_score(fx.episode_two_query, item.text), item.item_id),
             )
             top = ranked[: fx.top_k]
             latency_ms = float(len(fx.corpus) * 3)
@@ -181,8 +182,7 @@ class ScenarioExecutor:
         latency_growth = max(0.0, delayed_latency_ms - early_latency_ms)
         noise_hits = len({item.item_id for item in delayed_top} & set(fx.noise_ids))
         noise_resilience = 1.0 - (_safe_ratio(noise_hits, len(delayed_top)) or 0.0)
-        resume_under_scale = delayed_recall >= 0.5
-
+        resume_under_scale = delayed_recall >= 1.0
         return ScenarioObservation(
             scenario_id=fixture.scenario_id,
             category=fixture.category,
@@ -200,7 +200,7 @@ class ScenarioExecutor:
             retrieval_latency_growth=latency_growth,
             resume_correctness_under_scale=resume_under_scale,
             noise_resilience=noise_resilience,
-            scenario_success=resume_under_scale and noise_resilience >= 0.5,
+            scenario_success=resume_under_scale,
         )
 
     def _run_conflict_resolution(
@@ -516,6 +516,9 @@ class ScenarioExecutor:
                     ),
                     durability=Durability.TASK_PERSISTENT,
                     status=item.status,
+                    validity_status=item.validity_status,
+                    valid_from=item.valid_from,
+                    valid_to=item.valid_to,
                     content={"text": item.text},
                     provenance=Provenance(
                         source_type=SourceType.SYSTEM,
@@ -721,8 +724,11 @@ class ScenarioExecutor:
                 query_domains = {domain for domain in query_domains if domain.value != "solver"}
             candidates = [item for item in fixture.corpus if item.domain in query_domains]
             candidates = [item for item in candidates if self._in_scope(item=item, retrieval=fixture)]
+            candidates = [item for item in candidates if item.status != CommitStatus.CANDIDATE]
+            if _intent_requires_active_validity(fixture.intent):
+                candidates = [item for item in candidates if _is_active(item, valid_at=datetime.now(UTC))]
 
-        ranked = sorted(candidates, key=lambda item: (-_keyword_overlap(fixture.query, item.text), item.item_id))
+        ranked = sorted(candidates, key=lambda item: (-_retrieval_score(fixture.query, item.text), item.item_id))
         top = ranked[: fixture.top_k]
         latency_ms = float(len(candidates) * 2 + len(ranked))
         return top, latency_ms
@@ -755,17 +761,71 @@ class ScenarioExecutor:
     ) -> list[RetrievalFixtureMemoryItem]:
         scored: list[tuple[int, RetrievalFixtureMemoryItem]] = []
         for item in fixture.corpus:
-            score = _keyword_overlap(fixture.query, item.text)
+            score = _retrieval_score(fixture.query, item.text)
             if system == BenchmarkSystem.MEMORII:
-                score += _keyword_overlap(" ".join(fixture.context_tokens), item.text)
+                score += _retrieval_score(" ".join(fixture.context_tokens), item.text)
             scored.append((score, item))
         return [item for _, item in sorted(scored, key=lambda row: (-row[0], row[1].item_id))]
 
 
+_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+
+
+def _normalize_tokens(text: str) -> list[str]:
+    return _TOKEN_PATTERN.findall(text.lower())
+
+
 def _keyword_overlap(query: str, text: str) -> int:
-    query_tokens = {token for token in query.lower().split() if token}
-    text_tokens = {token for token in text.lower().split() if token}
+    query_tokens = set(_normalize_tokens(query))
+    text_tokens = set(_normalize_tokens(text))
     return len(query_tokens & text_tokens)
+
+
+def _retrieval_score(query: str, text: str) -> int:
+    query_tokens = _normalize_tokens(query)
+    text_tokens = _normalize_tokens(text)
+    if not query_tokens or not text_tokens:
+        return 0
+
+    query_set = set(query_tokens)
+    text_set = set(text_tokens)
+    exact_overlap = len(query_set & text_set)
+    union_size = len(query_set | text_set)
+    normalized_overlap = int((exact_overlap / union_size) * 1000) if union_size else 0
+    phrase_overlap = _max_contiguous_overlap(query_tokens, text_tokens)
+    return (exact_overlap * 1000) + normalized_overlap + (phrase_overlap * 200)
+
+
+def _max_contiguous_overlap(query_tokens: list[str], text_tokens: list[str]) -> int:
+    max_len = 0
+    query_len = len(query_tokens)
+    text_len = len(text_tokens)
+    for query_index in range(query_len):
+        for text_index in range(text_len):
+            current = 0
+            while (
+                query_index + current < query_len
+                and text_index + current < text_len
+                and query_tokens[query_index + current] == text_tokens[text_index + current]
+            ):
+                current += 1
+            if current > max_len:
+                max_len = current
+    return max_len
+
+
+def _intent_requires_active_validity(intent: RetrievalIntent) -> bool:
+    return intent != RetrievalIntent.CONSOLIDATE_CASE
+
+
+def _is_active(item: RetrievalFixtureMemoryItem, *, valid_at: datetime) -> bool:
+    if item.validity_status.value != "active":
+        return False
+    if item.valid_from is not None and item.valid_from > valid_at:
+        return False
+    if item.valid_to is not None and item.valid_to < valid_at:
+        return False
+    return True
 
 
 def _safe_ratio(numerator: int, denominator: int) -> float | None:

@@ -169,6 +169,7 @@ class RuntimeStepService:
         retrieval_plan = self._retrieval_planner.build_plan(
             intent=intent,
             scope=scope,
+            active_validity_only=True,
             include_raw_transcript=True,
         )
 
@@ -385,13 +386,24 @@ class RuntimeStepService:
 
     def _execute_retrieval(self, plan: RetrievalPlan) -> list[MemoryObject]:
         results: list[MemoryObject] = []
+        seen_ids: set[str] = set()
         for query in plan.queries:
-            results.extend(self._memory_plane.query(query))
+            for item in self._memory_plane.query(query):
+                if item.memory_id in seen_ids:
+                    continue
+                seen_ids.add(item.memory_id)
+                results.append(item)
         return results
 
     def _retrieved_ids_by_domain(self, plan: RetrievalPlan) -> dict[str, list[str]]:
         by_domain: dict[str, list[str]] = {}
+        seen_ids: set[str] = set()
         for query in plan.queries:
-            ids = [item.memory_id for item in self._memory_plane.query(query)]
+            ids: list[str] = []
+            for item in self._memory_plane.query(query):
+                if item.memory_id in seen_ids:
+                    continue
+                seen_ids.add(item.memory_id)
+                ids.append(item.memory_id)
             by_domain.setdefault(query.domain.value, []).extend(ids)
         return by_domain
