@@ -39,6 +39,8 @@ METRIC_FIELDS: tuple[str, ...] = (
     "implicit_recall_success_rate",
     "retrieval_plan_relevance_accuracy",
     "false_positive_retrieval_rate",
+    "precision_at_1",
+    "hard_distractor_outrank_rate",
 )
 
 
@@ -119,6 +121,8 @@ def compute_metrics(observation: ScenarioObservation) -> ScenarioMetrics:
         implicit_recall_success_rate=_bool_metric(observation.implicit_recall_success),
         retrieval_plan_relevance_accuracy=_bool_metric(observation.retrieval_plan_relevance_accuracy),
         false_positive_retrieval_rate=observation.false_positive_retrieval_rate,
+        precision_at_1=observation.precision_at_1,
+        hard_distractor_outrank_rate=observation.hard_distractor_outrank_rate,
     )
 
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from dataclasses import dataclass
-import re
 
+from memorii.core.benchmark.multilingual_tokenization import icu_tokens, mixed_char_ngrams
 from memorii.core.benchmark.models import (
     BenchmarkScenarioFixture,
     BenchmarkScenarioType,
@@ -184,7 +184,36 @@ class ScenarioExecutor:
         latency_growth = max(0.0, delayed_latency_ms - early_latency_ms)
         noise_hits = len({item.item_id for item in delayed_top} & set(fx.noise_ids))
         noise_resilience = 1.0 - (_safe_ratio(noise_hits, len(delayed_top)) or 0.0)
-        resume_under_scale = delayed_recall >= 1.0
+        delayed_ids = [item.item_id for item in delayed_top]
+        expected_relevant_set = set(fx.delayed_retrieval.expected_relevant_ids)
+        expected_hard_distractors = set(fx.delayed_retrieval.expected_hard_distractor_ids)
+        gold_rank = _first_rank(delayed_ids, expected_relevant_set)
+        precision_at_1 = 1.0 if delayed_ids and delayed_ids[0] in expected_relevant_set else 0.0
+        top_k_contamination_rate = _safe_ratio(
+            len([item_id for item_id in delayed_ids if item_id not in expected_relevant_set]),
+            len(delayed_ids),
+        ) or 0.0
+        hard_distractor_outrank_rate = _compute_hard_distractor_outrank_rate(
+            retrieved_ids=delayed_ids,
+            relevant_ids=expected_relevant_set,
+            hard_distractor_ids=expected_hard_distractors,
+        )
+        domain_priority_correctness = _domain_priority_correctness(
+            retrieved=delayed_top,
+            relevant_ids=expected_relevant_set,
+            hard_distractor_ids=expected_hard_distractors,
+            expected_domain_priority=fx.delayed_retrieval.expected_domain_priority,
+        )
+        has_explicit_hard_distractors = bool(fx.delayed_retrieval.expected_hard_distractor_ids)
+        if has_explicit_hard_distractors:
+            resume_under_scale = (
+                expected_relevant_set.issubset(set(delayed_ids))
+                and gold_rank is not None
+                and gold_rank <= 2
+                and hard_distractor_outrank_rate == 0.0
+            )
+        else:
+            resume_under_scale = delayed_recall >= 1.0
         return ScenarioObservation(
             scenario_id=fixture.scenario_id,
             category=fixture.category,
@@ -202,6 +231,11 @@ class ScenarioExecutor:
             retrieval_latency_growth=latency_growth,
             resume_correctness_under_scale=resume_under_scale,
             noise_resilience=noise_resilience,
+            precision_at_1=precision_at_1,
+            gold_rank=gold_rank,
+            hard_distractor_outrank_rate=hard_distractor_outrank_rate,
+            top_k_contamination_rate=top_k_contamination_rate,
+            domain_priority_correctness=domain_priority_correctness,
             scenario_success=resume_under_scale,
         )
 
@@ -747,7 +781,17 @@ class ScenarioExecutor:
             if _intent_requires_active_validity(fixture.intent):
                 candidates = [item for item in candidates if _is_active(item, valid_at=BENCHMARK_REFERENCE_TIME)]
 
-        ranked = sorted(candidates, key=lambda item: (-_retrieval_score(fixture.query, item.text), item.item_id))
+        ranked = sorted(
+            candidates,
+            key=lambda item: (
+                -_retrieval_score(
+                    fixture.query,
+                    item.text,
+                    language=fixture.language or item.language or "und",
+                ),
+                item.item_id,
+            ),
+        )
         top = ranked[: fixture.top_k]
         latency_ms = float(len(candidates) * 2 + len(ranked))
         return top, latency_ms
@@ -778,59 +822,80 @@ class ScenarioExecutor:
         fixture: ImplicitRecallFixture,
         system: BenchmarkSystem,
     ) -> list[RetrievalFixtureMemoryItem]:
-        scored: list[tuple[int, RetrievalFixtureMemoryItem]] = []
+        scored: list[tuple[float, RetrievalFixtureMemoryItem]] = []
         for item in fixture.corpus:
-            score = _retrieval_score(fixture.query, item.text)
+            score = _retrieval_score(fixture.query, item.text, language=item.language or "und")
             if system == BenchmarkSystem.MEMORII:
-                score += _retrieval_score(" ".join(fixture.context_tokens), item.text)
+                score += _retrieval_score(" ".join(fixture.context_tokens), item.text, language=item.language or "und")
             scored.append((score, item))
         return [item for _, item in sorted(scored, key=lambda row: (-row[0], row[1].item_id))]
 
 
-_TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
-
-
-def _normalize_tokens(text: str) -> list[str]:
-    return _TOKEN_PATTERN.findall(text.lower())
-
-
-def _keyword_overlap(query: str, text: str) -> int:
-    query_tokens = set(_normalize_tokens(query))
-    text_tokens = set(_normalize_tokens(text))
-    return len(query_tokens & text_tokens)
-
-
-def _retrieval_score(query: str, text: str) -> int:
-    query_tokens = _normalize_tokens(query)
-    text_tokens = _normalize_tokens(text)
+def _retrieval_score(query: str, text: str, *, language: str = "und") -> float:
+    query_tokens = icu_tokens(query, language)
+    text_tokens = icu_tokens(text, language)
     if not query_tokens or not text_tokens:
-        return 0
-
+        return 0.0
     query_set = set(query_tokens)
     text_set = set(text_tokens)
-    exact_overlap = len(query_set & text_set)
-    union_size = len(query_set | text_set)
-    normalized_overlap = int((exact_overlap / union_size) * 1000) if union_size else 0
-    phrase_overlap = _max_contiguous_overlap(query_tokens, text_tokens)
-    return (exact_overlap * 1000) + normalized_overlap + (phrase_overlap * 200)
+    token_overlap = _safe_ratio(len(query_set & text_set), len(query_set | text_set)) or 0.0
+    query_ngrams = mixed_char_ngrams(query)
+    text_ngrams = mixed_char_ngrams(text)
+    char_ngram_overlap = _safe_ratio(len(query_ngrams & text_ngrams), len(query_ngrams | text_ngrams)) or 0.0
+    phrase_bonus = 1.0 if " ".join(query_tokens) in " ".join(text_tokens) else 0.0
+    return (0.45 * token_overlap) + (0.35 * char_ngram_overlap) + (0.20 * phrase_bonus)
 
 
-def _max_contiguous_overlap(query_tokens: list[str], text_tokens: list[str]) -> int:
-    max_len = 0
-    query_len = len(query_tokens)
-    text_len = len(text_tokens)
-    for query_index in range(query_len):
-        for text_index in range(text_len):
-            current = 0
-            while (
-                query_index + current < query_len
-                and text_index + current < text_len
-                and query_tokens[query_index + current] == text_tokens[text_index + current]
-            ):
-                current += 1
-            if current > max_len:
-                max_len = current
-    return max_len
+def _first_rank(retrieved_ids: list[str], relevant_ids: set[str]) -> int | None:
+    for index, item_id in enumerate(retrieved_ids, start=1):
+        if item_id in relevant_ids:
+            return index
+    return None
+
+
+def _compute_hard_distractor_outrank_rate(
+    *,
+    retrieved_ids: list[str],
+    relevant_ids: set[str],
+    hard_distractor_ids: set[str],
+) -> float:
+    if not hard_distractor_ids:
+        return 0.0
+    best_gold_rank = _first_rank(retrieved_ids, relevant_ids)
+    if best_gold_rank is None:
+        return 1.0
+    outranking = 0
+    considered = 0
+    rank_by_id = {item_id: idx for idx, item_id in enumerate(retrieved_ids, start=1)}
+    for distractor_id in hard_distractor_ids:
+        distractor_rank = rank_by_id.get(distractor_id)
+        if distractor_rank is None:
+            continue
+        considered += 1
+        if distractor_rank < best_gold_rank:
+            outranking += 1
+    if considered == 0:
+        return 0.0
+    return float(outranking) / float(considered)
+
+
+def _domain_priority_correctness(
+    *,
+    retrieved: list[RetrievalFixtureMemoryItem],
+    relevant_ids: set[str],
+    hard_distractor_ids: set[str],
+    expected_domain_priority: list[str],
+) -> bool | None:
+    if not expected_domain_priority:
+        return None
+    domain_rank = {domain: index for index, domain in enumerate(expected_domain_priority)}
+    gold = next((item for item in retrieved if item.item_id in relevant_ids), None)
+    distractor = next((item for item in retrieved if item.item_id in hard_distractor_ids), None)
+    if gold is None or distractor is None:
+        return None
+    gold_rank = domain_rank.get(gold.domain.value, len(expected_domain_priority))
+    distractor_rank = domain_rank.get(distractor.domain.value, len(expected_domain_priority))
+    return gold_rank <= distractor_rank
 
 
 def _intent_requires_active_validity(intent: RetrievalIntent) -> bool:

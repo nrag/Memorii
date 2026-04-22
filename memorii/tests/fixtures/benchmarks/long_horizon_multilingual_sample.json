@@ -1,0 +1,1997 @@
+[
+  {
+    "scenario_id": "long_horizon_multilingual_en_atlas_db",
+    "category": "long_horizon_degradation",
+    "long_horizon_degradation": {
+      "early_retrieval": {
+        "query": "What database does Atlas use now?",
+        "language": "en",
+        "intent": "resume_task",
+        "scope": {
+          "task_id": "task:lh:en"
+        },
+        "top_k": 3,
+        "corpus": [
+          {
+            "item_id": "mem:atlas:db:current",
+            "domain": "semantic",
+            "text": "Atlas now uses Postgres for database.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "gold",
+            "fact_key": "atlas.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 3,
+            "template_id": "current_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:db:old",
+            "domain": "transcript",
+            "text": "Previously, Atlas used Redis for database.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "hard_distractor",
+            "distractor_type": "stale_value_same_entity",
+            "fact_key": "atlas.database",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 1,
+            "template_id": "stale_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:cache:redis",
+            "domain": "transcript",
+            "text": "Atlas uses Redis for cache.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "hard_distractor",
+            "distractor_type": "same_entity_wrong_attribute",
+            "fact_key": "atlas.cache",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 2,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "tx:hermes:db:postgres",
+            "domain": "transcript",
+            "text": "Hermes now uses Postgres for database.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "hard_distractor",
+            "distractor_type": "same_attribute_wrong_entity",
+            "fact_key": "hermes.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "hermes"
+            ],
+            "time_rank": 3,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "noise:en:01",
+            "domain": "transcript",
+            "text": "Atlas meeting notes about sprint planning.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:02",
+            "domain": "transcript",
+            "text": "Reminder about incident retrospective timeline.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:03",
+            "domain": "episodic",
+            "text": "Deployment checklist for Atlas services.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:04",
+            "domain": "transcript",
+            "text": "Atlas latency investigation and API errors.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:05",
+            "domain": "semantic",
+            "text": "General policy for storage backups.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:06",
+            "domain": "transcript",
+            "text": "Roadmap planning for Hermes.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:07",
+            "domain": "transcript",
+            "text": "Unrelated chat about office lunch.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:08",
+            "domain": "episodic",
+            "text": "Migration retrospective from last quarter.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          }
+        ],
+        "expected_relevant_ids": [
+          "mem:atlas:db:current"
+        ],
+        "expected_hard_distractor_ids": [
+          "tx:atlas:db:old",
+          "tx:atlas:cache:redis"
+        ],
+        "expected_excluded_ids": [
+          "tx:hermes:db:postgres"
+        ],
+        "expected_domain_priority": [
+          "semantic",
+          "episodic",
+          "transcript"
+        ]
+      },
+      "delayed_retrieval": {
+        "query": "What database does Atlas use now?",
+        "language": "en",
+        "intent": "resume_task",
+        "scope": {
+          "task_id": "task:lh:en"
+        },
+        "top_k": 3,
+        "corpus": [
+          {
+            "item_id": "mem:atlas:db:current",
+            "domain": "semantic",
+            "text": "Atlas now uses Postgres for database.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "gold",
+            "fact_key": "atlas.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 3,
+            "template_id": "current_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:db:old",
+            "domain": "transcript",
+            "text": "Previously, Atlas used Redis for database.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "hard_distractor",
+            "distractor_type": "stale_value_same_entity",
+            "fact_key": "atlas.database",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 1,
+            "template_id": "stale_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:cache:redis",
+            "domain": "transcript",
+            "text": "Atlas uses Redis for cache.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "hard_distractor",
+            "distractor_type": "same_entity_wrong_attribute",
+            "fact_key": "atlas.cache",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 2,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "tx:hermes:db:postgres",
+            "domain": "transcript",
+            "text": "Hermes now uses Postgres for database.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "hard_distractor",
+            "distractor_type": "same_attribute_wrong_entity",
+            "fact_key": "hermes.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "hermes"
+            ],
+            "time_rank": 3,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "noise:en:01",
+            "domain": "transcript",
+            "text": "Atlas meeting notes about sprint planning.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:02",
+            "domain": "transcript",
+            "text": "Reminder about incident retrospective timeline.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:03",
+            "domain": "episodic",
+            "text": "Deployment checklist for Atlas services.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:04",
+            "domain": "transcript",
+            "text": "Atlas latency investigation and API errors.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:05",
+            "domain": "semantic",
+            "text": "General policy for storage backups.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:06",
+            "domain": "transcript",
+            "text": "Roadmap planning for Hermes.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:07",
+            "domain": "transcript",
+            "text": "Unrelated chat about office lunch.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:08",
+            "domain": "episodic",
+            "text": "Migration retrospective from last quarter.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:01",
+            "domain": "transcript",
+            "text": "Delayed archive note 1 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:02",
+            "domain": "transcript",
+            "text": "Delayed archive note 2 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:03",
+            "domain": "transcript",
+            "text": "Delayed archive note 3 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:04",
+            "domain": "transcript",
+            "text": "Delayed archive note 4 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:05",
+            "domain": "transcript",
+            "text": "Delayed archive note 5 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:06",
+            "domain": "transcript",
+            "text": "Delayed archive note 6 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:07",
+            "domain": "transcript",
+            "text": "Delayed archive note 7 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:08",
+            "domain": "transcript",
+            "text": "Delayed archive note 8 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:09",
+            "domain": "transcript",
+            "text": "Delayed archive note 9 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:10",
+            "domain": "transcript",
+            "text": "Delayed archive note 10 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:11",
+            "domain": "transcript",
+            "text": "Delayed archive note 11 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:12",
+            "domain": "transcript",
+            "text": "Delayed archive note 12 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:13",
+            "domain": "transcript",
+            "text": "Delayed archive note 13 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:14",
+            "domain": "transcript",
+            "text": "Delayed archive note 14 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:15",
+            "domain": "transcript",
+            "text": "Delayed archive note 15 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:16",
+            "domain": "transcript",
+            "text": "Delayed archive note 16 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:17",
+            "domain": "transcript",
+            "text": "Delayed archive note 17 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:18",
+            "domain": "transcript",
+            "text": "Delayed archive note 18 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:19",
+            "domain": "transcript",
+            "text": "Delayed archive note 19 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:20",
+            "domain": "transcript",
+            "text": "Delayed archive note 20 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:21",
+            "domain": "transcript",
+            "text": "Delayed archive note 21 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:22",
+            "domain": "transcript",
+            "text": "Delayed archive note 22 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:23",
+            "domain": "transcript",
+            "text": "Delayed archive note 23 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:24",
+            "domain": "transcript",
+            "text": "Delayed archive note 24 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:25",
+            "domain": "transcript",
+            "text": "Delayed archive note 25 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:26",
+            "domain": "transcript",
+            "text": "Delayed archive note 26 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:27",
+            "domain": "transcript",
+            "text": "Delayed archive note 27 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:28",
+            "domain": "transcript",
+            "text": "Delayed archive note 28 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:29",
+            "domain": "transcript",
+            "text": "Delayed archive note 29 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:30",
+            "domain": "transcript",
+            "text": "Delayed archive note 30 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:31",
+            "domain": "transcript",
+            "text": "Delayed archive note 31 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:32",
+            "domain": "transcript",
+            "text": "Delayed archive note 32 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:33",
+            "domain": "transcript",
+            "text": "Delayed archive note 33 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:34",
+            "domain": "transcript",
+            "text": "Delayed archive note 34 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:35",
+            "domain": "transcript",
+            "text": "Delayed archive note 35 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:36",
+            "domain": "transcript",
+            "text": "Delayed archive note 36 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:37",
+            "domain": "transcript",
+            "text": "Delayed archive note 37 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:en:delayed:38",
+            "domain": "transcript",
+            "text": "Delayed archive note 38 for long_horizon_multilingual_en_atlas_db.",
+            "task_id": "task:lh:en",
+            "language": "en",
+            "role": "soft_noise"
+          }
+        ],
+        "expected_relevant_ids": [
+          "mem:atlas:db:current"
+        ],
+        "expected_hard_distractor_ids": [
+          "tx:atlas:db:old",
+          "tx:atlas:cache:redis"
+        ],
+        "expected_excluded_ids": [
+          "tx:hermes:db:postgres"
+        ],
+        "expected_domain_priority": [
+          "semantic",
+          "episodic",
+          "transcript"
+        ]
+      },
+      "noise_ids": [
+        "noise:en:01",
+        "noise:en:02",
+        "noise:en:03",
+        "noise:en:04",
+        "noise:en:05",
+        "noise:en:06",
+        "noise:en:07",
+        "noise:en:08",
+        "noise:en:delayed:01",
+        "noise:en:delayed:02",
+        "noise:en:delayed:03",
+        "noise:en:delayed:04",
+        "noise:en:delayed:05",
+        "noise:en:delayed:06",
+        "noise:en:delayed:07",
+        "noise:en:delayed:08",
+        "noise:en:delayed:09",
+        "noise:en:delayed:10",
+        "noise:en:delayed:11",
+        "noise:en:delayed:12",
+        "noise:en:delayed:13",
+        "noise:en:delayed:14",
+        "noise:en:delayed:15",
+        "noise:en:delayed:16",
+        "noise:en:delayed:17",
+        "noise:en:delayed:18",
+        "noise:en:delayed:19",
+        "noise:en:delayed:20",
+        "noise:en:delayed:21",
+        "noise:en:delayed:22",
+        "noise:en:delayed:23",
+        "noise:en:delayed:24",
+        "noise:en:delayed:25",
+        "noise:en:delayed:26",
+        "noise:en:delayed:27",
+        "noise:en:delayed:28",
+        "noise:en:delayed:29",
+        "noise:en:delayed:30",
+        "noise:en:delayed:31",
+        "noise:en:delayed:32",
+        "noise:en:delayed:33",
+        "noise:en:delayed:34",
+        "noise:en:delayed:35",
+        "noise:en:delayed:36",
+        "noise:en:delayed:37",
+        "noise:en:delayed:38"
+      ],
+      "delayed_depends_on_early_context": true
+    }
+  },
+  {
+    "scenario_id": "long_horizon_multilingual_es_atlas_db",
+    "category": "long_horizon_degradation",
+    "long_horizon_degradation": {
+      "early_retrieval": {
+        "query": "¿Qué base de datos usa Atlas ahora?",
+        "language": "es",
+        "intent": "resume_task",
+        "scope": {
+          "task_id": "task:lh:es"
+        },
+        "top_k": 3,
+        "corpus": [
+          {
+            "item_id": "mem:atlas:db:current:es",
+            "domain": "semantic",
+            "text": "Atlas ahora usa Postgres para base de datos.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "gold",
+            "fact_key": "atlas.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 3,
+            "template_id": "current_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:db:old:es",
+            "domain": "transcript",
+            "text": "Antes, Atlas usaba Redis para base de datos.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "hard_distractor",
+            "distractor_type": "stale_value_same_entity",
+            "fact_key": "atlas.database",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 1,
+            "template_id": "stale_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:cache:redis:es",
+            "domain": "transcript",
+            "text": "Atlas usa Redis para caché.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "hard_distractor",
+            "distractor_type": "same_entity_wrong_attribute",
+            "fact_key": "atlas.cache",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 2,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "tx:hermes:db:postgres:es",
+            "domain": "transcript",
+            "text": "Hermes ahora usa Postgres para base de datos.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "hard_distractor",
+            "distractor_type": "same_attribute_wrong_entity",
+            "fact_key": "hermes.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "hermes"
+            ],
+            "time_rank": 3,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "noise:es:01",
+            "domain": "transcript",
+            "text": "Notas de reunión de Atlas sobre planificación.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:02",
+            "domain": "episodic",
+            "text": "Resumen del incidente de la semana pasada.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:03",
+            "domain": "transcript",
+            "text": "Conversación sobre presupuesto trimestral.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:04",
+            "domain": "semantic",
+            "text": "Política general de respaldos.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:05",
+            "domain": "transcript",
+            "text": "Actualización de estado de Hermes.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:06",
+            "domain": "episodic",
+            "text": "Lecciones aprendidas del despliegue.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:07",
+            "domain": "transcript",
+            "text": "Recordatorio para revisar logs.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:08",
+            "domain": "transcript",
+            "text": "Charla informal del equipo.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          }
+        ],
+        "expected_relevant_ids": [
+          "mem:atlas:db:current:es"
+        ],
+        "expected_hard_distractor_ids": [
+          "tx:atlas:db:old:es",
+          "tx:atlas:cache:redis:es"
+        ],
+        "expected_excluded_ids": [
+          "tx:hermes:db:postgres:es"
+        ],
+        "expected_domain_priority": [
+          "semantic",
+          "episodic",
+          "transcript"
+        ]
+      },
+      "delayed_retrieval": {
+        "query": "¿Qué base de datos usa Atlas ahora?",
+        "language": "es",
+        "intent": "resume_task",
+        "scope": {
+          "task_id": "task:lh:es"
+        },
+        "top_k": 3,
+        "corpus": [
+          {
+            "item_id": "mem:atlas:db:current:es",
+            "domain": "semantic",
+            "text": "Atlas ahora usa Postgres para base de datos.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "gold",
+            "fact_key": "atlas.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 3,
+            "template_id": "current_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:db:old:es",
+            "domain": "transcript",
+            "text": "Antes, Atlas usaba Redis para base de datos.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "hard_distractor",
+            "distractor_type": "stale_value_same_entity",
+            "fact_key": "atlas.database",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 1,
+            "template_id": "stale_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:cache:redis:es",
+            "domain": "transcript",
+            "text": "Atlas usa Redis para caché.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "hard_distractor",
+            "distractor_type": "same_entity_wrong_attribute",
+            "fact_key": "atlas.cache",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 2,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "tx:hermes:db:postgres:es",
+            "domain": "transcript",
+            "text": "Hermes ahora usa Postgres para base de datos.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "hard_distractor",
+            "distractor_type": "same_attribute_wrong_entity",
+            "fact_key": "hermes.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "hermes"
+            ],
+            "time_rank": 3,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "noise:es:01",
+            "domain": "transcript",
+            "text": "Notas de reunión de Atlas sobre planificación.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:02",
+            "domain": "episodic",
+            "text": "Resumen del incidente de la semana pasada.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:03",
+            "domain": "transcript",
+            "text": "Conversación sobre presupuesto trimestral.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:04",
+            "domain": "semantic",
+            "text": "Política general de respaldos.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:05",
+            "domain": "transcript",
+            "text": "Actualización de estado de Hermes.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:06",
+            "domain": "episodic",
+            "text": "Lecciones aprendidas del despliegue.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:07",
+            "domain": "transcript",
+            "text": "Recordatorio para revisar logs.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:08",
+            "domain": "transcript",
+            "text": "Charla informal del equipo.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:01",
+            "domain": "transcript",
+            "text": "Delayed archive note 1 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:02",
+            "domain": "transcript",
+            "text": "Delayed archive note 2 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:03",
+            "domain": "transcript",
+            "text": "Delayed archive note 3 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:04",
+            "domain": "transcript",
+            "text": "Delayed archive note 4 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:05",
+            "domain": "transcript",
+            "text": "Delayed archive note 5 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:06",
+            "domain": "transcript",
+            "text": "Delayed archive note 6 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:07",
+            "domain": "transcript",
+            "text": "Delayed archive note 7 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:08",
+            "domain": "transcript",
+            "text": "Delayed archive note 8 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:09",
+            "domain": "transcript",
+            "text": "Delayed archive note 9 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:10",
+            "domain": "transcript",
+            "text": "Delayed archive note 10 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:11",
+            "domain": "transcript",
+            "text": "Delayed archive note 11 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:12",
+            "domain": "transcript",
+            "text": "Delayed archive note 12 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:13",
+            "domain": "transcript",
+            "text": "Delayed archive note 13 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:14",
+            "domain": "transcript",
+            "text": "Delayed archive note 14 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:15",
+            "domain": "transcript",
+            "text": "Delayed archive note 15 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:16",
+            "domain": "transcript",
+            "text": "Delayed archive note 16 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:17",
+            "domain": "transcript",
+            "text": "Delayed archive note 17 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:18",
+            "domain": "transcript",
+            "text": "Delayed archive note 18 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:19",
+            "domain": "transcript",
+            "text": "Delayed archive note 19 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:20",
+            "domain": "transcript",
+            "text": "Delayed archive note 20 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:21",
+            "domain": "transcript",
+            "text": "Delayed archive note 21 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:22",
+            "domain": "transcript",
+            "text": "Delayed archive note 22 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:23",
+            "domain": "transcript",
+            "text": "Delayed archive note 23 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:24",
+            "domain": "transcript",
+            "text": "Delayed archive note 24 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:25",
+            "domain": "transcript",
+            "text": "Delayed archive note 25 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:26",
+            "domain": "transcript",
+            "text": "Delayed archive note 26 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:27",
+            "domain": "transcript",
+            "text": "Delayed archive note 27 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:28",
+            "domain": "transcript",
+            "text": "Delayed archive note 28 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:29",
+            "domain": "transcript",
+            "text": "Delayed archive note 29 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:30",
+            "domain": "transcript",
+            "text": "Delayed archive note 30 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:31",
+            "domain": "transcript",
+            "text": "Delayed archive note 31 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:32",
+            "domain": "transcript",
+            "text": "Delayed archive note 32 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:33",
+            "domain": "transcript",
+            "text": "Delayed archive note 33 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:34",
+            "domain": "transcript",
+            "text": "Delayed archive note 34 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:35",
+            "domain": "transcript",
+            "text": "Delayed archive note 35 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:36",
+            "domain": "transcript",
+            "text": "Delayed archive note 36 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:37",
+            "domain": "transcript",
+            "text": "Delayed archive note 37 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:es:delayed:38",
+            "domain": "transcript",
+            "text": "Delayed archive note 38 for long_horizon_multilingual_es_atlas_db.",
+            "task_id": "task:lh:es",
+            "language": "es",
+            "role": "soft_noise"
+          }
+        ],
+        "expected_relevant_ids": [
+          "mem:atlas:db:current:es"
+        ],
+        "expected_hard_distractor_ids": [
+          "tx:atlas:db:old:es",
+          "tx:atlas:cache:redis:es"
+        ],
+        "expected_excluded_ids": [
+          "tx:hermes:db:postgres:es"
+        ],
+        "expected_domain_priority": [
+          "semantic",
+          "episodic",
+          "transcript"
+        ]
+      },
+      "noise_ids": [
+        "noise:es:01",
+        "noise:es:02",
+        "noise:es:03",
+        "noise:es:04",
+        "noise:es:05",
+        "noise:es:06",
+        "noise:es:07",
+        "noise:es:08",
+        "noise:es:delayed:01",
+        "noise:es:delayed:02",
+        "noise:es:delayed:03",
+        "noise:es:delayed:04",
+        "noise:es:delayed:05",
+        "noise:es:delayed:06",
+        "noise:es:delayed:07",
+        "noise:es:delayed:08",
+        "noise:es:delayed:09",
+        "noise:es:delayed:10",
+        "noise:es:delayed:11",
+        "noise:es:delayed:12",
+        "noise:es:delayed:13",
+        "noise:es:delayed:14",
+        "noise:es:delayed:15",
+        "noise:es:delayed:16",
+        "noise:es:delayed:17",
+        "noise:es:delayed:18",
+        "noise:es:delayed:19",
+        "noise:es:delayed:20",
+        "noise:es:delayed:21",
+        "noise:es:delayed:22",
+        "noise:es:delayed:23",
+        "noise:es:delayed:24",
+        "noise:es:delayed:25",
+        "noise:es:delayed:26",
+        "noise:es:delayed:27",
+        "noise:es:delayed:28",
+        "noise:es:delayed:29",
+        "noise:es:delayed:30",
+        "noise:es:delayed:31",
+        "noise:es:delayed:32",
+        "noise:es:delayed:33",
+        "noise:es:delayed:34",
+        "noise:es:delayed:35",
+        "noise:es:delayed:36",
+        "noise:es:delayed:37",
+        "noise:es:delayed:38"
+      ],
+      "delayed_depends_on_early_context": true
+    }
+  },
+  {
+    "scenario_id": "long_horizon_multilingual_fr_atlas_db",
+    "category": "long_horizon_degradation",
+    "long_horizon_degradation": {
+      "early_retrieval": {
+        "query": "Quelle base de données Atlas utilise-t-il maintenant ?",
+        "language": "fr",
+        "intent": "resume_task",
+        "scope": {
+          "task_id": "task:lh:fr"
+        },
+        "top_k": 3,
+        "corpus": [
+          {
+            "item_id": "mem:atlas:db:current:fr",
+            "domain": "semantic",
+            "text": "Atlas utilise maintenant Postgres pour base de données.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "gold",
+            "fact_key": "atlas.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 3,
+            "template_id": "current_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:db:old:fr",
+            "domain": "transcript",
+            "text": "Avant, Atlas utilisait Redis pour base de données.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "hard_distractor",
+            "distractor_type": "stale_value_same_entity",
+            "fact_key": "atlas.database",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 1,
+            "template_id": "stale_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:cache:redis:fr",
+            "domain": "transcript",
+            "text": "Atlas utilise Redis pour cache.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "hard_distractor",
+            "distractor_type": "same_entity_wrong_attribute",
+            "fact_key": "atlas.cache",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 2,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "tx:hermes:db:postgres:fr",
+            "domain": "transcript",
+            "text": "Hermes utilise maintenant Postgres pour base de données.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "hard_distractor",
+            "distractor_type": "same_attribute_wrong_entity",
+            "fact_key": "hermes.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "hermes"
+            ],
+            "time_rank": 3,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "noise:fr:01",
+            "domain": "transcript",
+            "text": "Notes de réunion Atlas sur le sprint.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:02",
+            "domain": "episodic",
+            "text": "Résumé de l'incident précédent.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:03",
+            "domain": "transcript",
+            "text": "Conversation sur la planification budgétaire.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:04",
+            "domain": "semantic",
+            "text": "Politique générale de sauvegarde.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:05",
+            "domain": "transcript",
+            "text": "Mise à jour de statut Hermes.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:06",
+            "domain": "episodic",
+            "text": "Leçons tirées du dernier déploiement.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:07",
+            "domain": "transcript",
+            "text": "Rappel pour vérifier les journaux.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:08",
+            "domain": "transcript",
+            "text": "Discussion informelle de l'équipe.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          }
+        ],
+        "expected_relevant_ids": [
+          "mem:atlas:db:current:fr"
+        ],
+        "expected_hard_distractor_ids": [
+          "tx:atlas:db:old:fr",
+          "tx:atlas:cache:redis:fr"
+        ],
+        "expected_excluded_ids": [
+          "tx:hermes:db:postgres:fr"
+        ],
+        "expected_domain_priority": [
+          "semantic",
+          "episodic",
+          "transcript"
+        ]
+      },
+      "delayed_retrieval": {
+        "query": "Quelle base de données Atlas utilise-t-il maintenant ?",
+        "language": "fr",
+        "intent": "resume_task",
+        "scope": {
+          "task_id": "task:lh:fr"
+        },
+        "top_k": 3,
+        "corpus": [
+          {
+            "item_id": "mem:atlas:db:current:fr",
+            "domain": "semantic",
+            "text": "Atlas utilise maintenant Postgres pour base de données.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "gold",
+            "fact_key": "atlas.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 3,
+            "template_id": "current_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:db:old:fr",
+            "domain": "transcript",
+            "text": "Avant, Atlas utilisait Redis pour base de données.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "hard_distractor",
+            "distractor_type": "stale_value_same_entity",
+            "fact_key": "atlas.database",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 1,
+            "template_id": "stale_fact_statement"
+          },
+          {
+            "item_id": "tx:atlas:cache:redis:fr",
+            "domain": "transcript",
+            "text": "Atlas utilise Redis pour cache.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "hard_distractor",
+            "distractor_type": "same_entity_wrong_attribute",
+            "fact_key": "atlas.cache",
+            "fact_value": "redis",
+            "entity_tags": [
+              "atlas"
+            ],
+            "time_rank": 2,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "tx:hermes:db:postgres:fr",
+            "domain": "transcript",
+            "text": "Hermes utilise maintenant Postgres pour base de données.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "hard_distractor",
+            "distractor_type": "same_attribute_wrong_entity",
+            "fact_key": "hermes.database",
+            "fact_value": "postgres",
+            "entity_tags": [
+              "hermes"
+            ],
+            "time_rank": 3,
+            "template_id": "wrong_attribute_statement"
+          },
+          {
+            "item_id": "noise:fr:01",
+            "domain": "transcript",
+            "text": "Notes de réunion Atlas sur le sprint.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:02",
+            "domain": "episodic",
+            "text": "Résumé de l'incident précédent.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:03",
+            "domain": "transcript",
+            "text": "Conversation sur la planification budgétaire.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:04",
+            "domain": "semantic",
+            "text": "Politique générale de sauvegarde.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:05",
+            "domain": "transcript",
+            "text": "Mise à jour de statut Hermes.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:06",
+            "domain": "episodic",
+            "text": "Leçons tirées du dernier déploiement.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:07",
+            "domain": "transcript",
+            "text": "Rappel pour vérifier les journaux.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:08",
+            "domain": "transcript",
+            "text": "Discussion informelle de l'équipe.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:01",
+            "domain": "transcript",
+            "text": "Delayed archive note 1 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:02",
+            "domain": "transcript",
+            "text": "Delayed archive note 2 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:03",
+            "domain": "transcript",
+            "text": "Delayed archive note 3 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:04",
+            "domain": "transcript",
+            "text": "Delayed archive note 4 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:05",
+            "domain": "transcript",
+            "text": "Delayed archive note 5 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:06",
+            "domain": "transcript",
+            "text": "Delayed archive note 6 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:07",
+            "domain": "transcript",
+            "text": "Delayed archive note 7 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:08",
+            "domain": "transcript",
+            "text": "Delayed archive note 8 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:09",
+            "domain": "transcript",
+            "text": "Delayed archive note 9 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:10",
+            "domain": "transcript",
+            "text": "Delayed archive note 10 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:11",
+            "domain": "transcript",
+            "text": "Delayed archive note 11 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:12",
+            "domain": "transcript",
+            "text": "Delayed archive note 12 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:13",
+            "domain": "transcript",
+            "text": "Delayed archive note 13 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:14",
+            "domain": "transcript",
+            "text": "Delayed archive note 14 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:15",
+            "domain": "transcript",
+            "text": "Delayed archive note 15 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:16",
+            "domain": "transcript",
+            "text": "Delayed archive note 16 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:17",
+            "domain": "transcript",
+            "text": "Delayed archive note 17 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:18",
+            "domain": "transcript",
+            "text": "Delayed archive note 18 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:19",
+            "domain": "transcript",
+            "text": "Delayed archive note 19 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:20",
+            "domain": "transcript",
+            "text": "Delayed archive note 20 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:21",
+            "domain": "transcript",
+            "text": "Delayed archive note 21 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:22",
+            "domain": "transcript",
+            "text": "Delayed archive note 22 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:23",
+            "domain": "transcript",
+            "text": "Delayed archive note 23 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:24",
+            "domain": "transcript",
+            "text": "Delayed archive note 24 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:25",
+            "domain": "transcript",
+            "text": "Delayed archive note 25 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:26",
+            "domain": "transcript",
+            "text": "Delayed archive note 26 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:27",
+            "domain": "transcript",
+            "text": "Delayed archive note 27 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:28",
+            "domain": "transcript",
+            "text": "Delayed archive note 28 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:29",
+            "domain": "transcript",
+            "text": "Delayed archive note 29 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:30",
+            "domain": "transcript",
+            "text": "Delayed archive note 30 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:31",
+            "domain": "transcript",
+            "text": "Delayed archive note 31 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:32",
+            "domain": "transcript",
+            "text": "Delayed archive note 32 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:33",
+            "domain": "transcript",
+            "text": "Delayed archive note 33 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:34",
+            "domain": "transcript",
+            "text": "Delayed archive note 34 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:35",
+            "domain": "transcript",
+            "text": "Delayed archive note 35 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:36",
+            "domain": "transcript",
+            "text": "Delayed archive note 36 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:37",
+            "domain": "transcript",
+            "text": "Delayed archive note 37 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          },
+          {
+            "item_id": "noise:fr:delayed:38",
+            "domain": "transcript",
+            "text": "Delayed archive note 38 for long_horizon_multilingual_fr_atlas_db.",
+            "task_id": "task:lh:fr",
+            "language": "fr",
+            "role": "soft_noise"
+          }
+        ],
+        "expected_relevant_ids": [
+          "mem:atlas:db:current:fr"
+        ],
+        "expected_hard_distractor_ids": [
+          "tx:atlas:db:old:fr",
+          "tx:atlas:cache:redis:fr"
+        ],
+        "expected_excluded_ids": [
+          "tx:hermes:db:postgres:fr"
+        ],
+        "expected_domain_priority": [
+          "semantic",
+          "episodic",
+          "transcript"
+        ]
+      },
+      "noise_ids": [
+        "noise:fr:01",
+        "noise:fr:02",
+        "noise:fr:03",
+        "noise:fr:04",
+        "noise:fr:05",
+        "noise:fr:06",
+        "noise:fr:07",
+        "noise:fr:08",
+        "noise:fr:delayed:01",
+        "noise:fr:delayed:02",
+        "noise:fr:delayed:03",
+        "noise:fr:delayed:04",
+        "noise:fr:delayed:05",
+        "noise:fr:delayed:06",
+        "noise:fr:delayed:07",
+        "noise:fr:delayed:08",
+        "noise:fr:delayed:09",
+        "noise:fr:delayed:10",
+        "noise:fr:delayed:11",
+        "noise:fr:delayed:12",
+        "noise:fr:delayed:13",
+        "noise:fr:delayed:14",
+        "noise:fr:delayed:15",
+        "noise:fr:delayed:16",
+        "noise:fr:delayed:17",
+        "noise:fr:delayed:18",
+        "noise:fr:delayed:19",
+        "noise:fr:delayed:20",
+        "noise:fr:delayed:21",
+        "noise:fr:delayed:22",
+        "noise:fr:delayed:23",
+        "noise:fr:delayed:24",
+        "noise:fr:delayed:25",
+        "noise:fr:delayed:26",
+        "noise:fr:delayed:27",
+        "noise:fr:delayed:28",
+        "noise:fr:delayed:29",
+        "noise:fr:delayed:30",
+        "noise:fr:delayed:31",
+        "noise:fr:delayed:32",
+        "noise:fr:delayed:33",
+        "noise:fr:delayed:34",
+        "noise:fr:delayed:35",
+        "noise:fr:delayed:36",
+        "noise:fr:delayed:37",
+        "noise:fr:delayed:38"
+      ],
+      "delayed_depends_on_early_context": true
+    }
+  }
+]

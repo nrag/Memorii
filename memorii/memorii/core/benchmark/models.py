@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -61,6 +62,14 @@ class RetrievalFixtureMemoryItem(BaseModel):
     item_id: str
     domain: MemoryDomain
     text: str
+    language: str | None = None
+    role: Literal["gold", "hard_distractor", "soft_noise"] | None = None
+    distractor_type: str | None = None
+    fact_key: str | None = None
+    fact_value: str | None = None
+    entity_tags: list[str] = Field(default_factory=list)
+    time_rank: int | None = None
+    template_id: str | None = None
     task_id: str | None = None
     execution_node_id: str | None = None
     solver_run_id: str | None = None
@@ -74,12 +83,15 @@ class RetrievalFixtureMemoryItem(BaseModel):
 
 class RetrievalFixture(BaseModel):
     query: str
+    language: str | None = None
     intent: RetrievalIntent
     scope: RetrievalScope
     top_k: int = 3
     corpus: list[RetrievalFixtureMemoryItem] = Field(default_factory=list)
     expected_relevant_ids: list[str] = Field(default_factory=list)
+    expected_hard_distractor_ids: list[str] = Field(default_factory=list)
     expected_excluded_ids: list[str] = Field(default_factory=list)
+    expected_domain_priority: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -329,6 +341,11 @@ class ScenarioObservation(BaseModel):
     implicit_recall_success: bool | None = None
     retrieval_plan_relevance_accuracy: bool | None = None
     false_positive_retrieval_rate: float | None = None
+    precision_at_1: float | None = None
+    gold_rank: int | None = None
+    hard_distractor_outrank_rate: float | None = None
+    top_k_contamination_rate: float | None = None
+    domain_priority_correctness: bool | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -365,6 +382,8 @@ class ScenarioMetrics(BaseModel):
     implicit_recall_success_rate: float | None = None
     retrieval_plan_relevance_accuracy: float | None = None
     false_positive_retrieval_rate: float | None = None
+    precision_at_1: float | None = None
+    hard_distractor_outrank_rate: float | None = None
 
     model_config = ConfigDict(extra="forbid")
 

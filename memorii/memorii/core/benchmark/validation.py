@@ -50,6 +50,8 @@ REQUIRED_METRICS_BY_CATEGORY: dict[BenchmarkScenarioType, tuple[str, ...]] = {
         "retrieval_recall_degradation",
         "retrieval_latency_growth",
         "noise_resilience",
+        "precision_at_1",
+        "hard_distractor_outrank_rate",
     ),
     BenchmarkScenarioType.CONFLICT_RESOLUTION: (
         "conflict_detection_rate",
