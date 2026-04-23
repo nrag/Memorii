@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memorii.core.promotion.models import PromotionAction, PromotionReasonCode
 from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
 from memorii.domain.routing import InboundEvent
@@ -360,6 +361,10 @@ class ScenarioObservation(BaseModel):
     hard_distractor_outrank_rate: float | None = None
     top_k_contamination_rate: float | None = None
     domain_priority_correctness: bool | None = None
+    promotion_actions: list[PromotionAction] = Field(default_factory=list)
+    promotion_reason_codes: list[PromotionReasonCode] = Field(default_factory=list)
+    promotion_deciders: list[str] = Field(default_factory=list)
+    promotion_committed_memory_ids: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -496,6 +501,7 @@ class CanonicalScenarioTrace(BaseModel):
     solver_decision: dict[str, object] | None = None
     verifier_result: dict[str, object] | None = None
     writeback_candidates: dict[str, object] | None = None
+    promotion_result: dict[str, object] | None = None
 
     model_config = ConfigDict(extra="forbid")
 

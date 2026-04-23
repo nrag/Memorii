@@ -21,6 +21,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.promotion import (
     PromotionContextBuilder,
     PromotionExecutor,
+    PromotionResult,
     PromotionService,
     RuleBasedPromotionDecider,
 )
@@ -131,7 +132,7 @@ class ScenarioExecutor:
 
         fx = fixture.learning_across_episodes
         if system == BenchmarkSystem.MEMORII:
-            top, latency_ms, promoted = self._run_learning_episode_promotion(fixture=fixture)
+            top, latency_ms, promotion_result = self._run_learning_episode_promotion(fixture=fixture)
         else:
             retrieval = RetrievalFixture(
                 query=fx.episode_two_query,
@@ -142,14 +143,15 @@ class ScenarioExecutor:
                 expected_relevant_ids=[fx.expected_reuse_id],
             )
             top, latency_ms = self._retrieve(fixture=retrieval, system=system)
-            promoted = False
+            promotion_result = None
         retrieved_ids = [item.item_id for item in top]
         reuse_correct = fx.expected_reuse_id in set(retrieved_ids)
         baseline_without_reuse_success = fx.expected_reuse_id in set(fx.baseline_without_reuse_retrieved_ids)
         performance_delta = float(reuse_correct) - float(baseline_without_reuse_success)
         writeback_correct = (
             system == BenchmarkSystem.MEMORII
-            and promoted
+            and promotion_result is not None
+            and promotion_result.committed_memory_id is not None
             and fx.expected_writeback_domain in set(fx.episode_one_writeback_domains)
         )
 
@@ -169,6 +171,16 @@ class ScenarioExecutor:
             expected_writeback_candidate_domains=list(fx.expected_writeback_domains),
             writeback_candidate_ids=[f"wb:learning:{fx.expected_reuse_id}"],
             expected_writeback_candidate_ids=list(fx.expected_writeback_candidate_ids),
+            promotion_actions=[promotion_result.action] if promotion_result is not None else [],
+            promotion_reason_codes=(
+                list(promotion_result.reason_codes) if promotion_result is not None else []
+            ),
+            promotion_deciders=[promotion_result.decided_by] if promotion_result is not None else [],
+            promotion_committed_memory_ids=(
+                [promotion_result.committed_memory_id]
+                if promotion_result is not None and promotion_result.committed_memory_id is not None
+                else []
+            ),
             scenario_success=reuse_correct and writeback_correct,
         )
 
@@ -176,7 +188,7 @@ class ScenarioExecutor:
         self,
         *,
         fixture: BenchmarkScenarioFixture,
-    ) -> tuple[list[RetrievalFixtureMemoryItem], float, bool]:
+    ) -> tuple[list[RetrievalFixtureMemoryItem], float, PromotionResult]:
         if fixture.learning_across_episodes is None:
             raise ValueError("learning across episodes fixture is required")
         fx = fixture.learning_across_episodes
@@ -253,7 +265,7 @@ class ScenarioExecutor:
                 )
             )
         latency_ms = float((trace.candidate_count if trace is not None else len(ranked_items)) * 3)
-        return ranked_items, latency_ms, result.committed_memory_id is not None
+        return ranked_items, latency_ms, result
 
     def _run_long_horizon_degradation(
         self,

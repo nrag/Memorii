@@ -281,6 +281,10 @@ def _build_observed_payload(observed: dict[str, object]) -> dict[str, object]:
         "blocked_domains": observed.get("blocked_domains", []),
         "writeback_candidate_domains": observed.get("writeback_candidate_domains", []),
         "writeback_candidate_ids": observed.get("writeback_candidate_ids", []),
+        "promotion_actions": observed.get("promotion_actions", []),
+        "promotion_reason_codes": observed.get("promotion_reason_codes", []),
+        "promotion_deciders": observed.get("promotion_deciders", []),
+        "promotion_committed_memory_ids": observed.get("promotion_committed_memory_ids", []),
         "scenario_success": observed.get("scenario_success"),
         "raw_observation": observed,
     }
@@ -310,6 +314,17 @@ def _build_trace_payload(observed: dict[str, object]) -> CanonicalScenarioTrace:
             "ids": observed.get("writeback_candidate_ids", []),
         }
         if observed.get("writeback_candidate_domains") or observed.get("writeback_candidate_ids")
+        else None,
+        promotion_result={
+            "actions": observed.get("promotion_actions", []),
+            "reason_codes": observed.get("promotion_reason_codes", []),
+            "deciders": observed.get("promotion_deciders", []),
+            "committed_memory_ids": observed.get("promotion_committed_memory_ids", []),
+        }
+        if observed.get("promotion_actions")
+        or observed.get("promotion_reason_codes")
+        or observed.get("promotion_deciders")
+        or observed.get("promotion_committed_memory_ids")
         else None,
     )
 

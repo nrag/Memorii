@@ -37,6 +37,15 @@ class PromotionContextBuilder:
             same_domain_candidates=same_domain_candidates,
             duplicates=duplicates,
             possible_conflicts=conflicts,
+            scope_summary=(
+                f"task={candidate.task_id or '-'} session={candidate.session_id or '-'} "
+                f"user={candidate.user_id or '-'} execution_node={candidate.execution_node_id or '-'} "
+                f"solver_run={candidate.solver_run_id or '-'}"
+            ),
+            candidate_count_in_scope=len(candidates_in_scope),
+            committed_count_in_scope=len(committed_in_scope),
+            same_domain_committed_count=len(same_domain_committed),
+            same_domain_candidate_count=len(same_domain_candidates),
         )
 
     def list_staged_candidates(self) -> list[CanonicalMemoryRecord]:

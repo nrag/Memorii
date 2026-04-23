@@ -12,8 +12,10 @@ from memorii.core.promotion import (
     PromotionContextBuilder,
     PromotionDecision,
     PromotionExecutor,
+    PromotionReasonCode,
     PromotionService,
     RuleBasedPromotionDecider,
+    build_promotion_decider,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
 
@@ -23,7 +25,7 @@ class FakePromotionDecider:
         return PromotionDecision(
             action=PromotionAction.KEEP_STAGED,
             target_domain=candidate.domain,
-            reasons=["fake_decider"],
+            reason_codes=[PromotionReasonCode.FAKE_DECIDER],
             decided_by="fake",
         )
 
@@ -68,6 +70,7 @@ def test_promotion_service_accepts_swappable_decider() -> None:
 
     assert result.action == PromotionAction.KEEP_STAGED
     assert result.decided_by == "fake"
+    assert result.reason_codes == [PromotionReasonCode.FAKE_DECIDER]
 
 
 def test_rule_based_decider_commits_safe_explicit_semantic_candidate() -> None:
@@ -89,6 +92,7 @@ def test_rule_based_decider_commits_safe_explicit_semantic_candidate() -> None:
 
     assert result.action == PromotionAction.COMMIT
     assert result.committed_memory_id is not None
+    assert result.reason_codes == [PromotionReasonCode.SEMANTIC_EXPLICIT_WRITE_SAFE]
     committed = plane.get_record(result.committed_memory_id)
     assert committed is not None
     assert committed.source_candidate_id == candidate.memory_id
@@ -124,6 +128,7 @@ def test_duplicate_candidate_does_not_create_duplicate_commit() -> None:
     assert result.action == PromotionAction.KEEP_STAGED
     assert result.duplicate_of_memory_id == committed.memory_id
     assert result.committed_memory_id is None
+    assert result.reason_codes == [PromotionReasonCode.DUPLICATE_COMMITTED_MEMORY_EXISTS]
 
 
 def test_conflicting_user_candidate_is_not_blindly_committed() -> None:
@@ -156,6 +161,7 @@ def test_conflicting_user_candidate_is_not_blindly_committed() -> None:
 
     assert result.action in {PromotionAction.KEEP_STAGED, PromotionAction.REJECT}
     assert result.conflict_with_memory_ids == ["mem:user:1"]
+    assert result.reason_codes == [PromotionReasonCode.POSSIBLE_CONFLICT_WITH_COMMITTED_MEMORY]
 
 
 def test_promoted_memory_is_visible_through_provider_prefetch_trace() -> None:
@@ -227,3 +233,51 @@ def test_provider_staged_learning_candidate_uses_natural_source_kind_for_promoti
     )
     result = promotion.promote_candidate(candidate_id)
     assert result.committed_memory_id is not None
+
+
+def test_promotion_decider_factory_builds_rule_based_v1() -> None:
+    decider = build_promotion_decider("rule_based_v1")
+    assert isinstance(decider, RuleBasedPromotionDecider)
+
+
+def test_promotion_decider_factory_rejects_unsupported_kind() -> None:
+    try:
+        build_promotion_decider("unknown_v99")
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected unsupported decider kind to raise ValueError")
+    assert "unsupported promotion decider kind" in message
+    assert "rule_based_v1" in message
+
+
+def test_promote_candidates_exposes_structured_observability_counts() -> None:
+    plane = MemoryPlaneService()
+    semantic_candidate = _candidate(
+        memory_id="cand:semantic:obs",
+        domain=MemoryDomain.SEMANTIC,
+        text="do not auto-expand claims",
+        source_kind="provider:memory_write_longterm",
+    )
+    episodic_candidate = _candidate(
+        memory_id="cand:episodic:obs",
+        domain=MemoryDomain.EPISODIC,
+        text="daily incident summary",
+        source_kind="provider:memory_write_dailylog",
+    )
+    plane.stage_record(semantic_candidate)
+    plane.stage_record(episodic_candidate)
+    service = PromotionService(
+        context_builder=PromotionContextBuilder(memory_plane=plane),
+        decider=RuleBasedPromotionDecider(),
+        executor=PromotionExecutor(memory_plane=plane),
+    )
+
+    batch = service.promote_candidates(task_id="task:1")
+
+    assert batch.count_by_action[PromotionAction.COMMIT] == 2
+    assert batch.count_by_target_domain[MemoryDomain.SEMANTIC] == 1
+    assert batch.count_by_target_domain[MemoryDomain.EPISODIC] == 1
+    assert batch.count_by_reason_code[PromotionReasonCode.SEMANTIC_EXPLICIT_WRITE_SAFE] == 1
+    assert batch.count_by_reason_code[PromotionReasonCode.EPISODIC_CANDIDATE_TRUSTED_SOURCE] == 1
+    assert batch.count_by_decider["rule_based_v1"] == 2
