@@ -17,7 +17,6 @@ from memorii.core.benchmark.models import (
     ScenarioExecutionLevel,
     ScenarioObservation,
 )
-from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.promotion import (
     PromotionContextBuilder,
@@ -26,7 +25,7 @@ from memorii.core.promotion import (
     RuleBasedPromotionDecider,
 )
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
-from memorii.core.provider.models import ProviderStoredRecord
+from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from memorii.core.persistence.resume import ResumeService
@@ -183,32 +182,33 @@ class ScenarioExecutor:
         fx = fixture.learning_across_episodes
 
         plane = MemoryPlaneService()
+        provider = ProviderMemoryService(memory_plane=plane)
         expected = next(item for item in fx.corpus if item.item_id == fx.expected_reuse_id)
-
-        candidate = CanonicalMemoryRecord(
-            memory_id=f"cand:{expected.item_id}",
-            domain=expected.domain,
-            text=expected.text,
-            content={"text": expected.text},
-            status=CommitStatus.CANDIDATE,
-            source_kind=_source_kind_for_learning_domain(expected.domain),
+        stage_result = provider.apply_memory_write(
+            operation=_provider_operation_for_learning_domain(expected.domain),
+            content=expected.text,
+            action="upsert",
+            target=_provider_target_for_learning_domain(expected.domain),
+            session_id="session:learning",
             task_id=expected.task_id,
-            promotion_state="staged",
+            user_id="user:learning",
         )
-        plane.stage_record(candidate)
+        if not stage_result.candidate_ids:
+            raise ValueError("learning benchmark expected a staged candidate via provider path")
+        candidate_id = stage_result.candidate_ids[0]
 
         for item in fx.corpus:
             if item.item_id == fx.expected_reuse_id:
                 continue
-            plane.stage_record(
-                CanonicalMemoryRecord(
+            provider.seed_committed_record(
+                ProviderStoredRecord(
                     memory_id=item.item_id,
                     domain=item.domain,
                     text=item.text,
-                    content={"text": item.text},
-                    status=CommitStatus.COMMITTED,
-                    source_kind="benchmark_seed",
+                    status=CommitStatus.COMMITTED.value,
                     task_id=item.task_id,
+                    session_id="session:learning",
+                    user_id="user:learning",
                 )
             )
 
@@ -217,8 +217,7 @@ class ScenarioExecutor:
             decider=RuleBasedPromotionDecider(),
             executor=PromotionExecutor(memory_plane=plane),
         )
-        result = promotion.promote_candidate(candidate.memory_id)
-        provider = ProviderMemoryService(memory_plane=plane)
+        result = promotion.promote_candidate(candidate_id)
         prefetch_query = fx.episode_two_query
         if expected.domain == MemoryDomain.USER and "prefer" not in prefetch_query.lower():
             prefetch_query = f"preference profile: {prefetch_query}"
@@ -238,9 +237,13 @@ class ScenarioExecutor:
             if record is None:
                 continue
             item_id = (
-                record.source_candidate_id.removeprefix("cand:")
-                if record.source_candidate_id is not None
-                else record.memory_id
+                expected.item_id
+                if record.source_candidate_id is not None and record.domain == expected.domain and record.text == expected.text
+                else (
+                    record.source_candidate_id.removeprefix("cand:")
+                    if record.source_candidate_id is not None
+                    else record.memory_id
+                )
             )
             ranked_items.append(
                 RetrievalFixtureMemoryItem(
@@ -1140,14 +1143,20 @@ def _safe_ratio(numerator: int, denominator: int) -> float | None:
     return float(numerator) / float(denominator)
 
 
-def _source_kind_for_learning_domain(domain: MemoryDomain) -> str:
+def _provider_operation_for_learning_domain(domain: MemoryDomain) -> ProviderOperation:
     if domain == MemoryDomain.USER:
-        return "provider:memory_write_user"
+        return ProviderOperation.MEMORY_WRITE_USER
     if domain == MemoryDomain.SEMANTIC:
-        return "provider:memory_write_longterm"
+        return ProviderOperation.MEMORY_WRITE_LONGTERM
     if domain == MemoryDomain.EPISODIC:
-        return "provider:memory_write_dailylog"
-    return "provider:unknown"
+        return ProviderOperation.MEMORY_WRITE_DAILYLOG
+    raise ValueError(f"unsupported learning promotion domain: {domain.value}")
+
+
+def _provider_target_for_learning_domain(domain: MemoryDomain) -> str:
+    if domain == MemoryDomain.USER:
+        return "user"
+    return "memory"
 
 
 @dataclass(frozen=True)

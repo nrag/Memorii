@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.provider.models import ProviderOperation
 from memorii.core.promotion import (
     PromotionAction,
     PromotionContext,
@@ -199,3 +200,30 @@ def test_promoted_memory_is_visible_through_provider_prefetch_trace() -> None:
     assert trace is not None
     assert trace.ranked_items
     assert result.committed_memory_id in {item.memory_id for item in trace.ranked_items}
+
+
+def test_provider_staged_learning_candidate_uses_natural_source_kind_for_promotion() -> None:
+    plane = MemoryPlaneService()
+    provider = ProviderMemoryService(memory_plane=plane)
+    staged = provider.apply_memory_write(
+        operation=ProviderOperation.MEMORY_WRITE_USER,
+        content="respond with concise bullet points",
+        session_id="session:learning",
+        task_id="task:learning",
+        user_id="user:learning",
+        action="upsert",
+        target="user",
+    )
+    assert staged.candidate_ids
+    candidate_id = staged.candidate_ids[0]
+    candidate = plane.get_record(candidate_id)
+    assert candidate is not None
+    assert candidate.source_kind == "provider:memory_write_user"
+
+    promotion = PromotionService(
+        context_builder=PromotionContextBuilder(memory_plane=plane),
+        decider=RuleBasedPromotionDecider(),
+        executor=PromotionExecutor(memory_plane=plane),
+    )
+    result = promotion.promote_candidate(candidate_id)
+    assert result.committed_memory_id is not None
