@@ -37,6 +37,7 @@ class BenchmarkSystem(str, Enum):
 
 class ScenarioExecutionLevel(str, Enum):
     SYSTEM_LEVEL = "system_level"
+    PROVIDER_SYSTEM = "provider_system"
     COMPONENT_LEVEL = "component_level"
 
 
@@ -138,6 +139,18 @@ class SolverValidationFixture(BaseModel):
 
 class EndToEndFixture(BaseModel):
     task_id: str
+    system_interface: Literal["runtime_step", "provider"] = "runtime_step"
+    provider_operations: list[
+        Literal[
+            "sync_turn",
+            "prefetch",
+            "memory_write_memory",
+            "memory_write_user",
+            "session_end",
+            "pre_compress",
+            "delegation",
+        ]
+    ] = Field(default_factory=lambda: ["sync_turn", "prefetch"])
     expect_pipeline_success: bool = True
     expect_writeback_domains: list[MemoryDomain] = Field(default_factory=list)
     expect_writeback_candidate_ids: list[str] = Field(default_factory=list)
@@ -303,6 +316,7 @@ class ScenarioObservation(BaseModel):
     retrieval_latency_ms: float = 0.0
     routed_domains: list[MemoryDomain] = Field(default_factory=list)
     blocked_domains: list[MemoryDomain] = Field(default_factory=list)
+    blocked_reasons: dict[str, str] = Field(default_factory=dict)
     expected_routed_domains: list[MemoryDomain] = Field(default_factory=list)
     expected_blocked_domains: list[MemoryDomain] = Field(default_factory=list)
     runtime_observability_status: str | None = None
