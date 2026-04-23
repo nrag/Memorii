@@ -160,6 +160,39 @@ def test_prefetch_fact_config_prefers_semantic_when_query_is_fact_like() -> None
     assert trace.ranked_items[0].memory_id == "sem:config"
 
 
+def test_prefetch_fact_config_bm25_prefers_concise_fact_over_noisy_match() -> None:
+    service = ProviderMemoryService()
+    now = datetime(2026, 1, 15, tzinfo=UTC)
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="sem:concise",
+            domain=MemoryDomain.SEMANTIC,
+            text="Timeout default is 30 seconds.",
+            status="committed",
+            task_id="task:fact:bm25",
+            timestamp=now - timedelta(days=5),
+        )
+    )
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="sem:noisy",
+            domain=MemoryDomain.SEMANTIC,
+            text=(
+                "Meeting transcript recap with many unrelated details and only one mention "
+                "that timeout might have a default value."
+            ),
+            status="committed",
+            task_id="task:fact:bm25",
+            timestamp=now,
+        )
+    )
+
+    service.prefetch("what is the timeout default config", task_id="task:fact:bm25")
+    trace = service.last_prefetch_trace()
+    assert trace is not None
+    assert trace.ranked_items[0].memory_id == "sem:concise"
+
+
 def test_prefetch_event_history_prefers_episodic_over_transcript() -> None:
     service = ProviderMemoryService()
     now = datetime(2026, 1, 15, tzinfo=UTC)
@@ -242,6 +275,7 @@ def test_prefetch_trace_exposes_score_breakdown_and_deterministic_ranks() -> Non
     service.prefetch("timeout default config", task_id="task:trace")
     trace = service.last_prefetch_trace()
     assert trace is not None
+    assert trace.lexical_method == "bm25"
     assert trace.candidate_count == 3
     assert [item.rank for item in trace.ranked_items] == [1, 2, 3]
     top = trace.ranked_items[0]

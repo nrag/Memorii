@@ -123,6 +123,7 @@ class ProviderRerankTraceItem(BaseModel):
 class ProviderPrefetchTrace(BaseModel):
     query: str
     query_class: ProviderQueryClass
+    lexical_method: str = "bm25"
     candidate_count: int
     ranked_items: list[ProviderRerankTraceItem] = Field(default_factory=list)
 
