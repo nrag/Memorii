@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from memorii.core.provider.models import ProviderQueryClass, ProviderStoredRecord
-from memorii.domain.enums import MemoryDomain
 
 
 def classify_prefetch_query(query: str) -> ProviderQueryClass:
@@ -15,16 +14,6 @@ def classify_prefetch_query(query: str) -> ProviderQueryClass:
     if any(token in normalized for token in ("last", "previous", "history", "earlier", "session")):
         return ProviderQueryClass.EVENT_HISTORY
     return ProviderQueryClass.GENERAL_CONTINUITY
-
-
-def rank_domain_priority(query_class: ProviderQueryClass) -> list[MemoryDomain]:
-    if query_class == ProviderQueryClass.PREFERENCE_PROFILE:
-        return [MemoryDomain.USER, MemoryDomain.SEMANTIC, MemoryDomain.EPISODIC, MemoryDomain.TRANSCRIPT]
-    if query_class == ProviderQueryClass.FACT_CONFIG:
-        return [MemoryDomain.SEMANTIC, MemoryDomain.USER, MemoryDomain.EPISODIC, MemoryDomain.TRANSCRIPT]
-    if query_class == ProviderQueryClass.EVENT_HISTORY:
-        return [MemoryDomain.EPISODIC, MemoryDomain.TRANSCRIPT, MemoryDomain.SEMANTIC, MemoryDomain.USER]
-    return [MemoryDomain.SEMANTIC, MemoryDomain.USER, MemoryDomain.EPISODIC, MemoryDomain.TRANSCRIPT]
 
 
 def format_prefetch_context(records: list[ProviderStoredRecord]) -> str:

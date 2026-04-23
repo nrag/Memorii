@@ -2,6 +2,7 @@ from memorii.core.provider.models import ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from memorii.domain.enums import MemoryDomain
+from datetime import UTC, datetime, timedelta
 
 
 def test_prefetch_excludes_candidate_only_records_and_formats_context() -> None:
@@ -93,3 +94,159 @@ def test_sync_turn_raw_transcript_only_no_direct_commits() -> None:
     assert len(result.transcript_ids) == 2
     assert result.candidate_ids == []
     assert result.blocked_commit_domains
+
+
+def test_prefetch_general_continuity_prefers_recent_transcript_over_old_semantic() -> None:
+    service = ProviderMemoryService()
+    now = datetime(2026, 1, 15, tzinfo=UTC)
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="sem:old",
+            domain=MemoryDomain.SEMANTIC,
+            text="Deployment checklist includes QA signoff.",
+            status="committed",
+            task_id="task:rank",
+            timestamp=now - timedelta(days=30),
+        )
+    )
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="tx:new",
+            domain=MemoryDomain.TRANSCRIPT,
+            text="Let's continue with the deployment checklist and QA signoff now.",
+            status="committed",
+            task_id="task:rank",
+            timestamp=now,
+        )
+    )
+
+    service.prefetch("continue with deployment checklist", task_id="task:rank")
+    trace = service.last_prefetch_trace()
+    assert trace is not None
+    assert trace.query_class.value == "general_continuity"
+    assert trace.ranked_items[0].memory_id == "tx:new"
+    assert trace.candidate_count == 2
+    assert trace.ranked_items[0].recency_score >= trace.ranked_items[1].recency_score
+
+
+def test_prefetch_fact_config_prefers_semantic_when_query_is_fact_like() -> None:
+    service = ProviderMemoryService()
+    now = datetime(2026, 1, 15, tzinfo=UTC)
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="sem:config",
+            domain=MemoryDomain.SEMANTIC,
+            text="Timeout default is 30 seconds.",
+            status="committed",
+            task_id="task:fact",
+            timestamp=now - timedelta(days=10),
+        )
+    )
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="tx:noise",
+            domain=MemoryDomain.TRANSCRIPT,
+            text="We talked about many defaults yesterday.",
+            status="committed",
+            task_id="task:fact",
+            timestamp=now,
+        )
+    )
+
+    service.prefetch("what is the timeout default config", task_id="task:fact")
+    trace = service.last_prefetch_trace()
+    assert trace is not None
+    assert trace.query_class.value == "fact_config"
+    assert trace.ranked_items[0].memory_id == "sem:config"
+
+
+def test_prefetch_event_history_prefers_episodic_over_transcript() -> None:
+    service = ProviderMemoryService()
+    now = datetime(2026, 1, 15, tzinfo=UTC)
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="epi:incident",
+            domain=MemoryDomain.EPISODIC,
+            text="Outage history timeline: rollback fixed API outage.",
+            status="committed",
+            task_id="task:event",
+            timestamp=now - timedelta(hours=3),
+        )
+    )
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="tx:incident",
+            domain=MemoryDomain.TRANSCRIPT,
+            text="I think we had an outage last week.",
+            status="committed",
+            task_id="task:event",
+            timestamp=now - timedelta(hours=1),
+        )
+    )
+
+    service.prefetch("what happened in the last outage history", task_id="task:event")
+    trace = service.last_prefetch_trace()
+    assert trace is not None
+    assert trace.query_class.value == "event_history"
+    assert trace.ranked_items[0].memory_id == "epi:incident"
+
+
+def test_prefetch_preference_profile_prefers_user_memory() -> None:
+    service = ProviderMemoryService()
+    now = datetime(2026, 1, 15, tzinfo=UTC)
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="user:style",
+            domain=MemoryDomain.USER,
+            text="User prefers concise bullet responses.",
+            status="committed",
+            task_id="task:user",
+            user_id="user:1",
+            timestamp=now - timedelta(days=5),
+        )
+    )
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="tx:style",
+            domain=MemoryDomain.TRANSCRIPT,
+            text="Can you keep responses short?",
+            status="committed",
+            task_id="task:user",
+            user_id="user:1",
+            timestamp=now,
+        )
+    )
+
+    service.prefetch("what is my preference profile", task_id="task:user", user_id="user:1")
+    trace = service.last_prefetch_trace()
+    assert trace is not None
+    assert trace.query_class.value == "preference_profile"
+    assert trace.ranked_items[0].memory_id == "user:style"
+
+
+def test_prefetch_trace_exposes_score_breakdown_and_deterministic_ranks() -> None:
+    service = ProviderMemoryService()
+    baseline_time = datetime(2026, 1, 10, tzinfo=UTC)
+    for index in range(3):
+        service.seed_committed_record(
+            ProviderStoredRecord(
+                memory_id=f"sem:{index}",
+                domain=MemoryDomain.SEMANTIC,
+                text=f"Timeout default detail {index}",
+                status="committed",
+                task_id="task:trace",
+                timestamp=baseline_time + timedelta(minutes=index),
+            )
+        )
+
+    service.prefetch("timeout default config", task_id="task:trace")
+    trace = service.last_prefetch_trace()
+    assert trace is not None
+    assert trace.candidate_count == 3
+    assert [item.rank for item in trace.ranked_items] == [1, 2, 3]
+    top = trace.ranked_items[0]
+    assert isinstance(top.final_score, float)
+    assert isinstance(top.domain_prior_score, float)
+    assert isinstance(top.lexical_score, float)
+    assert isinstance(top.recency_score, float)
+    assert isinstance(top.scope_score, float)
