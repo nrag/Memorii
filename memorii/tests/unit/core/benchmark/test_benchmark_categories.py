@@ -8,6 +8,7 @@ from memorii.core.benchmark.models import (
     LearningAcrossEpisodesFixture,
     RetrievalFixtureMemoryItem,
 )
+from memorii.core.promotion import PromotionAction, PromotionReasonCode
 from memorii.core.benchmark.scenarios import ScenarioExecutor
 from memorii.domain.enums import MemoryDomain
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
@@ -27,6 +28,10 @@ def test_learning_across_episodes_benchmark_execution() -> None:
     assert result.category == BenchmarkScenarioType.LEARNING_ACROSS_EPISODES
     assert result.metrics.cross_episode_reuse_accuracy == 1.0
     assert result.metrics.writeback_reuse_correctness == 1.0
+    assert result.observation.promotion_actions == [PromotionAction.COMMIT]
+    assert result.observation.promotion_deciders == ["rule_based_v1"]
+    assert PromotionReasonCode.USER_EXPLICIT_WRITE_SAFE in result.observation.promotion_reason_codes
+    assert result.observation.promotion_committed_memory_ids
 
 
 def test_learning_across_episodes_memorii_path_does_not_use_manual_retrieval_score(

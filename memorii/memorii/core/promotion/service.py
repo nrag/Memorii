@@ -5,7 +5,12 @@ from __future__ import annotations
 from memorii.core.promotion.context_builder import PromotionContextBuilder
 from memorii.core.promotion.executor import PromotionExecutor
 from memorii.core.promotion.interfaces import PromotionDecider
-from memorii.core.promotion.models import BatchPromotionResult, PromotionResult
+from memorii.core.promotion.models import (
+    BatchPromotionResult,
+    PromotionAction,
+    PromotionReasonCode,
+    PromotionResult,
+)
 from memorii.domain.enums import MemoryDomain
 
 
@@ -43,4 +48,35 @@ class PromotionService:
             and (domains is None or item.domain in set(domains))
         ]
         results = [self.promote_candidate(item.memory_id) for item in candidates]
-        return BatchPromotionResult(results=results)
+        return BatchPromotionResult(
+            results=results,
+            count_by_action=self._count_by_action(results),
+            count_by_target_domain=self._count_by_target_domain(results),
+            count_by_reason_code=self._count_by_reason_code(results),
+            count_by_decider=self._count_by_decider(results),
+        )
+
+    def _count_by_action(self, results: list[PromotionResult]) -> dict[PromotionAction, int]:
+        counts: dict[PromotionAction, int] = {}
+        for result in results:
+            counts[result.action] = counts.get(result.action, 0) + 1
+        return counts
+
+    def _count_by_target_domain(self, results: list[PromotionResult]) -> dict[MemoryDomain, int]:
+        counts: dict[MemoryDomain, int] = {}
+        for result in results:
+            counts[result.target_domain] = counts.get(result.target_domain, 0) + 1
+        return counts
+
+    def _count_by_reason_code(self, results: list[PromotionResult]) -> dict[PromotionReasonCode, int]:
+        counts: dict[PromotionReasonCode, int] = {}
+        for result in results:
+            for reason_code in result.reason_codes:
+                counts[reason_code] = counts.get(reason_code, 0) + 1
+        return counts
+
+    def _count_by_decider(self, results: list[PromotionResult]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for result in results:
+            counts[result.decided_by] = counts.get(result.decided_by, 0) + 1
+        return counts
