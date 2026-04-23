@@ -5,10 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from memorii.core.memory_plane.models import (
+    CanonicalMemoryRecord,
+    from_memory_object,
+    from_provider_stored_record,
+    to_memory_object,
+    to_provider_stored_record,
+)
 from memorii.core.provider.blocking_policy import evaluate_operation_policy
 from memorii.core.provider.models import (
     ProviderEvent,
-    ProviderOperation,
     ProviderPrefetchTrace,
     ProviderRerankTraceItem,
     ProviderStoredRecord,
@@ -38,20 +44,20 @@ class MemoryPlaneService:
     def __init__(self) -> None:
         self._planner = RetrievalPlanner()
         self._reranker = ProviderReranker()
-        self._runtime_by_domain: dict[MemoryDomain, list[MemoryObject]] = {domain: [] for domain in MemoryDomain}
-
+        self._records: list[CanonicalMemoryRecord] = []
         self._last_prefetch_trace: ProviderPrefetchTrace | None = None
-        self._transcript_records: list[ProviderStoredRecord] = []
-        self._candidate_records: list[ProviderStoredRecord] = []
-        self._committed_records: list[ProviderStoredRecord] = []
 
     # Runtime-facing canonical methods
     def seed_runtime_memory_object(self, memory_object: MemoryObject) -> None:
-        self._runtime_by_domain[memory_object.memory_type].append(memory_object)
+        self._records.append(from_memory_object(memory_object))
 
     def query_runtime_memory(self, query: DomainRetrievalQuery) -> list[MemoryObject]:
-        items = self._runtime_by_domain[query.domain]
-        return [item for item in items if self._matches_scope(item, query) and self._matches_semantics(item, query)]
+        records = [item for item in self._records if item.domain == query.domain]
+        return [
+            to_memory_object(item)
+            for item in records
+            if self._matches_scope(item, query.scope) and self._matches_semantics(item, include_candidates=query.include_candidates, freshness=query.freshness)
+        ]
 
     def ingest_runtime_observation(self, *, router: object, inbound: InboundEvent) -> RoutingDecision:
         decision = router.route_event(inbound)
@@ -133,21 +139,18 @@ class MemoryPlaneService:
         intent = _intent_for_query_class(query_class)
         plan = self._planner.build_plan(intent=intent, scope=RetrievalScope(task_id=task_id), include_raw_transcript=True)
         planned_domains = {query_spec.domain for query_spec in plan.queries}
-        committed_pool = [
-            item
-            for item in self._committed_records
-            if item.domain in planned_domains and _provider_in_scope(item=item, session_id=session_id, task_id=task_id, user_id=user_id)
-        ]
-        transcript_pool = [
-            item
-            for item in self._transcript_records
-            if item.domain in planned_domains and _provider_in_scope(item=item, session_id=session_id, task_id=task_id, user_id=user_id)
-        ]
-        pool = {item.memory_id: item for item in [*committed_pool, *transcript_pool]}
+        pool = {
+            item.memory_id: item
+            for item in self._records
+            if item.domain in planned_domains
+            and item.status == CommitStatus.COMMITTED
+            and self._matches_scope(item, RetrievalScope(session_id=session_id, task_id=task_id, user_id=user_id))
+        }
+        provider_candidates = [to_provider_stored_record(item) for item in pool.values()]
         reranked = self._reranker.rerank(
             query=query,
             query_class=query_class,
-            candidates=list(pool.values()),
+            candidates=provider_candidates,
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
@@ -175,66 +178,82 @@ class MemoryPlaneService:
         return format_prefetch_context(ranked_records[:top_k])
 
     def seed_provider_committed_record(self, record: ProviderStoredRecord) -> None:
-        self._committed_records.append(record)
+        self._records.append(from_provider_stored_record(record, source_kind="provider_seed"))
 
     def provider_candidate_records(self) -> list[ProviderStoredRecord]:
-        return list(self._candidate_records)
+        return [
+            to_provider_stored_record(item)
+            for item in self._records
+            if item.status == CommitStatus.CANDIDATE and item.source_kind == "provider"
+        ]
 
     def provider_transcript_records(self) -> list[ProviderStoredRecord]:
-        return list(self._transcript_records)
+        return [
+            to_provider_stored_record(item)
+            for item in self._records
+            if item.domain == MemoryDomain.TRANSCRIPT and item.is_raw_event
+        ]
 
     def last_provider_prefetch_trace(self) -> ProviderPrefetchTrace | None:
         return self._last_prefetch_trace
 
     def _store_transcript(self, event: ProviderEvent) -> str:
         memory_id = f"tx:{event.event_id}"
-        self._transcript_records.append(
-            ProviderStoredRecord(
+        self._records.append(
+            CanonicalMemoryRecord(
                 memory_id=memory_id,
                 domain=MemoryDomain.TRANSCRIPT,
                 text=event.content or "",
-                status="committed",
+                content={"text": event.content or ""},
+                status=CommitStatus.COMMITTED,
+                source_kind="provider",
+                timestamp=event.timestamp or datetime.now(UTC),
                 session_id=event.session_id,
                 task_id=event.task_id,
                 user_id=event.user_id,
-                timestamp=event.timestamp or datetime.now(UTC),
+                is_raw_event=True,
             )
         )
         return memory_id
 
     def _store_candidate(self, *, event: ProviderEvent, domain: MemoryDomain) -> str:
         memory_id = f"cand:{domain.value}:{event.event_id}"
-        self._candidate_records.append(
-            ProviderStoredRecord(
+        self._records.append(
+            CanonicalMemoryRecord(
                 memory_id=memory_id,
                 domain=domain,
                 text=event.content or "",
-                status="candidate",
+                content={"text": event.content or ""},
+                status=CommitStatus.CANDIDATE,
+                source_kind="provider",
+                timestamp=event.timestamp or datetime.now(UTC),
                 session_id=event.session_id,
                 task_id=event.task_id,
                 user_id=event.user_id,
-                timestamp=event.timestamp or datetime.now(UTC),
+                is_raw_event=False,
             )
         )
         return memory_id
 
-    def _matches_scope(self, item: MemoryObject, query: DomainRetrievalQuery) -> bool:
-        ns = item.namespace or {}
-        if query.scope.task_id is not None and ns.get("task_id") != query.scope.task_id:
+    def _matches_scope(self, item: CanonicalMemoryRecord, scope: RetrievalScope) -> bool:
+        if scope.session_id is not None and item.session_id not in {None, scope.session_id}:
             return False
-        if query.scope.execution_node_id is not None and ns.get("execution_node_id") != query.scope.execution_node_id:
+        if scope.task_id is not None and item.task_id not in {None, scope.task_id}:
             return False
-        if query.scope.solver_run_id is not None and ns.get("solver_run_id") != query.scope.solver_run_id:
+        if scope.execution_node_id is not None and item.execution_node_id not in {None, scope.execution_node_id}:
             return False
-        if query.scope.agent_id is not None and ns.get("agent_id") != query.scope.agent_id:
+        if scope.solver_run_id is not None and item.solver_run_id not in {None, scope.solver_run_id}:
+            return False
+        if scope.agent_id is not None and item.agent_id not in {None, scope.agent_id}:
+            return False
+        if scope.user_id is not None and item.user_id not in {None, scope.user_id}:
             return False
         return True
 
-    def _matches_semantics(self, item: MemoryObject, query: DomainRetrievalQuery) -> bool:
-        if not query.include_candidates and item.status == CommitStatus.CANDIDATE:
+    def _matches_semantics(self, item: CanonicalMemoryRecord, *, include_candidates: bool, freshness: object) -> bool:
+        if not include_candidates and item.status == CommitStatus.CANDIDATE:
             return False
-        freshness = query.freshness
-        if freshness is None or freshness.required_validity is None:
+        if freshness is None or getattr(freshness, "required_validity", None) is None:
             return True
 
         required = freshness.required_validity.value
@@ -249,18 +268,6 @@ class MemoryPlaneService:
             if item.valid_to is not None and item.valid_to < valid_at:
                 return False
         return True
-
-
-def _provider_in_scope(
-    *, item: ProviderStoredRecord, session_id: str | None, task_id: str | None, user_id: str | None
-) -> bool:
-    if session_id is not None and item.session_id not in {None, session_id}:
-        return False
-    if task_id is not None and item.task_id not in {None, task_id}:
-        return False
-    if user_id is not None and item.user_id not in {None, user_id}:
-        return False
-    return True
 
 
 def _intent_for_query_class(query_class: object) -> RetrievalIntent:
