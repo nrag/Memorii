@@ -548,6 +548,11 @@ class ScenarioExecutor:
                         task_id=fx.task_id,
                         user_id="user:benchmark",
                     )
+                    prefetch_trace = provider_service.last_prefetch_trace()
+                    if prefetch_trace is None:
+                        observability_missing.append("provider_prefetch_trace")
+                    else:
+                        retrieved_ids = [item.memory_id for item in prefetch_trace.ranked_items]
                 elif operation == "memory_write_memory":
                     write_result = provider.on_memory_write(
                         action="upsert",
@@ -626,11 +631,8 @@ class ScenarioExecutor:
             routed_records = [
                 _ObservedRoutedMemory(domain=MemoryDomain.TRANSCRIPT, status=CommitStatus.COMMITTED, is_raw_event=True)
             ]
-            retrieved_ids = [
-                line.split(" ", 1)[0].strip("-")
-                for line in retrieved_context.splitlines()
-                if line.startswith("- [")
-            ]
+            if not retrieved_ids and retrieved_context != "No durable memory context available.":
+                observability_missing.append("provider_prefetch_ranked_ids")
         elif event is not None and system == BenchmarkSystem.MEMORII:
             execution_store = InMemoryExecutionGraphStore()
             solver_store = InMemorySolverGraphStore()

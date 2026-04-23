@@ -105,3 +105,25 @@ class ProviderStoredRecord(BaseModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(extra="forbid")
+
+
+class ProviderRerankTraceItem(BaseModel):
+    memory_id: str
+    domain: MemoryDomain
+    final_score: float
+    domain_prior_score: float
+    lexical_score: float
+    recency_score: float
+    scope_score: float
+    rank: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProviderPrefetchTrace(BaseModel):
+    query: str
+    query_class: ProviderQueryClass
+    candidate_count: int
+    ranked_items: list[ProviderRerankTraceItem] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")

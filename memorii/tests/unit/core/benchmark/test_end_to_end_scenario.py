@@ -291,6 +291,97 @@ def test_end_to_end_provider_mode_respects_declared_provider_operations() -> Non
     assert observation.writeback_candidate_ids == []
     assert observation.writeback_candidate_domains == []
 
+
+def test_end_to_end_provider_mode_continuity_prefers_recent_transcript_over_semantic() -> None:
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_provider_rerank_continuity",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="continue deployment timeline",
+            intent=RetrievalIntent.RESUME_TASK,
+            scope=RetrievalScope(task_id="task:provider:rank"),
+            corpus=[
+                RetrievalFixtureMemoryItem(
+                    item_id="sem:old",
+                    domain=MemoryDomain.SEMANTIC,
+                    text="Deployment timeline checklist canonical steps.",
+                    task_id="task:provider:rank",
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="tx:new",
+                    domain=MemoryDomain.TRANSCRIPT,
+                    text="We should continue the deployment timeline right now.",
+                    task_id="task:provider:rank",
+                ),
+            ],
+            expected_relevant_ids=["tx:new"],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:provider:rank:1",
+                event_class=InboundEventClass.USER_MESSAGE,
+                task_id="task:provider:rank",
+                payload={"text": "continue timeline"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:provider:rank",
+            system_interface="provider",
+            provider_operations=["prefetch"],
+        ),
+    )
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert observation.execution_level == ScenarioExecutionLevel.PROVIDER_SYSTEM
+    assert observation.runtime_observability_status == "supported"
+    assert observation.retrieved_ids[:2] == ["tx:new", "sem:old"]
+
+
+def test_end_to_end_provider_mode_fact_config_prefers_semantic_over_transcript() -> None:
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_provider_rerank_fact",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="what is the timeout default config",
+            intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+            scope=RetrievalScope(task_id="task:provider:fact"),
+            corpus=[
+                RetrievalFixtureMemoryItem(
+                    item_id="tx:noise",
+                    domain=MemoryDomain.TRANSCRIPT,
+                    text="We discussed many defaults.",
+                    task_id="task:provider:fact",
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="sem:config",
+                    domain=MemoryDomain.SEMANTIC,
+                    text="Timeout default is 30 seconds.",
+                    task_id="task:provider:fact",
+                ),
+            ],
+            expected_relevant_ids=["sem:config"],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:provider:fact:1",
+                event_class=InboundEventClass.USER_MESSAGE,
+                task_id="task:provider:fact",
+                payload={"text": "need config default"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:provider:fact",
+            system_interface="provider",
+            provider_operations=["prefetch"],
+        ),
+    )
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert observation.execution_level == ScenarioExecutionLevel.PROVIDER_SYSTEM
+    assert observation.retrieved_ids[:2] == ["sem:config", "tx:noise"]
+
 def test_system_level_runtime_retrieval_path_applies_scope_candidate_validity_and_dedupe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
