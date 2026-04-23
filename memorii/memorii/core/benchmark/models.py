@@ -48,6 +48,12 @@ class ScenarioOutcomeStatus(str, Enum):
     UNSUPPORTED = "unsupported"
 
 
+class ScenarioVerdict(str, Enum):
+    PASSED = "passed"
+    MEMORII_FAILED = "memorii_failed"
+    MEMORII_PASSED_BUT_WORSE_THAN_BASELINE = "memorii_passed_but_worse_than_baseline"
+
+
 class BaselinePolicy(str, Enum):
     RUN = "run"
     SKIP = "skip"
@@ -477,8 +483,16 @@ class CanonicalBenchmarkConfig(BaseModel):
 
 class CanonicalBenchmarkSummary(BaseModel):
     total_scenarios: int
+    scenario_fixtures_total: int
     passed: int
     failed: int
+    failed_memorii: int
+    failed_underperformed_baseline: int
+    memorii_runs_total: int
+    memorii_runs_passed: int
+    memorii_runs_failed: int
+    baseline_runs_total: int
+    baseline_runs_failed: int
     aggregate_metrics: dict[str, dict[str, float | None]] = Field(default_factory=dict)
     baseline_comparison_summary: dict[str, dict[str, float | None]] = Field(default_factory=dict)
 
@@ -523,6 +537,19 @@ class CanonicalScenarioEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CanonicalScenarioVerdictEntry(BaseModel):
+    scenario_id: str
+    category: BenchmarkScenarioType
+    memorii_result: ScenarioOutcomeStatus
+    baseline_results: dict[str, ScenarioOutcomeStatus] = Field(default_factory=dict)
+    scenario_verdict: ScenarioVerdict
+    memorii_passed: bool
+    better_or_equal_than_all_baselines: bool
+    worse_than_baseline_systems: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CanonicalBaselineEntry(BaseModel):
     aggregate_metrics: dict[str, float | None] = Field(default_factory=dict)
     deltas_vs_memorii: dict[str, float | None] = Field(default_factory=dict)
@@ -536,6 +563,7 @@ class CanonicalBenchmarkReport(BaseModel):
     summary: CanonicalBenchmarkSummary
     categories: list[CanonicalBenchmarkCategoryEntry] = Field(default_factory=list)
     scenarios: list[CanonicalScenarioEntry] = Field(default_factory=list)
+    scenario_verdicts: list[CanonicalScenarioVerdictEntry] = Field(default_factory=list)
     baselines: dict[BenchmarkSystem, CanonicalBaselineEntry] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
 

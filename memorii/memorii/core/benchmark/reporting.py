@@ -21,10 +21,12 @@ from memorii.core.benchmark.models import (
     CanonicalBenchmarkSummary,
     CanonicalScenarioEntry,
     CanonicalScenarioTrace,
+    CanonicalScenarioVerdictEntry,
     ScenarioResult,
     ScenarioExecutionLevel,
     ScenarioMetrics,
     ScenarioOutcomeStatus,
+    ScenarioVerdict,
 )
 from memorii.core.benchmark.validation import validate_canonical_report
 
@@ -40,7 +42,9 @@ def to_canonical_report(
     fixture_by_id = {fixture.scenario_id: fixture for fixture in fixtures or []}
     scenarios: list[CanonicalScenarioEntry] = []
     errors: list[str] = []
+    results_by_scenario: dict[str, dict[BenchmarkSystem, ScenarioResult]] = defaultdict(dict)
     for result in sorted(report.scenario_results, key=lambda item: (item.scenario_id, item.system.value)):
+        results_by_scenario[result.scenario_id][result.system] = result
         fixture = fixture_by_id.get(result.scenario_id)
         expected = _build_expected_payload(result.scenario_id, fixture=fixture, observed=result.observation.model_dump(mode="python"))
         observed = _build_observed_payload(result.observation.model_dump(mode="python"))
@@ -64,15 +68,33 @@ def to_canonical_report(
             )
         )
 
+    scenario_verdicts = _build_scenario_verdicts(results_by_scenario)
+    passed_count = sum(1 for item in scenario_verdicts if item.scenario_verdict == ScenarioVerdict.PASSED)
+    failed_memorii = sum(1 for item in scenario_verdicts if item.scenario_verdict == ScenarioVerdict.MEMORII_FAILED)
+    failed_underperformed = sum(
+        1
+        for item in scenario_verdicts
+        if item.scenario_verdict == ScenarioVerdict.MEMORII_PASSED_BUT_WORSE_THAN_BASELINE
+    )
+    memorii_runs = [item for item in scenarios if item.system == BenchmarkSystem.MEMORII]
+    baseline_runs = [item for item in scenarios if item.system != BenchmarkSystem.MEMORII]
     aggregate_metrics = {
         system.value: metrics.model_dump(mode="python")
         for system, metrics in sorted(report.aggregate_by_system.items(), key=lambda item: item[0].value)
     }
     baseline_summary = _compute_baseline_summary(report)
     summary = CanonicalBenchmarkSummary(
-        total_scenarios=len(scenarios),
-        passed=sum(1 for scenario in scenarios if scenario.outcome_status == ScenarioOutcomeStatus.PASSED),
-        failed=sum(1 for scenario in scenarios if scenario.outcome_status == ScenarioOutcomeStatus.FAILED),
+        total_scenarios=len(scenario_verdicts),
+        scenario_fixtures_total=len(scenario_verdicts),
+        passed=passed_count,
+        failed=failed_memorii + failed_underperformed,
+        failed_memorii=failed_memorii,
+        failed_underperformed_baseline=failed_underperformed,
+        memorii_runs_total=len(memorii_runs),
+        memorii_runs_passed=sum(1 for item in memorii_runs if item.outcome_status == ScenarioOutcomeStatus.PASSED),
+        memorii_runs_failed=sum(1 for item in memorii_runs if item.outcome_status == ScenarioOutcomeStatus.FAILED),
+        baseline_runs_total=len(baseline_runs),
+        baseline_runs_failed=sum(1 for item in baseline_runs if item.outcome_status == ScenarioOutcomeStatus.FAILED),
         aggregate_metrics=aggregate_metrics,
         baseline_comparison_summary=baseline_summary,
     )
@@ -94,6 +116,7 @@ def to_canonical_report(
         summary=summary,
         categories=category_entries,
         scenarios=scenarios,
+        scenario_verdicts=scenario_verdicts,
         baselines=baselines,
         errors=errors,
     )
@@ -110,9 +133,40 @@ def to_markdown(report: BenchmarkRunReport, *, fixtures: list[BenchmarkScenarioF
     canonical = to_canonical_report(report, fixtures=fixtures)
     lines = ["# Memorii Benchmark Report", "", f"Run ID: `{canonical.metadata.run_id}`", ""]
     lines.append("## Summary")
-    lines.append(f"- Total scenarios: {canonical.summary.total_scenarios}")
+    lines.append(f"- Scenario fixtures: {canonical.summary.scenario_fixtures_total}")
     lines.append(f"- Passed: {canonical.summary.passed}")
     lines.append(f"- Failed: {canonical.summary.failed}")
+    lines.append(f"- Failed (Memorii failed): {canonical.summary.failed_memorii}")
+    lines.append(
+        "- Failed (Memorii passed but worse than baseline): "
+        f"{canonical.summary.failed_underperformed_baseline}"
+    )
+    lines.append(f"- Memorii runs: {canonical.summary.memorii_runs_total}")
+    lines.append(f"- Baseline runs: {canonical.summary.baseline_runs_total}")
+    lines.append("")
+    lines.append("## Failure Breakdown")
+    lines.append(f"- Memorii failed: {canonical.summary.failed_memorii}")
+    memorii_failed_ids = [
+        item.scenario_id
+        for item in canonical.scenario_verdicts
+        if item.scenario_verdict == ScenarioVerdict.MEMORII_FAILED
+    ]
+    if memorii_failed_ids:
+        lines.append(f"  - Scenarios: {', '.join(sorted(memorii_failed_ids))}")
+    lines.append(
+        "- Memorii passed but was worse than baseline: "
+        f"{canonical.summary.failed_underperformed_baseline}"
+    )
+    underperformed = [
+        item
+        for item in canonical.scenario_verdicts
+        if item.scenario_verdict == ScenarioVerdict.MEMORII_PASSED_BUT_WORSE_THAN_BASELINE
+    ]
+    if underperformed:
+        for item in sorted(underperformed, key=lambda verdict: verdict.scenario_id):
+            lines.append(
+                f"  - {item.scenario_id}: worse than {', '.join(sorted(item.worse_than_baseline_systems))}"
+            )
     lines.append("")
     lines.append("## Aggregate Metrics (By System)")
     for system_name, metric_map in sorted(canonical.summary.aggregate_metrics.items()):
@@ -164,6 +218,14 @@ def to_markdown(report: BenchmarkRunReport, *, fixtures: list[BenchmarkScenarioF
         lines.append(
             f"- `{scenario.scenario_id}` ({scenario.category.value}, {scenario.system.value}, {scenario.execution_type.value}) "
             f"status={scenario.outcome_status.value}"
+        )
+    lines.append("")
+    lines.append("## Scenario Verdicts (Memorii-centric)")
+    for verdict in sorted(canonical.scenario_verdicts, key=lambda item: item.scenario_id):
+        worse = ", ".join(sorted(verdict.worse_than_baseline_systems)) or "none"
+        lines.append(
+            f"- `{verdict.scenario_id}` verdict={verdict.scenario_verdict.value} "
+            f"(worse_than={worse})"
         )
     return "\n".join(lines)
 
@@ -381,6 +443,111 @@ def _build_baseline_entries(report: BenchmarkRunReport) -> dict[BenchmarkSystem,
             deltas_vs_memorii=deltas,
         )
     return output
+
+
+def _build_scenario_verdicts(
+    results_by_scenario: dict[str, dict[BenchmarkSystem, ScenarioResult]],
+) -> list[CanonicalScenarioVerdictEntry]:
+    verdicts: list[CanonicalScenarioVerdictEntry] = []
+    for scenario_id in sorted(results_by_scenario.keys()):
+        per_system = results_by_scenario[scenario_id]
+        memorii = per_system.get(BenchmarkSystem.MEMORII)
+        if memorii is None:
+            continue
+        memorii_result = _scenario_outcome_status(memorii)
+        memorii_passed = memorii_result == ScenarioOutcomeStatus.PASSED
+        worse_than_baseline_systems: list[str] = []
+        baseline_results: dict[str, ScenarioOutcomeStatus] = {}
+        for system, baseline_result in sorted(per_system.items(), key=lambda item: item[0].value):
+            if system == BenchmarkSystem.MEMORII:
+                continue
+            baseline_outcome = _scenario_outcome_status(baseline_result)
+            baseline_results[system.value] = baseline_outcome
+            if not memorii_passed:
+                continue
+            if _is_baseline_better(
+                memorii=memorii,
+                baseline=baseline_result,
+            ):
+                worse_than_baseline_systems.append(system.value)
+        better_or_equal = not worse_than_baseline_systems
+        if not memorii_passed:
+            scenario_verdict = ScenarioVerdict.MEMORII_FAILED
+        elif better_or_equal:
+            scenario_verdict = ScenarioVerdict.PASSED
+        else:
+            scenario_verdict = ScenarioVerdict.MEMORII_PASSED_BUT_WORSE_THAN_BASELINE
+        verdicts.append(
+            CanonicalScenarioVerdictEntry(
+                scenario_id=scenario_id,
+                category=memorii.category,
+                memorii_result=memorii_result,
+                baseline_results=baseline_results,
+                scenario_verdict=scenario_verdict,
+                memorii_passed=memorii_passed,
+                better_or_equal_than_all_baselines=better_or_equal,
+                worse_than_baseline_systems=sorted(worse_than_baseline_systems),
+            )
+        )
+    return verdicts
+
+
+def _is_baseline_better(*, memorii: ScenarioResult, baseline: ScenarioResult) -> bool:
+    if memorii.category == BenchmarkScenarioType.END_TO_END:
+        return _compare_by_metric_priority(
+            memorii,
+            baseline,
+            metric_priority=("scenario_success_rate",),
+        ) < 0
+    if memorii.category == BenchmarkScenarioType.CONFLICT_RESOLUTION:
+        return _compare_by_metric_priority(
+            memorii,
+            baseline,
+            metric_priority=(
+                "conflict_detection_rate",
+                "stale_memory_rejection_rate",
+                "correct_preference_for_newer_or_valid_memory",
+            ),
+        ) < 0
+    if memorii.category in {
+        BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+        BenchmarkScenarioType.IMPLICIT_RECALL,
+        BenchmarkScenarioType.LONG_HORIZON_DEGRADATION,
+    }:
+        return _compare_by_metric_priority(
+            memorii,
+            baseline,
+            metric_priority=("recall_at_k", "precision_at_k", "precision_at_1"),
+        ) < 0
+    if memorii.category == BenchmarkScenarioType.LEARNING_ACROSS_EPISODES:
+        return _compare_by_metric_priority(
+            memorii,
+            baseline,
+            metric_priority=("cross_episode_reuse_accuracy", "writeback_reuse_correctness"),
+        ) < 0
+    return _compare_by_metric_priority(
+        memorii,
+        baseline,
+        metric_priority=("scenario_success_rate",),
+    ) < 0
+
+
+def _compare_by_metric_priority(
+    memorii: ScenarioResult,
+    baseline: ScenarioResult,
+    *,
+    metric_priority: tuple[str, ...],
+) -> int:
+    for metric_name in metric_priority:
+        memorii_value = getattr(memorii.metrics, metric_name)
+        baseline_value = getattr(baseline.metrics, metric_name)
+        if memorii_value is None or baseline_value is None:
+            continue
+        if memorii_value > baseline_value:
+            return 1
+        if memorii_value < baseline_value:
+            return -1
+    return 0
 
 
 def _compute_baseline_summary(report: BenchmarkRunReport) -> dict[str, dict[str, float | None]]:

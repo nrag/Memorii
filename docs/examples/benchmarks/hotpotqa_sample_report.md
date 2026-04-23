@@ -1,11 +1,19 @@
 # Memorii Benchmark Report
 
-Run ID: `bench-a39e78bc8993c824`
+Run ID: `bench-30b5510848fd010d`
 
 ## Summary
-- Total scenarios: 28
-- Passed: 19
-- Failed: 9
+- Scenario fixtures: 8
+- Passed: 8
+- Failed: 0
+- Failed (Memorii failed): 0
+- Failed (Memorii passed but worse than baseline): 0
+- Memorii runs: 8
+- Baseline runs: 20
+
+## Failure Breakdown
+- Memorii failed: 0
+- Memorii passed but was worse than baseline: 0
 
 ## Aggregate Metrics (By System)
 ### flat_retrieval_baseline
@@ -13,9 +21,11 @@ Run ID: `bench-a39e78bc8993c824`
 - contradictory_memory_handling_correctness: 0.0000
 - correct_preference_for_newer_or_valid_memory: 0.0000
 - false_positive_retrieval_rate: 0.0000
+- hard_distractor_outrank_rate: 0.0000
 - implicit_recall_success_rate: 1.0000
 - multi_domain_fanout_correctness: 1.0000
 - noise_resilience: 0.3333
+- precision_at_1: 1.0000
 - precision_at_k: 0.8667
 - recall_at_k: 1.0000
 - resume_correctness_under_scale: 1.0000
@@ -35,9 +45,11 @@ Run ID: `bench-a39e78bc8993c824`
 - contradictory_memory_handling_correctness: 1.0000
 - correct_preference_for_newer_or_valid_memory: 1.0000
 - false_positive_retrieval_rate: 0.0000
+- hard_distractor_outrank_rate: 0.0000
 - implicit_recall_success_rate: 1.0000
 - multi_domain_fanout_correctness: 1.0000
 - noise_resilience: 0.3333
+- precision_at_1: 1.0000
 - precision_at_k: 0.8667
 - recall_at_k: 1.0000
 - resume_correctness_under_scale: 1.0000
@@ -57,9 +69,11 @@ Run ID: `bench-a39e78bc8993c824`
 - contradictory_memory_handling_correctness: 0.0000
 - correct_preference_for_newer_or_valid_memory: 0.0000
 - false_positive_retrieval_rate: 0.0000
+- hard_distractor_outrank_rate: 0.0000
 - implicit_recall_success_rate: 1.0000
 - multi_domain_fanout_correctness: 0.0000
 - noise_resilience: 0.3333
+- precision_at_1: 1.0000
 - precision_at_k: 0.8667
 - recall_at_k: 1.0000
 - resume_correctness_under_scale: 1.0000
@@ -78,8 +92,10 @@ Run ID: `bench-a39e78bc8993c824`
 - conflict_detection_rate: 0.0000
 - contradictory_memory_handling_correctness: 0.0000
 - correct_preference_for_newer_or_valid_memory: 1.0000
+- hard_distractor_outrank_rate: 0.0000
 - multi_domain_fanout_correctness: 0.0000
 - noise_resilience: 0.3333
+- precision_at_1: 1.0000
 - precision_at_k: 0.3333
 - recall_at_k: 1.0000
 - resume_correctness_under_scale: 1.0000
@@ -100,9 +116,11 @@ Run ID: `bench-a39e78bc8993c824`
   - contradictory_memory_handling_correctness: 0.0000
   - correct_preference_for_newer_or_valid_memory: 0.0000
   - false_positive_retrieval_rate: 0.0000
+  - hard_distractor_outrank_rate: 0.0000
   - implicit_recall_success_rate: 1.0000
   - multi_domain_fanout_correctness: 1.0000
   - noise_resilience: 0.3333
+  - precision_at_1: 1.0000
   - precision_at_k: 0.8667
   - recall_at_k: 1.0000
   - resume_correctness_under_scale: 1.0000
@@ -121,9 +139,11 @@ Run ID: `bench-a39e78bc8993c824`
   - contradictory_memory_handling_correctness: +1.0000 (higher-is-better)
   - correct_preference_for_newer_or_valid_memory: +1.0000 (higher-is-better)
   - false_positive_retrieval_rate: +0.0000 (lower-is-better)
+  - hard_distractor_outrank_rate: +0.0000 (higher-is-better)
   - implicit_recall_success_rate: +0.0000 (higher-is-better)
   - multi_domain_fanout_correctness: +0.0000 (higher-is-better)
   - noise_resilience: +0.0000 (higher-is-better)
+  - precision_at_1: +0.0000 (higher-is-better)
   - precision_at_k: +0.0000 (higher-is-better)
   - recall_at_k: +0.0000 (higher-is-better)
   - resume_correctness_under_scale: +0.0000 (higher-is-better)
@@ -143,9 +163,11 @@ Run ID: `bench-a39e78bc8993c824`
   - contradictory_memory_handling_correctness: 0.0000
   - correct_preference_for_newer_or_valid_memory: 0.0000
   - false_positive_retrieval_rate: 0.0000
+  - hard_distractor_outrank_rate: 0.0000
   - implicit_recall_success_rate: 1.0000
   - multi_domain_fanout_correctness: 0.0000
   - noise_resilience: 0.3333
+  - precision_at_1: 1.0000
   - precision_at_k: 0.8667
   - recall_at_k: 1.0000
   - resume_correctness_under_scale: 1.0000
@@ -164,9 +186,11 @@ Run ID: `bench-a39e78bc8993c824`
   - contradictory_memory_handling_correctness: +1.0000 (higher-is-better)
   - correct_preference_for_newer_or_valid_memory: +1.0000 (higher-is-better)
   - false_positive_retrieval_rate: +0.0000 (lower-is-better)
+  - hard_distractor_outrank_rate: +0.0000 (higher-is-better)
   - implicit_recall_success_rate: +0.0000 (higher-is-better)
   - multi_domain_fanout_correctness: +1.0000 (higher-is-better)
   - noise_resilience: +0.0000 (higher-is-better)
+  - precision_at_1: +0.0000 (higher-is-better)
   - precision_at_k: +0.0000 (higher-is-better)
   - recall_at_k: +0.0000 (higher-is-better)
   - resume_correctness_under_scale: +0.0000 (higher-is-better)
@@ -185,8 +209,10 @@ Run ID: `bench-a39e78bc8993c824`
   - conflict_detection_rate: 0.0000
   - contradictory_memory_handling_correctness: 0.0000
   - correct_preference_for_newer_or_valid_memory: 1.0000
+  - hard_distractor_outrank_rate: 0.0000
   - multi_domain_fanout_correctness: 0.0000
   - noise_resilience: 0.3333
+  - precision_at_1: 1.0000
   - precision_at_k: 0.3333
   - recall_at_k: 1.0000
   - resume_correctness_under_scale: 1.0000
@@ -203,8 +229,10 @@ Run ID: `bench-a39e78bc8993c824`
   - conflict_detection_rate: +1.0000 (higher-is-better)
   - contradictory_memory_handling_correctness: +1.0000 (higher-is-better)
   - correct_preference_for_newer_or_valid_memory: +0.0000 (higher-is-better)
+  - hard_distractor_outrank_rate: +0.0000 (higher-is-better)
   - multi_domain_fanout_correctness: +1.0000 (higher-is-better)
   - noise_resilience: +0.0000 (higher-is-better)
+  - precision_at_1: +0.0000 (higher-is-better)
   - precision_at_k: +0.5333 (higher-is-better)
   - recall_at_k: +0.0000 (higher-is-better)
   - resume_correctness_under_scale: +0.0000 (higher-is-better)
@@ -264,3 +292,13 @@ Run ID: `bench-a39e78bc8993c824`
 - `hotpot_semantic_hp2` (semantic_retrieval, flat_retrieval_baseline, component_level) status=passed
 - `hotpot_semantic_hp2` (semantic_retrieval, memorii, component_level) status=passed
 - `hotpot_semantic_hp2` (semantic_retrieval, no_solver_graph_baseline, component_level) status=passed
+
+## Scenario Verdicts (Memorii-centric)
+- `hotpot_control_conflict` verdict=passed (worse_than=none)
+- `hotpot_control_long_horizon` verdict=passed (worse_than=none)
+- `hotpot_e2e_hp1` verdict=passed (worse_than=none)
+- `hotpot_e2e_hp2` verdict=passed (worse_than=none)
+- `hotpot_implicit_hp1` verdict=passed (worse_than=none)
+- `hotpot_implicit_hp2` verdict=passed (worse_than=none)
+- `hotpot_semantic_hp1` verdict=passed (worse_than=none)
+- `hotpot_semantic_hp2` verdict=passed (worse_than=none)

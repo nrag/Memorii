@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from memorii.core.benchmark.harness import BenchmarkHarness
-from memorii.core.benchmark.models import CanonicalBenchmarkReport
+from memorii.core.benchmark.models import BenchmarkSystem, CanonicalBenchmarkReport, ScenarioVerdict
 from memorii.core.benchmark.reporting import to_canonical_report, to_markdown, write_artifacts
 from memorii.core.benchmark.validation import validate_canonical_report
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
@@ -18,7 +18,16 @@ def test_canonical_report_has_required_top_level_sections() -> None:
     canonical = to_canonical_report(report, fixtures=fixtures, dataset="fixture_set", fixture_source="tests")
 
     payload = canonical.model_dump(mode="json")
-    assert set(payload.keys()) == {"metadata", "config", "summary", "categories", "scenarios", "baselines", "errors"}
+    assert set(payload.keys()) == {
+        "metadata",
+        "config",
+        "summary",
+        "categories",
+        "scenarios",
+        "scenario_verdicts",
+        "baselines",
+        "errors",
+    }
 
 
 def test_canonical_scenario_entries_include_expected_observed_metrics_and_execution_type() -> None:
@@ -52,6 +61,7 @@ def test_markdown_is_derived_from_canonical_report() -> None:
 
     assert canonical.metadata.run_id in markdown
     assert "## Scenarios" in markdown
+    assert "## Failure Breakdown" in markdown
 
 
 def test_canonical_reporting_marks_semantic_retrieval_as_passed_when_success_true() -> None:
@@ -155,4 +165,120 @@ def test_canonical_reporting_marks_unsupported_without_counting_as_failed() -> N
     )
     assert entry.outcome_status.value == "unsupported"
     assert entry.passed is False
-    assert canonical.summary.failed == sum(1 for item in canonical.scenarios if item.outcome_status.value == "failed")
+    assert canonical.summary.failed == (
+        canonical.summary.failed_memorii + canonical.summary.failed_underperformed_baseline
+    )
+
+
+def test_scenario_verdict_passed_when_memorii_passes_and_baselines_fail() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    target_id = "retrieval_transcript_verbatim"
+    memorii_result = next(
+        item
+        for item in report.scenario_results
+        if item.scenario_id == target_id and item.system == BenchmarkSystem.MEMORII
+    )
+    memorii_result.observation.scenario_success = True
+    memorii_result.metrics.scenario_success_rate = 1.0
+    for baseline in (
+        BenchmarkSystem.TRANSCRIPT_ONLY_BASELINE,
+        BenchmarkSystem.FLAT_RETRIEVAL_BASELINE,
+        BenchmarkSystem.NO_SOLVER_GRAPH_BASELINE,
+    ):
+        baseline_result = next(
+            item
+            for item in report.scenario_results
+            if item.scenario_id == target_id and item.system == baseline
+        )
+        baseline_result.observation.scenario_success = False
+        baseline_result.metrics.scenario_success_rate = 0.0
+    canonical = to_canonical_report(report, fixtures=fixtures)
+
+    verdict = next(item for item in canonical.scenario_verdicts if item.scenario_id == target_id)
+    assert verdict.scenario_verdict == ScenarioVerdict.PASSED
+
+
+def test_scenario_verdict_marks_underperformed_when_baseline_beats_memorii() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    target_id = "retrieval_semantic_validated"
+    memorii_result = next(
+        item
+        for item in report.scenario_results
+        if item.scenario_id == target_id and item.system == BenchmarkSystem.MEMORII
+    )
+    memorii_result.observation.scenario_success = True
+    memorii_result.metrics.scenario_success_rate = 1.0
+    memorii_result.metrics.recall_at_k = 0.5
+    memorii_result.metrics.precision_at_k = 0.5
+    baseline_result = next(
+        item
+        for item in report.scenario_results
+        if item.scenario_id == target_id and item.system == BenchmarkSystem.FLAT_RETRIEVAL_BASELINE
+    )
+    baseline_result.observation.scenario_success = True
+    baseline_result.metrics.scenario_success_rate = 1.0
+    baseline_result.metrics.recall_at_k = 1.0
+    baseline_result.metrics.precision_at_k = 1.0
+
+    canonical = to_canonical_report(report, fixtures=fixtures)
+    verdict = next(item for item in canonical.scenario_verdicts if item.scenario_id == target_id)
+    assert verdict.scenario_verdict == ScenarioVerdict.MEMORII_PASSED_BUT_WORSE_THAN_BASELINE
+    assert "flat_retrieval_baseline" in verdict.worse_than_baseline_systems
+
+
+def test_scenario_verdict_marks_memorii_failed_when_memorii_fails() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    target_id = "retrieval_episodic_prior_case"
+    memorii_result = next(
+        item
+        for item in report.scenario_results
+        if item.scenario_id == target_id and item.system == BenchmarkSystem.MEMORII
+    )
+    memorii_result.observation.scenario_success = False
+    memorii_result.metrics.scenario_success_rate = 0.0
+
+    canonical = to_canonical_report(report, fixtures=fixtures)
+    verdict = next(item for item in canonical.scenario_verdicts if item.scenario_id == target_id)
+    assert verdict.scenario_verdict == ScenarioVerdict.MEMORII_FAILED
+
+
+def test_summary_counts_use_fixture_level_verdicts_not_system_execution_rows() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    canonical = to_canonical_report(report, fixtures=fixtures)
+
+    assert canonical.summary.scenario_fixtures_total == len(canonical.scenario_verdicts)
+    assert canonical.summary.scenario_fixtures_total < len(canonical.scenarios)
+    assert canonical.summary.failed == (
+        canonical.summary.failed_memorii + canonical.summary.failed_underperformed_baseline
+    )
+
+
+def test_markdown_failure_breakdown_lists_underperformed_scenarios() -> None:
+    fixtures = load_benchmark_fixture_set()
+    report = BenchmarkHarness().run(fixtures=fixtures)
+    target_id = "retrieval_semantic_validated"
+    memorii_result = next(
+        item
+        for item in report.scenario_results
+        if item.scenario_id == target_id and item.system == BenchmarkSystem.MEMORII
+    )
+    memorii_result.observation.scenario_success = True
+    memorii_result.metrics.scenario_success_rate = 1.0
+    memorii_result.metrics.recall_at_k = 0.5
+    baseline_result = next(
+        item
+        for item in report.scenario_results
+        if item.scenario_id == target_id and item.system == BenchmarkSystem.FLAT_RETRIEVAL_BASELINE
+    )
+    baseline_result.observation.scenario_success = True
+    baseline_result.metrics.scenario_success_rate = 1.0
+    baseline_result.metrics.recall_at_k = 1.0
+
+    markdown = to_markdown(report, fixtures=fixtures)
+    assert "## Failure Breakdown" in markdown
+    assert "Memorii passed but was worse than baseline" in markdown
+    assert "retrieval_semantic_validated: worse than flat_retrieval_baseline" in markdown
