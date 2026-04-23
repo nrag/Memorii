@@ -17,6 +17,14 @@ from memorii.core.benchmark.models import (
     ScenarioExecutionLevel,
     ScenarioObservation,
 )
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.promotion import (
+    PromotionContextBuilder,
+    PromotionExecutor,
+    PromotionService,
+    RuleBasedPromotionDecider,
+)
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.provider.models import ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
@@ -123,29 +131,27 @@ class ScenarioExecutor:
             raise ValueError("learning across episodes fixture is required")
 
         fx = fixture.learning_across_episodes
-        retrieval = RetrievalFixture(
-            query=fx.episode_two_query,
-            intent=fixture.retrieval.intent if fixture.retrieval is not None else RetrievalIntent.RESUME_TASK,
-            scope=fixture.retrieval.scope if fixture.retrieval is not None else RetrievalScope(),
-            top_k=fx.top_k,
-            corpus=fx.corpus,
-            expected_relevant_ids=[fx.expected_reuse_id],
-        )
         if system == BenchmarkSystem.MEMORII:
-            ranked = sorted(
-                fx.corpus,
-                key=lambda item: (-_retrieval_score(fx.episode_two_query, item.text), item.item_id),
-            )
-            top = ranked[: fx.top_k]
-            latency_ms = float(len(fx.corpus) * 3)
+            top, latency_ms, promoted = self._run_learning_episode_promotion(fixture=fixture)
         else:
+            retrieval = RetrievalFixture(
+                query=fx.episode_two_query,
+                intent=fixture.retrieval.intent if fixture.retrieval is not None else RetrievalIntent.RESUME_TASK,
+                scope=fixture.retrieval.scope if fixture.retrieval is not None else RetrievalScope(),
+                top_k=fx.top_k,
+                corpus=fx.corpus,
+                expected_relevant_ids=[fx.expected_reuse_id],
+            )
             top, latency_ms = self._retrieve(fixture=retrieval, system=system)
+            promoted = False
         retrieved_ids = [item.item_id for item in top]
         reuse_correct = fx.expected_reuse_id in set(retrieved_ids)
         baseline_without_reuse_success = fx.expected_reuse_id in set(fx.baseline_without_reuse_retrieved_ids)
         performance_delta = float(reuse_correct) - float(baseline_without_reuse_success)
         writeback_correct = (
-            system == BenchmarkSystem.MEMORII and fx.expected_writeback_domain in set(fx.episode_one_writeback_domains)
+            system == BenchmarkSystem.MEMORII
+            and promoted
+            and fx.expected_writeback_domain in set(fx.episode_one_writeback_domains)
         )
 
         return ScenarioObservation(
@@ -166,6 +172,66 @@ class ScenarioExecutor:
             expected_writeback_candidate_ids=list(fx.expected_writeback_candidate_ids),
             scenario_success=reuse_correct and writeback_correct,
         )
+
+    def _run_learning_episode_promotion(
+        self,
+        *,
+        fixture: BenchmarkScenarioFixture,
+    ) -> tuple[list[RetrievalFixtureMemoryItem], float, bool]:
+        if fixture.learning_across_episodes is None:
+            raise ValueError("learning across episodes fixture is required")
+        fx = fixture.learning_across_episodes
+
+        plane = MemoryPlaneService()
+        expected = next(item for item in fx.corpus if item.item_id == fx.expected_reuse_id)
+
+        candidate = CanonicalMemoryRecord(
+            memory_id=f"cand:{expected.item_id}",
+            domain=expected.domain,
+            text=expected.text,
+            content={"text": expected.text},
+            status=CommitStatus.CANDIDATE,
+            source_kind=_source_kind_for_learning_domain(expected.domain),
+            task_id=expected.task_id,
+            promotion_state="staged",
+        )
+        plane.stage_record(candidate)
+
+        for item in fx.corpus:
+            if item.item_id == fx.expected_reuse_id:
+                continue
+            plane.stage_record(
+                CanonicalMemoryRecord(
+                    memory_id=item.item_id,
+                    domain=item.domain,
+                    text=item.text,
+                    content={"text": item.text},
+                    status=CommitStatus.COMMITTED,
+                    source_kind="benchmark_seed",
+                    task_id=item.task_id,
+                )
+            )
+
+        promotion = PromotionService(
+            context_builder=PromotionContextBuilder(memory_plane=plane),
+            decider=RuleBasedPromotionDecider(),
+            executor=PromotionExecutor(memory_plane=plane),
+        )
+        result = promotion.promote_candidate(candidate.memory_id)
+
+        committed_items = [
+            RetrievalFixtureMemoryItem(
+                item_id=item.source_candidate_id.removeprefix("cand:") if item.source_candidate_id is not None else item.memory_id,
+                domain=item.domain,
+                text=item.text,
+            )
+            for item in plane.list_records(status=CommitStatus.COMMITTED)
+        ]
+        ranked = sorted(
+            committed_items,
+            key=lambda item: (-_retrieval_score(fx.episode_two_query, item.text), item.item_id),
+        )
+        return ranked[: fx.top_k], float(len(committed_items) * 3), result.committed_memory_id is not None
 
     def _run_long_horizon_degradation(
         self,
@@ -1053,6 +1119,16 @@ def _safe_ratio(numerator: int, denominator: int) -> float | None:
     if denominator == 0:
         return None
     return float(numerator) / float(denominator)
+
+
+def _source_kind_for_learning_domain(domain: MemoryDomain) -> str:
+    if domain == MemoryDomain.USER:
+        return "provider:memory_write_user"
+    if domain == MemoryDomain.SEMANTIC:
+        return "provider:memory_write_longterm"
+    if domain == MemoryDomain.EPISODIC:
+        return "provider:memory_write_dailylog"
+    return "provider:unknown"
 
 
 @dataclass(frozen=True)

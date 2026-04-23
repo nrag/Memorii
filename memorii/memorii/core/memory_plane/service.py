@@ -59,6 +59,91 @@ class MemoryPlaneService:
             if self._matches_scope(item, query.scope) and self._matches_semantics(item, include_candidates=query.include_candidates, freshness=query.freshness)
         ]
 
+    def list_records(
+        self,
+        *,
+        status: CommitStatus | None = None,
+        domains: list[MemoryDomain] | None = None,
+    ) -> list[CanonicalMemoryRecord]:
+        domain_set = set(domains) if domains is not None else None
+        return [
+            item
+            for item in self._records
+            if (status is None or item.status == status) and (domain_set is None or item.domain in domain_set)
+        ]
+
+    def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
+        for item in self._records:
+            if item.memory_id == memory_id:
+                return item
+        return None
+
+    def stage_record(self, record: CanonicalMemoryRecord) -> None:
+        self._records.append(record)
+
+    def update_candidate_lifecycle(
+        self,
+        *,
+        candidate_id: str,
+        promotion_state: str,
+        duplicate_of_memory_id: str | None,
+        rejected_reason: str | None,
+        conflict_with_memory_ids: list[str],
+        supersedes_memory_ids: list[str],
+    ) -> None:
+        updated: list[CanonicalMemoryRecord] = []
+        for item in self._records:
+            if item.memory_id == candidate_id:
+                updated.append(
+                    item.model_copy(
+                        update={
+                            "promotion_state": promotion_state,
+                            "duplicate_of_memory_id": duplicate_of_memory_id,
+                            "rejected_reason": rejected_reason,
+                            "conflict_with_memory_ids": list(conflict_with_memory_ids),
+                            "supersedes_memory_ids": list(supersedes_memory_ids),
+                        }
+                    )
+                )
+            else:
+                updated.append(item)
+        self._records = updated
+
+    def commit_candidate(
+        self,
+        *,
+        candidate_id: str,
+        target_domain: MemoryDomain,
+        source_candidate_id: str,
+        supersedes_memory_ids: list[str],
+    ) -> str:
+        candidate = self.get_record(candidate_id)
+        if candidate is None:
+            raise ValueError(f"candidate not found: {candidate_id}")
+
+        existing = [
+            item
+            for item in self._records
+            if item.source_candidate_id == source_candidate_id and item.status == CommitStatus.COMMITTED
+        ]
+        if existing:
+            return existing[0].memory_id
+
+        committed_memory_id = f"mem:{target_domain.value}:{candidate.memory_id}"
+        committed = candidate.model_copy(
+            update={
+                "memory_id": committed_memory_id,
+                "domain": target_domain,
+                "status": CommitStatus.COMMITTED,
+                "source_candidate_id": source_candidate_id,
+                "promotion_state": "committed",
+                "supersedes_memory_ids": list(supersedes_memory_ids),
+                "timestamp": datetime.now(UTC),
+            }
+        )
+        self._records.append(committed)
+        return committed_memory_id
+
     def ingest_runtime_observation(self, *, router: object, inbound: InboundEvent) -> RoutingDecision:
         decision = router.route_event(inbound)
         for routed in decision.routed_objects:
@@ -184,7 +269,7 @@ class MemoryPlaneService:
         return [
             to_provider_stored_record(item)
             for item in self._records
-            if item.status == CommitStatus.CANDIDATE and item.source_kind == "provider"
+            if item.status == CommitStatus.CANDIDATE and item.source_kind.startswith("provider")
         ]
 
     def provider_transcript_records(self) -> list[ProviderStoredRecord]:
@@ -225,12 +310,13 @@ class MemoryPlaneService:
                 text=event.content or "",
                 content={"text": event.content or ""},
                 status=CommitStatus.CANDIDATE,
-                source_kind="provider",
+                source_kind=f"provider:{event.operation.value}",
                 timestamp=event.timestamp or datetime.now(UTC),
                 session_id=event.session_id,
                 task_id=event.task_id,
                 user_id=event.user_id,
                 is_raw_event=False,
+                promotion_state="staged",
             )
         )
         return memory_id
