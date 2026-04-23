@@ -109,14 +109,19 @@ class ProviderMemoryService:
         intent = _intent_for_query_class(query_class)
         plan = self._planner.build_plan(intent=intent, scope=RetrievalScope(task_id=task_id), include_raw_transcript=True)
         planned_domains = {query_spec.domain for query_spec in plan.queries}
-
-        pool = [
+        committed_pool = [
             item
             for item in self._committed_records
             if item.domain in planned_domains and _in_scope(item=item, session_id=session_id, task_id=task_id, user_id=user_id)
         ]
+        transcript_pool = [
+            item
+            for item in self._transcript_records
+            if item.domain in planned_domains and _in_scope(item=item, session_id=session_id, task_id=task_id, user_id=user_id)
+        ]
+        pool = {item.memory_id: item for item in [*committed_pool, *transcript_pool]}
         ranked = sorted(
-            pool,
+            pool.values(),
             key=lambda item: (
                 preferred_domains.index(item.domain) if item.domain in preferred_domains else 99,
                 -_lexical_score(query, item.text),

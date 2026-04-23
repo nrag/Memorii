@@ -509,6 +509,10 @@ class ScenarioExecutor:
             execution_level = ScenarioExecutionLevel.PROVIDER_SYSTEM
             provider_service = ProviderMemoryService()
             provider = HermesMemoryProvider(provider_service)
+            blocked_domain_set = set()
+            operation_writeback_ids: list[str] = []
+            operation_writeback_domains: set[MemoryDomain] = set()
+            writeback_records = []
             for item in fixture.retrieval.corpus:
                 if (
                     item.status == CommitStatus.COMMITTED
@@ -525,32 +529,88 @@ class ScenarioExecutor:
                             user_id="user:benchmark",
                         )
                     )
-            turn_result = provider.sync_turn(
-                user_content=str(event.payload),
-                assistant_content="Acknowledged update.",
-                session_id="session:benchmark",
-                task_id=fx.task_id,
-                user_id="user:benchmark",
-            )
-            write_result = provider.on_memory_write(
-                action="upsert",
-                target="memory",
-                content=str(event.payload),
-                session_id="session:benchmark",
-                task_id=fx.task_id,
-                user_id="user:benchmark",
-            )
-            retrieved_context = provider.prefetch(
-                fixture.retrieval.query,
-                session_id="session:benchmark",
-                task_id=fx.task_id,
-                user_id="user:benchmark",
-            )
+            retrieved_context = "No durable memory context available."
+            for operation in fx.provider_operations:
+                if operation == "sync_turn":
+                    sync_result = provider.sync_turn(
+                        user_content=str(event.payload),
+                        assistant_content="Acknowledged update.",
+                        session_id="session:benchmark",
+                        task_id=fx.task_id,
+                        user_id="user:benchmark",
+                    )
+                    blocked_domain_set.update(sync_result.blocked_domains)
+                    blocked_reasons.update(sync_result.blocked_reasons)
+                elif operation == "prefetch":
+                    retrieved_context = provider.prefetch(
+                        fixture.retrieval.query,
+                        session_id="session:benchmark",
+                        task_id=fx.task_id,
+                        user_id="user:benchmark",
+                    )
+                elif operation == "memory_write_memory":
+                    write_result = provider.on_memory_write(
+                        action="upsert",
+                        target="memory",
+                        content=str(event.payload),
+                        session_id="session:benchmark",
+                        task_id=fx.task_id,
+                        user_id="user:benchmark",
+                    )
+                    blocked_domain_set.update(write_result.blocked_domains)
+                    blocked_reasons.update(write_result.blocked_reasons)
+                    operation_writeback_ids.extend(write_result.candidate_ids)
+                    operation_writeback_domains.update(write_result.allowed_candidate_domains)
+                elif operation == "memory_write_user":
+                    write_result = provider.on_memory_write(
+                        action="upsert",
+                        target="user",
+                        content=str(event.payload),
+                        session_id="session:benchmark",
+                        task_id=fx.task_id,
+                        user_id="user:benchmark",
+                    )
+                    blocked_domain_set.update(write_result.blocked_domains)
+                    blocked_reasons.update(write_result.blocked_reasons)
+                    operation_writeback_ids.extend(write_result.candidate_ids)
+                    operation_writeback_domains.update(write_result.allowed_candidate_domains)
+                elif operation == "session_end":
+                    sync_result = provider.on_session_end(
+                        [str(event.payload)],
+                        session_id="session:benchmark",
+                        task_id=fx.task_id,
+                        user_id="user:benchmark",
+                    )
+                    blocked_domain_set.update(sync_result.blocked_domains)
+                    blocked_reasons.update(sync_result.blocked_reasons)
+                    operation_writeback_ids.extend(sync_result.candidate_ids)
+                    operation_writeback_domains.update(sync_result.allowed_candidate_domains)
+                elif operation == "pre_compress":
+                    sync_result = provider.on_pre_compress(
+                        [str(event.payload)],
+                        session_id="session:benchmark",
+                        task_id=fx.task_id,
+                        user_id="user:benchmark",
+                    )
+                    blocked_domain_set.update(sync_result.blocked_domains)
+                    blocked_reasons.update(sync_result.blocked_reasons)
+                    operation_writeback_ids.extend(sync_result.candidate_ids)
+                    operation_writeback_domains.update(sync_result.allowed_candidate_domains)
+                elif operation == "delegation":
+                    sync_result = provider.on_delegation(
+                        task="benchmark delegation task",
+                        result=str(event.payload),
+                        session_id="session:benchmark",
+                        task_id=fx.task_id,
+                        user_id="user:benchmark",
+                    )
+                    blocked_domain_set.update(sync_result.blocked_domains)
+                    blocked_reasons.update(sync_result.blocked_reasons)
+                    operation_writeback_ids.extend(sync_result.candidate_ids)
+                    operation_writeback_domains.update(sync_result.allowed_candidate_domains)
             routed_domains = [MemoryDomain.TRANSCRIPT]
-            blocked_domain_set = set(turn_result.blocked_domains) | set(write_result.blocked_domains)
-            blocked_reasons = {**turn_result.blocked_reasons, **write_result.blocked_reasons}
-            writeback_ids = sorted(set(write_result.candidate_ids))
-            writeback_domains = sorted(set(write_result.allowed_candidate_domains), key=lambda domain: domain.value)
+            writeback_ids = sorted(set(operation_writeback_ids))
+            writeback_domains = sorted(operation_writeback_domains, key=lambda domain: domain.value)
             writeback_records = [
                 _ObservedWriteback(
                     domain=domain,
@@ -559,8 +619,8 @@ class ScenarioExecutor:
                     validated=False,
                     source_kind="raw",
                 )
-                for domain in write_result.allowed_candidate_domains
-                for candidate_id in write_result.candidate_ids
+                for domain in writeback_domains
+                for candidate_id in writeback_ids
                 if f"cand:{domain.value}:" in candidate_id
             ]
             routed_records = [

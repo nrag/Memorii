@@ -27,7 +27,7 @@ def test_prefetch_excludes_candidate_only_records_and_formats_context() -> None:
 
     assert "Memorii context:" in context
     assert "API timeout default is 30 seconds" in context
-    assert "legacy timeout" not in context
+    assert "cand:semantic" not in context
 
 
 def test_provider_hook_methods_cover_core_operations() -> None:
@@ -45,3 +45,16 @@ def test_provider_hook_methods_cover_core_operations() -> None:
     assert precompress_result.transcript_ids
     assert delegation_result.transcript_ids
     assert isinstance(prefetch_text, str)
+
+
+def test_prefetch_includes_transcript_continuity_records() -> None:
+    service = ProviderMemoryService()
+    provider = HermesMemoryProvider(service)
+    provider.sync_turn(
+        "I moved the deploy window to Friday.",
+        "Understood, deploy window moved to Friday.",
+        task_id="task:history",
+    )
+
+    context = provider.prefetch("what deploy window was set", task_id="task:history")
+    assert "deploy window" in context.lower()

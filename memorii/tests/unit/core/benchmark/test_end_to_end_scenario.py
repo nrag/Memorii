@@ -257,6 +257,40 @@ def test_end_to_end_provider_mode_surfaces_blocked_domains_and_reasons() -> None
     assert observation.blocked_reasons
     assert observation.runtime_observability_status == "supported"
 
+
+def test_end_to_end_provider_mode_respects_declared_provider_operations() -> None:
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_provider_ops_only_turn_prefetch",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="what happened",
+            intent=RetrievalIntent.RESUME_TASK,
+            scope=RetrievalScope(task_id="task:provider:ops"),
+            corpus=[],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:provider:ops",
+                event_class=InboundEventClass.USER_MESSAGE,
+                task_id="task:provider:ops",
+                payload={"text": "user asks for continuity"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:provider:ops",
+            system_interface="provider",
+            provider_operations=["sync_turn", "prefetch"],
+            expect_writeback_domains=[],
+            expect_writeback_candidate_ids=[],
+        ),
+    )
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert observation.execution_level == ScenarioExecutionLevel.PROVIDER_SYSTEM
+    assert observation.writeback_candidate_ids == []
+    assert observation.writeback_candidate_domains == []
+
 def test_system_level_runtime_retrieval_path_applies_scope_candidate_validity_and_dedupe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
