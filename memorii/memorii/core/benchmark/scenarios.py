@@ -17,8 +17,15 @@ from memorii.core.benchmark.models import (
     ScenarioExecutionLevel,
     ScenarioObservation,
 )
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.promotion import (
+    PromotionContextBuilder,
+    PromotionExecutor,
+    PromotionService,
+    RuleBasedPromotionDecider,
+)
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
-from memorii.core.provider.models import ProviderStoredRecord
+from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from memorii.core.persistence.resume import ResumeService
@@ -123,29 +130,27 @@ class ScenarioExecutor:
             raise ValueError("learning across episodes fixture is required")
 
         fx = fixture.learning_across_episodes
-        retrieval = RetrievalFixture(
-            query=fx.episode_two_query,
-            intent=fixture.retrieval.intent if fixture.retrieval is not None else RetrievalIntent.RESUME_TASK,
-            scope=fixture.retrieval.scope if fixture.retrieval is not None else RetrievalScope(),
-            top_k=fx.top_k,
-            corpus=fx.corpus,
-            expected_relevant_ids=[fx.expected_reuse_id],
-        )
         if system == BenchmarkSystem.MEMORII:
-            ranked = sorted(
-                fx.corpus,
-                key=lambda item: (-_retrieval_score(fx.episode_two_query, item.text), item.item_id),
-            )
-            top = ranked[: fx.top_k]
-            latency_ms = float(len(fx.corpus) * 3)
+            top, latency_ms, promoted = self._run_learning_episode_promotion(fixture=fixture)
         else:
+            retrieval = RetrievalFixture(
+                query=fx.episode_two_query,
+                intent=fixture.retrieval.intent if fixture.retrieval is not None else RetrievalIntent.RESUME_TASK,
+                scope=fixture.retrieval.scope if fixture.retrieval is not None else RetrievalScope(),
+                top_k=fx.top_k,
+                corpus=fx.corpus,
+                expected_relevant_ids=[fx.expected_reuse_id],
+            )
             top, latency_ms = self._retrieve(fixture=retrieval, system=system)
+            promoted = False
         retrieved_ids = [item.item_id for item in top]
         reuse_correct = fx.expected_reuse_id in set(retrieved_ids)
         baseline_without_reuse_success = fx.expected_reuse_id in set(fx.baseline_without_reuse_retrieved_ids)
         performance_delta = float(reuse_correct) - float(baseline_without_reuse_success)
         writeback_correct = (
-            system == BenchmarkSystem.MEMORII and fx.expected_writeback_domain in set(fx.episode_one_writeback_domains)
+            system == BenchmarkSystem.MEMORII
+            and promoted
+            and fx.expected_writeback_domain in set(fx.episode_one_writeback_domains)
         )
 
         return ScenarioObservation(
@@ -166,6 +171,89 @@ class ScenarioExecutor:
             expected_writeback_candidate_ids=list(fx.expected_writeback_candidate_ids),
             scenario_success=reuse_correct and writeback_correct,
         )
+
+    def _run_learning_episode_promotion(
+        self,
+        *,
+        fixture: BenchmarkScenarioFixture,
+    ) -> tuple[list[RetrievalFixtureMemoryItem], float, bool]:
+        if fixture.learning_across_episodes is None:
+            raise ValueError("learning across episodes fixture is required")
+        fx = fixture.learning_across_episodes
+
+        plane = MemoryPlaneService()
+        provider = ProviderMemoryService(memory_plane=plane)
+        expected = next(item for item in fx.corpus if item.item_id == fx.expected_reuse_id)
+        stage_result = provider.apply_memory_write(
+            operation=_provider_operation_for_learning_domain(expected.domain),
+            content=expected.text,
+            action="upsert",
+            target=_provider_target_for_learning_domain(expected.domain),
+            session_id="session:learning",
+            task_id=expected.task_id,
+            user_id="user:learning",
+        )
+        if not stage_result.candidate_ids:
+            raise ValueError("learning benchmark expected a staged candidate via provider path")
+        candidate_id = stage_result.candidate_ids[0]
+
+        for item in fx.corpus:
+            if item.item_id == fx.expected_reuse_id:
+                continue
+            provider.seed_committed_record(
+                ProviderStoredRecord(
+                    memory_id=item.item_id,
+                    domain=item.domain,
+                    text=item.text,
+                    status=CommitStatus.COMMITTED.value,
+                    task_id=item.task_id,
+                    session_id="session:learning",
+                    user_id="user:learning",
+                )
+            )
+
+        promotion = PromotionService(
+            context_builder=PromotionContextBuilder(memory_plane=plane),
+            decider=RuleBasedPromotionDecider(),
+            executor=PromotionExecutor(memory_plane=plane),
+        )
+        result = promotion.promote_candidate(candidate_id)
+        prefetch_query = fx.episode_two_query
+        if expected.domain == MemoryDomain.USER and "prefer" not in prefetch_query.lower():
+            prefetch_query = f"preference profile: {prefetch_query}"
+        provider.prefetch(
+            prefetch_query,
+            task_id=expected.task_id,
+            session_id="session:learning",
+            user_id="user:learning",
+            top_k=fx.top_k,
+        )
+        trace = provider.last_prefetch_trace()
+        ranked_ids = [item.memory_id for item in trace.ranked_items] if trace is not None else []
+
+        ranked_items: list[RetrievalFixtureMemoryItem] = []
+        for memory_id in ranked_ids[: fx.top_k]:
+            record = plane.get_record(memory_id)
+            if record is None:
+                continue
+            item_id = (
+                expected.item_id
+                if record.source_candidate_id is not None and record.domain == expected.domain and record.text == expected.text
+                else (
+                    record.source_candidate_id.removeprefix("cand:")
+                    if record.source_candidate_id is not None
+                    else record.memory_id
+                )
+            )
+            ranked_items.append(
+                RetrievalFixtureMemoryItem(
+                    item_id=item_id,
+                    domain=record.domain,
+                    text=record.text,
+                )
+            )
+        latency_ms = float((trace.candidate_count if trace is not None else len(ranked_items)) * 3)
+        return ranked_items, latency_ms, result.committed_memory_id is not None
 
     def _run_long_horizon_degradation(
         self,
@@ -1053,6 +1141,22 @@ def _safe_ratio(numerator: int, denominator: int) -> float | None:
     if denominator == 0:
         return None
     return float(numerator) / float(denominator)
+
+
+def _provider_operation_for_learning_domain(domain: MemoryDomain) -> ProviderOperation:
+    if domain == MemoryDomain.USER:
+        return ProviderOperation.MEMORY_WRITE_USER
+    if domain == MemoryDomain.SEMANTIC:
+        return ProviderOperation.MEMORY_WRITE_LONGTERM
+    if domain == MemoryDomain.EPISODIC:
+        return ProviderOperation.MEMORY_WRITE_DAILYLOG
+    raise ValueError(f"unsupported learning promotion domain: {domain.value}")
+
+
+def _provider_target_for_learning_domain(domain: MemoryDomain) -> str:
+    if domain == MemoryDomain.USER:
+        return "user"
+    return "memory"
 
 
 @dataclass(frozen=True)

@@ -31,6 +31,13 @@ class CanonicalMemoryRecord(BaseModel):
     user_id: str | None = None
     agent_id: str | None = None
     is_raw_event: bool = False
+    source_candidate_id: str | None = None
+    promotion_state: str | None = None
+    supersedes_memory_ids: list[str] = Field(default_factory=list)
+    duplicate_of_memory_id: str | None = None
+    rejected_reason: str | None = None
+    conflict_with_memory_ids: list[str] = Field(default_factory=list)
+    episode_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

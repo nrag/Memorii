@@ -1,5 +1,15 @@
 from memorii.core.benchmark.harness import BenchmarkHarness
-from memorii.core.benchmark.models import BenchmarkScenarioType, BenchmarkSystem
+import pytest
+
+from memorii.core.benchmark.models import (
+    BenchmarkScenarioFixture,
+    BenchmarkScenarioType,
+    BenchmarkSystem,
+    LearningAcrossEpisodesFixture,
+    RetrievalFixtureMemoryItem,
+)
+from memorii.core.benchmark.scenarios import ScenarioExecutor
+from memorii.domain.enums import MemoryDomain
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
 
 
@@ -17,6 +27,47 @@ def test_learning_across_episodes_benchmark_execution() -> None:
     assert result.category == BenchmarkScenarioType.LEARNING_ACROSS_EPISODES
     assert result.metrics.cross_episode_reuse_accuracy == 1.0
     assert result.metrics.writeback_reuse_correctness == 1.0
+
+
+def test_learning_across_episodes_memorii_path_does_not_use_manual_retrieval_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="learning_provider_path_only",
+        category=BenchmarkScenarioType.LEARNING_ACROSS_EPISODES,
+        learning_across_episodes=LearningAcrossEpisodesFixture(
+            episode_two_query="format using concise bullet points",
+            top_k=1,
+            corpus=[
+                RetrievalFixtureMemoryItem(
+                    item_id="pref:bullets",
+                    domain=MemoryDomain.USER,
+                    text="format using concise bullet points for user responses",
+                    task_id="task:learning",
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="tx:style",
+                    domain=MemoryDomain.TRANSCRIPT,
+                    text="latest chat asks for formatting style",
+                    task_id="task:learning",
+                ),
+            ],
+            expected_reuse_id="pref:bullets",
+            baseline_without_reuse_retrieved_ids=["tx:style"],
+            episode_one_writeback_domains=[MemoryDomain.USER, MemoryDomain.TRANSCRIPT],
+            expected_writeback_domain=MemoryDomain.USER,
+            expected_writeback_domains=[MemoryDomain.USER],
+            expected_writeback_candidate_ids=["wb:learning:pref:bullets"],
+        ),
+    )
+
+    def _boom(*args, **kwargs):
+        raise AssertionError("_retrieval_score should not be used by memorii learning path")
+
+    monkeypatch.setattr("memorii.core.benchmark.scenarios._retrieval_score", _boom)
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert observation.cross_episode_reuse_correct is True
+    assert observation.retrieved_ids == ["pref:bullets"]
 
 
 def test_long_horizon_benchmark_execution() -> None:
