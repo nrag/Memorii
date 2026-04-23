@@ -218,20 +218,39 @@ class ScenarioExecutor:
             executor=PromotionExecutor(memory_plane=plane),
         )
         result = promotion.promote_candidate(candidate.memory_id)
-
-        committed_items = [
-            RetrievalFixtureMemoryItem(
-                item_id=item.source_candidate_id.removeprefix("cand:") if item.source_candidate_id is not None else item.memory_id,
-                domain=item.domain,
-                text=item.text,
-            )
-            for item in plane.list_records(status=CommitStatus.COMMITTED)
-        ]
-        ranked = sorted(
-            committed_items,
-            key=lambda item: (-_retrieval_score(fx.episode_two_query, item.text), item.item_id),
+        provider = ProviderMemoryService(memory_plane=plane)
+        prefetch_query = fx.episode_two_query
+        if expected.domain == MemoryDomain.USER and "prefer" not in prefetch_query.lower():
+            prefetch_query = f"preference profile: {prefetch_query}"
+        provider.prefetch(
+            prefetch_query,
+            task_id=expected.task_id,
+            session_id="session:learning",
+            user_id="user:learning",
+            top_k=fx.top_k,
         )
-        return ranked[: fx.top_k], float(len(committed_items) * 3), result.committed_memory_id is not None
+        trace = provider.last_prefetch_trace()
+        ranked_ids = [item.memory_id for item in trace.ranked_items] if trace is not None else []
+
+        ranked_items: list[RetrievalFixtureMemoryItem] = []
+        for memory_id in ranked_ids[: fx.top_k]:
+            record = plane.get_record(memory_id)
+            if record is None:
+                continue
+            item_id = (
+                record.source_candidate_id.removeprefix("cand:")
+                if record.source_candidate_id is not None
+                else record.memory_id
+            )
+            ranked_items.append(
+                RetrievalFixtureMemoryItem(
+                    item_id=item_id,
+                    domain=record.domain,
+                    text=record.text,
+                )
+            )
+        latency_ms = float((trace.candidate_count if trace is not None else len(ranked_items)) * 3)
+        return ranked_items, latency_ms, result.committed_memory_id is not None
 
     def _run_long_horizon_degradation(
         self,
