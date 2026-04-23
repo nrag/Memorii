@@ -1,6 +1,6 @@
 # Memorii Benchmark Report
 
-Run ID: `bench-a39e78bc8993c824`
+Run ID: `bench-30b5510848fd010d`
 
 ## Summary
 - Total scenarios: 28
@@ -13,9 +13,11 @@ Run ID: `bench-a39e78bc8993c824`
 - contradictory_memory_handling_correctness: 0.0000
 - correct_preference_for_newer_or_valid_memory: 0.0000
 - false_positive_retrieval_rate: 0.0000
+- hard_distractor_outrank_rate: 0.0000
 - implicit_recall_success_rate: 1.0000
 - multi_domain_fanout_correctness: 1.0000
 - noise_resilience: 0.3333
+- precision_at_1: 1.0000
 - precision_at_k: 0.8667
 - recall_at_k: 1.0000
 - resume_correctness_under_scale: 1.0000
@@ -35,9 +37,11 @@ Run ID: `bench-a39e78bc8993c824`
 - contradictory_memory_handling_correctness: 1.0000
 - correct_preference_for_newer_or_valid_memory: 1.0000
 - false_positive_retrieval_rate: 0.0000
+- hard_distractor_outrank_rate: 0.0000
 - implicit_recall_success_rate: 1.0000
 - multi_domain_fanout_correctness: 1.0000
 - noise_resilience: 0.3333
+- precision_at_1: 1.0000
 - precision_at_k: 0.8667
 - recall_at_k: 1.0000
 - resume_correctness_under_scale: 1.0000
@@ -57,9 +61,11 @@ Run ID: `bench-a39e78bc8993c824`
 - contradictory_memory_handling_correctness: 0.0000
 - correct_preference_for_newer_or_valid_memory: 0.0000
 - false_positive_retrieval_rate: 0.0000
+- hard_distractor_outrank_rate: 0.0000
 - implicit_recall_success_rate: 1.0000
 - multi_domain_fanout_correctness: 0.0000
 - noise_resilience: 0.3333
+- precision_at_1: 1.0000
 - precision_at_k: 0.8667
 - recall_at_k: 1.0000
 - resume_correctness_under_scale: 1.0000
@@ -78,8 +84,10 @@ Run ID: `bench-a39e78bc8993c824`
 - conflict_detection_rate: 0.0000
 - contradictory_memory_handling_correctness: 0.0000
 - correct_preference_for_newer_or_valid_memory: 1.0000
+- hard_distractor_outrank_rate: 0.0000
 - multi_domain_fanout_correctness: 0.0000
 - noise_resilience: 0.3333
+- precision_at_1: 1.0000
 - precision_at_k: 0.3333
 - recall_at_k: 1.0000
 - resume_correctness_under_scale: 1.0000
@@ -100,9 +108,11 @@ Run ID: `bench-a39e78bc8993c824`
   - contradictory_memory_handling_correctness: 0.0000
   - correct_preference_for_newer_or_valid_memory: 0.0000
   - false_positive_retrieval_rate: 0.0000
+  - hard_distractor_outrank_rate: 0.0000
   - implicit_recall_success_rate: 1.0000
   - multi_domain_fanout_correctness: 1.0000
   - noise_resilience: 0.3333
+  - precision_at_1: 1.0000
   - precision_at_k: 0.8667
   - recall_at_k: 1.0000
   - resume_correctness_under_scale: 1.0000
@@ -121,9 +131,11 @@ Run ID: `bench-a39e78bc8993c824`
   - contradictory_memory_handling_correctness: +1.0000 (higher-is-better)
   - correct_preference_for_newer_or_valid_memory: +1.0000 (higher-is-better)
   - false_positive_retrieval_rate: +0.0000 (lower-is-better)
+  - hard_distractor_outrank_rate: +0.0000 (higher-is-better)
   - implicit_recall_success_rate: +0.0000 (higher-is-better)
   - multi_domain_fanout_correctness: +0.0000 (higher-is-better)
   - noise_resilience: +0.0000 (higher-is-better)
+  - precision_at_1: +0.0000 (higher-is-better)
   - precision_at_k: +0.0000 (higher-is-better)
   - recall_at_k: +0.0000 (higher-is-better)
   - resume_correctness_under_scale: +0.0000 (higher-is-better)
@@ -143,9 +155,11 @@ Run ID: `bench-a39e78bc8993c824`
   - contradictory_memory_handling_correctness: 0.0000
   - correct_preference_for_newer_or_valid_memory: 0.0000
   - false_positive_retrieval_rate: 0.0000
+  - hard_distractor_outrank_rate: 0.0000
   - implicit_recall_success_rate: 1.0000
   - multi_domain_fanout_correctness: 0.0000
   - noise_resilience: 0.3333
+  - precision_at_1: 1.0000
   - precision_at_k: 0.8667
   - recall_at_k: 1.0000
   - resume_correctness_under_scale: 1.0000
@@ -164,9 +178,11 @@ Run ID: `bench-a39e78bc8993c824`
   - contradictory_memory_handling_correctness: +1.0000 (higher-is-better)
   - correct_preference_for_newer_or_valid_memory: +1.0000 (higher-is-better)
   - false_positive_retrieval_rate: +0.0000 (lower-is-better)
+  - hard_distractor_outrank_rate: +0.0000 (higher-is-better)
   - implicit_recall_success_rate: +0.0000 (higher-is-better)
   - multi_domain_fanout_correctness: +1.0000 (higher-is-better)
   - noise_resilience: +0.0000 (higher-is-better)
+  - precision_at_1: +0.0000 (higher-is-better)
   - precision_at_k: +0.0000 (higher-is-better)
   - recall_at_k: +0.0000 (higher-is-better)
   - resume_correctness_under_scale: +0.0000 (higher-is-better)
@@ -185,8 +201,10 @@ Run ID: `bench-a39e78bc8993c824`
   - conflict_detection_rate: 0.0000
   - contradictory_memory_handling_correctness: 0.0000
   - correct_preference_for_newer_or_valid_memory: 1.0000
+  - hard_distractor_outrank_rate: 0.0000
   - multi_domain_fanout_correctness: 0.0000
   - noise_resilience: 0.3333
+  - precision_at_1: 1.0000
   - precision_at_k: 0.3333
   - recall_at_k: 1.0000
   - resume_correctness_under_scale: 1.0000
@@ -203,8 +221,10 @@ Run ID: `bench-a39e78bc8993c824`
   - conflict_detection_rate: +1.0000 (higher-is-better)
   - contradictory_memory_handling_correctness: +1.0000 (higher-is-better)
   - correct_preference_for_newer_or_valid_memory: +0.0000 (higher-is-better)
+  - hard_distractor_outrank_rate: +0.0000 (higher-is-better)
   - multi_domain_fanout_correctness: +1.0000 (higher-is-better)
   - noise_resilience: +0.0000 (higher-is-better)
+  - precision_at_1: +0.0000 (higher-is-better)
   - precision_at_k: +0.5333 (higher-is-better)
   - recall_at_k: +0.0000 (higher-is-better)
   - resume_correctness_under_scale: +0.0000 (higher-is-better)
