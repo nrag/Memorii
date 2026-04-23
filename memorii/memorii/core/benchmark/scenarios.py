@@ -518,6 +518,7 @@ class ScenarioExecutor:
                     item.status == CommitStatus.COMMITTED
                     and item.domain in {MemoryDomain.TRANSCRIPT, MemoryDomain.SEMANTIC, MemoryDomain.EPISODIC, MemoryDomain.USER}
                 ):
+                    seed_timestamp = item.valid_from or BENCHMARK_REFERENCE_TIME
                     provider_service.seed_committed_record(
                         ProviderStoredRecord(
                             memory_id=item.item_id,
@@ -527,6 +528,7 @@ class ScenarioExecutor:
                             session_id="session:benchmark",
                             task_id=item.task_id or fx.task_id,
                             user_id="user:benchmark",
+                            timestamp=seed_timestamp,
                         )
                     )
             retrieved_context = "No durable memory context available."

@@ -14,6 +14,7 @@ from memorii.core.benchmark.models import (
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 from memorii.core.benchmark.scenarios import ScenarioExecutor
+from memorii.core.provider.models import ProviderStoredRecord
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
 from memorii.domain.routing import InboundEvent, InboundEventClass
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
@@ -381,6 +382,109 @@ def test_end_to_end_provider_mode_fact_config_prefers_semantic_over_transcript()
     observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
     assert observation.execution_level == ScenarioExecutionLevel.PROVIDER_SYSTEM
     assert observation.retrieved_ids[:2] == ["sem:config", "tx:noise"]
+
+
+def test_end_to_end_provider_mode_prefetch_recency_uses_valid_from_timestamps() -> None:
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_provider_recency_uses_valid_from",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="continue timeline",
+            intent=RetrievalIntent.RESUME_TASK,
+            scope=RetrievalScope(task_id="task:provider:recency"),
+            corpus=[
+                RetrievalFixtureMemoryItem(
+                    item_id="tx:old",
+                    domain=MemoryDomain.TRANSCRIPT,
+                    text="continue timeline",
+                    task_id="task:provider:recency",
+                    valid_from=datetime(2025, 1, 1, tzinfo=UTC),
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="tx:new",
+                    domain=MemoryDomain.TRANSCRIPT,
+                    text="continue timeline",
+                    task_id="task:provider:recency",
+                    valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+                ),
+            ],
+            expected_relevant_ids=["tx:new"],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:provider:recency:1",
+                event_class=InboundEventClass.USER_MESSAGE,
+                task_id="task:provider:recency",
+                payload={"text": "continue timeline"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:provider:recency",
+            system_interface="provider",
+            provider_operations=["prefetch"],
+        ),
+    )
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert observation.execution_level == ScenarioExecutionLevel.PROVIDER_SYSTEM
+    assert observation.retrieved_ids[:2] == ["tx:new", "tx:old"]
+
+
+def test_end_to_end_provider_mode_seeding_sets_explicit_timestamp_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from memorii.core.provider.service import ProviderMemoryService
+
+    captured_timestamps: list[datetime] = []
+    original_seed = ProviderMemoryService.seed_committed_record
+
+    def _spy_seed(self: ProviderMemoryService, record: ProviderStoredRecord) -> None:
+        captured_timestamps.append(record.timestamp)
+        original_seed(self, record)
+
+    monkeypatch.setattr(ProviderMemoryService, "seed_committed_record", _spy_seed)
+
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_provider_seed_timestamp_fallback",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="continue timeline",
+            intent=RetrievalIntent.RESUME_TASK,
+            scope=RetrievalScope(task_id="task:provider:seed"),
+            corpus=[
+                RetrievalFixtureMemoryItem(
+                    item_id="tx:has_valid_from",
+                    domain=MemoryDomain.TRANSCRIPT,
+                    text="continue timeline",
+                    task_id="task:provider:seed",
+                    valid_from=datetime(2025, 6, 1, tzinfo=UTC),
+                ),
+                RetrievalFixtureMemoryItem(
+                    item_id="tx:fallback",
+                    domain=MemoryDomain.TRANSCRIPT,
+                    text="continue timeline",
+                    task_id="task:provider:seed",
+                    valid_from=None,
+                ),
+            ],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:provider:seed:1",
+                event_class=InboundEventClass.USER_MESSAGE,
+                task_id="task:provider:seed",
+                payload={"text": "continue timeline"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:provider:seed",
+            system_interface="provider",
+            provider_operations=["prefetch"],
+        ),
+    )
+    ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert captured_timestamps == [datetime(2025, 6, 1, tzinfo=UTC), datetime(2026, 1, 1, tzinfo=UTC)]
 
 def test_system_level_runtime_retrieval_path_applies_scope_candidate_validity_and_dedupe(
     monkeypatch: pytest.MonkeyPatch,
