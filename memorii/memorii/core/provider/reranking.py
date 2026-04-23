@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from memorii.core.provider.bm25 import BM25Scorer
 from memorii.core.provider.models import ProviderQueryClass, ProviderStoredRecord
 from memorii.domain.enums import MemoryDomain
 
@@ -67,6 +68,9 @@ _DOMAIN_PRIORS: dict[ProviderQueryClass, dict[MemoryDomain, float]] = {
 
 
 class ProviderReranker:
+    def __init__(self) -> None:
+        self._bm25 = BM25Scorer()
+
     def rerank(
         self,
         *,
@@ -81,7 +85,7 @@ class ProviderReranker:
             return []
 
         recency_scores = _relative_recency_scores(candidates)
-        lexical_scores = _normalized_lexical_scores(query=query, candidates=candidates)
+        lexical_scores = self._normalized_lexical_scores(query=query, candidates=candidates)
         weights = QUERY_CLASS_WEIGHTS[query_class]
 
         scored: list[ProviderRerankResult] = []
@@ -107,23 +111,22 @@ class ProviderReranker:
 
         return sorted(scored, key=lambda item: (-item.final_score, item.record.memory_id))
 
+    def _normalized_lexical_scores(self, *, query: str, candidates: list[ProviderStoredRecord]) -> dict[str, float]:
+        raw_scores = self._bm25.score(
+            query=query,
+            documents={candidate.memory_id: candidate.text for candidate in candidates},
+        )
+        max_score = max(raw_scores.values()) if raw_scores else 0.0
+        if max_score == 0.0:
+            return {candidate.memory_id: 0.0 for candidate in candidates}
+        return {
+            candidate.memory_id: raw_scores.get(candidate.memory_id, 0.0) / max_score
+            for candidate in candidates
+        }
+
 
 def _domain_prior(*, query_class: ProviderQueryClass, domain: MemoryDomain) -> float:
     return _DOMAIN_PRIORS[query_class].get(domain, 0.0)
-
-
-def _normalized_lexical_scores(*, query: str, candidates: list[ProviderStoredRecord]) -> dict[str, float]:
-    raw_scores = {candidate.memory_id: _lexical_overlap(query, candidate.text) for candidate in candidates}
-    max_score = max(raw_scores.values()) if raw_scores else 0
-    if max_score == 0:
-        return {memory_id: 0.0 for memory_id in raw_scores}
-    return {memory_id: score / max_score for memory_id, score in raw_scores.items()}
-
-
-def _lexical_overlap(query: str, text: str) -> int:
-    q_tokens = {token for token in query.lower().split() if token}
-    t_tokens = {token for token in text.lower().split() if token}
-    return len(q_tokens & t_tokens)
 
 
 def _relative_recency_scores(candidates: list[ProviderStoredRecord]) -> dict[str, float]:

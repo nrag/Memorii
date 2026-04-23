@@ -140,6 +140,7 @@ class ProviderMemoryService:
         self._last_prefetch_trace = ProviderPrefetchTrace(
             query=query,
             query_class=query_class,
+            lexical_method="bm25",
             candidate_count=len(reranked),
             ranked_items=[
                 ProviderRerankTraceItem(
