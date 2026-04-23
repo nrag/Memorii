@@ -217,6 +217,46 @@ def test_end_to_end_runtime_writeback_validation_metadata_is_used() -> None:
     assert memorii.observation.user_memory_pollution is False
 
 
+def test_end_to_end_provider_mode_surfaces_blocked_domains_and_reasons() -> None:
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_provider_mode",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="what happened last session",
+            intent=RetrievalIntent.RESUME_TASK,
+            scope=RetrievalScope(task_id="task:provider"),
+            corpus=[
+                RetrievalFixtureMemoryItem(
+                    item_id="sem:durable",
+                    domain=MemoryDomain.SEMANTIC,
+                    text="Service token rotation policy is every 24 hours",
+                    task_id="task:provider",
+                )
+            ],
+            expected_relevant_ids=["sem:durable"],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:provider:1",
+                event_class=InboundEventClass.USER_MESSAGE,
+                task_id="task:provider",
+                payload={"text": "maybe user likes dark mode"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:provider",
+            system_interface="provider",
+            expect_writeback_domains=[],
+        ),
+    )
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert observation.execution_level == ScenarioExecutionLevel.PROVIDER_SYSTEM
+    assert MemoryDomain.USER in observation.blocked_domains
+    assert observation.blocked_reasons
+    assert observation.runtime_observability_status == "supported"
+
 def test_system_level_runtime_retrieval_path_applies_scope_candidate_validity_and_dedupe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -18,6 +18,9 @@ from memorii.core.benchmark.models import (
     ScenarioObservation,
 )
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
+from memorii.core.provider.models import ProviderStoredRecord
+from memorii.core.provider.service import ProviderMemoryService
+from memorii.integrations.hermes_provider import HermesMemoryProvider
 from memorii.core.persistence.resume import ResumeService
 from memorii.core.retrieval.planner import RetrievalPlanner
 from memorii.core.router.router import MemoryRouter
@@ -498,9 +501,77 @@ class ScenarioExecutor:
         writeback_records: list[_ObservedWriteback] = []
         routed_records: list[_ObservedRoutedMemory] = []
         blocked_domain_set: set[MemoryDomain] | None = None
+        blocked_reasons: dict[str, str] = {}
         observability_missing: list[str] = []
         retrieved_ids: list[str] = []
-        if event is not None and system == BenchmarkSystem.MEMORII:
+        execution_level = ScenarioExecutionLevel.SYSTEM_LEVEL
+        if event is not None and system == BenchmarkSystem.MEMORII and fx.system_interface == "provider":
+            execution_level = ScenarioExecutionLevel.PROVIDER_SYSTEM
+            provider_service = ProviderMemoryService()
+            provider = HermesMemoryProvider(provider_service)
+            for item in fixture.retrieval.corpus:
+                if (
+                    item.status == CommitStatus.COMMITTED
+                    and item.domain in {MemoryDomain.TRANSCRIPT, MemoryDomain.SEMANTIC, MemoryDomain.EPISODIC, MemoryDomain.USER}
+                ):
+                    provider_service.seed_committed_record(
+                        ProviderStoredRecord(
+                            memory_id=item.item_id,
+                            domain=item.domain,
+                            text=item.text,
+                            status=item.status.value,
+                            session_id="session:benchmark",
+                            task_id=item.task_id or fx.task_id,
+                            user_id="user:benchmark",
+                        )
+                    )
+            turn_result = provider.sync_turn(
+                user_content=str(event.payload),
+                assistant_content="Acknowledged update.",
+                session_id="session:benchmark",
+                task_id=fx.task_id,
+                user_id="user:benchmark",
+            )
+            write_result = provider.on_memory_write(
+                action="upsert",
+                target="memory",
+                content=str(event.payload),
+                session_id="session:benchmark",
+                task_id=fx.task_id,
+                user_id="user:benchmark",
+            )
+            retrieved_context = provider.prefetch(
+                fixture.retrieval.query,
+                session_id="session:benchmark",
+                task_id=fx.task_id,
+                user_id="user:benchmark",
+            )
+            routed_domains = [MemoryDomain.TRANSCRIPT]
+            blocked_domain_set = set(turn_result.blocked_domains) | set(write_result.blocked_domains)
+            blocked_reasons = {**turn_result.blocked_reasons, **write_result.blocked_reasons}
+            writeback_ids = sorted(set(write_result.candidate_ids))
+            writeback_domains = sorted(set(write_result.allowed_candidate_domains), key=lambda domain: domain.value)
+            writeback_records = [
+                _ObservedWriteback(
+                    domain=domain,
+                    candidate_id=candidate_id,
+                    status=CommitStatus.CANDIDATE,
+                    validated=False,
+                    source_kind="raw",
+                )
+                for domain in write_result.allowed_candidate_domains
+                for candidate_id in write_result.candidate_ids
+                if f"cand:{domain.value}:" in candidate_id
+            ]
+            routed_records = [
+                _ObservedRoutedMemory(domain=MemoryDomain.TRANSCRIPT, status=CommitStatus.COMMITTED, is_raw_event=True)
+            ]
+            retrieved_ids = [
+                line.split(" ", 1)[0].strip("-")
+                for line in retrieved_context.splitlines()
+                if line.startswith("- [")
+            ]
+        elif event is not None and system == BenchmarkSystem.MEMORII:
             execution_store = InMemoryExecutionGraphStore()
             solver_store = InMemorySolverGraphStore()
             overlay_store = InMemoryOverlayStore()
@@ -581,6 +652,7 @@ class ScenarioExecutor:
             )
             routed_domains = list(result.routed_domains)
             blocked_domain_set = set(result.blocked_domains)
+            blocked_reasons = dict(result.blocked_reasons)
             retrieved_ids = list(result.retrieved_ids_deduped)
             routed_records = [
                 _ObservedRoutedMemory(
@@ -668,11 +740,12 @@ class ScenarioExecutor:
             scenario_id=fixture.scenario_id,
             category=fixture.category,
             system=system,
-            execution_level=ScenarioExecutionLevel.SYSTEM_LEVEL,
+            execution_level=execution_level,
             scenario_success=scenario_success,
             retrieved_ids=retrieved_ids,
             routed_domains=sorted(set(routed_domains), key=lambda d: d.value),
             blocked_domains=sorted(blocked_domain_set, key=lambda d: d.value) if blocked_domain_set is not None else [],
+            blocked_reasons=blocked_reasons,
             expected_routed_domains=expected_routed_domains,
             expected_blocked_domains=expected_blocked_domains,
             runtime_observability_status=runtime_observability_status,
