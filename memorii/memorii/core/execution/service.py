@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.consolidation.consolidator import Consolidator
 from memorii.core.directory.directory import MemoryDirectory
+from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.provider.classifier import build_event_id, make_event
+from memorii.core.provider.models import ProviderOperation, ProviderWriteDecision
 from memorii.core.persistence.resume import ResumeService
 from memorii.core.retrieval.planner import RetrievalPlanner
 from memorii.core.router.router import MemoryRouter
@@ -18,10 +21,10 @@ from memorii.core.solver import (
     SolverUpdateEngine,
     SolverUpdateInput,
 )
-from memorii.domain.enums import CommitStatus, EventType, ExecutionNodeStatus, MemoryDomain
+from memorii.domain.enums import EventType, ExecutionNodeStatus, MemoryDomain
 from memorii.domain.events import EventRecord
 from memorii.domain.memory_object import MemoryObject
-from memorii.domain.retrieval import DomainRetrievalQuery, RetrievalIntent, RetrievalPlan, RetrievalScope
+from memorii.domain.retrieval import RetrievalIntent, RetrievalPlan, RetrievalScope
 from memorii.domain.routing import InboundEvent, InboundEventClass, RoutingDecision
 from memorii.domain.writebacks import WritebackCandidate
 from memorii.stores.base.interfaces import EventLogStore, ExecutionGraphStore, OverlayStore, SolverGraphStore
@@ -67,50 +70,20 @@ class RuntimeStepResult(BaseModel):
 
 
 class InMemoryMemoryPlane:
-    """Simple in-memory memory object partition used by runtime retrieval."""
+    """Compatibility wrapper around the canonical MemoryPlaneService."""
 
-    def __init__(self) -> None:
-        self._by_domain: dict[MemoryDomain, list[MemoryObject]] = {domain: [] for domain in MemoryDomain}
+    def __init__(self, service: MemoryPlaneService | None = None) -> None:
+        self._service = service or MemoryPlaneService()
+
+    @property
+    def service(self) -> MemoryPlaneService:
+        return self._service
 
     def put(self, memory_object: MemoryObject) -> None:
-        self._by_domain[memory_object.memory_type].append(memory_object)
+        self._service.seed_runtime_memory_object(memory_object)
 
-    def query(self, query: DomainRetrievalQuery) -> list[MemoryObject]:
-        items = self._by_domain[query.domain]
-        return [item for item in items if self._matches_scope(item, query) and self._matches_semantics(item, query)]
-
-    def _matches_scope(self, item: MemoryObject, query: DomainRetrievalQuery) -> bool:
-        ns = item.namespace or {}
-        if query.scope.task_id is not None and ns.get("task_id") != query.scope.task_id:
-            return False
-        if query.scope.execution_node_id is not None and ns.get("execution_node_id") != query.scope.execution_node_id:
-            return False
-        if query.scope.solver_run_id is not None and ns.get("solver_run_id") != query.scope.solver_run_id:
-            return False
-        if query.scope.agent_id is not None and ns.get("agent_id") != query.scope.agent_id:
-            return False
-        return True
-
-    def _matches_semantics(self, item: MemoryObject, query: DomainRetrievalQuery) -> bool:
-        if not query.include_candidates and item.status == CommitStatus.CANDIDATE:
-            return False
-        freshness = query.freshness
-        if freshness is None or freshness.required_validity is None:
-            return True
-
-        required = freshness.required_validity.value
-        item_validity = item.validity_status.value if item.validity_status is not None else "active"
-        if item_validity != required:
-            return False
-
-        valid_at = freshness.valid_at
-        if valid_at is not None:
-            if item.valid_from is not None and item.valid_from > valid_at:
-                return False
-            if item.valid_to is not None and item.valid_to < valid_at:
-                return False
-        return True
-
+    def query(self, query):
+        return self._service.query_runtime_memory(query)
 
 class RuntimeStepService:
     def __init__(
@@ -138,11 +111,38 @@ class RuntimeStepService:
         self._directory = directory or MemoryDirectory()
         self._solver_update_engine = solver_update_engine or SolverUpdateEngine()
         self._memory_plane = memory_plane or InMemoryMemoryPlane()
+        self._memory_plane_service = self._memory_plane.service
         self._resume_service = ResumeService(execution_store, solver_store, overlay_store)
         self._model_provider = model_provider
 
     def seed_memory_object(self, memory_object: MemoryObject) -> None:
-        self._memory_plane.put(memory_object)
+        self._memory_plane_service.seed_runtime_memory_object(memory_object)
+
+
+    def apply_provider_compat_write(
+        self,
+        *,
+        operation: ProviderOperation,
+        content: str,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        action: str = "upsert",
+        target: str = "memory",
+    ) -> ProviderWriteDecision:
+        """Compatibility shim: runtime path delegates provider-style writes to the canonical memory plane."""
+        event = make_event(
+            event_id=build_event_id("runtime-compat-write", session_id=session_id, task_id=task_id, sequence=1),
+            operation=operation,
+            content=content,
+            action=action,
+            target=target,
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+            timestamp=datetime.now(UTC),
+        )
+        return self._memory_plane_service.apply_provider_memory_write(event=event)
 
     def step(
         self,
@@ -355,10 +355,7 @@ class RuntimeStepService:
             payload=observation.payload,
             timestamp=datetime.now(UTC),
         )
-        decision = self._router.route_event(inbound)
-        for routed in decision.routed_objects:
-            self._memory_plane.put(routed.memory_object)
-        return decision
+        return self._memory_plane_service.ingest_runtime_observation(router=self._router, inbound=inbound)
 
     def _resolve_intent(self, observation: RuntimeObservationInput) -> RetrievalIntent:
         failed = observation.payload.get("status") == "failed" or observation.payload.get("outcome") == "failed"
@@ -400,27 +397,12 @@ class RuntimeStepService:
         return sorted(node.id for node in nodes if node.id in status_by_node)[0]
 
     def _execute_retrieval(self, plan: RetrievalPlan) -> "_RuntimeRetrievalTrace":
-        results: list[MemoryObject] = []
-        raw_by_domain: dict[str, list[str]] = {}
-        deduped_by_domain: dict[str, list[str]] = {}
-        seen_ids: set[str] = set()
-        for query in plan.queries:
-            raw_ids: list[str] = []
-            deduped_ids: list[str] = []
-            for item in self._memory_plane.query(query):
-                raw_ids.append(item.memory_id)
-                if item.memory_id in seen_ids:
-                    continue
-                seen_ids.add(item.memory_id)
-                results.append(item)
-                deduped_ids.append(item.memory_id)
-            raw_by_domain.setdefault(query.domain.value, []).extend(raw_ids)
-            deduped_by_domain.setdefault(query.domain.value, []).extend(deduped_ids)
+        trace = self._memory_plane_service.retrieve_runtime_context(plan=plan)
         return _RuntimeRetrievalTrace(
-            retrieved_items=results,
-            retrieved_ids_by_domain_raw=raw_by_domain,
-            retrieved_ids_by_domain_deduped=deduped_by_domain,
-            retrieved_ids_deduped=[item.memory_id for item in results],
+            retrieved_items=trace.retrieved_items,
+            retrieved_ids_by_domain_raw=trace.retrieved_ids_by_domain_raw,
+            retrieved_ids_by_domain_deduped=trace.retrieved_ids_by_domain_deduped,
+            retrieved_ids_deduped=trace.retrieved_ids_deduped,
         )
 
     def _blocked_reasons(self, decision: RoutingDecision) -> dict[str, str]:
