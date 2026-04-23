@@ -82,6 +82,8 @@ def validate_canonical_report(report: CanonicalBenchmarkReport) -> None:
         raise ValueError("canonical benchmark report requires categories")
     if not report.scenarios:
         raise ValueError("canonical benchmark report requires scenarios")
+    if not report.scenario_verdicts:
+        raise ValueError("canonical benchmark report requires scenario_verdicts")
     for scenario in report.scenarios:
         if scenario.expected is None:
             raise ValueError(f"{scenario.scenario_id} missing expected payload")
