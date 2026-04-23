@@ -58,3 +58,38 @@ def test_prefetch_includes_transcript_continuity_records() -> None:
 
     context = provider.prefetch("what deploy window was set", task_id="task:history")
     assert "deploy window" in context.lower()
+
+
+def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
+    provider = HermesMemoryProvider(ProviderMemoryService())
+    result = provider.on_memory_write("upsert", "memory", "timeout is 30s", task_id="task:w")
+    assert any(candidate_id.startswith("cand:semantic:") for candidate_id in result.candidate_ids)
+    assert result.allowed_candidate_domains == [MemoryDomain.SEMANTIC]
+    assert MemoryDomain.SEMANTIC in result.blocked_commit_domains
+    assert MemoryDomain.USER in result.blocked_commit_domains
+    assert result.committed_domains == []
+
+
+def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:
+    provider = HermesMemoryProvider(ProviderMemoryService())
+    result = provider.on_memory_write("upsert", "user", "prefers concise responses", task_id="task:w")
+    assert any(candidate_id.startswith("cand:user:") for candidate_id in result.candidate_ids)
+    assert result.allowed_candidate_domains == [MemoryDomain.USER]
+    assert MemoryDomain.USER in result.blocked_commit_domains
+    assert MemoryDomain.SEMANTIC in result.blocked_commit_domains
+    assert result.committed_domains == []
+
+
+def test_session_end_stages_episodic_candidate() -> None:
+    provider = HermesMemoryProvider(ProviderMemoryService())
+    result = provider.on_session_end(["resolved incident"], task_id="task:end")
+    assert result.allowed_candidate_domains == [MemoryDomain.EPISODIC]
+    assert any(candidate_id.startswith("cand:episodic:") for candidate_id in result.candidate_ids)
+
+
+def test_sync_turn_raw_transcript_only_no_direct_commits() -> None:
+    provider = HermesMemoryProvider(ProviderMemoryService())
+    result = provider.sync_turn("user says x", "assistant replies y", task_id="task:sync")
+    assert len(result.transcript_ids) == 2
+    assert result.candidate_ids == []
+    assert result.blocked_commit_domains
