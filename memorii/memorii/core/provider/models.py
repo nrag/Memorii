@@ -23,6 +23,12 @@ class ProviderOperation(str, Enum):
     UNKNOWN = "unknown"
 
 
+class ProviderWriteKind(str, Enum):
+    RAW_APPEND = "raw_append"
+    CANDIDATE_STAGE = "candidate_stage"
+    COMMIT = "commit"
+
+
 class ProviderEvent(BaseModel):
     event_id: str
     operation: ProviderOperation
@@ -38,12 +44,33 @@ class ProviderEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ProviderDomainPermission(BaseModel):
+    operation: ProviderOperation
+    allowed_raw_append_domains: list[MemoryDomain] = Field(default_factory=list)
+    allowed_candidate_domains: list[MemoryDomain] = Field(default_factory=list)
+    blocked_commit_domains: list[MemoryDomain] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProviderPolicyDecision(BaseModel):
+    operation: ProviderOperation
+    allowed_raw_append_domains: list[MemoryDomain] = Field(default_factory=list)
+    allowed_candidate_domains: list[MemoryDomain] = Field(default_factory=list)
+    blocked_commit_domains: list[MemoryDomain] = Field(default_factory=list)
+    blocked_reasons: dict[str, str] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ProviderWriteDecision(BaseModel):
     blocked_domains: list[MemoryDomain] = Field(default_factory=list)
     allowed_candidate_domains: list[MemoryDomain] = Field(default_factory=list)
     committed_domains: list[MemoryDomain] = Field(default_factory=list)
     blocked_reasons: dict[str, str] = Field(default_factory=dict)
     candidate_ids: list[str] = Field(default_factory=list)
+    raw_append_domains: list[MemoryDomain] = Field(default_factory=list)
+    blocked_commit_domains: list[MemoryDomain] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -54,19 +81,8 @@ class ProviderSyncResult(BaseModel):
     blocked_domains: list[MemoryDomain] = Field(default_factory=list)
     blocked_reasons: dict[str, str] = Field(default_factory=dict)
     allowed_candidate_domains: list[MemoryDomain] = Field(default_factory=list)
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class ProviderTextFeatures(BaseModel):
-    looks_like_event: bool
-    looks_like_stable_fact: bool
-    looks_like_user_preference: bool
-    has_explicit_user_grounding: bool
-    has_uncertainty_marker: bool
-    has_temporal_marker: bool
-    looks_like_log_dump: bool
-    length_bucket: str
+    raw_append_domains: list[MemoryDomain] = Field(default_factory=list)
+    blocked_commit_domains: list[MemoryDomain] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 

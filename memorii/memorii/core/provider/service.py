@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from memorii.core.provider.blocking_policy import evaluate_operation_policy, extract_text_features
+from memorii.core.provider.blocking_policy import evaluate_operation_policy
 from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.provider.models import (
     ProviderEvent,
@@ -48,20 +48,23 @@ class ProviderMemoryService:
         return self._ingest_event(event)
 
     def _ingest_event(self, event: ProviderEvent) -> ProviderSyncResult:
-        transcript_ids = [self._store_transcript(event)]
-        features = extract_text_features(event.content or "")
-        blocked, allowed_candidates, reasons = evaluate_operation_policy(operation=event.operation, features=features)
+        policy = evaluate_operation_policy(operation=event.operation)
+        transcript_ids: list[str] = []
+        if MemoryDomain.TRANSCRIPT in policy.allowed_raw_append_domains:
+            transcript_ids.append(self._store_transcript(event))
 
         candidate_ids: list[str] = []
-        for domain in allowed_candidates:
+        for domain in policy.allowed_candidate_domains:
             candidate_ids.append(self._store_candidate(event=event, domain=domain))
 
         return ProviderSyncResult(
             transcript_ids=transcript_ids,
             candidate_ids=candidate_ids,
-            blocked_domains=blocked,
-            blocked_reasons=reasons,
-            allowed_candidate_domains=allowed_candidates,
+            blocked_domains=policy.blocked_commit_domains,
+            blocked_reasons=policy.blocked_reasons,
+            allowed_candidate_domains=policy.allowed_candidate_domains,
+            raw_append_domains=policy.allowed_raw_append_domains,
+            blocked_commit_domains=policy.blocked_commit_domains,
         )
 
     def apply_memory_write(
@@ -93,6 +96,8 @@ class ProviderMemoryService:
             committed_domains=[],
             blocked_reasons=sync_result.blocked_reasons,
             candidate_ids=sync_result.candidate_ids,
+            raw_append_domains=sync_result.raw_append_domains,
+            blocked_commit_domains=sync_result.blocked_commit_domains,
         )
 
     def prefetch(

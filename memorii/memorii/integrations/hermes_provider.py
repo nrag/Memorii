@@ -58,6 +58,14 @@ class HermesMemoryProvider(MemoryProviderInterface):
                 set(user_result.allowed_candidate_domains) | set(assistant_result.allowed_candidate_domains),
                 key=lambda domain: domain.value,
             ),
+            raw_append_domains=sorted(
+                set(user_result.raw_append_domains) | set(assistant_result.raw_append_domains),
+                key=lambda domain: domain.value,
+            ),
+            blocked_commit_domains=sorted(
+                set(user_result.blocked_commit_domains) | set(assistant_result.blocked_commit_domains),
+                key=lambda domain: domain.value,
+            ),
         )
 
     def on_session_end(

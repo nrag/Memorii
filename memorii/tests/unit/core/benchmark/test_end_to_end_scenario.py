@@ -524,3 +524,67 @@ def test_end_to_end_marks_runtime_observability_unsupported_when_trace_missing(
     assert observation.runtime_observability_status == "unsupported"
     assert "writeback_trace" in observation.runtime_observability_missing
     assert observation.scenario_success is False
+
+
+def test_end_to_end_provider_mode_memory_write_memory_stages_semantic_candidate() -> None:
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_provider_memory_write_memory",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="policy",
+            intent=RetrievalIntent.RESUME_TASK,
+            scope=RetrievalScope(task_id="task:provider:memory"),
+            corpus=[],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:provider:memory",
+                event_class=InboundEventClass.USER_MESSAGE,
+                task_id="task:provider:memory",
+                payload={"text": "timeout default is 30s"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:provider:memory",
+            system_interface="provider",
+            provider_operations=["memory_write_memory"],
+            expect_writeback_domains=[MemoryDomain.SEMANTIC],
+        ),
+    )
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert MemoryDomain.SEMANTIC in observation.writeback_candidate_domains
+    assert MemoryDomain.SEMANTIC in observation.blocked_domains
+
+
+def test_end_to_end_provider_mode_memory_write_user_stages_user_candidate() -> None:
+    fixture = BenchmarkScenarioFixture(
+        scenario_id="e2e_provider_memory_write_user",
+        category=BenchmarkScenarioType.END_TO_END,
+        retrieval=RetrievalFixture(
+            query="preference",
+            intent=RetrievalIntent.RESUME_TASK,
+            scope=RetrievalScope(task_id="task:provider:user"),
+            corpus=[],
+        ),
+        routing=RoutingFixture(
+            inbound_event=InboundEvent(
+                event_id="evt:provider:user",
+                event_class=InboundEventClass.USER_MESSAGE,
+                task_id="task:provider:user",
+                payload={"text": "prefers concise responses"},
+                timestamp=datetime.now(UTC),
+            ),
+            expected_domains=[MemoryDomain.TRANSCRIPT],
+        ),
+        end_to_end=EndToEndFixture(
+            task_id="task:provider:user",
+            system_interface="provider",
+            provider_operations=["memory_write_user"],
+            expect_writeback_domains=[MemoryDomain.USER],
+        ),
+    )
+    observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
+    assert MemoryDomain.USER in observation.writeback_candidate_domains
+    assert MemoryDomain.USER in observation.blocked_domains
