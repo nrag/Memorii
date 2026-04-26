@@ -2,7 +2,9 @@ from datetime import UTC, datetime
 
 from memorii.core.solver import SolverFrontierPlanner
 from memorii.domain.common import SolverNodeMetadata
-from memorii.domain.enums import CommitStatus, SolverCreatedBy, SolverNodeStatus, SolverNodeType
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.domain.enums import CommitStatus, MemoryDomain, SolverCreatedBy, SolverNodeStatus, SolverNodeType
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
 from memorii.core.provider.models import ProviderOperation
@@ -160,6 +162,8 @@ def test_record_progress_by_work_state_id() -> None:
     assert result.ok is True
     assert result.result["work_state_id"] == created.work_state_id
     assert result.result["status"] == "active"
+    assert result.result["memory_candidate_created"] is True
+    assert isinstance(result.result["memory_candidate_id"], str)
 
 
 def test_record_progress_by_task_id() -> None:
@@ -187,6 +191,32 @@ def test_record_progress_returns_error_when_no_state_found() -> None:
 
     assert result.ok is False
     assert result.error == "work_state_not_found"
+    assert provider._memory_plane.list_records(status=CommitStatus.CANDIDATE, domains=[MemoryDomain.EPISODIC]) == []
+
+
+def test_record_progress_creates_episodic_memory_candidate_with_work_state_event_metadata() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Emit candidate", task_id="task:progress:candidate")
+
+    result = provider.handle_tool_call(
+        "memorii_record_progress",
+        {
+            "work_state_id": created.work_state_id,
+            "content": "Implemented deterministic promotion staging",
+            "evidence_ids": ["ev:1"],
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["memory_candidate_created"] is True
+    candidate_id = str(result.result["memory_candidate_id"])
+    candidate = provider._memory_plane.get_record(candidate_id)
+    assert candidate is not None
+    assert candidate.domain == MemoryDomain.EPISODIC
+    assert candidate.content["work_state_event_id"] == result.result["event_id"]
+    assert candidate.content["event_type"] == "progress"
+    assert candidate.source_kind == "provider:work_state_event"
 
 
 def test_record_outcome_completed_marks_state_resolved() -> None:
@@ -201,6 +231,28 @@ def test_record_outcome_completed_marks_state_resolved() -> None:
 
     assert result.ok is True
     assert result.result["status"] == "resolved"
+    assert result.result["memory_candidate_created"] is True
+
+
+def test_record_outcome_creates_episodic_memory_candidate() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Outcome candidate", task_id="task:outcome:candidate")
+
+    result = provider.handle_tool_call(
+        "memorii_record_outcome",
+        {"work_state_id": created.work_state_id, "outcome": "completed", "content": "Completed with tests"},
+    )
+
+    assert result.ok is True
+    assert result.result["memory_candidate_created"] is True
+    candidate_id = str(result.result["memory_candidate_id"])
+    candidate = provider._memory_plane.get_record(candidate_id)
+    assert candidate is not None
+    assert candidate.domain == MemoryDomain.EPISODIC
+    assert candidate.content["event_type"] == "outcome"
+    assert candidate.content["outcome"] == "completed"
+    assert candidate.content["work_state_status"] == "resolved"
 
 
 def test_record_outcome_abandoned_marks_state_abandoned() -> None:
@@ -262,6 +314,56 @@ def test_record_progress_preserves_evidence_ids() -> None:
     assert result.ok is True
     events = work_state_service.list_work_state_events(created.work_state_id)
     assert events[-1].evidence_ids == ["test:integration:1", "artifact:log:2"]
+
+
+def test_record_progress_with_candidate_emission_disabled_returns_recorded_without_candidate() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        emit_work_state_event_candidates=False,
+    )
+    created = work_state_service.open_or_resume_work(title="No candidate", task_id="task:no-candidate")
+
+    result = provider.handle_tool_call(
+        "memorii_record_progress",
+        {
+            "work_state_id": created.work_state_id,
+            "content": "Progress without candidate",
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["memory_candidate_created"] is False
+    assert "memory_candidate_error" not in result.result
+    staged = provider._memory_plane.list_records(status=CommitStatus.CANDIDATE, domains=[MemoryDomain.EPISODIC])
+    assert staged == []
+
+
+class _FailingStageMemoryPlaneService(MemoryPlaneService):
+    def stage_record(self, record: CanonicalMemoryRecord) -> None:
+        raise RuntimeError("stage failure")
+
+
+def test_record_progress_candidate_stage_failure_does_not_fail_tool_call() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(
+        memory_plane=_FailingStageMemoryPlaneService(),
+        work_state_service=work_state_service,
+    )
+    created = work_state_service.open_or_resume_work(title="Stage failure", task_id="task:stage-failure")
+
+    result = provider.handle_tool_call(
+        "memorii_record_progress",
+        {
+            "work_state_id": created.work_state_id,
+            "content": "Progress survives candidate failure",
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["recorded"] is True
+    assert result.result["memory_candidate_created"] is False
+    assert result.result["memory_candidate_error"] == "stage failure"
 
 
 def test_record_progress_with_solver_run_binding_updates_resolution() -> None:
