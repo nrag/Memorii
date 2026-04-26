@@ -36,6 +36,7 @@ from memorii.core.work_state.models import (
     WorkStateStatus,
 )
 from memorii.core.work_state.service import WorkStateService
+from memorii.core.work_state.selector import WorkStateSelector
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
 
 
@@ -53,6 +54,7 @@ class ProviderMemoryService:
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
         self._work_state_service = work_state_service
+        self._work_state_selector = WorkStateSelector(work_state_service)
         self._solver_frontier_planner = solver_frontier_planner
         self._solver_store = solver_store
         self._overlay_store = overlay_store
@@ -137,7 +139,11 @@ class ProviderMemoryService:
             user_id=user_id,
             top_k=top_k,
         )
-        selected_work_states = self._select_recall_work_states(session_id=session_id, task_id=task_id, user_id=user_id)
+        selected_work_states = self._work_state_selector.select_recall_work_states(
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+        )
         work_state_summaries = summarize_work_states(
             selected_work_states,
             events_by_state_id=self._list_events_by_work_state_id(selected_work_states),
@@ -468,7 +474,11 @@ class ProviderMemoryService:
         task_id: str | None,
         user_id: str | None,
     ) -> dict[str, object]:
-        selected_work_states = self._select_recall_work_states(session_id=session_id, task_id=task_id, user_id=user_id)
+        selected_work_states = self._work_state_selector.select_recall_work_states(
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+        )
         work_state_summaries = summarize_work_states(
             selected_work_states,
             events_by_state_id=self._list_events_by_work_state_id(selected_work_states),
@@ -534,29 +544,6 @@ class ProviderMemoryService:
             },
             "binding": binding,
         }
-
-    def _select_recall_work_states(
-        self,
-        *,
-        session_id: str | None,
-        task_id: str | None,
-        user_id: str | None,
-    ) -> list[WorkStateRecord]:
-        if self._work_state_service is None:
-            return []
-
-        included_statuses = [
-            WorkStateStatus.ACTIVE,
-            WorkStateStatus.CANDIDATE,
-            WorkStateStatus.PAUSED,
-        ]
-        if task_id is not None:
-            return self._work_state_service.list_states(task_id=task_id, statuses=included_statuses)
-        if session_id is not None:
-            return self._work_state_service.list_states(session_id=session_id, statuses=included_statuses)
-        if user_id is not None:
-            return self._work_state_service.list_states(user_id=user_id, statuses=included_statuses)
-        return self._work_state_service.list_states(statuses=included_statuses)
 
     @staticmethod
     def _format_work_state_section(work_states: list[WorkStateSummary]) -> str:
