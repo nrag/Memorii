@@ -7,6 +7,7 @@ from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.work_state.models import WorkStateKind, WorkStateStatus
 from memorii.core.work_state.service import WorkStateService
 from memorii.stores.overlays import InMemoryOverlayStore
 from memorii.stores.solver_graph import InMemorySolverGraphStore
@@ -65,10 +66,14 @@ def test_get_tool_schemas_includes_state_summary_and_next_step() -> None:
 
     assert "memorii_get_state_summary" in tool_names
     assert "memorii_get_next_step" in tool_names
+    assert "memorii_open_or_resume_work" in tool_names
 
     next_step_schema = next(schema for schema in schemas if schema["name"] == "memorii_get_next_step")
     properties = next_step_schema["input_schema"]["properties"]
     assert "solver_run_id" in properties
+    open_or_resume_schema = next(schema for schema in schemas if schema["name"] == "memorii_open_or_resume_work")
+    assert open_or_resume_schema["input_schema"]["required"] == ["title"]
+    assert "kind" in open_or_resume_schema["input_schema"]["properties"]
 
 
 def test_handle_tool_call_unknown_tool_returns_error() -> None:
@@ -97,6 +102,140 @@ def test_get_state_summary_without_work_state_service_returns_empty() -> None:
     assert result.ok is True
     assert result.result["state_count"] == 0
     assert result.result["work_states"] == []
+
+
+def test_open_or_resume_without_work_state_service_returns_error() -> None:
+    provider = ProviderMemoryService()
+
+    result = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {"title": "Resume parser task", "task_id": "task:none"},
+    )
+
+    assert result.ok is False
+    assert result.error == "work_state_service_not_configured"
+
+
+def test_open_or_resume_creates_active_state() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {"title": "Implement parser updates", "kind": "task_execution", "task_id": "task:open:1"},
+    )
+
+    assert result.ok is True
+    assert result.result["work_state"]["status"] == "active"
+    states = work_state_service.list_states(task_id="task:open:1")
+    assert len(states) == 1
+    assert states[0].status == WorkStateStatus.ACTIVE
+
+
+def test_open_or_resume_resumes_existing_task_state_without_duplicate() -> None:
+    work_state_service = WorkStateService()
+    existing = work_state_service.open_or_resume_work(
+        title="Old title",
+        summary="Old summary",
+        kind=WorkStateKind.TASK_EXECUTION,
+        task_id="task:resume:1",
+    )
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {
+            "title": "New title",
+            "summary": "New summary",
+            "kind": "task_execution",
+            "task_id": "task:resume:1",
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["work_state"]["work_state_id"] == existing.work_state_id
+    assert result.result["work_state"]["title"] == "New title"
+    assert result.result["work_state"]["summary"] == "New summary"
+    states = work_state_service.list_states(task_id="task:resume:1")
+    assert len(states) == 1
+
+
+def test_open_or_resume_explicit_work_state_id_updates_exact_state() -> None:
+    work_state_service = WorkStateService()
+    target = work_state_service.open_or_resume_work(
+        title="Target",
+        kind=WorkStateKind.INVESTIGATION,
+        task_id="task:exact:original",
+    )
+    work_state_service.open_or_resume_work(
+        title="Other",
+        kind=WorkStateKind.INVESTIGATION,
+        task_id="task:exact:other",
+    )
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {
+            "title": "Updated target",
+            "summary": "Updated target summary",
+            "kind": "investigation",
+            "task_id": "task:exact:new",
+            "work_state_id": target.work_state_id,
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["work_state"]["work_state_id"] == target.work_state_id
+    assert result.result["work_state"]["task_id"] == "task:exact:new"
+
+
+def test_open_or_resume_creates_binding_when_solver_run_supplied() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {
+            "title": "Bound task",
+            "task_id": "task:binding:tool",
+            "solver_run_id": "solver:binding:tool",
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["binding"] is not None
+    assert work_state_service.resolve_solver_run_id(task_id="task:binding:tool") == "solver:binding:tool"
+
+
+def test_open_or_resume_binding_used_by_next_step_planner() -> None:
+    solver_store = InMemorySolverGraphStore()
+    overlay_store = InMemoryOverlayStore()
+    solver_frontier_planner = SolverFrontierPlanner()
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        solver_frontier_planner=solver_frontier_planner,
+        solver_store=solver_store,
+        overlay_store=overlay_store,
+    )
+
+    solver_run_id = "solver:open-resume-next-step"
+    task_id = "task:open-resume-next-step"
+    node_id = "node:open-resume-next-step"
+    solver_store.create_solver_run(solver_run_id, "exec-1")
+    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_best_test": "run planner via binding"}))
+    _append_overlay(overlay_store, solver_run_id, [_overlay(node_id)])
+
+    open_result = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {"title": "Open + bind", "task_id": task_id, "solver_run_id": solver_run_id},
+    )
+    assert open_result.ok is True
+
+    next_step_result = provider.handle_tool_call("memorii_get_next_step", {"task_id": task_id})
+    assert next_step_result.ok is True
+    assert next_step_result.result["planner_used"] is True
 
 
 def test_get_state_summary_with_matching_state_returns_state() -> None:

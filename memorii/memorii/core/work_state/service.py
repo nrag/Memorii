@@ -84,6 +84,72 @@ class WorkStateService:
         self._bindings.append(binding)
         return binding
 
+    def open_or_resume_work(
+        self,
+        *,
+        title: str,
+        summary: str | None = None,
+        kind: WorkStateKind = WorkStateKind.TASK_EXECUTION,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        work_state_id: str | None = None,
+        execution_node_id: str | None = None,
+        solver_run_id: str | None = None,
+    ) -> WorkStateRecord:
+        timestamp = datetime.now(UTC)
+        resolved_state = self._resolve_state_for_open_or_resume(
+            work_state_id=work_state_id,
+            task_id=task_id,
+            session_id=session_id,
+            kind=kind,
+        )
+        resolved_summary = summary or ""
+        if resolved_state is None:
+            created = WorkStateRecord(
+                work_state_id=f"ws:{kind.value}:{timestamp.timestamp()}:{len(self._states)}",
+                kind=kind,
+                status=WorkStateStatus.ACTIVE,
+                task_id=task_id,
+                session_id=session_id,
+                user_id=user_id,
+                title=title,
+                summary=resolved_summary,
+                confidence=1.0,
+                source_event_ids=[],
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            self._states.append(created)
+            resolved_state = created
+        else:
+            updated_state = resolved_state.model_copy(
+                update={
+                    "title": title,
+                    "summary": resolved_summary,
+                    "status": WorkStateStatus.ACTIVE,
+                    "confidence": 1.0,
+                    "task_id": task_id if task_id is not None else resolved_state.task_id,
+                    "session_id": session_id if session_id is not None else resolved_state.session_id,
+                    "user_id": user_id if user_id is not None else resolved_state.user_id,
+                    "updated_at": timestamp,
+                }
+            )
+            self._states = [
+                updated_state if state.work_state_id == resolved_state.work_state_id else state for state in self._states
+            ]
+            resolved_state = updated_state
+
+        if solver_run_id is not None or execution_node_id is not None:
+            self.bind_state(
+                session_id=resolved_state.session_id,
+                task_id=resolved_state.task_id,
+                work_state_id=resolved_state.work_state_id,
+                execution_node_id=execution_node_id,
+                solver_run_id=solver_run_id,
+            )
+        return resolved_state
+
     def resolve_solver_run_id(
         self,
         *,
@@ -256,6 +322,37 @@ class WorkStateService:
         if not candidates:
             return None
         return max(candidates, key=lambda item: item.updated_at)
+
+    def _resolve_state_for_open_or_resume(
+        self,
+        *,
+        work_state_id: str | None,
+        task_id: str | None,
+        session_id: str | None,
+        kind: WorkStateKind,
+    ) -> WorkStateRecord | None:
+        if work_state_id is not None:
+            exact = self.get_state(work_state_id=work_state_id)
+            if exact is not None:
+                return exact
+        active_or_candidate = {WorkStateStatus.ACTIVE, WorkStateStatus.CANDIDATE}
+        if task_id is not None:
+            task_matches = [
+                state
+                for state in self._states
+                if state.task_id == task_id and state.kind == kind and state.status in active_or_candidate
+            ]
+            if task_matches:
+                return max(task_matches, key=lambda state: state.updated_at)
+        if session_id is not None:
+            session_matches = [
+                state
+                for state in self._states
+                if state.session_id == session_id and state.kind == kind and state.status in active_or_candidate
+            ]
+            if session_matches:
+                return max(session_matches, key=lambda state: state.updated_at)
+        return None
 
     @staticmethod
     def _default_title(kind: WorkStateKind) -> str:
