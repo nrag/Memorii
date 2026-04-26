@@ -15,7 +15,12 @@ from memorii.core.provider.models import (
     ProviderSyncResult,
     ProviderWriteDecision,
 )
-from memorii.core.provider.tools import GetNextStepInput, GetStateSummaryInput, ProviderToolCallResult
+from memorii.core.provider.tools import (
+    GetNextStepInput,
+    GetStateSummaryInput,
+    OpenOrResumeWorkInput,
+    ProviderToolCallResult,
+)
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
 from memorii.core.solver import SolverFrontierPlanner
 from memorii.core.work_state.models import AgentEventEnvelope, WorkStateKind, WorkStateRecord, WorkStateStatus
@@ -164,6 +169,31 @@ class ProviderMemoryService:
                     "additionalProperties": False,
                 },
             },
+            {
+                "name": "memorii_open_or_resume_work",
+                "description": (
+                    "Explicitly open or resume structured work state and optionally create solver/execution bindings."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "summary": {"type": "string"},
+                        "kind": {
+                            "type": "string",
+                            "enum": [kind.value for kind in WorkStateKind],
+                        },
+                        "session_id": {"type": "string"},
+                        "task_id": {"type": "string"},
+                        "user_id": {"type": "string"},
+                        "work_state_id": {"type": "string"},
+                        "execution_node_id": {"type": "string"},
+                        "solver_run_id": {"type": "string"},
+                    },
+                    "required": ["title"],
+                    "additionalProperties": False,
+                },
+            },
         ]
 
     def handle_tool_call(self, tool_name: str, arguments: dict[str, object]) -> ProviderToolCallResult:
@@ -203,6 +233,37 @@ class ProviderMemoryService:
                     session_id=tool_input.session_id,
                     task_id=tool_input.task_id,
                     user_id=tool_input.user_id,
+                    solver_run_id=tool_input.solver_run_id,
+                ),
+            )
+
+        if tool_name == "memorii_open_or_resume_work":
+            try:
+                tool_input = OpenOrResumeWorkInput.model_validate(arguments)
+            except ValidationError as exc:
+                return ProviderToolCallResult(
+                    tool_name=tool_name,
+                    ok=False,
+                    error=f"Validation error for tool '{tool_name}': {exc}",
+                )
+            if self._work_state_service is None:
+                return ProviderToolCallResult(
+                    tool_name=tool_name,
+                    ok=False,
+                    error="work_state_service_not_configured",
+                )
+            return ProviderToolCallResult(
+                tool_name=tool_name,
+                ok=True,
+                result=self._build_open_or_resume_work_result(
+                    title=tool_input.title,
+                    summary=tool_input.summary,
+                    kind=tool_input.kind,
+                    session_id=tool_input.session_id,
+                    task_id=tool_input.task_id,
+                    user_id=tool_input.user_id,
+                    work_state_id=tool_input.work_state_id,
+                    execution_node_id=tool_input.execution_node_id,
                     solver_run_id=tool_input.solver_run_id,
                 ),
             )
@@ -434,6 +495,58 @@ class ProviderMemoryService:
             },
             "based_on_work_state_id": selected_state.work_state_id,
             "scope": scope,
+        }
+
+    def _build_open_or_resume_work_result(
+        self,
+        *,
+        title: str,
+        summary: str | None,
+        kind: WorkStateKind,
+        session_id: str | None,
+        task_id: str | None,
+        user_id: str | None,
+        work_state_id: str | None,
+        execution_node_id: str | None,
+        solver_run_id: str | None,
+    ) -> dict[str, object]:
+        if self._work_state_service is None:
+            return {"error": "work_state_service_not_configured"}
+        work_state = self._work_state_service.open_or_resume_work(
+            title=title,
+            summary=summary,
+            kind=kind,
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+            work_state_id=work_state_id,
+            execution_node_id=execution_node_id,
+            solver_run_id=solver_run_id,
+        )
+        binding = None
+        if solver_run_id is not None or execution_node_id is not None:
+            bindings = self._work_state_service.list_bindings(work_state_id=work_state.work_state_id)
+            if bindings:
+                latest = max(bindings, key=lambda item: item.updated_at)
+                binding = {
+                    "binding_id": latest.binding_id,
+                    "solver_run_id": latest.solver_run_id,
+                    "execution_node_id": latest.execution_node_id,
+                }
+
+        return {
+            "work_state": {
+                "work_state_id": work_state.work_state_id,
+                "kind": work_state.kind.value,
+                "status": work_state.status.value,
+                "title": work_state.title,
+                "summary": work_state.summary,
+                "confidence": work_state.confidence,
+                "task_id": work_state.task_id,
+                "session_id": work_state.session_id,
+                "user_id": work_state.user_id,
+            },
+            "binding": binding,
         }
 
     def _select_recall_work_states(
