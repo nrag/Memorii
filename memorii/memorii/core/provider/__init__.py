@@ -4,10 +4,12 @@ ProviderMemoryService lives in memorii.core.provider.service to avoid package im
 """
 
 from memorii.core.provider.models import ProviderEvent, ProviderOperation, ProviderSyncResult, ProviderWriteDecision
+from memorii.core.provider.tools import ProviderToolCallResult
 
 __all__ = [
     "ProviderEvent",
     "ProviderOperation",
     "ProviderSyncResult",
+    "ProviderToolCallResult",
     "ProviderWriteDecision",
 ]
