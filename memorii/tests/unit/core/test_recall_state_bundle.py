@@ -4,6 +4,7 @@ from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
 from memorii.core.work_state.service import WorkStateService
+from memorii.core.work_state.store import InMemoryWorkStateStore
 
 
 def _state(
@@ -86,12 +87,12 @@ def test_prefetch_includes_matching_candidate_task_state() -> None:
 
 
 def test_prefetch_excludes_resolved_and_abandoned_states() -> None:
-    work_state_service = WorkStateService()
+    store = InMemoryWorkStateStore()
+    work_state_service = WorkStateService(store=store)
     provider = ProviderMemoryService(work_state_service=work_state_service)
 
     now = datetime.now(UTC)
-    work_state_service._states.extend(  # noqa: SLF001
-        [
+    for state in [
             _state(
                 work_state_id="ws:active",
                 status=WorkStateStatus.ACTIVE,
@@ -122,8 +123,8 @@ def test_prefetch_excludes_resolved_and_abandoned_states() -> None:
                 session_id="session:3",
                 updated_at=now - timedelta(minutes=2),
             ),
-        ]
-    )
+    ]:
+        store.upsert_state(state)
 
     context = provider.prefetch("continue", task_id="task:3", session_id="session:3")
     assert "Current work state" in context
@@ -137,12 +138,12 @@ def test_prefetch_excludes_resolved_and_abandoned_states() -> None:
 
 
 def test_work_states_are_sorted_deterministically() -> None:
-    work_state_service = WorkStateService()
+    store = InMemoryWorkStateStore()
+    work_state_service = WorkStateService(store=store)
     provider = ProviderMemoryService(work_state_service=work_state_service)
 
     now = datetime.now(UTC)
-    work_state_service._states.extend(  # noqa: SLF001
-        [
+    for state in [
             _state(
                 work_state_id="ws:candidate-high",
                 status=WorkStateStatus.CANDIDATE,
@@ -179,8 +180,8 @@ def test_work_states_are_sorted_deterministically() -> None:
                 task_id="task:4",
                 updated_at=now,
             ),
-        ]
-    )
+    ]:
+        store.upsert_state(state)
 
     provider.prefetch("continue", task_id="task:4")
     bundle = provider.last_recall_bundle()

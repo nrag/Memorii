@@ -13,6 +13,7 @@ from memorii.core.work_state.models import (
     WorkStateStatus,
 )
 from memorii.core.work_state.service import WorkStateService
+from memorii.core.work_state.store import InMemoryWorkStateStore, WorkStateStore
 
 __all__ = [
     "AgentEventEnvelope",
@@ -25,5 +26,7 @@ __all__ = [
     "WorkStateReasonCode",
     "WorkStateRecord",
     "WorkStateService",
+    "WorkStateStore",
+    "InMemoryWorkStateStore",
     "WorkStateStatus",
 ]
