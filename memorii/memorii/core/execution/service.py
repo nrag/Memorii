@@ -212,12 +212,16 @@ class RuntimeStepService:
             model_output=effective_model_output,
         )
 
+        decision_node_id = f"node:{observation.event_id}:decision"
+        prior_overlay = self._overlay_store.get_latest_node_overlay(solver_run_id, decision_node_id)
+
         update_result = self._solver_update_engine.apply_update(
             update_input=update_input,
             next_overlay_version_id=f"ov:{solver_run_id}:{observation.event_id}",
             next_event_id=f"solver-update:{observation.event_id}",
             next_node_id=f"node:{observation.event_id}",
             next_edge_id=f"edge:{observation.event_id}",
+            prior_belief=prior_overlay.belief if prior_overlay is not None else None,
         )
         logger.info(
             "solver_decision task_id=%s event_id=%s decision=%s downgraded=%s",

@@ -1,6 +1,7 @@
 """Solver runtime services."""
 
 from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
+from memorii.core.solver.belief import update_solver_belief
 from memorii.core.solver.frontier import FrontierPlan, SolverFrontierPlanner
 from memorii.core.solver.models import NextTestAction
 from memorii.core.solver.model_integration import (
@@ -32,4 +33,5 @@ __all__ = [
     "NextTestAction",
     "FrontierPlan",
     "SolverFrontierPlanner",
+    "update_solver_belief",
 ]

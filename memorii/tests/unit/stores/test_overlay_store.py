@@ -34,3 +34,4 @@ def test_overlay_version_retrieval() -> None:
     assert [v.version_id for v in store.list_versions("solver-1")] == ["v1", "v2"]
     assert store.get_latest_version("solver-1").version_id == "v2"
     assert store.get_latest_for_node("solver-1", "n1").version_id == "v1"
+    assert store.get_latest_node_overlay("solver-1", "n1").node_id == "n1"
