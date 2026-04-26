@@ -1,6 +1,7 @@
 """Solver runtime services."""
 
 from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
+from memorii.core.solver.frontier import FrontierPlan, SolverFrontierPlanner
 from memorii.core.solver.models import NextTestAction
 from memorii.core.solver.model_integration import (
     OpenAIStyleCompletionClient,
@@ -29,4 +30,6 @@ __all__ = [
     "OpenAIStyleCompletionClient",
     "OpenAIStyleSolverModelProvider",
     "NextTestAction",
+    "FrontierPlan",
+    "SolverFrontierPlanner",
 ]
