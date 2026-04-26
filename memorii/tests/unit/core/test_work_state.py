@@ -59,6 +59,16 @@ def test_tool_failure_creates_candidate_investigation() -> None:
     assert states[0].kind == WorkStateKind.INVESTIGATION
 
 
+def test_failing_language_prefers_investigation_over_task_execution() -> None:
+    service = WorkStateService()
+    decision = service.ingest_event(_event("e3b", "fix the failing benchmark", task_id="task:2b"))
+    assert decision.kind == WorkStateKind.INVESTIGATION
+    assert (
+        WorkStateReasonCode.TOOL_FAILURE_OR_ERROR in decision.reason_codes
+        or WorkStateReasonCode.DEBUGGING_LANGUAGE in decision.reason_codes
+    )
+
+
 def test_second_related_task_event_updates_existing_state() -> None:
     service = WorkStateService()
     first = service.ingest_event(_event("e4", "let's implement parser update", session_id="s:2"))

@@ -12,7 +12,18 @@ from memorii.core.work_state.models import (
     WorkStateStatus,
 )
 
-_ERROR_TERMS = ("failed", "error", "exception", "traceback", "test failed", "build failed")
+_ERROR_TERMS = (
+    "failed",
+    "failing",
+    "failure",
+    "broken",
+    "regression",
+    "error",
+    "exception",
+    "traceback",
+    "test failed",
+    "build failed",
+)
 _TASK_TERMS = ("implement", "fix", "update", "add", "merge", "review pr", "run benchmark", "write tests")
 _DECISION_TERMS = ("decide", "choose", "compare options", "should we", "recommendation", "tradeoff")
 _RESEARCH_TERMS = ("literature search", "paper", "analyze", "research", "learn about")
