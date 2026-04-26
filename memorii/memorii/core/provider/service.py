@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.next_step import NextStepEngine, NextStepRequest
 from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.provider.models import (
     ProviderEvent,
@@ -55,6 +56,12 @@ class ProviderMemoryService:
         self._solver_frontier_planner = solver_frontier_planner
         self._solver_store = solver_store
         self._overlay_store = overlay_store
+        self._next_step_engine = NextStepEngine(
+            work_state_service=work_state_service,
+            solver_frontier_planner=solver_frontier_planner,
+            solver_store=solver_store,
+            overlay_store=overlay_store,
+        )
         self._emit_work_state_event_candidates = emit_work_state_event_candidates
         self._sequence = 0
         self._last_recall_bundle: RecallStateBundle | None = None
@@ -283,13 +290,15 @@ class ProviderMemoryService:
             return ProviderToolCallResult(
                 tool_name=tool_name,
                 ok=True,
-                result=self._build_next_step_result(
-                    query=tool_input.query,
-                    session_id=tool_input.session_id,
-                    task_id=tool_input.task_id,
-                    user_id=tool_input.user_id,
-                    solver_run_id=tool_input.solver_run_id,
-                ),
+                result=self._next_step_engine.get_next_step(
+                    NextStepRequest(
+                        query=tool_input.query,
+                        session_id=tool_input.session_id,
+                        task_id=tool_input.task_id,
+                        user_id=tool_input.user_id,
+                        solver_run_id=tool_input.solver_run_id,
+                    )
+                ).model_dump(mode="json"),
             )
 
         if tool_name == "memorii_open_or_resume_work":
@@ -474,177 +483,6 @@ class ProviderMemoryService:
             },
         }
 
-    def _build_next_step_result(
-        self,
-        *,
-        query: str | None,
-        session_id: str | None,
-        task_id: str | None,
-        user_id: str | None,
-        solver_run_id: str | None = None,
-    ) -> dict[str, object]:
-        del query  # query is accepted for future frontier-planning support.
-        scope = {
-            "task_id": task_id,
-            "session_id": session_id,
-            "user_id": user_id,
-        }
-        effective_solver_run_id, solver_run_resolution_source = self._resolve_effective_solver_run_id(
-            solver_run_id=solver_run_id,
-            task_id=task_id,
-            session_id=session_id,
-        )
-
-        if effective_solver_run_id is not None:
-            if self._planner_dependencies_ready():
-                frontier_plan = self._solver_frontier_planner.select_next_frontier(
-                    solver_run_id=effective_solver_run_id,
-                    solver_store=self._solver_store,
-                    overlay_store=self._overlay_store,
-                )
-                if frontier_plan.selected_node_id is not None:
-                    next_step: dict[str, object]
-                    if frontier_plan.next_test_action is not None:
-                        next_step = {
-                            "action_type": frontier_plan.next_test_action.action_type,
-                            "description": frontier_plan.next_test_action.description,
-                            "confidence": 0.6,
-                            "reason": frontier_plan.reason.value,
-                            "evidence_ids": [],
-                            "expected_evidence": frontier_plan.next_test_action.expected_evidence,
-                            "success_condition": frontier_plan.next_test_action.success_condition,
-                            "failure_condition": frontier_plan.next_test_action.failure_condition,
-                            "required_tool": frontier_plan.next_test_action.required_tool,
-                            "target_ref": frontier_plan.next_test_action.target_ref,
-                        }
-                    elif frontier_plan.next_best_test:
-                        next_step = {
-                            "action_type": "run_test",
-                            "description": frontier_plan.next_best_test,
-                            "confidence": 0.55,
-                            "reason": frontier_plan.reason.value,
-                            "evidence_ids": [],
-                        }
-                    else:
-                        next_step = {
-                            "action_type": "inspect_frontier",
-                            "description": "Inspect the selected solver frontier node before continuing.",
-                            "confidence": 0.45,
-                            "reason": frontier_plan.reason.value,
-                            "evidence_ids": [],
-                        }
-                    return {
-                        "next_step": next_step,
-                        "based_on_solver_run_id": effective_solver_run_id,
-                        "based_on_solver_node_id": frontier_plan.selected_node_id,
-                        "based_on_work_state_id": None,
-                        "planner_used": True,
-                        "planner_reason": frontier_plan.reason.value,
-                        "candidate_frontier_node_ids": frontier_plan.candidate_frontier_node_ids,
-                        "requested_solver_run_id": solver_run_id,
-                        "resolved_solver_run_id": effective_solver_run_id,
-                        "solver_run_resolution_source": solver_run_resolution_source,
-                        "scope": scope,
-                    }
-                fallback_result = self._build_work_state_next_step_fallback(
-                    session_id=session_id,
-                    task_id=task_id,
-                    user_id=user_id,
-                    scope=scope,
-                )
-                fallback_result["based_on_solver_run_id"] = effective_solver_run_id
-                fallback_result["based_on_solver_node_id"] = None
-                fallback_result["planner_used"] = False
-                fallback_result["planner_reason"] = "no_frontier_found"
-                fallback_result["candidate_frontier_node_ids"] = frontier_plan.candidate_frontier_node_ids
-                fallback_result["requested_solver_run_id"] = solver_run_id
-                fallback_result["resolved_solver_run_id"] = effective_solver_run_id
-                fallback_result["solver_run_resolution_source"] = solver_run_resolution_source
-                return fallback_result
-
-            fallback_result = self._build_work_state_next_step_fallback(
-                session_id=session_id,
-                task_id=task_id,
-                user_id=user_id,
-                scope=scope,
-            )
-            fallback_result["based_on_solver_run_id"] = effective_solver_run_id
-            fallback_result["based_on_solver_node_id"] = None
-            fallback_result["planner_used"] = False
-            fallback_result["planner_reason"] = "planner_not_configured"
-            fallback_result["candidate_frontier_node_ids"] = []
-            fallback_result["requested_solver_run_id"] = solver_run_id
-            fallback_result["resolved_solver_run_id"] = effective_solver_run_id
-            fallback_result["solver_run_resolution_source"] = solver_run_resolution_source
-            return fallback_result
-
-        fallback_result = self._build_work_state_next_step_fallback(
-            session_id=session_id,
-            task_id=task_id,
-            user_id=user_id,
-            scope=scope,
-        )
-        fallback_result["based_on_solver_run_id"] = None
-        fallback_result["based_on_solver_node_id"] = None
-        fallback_result["planner_used"] = False
-        fallback_result["planner_reason"] = "no_solver_run_resolved"
-        fallback_result["candidate_frontier_node_ids"] = []
-        fallback_result["requested_solver_run_id"] = solver_run_id
-        fallback_result["resolved_solver_run_id"] = None
-        fallback_result["solver_run_resolution_source"] = solver_run_resolution_source
-        return fallback_result
-
-    def _build_work_state_next_step_fallback(
-        self,
-        *,
-        session_id: str | None,
-        task_id: str | None,
-        user_id: str | None,
-        scope: dict[str, str | None],
-    ) -> dict[str, object]:
-        selected_work_states = self._select_recall_work_states(session_id=session_id, task_id=task_id, user_id=user_id)
-        work_state_summaries = summarize_work_states(
-            selected_work_states,
-            events_by_state_id=self._list_events_by_work_state_id(selected_work_states),
-        )
-        if not work_state_summaries:
-            return {
-                "next_step": {
-                    "action_type": "ask_user",
-                    "description": "No active work state found. Ask the user what they want to do next.",
-                    "confidence": 0.2,
-                    "reason": "no_active_work_state",
-                    "evidence_ids": [],
-                },
-                "based_on_work_state_id": None,
-                "scope": scope,
-            }
-
-        selected_state = work_state_summaries[0]
-        action_type = "continue_research"
-        description = "Continue collecting evidence and summarize what changed."
-        if selected_state.kind == WorkStateKind.TASK_EXECUTION:
-            action_type = "continue_task"
-            description = "Continue the active task and record progress when a meaningful step completes."
-        elif selected_state.kind == WorkStateKind.INVESTIGATION:
-            action_type = "inspect_failure"
-            description = "Inspect the latest failure or missing evidence before committing a conclusion."
-        elif selected_state.kind == WorkStateKind.DECISION:
-            action_type = "clarify_decision_criteria"
-            description = "Clarify options, criteria, and constraints before choosing."
-
-        return {
-            "next_step": {
-                "action_type": action_type,
-                "description": description,
-                "confidence": 0.4,
-                "reason": "frontier_planner_not_yet_enabled",
-                "evidence_ids": list(selected_state.source_event_ids),
-            },
-            "based_on_work_state_id": selected_state.work_state_id,
-            "scope": scope,
-        }
-
     def _build_open_or_resume_work_result(
         self,
         *,
@@ -777,34 +615,6 @@ class ProviderMemoryService:
             metadata=metadata,
             timestamp=event.timestamp or datetime.now(UTC),
         )
-
-    def _planner_dependencies_ready(self) -> bool:
-        return (
-            self._solver_frontier_planner is not None
-            and self._solver_store is not None
-            and self._overlay_store is not None
-        )
-
-    def _resolve_effective_solver_run_id(
-        self,
-        *,
-        solver_run_id: str | None,
-        task_id: str | None,
-        session_id: str | None,
-    ) -> tuple[str | None, str]:
-        if solver_run_id is not None:
-            return solver_run_id, "explicit"
-        if self._work_state_service is None:
-            return None, "none"
-        if task_id is not None:
-            resolved_by_task = self._work_state_service.resolve_solver_run_id(task_id=task_id)
-            if resolved_by_task is not None:
-                return resolved_by_task, "task_binding"
-        if session_id is not None:
-            resolved_by_session = self._work_state_service.resolve_solver_run_id(session_id=session_id)
-            if resolved_by_session is not None:
-                return resolved_by_session, "session_binding"
-        return None, "none"
 
     def _stage_work_state_event_candidate(
         self,
