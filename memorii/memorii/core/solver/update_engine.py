@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
+from memorii.core.solver.models import NextTestAction
 from memorii.core.solver.verifier import SolverDecisionVerifier
 from memorii.domain.common import SolverEdgeMetadata, SolverNodeMetadata
 from memorii.domain.enums import CommitStatus, ConfidenceClass, SolverCreatedBy, SolverEdgeType, SolverNodeStatus, SolverNodeType
@@ -19,6 +20,7 @@ class SolverDecisionOutput(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
     next_best_test: str | None = None
+    next_test_action: NextTestAction | None = None
     rationale_short: str
     confidence_band: ConfidenceBand
 
@@ -30,11 +32,14 @@ class SolverDecisionOutput(BaseModel):
             raise ValueError("commitment_decisions_require_evidence_ids")
         if self.decision == SolverDecision.INSUFFICIENT_EVIDENCE and not self.missing_evidence:
             raise ValueError("insufficient_evidence_requires_missing_evidence")
+        if self.next_test_action is not None and not self.next_test_action.description.strip():
+            raise ValueError("next_test_action_requires_description")
         if self.decision == SolverDecision.NEEDS_TEST:
             if not self.missing_evidence:
                 raise ValueError("needs_test_requires_missing_evidence")
-            if self.next_best_test is None or not self.next_best_test.strip():
-                raise ValueError("needs_test_requires_next_best_test")
+            has_next_best_test = self.next_best_test is not None and bool(self.next_best_test.strip())
+            if not has_next_best_test and self.next_test_action is None:
+                raise ValueError("needs_test_requires_next_test")
         return self
 
 
@@ -103,6 +108,7 @@ class SolverUpdateEngine:
             evidence_ids=parsed.evidence_ids,
             missing_evidence=parsed.missing_evidence,
             next_best_test=parsed.next_best_test,
+            next_test_action=parsed.next_test_action,
             available_evidence_ids=set(update_input.available_evidence_ids),
         )
         if not verification.is_valid:
@@ -165,6 +171,7 @@ class SolverUpdateEngine:
             decision_node_content = {
                 "decision": final_decision.value,
                 "next_best_test": parsed.next_best_test,
+                "next_test_action": parsed.next_test_action.model_dump(mode="json") if parsed.next_test_action else None,
                 "missing_evidence": parsed.missing_evidence,
             }
             overlay_status = SolverNodeStatus.NEEDS_TEST

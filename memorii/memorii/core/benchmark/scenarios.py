@@ -566,6 +566,7 @@ class ScenarioExecutor:
                 evidence_ids=list(fx.evidence_ids),
                 missing_evidence=list(fx.missing_evidence),
                 next_best_test=fx.next_best_test,
+                next_test_action=None,
                 available_evidence_ids=set(fx.available_evidence_ids),
             )
             downgraded = outcome.downgraded

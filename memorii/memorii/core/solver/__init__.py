@@ -1,6 +1,7 @@
 """Solver runtime services."""
 
 from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
+from memorii.core.solver.models import NextTestAction
 from memorii.core.solver.model_integration import (
     OpenAIStyleCompletionClient,
     OpenAIStyleSolverModelProvider,
@@ -27,4 +28,5 @@ __all__ = [
     "StaticSolverModelProvider",
     "OpenAIStyleCompletionClient",
     "OpenAIStyleSolverModelProvider",
+    "NextTestAction",
 ]
