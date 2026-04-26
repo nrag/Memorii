@@ -28,11 +28,6 @@ class WorkStateService:
     ) -> None:
         self._detector = detector or WorkStateDetector()
         self._store = store or InMemoryWorkStateStore()
-        if isinstance(self._store, InMemoryWorkStateStore):
-            # Backward-compatible test hooks for existing direct-list fixtures.
-            self._states = self._store._states  # noqa: SLF001
-            self._bindings = self._store._bindings  # noqa: SLF001
-            self._events = self._store._events  # noqa: SLF001
 
     def ingest_event(self, event: AgentEventEnvelope) -> WorkStateDetectionDecision:
         decision = self._detector.detect(event=event, active_states=self._store.list_states())
