@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.provider.models import (
@@ -25,6 +26,7 @@ from memorii.core.provider.tools import (
 )
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
 from memorii.core.solver import SolverFrontierPlanner
+from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.core.work_state.models import (
     AgentEventEnvelope,
     WorkStateEvent,
@@ -46,12 +48,14 @@ class ProviderMemoryService:
         solver_frontier_planner: SolverFrontierPlanner | None = None,
         solver_store: SolverGraphStore | None = None,
         overlay_store: OverlayStore | None = None,
+        emit_work_state_event_candidates: bool = True,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
         self._work_state_service = work_state_service
         self._solver_frontier_planner = solver_frontier_planner
         self._solver_store = solver_store
         self._overlay_store = overlay_store
+        self._emit_work_state_event_candidates = emit_work_state_event_candidates
         self._sequence = 0
         self._last_recall_bundle: RecallStateBundle | None = None
 
@@ -341,6 +345,16 @@ class ProviderMemoryService:
             )
             if state is None or event is None:
                 return ProviderToolCallResult(tool_name=tool_name, ok=False, error="work_state_not_found")
+            candidate_result = self._stage_work_state_event_candidate(
+                state=state,
+                event=event,
+                event_type="progress",
+                outcome=None,
+                task_id=tool_input.task_id,
+                session_id=tool_input.session_id,
+                solver_run_id=tool_input.solver_run_id,
+                execution_node_id=tool_input.execution_node_id,
+            )
             return ProviderToolCallResult(
                 tool_name=tool_name,
                 ok=True,
@@ -349,6 +363,7 @@ class ProviderMemoryService:
                     "event_id": event.event_id,
                     "status": state.status.value,
                     "recorded": True,
+                    **candidate_result,
                 },
             )
 
@@ -375,6 +390,16 @@ class ProviderMemoryService:
             )
             if state is None or event is None:
                 return ProviderToolCallResult(tool_name=tool_name, ok=False, error="work_state_not_found")
+            candidate_result = self._stage_work_state_event_candidate(
+                state=state,
+                event=event,
+                event_type="outcome",
+                outcome=tool_input.outcome.value,
+                task_id=tool_input.task_id,
+                session_id=tool_input.session_id,
+                solver_run_id=tool_input.solver_run_id,
+                execution_node_id=tool_input.execution_node_id,
+            )
             return ProviderToolCallResult(
                 tool_name=tool_name,
                 ok=True,
@@ -383,6 +408,7 @@ class ProviderMemoryService:
                     "event_id": event.event_id,
                     "status": state.status.value,
                     "recorded": True,
+                    **candidate_result,
                 },
             )
 
@@ -779,3 +805,102 @@ class ProviderMemoryService:
             if resolved_by_session is not None:
                 return resolved_by_session, "session_binding"
         return None, "none"
+
+    def _stage_work_state_event_candidate(
+        self,
+        *,
+        state: WorkStateRecord,
+        event: WorkStateEvent,
+        event_type: str,
+        outcome: str | None,
+        task_id: str | None,
+        session_id: str | None,
+        solver_run_id: str | None,
+        execution_node_id: str | None,
+    ) -> dict[str, object]:
+        if not self._emit_work_state_event_candidates:
+            return {"memory_candidate_created": False}
+        try:
+            memory_id = f"cand:episodic:work_state_event:{event.event_id}"
+            scoped_task_id = task_id or state.task_id
+            scoped_session_id = session_id or state.session_id
+            event_solver_run_id = solver_run_id
+            event_execution_node_id = execution_node_id
+            if self._work_state_service is not None:
+                bindings = self._work_state_service.list_bindings(work_state_id=state.work_state_id)
+                if bindings:
+                    latest = max(bindings, key=lambda item: item.updated_at)
+                    event_solver_run_id = event_solver_run_id or latest.solver_run_id
+                    event_execution_node_id = event_execution_node_id or latest.execution_node_id
+            memory_text = self._build_work_state_event_memory_text(
+                state=state,
+                event=event,
+                event_type=event_type,
+                outcome=outcome,
+            )
+            record = CanonicalMemoryRecord(
+                memory_id=memory_id,
+                domain=MemoryDomain.EPISODIC,
+                text=memory_text,
+                content={
+                    "text": memory_text,
+                    "work_state_id": state.work_state_id,
+                    "work_state_event_id": event.event_id,
+                    "event_type": event_type,
+                    "task_id": scoped_task_id,
+                    "session_id": scoped_session_id,
+                    "solver_run_id": event_solver_run_id,
+                    "execution_node_id": event_execution_node_id,
+                    "outcome": outcome,
+                    "work_state_status": state.status.value,
+                },
+                status=CommitStatus.CANDIDATE,
+                source_kind="provider:work_state_event",
+                timestamp=event.created_at,
+                session_id=scoped_session_id,
+                task_id=scoped_task_id,
+                execution_node_id=event_execution_node_id,
+                solver_run_id=event_solver_run_id,
+                user_id=state.user_id,
+                is_raw_event=False,
+                promotion_state="staged",
+            )
+            self._memory_plane.stage_record(record)
+            return {
+                "memory_candidate_created": True,
+                "memory_candidate_id": memory_id,
+            }
+        except Exception as exc:  # pragma: no cover - covered via injected failure tests
+            return {
+                "memory_candidate_created": False,
+                "memory_candidate_error": str(exc),
+            }
+
+    @staticmethod
+    def _build_work_state_event_memory_text(
+        *,
+        state: WorkStateRecord,
+        event: WorkStateEvent,
+        event_type: str,
+        outcome: str | None,
+    ) -> str:
+        if event_type == "progress":
+            return "\n".join(
+                [
+                    "Work state progress:",
+                    f"Title: {state.title}",
+                    f"Kind: {state.kind.value}",
+                    f"Status: {state.status.value}",
+                    f"Content: {event.content}",
+                    f"Evidence: {event.evidence_ids}",
+                ]
+            )
+        return "\n".join(
+            [
+                "Work state outcome:",
+                f"Title: {state.title}",
+                f"Outcome status: {outcome or 'unknown'}",
+                f"Final status: {state.status.value}",
+                f"Content: {event.content}",
+            ]
+        )
