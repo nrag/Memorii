@@ -20,6 +20,8 @@ from memorii.core.provider.tools import (
     GetStateSummaryInput,
     OpenOrResumeWorkInput,
     ProviderToolCallResult,
+    RecordOutcomeInput,
+    RecordProgressInput,
 )
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
 from memorii.core.solver import SolverFrontierPlanner
@@ -194,6 +196,47 @@ class ProviderMemoryService:
                     "additionalProperties": False,
                 },
             },
+            {
+                "name": "memorii_record_progress",
+                "description": "Record meaningful progress against an active work state.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "work_state_id": {"type": "string"},
+                        "task_id": {"type": "string"},
+                        "session_id": {"type": "string"},
+                        "title": {"type": "string"},
+                        "content": {"type": "string"},
+                        "evidence_ids": {"type": "array", "items": {"type": "string"}},
+                        "solver_run_id": {"type": "string"},
+                        "execution_node_id": {"type": "string"},
+                    },
+                    "required": ["content"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "memorii_record_outcome",
+                "description": "Record a terminal or semi-terminal outcome for a work state.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "work_state_id": {"type": "string"},
+                        "task_id": {"type": "string"},
+                        "session_id": {"type": "string"},
+                        "outcome": {
+                            "type": "string",
+                            "enum": ["completed", "blocked", "abandoned", "needs_followup"],
+                        },
+                        "content": {"type": "string"},
+                        "evidence_ids": {"type": "array", "items": {"type": "string"}},
+                        "solver_run_id": {"type": "string"},
+                        "execution_node_id": {"type": "string"},
+                    },
+                    "required": ["outcome", "content"],
+                    "additionalProperties": False,
+                },
+            },
         ]
 
     def handle_tool_call(self, tool_name: str, arguments: dict[str, object]) -> ProviderToolCallResult:
@@ -266,6 +309,73 @@ class ProviderMemoryService:
                     execution_node_id=tool_input.execution_node_id,
                     solver_run_id=tool_input.solver_run_id,
                 ),
+            )
+
+        if tool_name == "memorii_record_progress":
+            try:
+                tool_input = RecordProgressInput.model_validate(arguments)
+            except ValidationError as exc:
+                return ProviderToolCallResult(
+                    tool_name=tool_name,
+                    ok=False,
+                    error=f"Validation error for tool '{tool_name}': {exc}",
+                )
+            if self._work_state_service is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="work_state_service_not_configured")
+            state, event = self._work_state_service.record_progress(
+                work_state_id=tool_input.work_state_id,
+                task_id=tool_input.task_id,
+                session_id=tool_input.session_id,
+                content=tool_input.content,
+                evidence_ids=tool_input.evidence_ids,
+                solver_run_id=tool_input.solver_run_id,
+                execution_node_id=tool_input.execution_node_id,
+            )
+            if state is None or event is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="work_state_not_found")
+            return ProviderToolCallResult(
+                tool_name=tool_name,
+                ok=True,
+                result={
+                    "work_state_id": state.work_state_id,
+                    "event_id": event.event_id,
+                    "status": state.status.value,
+                    "recorded": True,
+                },
+            )
+
+        if tool_name == "memorii_record_outcome":
+            try:
+                tool_input = RecordOutcomeInput.model_validate(arguments)
+            except ValidationError as exc:
+                return ProviderToolCallResult(
+                    tool_name=tool_name,
+                    ok=False,
+                    error=f"Validation error for tool '{tool_name}': {exc}",
+                )
+            if self._work_state_service is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="work_state_service_not_configured")
+            state, event = self._work_state_service.record_outcome(
+                work_state_id=tool_input.work_state_id,
+                task_id=tool_input.task_id,
+                session_id=tool_input.session_id,
+                outcome=tool_input.outcome.value,
+                content=tool_input.content,
+                evidence_ids=tool_input.evidence_ids,
+                solver_run_id=tool_input.solver_run_id,
+                execution_node_id=tool_input.execution_node_id,
+            )
+            if state is None or event is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="work_state_not_found")
+            return ProviderToolCallResult(
+                tool_name=tool_name,
+                ok=True,
+                result={
+                    "work_state_id": state.work_state_id,
+                    "event_id": event.event_id,
+                    "status": state.status.value,
+                    "recorded": True,
+                },
             )
 
         return ProviderToolCallResult(

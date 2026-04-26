@@ -80,6 +80,22 @@ class WorkStateBinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class WorkStateEventType(str, Enum):
+    PROGRESS = "progress"
+    OUTCOME = "outcome"
+
+
+class WorkStateEvent(BaseModel):
+    event_id: str
+    work_state_id: str
+    event_type: WorkStateEventType
+    content: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class WorkStateDetectionAction(str, Enum):
     NO_STATE_UPDATE = "no_state_update"
     CREATE_CANDIDATE_STATE = "create_candidate_state"
