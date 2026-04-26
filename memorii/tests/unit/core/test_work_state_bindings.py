@@ -27,6 +27,13 @@ def test_task_resolution_wins_over_session_resolution() -> None:
     )
 
 
+def test_resolve_falls_back_to_session_when_task_has_no_binding() -> None:
+    service = WorkStateService()
+    service.bind_state(session_id="session:1", solver_run_id="solver:session")
+
+    assert service.resolve_solver_run_id(task_id="task:no-binding", session_id="session:1") == "solver:session"
+
+
 def test_latest_active_binding_wins() -> None:
     service = WorkStateService()
     service.bind_state(task_id="task:bind:3", solver_run_id="solver:task:3:old")

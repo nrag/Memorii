@@ -90,12 +90,14 @@ class WorkStateService:
         task_id: str | None = None,
         session_id: str | None = None,
     ) -> str | None:
-        task_match = self._latest_active_binding(task_id=task_id)
-        if task_match is not None:
-            return task_match.solver_run_id
-        session_match = self._latest_active_binding(session_id=session_id)
-        if session_match is not None:
-            return session_match.solver_run_id
+        if task_id is not None:
+            task_match = self._latest_active_binding(task_id=task_id)
+            if task_match is not None:
+                return task_match.solver_run_id
+        if session_id is not None:
+            session_match = self._latest_active_binding(session_id=session_id)
+            if session_match is not None:
+                return session_match.solver_run_id
         return None
 
     def list_bindings(
