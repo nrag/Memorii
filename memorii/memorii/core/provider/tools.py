@@ -27,5 +27,6 @@ class GetNextStepInput(BaseModel):
     session_id: str | None = None
     task_id: str | None = None
     user_id: str | None = None
+    solver_run_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")
