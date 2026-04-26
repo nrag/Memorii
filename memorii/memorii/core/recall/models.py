@@ -2,9 +2,22 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.work_state.models import WorkStateKind, WorkStateStatus
+
+
+class WorkStateEventSummary(BaseModel):
+    event_id: str
+    work_state_id: str
+    event_type: str
+    content: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class WorkStateSummary(BaseModel):
@@ -18,6 +31,9 @@ class WorkStateSummary(BaseModel):
     session_id: str | None = None
     user_id: str | None = None
     source_event_ids: list[str] = Field(default_factory=list)
+    recent_events: list[WorkStateEventSummary] = Field(default_factory=list)
+    latest_progress: str | None = None
+    latest_outcome: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 

@@ -25,7 +25,13 @@ from memorii.core.provider.tools import (
 )
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
 from memorii.core.solver import SolverFrontierPlanner
-from memorii.core.work_state.models import AgentEventEnvelope, WorkStateKind, WorkStateRecord, WorkStateStatus
+from memorii.core.work_state.models import (
+    AgentEventEnvelope,
+    WorkStateEvent,
+    WorkStateKind,
+    WorkStateRecord,
+    WorkStateStatus,
+)
 from memorii.core.work_state.service import WorkStateService
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
 
@@ -120,8 +126,10 @@ class ProviderMemoryService:
             user_id=user_id,
             top_k=top_k,
         )
+        selected_work_states = self._select_recall_work_states(session_id=session_id, task_id=task_id, user_id=user_id)
         work_state_summaries = summarize_work_states(
-            self._select_recall_work_states(session_id=session_id, task_id=task_id, user_id=user_id)
+            selected_work_states,
+            events_by_state_id=self._list_events_by_work_state_id(selected_work_states),
         )
         bundle = RecallStateBundle(
             query=query,
@@ -425,8 +433,10 @@ class ProviderMemoryService:
         task_id: str | None,
         user_id: str | None,
     ) -> dict[str, object]:
+        selected_work_states = self._select_recall_work_states(session_id=session_id, task_id=task_id, user_id=user_id)
         work_state_summaries = summarize_work_states(
-            self._select_recall_work_states(session_id=session_id, task_id=task_id, user_id=user_id)
+            selected_work_states,
+            events_by_state_id=self._list_events_by_work_state_id(selected_work_states),
         )
         return {
             "work_states": [summary.model_dump(mode="json") for summary in work_state_summaries],
@@ -566,8 +576,10 @@ class ProviderMemoryService:
         user_id: str | None,
         scope: dict[str, str | None],
     ) -> dict[str, object]:
+        selected_work_states = self._select_recall_work_states(session_id=session_id, task_id=task_id, user_id=user_id)
         work_state_summaries = summarize_work_states(
-            self._select_recall_work_states(session_id=session_id, task_id=task_id, user_id=user_id)
+            selected_work_states,
+            events_by_state_id=self._list_events_by_work_state_id(selected_work_states),
         )
         if not work_state_summaries:
             return {
@@ -688,8 +700,22 @@ class ProviderMemoryService:
         for state in work_states:
             lines.append(f"- [{state.kind.value}:{state.status.value}] {state.title}")
             lines.append(f"  Summary: {state.summary}")
+            if state.latest_progress:
+                lines.append(f"  Latest progress: {state.latest_progress}")
+            if state.latest_outcome:
+                lines.append(f"  Latest outcome: {state.latest_outcome}")
             lines.append(f"  Confidence: {state.confidence:.2f}")
         return "\n".join(lines)
+
+    def _list_events_by_work_state_id(
+        self, work_states: list[WorkStateRecord]
+    ) -> dict[str, list[WorkStateEvent]]:
+        if self._work_state_service is None:
+            return {}
+        return {
+            state.work_state_id: self._work_state_service.list_work_state_events(state.work_state_id)
+            for state in work_states
+        }
 
     def _ingest_work_state(self, event: AgentEventEnvelope) -> None:
         if self._work_state_service is None:
