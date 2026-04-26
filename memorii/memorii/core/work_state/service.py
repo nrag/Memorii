@@ -28,6 +28,11 @@ class WorkStateService:
     ) -> None:
         self._detector = detector or WorkStateDetector()
         self._store = store or InMemoryWorkStateStore()
+        if isinstance(self._store, InMemoryWorkStateStore):
+            # Backward-compatible test hooks for existing direct-list fixtures.
+            self._states = self._store._states  # noqa: SLF001
+            self._bindings = self._store._bindings  # noqa: SLF001
+            self._events = self._store._events  # noqa: SLF001
 
     def ingest_event(self, event: AgentEventEnvelope) -> WorkStateDetectionDecision:
         decision = self._detector.detect(event=event, active_states=self._store.list_states())
@@ -234,7 +239,7 @@ class WorkStateService:
         if state is None:
             return None, None
         timestamp = datetime.now(UTC)
-        event_count = len(self._store.list_events(state.work_state_id))
+        event_count = self._event_count()
         event = WorkStateEvent(
             event_id=f"wse:progress:{timestamp.timestamp()}:{event_count}",
             work_state_id=state.work_state_id,
@@ -283,7 +288,7 @@ class WorkStateService:
             "needs_followup": WorkStateStatus.ACTIVE,
         }
         timestamp = datetime.now(UTC)
-        event_count = len(self._store.list_events(state.work_state_id))
+        event_count = self._event_count()
         event = WorkStateEvent(
             event_id=f"wse:outcome:{timestamp.timestamp()}:{event_count}",
             work_state_id=state.work_state_id,
@@ -470,6 +475,10 @@ class WorkStateService:
             if session_matches:
                 return max(session_matches, key=lambda state: state.updated_at)
         return None
+
+
+    def _event_count(self) -> int:
+        return sum(len(self._store.list_events(state.work_state_id)) for state in self._store.list_states())
 
     def _replace_state(self, updated_state: WorkStateRecord) -> None:
         self._store.upsert_state(updated_state)
