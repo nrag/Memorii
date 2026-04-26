@@ -42,6 +42,13 @@ class WorkStateStatus(str, Enum):
     ABANDONED = "abandoned"
 
 
+class WorkStateBindingStatus(str, Enum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    RESOLVED = "resolved"
+    ABANDONED = "abandoned"
+
+
 class WorkStateRecord(BaseModel):
     work_state_id: str
     kind: WorkStateKind
@@ -53,6 +60,20 @@ class WorkStateRecord(BaseModel):
     summary: str
     confidence: float
     source_event_ids: list[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class WorkStateBinding(BaseModel):
+    binding_id: str
+    session_id: str | None = None
+    task_id: str | None = None
+    work_state_id: str | None = None
+    execution_node_id: str | None = None
+    solver_run_id: str | None = None
+    status: WorkStateBindingStatus = WorkStateBindingStatus.ACTIVE
     created_at: datetime
     updated_at: datetime
 

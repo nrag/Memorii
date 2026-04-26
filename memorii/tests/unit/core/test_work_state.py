@@ -114,3 +114,22 @@ def test_provider_integration_records_state_when_service_supplied() -> None:
     states = work_state_service.list_states(task_id="task:4")
     assert len(states) == 1
     assert states[0].status == WorkStateStatus.CANDIDATE
+
+
+def test_ingest_event_with_solver_metadata_creates_binding() -> None:
+    service = WorkStateService()
+
+    service.ingest_event(
+        _event(
+            "e7",
+            "investigate failing branch and capture evidence",
+            session_id="s:binding",
+            task_id="task:binding",
+            metadata={"solver_run_id": "solver:binding", "execution_node_id": "exec:binding"},
+        )
+    )
+
+    bindings = service.list_bindings(task_id="task:binding")
+    assert len(bindings) == 1
+    assert bindings[0].solver_run_id == "solver:binding"
+    assert bindings[0].execution_node_id == "exec:binding"
