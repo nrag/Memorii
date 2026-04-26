@@ -84,7 +84,7 @@ class SolverUpdateEngine:
         next_event_id: str,
         next_node_id: str,
         next_edge_id: str,
-        prior_overlay_version: SolverOverlayVersion | None = None,
+        prior_belief: float | None = None,
     ) -> SolverUpdateResult:
         now = datetime.now(UTC)
         parsed, parse_errors = self._parse_output(update_input)
@@ -230,10 +230,6 @@ class SolverUpdateEngine:
         if edge_state == CommitStatus.COMMITTED:
             committed_edge_ids.append(link_edge.id)
 
-        prior_belief = self._prior_belief_for_node(
-            prior_overlay_version=prior_overlay_version,
-            node_id=decision_node.id,
-        )
         decision_belief = update_solver_belief(
             prior_belief=prior_belief,
             decision=final_decision,
@@ -293,19 +289,6 @@ class SolverUpdateEngine:
             downgraded=verifier_downgraded,
             validation_notes=notes,
         )
-
-    def _prior_belief_for_node(
-        self,
-        *,
-        prior_overlay_version: SolverOverlayVersion | None,
-        node_id: str,
-    ) -> float | None:
-        if prior_overlay_version is None:
-            return None
-        for overlay in prior_overlay_version.node_overlays:
-            if overlay.node_id == node_id:
-                return overlay.belief
-        return None
 
     def _parse_output(self, update_input: SolverUpdateInput) -> tuple[SolverDecisionOutput, list[str]]:
         if update_input.model_output is None:

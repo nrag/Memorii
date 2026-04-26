@@ -9,7 +9,7 @@ from memorii.domain.memory_object import MemoryObject
 from memorii.domain.directory import WritebackSourceLink
 from memorii.domain.solver_graph.edges import SolverEdge
 from memorii.domain.solver_graph.nodes import SolverNode
-from memorii.domain.solver_graph.overlays import SolverOverlayVersion
+from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
 
 
 class MemoryObjectStore(ABC):
@@ -164,6 +164,10 @@ class OverlayStore(ABC):
 
     @abstractmethod
     def get_latest_for_node(self, solver_run_id: str, node_id: str) -> SolverOverlayVersion | None:
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_latest_node_overlay(self, solver_run_id: str, node_id: str) -> SolverNodeOverlay | None:
         raise NotImplementedError
 
 
