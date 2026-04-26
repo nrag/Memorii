@@ -67,6 +67,8 @@ def test_get_tool_schemas_includes_state_summary_and_next_step() -> None:
     assert "memorii_get_state_summary" in tool_names
     assert "memorii_get_next_step" in tool_names
     assert "memorii_open_or_resume_work" in tool_names
+    assert "memorii_record_progress" in tool_names
+    assert "memorii_record_outcome" in tool_names
 
     next_step_schema = next(schema for schema in schemas if schema["name"] == "memorii_get_next_step")
     properties = next_step_schema["input_schema"]["properties"]
@@ -74,6 +76,10 @@ def test_get_tool_schemas_includes_state_summary_and_next_step() -> None:
     open_or_resume_schema = next(schema for schema in schemas if schema["name"] == "memorii_open_or_resume_work")
     assert open_or_resume_schema["input_schema"]["required"] == ["title"]
     assert "kind" in open_or_resume_schema["input_schema"]["properties"]
+    record_progress_schema = next(schema for schema in schemas if schema["name"] == "memorii_record_progress")
+    assert record_progress_schema["input_schema"]["required"] == ["content"]
+    record_outcome_schema = next(schema for schema in schemas if schema["name"] == "memorii_record_outcome")
+    assert record_outcome_schema["input_schema"]["required"] == ["outcome", "content"]
 
 
 def test_handle_tool_call_unknown_tool_returns_error() -> None:
@@ -114,6 +120,171 @@ def test_open_or_resume_without_work_state_service_returns_error() -> None:
 
     assert result.ok is False
     assert result.error == "work_state_service_not_configured"
+
+
+def test_record_progress_without_work_state_service_returns_error() -> None:
+    provider = ProviderMemoryService()
+
+    result = provider.handle_tool_call("memorii_record_progress", {"content": "implemented parser changes"})
+
+    assert result.ok is False
+    assert result.error == "work_state_service_not_configured"
+
+
+def test_record_outcome_without_work_state_service_returns_error() -> None:
+    provider = ProviderMemoryService()
+
+    result = provider.handle_tool_call(
+        "memorii_record_outcome",
+        {"outcome": "completed", "content": "all acceptance tests passed"},
+    )
+
+    assert result.ok is False
+    assert result.error == "work_state_service_not_configured"
+
+
+def test_record_progress_by_work_state_id() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Implement parser", task_id="task:progress:ws")
+
+    result = provider.handle_tool_call(
+        "memorii_record_progress",
+        {
+            "work_state_id": created.work_state_id,
+            "content": "Merged parser refactor and added tests",
+            "evidence_ids": ["pr:123"],
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["work_state_id"] == created.work_state_id
+    assert result.result["status"] == "active"
+
+
+def test_record_progress_by_task_id() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Implement parser", task_id="task:progress:task")
+
+    result = provider.handle_tool_call(
+        "memorii_record_progress",
+        {"task_id": "task:progress:task", "content": "Added failing case reproduction"},
+    )
+
+    assert result.ok is True
+    assert result.result["work_state_id"] == created.work_state_id
+
+
+def test_record_progress_returns_error_when_no_state_found() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_record_progress",
+        {"task_id": "task:missing", "content": "progress with unknown state"},
+    )
+
+    assert result.ok is False
+    assert result.error == "work_state_not_found"
+
+
+def test_record_outcome_completed_marks_state_resolved() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Complete parser", task_id="task:outcome:completed")
+
+    result = provider.handle_tool_call(
+        "memorii_record_outcome",
+        {"work_state_id": created.work_state_id, "outcome": "completed", "content": "Done"},
+    )
+
+    assert result.ok is True
+    assert result.result["status"] == "resolved"
+
+
+def test_record_outcome_abandoned_marks_state_abandoned() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Deprecated path", task_id="task:outcome:abandoned")
+
+    result = provider.handle_tool_call(
+        "memorii_record_outcome",
+        {"work_state_id": created.work_state_id, "outcome": "abandoned", "content": "No longer needed"},
+    )
+
+    assert result.ok is True
+    assert result.result["status"] == "abandoned"
+
+
+def test_record_outcome_blocked_marks_state_paused() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Blocked work", task_id="task:outcome:blocked")
+
+    result = provider.handle_tool_call(
+        "memorii_record_outcome",
+        {"work_state_id": created.work_state_id, "outcome": "blocked", "content": "Waiting on dependency"},
+    )
+
+    assert result.ok is True
+    assert result.result["status"] == "paused"
+
+
+def test_record_outcome_needs_followup_keeps_state_active() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Followup needed", task_id="task:outcome:followup")
+
+    result = provider.handle_tool_call(
+        "memorii_record_outcome",
+        {"work_state_id": created.work_state_id, "outcome": "needs_followup", "content": "Need another validation step"},
+    )
+
+    assert result.ok is True
+    assert result.result["status"] == "active"
+
+
+def test_record_progress_preserves_evidence_ids() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Evidence tracking", task_id="task:evidence")
+
+    result = provider.handle_tool_call(
+        "memorii_record_progress",
+        {
+            "work_state_id": created.work_state_id,
+            "content": "Observed passing integration tests",
+            "evidence_ids": ["test:integration:1", "artifact:log:2"],
+        },
+    )
+
+    assert result.ok is True
+    events = work_state_service.list_work_state_events(created.work_state_id)
+    assert events[-1].evidence_ids == ["test:integration:1", "artifact:log:2"]
+
+
+def test_record_progress_with_solver_run_binding_updates_resolution() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(
+        title="Binding update",
+        task_id="task:binding:update",
+        solver_run_id="solver:old",
+    )
+
+    result = provider.handle_tool_call(
+        "memorii_record_progress",
+        {
+            "work_state_id": created.work_state_id,
+            "content": "Progress with newer solver binding",
+            "solver_run_id": "solver:new",
+            "execution_node_id": "exec:new",
+        },
+    )
+
+    assert result.ok is True
+    assert work_state_service.resolve_solver_run_id(task_id="task:binding:update") == "solver:new"
 
 
 def test_open_or_resume_creates_active_state() -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from enum import Enum
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.work_state.models import WorkStateKind
@@ -44,5 +46,38 @@ class OpenOrResumeWorkInput(BaseModel):
     work_state_id: str | None = None
     execution_node_id: str | None = None
     solver_run_id: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class WorkOutcome(str, Enum):
+    COMPLETED = "completed"
+    BLOCKED = "blocked"
+    ABANDONED = "abandoned"
+    NEEDS_FOLLOWUP = "needs_followup"
+
+
+class RecordProgressInput(BaseModel):
+    work_state_id: str | None = None
+    task_id: str | None = None
+    session_id: str | None = None
+    title: str | None = None
+    content: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    solver_run_id: str | None = None
+    execution_node_id: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RecordOutcomeInput(BaseModel):
+    work_state_id: str | None = None
+    task_id: str | None = None
+    session_id: str | None = None
+    outcome: WorkOutcome
+    content: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    solver_run_id: str | None = None
+    execution_node_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")

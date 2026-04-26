@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from memorii.core.work_state.detector import WorkStateDetector
 from memorii.core.work_state.models import (
     AgentEventEnvelope,
+    WorkStateEvent,
+    WorkStateEventType,
     WorkStateBinding,
     WorkStateBindingStatus,
     WorkStateDetectionAction,
@@ -22,6 +24,7 @@ class WorkStateService:
         self._detector = detector or WorkStateDetector()
         self._states: list[WorkStateRecord] = []
         self._bindings: list[WorkStateBinding] = []
+        self._events: list[WorkStateEvent] = []
 
     def ingest_event(self, event: AgentEventEnvelope) -> WorkStateDetectionDecision:
         decision = self._detector.detect(event=event, active_states=self._states)
@@ -211,6 +214,104 @@ class WorkStateService:
                 return state
         return None
 
+    def list_work_state_events(self, work_state_id: str) -> list[WorkStateEvent]:
+        return [event for event in self._events if event.work_state_id == work_state_id]
+
+    def record_progress(
+        self,
+        *,
+        content: str,
+        work_state_id: str | None = None,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        evidence_ids: list[str] | None = None,
+        solver_run_id: str | None = None,
+        execution_node_id: str | None = None,
+    ) -> tuple[WorkStateRecord | None, WorkStateEvent | None]:
+        state = self._resolve_state_for_recording(
+            work_state_id=work_state_id,
+            task_id=task_id,
+            session_id=session_id,
+        )
+        if state is None:
+            return None, None
+        timestamp = datetime.now(UTC)
+        event = WorkStateEvent(
+            event_id=f"wse:progress:{timestamp.timestamp()}:{len(self._events)}",
+            work_state_id=state.work_state_id,
+            event_type=WorkStateEventType.PROGRESS,
+            content=content,
+            evidence_ids=list(evidence_ids or []),
+            created_at=timestamp,
+        )
+        self._events.append(event)
+        updated = state.model_copy(update={"summary": content[:240], "updated_at": timestamp})
+        self._replace_state(updated)
+        if solver_run_id is not None or execution_node_id is not None:
+            self._upsert_binding_for_state(
+                work_state_id=state.work_state_id,
+                task_id=updated.task_id,
+                session_id=updated.session_id,
+                solver_run_id=solver_run_id,
+                execution_node_id=execution_node_id,
+                timestamp=timestamp,
+            )
+        return updated, event
+
+    def record_outcome(
+        self,
+        *,
+        outcome: str,
+        content: str,
+        work_state_id: str | None = None,
+        task_id: str | None = None,
+        session_id: str | None = None,
+        evidence_ids: list[str] | None = None,
+        solver_run_id: str | None = None,
+        execution_node_id: str | None = None,
+    ) -> tuple[WorkStateRecord | None, WorkStateEvent | None]:
+        state = self._resolve_state_for_recording(
+            work_state_id=work_state_id,
+            task_id=task_id,
+            session_id=session_id,
+        )
+        if state is None:
+            return None, None
+        status_map = {
+            "completed": WorkStateStatus.RESOLVED,
+            "blocked": WorkStateStatus.PAUSED,
+            "abandoned": WorkStateStatus.ABANDONED,
+            "needs_followup": WorkStateStatus.ACTIVE,
+        }
+        timestamp = datetime.now(UTC)
+        event = WorkStateEvent(
+            event_id=f"wse:outcome:{timestamp.timestamp()}:{len(self._events)}",
+            work_state_id=state.work_state_id,
+            event_type=WorkStateEventType.OUTCOME,
+            content=content,
+            evidence_ids=list(evidence_ids or []),
+            created_at=timestamp,
+        )
+        self._events.append(event)
+        updated = state.model_copy(
+            update={
+                "summary": content[:240],
+                "status": status_map[outcome],
+                "updated_at": timestamp,
+            }
+        )
+        self._replace_state(updated)
+        if solver_run_id is not None or execution_node_id is not None:
+            self._upsert_binding_for_state(
+                work_state_id=state.work_state_id,
+                task_id=updated.task_id,
+                session_id=updated.session_id,
+                solver_run_id=solver_run_id,
+                execution_node_id=execution_node_id,
+                timestamp=timestamp,
+            )
+        return updated, event
+
     def _create_state(
         self,
         *,
@@ -353,6 +454,71 @@ class WorkStateService:
             if session_matches:
                 return max(session_matches, key=lambda state: state.updated_at)
         return None
+
+    def _resolve_state_for_recording(
+        self,
+        *,
+        work_state_id: str | None,
+        task_id: str | None,
+        session_id: str | None,
+    ) -> WorkStateRecord | None:
+        if work_state_id is not None:
+            return self.get_state(work_state_id=work_state_id)
+        preferred_statuses = {WorkStateStatus.ACTIVE, WorkStateStatus.PAUSED, WorkStateStatus.CANDIDATE}
+        if task_id is not None:
+            task_matches = [state for state in self._states if state.task_id == task_id and state.status in preferred_statuses]
+            if task_matches:
+                return max(task_matches, key=lambda state: state.updated_at)
+        if session_id is not None:
+            session_matches = [
+                state for state in self._states if state.session_id == session_id and state.status in preferred_statuses
+            ]
+            if session_matches:
+                return max(session_matches, key=lambda state: state.updated_at)
+        return None
+
+    def _replace_state(self, updated_state: WorkStateRecord) -> None:
+        self._states = [
+            updated_state if state.work_state_id == updated_state.work_state_id else state for state in self._states
+        ]
+
+    def _upsert_binding_for_state(
+        self,
+        *,
+        work_state_id: str,
+        task_id: str | None,
+        session_id: str | None,
+        solver_run_id: str | None,
+        execution_node_id: str | None,
+        timestamp: datetime,
+    ) -> None:
+        candidates = [
+            binding
+            for binding in self._bindings
+            if binding.status == WorkStateBindingStatus.ACTIVE and binding.work_state_id == work_state_id
+        ]
+        if candidates:
+            latest = max(candidates, key=lambda item: item.updated_at)
+            updated = latest.model_copy(
+                update={
+                    "task_id": task_id,
+                    "session_id": session_id,
+                    "solver_run_id": solver_run_id if solver_run_id is not None else latest.solver_run_id,
+                    "execution_node_id": (
+                        execution_node_id if execution_node_id is not None else latest.execution_node_id
+                    ),
+                    "updated_at": timestamp,
+                }
+            )
+            self._bindings = [updated if binding.binding_id == latest.binding_id else binding for binding in self._bindings]
+            return
+        self.bind_state(
+            session_id=session_id,
+            task_id=task_id,
+            work_state_id=work_state_id,
+            solver_run_id=solver_run_id,
+            execution_node_id=execution_node_id,
+        )
 
     @staticmethod
     def _default_title(kind: WorkStateKind) -> str:
