@@ -25,7 +25,7 @@ class SolverDecisionVerifier:
         evidence_ids: list[str],
         missing_evidence: list[str],
         next_best_test: str | None,
-        next_test_action: NextTestAction | None,
+        next_test_action: NextTestAction | None = None,
         available_evidence_ids: set[str],
     ) -> VerificationOutcome:
         reasons: list[str] = []
