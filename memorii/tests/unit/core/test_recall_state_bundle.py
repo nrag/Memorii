@@ -211,3 +211,49 @@ def test_last_recall_bundle_trace_is_populated() -> None:
     assert bundle.trace["work_state_count"] == 1
     assert bundle.trace["work_state_ids"]
     assert bundle.trace["included_statuses"] == ["candidate"]
+
+
+def test_prefetch_includes_latest_progress_line() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Implement parser", task_id="task:progress:prefetch")
+    work_state_service.record_progress(work_state_id=created.work_state_id, content="Parser tokenizer now handles escapes")
+
+    context = provider.prefetch("continue", task_id="task:progress:prefetch")
+
+    assert "Latest progress: Parser tokenizer now handles escapes" in context
+
+
+def test_prefetch_includes_latest_outcome_line() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Finalize parser", task_id="task:outcome:prefetch")
+    work_state_service.record_outcome(
+        work_state_id=created.work_state_id,
+        outcome="needs_followup",
+        content="Outcome recorded after validating parser behavior",
+    )
+
+    context = provider.prefetch("continue", task_id="task:outcome:prefetch")
+
+    assert "Latest outcome: Outcome recorded after validating parser behavior" in context
+
+
+def test_last_recall_bundle_includes_recent_events_and_latest_fields() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Bundle event coverage", task_id="task:bundle:events")
+    work_state_service.record_progress(work_state_id=created.work_state_id, content="Completed parser refactor")
+    work_state_service.record_outcome(
+        work_state_id=created.work_state_id,
+        outcome="needs_followup",
+        content="Need one more regression check",
+    )
+
+    provider.prefetch("continue", task_id="task:bundle:events")
+    bundle = provider.last_recall_bundle()
+    assert bundle is not None
+    state = bundle.work_states[0]
+    assert state.recent_events
+    assert state.latest_progress == "Completed parser refactor"
+    assert state.latest_outcome == "Need one more regression check"

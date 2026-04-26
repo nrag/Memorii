@@ -430,6 +430,22 @@ def test_get_state_summary_with_matching_state_returns_state() -> None:
     assert work_states[0]["task_id"] == "task:tool:1"
 
 
+def test_get_state_summary_includes_recent_work_state_events() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+    created = work_state_service.open_or_resume_work(title="Summary events", task_id="task:tool:events")
+    work_state_service.record_progress(work_state_id=created.work_state_id, content="Progress item for summary")
+
+    result = provider.handle_tool_call("memorii_get_state_summary", {"task_id": "task:tool:events"})
+
+    assert result.ok is True
+    work_states = result.result["work_states"]
+    assert isinstance(work_states, list)
+    assert work_states[0]["recent_events"]
+    assert work_states[0]["latest_progress"] == "Progress item for summary"
+    assert "latest_outcome" in work_states[0]
+
+
 def test_get_next_step_without_state_returns_ask_user_stub() -> None:
     provider = ProviderMemoryService()
 
