@@ -17,6 +17,7 @@ from memorii.core.solver import (
     SolverContextItem,
     SolverDecision,
     SolverModelInput,
+    NextTestAction,
     SolverModelProvider,
     SolverUpdateEngine,
     SolverUpdateInput,
@@ -58,6 +59,7 @@ class RuntimeStepResult(BaseModel):
     follow_up_required: bool
     downgraded: bool
     next_action: str | None = None
+    next_test_action: NextTestAction | None = None
     solver_state_summary: str = ""
     unresolved_questions: list[str] = Field(default_factory=list)
     required_tests: list[str] = Field(default_factory=list)
@@ -266,9 +268,12 @@ class RuntimeStepService:
             downgraded=update_result.downgraded,
             next_action=update_result.parsed_output.next_best_test,
             solver_state_summary=update_result.parsed_output.rationale_short,
+            next_test_action=update_result.parsed_output.next_test_action,
             unresolved_questions=update_result.parsed_output.missing_evidence,
             required_tests=[update_result.parsed_output.next_best_test]
             if update_result.parsed_output.next_best_test
+            else [update_result.parsed_output.next_test_action.description]
+            if update_result.parsed_output.next_test_action
             else [],
             candidate_decisions=[update_result.parsed_output.decision.value],
             writeback_candidates=writebacks,

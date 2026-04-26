@@ -536,3 +536,65 @@ def test_runtime_step_exposes_retrieval_and_writeback_traces() -> None:
     assert result.retrieved_by_domain == result.retrieved_ids_by_domain_deduped
     assert len(result.writeback_trace) == 1
     assert result.writeback_trace[0]["candidate_id"] == result.writeback_candidates[0].candidate_id
+
+
+def test_needs_test_with_structured_next_test_action_is_supported_in_runtime() -> None:
+    runtime = _build_runtime(task_id="task-structured", execution_node_id="exec-structured")
+
+    result = runtime.step(
+        task_id="task-structured",
+        observation=RuntimeObservationInput(
+            event_id="evt-structured",
+            event_class=InboundEventClass.TOOL_RESULT,
+            payload={"status": "failed", "error": "assertion mismatch"},
+        ),
+        model_output={
+            "decision": "NEEDS_TEST",
+            "evidence_ids": [],
+            "missing_evidence": ["stacktrace"],
+            "next_test_action": {
+                "action_type": "run_command",
+                "description": "Run pytest tests/unit/core/test_phase5_runtime.py -k structured",
+                "required_tool": "pytest",
+            },
+            "rationale_short": "Need direct reproduction evidence",
+            "confidence_band": "low",
+        },
+    )
+
+    assert result.solver_decision == SolverDecision.NEEDS_TEST
+    assert result.next_action is None
+    assert result.next_test_action is not None
+    assert result.next_test_action.description.startswith("Run pytest")
+    assert result.required_tests == [result.next_test_action.description]
+
+    decision_node = next(node for node in runtime._solver_store.list_nodes(result.solver_run_id) if node.id.endswith(":decision"))  # noqa: SLF001 - test-only introspection
+    assert decision_node.content["next_test_action"] is not None
+    assert decision_node.content["next_test_action"]["action_type"] == "run_command"
+
+
+def test_invalid_structured_next_test_action_triggers_parse_fallback() -> None:
+    runtime = _build_runtime(task_id="task-invalid-action", execution_node_id="exec-invalid-action")
+
+    result = runtime.step(
+        task_id="task-invalid-action",
+        observation=RuntimeObservationInput(
+            event_id="evt-invalid-action",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "failed", "detail": "bad schema"},
+        ),
+        model_output={
+            "decision": "NEEDS_TEST",
+            "evidence_ids": [],
+            "missing_evidence": ["stacktrace"],
+            "next_test_action": {
+                "action_type": "unknown_action",
+                "description": "invalid",
+            },
+            "rationale_short": "bad action type",
+            "confidence_band": "low",
+        },
+    )
+
+    assert result.solver_decision == SolverDecision.INSUFFICIENT_EVIDENCE
+    assert result.event_ids == []

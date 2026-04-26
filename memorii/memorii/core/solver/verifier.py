@@ -3,6 +3,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.solver.abstention import SolverDecision
+from memorii.core.solver.models import NextTestAction
 
 
 class VerificationOutcome(BaseModel):
@@ -24,6 +25,7 @@ class SolverDecisionVerifier:
         evidence_ids: list[str],
         missing_evidence: list[str],
         next_best_test: str | None,
+        next_test_action: NextTestAction | None,
         available_evidence_ids: set[str],
     ) -> VerificationOutcome:
         reasons: list[str] = []
@@ -46,8 +48,10 @@ class SolverDecisionVerifier:
         elif decision == SolverDecision.NEEDS_TEST:
             if not missing_evidence:
                 reasons.append("needs_test_missing_missing_evidence")
-            if next_best_test is None or not next_best_test.strip():
-                reasons.append("needs_test_missing_next_best_test")
+            has_next_best_test = next_best_test is not None and bool(next_best_test.strip())
+            has_next_test_action = next_test_action is not None
+            if not has_next_best_test and not has_next_test_action:
+                reasons.append("needs_test_missing_next_test")
         elif decision == SolverDecision.INSUFFICIENT_EVIDENCE:
             if not missing_evidence:
                 reasons.append("insufficient_evidence_missing_missing_evidence")
