@@ -130,6 +130,8 @@ def test_get_next_step_without_state_returns_ask_user_stub() -> None:
     assert next_step["action_type"] == "ask_user"
     assert next_step["reason"] == "no_active_work_state"
     assert result.result["planner_used"] is False
+    assert result.result["planner_reason"] == "no_solver_run_resolved"
+    assert result.result["solver_run_resolution_source"] == "none"
 
 
 def test_get_next_step_with_task_state_returns_continue_task_stub() -> None:
@@ -180,6 +182,7 @@ def test_get_next_step_with_solver_run_and_no_planner_dependencies_falls_back() 
     assert result.ok is True
     assert result.result["planner_used"] is False
     assert result.result["planner_reason"] == "planner_not_configured"
+    assert result.result["solver_run_resolution_source"] == "explicit"
     assert result.result["next_step"]["action_type"] == "ask_user"
 
 
@@ -199,6 +202,7 @@ def test_get_next_step_with_solver_run_and_no_frontier_falls_back() -> None:
     assert result.ok is True
     assert result.result["planner_used"] is False
     assert result.result["planner_reason"] == "no_frontier_found"
+    assert result.result["solver_run_resolution_source"] == "explicit"
     assert result.result["next_step"]["action_type"] == "ask_user"
 
 
@@ -240,6 +244,7 @@ def test_get_next_step_returns_structured_frontier_action() -> None:
     assert result.result["next_step"]["description"] == "Run targeted command with verbose mode"
     assert result.result["next_step"]["expected_evidence"] == "stderr includes timeout source"
     assert result.result["next_step"]["required_tool"] == "shell"
+    assert result.result["solver_run_resolution_source"] == "explicit"
 
 
 def test_get_next_step_returns_legacy_frontier_action() -> None:
@@ -264,6 +269,7 @@ def test_get_next_step_returns_legacy_frontier_action() -> None:
     assert result.result["planner_used"] is True
     assert result.result["next_step"]["action_type"] == "run_test"
     assert result.result["next_step"]["description"] == "rerun flaky test with seed"
+    assert result.result["solver_run_resolution_source"] == "explicit"
 
 
 def test_get_next_step_returns_inspect_frontier_when_node_has_no_action() -> None:
@@ -287,3 +293,102 @@ def test_get_next_step_returns_inspect_frontier_when_node_has_no_action() -> Non
     assert result.ok is True
     assert result.result["planner_used"] is True
     assert result.result["next_step"]["action_type"] == "inspect_frontier"
+    assert result.result["solver_run_resolution_source"] == "explicit"
+
+
+def test_get_next_step_uses_task_binding() -> None:
+    solver_store = InMemorySolverGraphStore()
+    overlay_store = InMemoryOverlayStore()
+    solver_frontier_planner = SolverFrontierPlanner()
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        solver_frontier_planner=solver_frontier_planner,
+        solver_store=solver_store,
+        overlay_store=overlay_store,
+    )
+
+    solver_run_id = "solver:task-binding"
+    node_id = "node:task-binding"
+    task_id = "task:binding:1"
+    solver_store.create_solver_run(solver_run_id, "exec-1")
+    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_best_test": "run task-bound test"}))
+    _append_overlay(overlay_store, solver_run_id, [_overlay(node_id)])
+    work_state_service.bind_state(task_id=task_id, solver_run_id=solver_run_id)
+
+    result = provider.handle_tool_call("memorii_get_next_step", {"task_id": task_id})
+
+    assert result.ok is True
+    assert result.result["planner_used"] is True
+    assert result.result["resolved_solver_run_id"] == solver_run_id
+    assert result.result["solver_run_resolution_source"] == "task_binding"
+
+
+def test_get_next_step_uses_session_binding() -> None:
+    solver_store = InMemorySolverGraphStore()
+    overlay_store = InMemoryOverlayStore()
+    solver_frontier_planner = SolverFrontierPlanner()
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        solver_frontier_planner=solver_frontier_planner,
+        solver_store=solver_store,
+        overlay_store=overlay_store,
+    )
+
+    solver_run_id = "solver:session-binding"
+    node_id = "node:session-binding"
+    session_id = "session:binding:1"
+    solver_store.create_solver_run(solver_run_id, "exec-1")
+    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_best_test": "run session-bound test"}))
+    _append_overlay(overlay_store, solver_run_id, [_overlay(node_id)])
+    work_state_service.bind_state(session_id=session_id, solver_run_id=solver_run_id)
+
+    result = provider.handle_tool_call("memorii_get_next_step", {"session_id": session_id})
+
+    assert result.ok is True
+    assert result.result["planner_used"] is True
+    assert result.result["resolved_solver_run_id"] == solver_run_id
+    assert result.result["solver_run_resolution_source"] == "session_binding"
+
+
+def test_get_next_step_explicit_solver_run_id_overrides_bindings() -> None:
+    solver_store = InMemorySolverGraphStore()
+    overlay_store = InMemoryOverlayStore()
+    solver_frontier_planner = SolverFrontierPlanner()
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        solver_frontier_planner=solver_frontier_planner,
+        solver_store=solver_store,
+        overlay_store=overlay_store,
+    )
+
+    explicit_solver_run_id = "solver:explicit-win"
+    bound_solver_run_id = "solver:bound-lose"
+    node_id = "node:explicit-win"
+    task_id = "task:binding:override"
+    solver_store.create_solver_run(explicit_solver_run_id, "exec-1")
+    solver_store.upsert_node(explicit_solver_run_id, _make_node(node_id, content={"next_best_test": "run explicit test"}))
+    _append_overlay(overlay_store, explicit_solver_run_id, [_overlay(node_id)])
+    work_state_service.bind_state(task_id=task_id, solver_run_id=bound_solver_run_id)
+
+    result = provider.handle_tool_call(
+        "memorii_get_next_step",
+        {"task_id": task_id, "solver_run_id": explicit_solver_run_id},
+    )
+
+    assert result.ok is True
+    assert result.result["planner_used"] is True
+    assert result.result["resolved_solver_run_id"] == explicit_solver_run_id
+    assert result.result["solver_run_resolution_source"] == "explicit"
+
+
+def test_get_next_step_without_binding_falls_back_with_no_solver_run_resolved() -> None:
+    provider = ProviderMemoryService(work_state_service=WorkStateService())
+
+    result = provider.handle_tool_call("memorii_get_next_step", {"task_id": "task:no-binding"})
+
+    assert result.ok is True
+    assert result.result["planner_used"] is False
+    assert result.result["planner_reason"] == "no_solver_run_resolved"

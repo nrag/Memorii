@@ -282,14 +282,16 @@ class ProviderMemoryService:
             "session_id": session_id,
             "user_id": user_id,
         }
-        if solver_run_id is not None:
-            if (
-                self._solver_frontier_planner is not None
-                and self._solver_store is not None
-                and self._overlay_store is not None
-            ):
+        effective_solver_run_id, solver_run_resolution_source = self._resolve_effective_solver_run_id(
+            solver_run_id=solver_run_id,
+            task_id=task_id,
+            session_id=session_id,
+        )
+
+        if effective_solver_run_id is not None:
+            if self._planner_dependencies_ready():
                 frontier_plan = self._solver_frontier_planner.select_next_frontier(
-                    solver_run_id=solver_run_id,
+                    solver_run_id=effective_solver_run_id,
                     solver_store=self._solver_store,
                     overlay_store=self._overlay_store,
                 )
@@ -326,12 +328,15 @@ class ProviderMemoryService:
                         }
                     return {
                         "next_step": next_step,
-                        "based_on_solver_run_id": solver_run_id,
+                        "based_on_solver_run_id": effective_solver_run_id,
                         "based_on_solver_node_id": frontier_plan.selected_node_id,
                         "based_on_work_state_id": None,
                         "planner_used": True,
                         "planner_reason": frontier_plan.reason.value,
                         "candidate_frontier_node_ids": frontier_plan.candidate_frontier_node_ids,
+                        "requested_solver_run_id": solver_run_id,
+                        "resolved_solver_run_id": effective_solver_run_id,
+                        "solver_run_resolution_source": solver_run_resolution_source,
                         "scope": scope,
                     }
                 fallback_result = self._build_work_state_next_step_fallback(
@@ -340,11 +345,14 @@ class ProviderMemoryService:
                     user_id=user_id,
                     scope=scope,
                 )
-                fallback_result["based_on_solver_run_id"] = solver_run_id
+                fallback_result["based_on_solver_run_id"] = effective_solver_run_id
                 fallback_result["based_on_solver_node_id"] = None
                 fallback_result["planner_used"] = False
                 fallback_result["planner_reason"] = "no_frontier_found"
                 fallback_result["candidate_frontier_node_ids"] = frontier_plan.candidate_frontier_node_ids
+                fallback_result["requested_solver_run_id"] = solver_run_id
+                fallback_result["resolved_solver_run_id"] = effective_solver_run_id
+                fallback_result["solver_run_resolution_source"] = solver_run_resolution_source
                 return fallback_result
 
             fallback_result = self._build_work_state_next_step_fallback(
@@ -353,11 +361,14 @@ class ProviderMemoryService:
                 user_id=user_id,
                 scope=scope,
             )
-            fallback_result["based_on_solver_run_id"] = solver_run_id
+            fallback_result["based_on_solver_run_id"] = effective_solver_run_id
             fallback_result["based_on_solver_node_id"] = None
             fallback_result["planner_used"] = False
             fallback_result["planner_reason"] = "planner_not_configured"
             fallback_result["candidate_frontier_node_ids"] = []
+            fallback_result["requested_solver_run_id"] = solver_run_id
+            fallback_result["resolved_solver_run_id"] = effective_solver_run_id
+            fallback_result["solver_run_resolution_source"] = solver_run_resolution_source
             return fallback_result
 
         fallback_result = self._build_work_state_next_step_fallback(
@@ -369,8 +380,11 @@ class ProviderMemoryService:
         fallback_result["based_on_solver_run_id"] = None
         fallback_result["based_on_solver_node_id"] = None
         fallback_result["planner_used"] = False
-        fallback_result["planner_reason"] = "planner_not_configured"
+        fallback_result["planner_reason"] = "no_solver_run_resolved"
         fallback_result["candidate_frontier_node_ids"] = []
+        fallback_result["requested_solver_run_id"] = solver_run_id
+        fallback_result["resolved_solver_run_id"] = None
+        fallback_result["solver_run_resolution_source"] = solver_run_resolution_source
         return fallback_result
 
     def _build_work_state_next_step_fallback(
@@ -460,6 +474,23 @@ class ProviderMemoryService:
         self._work_state_service.ingest_event(event)
 
     def _agent_event_from_provider_event(self, *, event: ProviderEvent) -> AgentEventEnvelope:
+        provider_metadata = getattr(event, "metadata", None)
+        solver_run_id = getattr(event, "solver_run_id", None)
+        execution_node_id = getattr(event, "execution_node_id", None)
+        metadata = {
+            "role": event.role,
+            "target": event.target,
+            "action": event.action,
+        }
+        if isinstance(provider_metadata, dict):
+            if "solver_run_id" in provider_metadata:
+                metadata["solver_run_id"] = provider_metadata["solver_run_id"]
+            if "execution_node_id" in provider_metadata:
+                metadata["execution_node_id"] = provider_metadata["execution_node_id"]
+        if solver_run_id is not None:
+            metadata["solver_run_id"] = solver_run_id
+        if execution_node_id is not None:
+            metadata["execution_node_id"] = execution_node_id
         return AgentEventEnvelope(
             event_id=event.event_id,
             provider="provider_memory_service",
@@ -468,10 +499,34 @@ class ProviderMemoryService:
             user_id=event.user_id,
             task_id=event.task_id,
             content=event.content or "",
-            metadata={
-                "role": event.role,
-                "target": event.target,
-                "action": event.action,
-            },
+            metadata=metadata,
             timestamp=event.timestamp or datetime.now(UTC),
         )
+
+    def _planner_dependencies_ready(self) -> bool:
+        return (
+            self._solver_frontier_planner is not None
+            and self._solver_store is not None
+            and self._overlay_store is not None
+        )
+
+    def _resolve_effective_solver_run_id(
+        self,
+        *,
+        solver_run_id: str | None,
+        task_id: str | None,
+        session_id: str | None,
+    ) -> tuple[str | None, str]:
+        if solver_run_id is not None:
+            return solver_run_id, "explicit"
+        if self._work_state_service is None:
+            return None, "none"
+        if task_id is not None:
+            resolved_by_task = self._work_state_service.resolve_solver_run_id(task_id=task_id)
+            if resolved_by_task is not None:
+                return resolved_by_task, "task_binding"
+        if session_id is not None:
+            resolved_by_session = self._work_state_service.resolve_solver_run_id(session_id=session_id)
+            if resolved_by_session is not None:
+                return resolved_by_session, "session_binding"
+        return None, "none"
