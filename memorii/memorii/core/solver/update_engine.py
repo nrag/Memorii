@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
+from memorii.core.solver.belief import update_solver_belief
 from memorii.core.solver.models import NextTestAction
 from memorii.core.solver.verifier import SolverDecisionVerifier
 from memorii.domain.common import SolverEdgeMetadata, SolverNodeMetadata
@@ -83,6 +84,7 @@ class SolverUpdateEngine:
         next_event_id: str,
         next_node_id: str,
         next_edge_id: str,
+        prior_overlay_version: SolverOverlayVersion | None = None,
     ) -> SolverUpdateResult:
         now = datetime.now(UTC)
         parsed, parse_errors = self._parse_output(update_input)
@@ -120,6 +122,7 @@ class SolverUpdateEngine:
                 validation_notes=list(verification.reasons),
             )
         final_decision = verification.final_decision
+        verifier_downgraded = verification.downgraded or parsed.decision != final_decision
 
         notes = list(verification.reasons)
         if final_decision == SolverDecision.INSUFFICIENT_EVIDENCE and parsed.decision in {
@@ -227,6 +230,19 @@ class SolverUpdateEngine:
         if edge_state == CommitStatus.COMMITTED:
             committed_edge_ids.append(link_edge.id)
 
+        prior_belief = self._prior_belief_for_node(
+            prior_overlay_version=prior_overlay_version,
+            node_id=decision_node.id,
+        )
+        decision_belief = update_solver_belief(
+            prior_belief=prior_belief,
+            decision=final_decision,
+            evidence_count=len(parsed.evidence_ids),
+            missing_evidence_count=len(parsed.missing_evidence),
+            verifier_downgraded=verifier_downgraded,
+            conflict_count=0,
+        )
+
         overlay = SolverOverlayVersion(
             version_id=next_overlay_version_id,
             solver_run_id=update_input.solver_run_id,
@@ -235,7 +251,7 @@ class SolverUpdateEngine:
             node_overlays=[
                 SolverNodeOverlay(
                     node_id=decision_node.id,
-                    belief=0.8 if decision_node_state == CommitStatus.COMMITTED else 0.35,
+                    belief=decision_belief,
                     status=overlay_status,
                     is_frontier=follow_up_required,
                     frontier_priority=1.0 if follow_up_required else None,
@@ -274,9 +290,22 @@ class SolverUpdateEngine:
             overlay_version=overlay,
             generated_events=events,
             follow_up_required=follow_up_required,
-            downgraded=verification.downgraded,
+            downgraded=verifier_downgraded,
             validation_notes=notes,
         )
+
+    def _prior_belief_for_node(
+        self,
+        *,
+        prior_overlay_version: SolverOverlayVersion | None,
+        node_id: str,
+    ) -> float | None:
+        if prior_overlay_version is None:
+            return None
+        for overlay in prior_overlay_version.node_overlays:
+            if overlay.node_id == node_id:
+                return overlay.belief
+        return None
 
     def _parse_output(self, update_input: SolverUpdateInput) -> tuple[SolverDecisionOutput, list[str]]:
         if update_input.model_output is None:

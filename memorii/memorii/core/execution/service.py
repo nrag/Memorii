@@ -218,6 +218,7 @@ class RuntimeStepService:
             next_event_id=f"solver-update:{observation.event_id}",
             next_node_id=f"node:{observation.event_id}",
             next_edge_id=f"edge:{observation.event_id}",
+            prior_overlay_version=self._overlay_store.get_latest_version(solver_run_id),
         )
         logger.info(
             "solver_decision task_id=%s event_id=%s decision=%s downgraded=%s",

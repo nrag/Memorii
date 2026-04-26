@@ -80,6 +80,13 @@ def _build_runtime(task_id: str = "task-1", execution_node_id: str = "exec-1") -
     )
 
 
+def _decision_belief(runtime: RuntimeStepService, solver_run_id: str) -> float:
+    latest = runtime._overlay_store.get_latest_version(solver_run_id)  # noqa: SLF001 - test-only introspection
+    assert latest is not None
+    decision_overlay = next(overlay for overlay in latest.node_overlays if overlay.node_id.endswith(":decision"))
+    return decision_overlay.belief
+
+
 def test_failure_debug_flow_then_resolution() -> None:
     runtime = _build_runtime()
 
@@ -598,3 +605,112 @@ def test_invalid_structured_next_test_action_triggers_parse_fallback() -> None:
 
     assert result.solver_decision == SolverDecision.INSUFFICIENT_EVIDENCE
     assert result.event_ids == []
+
+
+def test_supported_with_evidence_overlay_belief_is_above_default() -> None:
+    runtime = _build_runtime(task_id="task-belief-supported", execution_node_id="exec-belief-supported")
+    result = runtime.step(
+        task_id="task-belief-supported",
+        observation=RuntimeObservationInput(
+            event_id="evt-belief-supported",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "passed"},
+        ),
+        model_output={
+            "decision": "SUPPORTED",
+            "evidence_ids": ["evt-belief-supported:transcript"],
+            "missing_evidence": [],
+            "next_best_test": None,
+            "rationale_short": "supported",
+            "confidence_band": "high",
+        },
+    )
+    assert _decision_belief(runtime, result.solver_run_id) > 0.5
+
+
+def test_needs_test_with_missing_evidence_overlay_belief_is_below_default() -> None:
+    runtime = _build_runtime(task_id="task-belief-needs-test", execution_node_id="exec-belief-needs-test")
+    result = runtime.step(
+        task_id="task-belief-needs-test",
+        observation=RuntimeObservationInput(
+            event_id="evt-belief-needs-test",
+            event_class=InboundEventClass.TOOL_RESULT,
+            payload={"status": "failed"},
+        ),
+        model_output={
+            "decision": "NEEDS_TEST",
+            "evidence_ids": [],
+            "missing_evidence": ["traceback", "repro"],
+            "next_best_test": "collect_logs",
+            "rationale_short": "need test",
+            "confidence_band": "low",
+        },
+    )
+    assert _decision_belief(runtime, result.solver_run_id) < 0.5
+
+
+def test_verifier_downgrade_reduces_belief_vs_non_downgraded_supported() -> None:
+    supported_runtime = _build_runtime(task_id="task-belief-normal", execution_node_id="exec-belief-normal")
+    supported = supported_runtime.step(
+        task_id="task-belief-normal",
+        observation=RuntimeObservationInput(
+            event_id="evt-belief-normal",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "passed"},
+        ),
+        model_output={
+            "decision": "SUPPORTED",
+            "evidence_ids": ["evt-belief-normal:transcript"],
+            "missing_evidence": [],
+            "next_best_test": None,
+            "rationale_short": "supported",
+            "confidence_band": "high",
+        },
+    )
+    normal_belief = _decision_belief(supported_runtime, supported.solver_run_id)
+
+    downgraded_runtime = _build_runtime(task_id="task-belief-downgraded", execution_node_id="exec-belief-downgraded")
+    downgraded = downgraded_runtime.step(
+        task_id="task-belief-downgraded",
+        observation=RuntimeObservationInput(
+            event_id="evt-belief-downgraded",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "ambiguous"},
+        ),
+        model_output={
+            "decision": "SUPPORTED",
+            "evidence_ids": ["missing-evidence-id"],
+            "missing_evidence": ["real_proof"],
+            "next_best_test": "collect_real_proof",
+            "rationale_short": "unsupported commitment",
+            "confidence_band": "medium",
+        },
+    )
+    downgraded_belief = _decision_belief(downgraded_runtime, downgraded.solver_run_id)
+
+    assert downgraded.downgraded is True
+    assert downgraded_belief < normal_belief
+
+
+def test_observation_overlay_belief_remains_one() -> None:
+    runtime = _build_runtime(task_id="task-observation-belief", execution_node_id="exec-observation-belief")
+    result = runtime.step(
+        task_id="task-observation-belief",
+        observation=RuntimeObservationInput(
+            event_id="evt-observation-belief",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "seen"},
+        ),
+        model_output={
+            "decision": "INSUFFICIENT_EVIDENCE",
+            "evidence_ids": [],
+            "missing_evidence": ["details"],
+            "next_best_test": "collect_details",
+            "rationale_short": "unknown",
+            "confidence_band": "low",
+        },
+    )
+    latest = runtime._overlay_store.get_latest_version(result.solver_run_id)  # noqa: SLF001 - test-only introspection
+    assert latest is not None
+    observation_overlay = next(overlay for overlay in latest.node_overlays if overlay.node_id.endswith(":obs"))
+    assert observation_overlay.belief == 1.0
