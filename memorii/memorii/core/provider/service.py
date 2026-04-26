@@ -7,18 +7,26 @@ from datetime import UTC, datetime
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.provider.models import (
+    ProviderEvent,
     ProviderOperation,
     ProviderStoredRecord,
     ProviderSyncResult,
     ProviderWriteDecision,
 )
+from memorii.core.work_state.models import AgentEventEnvelope, WorkStateKind, WorkStateRecord, WorkStateStatus
+from memorii.core.work_state.service import WorkStateService
 
 
 class ProviderMemoryService:
     """Thin provider adapter over the canonical MemoryPlaneService."""
 
-    def __init__(self, memory_plane: MemoryPlaneService | None = None) -> None:
+    def __init__(
+        self,
+        memory_plane: MemoryPlaneService | None = None,
+        work_state_service: WorkStateService | None = None,
+    ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
+        self._work_state_service = work_state_service
         self._sequence = 0
 
     def sync_event(self, *, operation: ProviderOperation, content: str, role: str | None = None,
@@ -37,7 +45,9 @@ class ProviderMemoryService:
             user_id=user_id,
             timestamp=datetime.now(UTC),
         )
-        return self._memory_plane.ingest_provider_event(event)
+        result = self._memory_plane.ingest_provider_event(event)
+        self._ingest_work_state(self._agent_event_from_provider_event(event=event))
+        return result
 
     def apply_memory_write(
         self,
@@ -61,7 +71,9 @@ class ProviderMemoryService:
             task_id=task_id,
             user_id=user_id,
         )
-        return self._memory_plane.apply_provider_memory_write(event=event)
+        decision = self._memory_plane.apply_provider_memory_write(event=event)
+        self._ingest_work_state(self._agent_event_from_provider_event(event=event))
+        return decision
 
     def prefetch(
         self,
@@ -91,3 +103,44 @@ class ProviderMemoryService:
 
     def last_prefetch_trace(self):
         return self._memory_plane.last_provider_prefetch_trace()
+
+    def list_work_states(
+        self,
+        *,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        kinds: list[WorkStateKind] | None = None,
+        statuses: list[WorkStateStatus] | None = None,
+    ) -> list[WorkStateRecord]:
+        if self._work_state_service is None:
+            return []
+        return self._work_state_service.list_states(
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+            kinds=kinds,
+            statuses=statuses,
+        )
+
+    def _ingest_work_state(self, event: AgentEventEnvelope) -> None:
+        if self._work_state_service is None:
+            return
+        self._work_state_service.ingest_event(event)
+
+    def _agent_event_from_provider_event(self, *, event: ProviderEvent) -> AgentEventEnvelope:
+        return AgentEventEnvelope(
+            event_id=event.event_id,
+            provider="provider_memory_service",
+            operation=event.operation.value,
+            session_id=event.session_id,
+            user_id=event.user_id,
+            task_id=event.task_id,
+            content=event.content or "",
+            metadata={
+                "role": event.role,
+                "target": event.target,
+                "action": event.action,
+            },
+            timestamp=event.timestamp or datetime.now(UTC),
+        )
