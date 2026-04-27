@@ -13,6 +13,10 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.next_step import NextStepEngine, NextStepRequest
 from memorii.core.provider.classifier import build_event_id, make_event
+from memorii.core.llm_decision.trace import LLMDecisionTraceStore
+from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
+from memorii.core.promotion.provider import PromotionDecisionProvider
+from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
 from memorii.core.provider.models import (
     ProviderEvent,
     ProviderOperation,
@@ -52,12 +56,15 @@ class ProviderMemoryService:
     """Thin provider adapter over the canonical MemoryPlaneService."""
 
     _DEFAULT_DECISION_STATE_SERVICE = object()
+    _DEFAULT_PROMOTION_DECISION_PROVIDER = object()
 
     def __init__(
         self,
         memory_plane: MemoryPlaneService | None = None,
         work_state_service: WorkStateService | None = None,
         decision_state_service: DecisionStateService | None | object = _DEFAULT_DECISION_STATE_SERVICE,
+        promotion_decision_provider: PromotionDecisionProvider | None | object = _DEFAULT_PROMOTION_DECISION_PROVIDER,
+        llm_decision_trace_store: LLMDecisionTraceStore | None = None,
         solver_frontier_planner: SolverFrontierPlanner | None = None,
         solver_store: SolverGraphStore | None = None,
         overlay_store: OverlayStore | None = None,
@@ -73,6 +80,11 @@ class ProviderMemoryService:
             self._decision_state_service: DecisionStateService | None = DecisionStateService()
         else:
             self._decision_state_service = decision_state_service
+        if promotion_decision_provider is self._DEFAULT_PROMOTION_DECISION_PROVIDER:
+            self._promotion_decision_provider: PromotionDecisionProvider | None = RuleBasedPromotionDecisionProvider()
+        else:
+            self._promotion_decision_provider = promotion_decision_provider
+        self._llm_decision_trace_store = llm_decision_trace_store
         self._next_step_engine = NextStepEngine(
             work_state_service=work_state_service,
             decision_state_service=self._decision_state_service,
@@ -472,7 +484,19 @@ class ProviderMemoryService:
             )
             if decision_state is None:
                 return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_not_found")
-            outcome_result = self._record_decision_work_state_outcome(decision_state=decision_state)
+            outcome_result, outcome_state, outcome_event = self._record_decision_work_state_outcome(decision_state=decision_state)
+            candidate_result: dict[str, object] = {}
+            if outcome_state is not None and outcome_event is not None:
+                candidate_result = self._stage_work_state_event_candidate(
+                    state=outcome_state,
+                    event=outcome_event,
+                    event_type="decision_finalized",
+                    outcome="completed",
+                    task_id=decision_state.task_id,
+                    session_id=decision_state.session_id,
+                    solver_run_id=None,
+                    execution_node_id=None,
+                )
             return ProviderToolCallResult(
                 tool_name=tool_name,
                 ok=True,
@@ -480,6 +504,7 @@ class ProviderMemoryService:
                     "decision_state": decision_state.model_dump(mode="json"),
                     "work_state_outcome_recorded": outcome_result["work_state_outcome_recorded"],
                     "work_state_outcome_event": outcome_result["work_state_outcome_event"],
+                    **candidate_result,
                     **(
                         {"work_state_outcome_error": outcome_result["work_state_outcome_error"]}
                         if "work_state_outcome_error" in outcome_result
@@ -809,17 +834,17 @@ class ProviderMemoryService:
         self,
         *,
         decision_state: DecisionState,
-    ) -> dict[str, object]:
+    ) -> tuple[dict[str, object], WorkStateRecord | None, WorkStateEvent | None]:
         if self._work_state_service is None:
             return {
                 "work_state_outcome_recorded": False,
                 "work_state_outcome_event": None,
-            }
+            }, None, None
         if decision_state.work_state_id is None:
             return {
                 "work_state_outcome_recorded": False,
                 "work_state_outcome_event": None,
-            }
+            }, None, None
         state, event = self._work_state_service.record_outcome(
             work_state_id=decision_state.work_state_id,
             outcome="completed",
@@ -831,7 +856,7 @@ class ProviderMemoryService:
                 "work_state_outcome_recorded": False,
                 "work_state_outcome_event": None,
                 "work_state_outcome_error": "work_state_not_found",
-            }
+            }, None, None
         return {
             "work_state_outcome_recorded": True,
             "work_state_outcome_event": {
@@ -839,7 +864,7 @@ class ProviderMemoryService:
                 "event_id": event.event_id,
                 "status": state.status.value,
             },
-        }
+        }, state, event
 
     @staticmethod
     def _format_work_state_section(work_states: list[WorkStateSummary]) -> str:
@@ -961,7 +986,13 @@ class ProviderMemoryService:
         execution_node_id: str | None,
     ) -> dict[str, object]:
         if not self._emit_work_state_event_candidates:
-            return {"memory_candidate_created": False}
+            return {
+                "memory_candidate_created": False,
+                "promotion_decision_applied": False,
+                "promotion_trace_id": None,
+                "promotion_decision": None,
+                "promotion_decision_error": None,
+            }
         try:
             memory_id = f"cand:episodic:work_state_event:{event.event_id}"
             scoped_task_id = task_id or state.task_id
@@ -1008,15 +1039,141 @@ class ProviderMemoryService:
                 promotion_state="staged",
             )
             self._memory_plane.stage_record(record)
+            promotion_result = self._apply_promotion_decision_to_candidate(
+                work_state=state,
+                event=event,
+                candidate_record=record,
+            )
             return {
                 "memory_candidate_created": True,
                 "memory_candidate_id": memory_id,
+                **promotion_result,
             }
         except Exception as exc:  # pragma: no cover - covered via injected failure tests
             return {
                 "memory_candidate_created": False,
                 "memory_candidate_error": str(exc),
+                "promotion_decision_applied": False,
+                "promotion_trace_id": None,
+                "promotion_decision": None,
+                "promotion_decision_error": None,
             }
+
+    def _apply_promotion_decision_to_candidate(
+        self,
+        *,
+        work_state: WorkStateRecord,
+        event: WorkStateEvent,
+        candidate_record: CanonicalMemoryRecord,
+    ) -> dict[str, object]:
+        if self._promotion_decision_provider is None:
+            return {
+                "promotion_decision_applied": False,
+                "promotion_trace_id": None,
+                "promotion_decision": None,
+                "promotion_decision_error": None,
+            }
+        try:
+            promotion_context = self._build_promotion_context_for_work_state_event(
+                work_state=work_state,
+                event=event,
+                candidate_record=candidate_record,
+                source_metadata=dict(candidate_record.content),
+            )
+            decision, trace = self._promotion_decision_provider.decide(context=promotion_context)
+            if self._llm_decision_trace_store is not None:
+                self._llm_decision_trace_store.append_trace(trace)
+            promotion_decision_payload = {
+                "promote": decision.promote,
+                "target_plane": decision.target_plane,
+                "confidence": decision.confidence,
+                "rationale": decision.rationale,
+                "merge_with_memory_id": decision.merge_with_memory_id,
+                "supersede_memory_id": decision.supersede_memory_id,
+                "tags": list(decision.tags),
+                "trace_id": decision.trace_id,
+            }
+            candidate_record.content["promotion_decision"] = promotion_decision_payload
+            candidate_record.content["promotion_trace_id"] = trace.trace_id
+            return {
+                "promotion_decision_applied": True,
+                "promotion_trace_id": trace.trace_id,
+                "promotion_decision": promotion_decision_payload,
+                "promotion_decision_error": None,
+            }
+        except Exception as exc:
+            candidate_record.content["promotion_decision_error"] = str(exc)
+            return {
+                "promotion_decision_applied": False,
+                "promotion_trace_id": None,
+                "promotion_decision": None,
+                "promotion_decision_error": str(exc),
+            }
+
+    def _build_promotion_context_for_work_state_event(
+        self,
+        *,
+        work_state: WorkStateRecord,
+        event: WorkStateEvent,
+        candidate_record: CanonicalMemoryRecord,
+        source_metadata: dict[str, object],
+    ) -> PromotionContext:
+        repeated_across_episodes = int(source_metadata.get("repeated_across_episodes", 0) or 0)
+        explicit_user_memory_request = bool(source_metadata.get("explicit_user_memory_request", False))
+        candidate_type = self._promotion_candidate_type_for_work_state_event(
+            event=event,
+            source_metadata=source_metadata,
+            explicit_user_memory_request=explicit_user_memory_request,
+        )
+        return PromotionContext(
+            candidate_id=candidate_record.memory_id,
+            candidate_type=candidate_type,
+            content=candidate_record.text,
+            source_ids=list(event.evidence_ids),
+            related_memory_ids=[],
+            repeated_across_episodes=repeated_across_episodes,
+            explicit_user_memory_request=explicit_user_memory_request,
+            created_from=self._promotion_created_from_for_work_state_event(work_state=work_state, event=candidate_record.content),
+            metadata=dict(candidate_record.content),
+        )
+
+    @staticmethod
+    def _promotion_candidate_type_for_work_state_event(
+        *,
+        event: WorkStateEvent,
+        source_metadata: dict[str, object],
+        explicit_user_memory_request: bool,
+    ) -> PromotionCandidateType:
+        if explicit_user_memory_request:
+            return PromotionCandidateType.USER_MEMORY
+        if bool(source_metadata.get("repeated_across_episodes", False)):
+            semantic_target = source_metadata.get("semantic_target")
+            if semantic_target == PromotionCandidateType.PROJECT_FACT.value:
+                return PromotionCandidateType.PROJECT_FACT
+            return PromotionCandidateType.SEMANTIC
+        if event.event_type.value == "outcome":
+            return PromotionCandidateType.EPISODIC
+        return PromotionCandidateType.EPISODIC
+
+    @staticmethod
+    def _promotion_created_from_for_work_state_event(
+        *,
+        work_state: WorkStateRecord,
+        event: dict[str, object],
+    ) -> str:
+        event_type = str(event.get("event_type", "progress"))
+        outcome = str(event.get("outcome") or "")
+        if event_type == "progress":
+            return "observation"
+        if event_type == "decision_finalized":
+            return "decision_finalized"
+        if outcome == "completed":
+            return "task_outcome"
+        if outcome == "blocked":
+            if work_state.kind == WorkStateKind.INVESTIGATION:
+                return "investigation_conclusion"
+            return "task_outcome"
+        return "task_outcome"
 
     @staticmethod
     def _build_work_state_event_memory_text(
