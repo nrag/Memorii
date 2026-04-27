@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from memorii.core.decision_state.models import DecisionState, DecisionStatus
 from memorii.core.decision_state.service import DecisionStateService
+from memorii.core.decision_state.summary import DecisionStateSummary, summarize_decision_state
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.next_step import NextStepEngine, NextStepRequest
@@ -162,6 +163,7 @@ class ProviderMemoryService:
         work_state_summaries = summarize_work_states(
             selected_work_states,
             events_by_state_id=self._list_events_by_work_state_id(selected_work_states),
+            decision_summary_by_state_id=self._decision_summary_by_work_state_id(selected_work_states),
         )
         bundle = RecallStateBundle(
             query=query,
@@ -703,6 +705,7 @@ class ProviderMemoryService:
         work_state_summaries = summarize_work_states(
             selected_work_states,
             events_by_state_id=self._list_events_by_work_state_id(selected_work_states),
+            decision_summary_by_state_id=self._decision_summary_by_work_state_id(selected_work_states),
         )
         return {
             "work_states": [summary.model_dump(mode="json") for summary in work_state_summaries],
@@ -848,8 +851,32 @@ class ProviderMemoryService:
                 lines.append(f"  Latest progress: {state.latest_progress}")
             if state.latest_outcome:
                 lines.append(f"  Latest outcome: {state.latest_outcome}")
+            if state.decision_state is not None:
+                lines.extend(ProviderMemoryService._format_decision_state_section(state.decision_state))
             lines.append(f"  Confidence: {state.confidence:.2f}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_decision_state_section(decision_summary: DecisionStateSummary) -> list[str]:
+        lines = [
+            "  Decision state:",
+            f"  Question: {decision_summary.question}",
+            f"  Status: {decision_summary.status}",
+        ]
+        if decision_summary.option_labels:
+            lines.append("  Options:")
+            lines.extend([f"  - {option_label}" for option_label in decision_summary.option_labels])
+        if decision_summary.criteria_labels:
+            lines.append("  Criteria:")
+            lines.extend([f"  - {criteria_label}" for criteria_label in decision_summary.criteria_labels])
+        if decision_summary.recommendation is not None:
+            lines.extend(["  Current recommendation:", f"  {decision_summary.recommendation}"])
+        if decision_summary.unresolved_questions:
+            lines.append("  Unresolved questions:")
+            lines.extend([f"  - {question}" for question in decision_summary.unresolved_questions])
+        if decision_summary.final_decision is not None:
+            lines.extend(["  Final decision:", f"  {decision_summary.final_decision}"])
+        return lines
 
     def _list_events_by_work_state_id(
         self, work_states: list[WorkStateRecord]
@@ -860,6 +887,31 @@ class ProviderMemoryService:
             state.work_state_id: self._work_state_service.list_work_state_events(state.work_state_id)
             for state in work_states
         }
+
+    def _decision_summary_by_work_state_id(
+        self,
+        work_states: list[WorkStateRecord],
+    ) -> dict[str, DecisionStateSummary]:
+        if self._decision_state_service is None:
+            return {}
+        summaries: dict[str, DecisionStateSummary] = {}
+        for state in work_states:
+            if state.kind != WorkStateKind.DECISION:
+                continue
+            decisions = self._decision_state_service.list_decisions(
+                work_state_id=state.work_state_id,
+                statuses=[DecisionStatus.OPEN, DecisionStatus.DECIDED],
+            )
+            selected_decision = next((decision for decision in decisions if decision.status == DecisionStatus.OPEN), None)
+            if selected_decision is None:
+                selected_decision = next(
+                    (decision for decision in decisions if decision.status == DecisionStatus.DECIDED),
+                    None,
+                )
+            if selected_decision is None:
+                continue
+            summaries[state.work_state_id] = summarize_decision_state(selected_decision)
+        return summaries
 
     def _ingest_work_state(self, event: AgentEventEnvelope) -> None:
         if self._work_state_service is None:

@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
 from memorii.core.work_state.service import WorkStateService
 from memorii.core.work_state.store import InMemoryWorkStateStore
@@ -258,3 +259,34 @@ def test_last_recall_bundle_includes_recent_events_and_latest_fields() -> None:
     assert state.recent_events
     assert state.latest_progress == "Completed parser refactor"
     assert state.latest_outcome == "Need one more regression check"
+
+
+def test_prefetch_includes_decision_summary_text_for_decision_work() -> None:
+    work_state_service = WorkStateService()
+    decision_state_service = DecisionStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service, decision_state_service=decision_state_service)
+    work_state = work_state_service.open_or_resume_work(
+        title="Choose vector db",
+        kind=WorkStateKind.DECISION,
+        task_id="task:prefetch:decision",
+    )
+    decision = decision_state_service.open_decision(
+        question="Which vector DB should we use?",
+        work_state_id=work_state.work_state_id,
+        task_id="task:prefetch:decision",
+        unresolved_questions=["cost under sustained load"],
+    )
+    decision_state_service.add_option(decision_id=decision.decision_id, option_id="opt:qdrant", label="Qdrant")
+    decision_state_service.add_option(decision_id=decision.decision_id, option_id="opt:weaviate", label="Weaviate")
+    decision_state_service.add_criterion(decision_id=decision.decision_id, criterion_id="crit:latency", label="latency")
+    decision_state_service.update_recommendation(decision_id=decision.decision_id, recommendation="Qdrant")
+
+    context = provider.prefetch("continue", task_id="task:prefetch:decision")
+
+    assert "Decision state:" in context
+    assert "Question: Which vector DB should we use?" in context
+    assert "Status: open" in context
+    assert "Options:" in context
+    assert "Criteria:" in context
+    assert "Current recommendation:" in context
+    assert "Unresolved questions:" in context
