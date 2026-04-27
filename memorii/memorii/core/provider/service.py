@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
-from memorii.core.decision_state.models import DecisionStatus
+from memorii.core.decision_state.models import DecisionState, DecisionStatus
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane import MemoryPlaneService
@@ -470,10 +470,20 @@ class ProviderMemoryService:
             )
             if decision_state is None:
                 return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_not_found")
+            outcome_result = self._record_decision_work_state_outcome(decision_state=decision_state)
             return ProviderToolCallResult(
                 tool_name=tool_name,
                 ok=True,
-                result={"decision_state": decision_state.model_dump(mode="json")},
+                result={
+                    "decision_state": decision_state.model_dump(mode="json"),
+                    "work_state_outcome_recorded": outcome_result["work_state_outcome_recorded"],
+                    "work_state_outcome_event": outcome_result["work_state_outcome_event"],
+                    **(
+                        {"work_state_outcome_error": outcome_result["work_state_outcome_error"]}
+                        if "work_state_outcome_error" in outcome_result
+                        else {}
+                    ),
+                },
             )
 
         if tool_name == "memorii_get_state_summary":
@@ -792,6 +802,42 @@ class ProviderMemoryService:
         )
         return created.decision_id
 
+    def _record_decision_work_state_outcome(
+        self,
+        *,
+        decision_state: DecisionState,
+    ) -> dict[str, object]:
+        if self._work_state_service is None:
+            return {
+                "work_state_outcome_recorded": False,
+                "work_state_outcome_event": None,
+            }
+        if decision_state.work_state_id is None:
+            return {
+                "work_state_outcome_recorded": False,
+                "work_state_outcome_event": None,
+            }
+        state, event = self._work_state_service.record_outcome(
+            work_state_id=decision_state.work_state_id,
+            outcome="completed",
+            content=f"Decision finalized: {decision_state.final_decision}",
+            evidence_ids=_decision_evidence_ids(decision_state),
+        )
+        if state is None or event is None:
+            return {
+                "work_state_outcome_recorded": False,
+                "work_state_outcome_event": None,
+                "work_state_outcome_error": "work_state_not_found",
+            }
+        return {
+            "work_state_outcome_recorded": True,
+            "work_state_outcome_event": {
+                "work_state_id": state.work_state_id,
+                "event_id": event.event_id,
+                "status": state.status.value,
+            },
+        }
+
     @staticmethod
     def _format_work_state_section(work_states: list[WorkStateSummary]) -> str:
         lines = ["Current work state:"]
@@ -948,3 +994,16 @@ class ProviderMemoryService:
                 f"Content: {event.content}",
             ]
         )
+
+
+def _decision_evidence_ids(decision_state: DecisionState) -> list[str]:
+    evidence_ids: list[str] = []
+    seen: set[str] = set()
+
+    for decision_evidence in decision_state.evidence:
+        for candidate in [decision_evidence.evidence_id, *decision_evidence.source_ids]:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            evidence_ids.append(candidate)
+    return evidence_ids
