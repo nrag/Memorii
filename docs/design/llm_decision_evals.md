@@ -69,3 +69,14 @@ JSONL is the preferred first storage layer.
 - No database dependency at this stage.
 
 A database-backed store can be added later behind the same typed interfaces.
+
+## Judge evaluation policy
+
+Judges are intentionally deferred in this PR.
+
+- Offline deterministic eval is the first-pass regression gate.
+- Judges are second-pass semantic evaluators.
+- Each judge must evaluate exactly one dimension only.
+- Multi-dimensional judges are not allowed.
+- Jury aggregation combines several single-dimension judges.
+- Human review handles judge disagreement or low confidence.
