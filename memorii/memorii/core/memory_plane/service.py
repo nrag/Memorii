@@ -12,6 +12,7 @@ from memorii.core.memory_plane.models import (
     to_memory_object,
     to_provider_stored_record,
 )
+from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, MemoryPlaneStore
 from memorii.core.provider.blocking_policy import evaluate_operation_policy
 from memorii.core.provider.models import (
     ProviderEvent,
@@ -41,18 +42,18 @@ class RuntimeRetrievalTrace:
 class MemoryPlaneService:
     """Canonical behavior engine for ingestion, staging, and retrieval/reranking."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, record_store: MemoryPlaneStore | None = None) -> None:
         self._planner = RetrievalPlanner()
         self._reranker = ProviderReranker()
-        self._records: list[CanonicalMemoryRecord] = []
+        self._records = record_store if record_store is not None else InMemoryMemoryPlaneStore()
         self._last_prefetch_trace: ProviderPrefetchTrace | None = None
 
     # Runtime-facing canonical methods
     def seed_runtime_memory_object(self, memory_object: MemoryObject) -> None:
-        self._records.append(from_memory_object(memory_object))
+        self._records.stage_record(from_memory_object(memory_object))
 
     def query_runtime_memory(self, query: DomainRetrievalQuery) -> list[MemoryObject]:
-        records = [item for item in self._records if item.domain == query.domain]
+        records = self._records.list_records(domains=[query.domain])
         return [
             to_memory_object(item)
             for item in records
@@ -65,21 +66,13 @@ class MemoryPlaneService:
         status: CommitStatus | None = None,
         domains: list[MemoryDomain] | None = None,
     ) -> list[CanonicalMemoryRecord]:
-        domain_set = set(domains) if domains is not None else None
-        return [
-            item
-            for item in self._records
-            if (status is None or item.status == status) and (domain_set is None or item.domain in domain_set)
-        ]
+        return self._records.list_records(status=status, domains=domains)
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
-        for item in self._records:
-            if item.memory_id == memory_id:
-                return item
-        return None
+        return self._records.get_record(memory_id)
 
     def stage_record(self, record: CanonicalMemoryRecord) -> None:
-        self._records.append(record)
+        self._records.stage_record(record)
 
     def update_candidate_lifecycle(
         self,
@@ -91,23 +84,20 @@ class MemoryPlaneService:
         conflict_with_memory_ids: list[str],
         supersedes_memory_ids: list[str],
     ) -> None:
-        updated: list[CanonicalMemoryRecord] = []
-        for item in self._records:
-            if item.memory_id == candidate_id:
-                updated.append(
-                    item.model_copy(
-                        update={
-                            "promotion_state": promotion_state,
-                            "duplicate_of_memory_id": duplicate_of_memory_id,
-                            "rejected_reason": rejected_reason,
-                            "conflict_with_memory_ids": list(conflict_with_memory_ids),
-                            "supersedes_memory_ids": list(supersedes_memory_ids),
-                        }
-                    )
-                )
-            else:
-                updated.append(item)
-        self._records = updated
+        candidate = self._records.get_record(candidate_id)
+        if candidate is None:
+            return
+        self._records.upsert_record(
+            candidate.model_copy(
+                update={
+                    "promotion_state": promotion_state,
+                    "duplicate_of_memory_id": duplicate_of_memory_id,
+                    "rejected_reason": rejected_reason,
+                    "conflict_with_memory_ids": list(conflict_with_memory_ids),
+                    "supersedes_memory_ids": list(supersedes_memory_ids),
+                }
+            )
+        )
 
     def commit_candidate(
         self,
@@ -123,7 +113,7 @@ class MemoryPlaneService:
 
         existing = [
             item
-            for item in self._records
+            for item in self._records.list_records(status=CommitStatus.COMMITTED)
             if item.source_candidate_id == source_candidate_id and item.status == CommitStatus.COMMITTED
         ]
         if existing:
@@ -141,7 +131,7 @@ class MemoryPlaneService:
                 "timestamp": datetime.now(UTC),
             }
         )
-        self._records.append(committed)
+        self._records.stage_record(committed)
         return committed_memory_id
 
     def ingest_runtime_observation(self, *, router: object, inbound: InboundEvent) -> RoutingDecision:
@@ -226,9 +216,8 @@ class MemoryPlaneService:
         planned_domains = {query_spec.domain for query_spec in plan.queries}
         pool = {
             item.memory_id: item
-            for item in self._records
+            for item in self._records.list_records(status=CommitStatus.COMMITTED)
             if item.domain in planned_domains
-            and item.status == CommitStatus.COMMITTED
             and self._matches_scope(item, RetrievalScope(session_id=session_id, task_id=task_id, user_id=user_id))
         }
         provider_candidates = [to_provider_stored_record(item) for item in pool.values()]
@@ -263,19 +252,19 @@ class MemoryPlaneService:
         return format_prefetch_context(ranked_records[:top_k])
 
     def seed_provider_committed_record(self, record: ProviderStoredRecord) -> None:
-        self._records.append(from_provider_stored_record(record, source_kind="provider_seed"))
+        self._records.stage_record(from_provider_stored_record(record, source_kind="provider_seed"))
 
     def provider_candidate_records(self) -> list[ProviderStoredRecord]:
         return [
             to_provider_stored_record(item)
-            for item in self._records
+            for item in self._records.list_records(status=CommitStatus.CANDIDATE)
             if item.status == CommitStatus.CANDIDATE and item.source_kind.startswith("provider")
         ]
 
     def provider_transcript_records(self) -> list[ProviderStoredRecord]:
         return [
             to_provider_stored_record(item)
-            for item in self._records
+            for item in self._records.list_records(domains=[MemoryDomain.TRANSCRIPT])
             if item.domain == MemoryDomain.TRANSCRIPT and item.is_raw_event
         ]
 
@@ -284,7 +273,7 @@ class MemoryPlaneService:
 
     def _store_transcript(self, event: ProviderEvent) -> str:
         memory_id = f"tx:{event.event_id}"
-        self._records.append(
+        self._records.stage_record(
             CanonicalMemoryRecord(
                 memory_id=memory_id,
                 domain=MemoryDomain.TRANSCRIPT,
@@ -303,7 +292,7 @@ class MemoryPlaneService:
 
     def _store_candidate(self, *, event: ProviderEvent, domain: MemoryDomain) -> str:
         memory_id = f"cand:{domain.value}:{event.event_id}"
-        self._records.append(
+        self._records.stage_record(
             CanonicalMemoryRecord(
                 memory_id=memory_id,
                 domain=domain,
