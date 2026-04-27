@@ -6,6 +6,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from memorii.core.decision_state.models import DecisionEvidencePolarity
 from memorii.core.work_state.models import WorkStateKind
 
 
@@ -79,5 +80,48 @@ class RecordOutcomeInput(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     solver_run_id: str | None = None
     execution_node_id: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DecisionAddOptionInput(BaseModel):
+    decision_state_id: str
+    option_id: str
+    label: str
+    description: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DecisionAddCriterionInput(BaseModel):
+    decision_state_id: str
+    criterion_id: str
+    label: str
+    weight: float = 1.0
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DecisionAddEvidenceInput(BaseModel):
+    decision_state_id: str
+    evidence_id: str
+    content: str
+    polarity: DecisionEvidencePolarity
+    option_id: str | None = None
+    source_ids: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DecisionSetRecommendationInput(BaseModel):
+    decision_state_id: str
+    recommendation: str | None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DecisionFinalizeInput(BaseModel):
+    decision_state_id: str
+    final_decision: str
 
     model_config = ConfigDict(extra="forbid")

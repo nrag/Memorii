@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from memorii.core.solver import SolverFrontierPlanner
+from memorii.core.decision_state.models import DecisionEvidencePolarity, DecisionStatus
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.domain.common import SolverNodeMetadata
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -72,6 +73,11 @@ def test_get_tool_schemas_includes_state_summary_and_next_step() -> None:
     assert "memorii_open_or_resume_work" in tool_names
     assert "memorii_record_progress" in tool_names
     assert "memorii_record_outcome" in tool_names
+    assert "memorii_decision_add_option" in tool_names
+    assert "memorii_decision_add_criterion" in tool_names
+    assert "memorii_decision_add_evidence" in tool_names
+    assert "memorii_decision_set_recommendation" in tool_names
+    assert "memorii_decision_finalize" in tool_names
 
     next_step_schema = next(schema for schema in schemas if schema["name"] == "memorii_get_next_step")
     properties = next_step_schema["input_schema"]["properties"]
@@ -83,6 +89,157 @@ def test_get_tool_schemas_includes_state_summary_and_next_step() -> None:
     assert record_progress_schema["input_schema"]["required"] == ["content"]
     record_outcome_schema = next(schema for schema in schemas if schema["name"] == "memorii_record_outcome")
     assert record_outcome_schema["input_schema"]["required"] == ["outcome", "content"]
+    add_evidence_schema = next(schema for schema in schemas if schema["name"] == "memorii_decision_add_evidence")
+    assert add_evidence_schema["input_schema"]["required"] == [
+        "decision_state_id",
+        "evidence_id",
+        "content",
+        "polarity",
+    ]
+    finalize_schema = next(schema for schema in schemas if schema["name"] == "memorii_decision_finalize")
+    assert finalize_schema["input_schema"]["required"] == ["decision_state_id", "final_decision"]
+
+
+def test_decision_tools_without_decision_state_service_return_error() -> None:
+    provider = ProviderMemoryService(decision_state_service=None)
+
+    result = provider.handle_tool_call(
+        "memorii_decision_add_option",
+        {"decision_state_id": "decision:missing", "option_id": "opt:1", "label": "Option 1"},
+    )
+
+    assert result.ok is False
+    assert result.error == "decision_state_service_not_configured"
+
+
+def test_decision_add_option_succeeds() -> None:
+    decision_state_service = DecisionStateService()
+    decision = decision_state_service.open_decision(question="Which rollout?")
+    provider = ProviderMemoryService(decision_state_service=decision_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_decision_add_option",
+        {
+            "decision_state_id": decision.decision_id,
+            "option_id": "opt:canary",
+            "label": "Canary rollout",
+            "description": "Ship in phases",
+        },
+    )
+
+    assert result.ok is True
+    decision_state = result.result["decision_state"]
+    assert decision_state["options"][0]["option_id"] == "opt:canary"
+
+
+def test_decision_add_criterion_succeeds() -> None:
+    decision_state_service = DecisionStateService()
+    decision = decision_state_service.open_decision(question="Which storage?")
+    provider = ProviderMemoryService(decision_state_service=decision_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_decision_add_criterion",
+        {
+            "decision_state_id": decision.decision_id,
+            "criterion_id": "crit:cost",
+            "label": "Cost",
+            "weight": 2.5,
+        },
+    )
+
+    assert result.ok is True
+    decision_state = result.result["decision_state"]
+    assert decision_state["criteria"][0]["criterion_id"] == "crit:cost"
+    assert decision_state["criteria"][0]["weight"] == 2.5
+
+
+def test_decision_add_evidence_succeeds_with_enum_polarity() -> None:
+    decision_state_service = DecisionStateService()
+    decision = decision_state_service.open_decision(question="Which language?")
+    provider = ProviderMemoryService(decision_state_service=decision_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_decision_add_evidence",
+        {
+            "decision_state_id": decision.decision_id,
+            "evidence_id": "ev:1",
+            "content": "Team has strong Python expertise",
+            "polarity": DecisionEvidencePolarity.FOR_OPTION.value,
+            "option_id": "opt:python",
+            "source_ids": ["src:1"],
+        },
+    )
+
+    assert result.ok is True
+    decision_state = result.result["decision_state"]
+    assert decision_state["evidence"][0]["polarity"] == DecisionEvidencePolarity.FOR_OPTION.value
+    assert decision_state["evidence"][0]["source_ids"] == ["src:1"]
+
+
+def test_decision_set_recommendation_succeeds() -> None:
+    decision_state_service = DecisionStateService()
+    decision = decision_state_service.open_decision(question="Which db?")
+    provider = ProviderMemoryService(decision_state_service=decision_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_decision_set_recommendation",
+        {
+            "decision_state_id": decision.decision_id,
+            "recommendation": "Prefer Postgres",
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["decision_state"]["current_recommendation"] == "Prefer Postgres"
+
+
+def test_decision_finalize_marks_decided() -> None:
+    decision_state_service = DecisionStateService()
+    decision = decision_state_service.open_decision(question="Which cache?")
+    provider = ProviderMemoryService(decision_state_service=decision_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_decision_finalize",
+        {
+            "decision_state_id": decision.decision_id,
+            "final_decision": "Use Redis",
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["decision_state"]["status"] == DecisionStatus.DECIDED.value
+    assert result.result["decision_state"]["final_decision"] == "Use Redis"
+
+
+def test_decision_tool_unknown_decision_id_returns_not_found() -> None:
+    provider = ProviderMemoryService(decision_state_service=DecisionStateService())
+
+    result = provider.handle_tool_call(
+        "memorii_decision_add_option",
+        {"decision_state_id": "decision:unknown", "option_id": "opt:1", "label": "Option"},
+    )
+
+    assert result.ok is False
+    assert result.error == "decision_state_not_found"
+
+
+def test_decision_tool_validation_rejects_extra_fields() -> None:
+    decision_state_service = DecisionStateService()
+    provider = ProviderMemoryService(decision_state_service=decision_state_service)
+    decision = decision_state_service.open_decision(question="q")
+
+    result = provider.handle_tool_call(
+        "memorii_decision_add_option",
+        {
+            "decision_state_id": decision.decision_id,
+            "option_id": "opt:1",
+            "label": "Option",
+            "extra_field": "not-allowed",
+        },
+    )
+
+    assert result.ok is False
+    assert "Validation error" in (result.error or "")
 
 
 def test_handle_tool_call_unknown_tool_returns_error() -> None:
