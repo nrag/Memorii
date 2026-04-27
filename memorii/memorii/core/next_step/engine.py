@@ -1,5 +1,7 @@
 """Next-step selection engine."""
 
+from memorii.core.decision_state.models import DecisionState, DecisionStatus
+from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.next_step.models import NextStepRequest, NextStepResult
 from memorii.core.recall import summarize_work_states
 from memorii.core.solver import SolverFrontierPlanner
@@ -14,12 +16,14 @@ class NextStepEngine:
         self,
         *,
         work_state_service: WorkStateService | None = None,
+        decision_state_service: DecisionStateService | None = None,
         solver_frontier_planner: SolverFrontierPlanner | None = None,
         solver_store: SolverGraphStore | None = None,
         overlay_store: OverlayStore | None = None,
     ) -> None:
         self._work_state_service = work_state_service
         self._work_state_selector = WorkStateSelector(work_state_service)
+        self._decision_state_service = decision_state_service
         self._solver_frontier_planner = solver_frontier_planner
         self._solver_store = solver_store
         self._overlay_store = overlay_store
@@ -188,8 +192,14 @@ class NextStepEngine:
             action_type = "inspect_failure"
             description = "Inspect the latest failure or missing evidence before committing a conclusion."
         elif selected_state.kind == WorkStateKind.DECISION:
-            action_type = "clarify_decision_criteria"
-            description = "Clarify options, criteria, and constraints before choosing."
+            return NextStepResult(
+                next_step=self._get_decision_next_step(selected_state),
+                based_on_work_state_id=selected_state.work_state_id,
+                planner_used=False,
+                planner_reason="",
+                solver_run_resolution_source="none",
+                scope=scope,
+            )
         return NextStepResult(
             next_step={
                 "action_type": action_type,
@@ -204,6 +214,97 @@ class NextStepEngine:
             solver_run_resolution_source="none",
             scope=scope,
         )
+
+    def _get_decision_next_step(self, selected_state) -> dict[str, object]:
+        if self._decision_state_service is None:
+            return {
+                "action_type": "clarify_decision_criteria",
+                "description": "Clarify options, criteria, and constraints before choosing.",
+                "confidence": 0.4,
+                "reason": "frontier_planner_not_yet_enabled",
+                "evidence_ids": list(selected_state.source_event_ids),
+                "decision_state_id": None,
+            }
+
+        decisions = self._decision_state_service.list_decisions(
+            work_state_id=selected_state.work_state_id,
+            statuses=[DecisionStatus.OPEN, DecisionStatus.DECIDED],
+        )
+        decision = self._select_relevant_decision(decisions)
+        if decision is None:
+            return {
+                "action_type": "open_decision_state",
+                "description": "Open a decision state for this decision work.",
+                "confidence": 0.3,
+                "reason": "decision_state_missing",
+                "evidence_ids": list(selected_state.source_event_ids),
+                "decision_state_id": None,
+            }
+
+        if not decision.options:
+            return {
+                "action_type": "add_decision_options",
+                "description": "Add the options under consideration before making a recommendation.",
+                "confidence": 0.45,
+                "reason": "decision_options_missing",
+                "evidence_ids": [evidence.evidence_id for evidence in decision.evidence],
+                "decision_state_id": decision.decision_id,
+            }
+
+        if not decision.criteria:
+            return {
+                "action_type": "add_decision_criteria",
+                "description": "Add decision criteria and weights before comparing options.",
+                "confidence": 0.45,
+                "reason": "decision_criteria_missing",
+                "evidence_ids": [evidence.evidence_id for evidence in decision.evidence],
+                "decision_state_id": decision.decision_id,
+            }
+
+        if not decision.evidence:
+            return {
+                "action_type": "add_decision_evidence",
+                "description": "Add evidence for, against, or neutral to the options.",
+                "confidence": 0.45,
+                "reason": "decision_evidence_missing",
+                "evidence_ids": [],
+                "decision_state_id": decision.decision_id,
+            }
+
+        if decision.current_recommendation is None:
+            return {
+                "action_type": "set_decision_recommendation",
+                "description": "Set a current recommendation based on the available options, criteria, and evidence.",
+                "confidence": 0.5,
+                "reason": "decision_recommendation_missing",
+                "evidence_ids": [evidence.evidence_id for evidence in decision.evidence],
+                "decision_state_id": decision.decision_id,
+            }
+
+        if decision.final_decision is None:
+            return {
+                "action_type": "finalize_decision",
+                "description": "Finalize the decision or record why it remains open.",
+                "confidence": 0.55,
+                "reason": "decision_ready_to_finalize",
+                "evidence_ids": [evidence.evidence_id for evidence in decision.evidence],
+                "decision_state_id": decision.decision_id,
+            }
+
+        return {
+            "action_type": "record_outcome",
+            "description": "Record the decision outcome on the work state.",
+            "confidence": 0.55,
+            "reason": "decision_already_decided",
+            "evidence_ids": [evidence.evidence_id for evidence in decision.evidence],
+            "decision_state_id": decision.decision_id,
+        }
+
+    def _select_relevant_decision(self, decisions: list[DecisionState]) -> DecisionState | None:
+        open_decision = next((decision for decision in decisions if decision.status == DecisionStatus.OPEN), None)
+        if open_decision is not None:
+            return open_decision
+        return next((decision for decision in decisions if decision.status == DecisionStatus.DECIDED), None)
 
     def _list_events_by_work_state_id(self, work_states) -> dict[str, list[WorkStateEvent]]:
         if self._work_state_service is None:
