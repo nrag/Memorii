@@ -1,6 +1,9 @@
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
+from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.retrieval import RetrievalPlanner
 from memorii.core.router import MemoryRouter
@@ -25,6 +28,32 @@ from memorii.stores.event_log import InMemoryEventLogStore
 from memorii.stores.execution_graph import InMemoryExecutionGraphStore
 from memorii.stores.overlays import InMemoryOverlayStore
 from memorii.stores.solver_graph import InMemorySolverGraphStore
+
+
+class _FixedBeliefProvider:
+    def __init__(self, belief: float) -> None:
+        self.belief = belief
+        self.last_context: object | None = None
+
+    def update(self, *, context: object) -> tuple[object, LLMDecisionTrace]:
+        self.last_context = context
+        decision = SimpleNamespace(belief=self.belief, confidence=1.0, rationale="fixed")
+        trace = LLMDecisionTrace(
+            trace_id="trace:fixed",
+            decision_point=LLMDecisionPoint.BELIEF_UPDATE,
+            mode=LLMDecisionMode.RULE_BASED,
+            input_payload=context.model_dump(mode="json"),
+            parsed_output={"belief": decision.belief, "confidence": decision.confidence, "rationale": decision.rationale},
+            final_output={"belief": decision.belief, "confidence": decision.confidence, "rationale": decision.rationale},
+            status=LLMDecisionStatus.SUCCEEDED,
+            created_at=datetime.now(UTC),
+        )
+        return decision, trace
+
+
+class _FailingBeliefProvider:
+    def update(self, *, context: object) -> tuple[object, LLMDecisionTrace]:
+        raise RuntimeError("belief provider failed")
 
 
 def _make_execution_node(node_id: str, status: ExecutionNodeStatus) -> ExecutionNode:
@@ -626,6 +655,167 @@ def test_supported_with_evidence_overlay_belief_is_above_default() -> None:
         },
     )
     assert _decision_belief(runtime, result.solver_run_id) > 0.5
+
+
+def test_default_rule_provider_preserves_existing_belief_behavior() -> None:
+    runtime = _build_runtime(task_id="task-default-rule", execution_node_id="exec-default-rule")
+    result = runtime.step(
+        task_id="task-default-rule",
+        observation=RuntimeObservationInput(
+            event_id="evt-default-rule",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "passed"},
+        ),
+        model_output={
+            "decision": "SUPPORTED",
+            "evidence_ids": ["evt-default-rule:transcript"],
+            "missing_evidence": [],
+            "next_best_test": None,
+            "rationale_short": "supported",
+            "confidence_band": "high",
+        },
+    )
+    assert _decision_belief(runtime, result.solver_run_id) == 0.8
+
+
+def test_injected_belief_provider_controls_overlay_belief() -> None:
+    task_id = "task-fixed-provider"
+    execution_node_id = "exec-fixed-provider"
+    execution_store = InMemoryExecutionGraphStore()
+    execution_store.upsert_node(task_id, _make_execution_node(execution_node_id, ExecutionNodeStatus.RUNNING))
+    provider = _FixedBeliefProvider(belief=0.17)
+    runtime = RuntimeStepService(
+        execution_store=execution_store,
+        solver_store=InMemorySolverGraphStore(),
+        overlay_store=InMemoryOverlayStore(),
+        event_log_store=InMemoryEventLogStore(),
+        belief_update_provider=provider,
+    )
+
+    result = runtime.step(
+        task_id=task_id,
+        observation=RuntimeObservationInput(
+            event_id="evt-fixed-provider",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "passed"},
+        ),
+        model_output={
+            "decision": "SUPPORTED",
+            "evidence_ids": ["evt-fixed-provider:transcript"],
+            "missing_evidence": [],
+            "next_best_test": None,
+            "rationale_short": "supported",
+            "confidence_band": "high",
+        },
+    )
+    assert _decision_belief(runtime, result.solver_run_id) == 0.17
+
+
+def test_belief_update_trace_is_appended_when_trace_store_configured() -> None:
+    task_id = "task-trace-store"
+    execution_node_id = "exec-trace-store"
+    execution_store = InMemoryExecutionGraphStore()
+    execution_store.upsert_node(task_id, _make_execution_node(execution_node_id, ExecutionNodeStatus.RUNNING))
+    provider = _FixedBeliefProvider(belief=0.42)
+    trace_store = InMemoryLLMDecisionTraceStore()
+    runtime = RuntimeStepService(
+        execution_store=execution_store,
+        solver_store=InMemorySolverGraphStore(),
+        overlay_store=InMemoryOverlayStore(),
+        event_log_store=InMemoryEventLogStore(),
+        belief_update_provider=provider,
+        llm_decision_trace_store=trace_store,
+    )
+
+    runtime.step(
+        task_id=task_id,
+        observation=RuntimeObservationInput(
+            event_id="evt-trace-store",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "passed"},
+        ),
+        model_output={
+            "decision": "SUPPORTED",
+            "evidence_ids": ["evt-trace-store:transcript"],
+            "missing_evidence": [],
+            "next_best_test": None,
+            "rationale_short": "supported",
+            "confidence_band": "high",
+        },
+    )
+
+    traces = trace_store.list_traces(decision_point=LLMDecisionPoint.BELIEF_UPDATE)
+    assert len(traces) == 1
+    assert traces[0].trace_id == "trace:fixed"
+
+
+def test_provider_failure_falls_back_to_existing_belief_update_safely() -> None:
+    task_id = "task-provider-fallback"
+    execution_node_id = "exec-provider-fallback"
+    execution_store = InMemoryExecutionGraphStore()
+    execution_store.upsert_node(task_id, _make_execution_node(execution_node_id, ExecutionNodeStatus.RUNNING))
+    runtime = RuntimeStepService(
+        execution_store=execution_store,
+        solver_store=InMemorySolverGraphStore(),
+        overlay_store=InMemoryOverlayStore(),
+        event_log_store=InMemoryEventLogStore(),
+        belief_update_provider=_FailingBeliefProvider(),
+    )
+
+    result = runtime.step(
+        task_id=task_id,
+        observation=RuntimeObservationInput(
+            event_id="evt-provider-fallback",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "passed"},
+        ),
+        model_output={
+            "decision": "SUPPORTED",
+            "evidence_ids": ["evt-provider-fallback:transcript"],
+            "missing_evidence": [],
+            "next_best_test": None,
+            "rationale_short": "supported",
+            "confidence_band": "high",
+        },
+    )
+
+    assert result.solver_decision == SolverDecision.SUPPORTED
+    assert _decision_belief(runtime, result.solver_run_id) == 0.8
+
+
+def test_runtime_step_service_passes_provider_into_solver_update_engine() -> None:
+    task_id = "task-pass-provider"
+    execution_node_id = "exec-pass-provider"
+    execution_store = InMemoryExecutionGraphStore()
+    execution_store.upsert_node(task_id, _make_execution_node(execution_node_id, ExecutionNodeStatus.RUNNING))
+    provider = _FixedBeliefProvider(belief=0.31)
+    runtime = RuntimeStepService(
+        execution_store=execution_store,
+        solver_store=InMemorySolverGraphStore(),
+        overlay_store=InMemoryOverlayStore(),
+        event_log_store=InMemoryEventLogStore(),
+        belief_update_provider=provider,
+    )
+
+    runtime.step(
+        task_id=task_id,
+        observation=RuntimeObservationInput(
+            event_id="evt-pass-provider",
+            event_class=InboundEventClass.SOLVER_OBSERVATION,
+            payload={"status": "ambiguous"},
+        ),
+        model_output={
+            "decision": "INSUFFICIENT_EVIDENCE",
+            "evidence_ids": [],
+            "missing_evidence": ["details"],
+            "next_best_test": "collect_details",
+            "rationale_short": "unknown",
+            "confidence_band": "low",
+        },
+    )
+
+    assert provider.last_context is not None
+    assert provider.last_context.solver_run_id == f"solver:{task_id}:{execution_node_id}"
 
 
 def test_needs_test_with_missing_evidence_overlay_belief_is_below_default() -> None:
