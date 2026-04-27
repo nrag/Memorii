@@ -5,7 +5,7 @@ from __future__ import annotations
 from memorii.core.promotion.context_builder import PromotionContextBuilder
 from memorii.core.promotion.executor import PromotionExecutor
 from memorii.core.promotion.interfaces import PromotionDecider
-from memorii.core.promotion.models import (
+from memorii.core.promotion.legacy_models import (
     BatchPromotionResult,
     PromotionAction,
     PromotionReasonCode,
