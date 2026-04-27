@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from memorii.core.solver import SolverFrontierPlanner
+from memorii.core.decision_state.service import DecisionStateService
 from memorii.domain.common import SolverNodeMetadata
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -403,6 +404,46 @@ def test_open_or_resume_creates_active_state() -> None:
     states = work_state_service.list_states(task_id="task:open:1")
     assert len(states) == 1
     assert states[0].status == WorkStateStatus.ACTIVE
+    assert result.result["decision_state_id"] is None
+
+
+def test_open_or_resume_decision_work_creates_decision_state() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service)
+
+    result = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {"title": "Choose deployment strategy", "kind": "decision", "task_id": "task:decision:create"},
+    )
+
+    assert result.ok is True
+    decision_state_id = result.result["decision_state_id"]
+    assert isinstance(decision_state_id, str)
+    assert decision_state_id
+
+
+def test_open_or_resume_decision_reuses_existing_decision_state_without_duplicates() -> None:
+    work_state_service = WorkStateService()
+    decision_state_service = DecisionStateService()
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        decision_state_service=decision_state_service,
+    )
+
+    first = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {"title": "Pick API design", "kind": "decision", "task_id": "task:decision:reuse"},
+    )
+    second = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {"title": "Pick API design", "kind": "decision", "task_id": "task:decision:reuse"},
+    )
+
+    assert first.ok is True
+    assert second.ok is True
+    assert first.result["decision_state_id"] == second.result["decision_state_id"]
+    decisions = decision_state_service.list_decisions(work_state_id=first.result["work_state"]["work_state_id"])
+    assert len(decisions) == 1
 
 
 def test_open_or_resume_resumes_existing_task_state_without_duplicate() -> None:
@@ -429,6 +470,7 @@ def test_open_or_resume_resumes_existing_task_state_without_duplicate() -> None:
     assert result.result["work_state"]["work_state_id"] == existing.work_state_id
     assert result.result["work_state"]["title"] == "New title"
     assert result.result["work_state"]["summary"] == "New summary"
+    assert result.result["decision_state_id"] is None
     states = work_state_service.list_states(task_id="task:resume:1")
     assert len(states) == 1
 
@@ -461,6 +503,57 @@ def test_open_or_resume_explicit_work_state_id_updates_exact_state() -> None:
     assert result.ok is True
     assert result.result["work_state"]["work_state_id"] == target.work_state_id
     assert result.result["work_state"]["task_id"] == "task:exact:new"
+    assert result.result["decision_state_id"] is None
+
+
+def test_open_or_resume_decision_resume_by_work_state_id_reuses_decision_state() -> None:
+    work_state_service = WorkStateService()
+    decision_state_service = DecisionStateService()
+    target = work_state_service.open_or_resume_work(
+        title="Initial decision title",
+        kind=WorkStateKind.DECISION,
+        task_id="task:decision:explicit",
+    )
+    existing = decision_state_service.open_decision(
+        question="Initial decision title",
+        work_state_id=target.work_state_id,
+        task_id="task:decision:explicit",
+    )
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        decision_state_service=decision_state_service,
+    )
+
+    result = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {
+            "title": "Updated decision title",
+            "kind": "decision",
+            "work_state_id": target.work_state_id,
+            "task_id": "task:decision:explicit",
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["decision_state_id"] == existing.decision_id
+    decisions = decision_state_service.list_decisions(work_state_id=target.work_state_id)
+    assert len(decisions) == 1
+
+
+def test_open_or_resume_decision_with_disabled_decision_state_service_returns_none() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        decision_state_service=None,
+    )
+
+    result = provider.handle_tool_call(
+        "memorii_open_or_resume_work",
+        {"title": "Select rollout plan", "kind": "decision", "task_id": "task:decision:disabled"},
+    )
+
+    assert result.ok is True
+    assert result.result["decision_state_id"] is None
 
 
 def test_open_or_resume_creates_binding_when_solver_run_supplied() -> None:

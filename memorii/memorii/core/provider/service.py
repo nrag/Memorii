@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
+from memorii.core.decision_state.models import DecisionStatus
+from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.next_step import NextStepEngine, NextStepRequest
@@ -43,10 +45,13 @@ from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
 class ProviderMemoryService:
     """Thin provider adapter over the canonical MemoryPlaneService."""
 
+    _DEFAULT_DECISION_STATE_SERVICE = object()
+
     def __init__(
         self,
         memory_plane: MemoryPlaneService | None = None,
         work_state_service: WorkStateService | None = None,
+        decision_state_service: DecisionStateService | None | object = _DEFAULT_DECISION_STATE_SERVICE,
         solver_frontier_planner: SolverFrontierPlanner | None = None,
         solver_store: SolverGraphStore | None = None,
         overlay_store: OverlayStore | None = None,
@@ -58,6 +63,10 @@ class ProviderMemoryService:
         self._solver_frontier_planner = solver_frontier_planner
         self._solver_store = solver_store
         self._overlay_store = overlay_store
+        if decision_state_service is self._DEFAULT_DECISION_STATE_SERVICE:
+            self._decision_state_service: DecisionStateService | None = DecisionStateService()
+        else:
+            self._decision_state_service = decision_state_service
         self._next_step_engine = NextStepEngine(
             work_state_service=work_state_service,
             solver_frontier_planner=solver_frontier_planner,
@@ -519,6 +528,15 @@ class ProviderMemoryService:
             execution_node_id=execution_node_id,
             solver_run_id=solver_run_id,
         )
+        decision_state_id = None
+        if work_state.kind == WorkStateKind.DECISION:
+            decision_state_id = self._ensure_decision_state_for_work(
+                work_state=work_state,
+                title=title,
+                session_id=session_id,
+                task_id=task_id,
+                user_id=user_id,
+            )
         binding = None
         if solver_run_id is not None or execution_node_id is not None:
             bindings = self._work_state_service.list_bindings(work_state_id=work_state.work_state_id)
@@ -543,7 +561,34 @@ class ProviderMemoryService:
                 "user_id": work_state.user_id,
             },
             "binding": binding,
+            "decision_state_id": decision_state_id,
         }
+
+    def _ensure_decision_state_for_work(
+        self,
+        *,
+        work_state: WorkStateRecord,
+        title: str,
+        session_id: str | None,
+        task_id: str | None,
+        user_id: str | None,
+    ) -> str | None:
+        if self._decision_state_service is None:
+            return None
+        existing_open_decisions = self._decision_state_service.list_decisions(
+            work_state_id=work_state.work_state_id,
+            statuses=[DecisionStatus.OPEN],
+        )
+        if existing_open_decisions:
+            return existing_open_decisions[0].decision_id
+        created = self._decision_state_service.open_decision(
+            question=title,
+            work_state_id=work_state.work_state_id,
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+        )
+        return created.decision_id
 
     @staticmethod
     def _format_work_state_section(work_states: list[WorkStateSummary]) -> str:
