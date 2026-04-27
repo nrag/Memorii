@@ -74,6 +74,7 @@ class ProviderMemoryService:
             self._decision_state_service = decision_state_service
         self._next_step_engine = NextStepEngine(
             work_state_service=work_state_service,
+            decision_state_service=self._decision_state_service,
             solver_frontier_planner=solver_frontier_planner,
             solver_store=solver_store,
             overlay_store=overlay_store,

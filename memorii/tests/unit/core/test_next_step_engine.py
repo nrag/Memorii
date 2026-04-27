@@ -1,6 +1,9 @@
 from datetime import UTC, datetime
 
+from memorii.core.decision_state.models import DecisionEvidencePolarity, DecisionStatus
+from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.next_step import NextStepEngine, NextStepRequest
+from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.solver import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind
 from memorii.core.work_state.service import WorkStateService
@@ -183,3 +186,283 @@ def test_frontier_without_action_maps_inspect_frontier() -> None:
         overlay_store=overlay_store,
     ).get_next_step(NextStepRequest(solver_run_id="solver:inspect"))
     assert result.next_step["action_type"] == "inspect_frontier"
+
+
+def test_decision_work_without_decision_state_requests_open() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:missing",
+        kind=WorkStateKind.DECISION,
+    )
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=DecisionStateService(),
+    ).get_next_step(NextStepRequest(task_id="task:decision:missing"))
+
+    assert result.based_on_work_state_id == decision_work.work_state_id
+    assert result.next_step["action_type"] == "open_decision_state"
+    assert result.next_step["reason"] == "decision_state_missing"
+
+
+def test_decision_without_options_requests_options() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:no-options",
+        kind=WorkStateKind.DECISION,
+    )
+    decision_service = DecisionStateService()
+    decision = decision_service.open_decision(
+        question="Which provider?",
+        work_state_id=decision_work.work_state_id,
+        task_id="task:decision:no-options",
+    )
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=decision_service,
+    ).get_next_step(NextStepRequest(task_id="task:decision:no-options"))
+
+    assert result.next_step["action_type"] == "add_decision_options"
+    assert result.next_step["decision_state_id"] == decision.decision_id
+
+
+def test_decision_without_criteria_requests_criteria() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:no-criteria",
+        kind=WorkStateKind.DECISION,
+    )
+    decision_service = DecisionStateService()
+    decision = decision_service.open_decision(
+        question="Which provider?",
+        work_state_id=decision_work.work_state_id,
+        task_id="task:decision:no-criteria",
+    )
+    decision_service.add_option(decision_id=decision.decision_id, option_id="o1", label="A")
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=decision_service,
+    ).get_next_step(NextStepRequest(task_id="task:decision:no-criteria"))
+
+    assert result.next_step["action_type"] == "add_decision_criteria"
+
+
+def test_decision_without_evidence_requests_evidence() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:no-evidence",
+        kind=WorkStateKind.DECISION,
+    )
+    decision_service = DecisionStateService()
+    decision = decision_service.open_decision(
+        question="Which provider?",
+        work_state_id=decision_work.work_state_id,
+        task_id="task:decision:no-evidence",
+    )
+    decision_service.add_option(decision_id=decision.decision_id, option_id="o1", label="A")
+    decision_service.add_criterion(decision_id=decision.decision_id, criterion_id="c1", label="Latency")
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=decision_service,
+    ).get_next_step(NextStepRequest(task_id="task:decision:no-evidence"))
+
+    assert result.next_step["action_type"] == "add_decision_evidence"
+
+
+def test_decision_without_recommendation_requests_set_recommendation() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:no-rec",
+        kind=WorkStateKind.DECISION,
+    )
+    decision_service = DecisionStateService()
+    decision = decision_service.open_decision(
+        question="Which provider?",
+        work_state_id=decision_work.work_state_id,
+        task_id="task:decision:no-rec",
+    )
+    decision_service.add_option(decision_id=decision.decision_id, option_id="o1", label="A")
+    decision_service.add_criterion(decision_id=decision.decision_id, criterion_id="c1", label="Latency")
+    decision_service.add_evidence(
+        decision_id=decision.decision_id,
+        evidence_id="e1",
+        content="A has low latency",
+        polarity=DecisionEvidencePolarity.FOR_OPTION,
+        option_id="o1",
+    )
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=decision_service,
+    ).get_next_step(NextStepRequest(task_id="task:decision:no-rec"))
+
+    assert result.next_step["action_type"] == "set_decision_recommendation"
+
+
+def test_decision_with_recommendation_requests_finalize() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:finalize",
+        kind=WorkStateKind.DECISION,
+    )
+    decision_service = DecisionStateService()
+    decision = decision_service.open_decision(
+        question="Which provider?",
+        work_state_id=decision_work.work_state_id,
+        task_id="task:decision:finalize",
+    )
+    decision_service.add_option(decision_id=decision.decision_id, option_id="o1", label="A")
+    decision_service.add_criterion(decision_id=decision.decision_id, criterion_id="c1", label="Latency")
+    decision_service.add_evidence(
+        decision_id=decision.decision_id,
+        evidence_id="e1",
+        content="A has low latency",
+        polarity=DecisionEvidencePolarity.FOR_OPTION,
+        option_id="o1",
+    )
+    decision_service.update_recommendation(decision_id=decision.decision_id, recommendation="Pick A")
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=decision_service,
+    ).get_next_step(NextStepRequest(task_id="task:decision:finalize"))
+
+    assert result.next_step["action_type"] == "finalize_decision"
+
+
+def test_decided_decision_requests_record_outcome() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:decided",
+        kind=WorkStateKind.DECISION,
+    )
+    decision_service = DecisionStateService()
+    decision = decision_service.open_decision(
+        question="Which provider?",
+        work_state_id=decision_work.work_state_id,
+        task_id="task:decision:decided",
+    )
+    decision_service.add_option(decision_id=decision.decision_id, option_id="o1", label="A")
+    decision_service.add_criterion(decision_id=decision.decision_id, criterion_id="c1", label="Latency")
+    decision_service.add_evidence(
+        decision_id=decision.decision_id,
+        evidence_id="e1",
+        content="A has low latency",
+        polarity=DecisionEvidencePolarity.FOR_OPTION,
+        option_id="o1",
+    )
+    decision_service.update_recommendation(decision_id=decision.decision_id, recommendation="Pick A")
+    decision_service.record_final_decision(decision_id=decision.decision_id, final_decision="A")
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=decision_service,
+    ).get_next_step(NextStepRequest(task_id="task:decision:decided"))
+
+    assert result.next_step["action_type"] == "record_outcome"
+    assert result.next_step["reason"] == "decision_already_decided"
+
+
+def test_decision_without_service_falls_back_to_generic_clarify() -> None:
+    work_state_service = WorkStateService()
+    work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:no-service",
+        kind=WorkStateKind.DECISION,
+    )
+
+    result = NextStepEngine(work_state_service=work_state_service).get_next_step(
+        NextStepRequest(task_id="task:decision:no-service")
+    )
+
+    assert result.next_step["action_type"] == "clarify_decision_criteria"
+
+
+def test_provider_memory_service_passes_decision_state_service_to_next_step_engine() -> None:
+    decision_state_service = DecisionStateService()
+    provider = ProviderMemoryService(decision_state_service=decision_state_service)
+
+    assert provider._next_step_engine._decision_state_service is decision_state_service
+
+
+def test_decision_lookup_prefers_open_over_decided() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:prefer-open",
+        kind=WorkStateKind.DECISION,
+    )
+    decision_service = DecisionStateService()
+    decided = decision_service.open_decision(question="Old", work_state_id=decision_work.work_state_id)
+    decision_service.record_final_decision(decision_id=decided.decision_id, final_decision="Old choice")
+    open_decision = decision_service.open_decision(question="Current", work_state_id=decision_work.work_state_id)
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=decision_service,
+    ).get_next_step(NextStepRequest(task_id="task:decision:prefer-open"))
+
+    assert result.next_step["action_type"] == "add_decision_options"
+    assert result.next_step["decision_state_id"] == open_decision.decision_id
+
+
+def test_decision_lookup_uses_decided_when_no_open_exists() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:prefer-decided",
+        kind=WorkStateKind.DECISION,
+    )
+    decision_service = DecisionStateService()
+    decided = decision_service.open_decision(question="Only", work_state_id=decision_work.work_state_id)
+    decision_service.add_option(decision_id=decided.decision_id, option_id="o1", label="A")
+    decision_service.add_criterion(decision_id=decided.decision_id, criterion_id="c1", label="Latency")
+    decision_service.add_evidence(
+        decision_id=decided.decision_id,
+        evidence_id="e1",
+        content="A has low latency",
+        polarity=DecisionEvidencePolarity.FOR_OPTION,
+        option_id="o1",
+    )
+    decision_service.update_recommendation(decision_id=decided.decision_id, recommendation="A")
+    decision_service.record_final_decision(decision_id=decided.decision_id, final_decision="A")
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=decision_service,
+    ).get_next_step(NextStepRequest(task_id="task:decision:prefer-decided"))
+
+    assert result.next_step["action_type"] == "record_outcome"
+    assert result.next_step["decision_state_id"] == decided.decision_id
+
+
+def test_decision_lookup_ignores_non_open_non_decided_statuses() -> None:
+    work_state_service = WorkStateService()
+    decision_work = work_state_service.open_or_resume_work(
+        title="Choose provider",
+        task_id="task:decision:ignore-abandoned",
+        kind=WorkStateKind.DECISION,
+    )
+    decision_service = DecisionStateService()
+    abandoned = decision_service.open_decision(question="Old", work_state_id=decision_work.work_state_id)
+    decision_service.abandon_decision(decision_id=abandoned.decision_id)
+
+    decisions = decision_service.list_decisions(work_state_id=decision_work.work_state_id)
+    assert decisions[0].status == DecisionStatus.ABANDONED
+
+    result = NextStepEngine(
+        work_state_service=work_state_service,
+        decision_state_service=decision_service,
+    ).get_next_step(NextStepRequest(task_id="task:decision:ignore-abandoned"))
+
+    assert result.next_step["action_type"] == "open_decision_state"
