@@ -1,10 +1,21 @@
-"""Promotion decision provider models."""
+"""Promotion decision provider models.
+
+This module also re-exports legacy promotion lifecycle models for
+backward compatibility with existing imports.
+"""
 
 from __future__ import annotations
 
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from memorii.core.promotion.legacy_models import (
+    BatchPromotionResult,
+    PromotionAction,
+    PromotionReasonCode,
+    PromotionResult,
+)
 
 
 class PromotionCandidateType(str, Enum):
@@ -39,3 +50,14 @@ class PromotionContext(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
+
+
+__all__ = [
+    "BatchPromotionResult",
+    "PromotionAction",
+    "PromotionCandidateType",
+    "PromotionContext",
+    "PromotionDecision",
+    "PromotionReasonCode",
+    "PromotionResult",
+]
