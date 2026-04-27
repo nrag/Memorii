@@ -3,7 +3,11 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from memorii.core.decision_state.models import DecisionState, DecisionStatus
+from memorii.core.decision_state.models import (
+    DecisionEvidencePolarity,
+    DecisionState,
+    DecisionStatus,
+)
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.store import InMemoryDecisionStateStore
 
@@ -83,7 +87,7 @@ def test_add_evidence_appends_evidence_with_polarity() -> None:
         evidence_id="ev:1",
         content="Operational cost is lower.",
         option_id="opt:a",
-        polarity="for_option",
+        polarity=DecisionEvidencePolarity.FOR_OPTION,
     )
 
     assert updated is not None
