@@ -20,6 +20,11 @@ from memorii.core.provider.models import (
     ProviderWriteDecision,
 )
 from memorii.core.provider.tools import (
+    DecisionAddCriterionInput,
+    DecisionAddEvidenceInput,
+    DecisionAddOptionInput,
+    DecisionFinalizeInput,
+    DecisionSetRecommendationInput,
     GetNextStepInput,
     GetStateSummaryInput,
     OpenOrResumeWorkInput,
@@ -175,6 +180,79 @@ class ProviderMemoryService:
     def get_tool_schemas(self) -> list[dict[str, object]]:
         return [
             {
+                "name": "memorii_decision_add_option",
+                "description": "Add an option to an existing decision state.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "decision_state_id": {"type": "string"},
+                        "option_id": {"type": "string"},
+                        "label": {"type": "string"},
+                        "description": {"type": "string"},
+                    },
+                    "required": ["decision_state_id", "option_id", "label"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "memorii_decision_add_criterion",
+                "description": "Add a weighted criterion to an existing decision state.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "decision_state_id": {"type": "string"},
+                        "criterion_id": {"type": "string"},
+                        "label": {"type": "string"},
+                        "weight": {"type": "number"},
+                    },
+                    "required": ["decision_state_id", "criterion_id", "label"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "memorii_decision_add_evidence",
+                "description": "Add evidence for/against an option (or neutral) in a decision state.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "decision_state_id": {"type": "string"},
+                        "evidence_id": {"type": "string"},
+                        "content": {"type": "string"},
+                        "polarity": {"type": "string", "enum": ["for_option", "against_option", "neutral"]},
+                        "option_id": {"type": "string"},
+                        "source_ids": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["decision_state_id", "evidence_id", "content", "polarity"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "memorii_decision_set_recommendation",
+                "description": "Set or clear the recommendation on a decision state.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "decision_state_id": {"type": "string"},
+                        "recommendation": {"type": ["string", "null"]},
+                    },
+                    "required": ["decision_state_id", "recommendation"],
+                    "additionalProperties": False,
+                },
+            },
+            {
+                "name": "memorii_decision_finalize",
+                "description": "Record the final decision and mark the decision state as decided.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "decision_state_id": {"type": "string"},
+                        "final_decision": {"type": "string"},
+                    },
+                    "required": ["decision_state_id", "final_decision"],
+                    "additionalProperties": False,
+                },
+            },
+            {
                 "name": "memorii_get_state_summary",
                 "description": "Return Memorii's current work-state summary for the given session/task/user scope.",
                 "input_schema": {
@@ -274,6 +352,129 @@ class ProviderMemoryService:
         ]
 
     def handle_tool_call(self, tool_name: str, arguments: dict[str, object]) -> ProviderToolCallResult:
+        if tool_name == "memorii_decision_add_option":
+            try:
+                tool_input = DecisionAddOptionInput.model_validate(arguments)
+            except ValidationError as exc:
+                return ProviderToolCallResult(
+                    tool_name=tool_name,
+                    ok=False,
+                    error=f"Validation error for tool '{tool_name}': {exc}",
+                )
+            if self._decision_state_service is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_service_not_configured")
+            decision_state = self._decision_state_service.add_option(
+                decision_id=tool_input.decision_state_id,
+                option_id=tool_input.option_id,
+                label=tool_input.label,
+                description=tool_input.description,
+            )
+            if decision_state is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_not_found")
+            return ProviderToolCallResult(
+                tool_name=tool_name,
+                ok=True,
+                result={"decision_state": decision_state.model_dump(mode="json")},
+            )
+
+        if tool_name == "memorii_decision_add_criterion":
+            try:
+                tool_input = DecisionAddCriterionInput.model_validate(arguments)
+            except ValidationError as exc:
+                return ProviderToolCallResult(
+                    tool_name=tool_name,
+                    ok=False,
+                    error=f"Validation error for tool '{tool_name}': {exc}",
+                )
+            if self._decision_state_service is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_service_not_configured")
+            decision_state = self._decision_state_service.add_criterion(
+                decision_id=tool_input.decision_state_id,
+                criterion_id=tool_input.criterion_id,
+                label=tool_input.label,
+                weight=tool_input.weight,
+            )
+            if decision_state is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_not_found")
+            return ProviderToolCallResult(
+                tool_name=tool_name,
+                ok=True,
+                result={"decision_state": decision_state.model_dump(mode="json")},
+            )
+
+        if tool_name == "memorii_decision_add_evidence":
+            try:
+                tool_input = DecisionAddEvidenceInput.model_validate(arguments)
+            except ValidationError as exc:
+                return ProviderToolCallResult(
+                    tool_name=tool_name,
+                    ok=False,
+                    error=f"Validation error for tool '{tool_name}': {exc}",
+                )
+            if self._decision_state_service is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_service_not_configured")
+            decision_state = self._decision_state_service.add_evidence(
+                decision_id=tool_input.decision_state_id,
+                evidence_id=tool_input.evidence_id,
+                content=tool_input.content,
+                polarity=tool_input.polarity,
+                option_id=tool_input.option_id,
+                source_ids=tool_input.source_ids,
+            )
+            if decision_state is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_not_found")
+            return ProviderToolCallResult(
+                tool_name=tool_name,
+                ok=True,
+                result={"decision_state": decision_state.model_dump(mode="json")},
+            )
+
+        if tool_name == "memorii_decision_set_recommendation":
+            try:
+                tool_input = DecisionSetRecommendationInput.model_validate(arguments)
+            except ValidationError as exc:
+                return ProviderToolCallResult(
+                    tool_name=tool_name,
+                    ok=False,
+                    error=f"Validation error for tool '{tool_name}': {exc}",
+                )
+            if self._decision_state_service is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_service_not_configured")
+            decision_state = self._decision_state_service.update_recommendation(
+                decision_id=tool_input.decision_state_id,
+                recommendation=tool_input.recommendation,
+            )
+            if decision_state is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_not_found")
+            return ProviderToolCallResult(
+                tool_name=tool_name,
+                ok=True,
+                result={"decision_state": decision_state.model_dump(mode="json")},
+            )
+
+        if tool_name == "memorii_decision_finalize":
+            try:
+                tool_input = DecisionFinalizeInput.model_validate(arguments)
+            except ValidationError as exc:
+                return ProviderToolCallResult(
+                    tool_name=tool_name,
+                    ok=False,
+                    error=f"Validation error for tool '{tool_name}': {exc}",
+                )
+            if self._decision_state_service is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_service_not_configured")
+            decision_state = self._decision_state_service.record_final_decision(
+                decision_id=tool_input.decision_state_id,
+                final_decision=tool_input.final_decision,
+            )
+            if decision_state is None:
+                return ProviderToolCallResult(tool_name=tool_name, ok=False, error="decision_state_not_found")
+            return ProviderToolCallResult(
+                tool_name=tool_name,
+                ok=True,
+                result={"decision_state": decision_state.model_dump(mode="json")},
+            )
+
         if tool_name == "memorii_get_state_summary":
             try:
                 tool_input = GetStateSummaryInput.model_validate(arguments)
