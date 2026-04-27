@@ -22,6 +22,8 @@ def _promotion_snapshot(
     repeated_across_episodes: int = 0,
     explicit_user_memory_request: bool = False,
     related_memory_ids: list[str] | None = None,
+    source_ids: list[str] | None = None,
+    metadata: dict[str, object] | None = None,
 ) -> EvalSnapshot:
     return EvalSnapshot(
         snapshot_id=snapshot_id,
@@ -30,10 +32,17 @@ def _promotion_snapshot(
             "candidate_id": candidate_id,
             "candidate_type": candidate_type.value,
             "content": content,
+            "source_ids": source_ids or [f"src:{snapshot_id}"],
             "created_from": created_from,
             "repeated_across_episodes": repeated_across_episodes,
             "explicit_user_memory_request": explicit_user_memory_request,
             "related_memory_ids": related_memory_ids or [],
+            "metadata": metadata
+            or {
+                "golden_version": "promotion_v1",
+                "curation_tier": "reviewed",
+                "llm_followup_expected": bool(expected_output.get("requires_judge_review") is True),
+            },
         },
         expected_output=expected_output,
         source="offline_golden",
@@ -45,6 +54,7 @@ def _promotion_snapshot(
 def promotion_golden_v1() -> list[EvalSnapshot]:
     """Return curated v1 promotion snapshots for deterministic offline evals."""
     return [
+        # Core required scenarios.
         _promotion_snapshot(
             snapshot_id="promotion:v1:explicit-user-preference",
             candidate_id="cand:user:concise-direct",
@@ -58,11 +68,7 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
                 "min_confidence": 0.8,
                 "rationale_contains": "explicit_user_memory_request",
             },
-            tags=[
-                "domain:personal_assistant",
-                "task_type:interaction_style",
-                "memory_class:user_memory",
-            ],
+            tags=["domain:personal_assistant", "task_type:interaction_style", "memory_class:user_memory"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:inferred-repeated-preference",
@@ -71,12 +77,13 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
             content="Across several chats, user repeatedly asks for concise output.",
             created_from="observation",
             repeated_across_episodes=4,
-            expected_output={"requires_judge_review": True},
-            tags=[
-                "domain:personal_assistant",
-                "task_type:interaction_style",
-                "memory_class:user_memory",
-            ],
+            expected_output={
+                "promote": False,
+                "max_confidence": 0.5,
+                "rationale_contains": "observation_not_promoted",
+                "requires_judge_review": True,
+            },
+            tags=["domain:personal_assistant", "task_type:interaction_style", "memory_class:user_memory"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:one-off-trip-preference",
@@ -85,16 +92,8 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
             content="For this Iceland trip, prefer one hotel base.",
             created_from="observation",
             repeated_across_episodes=1,
-            expected_output={
-                "promote": False,
-                "max_confidence": 0.5,
-                "rationale_contains": "observation_not_promoted",
-            },
-            tags=[
-                "domain:travel_planning",
-                "task_type:temporary_planning_preference",
-                "memory_class:user_memory",
-            ],
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:travel_planning", "task_type:temporary_planning_preference", "memory_class:user_memory"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:noisy-observation-tests-passed",
@@ -102,16 +101,8 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
             candidate_type=PromotionCandidateType.EPISODIC,
             content="User asked whether tests passed.",
             created_from="observation",
-            expected_output={
-                "promote": False,
-                "max_confidence": 0.5,
-                "rationale_contains": "observation_not_promoted",
-            },
-            tags=[
-                "domain:software_engineering",
-                "task_type:implementation",
-                "memory_class:episodic",
-            ],
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:software_engineering", "task_type:implementation", "memory_class:episodic"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:task-outcome-jsonl-store",
@@ -119,17 +110,8 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
             candidate_type=PromotionCandidateType.EPISODIC,
             content="Implemented JSONL memory plane store with latest-wins replay.",
             created_from="task_outcome",
-            expected_output={
-                "promote": True,
-                "target_plane": "episodic",
-                "min_confidence": 0.7,
-                "rationale_contains": "task_outcome",
-            },
-            tags=[
-                "domain:software_engineering",
-                "task_type:implementation",
-                "memory_class:episodic",
-            ],
+            expected_output={"promote": True, "target_plane": "episodic", "min_confidence": 0.7, "rationale_contains": "task_outcome"},
+            tags=["domain:software_engineering", "task_type:implementation", "memory_class:episodic"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:investigation-conclusion-refresh-token",
@@ -143,11 +125,7 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
                 "min_confidence": 0.7,
                 "rationale_contains": "investigation_conclusion",
             },
-            tags=[
-                "domain:debugging_incident_investigation",
-                "task_type:root_cause_analysis",
-                "memory_class:episodic",
-            ],
+            tags=["domain:debugging_incident_investigation", "task_type:root_cause_analysis", "memory_class:episodic"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:decision-finalized-qdrant",
@@ -161,11 +139,7 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
                 "min_confidence": 0.7,
                 "rationale_contains": "decision_finalized",
             },
-            tags=[
-                "domain:decision_making_architecture",
-                "task_type:decision_making",
-                "memory_class:episodic",
-            ],
+            tags=["domain:decision_making_architecture", "task_type:decision_making", "memory_class:episodic"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:semantic-jsonl-repeated",
@@ -180,11 +154,7 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
                 "min_confidence": 0.6,
                 "rationale_contains": "repeated_across_episodes",
             },
-            tags=[
-                "domain:software_engineering",
-                "task_type:system_design",
-                "memory_class:semantic",
-            ],
+            tags=["domain:software_engineering", "task_type:system_design", "memory_class:semantic"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:project-fact-locomo-parked",
@@ -199,11 +169,7 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
                 "min_confidence": 0.6,
                 "rationale_contains": "repeated_across_episodes",
             },
-            tags=[
-                "domain:product_project_management",
-                "task_type:project_planning",
-                "memory_class:project_fact",
-            ],
+            tags=["domain:product_project_management", "task_type:project_planning", "memory_class:project_fact"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:user-memory-single-observation-tables",
@@ -212,16 +178,8 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
             content="User prefers tables.",
             created_from="observation",
             repeated_across_episodes=1,
-            expected_output={
-                "promote": False,
-                "max_confidence": 0.5,
-                "rationale_contains": "observation_not_promoted",
-            },
-            tags=[
-                "domain:personal_assistant",
-                "task_type:preference_inference",
-                "memory_class:user_memory",
-            ],
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:personal_assistant", "task_type:preference_inference", "memory_class:user_memory"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:customer-security-review-repeated",
@@ -236,32 +194,16 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
                 "min_confidence": 0.6,
                 "rationale_contains": "repeated_across_episodes",
             },
-            tags=[
-                "domain:customer_support_operations",
-                "task_type:customer_follow_up",
-                "memory_class:project_fact",
-            ],
+            tags=["domain:customer_support_operations", "task_type:customer_follow_up", "memory_class:project_fact"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:research-conclusion-blf",
             candidate_id="cand:research:blf-belief-updates",
             candidate_type=PromotionCandidateType.EPISODIC,
-            content=(
-                "Literature review concluded BLF-style belief updates help separate "
-                "support, refutation, and uncertainty."
-            ),
+            content="Literature review concluded BLF-style belief updates help separate support, refutation, and uncertainty.",
             created_from="task_outcome",
-            expected_output={
-                "promote": True,
-                "target_plane": "episodic",
-                "min_confidence": 0.7,
-                "rationale_contains": "task_outcome",
-            },
-            tags=[
-                "domain:research_analysis",
-                "task_type:literature_review",
-                "memory_class:episodic",
-            ],
+            expected_output={"promote": True, "target_plane": "episodic", "min_confidence": 0.7, "rationale_contains": "task_outcome"},
+            tags=["domain:research_analysis", "task_type:literature_review", "memory_class:episodic"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:planning-one-off-locomo-next-week",
@@ -270,16 +212,8 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
             content="Let's prioritize LoCoMo next week.",
             created_from="observation",
             repeated_across_episodes=1,
-            expected_output={
-                "promote": False,
-                "max_confidence": 0.5,
-                "rationale_contains": "observation_not_promoted",
-            },
-            tags=[
-                "domain:product_project_management",
-                "task_type:planning",
-                "memory_class:project_fact",
-            ],
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:product_project_management", "task_type:planning", "memory_class:project_fact"],
         ),
         _promotion_snapshot(
             snapshot_id="promotion:v1:duplicate-merge-placeholder",
@@ -292,12 +226,114 @@ def promotion_golden_v1() -> list[EvalSnapshot]:
             expected_output={
                 "promote": True,
                 "target_plane": "semantic",
+                "min_confidence": 0.6,
+                "rationale_contains": "repeated_across_episodes",
                 "requires_judge_review": True,
             },
-            tags=[
-                "domain:software_engineering",
-                "task_type:memory_maintenance",
-                "memory_class:semantic",
-            ],
+            tags=["domain:software_engineering", "task_type:memory_maintenance", "memory_class:semantic"],
+        ),
+        # Additional hard negatives and LLM-finer-distinction placeholders.
+        _promotion_snapshot(
+            snapshot_id="promotion:v1:semantic-single-mention-no-promotion",
+            candidate_id="cand:semantic:single-mention-style-guide",
+            candidate_type=PromotionCandidateType.SEMANTIC,
+            content="A one-off note mentions using feature flags sometime.",
+            created_from="observation",
+            repeated_across_episodes=1,
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:software_engineering", "task_type:system_design", "memory_class:semantic"],
+        ),
+        _promotion_snapshot(
+            snapshot_id="promotion:v1:project-fact-single-ticket-no-promotion",
+            candidate_id="cand:project:single-ticket-priority",
+            candidate_type=PromotionCandidateType.PROJECT_FACT,
+            content="One ticket requested P2 reprioritization for this sprint.",
+            created_from="observation",
+            repeated_across_episodes=1,
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:product_project_management", "task_type:planning", "memory_class:project_fact"],
+        ),
+        _promotion_snapshot(
+            snapshot_id="promotion:v1:user-memory-implicit-tone-single",
+            candidate_id="cand:user:single-tone-hint",
+            candidate_type=PromotionCandidateType.USER_MEMORY,
+            content="User briefly asked for a friendlier tone once.",
+            created_from="observation",
+            repeated_across_episodes=1,
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:personal_assistant", "task_type:interaction_style", "memory_class:user_memory"],
+        ),
+        _promotion_snapshot(
+            snapshot_id="promotion:v1:episodic-observation-standup-note",
+            candidate_id="cand:episode:standup-note",
+            candidate_type=PromotionCandidateType.EPISODIC,
+            content="Team standup mentioned maybe reviewing docs tomorrow.",
+            created_from="observation",
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:product_project_management", "task_type:project_planning", "memory_class:episodic"],
+        ),
+        _promotion_snapshot(
+            snapshot_id="promotion:v1:customer-constraint-two-episodes-no-promotion",
+            candidate_id="cand:project:customer-constraint-two-episodes",
+            candidate_type=PromotionCandidateType.PROJECT_FACT,
+            content="Customer asks for manual validation before rollout in two tickets.",
+            created_from="observation",
+            repeated_across_episodes=2,
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:customer_support_operations", "task_type:customer_follow_up", "memory_class:project_fact"],
+        ),
+        _promotion_snapshot(
+            snapshot_id="promotion:v1:research-note-single-paper-no-promotion",
+            candidate_id="cand:research:single-paper-note",
+            candidate_type=PromotionCandidateType.SEMANTIC,
+            content="One paper claims this indexing trick may help retrieval quality.",
+            created_from="observation",
+            repeated_across_episodes=1,
+            expected_output={"promote": False, "max_confidence": 0.5, "rationale_contains": "observation_not_promoted"},
+            tags=["domain:research_analysis", "task_type:literature_review", "memory_class:semantic"],
+        ),
+        _promotion_snapshot(
+            snapshot_id="promotion:v1:semantic-repeated-but-needs-scope-review",
+            candidate_id="cand:semantic:repeated-tenant-policy",
+            candidate_type=PromotionCandidateType.SEMANTIC,
+            content="Repeatedly observed policy: EU tenant data cannot leave region.",
+            created_from="observation",
+            repeated_across_episodes=4,
+            expected_output={
+                "promote": True,
+                "target_plane": "semantic",
+                "min_confidence": 0.6,
+                "rationale_contains": "repeated_across_episodes",
+                "requires_judge_review": True,
+            },
+            tags=["domain:decision_making_architecture", "task_type:system_design", "memory_class:semantic"],
+            metadata={
+                "golden_version": "promotion_v1",
+                "curation_tier": "reviewed",
+                "llm_followup_expected": True,
+                "llm_followup_reason": "needs_scope_and_normativity_check",
+            },
+        ),
+        _promotion_snapshot(
+            snapshot_id="promotion:v1:project-fact-repeated-but-timebound",
+            candidate_id="cand:project:release-freeze-repeated",
+            candidate_type=PromotionCandidateType.PROJECT_FACT,
+            content="Release freeze every Friday appears repeatedly in recent sprints.",
+            created_from="observation",
+            repeated_across_episodes=3,
+            expected_output={
+                "promote": True,
+                "target_plane": "project_fact",
+                "min_confidence": 0.6,
+                "rationale_contains": "repeated_across_episodes",
+                "requires_judge_review": True,
+            },
+            tags=["domain:product_project_management", "task_type:project_planning", "memory_class:project_fact"],
+            metadata={
+                "golden_version": "promotion_v1",
+                "curation_tier": "reviewed",
+                "llm_followup_expected": True,
+                "llm_followup_reason": "possible_temporal_bound_fact",
+            },
         ),
     ]

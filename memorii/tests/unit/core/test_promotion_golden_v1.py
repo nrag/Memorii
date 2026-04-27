@@ -6,6 +6,22 @@ from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
 from memorii.core.promotion.models import PromotionContext
 
 
+def _judge_review_snapshots() -> list[EvalSnapshot]:
+    return [
+        snapshot
+        for snapshot in promotion_golden_v1()
+        if bool((snapshot.expected_output or {}).get("requires_judge_review") is True)
+    ]
+
+
+def _deterministic_snapshots() -> list[EvalSnapshot]:
+    return [
+        snapshot
+        for snapshot in promotion_golden_v1()
+        if not bool((snapshot.expected_output or {}).get("requires_judge_review") is True)
+    ]
+
+
 def test_promotion_golden_v1_has_minimum_snapshot_count() -> None:
     snapshots = promotion_golden_v1()
     assert len(snapshots) >= 14
@@ -29,6 +45,14 @@ def test_promotion_golden_v1_inputs_validate_as_promotion_context() -> None:
     for snapshot in snapshots:
         context = PromotionContext.model_validate(snapshot.input_payload)
         assert context.candidate_id.startswith("cand:")
+
+
+def test_promotion_golden_v1_every_snapshot_has_source_ids_and_metadata() -> None:
+    snapshots = promotion_golden_v1()
+    for snapshot in snapshots:
+        context = PromotionContext.model_validate(snapshot.input_payload)
+        assert len(context.source_ids) >= 1
+        assert bool(context.metadata)
 
 
 def test_promotion_golden_v1_covers_required_domains() -> None:
@@ -74,6 +98,19 @@ def test_promotion_golden_v1_every_snapshot_has_required_tag_categories() -> Non
         assert any(tag.startswith("memory_class:") for tag in snapshot.tags)
 
 
+def test_promotion_golden_v1_counts_positive_negative_and_judge_review_cases() -> None:
+    snapshots = promotion_golden_v1()
+    expected_outputs = [snapshot.expected_output or {} for snapshot in snapshots]
+
+    positive_count = sum(1 for output in expected_outputs if output.get("promote") is True)
+    negative_count = sum(1 for output in expected_outputs if output.get("promote") is False)
+    judge_review_count = sum(1 for output in expected_outputs if output.get("requires_judge_review") is True)
+
+    assert positive_count >= 8
+    assert negative_count >= 8
+    assert judge_review_count >= 4
+
+
 def test_offline_eval_runner_runs_full_promotion_golden_set() -> None:
     snapshots = promotion_golden_v1()
     runner = OfflineLLMEvalRunner()
@@ -84,12 +121,25 @@ def test_offline_eval_runner_runs_full_promotion_golden_set() -> None:
     assert report.failed_cases == 0
 
 
-def test_offline_eval_runner_reports_deterministic_pass_rate() -> None:
+def test_offline_eval_runner_reports_deterministic_pass_rate_for_non_judge_cases() -> None:
+    deterministic_snapshots = _deterministic_snapshots()
     runner = OfflineLLMEvalRunner()
-    report = runner.run_snapshots(promotion_golden_v1())
 
+    report = runner.run_snapshots(deterministic_snapshots)
+
+    assert report.total_cases == len(deterministic_snapshots)
     assert "promotion" in report.pass_rate_by_decision_point
     assert report.pass_rate_by_decision_point["promotion"] == 1.0
+
+
+def test_ambiguous_judge_review_cases_run_separately() -> None:
+    judge_snapshots = _judge_review_snapshots()
+    runner = OfflineLLMEvalRunner()
+
+    report = runner.run_snapshots(judge_snapshots)
+
+    assert report.total_cases == len(judge_snapshots)
+    assert all(result.requires_judge_review is True for result in report.results)
 
 
 def test_inferred_preference_case_is_marked_for_judge_review() -> None:
