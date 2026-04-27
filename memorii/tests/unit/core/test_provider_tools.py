@@ -10,7 +10,7 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, SolverCreatedBy, So
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.provider.service import ProviderMemoryService, _decision_evidence_ids
 from memorii.core.work_state.models import WorkStateKind, WorkStateStatus
 from memorii.core.work_state.service import WorkStateService
 from memorii.stores.overlays import InMemoryOverlayStore
@@ -209,6 +209,142 @@ def test_decision_finalize_marks_decided() -> None:
     assert result.ok is True
     assert result.result["decision_state"]["status"] == DecisionStatus.DECIDED.value
     assert result.result["decision_state"]["final_decision"] == "Use Redis"
+    assert result.result["work_state_outcome_recorded"] is False
+    assert result.result["work_state_outcome_event"] is None
+    assert "work_state_outcome_error" not in result.result
+
+
+def test_decision_finalize_linked_decision_records_completed_work_state_outcome() -> None:
+    work_state_service = WorkStateService()
+    decision_state_service = DecisionStateService()
+    work_state = work_state_service.open_or_resume_work(
+        title="Choose cache",
+        kind=WorkStateKind.DECISION,
+        task_id="task:decision:outcome",
+    )
+    decision = decision_state_service.open_decision(
+        question="Which cache?",
+        work_state_id=work_state.work_state_id,
+        task_id=work_state.task_id,
+    )
+    decision_state_service.add_evidence(
+        decision_id=decision.decision_id,
+        evidence_id="ev:cache:1",
+        content="Current load profile is bursty",
+        polarity=DecisionEvidencePolarity.NEUTRAL,
+        source_ids=["src:load-profile"],
+    )
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        decision_state_service=decision_state_service,
+    )
+
+    result = provider.handle_tool_call(
+        "memorii_decision_finalize",
+        {
+            "decision_state_id": decision.decision_id,
+            "final_decision": "Use Redis",
+        },
+    )
+
+    assert result.ok is True
+    assert result.result["decision_state"]["status"] == DecisionStatus.DECIDED.value
+    assert result.result["work_state_outcome_recorded"] is True
+    assert result.result["work_state_outcome_event"]["status"] == WorkStateStatus.RESOLVED.value
+    assert "work_state_outcome_error" not in result.result
+    events = work_state_service.list_work_state_events(work_state.work_state_id)
+    assert events
+    assert events[-1].content == "Decision finalized: Use Redis"
+
+
+def test_decision_evidence_ids_dedupes_with_stable_order() -> None:
+    decision_state_service = DecisionStateService()
+    decision = decision_state_service.open_decision(question="Which db?")
+    decision_state_service.add_evidence(
+        decision_id=decision.decision_id,
+        evidence_id="ev:1",
+        content="first",
+        polarity=DecisionEvidencePolarity.NEUTRAL,
+        source_ids=["src:1", "src:2", "ev:1"],
+    )
+    decision_state_service.add_evidence(
+        decision_id=decision.decision_id,
+        evidence_id="src:2",
+        content="second",
+        polarity=DecisionEvidencePolarity.NEUTRAL,
+        source_ids=["src:3", "src:1"],
+    )
+    updated = decision_state_service.get_decision(decision.decision_id)
+    assert updated is not None
+
+    assert _decision_evidence_ids(updated) == ["ev:1", "src:1", "src:2", "src:3"]
+
+
+def test_decision_finalize_linked_outcome_records_deduped_evidence_ids() -> None:
+    work_state_service = WorkStateService()
+    decision_state_service = DecisionStateService()
+    work_state = work_state_service.open_or_resume_work(title="Choose queue", kind=WorkStateKind.DECISION)
+    decision = decision_state_service.open_decision(question="Which queue?", work_state_id=work_state.work_state_id)
+    decision_state_service.add_evidence(
+        decision_id=decision.decision_id,
+        evidence_id="ev:1",
+        content="evidence",
+        polarity=DecisionEvidencePolarity.NEUTRAL,
+        source_ids=["src:1", "src:1", "ev:1"],
+    )
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        decision_state_service=decision_state_service,
+    )
+
+    result = provider.handle_tool_call(
+        "memorii_decision_finalize",
+        {"decision_state_id": decision.decision_id, "final_decision": "Use queue A"},
+    )
+
+    assert result.ok is True
+    events = work_state_service.list_work_state_events(work_state.work_state_id)
+    assert events[-1].evidence_ids == ["ev:1", "src:1"]
+
+
+def test_decision_finalize_without_work_state_service_does_not_fail() -> None:
+    decision_state_service = DecisionStateService()
+    decision = decision_state_service.open_decision(question="Which cache?", work_state_id="ws:decision:missing")
+    provider = ProviderMemoryService(
+        work_state_service=None,
+        decision_state_service=decision_state_service,
+    )
+
+    result = provider.handle_tool_call(
+        "memorii_decision_finalize",
+        {"decision_state_id": decision.decision_id, "final_decision": "Use Redis"},
+    )
+
+    assert result.ok is True
+    assert result.result["decision_state"]["status"] == DecisionStatus.DECIDED.value
+    assert result.result["work_state_outcome_recorded"] is False
+    assert result.result["work_state_outcome_event"] is None
+    assert "work_state_outcome_error" not in result.result
+
+
+def test_decision_finalize_missing_linked_work_state_returns_error_but_succeeds() -> None:
+    decision_state_service = DecisionStateService()
+    decision = decision_state_service.open_decision(question="Which cache?", work_state_id="ws:decision:unknown")
+    provider = ProviderMemoryService(
+        work_state_service=WorkStateService(),
+        decision_state_service=decision_state_service,
+    )
+
+    result = provider.handle_tool_call(
+        "memorii_decision_finalize",
+        {"decision_state_id": decision.decision_id, "final_decision": "Use Redis"},
+    )
+
+    assert result.ok is True
+    assert result.result["decision_state"]["status"] == DecisionStatus.DECIDED.value
+    assert result.result["work_state_outcome_recorded"] is False
+    assert result.result["work_state_outcome_event"] is None
+    assert result.result["work_state_outcome_error"] == "work_state_not_found"
 
 
 def test_decision_tool_unknown_decision_id_returns_not_found() -> None:
