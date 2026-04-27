@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.promotion.models import PromotionContext
+from memorii.core.promotion.legacy_models import LegacyPromotionContext as PromotionContext
 from memorii.domain.enums import CommitStatus
 
 

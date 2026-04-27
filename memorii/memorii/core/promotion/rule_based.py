@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.promotion.models import (
+from memorii.core.promotion.legacy_models import (
     PromotionAction,
     PromotionContext,
     PromotionDecision,
