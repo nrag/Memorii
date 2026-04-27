@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
+from memorii.core.promotion.models import PromotionContext
 from memorii.core.solver import SolverFrontierPlanner
 from memorii.core.decision_state.models import DecisionEvidencePolarity, DecisionStatus
 from memorii.core.decision_state.service import DecisionStateService
@@ -18,6 +20,11 @@ from memorii.stores.solver_graph import InMemorySolverGraphStore
 
 
 NOW = datetime.now(UTC)
+
+
+class _RaisingPromotionDecisionProvider:
+    def decide(self, *, context: PromotionContext):  # type: ignore[no-untyped-def]
+        raise RuntimeError("promotion provider failure")
 
 
 def _make_node(node_id: str, *, content: dict[str, object]) -> SolverNode:
@@ -511,6 +518,9 @@ def test_record_progress_creates_episodic_memory_candidate_with_work_state_event
     assert candidate.content["work_state_event_id"] == result.result["event_id"]
     assert candidate.content["event_type"] == "progress"
     assert candidate.source_kind == "provider:work_state_event"
+    assert result.result["promotion_decision_applied"] is True
+    assert result.result["promotion_decision"]["promote"] is False
+    assert result.result["promotion_trace_id"]
 
 
 def test_record_outcome_completed_marks_state_resolved() -> None:
@@ -526,6 +536,9 @@ def test_record_outcome_completed_marks_state_resolved() -> None:
     assert result.ok is True
     assert result.result["status"] == "resolved"
     assert result.result["memory_candidate_created"] is True
+    assert result.result["promotion_decision_applied"] is True
+    assert result.result["promotion_decision"]["promote"] is True
+    assert result.result["promotion_decision"]["target_plane"] == "episodic"
 
 
 def test_record_outcome_creates_episodic_memory_candidate() -> None:
@@ -547,6 +560,8 @@ def test_record_outcome_creates_episodic_memory_candidate() -> None:
     assert candidate.content["event_type"] == "outcome"
     assert candidate.content["outcome"] == "completed"
     assert candidate.content["work_state_status"] == "resolved"
+    assert candidate.content["promotion_decision"]["promote"] is True
+    assert candidate.content["promotion_trace_id"] == result.result["promotion_trace_id"]
 
 
 def test_record_outcome_abandoned_marks_state_abandoned() -> None:
@@ -628,6 +643,10 @@ def test_record_progress_with_candidate_emission_disabled_returns_recorded_witho
 
     assert result.ok is True
     assert result.result["memory_candidate_created"] is False
+    assert result.result["promotion_decision_applied"] is False
+    assert result.result["promotion_decision"] is None
+    assert result.result["promotion_trace_id"] is None
+    assert result.result["promotion_decision_error"] is None
     assert "memory_candidate_error" not in result.result
     staged = provider._memory_plane.list_records(status=CommitStatus.CANDIDATE, domains=[MemoryDomain.EPISODIC])
     assert staged == []
@@ -658,6 +677,101 @@ def test_record_progress_candidate_stage_failure_does_not_fail_tool_call() -> No
     assert result.result["recorded"] is True
     assert result.result["memory_candidate_created"] is False
     assert result.result["memory_candidate_error"] == "stage failure"
+    assert result.result["promotion_decision_applied"] is False
+    assert result.result["promotion_decision"] is None
+    assert result.result["promotion_trace_id"] is None
+    assert result.result["promotion_decision_error"] is None
+
+
+def test_record_outcome_trace_store_appends_promotion_trace_when_configured() -> None:
+    work_state_service = WorkStateService()
+    trace_store = InMemoryLLMDecisionTraceStore()
+    provider = ProviderMemoryService(work_state_service=work_state_service, llm_decision_trace_store=trace_store)
+    created = work_state_service.open_or_resume_work(title="Trace append", task_id="task:trace:append")
+
+    result = provider.handle_tool_call(
+        "memorii_record_outcome",
+        {"work_state_id": created.work_state_id, "outcome": "completed", "content": "Completed with proof"},
+    )
+
+    assert result.ok is True
+    assert result.result["promotion_decision_applied"] is True
+    traces = trace_store.list_traces()
+    assert len(traces) == 1
+    assert traces[0].trace_id == result.result["promotion_trace_id"]
+
+
+def test_record_outcome_promotion_provider_failure_does_not_fail_tool_call() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        promotion_decision_provider=_RaisingPromotionDecisionProvider(),
+    )
+    created = work_state_service.open_or_resume_work(title="Promotion failure", task_id="task:promotion:failure")
+
+    result = provider.handle_tool_call(
+        "memorii_record_outcome",
+        {"work_state_id": created.work_state_id, "outcome": "completed", "content": "Still stages candidate"},
+    )
+
+    assert result.ok is True
+    assert result.result["memory_candidate_created"] is True
+    assert result.result["promotion_decision_applied"] is False
+    assert result.result["promotion_decision"] is None
+    assert result.result["promotion_trace_id"] is None
+    assert result.result["promotion_decision_error"] == "promotion provider failure"
+
+
+def test_record_outcome_with_explicit_none_promotion_provider_stages_without_decision_metadata() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service, promotion_decision_provider=None)
+    created = work_state_service.open_or_resume_work(title="No promotion provider", task_id="task:no:promotion-provider")
+
+    result = provider.handle_tool_call(
+        "memorii_record_outcome",
+        {"work_state_id": created.work_state_id, "outcome": "completed", "content": "Candidate still staged"},
+    )
+
+    assert result.ok is True
+    assert result.result["memory_candidate_created"] is True
+    assert result.result["promotion_decision_applied"] is False
+    assert result.result["promotion_decision"] is None
+    assert result.result["promotion_trace_id"] is None
+    assert result.result["promotion_decision_error"] is None
+
+
+def test_decision_finalize_records_candidate_with_decision_finalized_promotion_context() -> None:
+    work_state_service = WorkStateService()
+    decision_state_service = DecisionStateService()
+    work_state = work_state_service.open_or_resume_work(
+        title="Finalize architecture decision",
+        kind=WorkStateKind.DECISION,
+        task_id="task:decision:promotion",
+    )
+    decision = decision_state_service.open_decision(
+        question="Use provider architecture?",
+        work_state_id=work_state.work_state_id,
+        task_id=work_state.task_id,
+    )
+    provider = ProviderMemoryService(
+        work_state_service=work_state_service,
+        decision_state_service=decision_state_service,
+    )
+
+    result = provider.handle_tool_call(
+        "memorii_decision_finalize",
+        {"decision_state_id": decision.decision_id, "final_decision": "Use promotion provider"},
+    )
+
+    assert result.ok is True
+    assert result.result["memory_candidate_created"] is True
+    assert result.result["promotion_decision_applied"] is True
+    assert result.result["promotion_decision"]["promote"] is True
+    candidate_id = str(result.result["memory_candidate_id"])
+    candidate = provider._memory_plane.get_record(candidate_id)
+    assert candidate is not None
+    assert candidate.content["event_type"] == "decision_finalized"
+    assert candidate.content["promotion_decision"]["rationale"] == "decision_finalized"
 
 
 def test_record_progress_with_solver_run_binding_updates_resolution() -> None:
