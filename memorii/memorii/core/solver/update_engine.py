@@ -1,9 +1,11 @@
 """Structured solver update pipeline with abstention and verification."""
 
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from memorii.core.llm_decision.trace import LLMDecisionTraceStore
 from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
 from memorii.core.solver.belief import update_solver_belief
 from memorii.core.solver.models import NextTestAction
@@ -14,6 +16,9 @@ from memorii.domain.events import EventRecord
 from memorii.domain.solver_graph.edges import SolverEdge
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
+
+if TYPE_CHECKING:
+    from memorii.core.belief.provider import BeliefUpdateProvider
 
 
 class SolverDecisionOutput(BaseModel):
@@ -73,8 +78,20 @@ class SolverUpdateResult(BaseModel):
 
 
 class SolverUpdateEngine:
-    def __init__(self, verifier: SolverDecisionVerifier | None = None) -> None:
+    def __init__(
+        self,
+        verifier: SolverDecisionVerifier | None = None,
+        belief_update_provider: "BeliefUpdateProvider | None" = None,
+        llm_decision_trace_store: LLMDecisionTraceStore | None = None,
+    ) -> None:
         self._verifier = verifier or SolverDecisionVerifier()
+        if belief_update_provider is None:
+            from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
+
+            self._belief_update_provider = RuleBasedBeliefUpdateProvider()
+        else:
+            self._belief_update_provider = belief_update_provider
+        self._llm_decision_trace_store = llm_decision_trace_store
 
     def apply_update(
         self,
@@ -230,14 +247,39 @@ class SolverUpdateEngine:
         if edge_state == CommitStatus.COMMITTED:
             committed_edge_ids.append(link_edge.id)
 
-        decision_belief = update_solver_belief(
+        from memorii.core.belief.models import BeliefUpdateContext
+
+        belief_context = BeliefUpdateContext(
             prior_belief=prior_belief,
             decision=final_decision,
             evidence_count=len(parsed.evidence_ids),
             missing_evidence_count=len(parsed.missing_evidence),
             verifier_downgraded=verifier_downgraded,
             conflict_count=0,
+            evidence_ids=list(parsed.evidence_ids),
+            missing_evidence=list(parsed.missing_evidence),
+            node_id=decision_node.id,
+            solver_run_id=update_input.solver_run_id,
+            metadata={
+                "task_id": update_input.task_id,
+                "execution_node_id": update_input.execution_node_id,
+                "observation_source_ref": update_input.observation_source_ref,
+            },
         )
+        try:
+            belief_decision, belief_trace = self._belief_update_provider.update(context=belief_context)
+            decision_belief = belief_decision.belief
+            if self._llm_decision_trace_store is not None:
+                self._llm_decision_trace_store.append_trace(belief_trace)
+        except Exception:
+            decision_belief = update_solver_belief(
+                prior_belief=prior_belief,
+                decision=final_decision,
+                evidence_count=len(parsed.evidence_ids),
+                missing_evidence_count=len(parsed.missing_evidence),
+                verifier_downgraded=verifier_downgraded,
+                conflict_count=0,
+            )
 
         overlay = SolverOverlayVersion(
             version_id=next_overlay_version_id,

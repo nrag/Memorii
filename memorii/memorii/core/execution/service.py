@@ -2,11 +2,13 @@
 
 import logging
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.consolidation.consolidator import Consolidator
 from memorii.core.directory.directory import MemoryDirectory
+from memorii.core.llm_decision.trace import LLMDecisionTraceStore
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.provider.models import ProviderOperation, ProviderWriteDecision
@@ -31,6 +33,9 @@ from memorii.domain.writebacks import WritebackCandidate
 from memorii.stores.base.interfaces import EventLogStore, ExecutionGraphStore, OverlayStore, SolverGraphStore
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from memorii.core.belief.provider import BeliefUpdateProvider
 
 
 class RuntimeObservationInput(BaseModel):
@@ -100,6 +105,8 @@ class RuntimeStepService:
         consolidator: Consolidator | None = None,
         directory: MemoryDirectory | None = None,
         solver_update_engine: SolverUpdateEngine | None = None,
+        belief_update_provider: "BeliefUpdateProvider | None" = None,
+        llm_decision_trace_store: LLMDecisionTraceStore | None = None,
         memory_plane: InMemoryMemoryPlane | None = None,
         model_provider: SolverModelProvider | None = None,
     ) -> None:
@@ -111,7 +118,16 @@ class RuntimeStepService:
         self._retrieval_planner = retrieval_planner or RetrievalPlanner()
         self._consolidator = consolidator or Consolidator()
         self._directory = directory or MemoryDirectory()
-        self._solver_update_engine = solver_update_engine or SolverUpdateEngine()
+        if belief_update_provider is None:
+            from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
+
+            default_belief_provider = RuleBasedBeliefUpdateProvider()
+        else:
+            default_belief_provider = belief_update_provider
+        self._solver_update_engine = solver_update_engine or SolverUpdateEngine(
+            belief_update_provider=default_belief_provider,
+            llm_decision_trace_store=llm_decision_trace_store,
+        )
         self._memory_plane = memory_plane or InMemoryMemoryPlane()
         self._memory_plane_service = self._memory_plane.service
         self._resume_service = ResumeService(execution_store, solver_store, overlay_store)
