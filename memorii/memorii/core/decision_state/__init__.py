@@ -10,6 +10,7 @@ from memorii.core.decision_state.models import (
 )
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.store import DecisionStateStore, InMemoryDecisionStateStore
+from memorii.core.decision_state.summary import DecisionStateSummary, summarize_decision_state
 
 __all__ = [
     "DecisionCriterion",
@@ -20,5 +21,7 @@ __all__ = [
     "DecisionStateService",
     "DecisionStateStore",
     "DecisionStatus",
+    "DecisionStateSummary",
     "InMemoryDecisionStateStore",
+    "summarize_decision_state",
 ]

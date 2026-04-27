@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from memorii.core.decision_state.summary import DecisionStateSummary
 from memorii.core.recall.models import WorkStateEventSummary, WorkStateSummary
 from memorii.core.work_state.models import WorkStateEvent, WorkStateEventType, WorkStateRecord, WorkStateStatus
 
@@ -17,6 +18,7 @@ _STATUS_ORDER = {
 def summarize_work_states(
     states: list[WorkStateRecord],
     events_by_state_id: dict[str, list[WorkStateEvent]] | None = None,
+    decision_summary_by_state_id: dict[str, DecisionStateSummary] | None = None,
     max_events_per_state: int = 3,
 ) -> list[WorkStateSummary]:
     sorted_states = sorted(
@@ -70,6 +72,7 @@ def summarize_work_states(
                 recent_events=recent_events,
                 latest_progress=latest_progress,
                 latest_outcome=latest_outcome,
+                decision_state=(decision_summary_by_state_id or {}).get(state.work_state_id),
             )
         )
     return summaries

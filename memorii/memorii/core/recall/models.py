@@ -6,6 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from memorii.core.decision_state.summary import DecisionStateSummary
 from memorii.core.work_state.models import WorkStateKind, WorkStateStatus
 
 
@@ -34,6 +35,7 @@ class WorkStateSummary(BaseModel):
     recent_events: list[WorkStateEventSummary] = Field(default_factory=list)
     latest_progress: str | None = None
     latest_outcome: str | None = None
+    decision_state: DecisionStateSummary | None = None
 
     model_config = ConfigDict(extra="forbid")
 

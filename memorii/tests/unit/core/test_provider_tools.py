@@ -934,6 +934,127 @@ def test_get_state_summary_includes_recent_work_state_events() -> None:
     assert "latest_outcome" in work_states[0]
 
 
+def test_get_state_summary_for_decision_work_includes_decision_block_open() -> None:
+    work_state_service = WorkStateService()
+    decision_state_service = DecisionStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service, decision_state_service=decision_state_service)
+    work_state = work_state_service.open_or_resume_work(
+        title="Select vector database",
+        kind=WorkStateKind.DECISION,
+        task_id="task:decision:summary:open",
+    )
+    decision = decision_state_service.open_decision(
+        question="Which vector DB should we use?",
+        work_state_id=work_state.work_state_id,
+        task_id="task:decision:summary:open",
+        unresolved_questions=["cost under sustained load"],
+    )
+    decision_state_service.add_option(decision_id=decision.decision_id, option_id="opt:qdrant", label="Qdrant")
+    decision_state_service.add_option(decision_id=decision.decision_id, option_id="opt:weaviate", label="Weaviate")
+    decision_state_service.add_criterion(decision_id=decision.decision_id, criterion_id="crit:latency", label="latency")
+    decision_state_service.add_criterion(
+        decision_id=decision.decision_id,
+        criterion_id="crit:ops",
+        label="operational simplicity",
+    )
+    decision_state_service.update_recommendation(decision_id=decision.decision_id, recommendation="Qdrant")
+
+    result = provider.handle_tool_call("memorii_get_state_summary", {"task_id": "task:decision:summary:open"})
+
+    assert result.ok is True
+    summary = result.result["work_states"][0]["decision_state"]
+    assert summary["question"] == "Which vector DB should we use?"
+    assert summary["status"] == DecisionStatus.OPEN.value
+    assert summary["option_labels"] == ["Qdrant", "Weaviate"]
+    assert summary["criteria_labels"] == ["latency", "operational simplicity"]
+    assert summary["recommendation"] == "Qdrant"
+    assert summary["unresolved_questions"] == ["cost under sustained load"]
+
+
+def test_get_state_summary_for_decision_work_includes_final_decision_when_decided() -> None:
+    work_state_service = WorkStateService()
+    decision_state_service = DecisionStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service, decision_state_service=decision_state_service)
+    work_state = work_state_service.open_or_resume_work(
+        title="Select cache",
+        kind=WorkStateKind.DECISION,
+        task_id="task:decision:summary:decided",
+    )
+    decision = decision_state_service.open_decision(
+        question="Which cache should we use?",
+        work_state_id=work_state.work_state_id,
+        task_id="task:decision:summary:decided",
+    )
+    decision_state_service.record_final_decision(decision_id=decision.decision_id, final_decision="Redis")
+
+    result = provider.handle_tool_call("memorii_get_state_summary", {"task_id": "task:decision:summary:decided"})
+
+    assert result.ok is True
+    summary = result.result["work_states"][0]["decision_state"]
+    assert summary["status"] == DecisionStatus.DECIDED.value
+    assert summary["final_decision"] == "Redis"
+
+
+def test_get_state_summary_for_decision_work_without_linked_decision_state_skips_section() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service, decision_state_service=DecisionStateService())
+    work_state_service.open_or_resume_work(
+        title="Choose strategy",
+        kind=WorkStateKind.DECISION,
+        task_id="task:decision:summary:none",
+    )
+
+    result = provider.handle_tool_call("memorii_get_state_summary", {"task_id": "task:decision:summary:none"})
+
+    assert result.ok is True
+    assert result.result["work_states"][0]["decision_state"] is None
+
+
+def test_get_state_summary_for_non_decision_work_remains_unchanged() -> None:
+    work_state_service = WorkStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service, decision_state_service=DecisionStateService())
+    work_state_service.open_or_resume_work(
+        title="Implement parser updates",
+        kind=WorkStateKind.TASK_EXECUTION,
+        task_id="task:summary:non-decision",
+    )
+
+    result = provider.handle_tool_call("memorii_get_state_summary", {"task_id": "task:summary:non-decision"})
+
+    assert result.ok is True
+    assert result.result["work_states"][0]["kind"] == WorkStateKind.TASK_EXECUTION.value
+    assert result.result["work_states"][0]["decision_state"] is None
+
+
+def test_get_state_summary_prefers_open_decision_when_open_and_decided_exist() -> None:
+    work_state_service = WorkStateService()
+    decision_state_service = DecisionStateService()
+    provider = ProviderMemoryService(work_state_service=work_state_service, decision_state_service=decision_state_service)
+    work_state = work_state_service.open_or_resume_work(
+        title="Choose framework",
+        kind=WorkStateKind.DECISION,
+        task_id="task:decision:summary:prefer-open",
+    )
+    decided = decision_state_service.open_decision(
+        question="Old decision",
+        work_state_id=work_state.work_state_id,
+        task_id="task:decision:summary:prefer-open",
+    )
+    decision_state_service.record_final_decision(decision_id=decided.decision_id, final_decision="Option A")
+    decision_state_service.open_decision(
+        question="Current decision",
+        work_state_id=work_state.work_state_id,
+        task_id="task:decision:summary:prefer-open",
+    )
+
+    result = provider.handle_tool_call("memorii_get_state_summary", {"task_id": "task:decision:summary:prefer-open"})
+
+    assert result.ok is True
+    summary = result.result["work_states"][0]["decision_state"]
+    assert summary["question"] == "Current decision"
+    assert summary["status"] == DecisionStatus.OPEN.value
+
+
 def test_get_next_step_without_state_returns_ask_user_stub() -> None:
     provider = ProviderMemoryService()
 
