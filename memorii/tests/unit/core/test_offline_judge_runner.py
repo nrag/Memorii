@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionPoint
 from memorii.core.llm_eval.models import EvalCaseResult, EvalRunReport
 from memorii.core.llm_judge import OfflineJudgeRunner, attach_judge_refs_to_eval_cases
+from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric
 
 
 def _snapshot(*, snapshot_id: str, decision_point: LLMDecisionPoint, input_payload: dict[str, object]) -> EvalSnapshot:
@@ -25,6 +26,7 @@ def _eval_case(
     passed: bool,
     requires_judge_review: bool,
     actual_output: dict[str, object] | None = None,
+    trace_id: str | None = None,
 ) -> EvalCaseResult:
     return EvalCaseResult(
         snapshot_id=snapshot_id,
@@ -35,6 +37,7 @@ def _eval_case(
         actual_output=actual_output or {},
         expected_output={},
         requires_judge_review=requires_judge_review,
+        trace_id=trace_id,
     )
 
 
@@ -93,7 +96,7 @@ def test_promotion_case_routes_to_promotion_wave1_judges() -> None:
     ]
 
 
-def test_belief_case_routes_to_attribution_and_belief_direction_only() -> None:
+def test_belief_case_routes_to_belief_direction_only_when_attribution_missing() -> None:
     runner = OfflineJudgeRunner()
     case = _eval_case(
         snapshot_id="snap:belief",
@@ -103,6 +106,24 @@ def test_belief_case_routes_to_attribution_and_belief_direction_only() -> None:
         actual_output={"belief": 0.8},
     )
     snapshot = _snapshot(snapshot_id="snap:belief", decision_point=LLMDecisionPoint.BELIEF_UPDATE, input_payload=_belief_payload())
+
+    report = runner.run_cases([case], snapshots_by_id={snapshot.snapshot_id: snapshot})
+
+    assert [v.judge_id for v in report.case_results[0].judge_verdicts] == ["belief_direction:v1"]
+
+
+def test_belief_case_routes_to_attribution_when_fields_present() -> None:
+    runner = OfflineJudgeRunner()
+    case = _eval_case(
+        snapshot_id="snap:belief:attr",
+        decision_point="belief_update",
+        passed=False,
+        requires_judge_review=False,
+        actual_output={"belief": 0.8},
+    )
+    payload = _belief_payload()
+    payload["metadata"] = {"source_actor": "tool", "source_kind": "tool", "asserted_by": "tool"}
+    snapshot = _snapshot(snapshot_id="snap:belief:attr", decision_point=LLMDecisionPoint.BELIEF_UPDATE, input_payload=payload)
 
     report = runner.run_cases([case], snapshots_by_id={snapshot.snapshot_id: snapshot})
 
@@ -227,6 +248,36 @@ def test_run_id_is_stable_for_same_inputs() -> None:
     assert first.run_id == second.run_id
 
 
+def test_run_id_changes_when_case_payload_changes() -> None:
+    runner = OfflineJudgeRunner()
+
+    first_cases = [
+        _eval_case(
+            snapshot_id="snap:same",
+            decision_point="belief_update",
+            passed=False,
+            requires_judge_review=False,
+            actual_output={"belief": 0.7},
+            trace_id="trace:1",
+        )
+    ]
+    second_cases = [
+        _eval_case(
+            snapshot_id="snap:same",
+            decision_point="belief_update",
+            passed=False,
+            requires_judge_review=False,
+            actual_output={"belief": 0.9},
+            trace_id="trace:1",
+        )
+    ]
+
+    first = runner.run_cases(first_cases, snapshots_by_id={})
+    second = runner.run_cases(second_cases, snapshots_by_id={})
+
+    assert first.run_id != second.run_id
+
+
 def test_attach_judge_refs_to_eval_cases_returns_new_cases_without_mutating_original() -> None:
     runner = OfflineJudgeRunner()
     original_case = _eval_case(snapshot_id="snap:refs", decision_point="promotion", passed=False, requires_judge_review=False)
@@ -249,6 +300,66 @@ def test_attached_judge_verdict_refs_match_produced_verdict_ids() -> None:
 
     expected_verdict_ids = [verdict.verdict_id for verdict in judge_report.case_results[0].judge_verdicts]
     assert updated[0].judge_verdict_refs == expected_verdict_ids
+
+
+def test_attach_judge_refs_uses_snapshot_and_trace_id() -> None:
+    runner = OfflineJudgeRunner(judge_all_cases=True)
+    shared_snapshot = _snapshot(
+        snapshot_id="snap:shared",
+        decision_point=LLMDecisionPoint.PROMOTION,
+        input_payload=_promotion_payload(),
+    )
+    case_one = _eval_case(
+        snapshot_id="snap:shared",
+        decision_point="promotion",
+        passed=False,
+        requires_judge_review=False,
+        trace_id="trace:1",
+    )
+    case_two = _eval_case(
+        snapshot_id="snap:shared",
+        decision_point="promotion",
+        passed=False,
+        requires_judge_review=False,
+        trace_id="trace:2",
+    )
+
+    report = runner.run_cases([case_one, case_two], snapshots_by_id={"snap:shared": shared_snapshot})
+    updated = attach_judge_refs_to_eval_cases([case_one, case_two], report)
+
+    assert updated[0].judge_verdict_refs != updated[1].judge_verdict_refs
+
+
+class _ExplodingJudge:
+    judge_id = "exploding:test"
+    dimension = JudgeDimension.ATTRIBUTION
+    rubric = JudgeRubric(
+        judge_id="exploding:test",
+        dimension=JudgeDimension.ATTRIBUTION,
+        name="Exploding",
+        description="Explodes on judge call.",
+        score_1_anchor="pass",
+        score_0_5_anchor="amb",
+        score_0_anchor="fail",
+    )
+
+    def judge(self, *, input_payload: dict[str, object], snapshot_id: str | None = None, trace_id: str | None = None):
+        raise RuntimeError("boom")
+
+
+def test_judge_exception_becomes_human_review_case() -> None:
+    runner = OfflineJudgeRunner(
+        promotion_judges=[_ExplodingJudge()],
+        belief_judges=[_ExplodingJudge()],
+    )
+    case = _eval_case(snapshot_id="snap:error", decision_point="promotion", passed=False, requires_judge_review=False)
+    snapshot = _snapshot(snapshot_id="snap:error", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_payload())
+
+    report = runner.run_cases([case], snapshots_by_id={snapshot.snapshot_id: snapshot})
+
+    assert report.case_results[0].golden_candidate_reason == "judge_execution_error"
+    assert report.case_results[0].judge_verdicts == []
+    assert report.human_review_cases == 1
 
 
 def test_no_live_llm_calls_are_required() -> None:
