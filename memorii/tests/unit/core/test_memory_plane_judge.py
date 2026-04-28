@@ -29,6 +29,7 @@ def test_memory_plane_contract_and_cases() -> None:
     assert judge.judge(input_payload={"context": _payload("user_memory", "remember this"), "actual_output": {"target_plane": "user_memory"}}).score == 1.0
     assert judge.judge(input_payload={"context": _payload("semantic", "general fact"), "actual_output": {"target_plane": "project_fact"}}).score == 0.0
     assert judge.judge(input_payload={"context": _payload("user_memory", "inferred"), "actual_output": {"target_plane": "user_memory"}}).score in {0.5, 1.0}
+    assert judge.judge(input_payload={"context": _payload("project_fact", "customer contract requires SSO"), "actual_output": {}}).score == 0.5
 
 
 def test_memory_plane_stability_created_and_snapshot() -> None:
@@ -53,4 +54,6 @@ def test_memory_plane_calibration_quality() -> None:
     assert report.false_negative_count <= 3
     represented = {e.expected_failure_mode for e in examples if e.expected_failure_mode}
     assert "ambiguous_plane" in represented
+    assert "should_be_project_fact" in represented
+    assert "should_be_user_memory" in represented
     assert report.total_examples > 0

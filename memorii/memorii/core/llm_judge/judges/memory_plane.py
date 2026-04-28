@@ -110,7 +110,7 @@ class MemoryPlaneJudge:
             return 0.5, "ambiguous_plane_boundary", "ambiguous_plane"
 
         if not actual_plane:
-            return 1.0, f"expected_plane:{expected}", None
+            return 0.5, f"missing_target_plane_expected:{expected}", "ambiguous_plane"
 
         if actual_plane not in _VALID_PLANES:
             return 0.5, "invalid_plane_name", "ambiguous_plane"
@@ -144,7 +144,7 @@ def memory_plane_calibration_v1() -> list[CalibrationExample]:
             )
         )
 
-    categories = [
+    pass_categories = [
         ("episodic", PromotionCandidateType.EPISODIC, "task_outcome", "incident outcome closed", "domain:incident_outcomes"),
         ("semantic", PromotionCandidateType.SEMANTIC, "observation", "general parser rule", "domain:research"),
         ("user_memory", PromotionCandidateType.USER_MEMORY, "observation", "remember my timezone preference", "domain:user_preferences"),
@@ -152,8 +152,8 @@ def memory_plane_calibration_v1() -> list[CalibrationExample]:
     ]
 
     counter = 1
-    for plane, ctype, created_from, content, domain in categories:
-        for _ in range(8):
+    for plane, ctype, created_from, content, domain in pass_categories:
+        for _ in range(5):
             add(
                 f"mp:pass:{counter:02d}",
                 {
@@ -166,6 +166,47 @@ def memory_plane_calibration_v1() -> list[CalibrationExample]:
                 [domain],
             )
             counter += 1
+
+    fail_cases = [
+        ("01", PromotionCandidateType.USER_MEMORY, "remember my dietary restriction", "observation", "project_fact", "should_be_user_memory", "domain:user_preferences"),
+        ("02", PromotionCandidateType.USER_MEMORY, "remember I prefer concise replies", "observation", "semantic", "should_be_user_memory", "domain:user_preferences"),
+        ("03", PromotionCandidateType.SEMANTIC, "JWT expiration defaults to 15 minutes", "observation", "project_fact", "should_be_semantic", "domain:software_engineering"),
+        ("04", PromotionCandidateType.SEMANTIC, "Hashing strategy is salted PBKDF2", "observation", "episodic", "should_be_semantic", "domain:research"),
+        ("05", PromotionCandidateType.EPISODIC, "incident timeline and mitigation completed", "task_outcome", "project_fact", "should_be_episodic", "domain:incident_outcomes"),
+        ("06", PromotionCandidateType.EPISODIC, "investigation concluded stale cache root cause", "investigation_conclusion", "semantic", "should_be_episodic", "domain:incident_debugging"),
+        ("07", PromotionCandidateType.PROJECT_FACT, "customer contract requires SOC2 attestation", "observation", "semantic", "should_be_project_fact", "domain:customer_support"),
+        ("08", PromotionCandidateType.PROJECT_FACT, "roadmap launch blocked by legal signoff", "observation", "episodic", "should_be_project_fact", "domain:project_planning"),
+    ]
+    for idx, ctype, content, created_from, wrong_plane, failure_mode, domain in fail_cases:
+        add(
+            f"mp:fail:{idx}",
+            {
+                "context": _payload(f"mp:fail:{idx}", ctype, content, created_from),
+                "actual_output": {"target_plane": wrong_plane},
+            },
+            False,
+            0.0,
+            failure_mode,
+            [domain],
+        )
+
+    for idx in range(1, 5):
+        add(
+            f"mp:missing:{idx:02d}",
+            {
+                "context": _payload(
+                    f"mp:missing:{idx}",
+                    PromotionCandidateType.PROJECT_FACT if idx % 2 else PromotionCandidateType.SEMANTIC,
+                    "durable fact missing target plane output",
+                    "observation",
+                ),
+                "actual_output": {},
+            },
+            False,
+            0.5,
+            "ambiguous_plane",
+            ["domain:agent_runtime"],
+        )
 
     for idx in range(1, 9):
         add(

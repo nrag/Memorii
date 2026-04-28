@@ -30,6 +30,7 @@ def test_belief_direction_contract_and_cases() -> None:
     validate_single_dimension_judge(judge)
     assert judge.judge(input_payload={"context": _ctx("SUPPORTED"), "actual_output": {"belief": 0.8}}).score == 1.0
     assert judge.judge(input_payload={"context": _ctx("REFUTED", prior=0.7), "actual_output": {"belief": 0.8}}).score == 0.0
+    assert judge.judge(input_payload={"context": _ctx("SUPPORTED", prior=0.7), "actual_output": {"belief": 0.5}}).score == 0.0
     assert judge.judge(input_payload={"context": _ctx("SUPPORTED", conflicts=1), "actual_output": {"belief": 0.43}}).score == 0.5
 
 
@@ -53,5 +54,5 @@ def test_belief_direction_calibration_quality() -> None:
     assert report.false_positive_count <= 3
     assert report.false_negative_count <= 3
     represented = {e.expected_failure_mode for e in examples if e.expected_failure_mode}
-    assert set(belief_direction_rubric().failure_modes).intersection(represented)
+    assert {"should_increase", "should_decrease", "should_not_increase", "ambiguous_direction"}.issubset(represented)
     assert report.total_examples > 0

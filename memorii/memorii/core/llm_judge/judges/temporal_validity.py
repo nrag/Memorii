@@ -134,7 +134,10 @@ class TemporalValidityJudge:
         }:
             return 1.0, "stable_repeated_fact", None
 
-        return 0.5, "ambiguous_temporal_scope", "ambiguous_temporal_scope"
+        if any(marker in content for marker in _DURABLE_MARKERS):
+            return 1.0, "durable_marker_without_time_bound", None
+
+        return 1.0, "no_temporal_risk_markers_found", None
 
 
 def temporal_validity_calibration_v1() -> list[CalibrationExample]:

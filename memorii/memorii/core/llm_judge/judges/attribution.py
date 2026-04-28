@@ -155,65 +155,86 @@ def attribution_calibration_v1() -> list[CalibrationExample]:
             )
         )
 
-    for idx in range(1, 11):
+    pass_cases = [
+        ("attr:pass:01", "user_memory", "Remember I prefer concise release notes.", "user", "message", "user", ["domain:personal_assistant"]),
+        ("attr:pass:02", "user_memory", "Please remember my timezone is Pacific.", "user", "message", "user", ["domain:personal_assistant"]),
+        ("attr:pass:03", "project_fact", "Tool output: incident ticket INC-431 is resolved.", "tool", "tool", "tool", ["domain:incident_debugging"]),
+        ("attr:pass:04", "project_fact", "Tool observed latency dropped under SLO for 24h.", "tool", "tool", "tool", ["domain:incident_debugging"]),
+        ("attr:pass:05", "project_fact", "Verifier downgraded claim due to missing log shard.", "verifier", "verifier", "verifier", ["domain:research", "hermes:multi_agent"]),
+        ("attr:pass:06", "project_fact", "Verifier marked hypothesis unproven after replay.", "verifier", "verifier", "verifier", ["domain:software_engineering", "hermes:multi_agent"]),
+        ("attr:pass:07", "project_fact", "Agent planned migration rollback checklist.", "agent", "agent", "agent", ["domain:project_planning"]),
+        ("attr:pass:08", "episodic", "Agent completed customer escalation timeline.", "agent", "agent", "agent", ["domain:customer_support"]),
+        ("attr:pass:09", "project_fact", "Tool emitted billing export checksum mismatch.", "tool", "tool", "tool", ["domain:customer_support"]),
+        ("attr:pass:10", "project_fact", "Tool detected schema drift in nightly ETL.", "tool", "tool", "tool", ["domain:research"]),
+    ]
+    for eid, ctype, content, actor, skind, asserted, tags in pass_cases:
         add(
-            eid=f"attr:pass:{idx:02d}",
+            eid=eid,
             payload={
-                "candidate_type": "user_memory" if idx <= 3 else "project_fact",
-                "content": f"case {idx}",
-                "source_actor": "user" if idx <= 3 else ("tool" if idx <= 6 else "verifier" if idx <= 8 else "agent"),
-                "source_kind": "message" if idx <= 3 else ("tool" if idx <= 6 else "verifier" if idx <= 8 else "agent"),
-                "asserted_by": "user" if idx <= 3 else ("tool" if idx <= 6 else "verifier" if idx <= 8 else "agent"),
-                "metadata": {"user_id": "u1", "agent_id": "a1"},
+                "candidate_type": ctype,
+                "content": content,
+                "source_actor": actor,
+                "source_kind": skind,
+                "asserted_by": asserted,
+                "metadata": {"agent_id": "agent:planner", "user_id": "user:1"},
             },
             passed=True,
             score=1.0,
             failure_mode=None,
-            tags=[
-                "domain:personal_assistant" if idx <= 3 else "domain:software_engineering",
-                "hermes:multi_agent" if idx in {7, 8} else "domain:customer_support",
-            ],
+            tags=tags,
         )
 
     fail_cases = [
-        ("01", "user_memory", "agent", "agent_claim_as_user_claim", "domain:personal_assistant"),
-        ("02", "user_memory", "agent", "agent_claim_as_user_claim", "domain:customer_support"),
-        ("03", "project_fact", "", "missing_attribution", "domain:incident_debugging"),
-        ("04", "project_fact", "", "missing_attribution", "domain:research"),
-        ("05", "user_memory", "", "external_source_as_user_memory", "domain:personal_assistant"),
-        ("06", "user_memory", "", "external_source_as_user_memory", "domain:customer_support"),
-        ("07", "project_fact", "verifier", "verifier_hypothesis_as_fact", "domain:incident_debugging"),
-        ("08", "project_fact", "verifier", "verifier_hypothesis_as_fact", "domain:software_engineering"),
-        ("09", "semantic", "", "missing_attribution", "domain:architecture_decisions"),
-        ("10", "project_fact", "", "missing_attribution", "domain:product_project_planning"),
+        ("attr:fail:01", "user_memory", "Agent says user always wants terse mode.", "agent", "agent", "", "agent_claim_as_user_claim", ["domain:personal_assistant"]),
+        ("attr:fail:02", "user_memory", "Assistant inferred user prefers markdown tables.", "agent", "agent", "", "agent_claim_as_user_claim", ["domain:customer_support"]),
+        ("attr:fail:03", "project_fact", "Root cause confirmed.", "", "", "", "missing_attribution", ["domain:incident_debugging"]),
+        ("attr:fail:04", "semantic", "Final architecture rule is now mandatory.", "", "", "", "missing_attribution", ["domain:architecture_decisions"]),
+        ("attr:fail:05", "user_memory", "External blog says user must receive JSON.", "", "external", "", "external_source_as_user_memory", ["domain:personal_assistant"]),
+        ("attr:fail:06", "user_memory", "Vendor document claims user likes long answers.", "", "document", "", "external_source_as_user_memory", ["domain:customer_support"]),
+        ("attr:fail:07", "project_fact", "Verifier hypothesis treated as final root cause.", "verifier", "verifier", "", "verifier_hypothesis_as_fact", ["domain:incident_debugging", "hermes:multi_agent"]),
+        ("attr:fail:08", "project_fact", "Verifier guess persisted as confirmed conclusion.", "verifier", "verifier", "", "verifier_hypothesis_as_fact", ["domain:software_engineering", "hermes:multi_agent"]),
+        ("attr:fail:09", "project_fact", "Customer contract requirement confirmed.", "", "", "", "missing_attribution", ["domain:customer_support"]),
+        ("attr:fail:10", "semantic", "Always retry webhook three times.", "", "", "", "missing_attribution", ["domain:research"]),
     ]
-    for idx, ctype, actor, mode, domain in fail_cases:
+    for eid, ctype, content, actor, skind, asserted, failure_mode, tags in fail_cases:
         add(
-            eid=f"attr:fail:{idx}",
+            eid=eid,
             payload={
                 "candidate_type": ctype,
-                "content": "final root cause confirmed",
+                "content": content,
                 "source_actor": actor,
-                "source_kind": "external" if mode == "external_source_as_user_memory" else "",
-                "asserted_by": "",
-                "metadata": {"is_hypothesis_promoted": mode == "verifier_hypothesis_as_fact"},
+                "source_kind": skind,
+                "asserted_by": asserted,
+                "metadata": {"is_hypothesis_promoted": failure_mode == "verifier_hypothesis_as_fact"},
             },
             passed=False,
             score=0.0,
-            failure_mode=mode,
-            tags=[domain, "hermes:attribution"],
+            failure_mode=failure_mode,
+            tags=tags,
         )
 
-    for idx in range(1, 11):
+    ambiguous_cases = [
+        ("attr:amb:01", "project_fact", "Router team says patch might be enough.", "agent", "message", "user"),
+        ("attr:amb:02", "project_fact", "Support lead relayed tool result verbally.", "user", "tool", ""),
+        ("attr:amb:03", "project_fact", "Another agent requested temporary policy update.", "agent", "agent", "user"),
+        ("attr:amb:04", "project_fact", "Tool finding cited in handoff without owner.", "agent", "tool", ""),
+        ("attr:amb:05", "project_fact", "Verifier note copied by planner.", "agent", "verifier", "agent"),
+        ("attr:amb:06", "project_fact", "Runtime worker reported flake, source unclear.", "user", "message", ""),
+        ("attr:amb:07", "project_fact", "Escalation summary came from multi-agent thread.", "agent", "message", "agent"),
+        ("attr:amb:08", "project_fact", "Partner shared dashboard observation through CSM.", "user", "external", ""),
+        ("attr:amb:09", "project_fact", "Tool observation was paraphrased by reviewer.", "user", "tool", "user"),
+        ("attr:amb:10", "project_fact", "Unclear who confirmed rollout readiness.", "agent", "message", ""),
+    ]
+    for eid, ctype, content, actor, skind, asserted in ambiguous_cases:
         add(
-            eid=f"attr:amb:{idx:02d}",
+            eid=eid,
             payload={
-                "candidate_type": "project_fact",
-                "content": "status update",
-                "source_actor": "agent" if idx % 2 == 0 else "user",
-                "source_kind": "tool" if idx % 3 == 0 else "message",
-                "asserted_by": "" if idx <= 6 else "agent",
-                "metadata": {"agent_id": "a1"},
+                "candidate_type": ctype,
+                "content": content,
+                "source_actor": actor,
+                "source_kind": skind,
+                "asserted_by": asserted,
+                "metadata": {"agent_id": "agent:hermes-sub", "user_id": "user:1"},
             },
             passed=False,
             score=0.5,

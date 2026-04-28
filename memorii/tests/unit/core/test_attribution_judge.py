@@ -28,6 +28,7 @@ def test_attribution_contract_scoring_snapshot_and_stability() -> None:
 def test_attribution_calibration_quality() -> None:
     examples = attribution_calibration_v1()
     assert len(examples) >= 30
+    assert all("case " not in str(e.input_payload.get("content", "")).lower() for e in examples)
     assert any(e.expected_passed for e in examples)
     assert any((not e.expected_passed) and e.expected_score_min == 0.0 for e in examples)
     assert any(e.expected_score_min == 0.5 for e in examples)

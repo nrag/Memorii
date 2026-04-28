@@ -31,6 +31,7 @@ def test_temporal_validity_contract_and_scoring() -> None:
     judge = TemporalValidityJudge()
     validate_single_dimension_judge(judge)
     assert judge.judge(input_payload=_payload("Remember this permanent preference.", ctype="user_memory")).score == 1.0
+    assert judge.judge(input_payload=_payload("Auth retry backoff is capped at 30 seconds.")).score == 1.0
     assert judge.judge(input_payload=_payload("Use workaround for now this sprint.")).score == 0.5
     assert judge.judge(input_payload=_payload("already obsolete and no longer applies")).score == 0.0
 

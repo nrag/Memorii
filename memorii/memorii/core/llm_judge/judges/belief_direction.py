@@ -207,6 +207,24 @@ def belief_direction_calibration_v1() -> list[CalibrationExample]:
             ["domain:agent_runtime", "domain:incident_debugging"],
         )
 
+    wrong_direction_cases = [
+        ("01", _ctx(SolverDecision.SUPPORTED, prior=0.62), {"belief": 0.40}, "should_increase", ["domain:software_debugging"]),
+        ("02", _ctx(SolverDecision.SUPPORTED, prior=0.55), {"belief": 0.50}, "should_increase", ["domain:incident_debugging"]),
+        ("03", _ctx(SolverDecision.REFUTED, prior=0.30), {"belief": 0.48}, "should_decrease", ["domain:research"]),
+        ("04", _ctx(SolverDecision.REFUTED, prior=0.42), {"belief": 0.70}, "should_decrease", ["domain:customer_support"]),
+        ("05", _ctx(SolverDecision.INSUFFICIENT_EVIDENCE, prior=0.35), {"belief": 0.61}, "should_not_increase", ["domain:project_planning"]),
+        ("06", _ctx(SolverDecision.NEEDS_TEST, prior=0.44), {"belief": 0.66}, "should_not_increase", ["domain:agent_runtime"]),
+    ]
+    for idx, context, actual_output, failure_mode, tags in wrong_direction_cases:
+        add(
+            f"bd:fail:{idx}",
+            {"context": context, "actual_output": actual_output},
+            False,
+            0.0,
+            failure_mode,
+            tags,
+        )
+
     return examples
 
 
