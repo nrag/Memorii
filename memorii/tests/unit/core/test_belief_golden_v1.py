@@ -33,11 +33,20 @@ REQUIRED_TASK_TYPES = {
 }
 
 
-def _judge_review_snapshots() -> list[EvalSnapshot]:
+def _judge_review_with_constraints_snapshots() -> list[EvalSnapshot]:
     return [
         snapshot
         for snapshot in belief_golden_v1()
         if bool((snapshot.expected_output or {}).get("requires_judge_review") is True)
+        and bool((snapshot.expected_output or {}).keys() - {"requires_judge_review"})
+    ]
+
+
+def _judge_only_snapshots() -> list[EvalSnapshot]:
+    return [
+        snapshot
+        for snapshot in belief_golden_v1()
+        if snapshot.expected_output is None or set((snapshot.expected_output or {}).keys()) == {"requires_judge_review"}
     ]
 
 
@@ -101,6 +110,8 @@ def test_belief_golden_v1_every_snapshot_has_required_metadata_fields() -> None:
         metadata = context.metadata
         assert "hypothesis" in metadata
         assert "scenario" in metadata
+        assert "evidence_summary" in metadata
+        assert "missing_evidence_summary" in metadata
         assert metadata.get("golden_version") == "belief_v1"
         assert metadata.get("curation_tier") == "reviewed"
 
@@ -126,13 +137,25 @@ def test_offline_eval_runner_runs_deterministic_non_judge_belief_cases() -> None
     assert report.pass_rate_by_decision_point["belief_update"] == 1.0
 
 
-def test_judge_review_belief_cases_run_separately_and_are_marked() -> None:
+def test_judge_review_with_constraints_cases_run_separately_and_are_marked() -> None:
     runner = OfflineLLMEvalRunner()
-    judge_review_snapshots = _judge_review_snapshots()
+    judge_review_snapshots = _judge_review_with_constraints_snapshots()
 
     report = runner.run_snapshots(judge_review_snapshots)
 
     assert report.total_cases == len(judge_review_snapshots)
+    assert report.total_cases >= 1
+    assert all(result.requires_judge_review is True for result in report.results)
+
+
+def test_judge_only_cases_run_separately_and_are_marked() -> None:
+    runner = OfflineLLMEvalRunner()
+    judge_only_snapshots = _judge_only_snapshots()
+
+    report = runner.run_snapshots(judge_only_snapshots)
+
+    assert report.total_cases == len(judge_only_snapshots)
+    assert report.total_cases >= 1
     assert all(result.requires_judge_review is True for result in report.results)
 
 
@@ -145,6 +168,42 @@ def test_belief_golden_v1_covers_required_case_families() -> None:
     assert any(context.decision.value in {"INSUFFICIENT_EVIDENCE", "NEEDS_TEST"} for context in contexts)
     assert any(context.conflict_count > 0 for context in contexts)
     assert any(context.verifier_downgraded for context in contexts)
+
+
+def test_belief_golden_v1_expected_outputs_have_sufficient_constraints() -> None:
+    snapshots = belief_golden_v1()
+    for snapshot in snapshots:
+        expected_output = snapshot.expected_output
+        if expected_output is None:
+            continue
+        keys = set(expected_output.keys())
+        assert keys != set()
+        assert keys != {"requires_judge_review"}
+
+
+def test_every_refuted_case_expects_direction_decrease() -> None:
+    snapshots = belief_golden_v1()
+    for snapshot in snapshots:
+        context = BeliefUpdateContext.model_validate(snapshot.input_payload)
+        if context.decision.value == "REFUTED":
+            expected_output = snapshot.expected_output or {}
+            assert expected_output.get("direction") == "decrease"
+
+
+def test_every_clean_supported_case_expects_direction_increase() -> None:
+    snapshots = belief_golden_v1()
+    for snapshot in snapshots:
+        context = BeliefUpdateContext.model_validate(snapshot.input_payload)
+        if context.decision.value != "SUPPORTED":
+            continue
+        if context.missing_evidence_count > 0:
+            continue
+        if context.conflict_count > 0:
+            continue
+        if context.verifier_downgraded:
+            continue
+        expected_output = snapshot.expected_output or {}
+        assert expected_output.get("direction") == "increase"
 
 
 def test_running_belief_golden_requires_no_live_llm_or_judge_calls() -> None:
