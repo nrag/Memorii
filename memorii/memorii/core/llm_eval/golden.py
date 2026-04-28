@@ -66,6 +66,8 @@ def _belief_snapshot(
     tags: list[str],
     hypothesis: str,
     scenario: str,
+    evidence_summary: str,
+    missing_evidence_summary: str,
 ) -> EvalSnapshot:
     evidence_ids = [f"ev:{snapshot_id}:{idx + 1}" for idx in range(evidence_count)] if evidence_count > 0 else []
     missing_evidence = (
@@ -84,12 +86,8 @@ def _belief_snapshot(
         metadata={
             "hypothesis": hypothesis,
             "scenario": scenario,
-            "evidence_summary": f"{evidence_count} evidence item(s) linked to this belief update.",
-            "missing_evidence_summary": (
-                f"{missing_evidence_count} missing evidence item(s) still required."
-                if missing_evidence_count > 0
-                else "No missing evidence items were identified."
-            ),
+            "evidence_summary": evidence_summary,
+            "missing_evidence_summary": missing_evidence_summary,
             "golden_version": "belief_v1",
             "curation_tier": "reviewed",
         },
@@ -406,6 +404,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:software_debugging", "task_type:root_cause_analysis", "belief_case:strong_support"],
             hypothesis="Expired OAuth refresh tokens caused login failures.",
             scenario="Logs show token_expired and refresh retry succeeds after token rotation.",
+            evidence_summary="Auth logs include token_expired events and successful login recovery immediately after token rotation.",
+            missing_evidence_summary="No major evidence gaps remain for this root-cause hypothesis.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:software-debugging-weak-support-cache-stale-ui",
@@ -417,6 +417,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:software_debugging", "task_type:bug_triage", "belief_case:weak_support"],
             hypothesis="Cache invalidation caused stale UI.",
             scenario="Single screenshot shows stale data and logs are still missing.",
+            evidence_summary="One UI screenshot captures stale data that is consistent with cache staleness.",
+            missing_evidence_summary="Server cache invalidation logs are still missing, so causality is unconfirmed.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:incident-refuted-db-outage-api-failures",
@@ -427,6 +429,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:incident_investigation", "task_type:root_cause_analysis", "belief_case:refutation"],
             hypothesis="Database outage caused API failures.",
             scenario="DB health checks and query latency stayed normal throughout outage window.",
+            evidence_summary="Database health checks stayed green and query latency dashboards remained within baseline during the incident.",
+            missing_evidence_summary="No critical missing evidence; available telemetry directly contradicts a DB outage cause.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:planning-insufficient-evidence-dataset-parsing",
@@ -438,6 +442,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:product_project_planning", "task_type:planning_diagnosis", "belief_case:insufficient_evidence"],
             hypothesis="LoCoMo benchmark failure is due to dataset parsing.",
             scenario="No parser logs are collected and no sample parsing inspection exists yet.",
+            evidence_summary="No parser outputs or sample records have been inspected yet.",
+            missing_evidence_summary="Need parser logs and parsed-sample inspection before diagnosing dataset parsing faults.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:agent-execution-needs-test-latest-wins-replay",
@@ -449,6 +455,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:agent_task_execution", "task_type:next_step_planning", "belief_case:needs_test"],
             hypothesis="Storage replay bug is caused by latest-wins ordering.",
             scenario="Code path looks plausible but no reproduction test has been run.",
+            evidence_summary="Code walkthrough shows a plausible latest-wins branch that could reorder replay state.",
+            missing_evidence_summary="A deterministic replay reproduction test is still missing.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:software-debugging-verifier-downgrade-supported",
@@ -461,6 +469,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:software_debugging", "task_type:solver_verification", "belief_case:verifier_downgrade"],
             hypothesis="Observed fix path supports the proposed root cause.",
             scenario="Model returned support, then verifier downgraded due to missing corroborating evidence.",
+            evidence_summary="Initial solver output linked one fix-path clue to the hypothesis.",
+            missing_evidence_summary="Verifier requires additional corroborating logs before support can be treated as reliable.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:incident-conflict-deployment-latency-spike",
@@ -472,6 +482,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:incident_investigation", "task_type:root_cause_analysis", "belief_case:conflict_present"],
             hypothesis="Deployment caused the latency spike.",
             scenario="Spike aligns with deploy in most regions but one region spiked before deployment.",
+            evidence_summary="Most regions show latency rising immediately after deploy, indicating temporal alignment.",
+            missing_evidence_summary="Need per-region timeline reconciliation because one region spiked pre-deploy.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:architecture-strong-prior-refuted-qdrant",
@@ -482,6 +494,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:architecture_decision_analysis", "task_type:decision_review", "belief_case:strong_prior_refuted"],
             hypothesis="Qdrant latency is the primary bottleneck.",
             scenario="Profiling confirms app-side serialization dominates total latency.",
+            evidence_summary="Profiler traces attribute dominant latency share to application serialization rather than vector DB calls.",
+            missing_evidence_summary="No major evidence gaps remain for rejecting the original bottleneck assumption.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:customer-low-prior-strong-support-policy-mismatch",
@@ -492,6 +506,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:customer_support_operations", "task_type:customer_diagnosis", "belief_case:low_prior_strong_support"],
             hypothesis="Customer issue is caused by tenant policy misconfiguration.",
             scenario="Policy export and full reproduction both confirm the mismatch.",
+            evidence_summary="Tenant policy export and reproduction in a controlled environment both show a policy mismatch.",
+            missing_evidence_summary="No additional evidence is required to establish strong support for this diagnosis.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:research-missing-evidence-prevents-overconfidence",
@@ -503,6 +519,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:research_literature_review", "task_type:claim_validation", "belief_case:missing_evidence"],
             hypothesis="BLF-style belief update improves agent debugging outcomes.",
             scenario="One related paper exists but no direct benchmark evidence is available.",
+            evidence_summary="A related paper reports adjacent improvements for structured belief tracking.",
+            missing_evidence_summary="Direct benchmark evidence on agent debugging outcomes is still missing.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:research-contradictory-evidence-prompt-repetition",
@@ -514,6 +532,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:research_literature_review", "task_type:claim_validation", "belief_case:contradictory_evidence"],
             hypothesis="Prompt repetition always improves retrieval.",
             scenario="One paper supports it for non-reasoning models while another shows no gain for reasoning models.",
+            evidence_summary="Cross-paper findings are mixed: gains appear in non-reasoning models but not in reasoning-model settings.",
+            missing_evidence_summary="Need matched-model replication under identical retrieval tasks to resolve contradiction.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:agent-execution-no-evidence-no-increase",
@@ -525,6 +545,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:agent_task_execution", "task_type:runtime_diagnosis", "belief_case:no_evidence"],
             hypothesis="Agent failed because memory recall was missing.",
             scenario="No trace has been inspected yet.",
+            evidence_summary="No runtime traces or retrieval logs have been reviewed.",
+            missing_evidence_summary="Need trace inspection and recall-path telemetry before assigning cause.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:software-debugging-many-missing-evidence-retry-bug",
@@ -536,6 +558,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:software_debugging", "task_type:bug_triage", "belief_case:many_missing_evidence"],
             hypothesis="Retry bug caused duplicate writes.",
             scenario="One log line exists while request IDs, retry count, and DB write trace are all missing.",
+            evidence_summary="A single log line indicates a duplicate-write symptom under retry conditions.",
+            missing_evidence_summary="Request IDs, retry counters, and DB write traces are missing and required for confirmation.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:architecture-clean-supported-jsonl-append-replay",
@@ -546,6 +570,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:architecture_decision_analysis", "task_type:system_design", "belief_case:clean_supported"],
             hypothesis="JSONL append/replay is sufficient for local debug persistence.",
             scenario="Replay, append history, and fresh bundle tests all pass.",
+            evidence_summary="Replay correctness, append history integrity, and fresh-bundle startup tests all passed.",
+            missing_evidence_summary="No unresolved evidence gaps remain for this local-persistence design decision.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:planning-supported-time-bound-locomo-priority",
@@ -557,6 +583,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:product_project_planning", "task_type:roadmap_planning", "belief_case:time_bound_support"],
             hypothesis="LoCoMo should be next priority.",
             scenario="One recent planning discussion supports it, but roadmap priorities can shift.",
+            evidence_summary="Recent planning notes argue LoCoMo addresses near-term evaluation risk.",
+            missing_evidence_summary="Roadmap lock and dependency sequencing are still unresolved for final prioritization.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:customer-refuted-admin-permissions-assumption",
@@ -567,6 +595,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:customer_support_operations", "task_type:support_triage", "belief_case:refuted_assumption"],
             hypothesis="Customer is blocked by missing admin permissions.",
             scenario="Tenant audit confirms required admin permissions are already present.",
+            evidence_summary="Tenant audit records show all required admin permissions are already granted.",
+            missing_evidence_summary="No missing evidence is blocking this refutation; permission absence is disproven.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:agent-execution-ambiguous-state-management",
@@ -578,6 +608,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:agent_task_execution", "task_type:state_management", "belief_case:ambiguity_placeholder"],
             hypothesis="Decision state was not created.",
             scenario="Trace is ambiguous and may point to an older run.",
+            evidence_summary="One ambiguous trace fragment references state-creation behavior without clear run linkage.",
+            missing_evidence_summary="Need run-scoped trace correlation to determine whether state creation actually failed.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:incident-verifier-downgrade-with-conflict-memory-recall",
@@ -591,6 +623,8 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:incident_investigation", "task_type:root_cause_analysis", "belief_case:verifier_downgrade_conflict"],
             hypothesis="Memory recall caused wrong next-step recommendation.",
             scenario="Evidence candidate exists, but verifier reports missing trace and conflicting state summary.",
+            evidence_summary="Candidate evidence links recall output to a wrong next-step recommendation in incident notes.",
+            missing_evidence_summary="Verifier flagged missing raw trace lineage and conflicting state summaries that must be resolved.",
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:agent-runtime-judge-only-ambiguous-audit-trace",
@@ -602,5 +636,7 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             tags=["domain:agent_task_execution", "task_type:runtime_diagnosis", "belief_case:judge_only_ambiguity"],
             hypothesis="Agent timeout was caused by stale execution state from a previous run.",
             scenario="Partial logs reference multiple run IDs and cannot be deterministically disambiguated.",
+            evidence_summary="Timeout logs mention stale-state hints but mix references from multiple execution runs.",
+            missing_evidence_summary="Need canonical run-to-log mapping and full timeout trace chain before deterministic scoring.",
         ),
     ]

@@ -116,6 +116,20 @@ def test_belief_golden_v1_every_snapshot_has_required_metadata_fields() -> None:
         assert metadata.get("curation_tier") == "reviewed"
 
 
+def test_belief_golden_v1_uses_semantic_evidence_summaries() -> None:
+    snapshots = belief_golden_v1()
+    for snapshot in snapshots:
+        context = BeliefUpdateContext.model_validate(snapshot.input_payload)
+        metadata = context.metadata
+        evidence_summary = str(metadata.get("evidence_summary", ""))
+        missing_summary = str(metadata.get("missing_evidence_summary", ""))
+
+        assert len(evidence_summary.strip()) > 20
+        assert len(missing_summary.strip()) > 20
+        assert "item(s)" not in evidence_summary
+        assert "item(s)" not in missing_summary
+
+
 def test_belief_golden_v1_includes_evidence_and_missing_evidence_lists_when_required() -> None:
     snapshots = belief_golden_v1()
     for snapshot in snapshots:
