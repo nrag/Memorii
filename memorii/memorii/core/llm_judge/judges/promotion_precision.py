@@ -7,6 +7,8 @@ import json
 from datetime import UTC, datetime
 from typing import Callable
 
+from pydantic import ValidationError
+
 from memorii.core.llm_decision.models import EvalSnapshot
 from memorii.core.llm_judge.models import CalibrationExample, JudgeDimension, JudgeRubric, JudgeVerdict
 from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
@@ -108,9 +110,12 @@ class PromotionPrecisionJudge:
         )
 
     def _extract_context(self, *, input_payload: dict[str, object]) -> PromotionContext:
-        if "input_payload" in input_payload:
-            snapshot = EvalSnapshot.model_validate(input_payload)
-            return PromotionContext.model_validate(snapshot.input_payload)
+        if isinstance(input_payload.get("input_payload"), dict):
+            try:
+                return PromotionContext.model_validate(input_payload["input_payload"])
+            except ValidationError:
+                snapshot = EvalSnapshot.model_validate(input_payload)
+                return PromotionContext.model_validate(snapshot.input_payload)
         return PromotionContext.model_validate(input_payload)
 
     def _score_context(self, *, context: PromotionContext) -> tuple[float, str, str | None]:
