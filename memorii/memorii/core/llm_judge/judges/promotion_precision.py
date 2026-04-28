@@ -20,6 +20,13 @@ _TIME_BOUND_MARKERS = (
 )
 
 _HIGH_VALUE_CREATED_FROM = {"task_outcome", "investigation_conclusion", "decision_finalized"}
+_LOW_VALUE_MARKERS = (
+    "user asked",
+    "quick note",
+    "fyi",
+    "just checking",
+    "status ping",
+)
 
 
 def promotion_precision_rubric() -> JudgeRubric:
@@ -43,7 +50,6 @@ def promotion_precision_rubric() -> JudgeRubric:
         pass_threshold=0.7,
         failure_modes=[
             "noise",
-            "transient_context",
             "one_off_preference",
             "unsupported_inference",
             "speculative_claim",
@@ -110,15 +116,10 @@ class PromotionPrecisionJudge:
     def _score_context(self, *, context: PromotionContext) -> tuple[float, str, str | None]:
         content = context.content.lower()
         marker_hit = next((marker for marker in _TIME_BOUND_MARKERS if marker in content), None)
+        low_value_hit = next((marker for marker in _LOW_VALUE_MARKERS if marker in content), None)
 
         if context.metadata.get("speculative", False):
             return 0.0, "speculative_claim", "speculative_claim"
-
-        if context.explicit_user_memory_request:
-            return 1.0, "explicit_user_memory_request", None
-
-        if context.created_from in _HIGH_VALUE_CREATED_FROM:
-            return 1.0, context.created_from, None
 
         if (
             context.candidate_type == PromotionCandidateType.USER_MEMORY
@@ -128,7 +129,16 @@ class PromotionPrecisionJudge:
             return 0.0, "one_off_preference", "one_off_preference"
 
         if marker_hit is not None:
-            return 0.5, f"time_bound_marker:{marker_hit}", "transient_context"
+            return 0.5, f"time_or_scope_bound:{marker_hit}", "ambiguous_scope"
+
+        if low_value_hit is not None:
+            return 0.0, f"low_value_noise:{low_value_hit}", "noise"
+
+        if context.explicit_user_memory_request:
+            return 1.0, "explicit_user_memory_request", None
+
+        if context.created_from in _HIGH_VALUE_CREATED_FROM:
+            return 1.0, context.created_from, None
 
         if (
             context.candidate_type in {PromotionCandidateType.SEMANTIC, PromotionCandidateType.PROJECT_FACT}
@@ -369,6 +379,35 @@ def promotion_precision_calibration_v1() -> list[CalibrationExample]:
         failure_mode="one_off_preference",
         tags=["domain:personal_assistant", "one_off_preference"],
     )
+    add(
+        example_id="pp:fail:11",
+        payload=_payload(
+            "cand:fail:11",
+            PromotionCandidateType.USER_MEMORY,
+            "Remember this: quick note from today standup only.",
+            "observation",
+            explicit=True,
+        ),
+        expected_passed=False,
+        score_min=0.0,
+        score_max=0.0,
+        failure_mode="noise",
+        tags=["domain:software_engineering", "adversarial", "explicit_but_noisy"],
+    )
+    add(
+        example_id="pp:fail:12",
+        payload=_payload(
+            "cand:fail:12",
+            PromotionCandidateType.EPISODIC,
+            "Task outcome: FYI user asked whether docs exist.",
+            "task_outcome",
+        ),
+        expected_passed=False,
+        score_min=0.0,
+        score_max=0.0,
+        failure_mode="noise",
+        tags=["domain:customer_support", "adversarial", "high_value_but_noisy"],
+    )
 
     # 10 ambiguous.
     add(
@@ -386,7 +425,7 @@ def promotion_precision_calibration_v1() -> list[CalibrationExample]:
         expected_passed=False,
         score_min=0.5,
         score_max=0.5,
-        failure_mode="transient_context",
+        failure_mode="ambiguous_scope",
         tags=["domain:product_project_planning", "time_bound_project_fact"],
     )
     add(
@@ -435,7 +474,7 @@ def promotion_precision_calibration_v1() -> list[CalibrationExample]:
         expected_passed=False,
         score_min=0.5,
         score_max=0.5,
-        failure_mode="transient_context",
+        failure_mode="ambiguous_scope",
         tags=["domain:product_project_planning", "temporary_planning"],
     )
     add(
@@ -484,8 +523,125 @@ def promotion_precision_calibration_v1() -> list[CalibrationExample]:
         expected_passed=False,
         score_min=0.5,
         score_max=0.5,
-        failure_mode="transient_context",
+        failure_mode="ambiguous_scope",
         tags=["domain:architecture_decisions", "time_bound_project_fact"],
+    )
+    add(
+        example_id="pp:amb:11",
+        payload=_payload(
+            "cand:amb:11",
+            PromotionCandidateType.USER_MEMORY,
+            "Please remember this sprint I prefer brief updates.",
+            "observation",
+            explicit=True,
+        ),
+        expected_passed=False,
+        score_min=0.5,
+        score_max=0.5,
+        failure_mode="ambiguous_scope",
+        tags=["domain:product_project_planning", "adversarial", "explicit_but_temporary"],
+    )
+    add(
+        example_id="pp:amb:12",
+        payload=_payload(
+            "cand:amb:12",
+            PromotionCandidateType.EPISODIC,
+            "Task outcome for now: keep workaround until next week.",
+            "task_outcome",
+        ),
+        expected_passed=False,
+        score_min=0.5,
+        score_max=0.5,
+        failure_mode="ambiguous_scope",
+        tags=["domain:incident_debugging", "adversarial", "high_value_but_temporary"],
+    )
+    add(
+        example_id="pp:amb:13",
+        payload=_payload(
+            "cand:amb:13",
+            PromotionCandidateType.PROJECT_FACT,
+            "Use this trip's checklist template for now.",
+            "observation",
+            repeat=5,
+        ),
+        expected_passed=False,
+        score_min=0.5,
+        score_max=0.5,
+        failure_mode="ambiguous_scope",
+        tags=["domain:product_project_planning", "adversarial", "time_scope_bound"],
+    )
+    add(
+        example_id="pp:amb:14",
+        payload=_payload(
+            "cand:amb:14",
+            PromotionCandidateType.USER_MEMORY,
+            "Remember next week only: send verbose detail.",
+            "observation",
+            explicit=True,
+        ),
+        expected_passed=False,
+        score_min=0.5,
+        score_max=0.5,
+        failure_mode="ambiguous_scope",
+        tags=["domain:personal_assistant", "adversarial", "explicit_but_time_bound"],
+    )
+    add(
+        example_id="pp:amb:15",
+        payload=_payload(
+            "cand:amb:15",
+            PromotionCandidateType.EPISODIC,
+            "Investigation conclusion for now pending next week follow-up.",
+            "investigation_conclusion",
+        ),
+        expected_passed=False,
+        score_min=0.5,
+        score_max=0.5,
+        failure_mode="ambiguous_scope",
+        tags=["domain:research", "adversarial", "high_value_but_time_bound"],
+    )
+    add(
+        example_id="pp:amb:16",
+        payload=_payload(
+            "cand:amb:16",
+            PromotionCandidateType.EPISODIC,
+            "Decision finalized for this sprint only.",
+            "decision_finalized",
+        ),
+        expected_passed=False,
+        score_min=0.5,
+        score_max=0.5,
+        failure_mode="ambiguous_scope",
+        tags=["domain:architecture_decisions", "adversarial", "decision_time_bound"],
+    )
+    add(
+        example_id="pp:amb:17",
+        payload=_payload(
+            "cand:amb:17",
+            PromotionCandidateType.USER_MEMORY,
+            "Remember this trip preference permanently for now.",
+            "observation",
+            explicit=True,
+        ),
+        expected_passed=False,
+        score_min=0.5,
+        score_max=0.5,
+        failure_mode="ambiguous_scope",
+        tags=["domain:personal_assistant", "adversarial", "scope_conflict"],
+    )
+    add(
+        example_id="pp:amb:18",
+        payload=_payload(
+            "cand:amb:18",
+            PromotionCandidateType.PROJECT_FACT,
+            "Repeated rule: temporary routing override this sprint.",
+            "observation",
+            repeat=4,
+        ),
+        expected_passed=False,
+        score_min=0.5,
+        score_max=0.5,
+        failure_mode="ambiguous_scope",
+        tags=["domain:software_engineering", "adversarial", "repeated_but_temporary"],
     )
 
     return examples

@@ -124,7 +124,7 @@ def test_time_bound_planning_scores_ambiguous() -> None:
     )
     assert verdict.passed is False
     assert verdict.score == 0.5
-    assert verdict.failure_mode == "transient_context"
+    assert verdict.failure_mode == "ambiguous_scope"
 
 
 def test_duplicate_prone_candidate_scores_ambiguous() -> None:
@@ -139,6 +139,32 @@ def test_duplicate_prone_candidate_scores_ambiguous() -> None:
     assert verdict.passed is False
     assert verdict.score == 0.5
     assert verdict.failure_mode == "ambiguous_scope"
+
+
+def test_explicit_but_temporary_scores_ambiguous() -> None:
+    verdict = PromotionPrecisionJudge().judge(
+        input_payload=_payload(
+            candidate_type=PromotionCandidateType.USER_MEMORY,
+            content="Please remember this for now during this sprint.",
+            explicit_user_memory_request=True,
+        )
+    )
+    assert verdict.passed is False
+    assert verdict.score == 0.5
+    assert verdict.failure_mode == "ambiguous_scope"
+
+
+def test_task_outcome_but_noisy_fails() -> None:
+    verdict = PromotionPrecisionJudge().judge(
+        input_payload=_payload(
+            candidate_type=PromotionCandidateType.EPISODIC,
+            created_from="task_outcome",
+            content="FYI user asked if we are done.",
+        )
+    )
+    assert verdict.passed is False
+    assert verdict.score == 0.0
+    assert verdict.failure_mode == "noise"
 
 
 def test_verdict_id_is_stable_for_same_input() -> None:
@@ -216,6 +242,13 @@ def test_false_positive_count_is_low() -> None:
 def test_false_negative_count_is_low() -> None:
     report = JudgeCalibrator().run(judge=PromotionPrecisionJudge(), examples=promotion_precision_calibration_v1())
     assert report.false_negative_count <= 2
+
+
+def test_failure_mode_agreement_is_high() -> None:
+    report = JudgeCalibrator().run(judge=PromotionPrecisionJudge(), examples=promotion_precision_calibration_v1())
+    comparable_cases = [case for case in report.case_results if case.expected_failure_mode is not None]
+    exact_matches = [case for case in comparable_cases if case.expected_failure_mode == case.actual_failure_mode]
+    assert len(exact_matches) / len(comparable_cases) >= 0.9
 
 
 def test_no_live_llm_calls_are_required() -> None:
