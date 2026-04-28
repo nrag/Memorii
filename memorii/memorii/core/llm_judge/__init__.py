@@ -27,6 +27,7 @@ from memorii.core.llm_judge.judges import (
     temporal_validity_calibration_v1,
     temporal_validity_rubric,
 )
+from memorii.core.llm_judge.jury import JuryAggregator
 from memorii.core.llm_judge.models import (
     CalibrationCaseResult,
     CalibrationExample,
@@ -35,6 +36,12 @@ from memorii.core.llm_judge.models import (
     JudgeRubric,
     JudgeVerdict,
     JuryVerdict,
+)
+from memorii.core.llm_judge.runner import (
+    JudgeRunCaseResult,
+    JudgeRunReport,
+    OfflineJudgeRunner,
+    attach_judge_refs_to_eval_cases,
 )
 
 __all__ = [
@@ -47,13 +54,17 @@ __all__ = [
     "JudgeCalibrator",
     "JudgeDimension",
     "JudgeRubric",
+    "JudgeRunCaseResult",
+    "JudgeRunReport",
     "JudgeVerdict",
     "JuryAggregator",
     "JuryVerdict",
     "MemoryPlaneJudge",
+    "OfflineJudgeRunner",
     "PromotionPrecisionJudge",
     "SingleDimensionJudge",
     "TemporalValidityJudge",
+    "attach_judge_refs_to_eval_cases",
     "attribution_calibration_v1",
     "attribution_rubric",
     "belief_direction_calibration_v1",
@@ -68,5 +79,3 @@ __all__ = [
     "temporal_validity_rubric",
     "validate_single_dimension_judge",
 ]
-
-from memorii.core.llm_judge.jury import JuryAggregator
