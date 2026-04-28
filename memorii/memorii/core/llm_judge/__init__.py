@@ -12,6 +12,7 @@ from memorii.core.llm_judge.judge import (
 )
 from memorii.core.llm_judge.jury import JuryAggregator
 from memorii.core.llm_judge.models import (
+    CalibrationCaseResult,
     CalibrationExample,
     JudgeCalibrationReport,
     JudgeDimension,
@@ -21,6 +22,7 @@ from memorii.core.llm_judge.models import (
 )
 
 __all__ = [
+    "CalibrationCaseResult",
     "CalibrationExample",
     "FakeSingleDimensionJudge",
     "JudgeCalibrationReport",

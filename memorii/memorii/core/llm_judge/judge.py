@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Callable, Protocol
 
 from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric, JudgeVerdict
 
@@ -34,11 +34,7 @@ def validate_single_dimension_judge(judge: SingleDimensionJudge) -> None:
     if not judge.rubric.description.strip():
         raise ValueError("rubric description must be non-empty")
 
-    anchors = [
-        judge.rubric.score_1_anchor,
-        judge.rubric.score_0_5_anchor,
-        judge.rubric.score_0_anchor,
-    ]
+    anchors = [judge.rubric.score_1_anchor, judge.rubric.score_0_5_anchor, judge.rubric.score_0_anchor]
     if any(not anchor.strip() for anchor in anchors):
         raise ValueError("rubric score anchors must be non-empty")
 
@@ -54,8 +50,9 @@ class FakeSingleDimensionJudge:
         default_rationale: str,
         default_failure_mode: str | None = None,
         default_needs_human_review: bool = False,
-        score_by_input_key: dict[str, float] | None = None,
-        failure_mode_by_input_key: dict[str, str | None] | None = None,
+        score_by_input_field_value: dict[str, dict[object, float]] | None = None,
+        failure_mode_by_input_field_value: dict[str, dict[object, str | None]] | None = None,
+        created_at_factory: Callable[[], datetime] | None = None,
     ) -> None:
         self.judge_id = judge_id
         self.dimension = dimension
@@ -64,8 +61,9 @@ class FakeSingleDimensionJudge:
         self.default_rationale = default_rationale
         self.default_failure_mode = default_failure_mode
         self.default_needs_human_review = default_needs_human_review
-        self.score_by_input_key = score_by_input_key or {}
-        self.failure_mode_by_input_key = failure_mode_by_input_key or {}
+        self.score_by_input_field_value = score_by_input_field_value or {}
+        self.failure_mode_by_input_field_value = failure_mode_by_input_field_value or {}
+        self.created_at_factory = created_at_factory or (lambda: datetime.now(UTC))
 
     def judge(
         self,
@@ -77,12 +75,13 @@ class FakeSingleDimensionJudge:
         score = self.default_score
         failure_mode = self.default_failure_mode
 
-        for key, mapped_score in self.score_by_input_key.items():
-            if key in input_payload:
-                score = mapped_score
-        for key, mapped_failure_mode in self.failure_mode_by_input_key.items():
-            if key in input_payload:
-                failure_mode = mapped_failure_mode
+        for field_name, value_scores in self.score_by_input_field_value.items():
+            if field_name in input_payload and input_payload[field_name] in value_scores:
+                score = value_scores[input_payload[field_name]]
+
+        for field_name, value_modes in self.failure_mode_by_input_field_value.items():
+            if field_name in input_payload and input_payload[field_name] in value_modes:
+                failure_mode = value_modes[input_payload[field_name]]
 
         passed = score >= self.rubric.pass_threshold
         stable_key = {
@@ -105,5 +104,5 @@ class FakeSingleDimensionJudge:
             rationale=self.default_rationale,
             failure_mode=failure_mode,
             needs_human_review=self.default_needs_human_review,
-            created_at=datetime.now(UTC),
+            created_at=self.created_at_factory(),
         )

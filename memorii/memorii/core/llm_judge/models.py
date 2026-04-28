@@ -54,6 +54,7 @@ class JuryVerdict(BaseModel):
     snapshot_id: str | None = None
     trace_id: str | None = None
     verdicts: list[JudgeVerdict]
+    dimensions: list[JudgeDimension] = Field(default_factory=list)
     passed: bool
     aggregate_score: float
     disagreement: bool = False
@@ -119,6 +120,23 @@ class CalibrationExample(BaseModel):
         return value
 
 
+class CalibrationCaseResult(BaseModel):
+    example_id: str
+    verdict_id: str
+    expected_passed: bool
+    actual_passed: bool
+    expected_score_min: float
+    expected_score_max: float
+    actual_score: float
+    score_in_range: bool
+    expected_failure_mode: str | None = None
+    actual_failure_mode: str | None = None
+    needs_human_review: bool
+    error_type: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class JudgeCalibrationReport(BaseModel):
     judge_id: str
     dimension: JudgeDimension
@@ -129,7 +147,10 @@ class JudgeCalibrationReport(BaseModel):
     false_positive_count: int
     false_negative_count: int
     ambiguous_count: int
+    score_out_of_range_count: int
+    human_review_count: int
     failure_mode_counts: dict[str, int]
+    case_results: list[CalibrationCaseResult] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 

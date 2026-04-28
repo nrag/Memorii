@@ -38,11 +38,12 @@ def _verdict(
     passed: bool,
     score: float,
     needs_human_review: bool = False,
+    dimension: JudgeDimension = JudgeDimension.ATTRIBUTION,
 ) -> JudgeVerdict:
     return JudgeVerdict(
         verdict_id=verdict_id,
         judge_id="judge:test",
-        dimension=JudgeDimension.ATTRIBUTION,
+        dimension=dimension,
         passed=passed,
         score=score,
         rationale="ok",
@@ -122,6 +123,7 @@ def test_jury_aggregator_aggregates_all_passing_verdicts() -> None:
     assert jury.disagreement is False
     assert jury.needs_human_review is False
     assert jury.aggregate_score == pytest.approx(0.85)
+    assert jury.dimensions == [JudgeDimension.ATTRIBUTION]
 
 
 def test_jury_aggregator_detects_pass_fail_disagreement() -> None:
@@ -162,6 +164,29 @@ def test_jury_aggregator_marks_empty_verdict_list_as_human_review() -> None:
     assert jury.passed is False
     assert jury.aggregate_score == 0.0
     assert jury.needs_human_review is True
+    assert jury.dimensions == []
+
+
+def test_jury_aggregator_builds_stable_id_from_inputs() -> None:
+    aggregator = JuryAggregator()
+    first = aggregator.aggregate(
+        verdicts=[
+            _verdict(verdict_id="v:1", passed=True, score=0.8),
+            _verdict(verdict_id="v:2", passed=True, score=0.9),
+        ],
+        snapshot_id="snap:1",
+        trace_id="trace:1",
+    )
+    second = aggregator.aggregate(
+        verdicts=[
+            _verdict(verdict_id="v:2", passed=True, score=0.9),
+            _verdict(verdict_id="v:1", passed=True, score=0.8),
+        ],
+        snapshot_id="snap:1",
+        trace_id="trace:1",
+    )
+
+    assert first.jury_id == second.jury_id
 
 
 def test_judge_calibrator_computes_agreement_rate() -> None:
@@ -179,30 +204,31 @@ def test_judge_calibrator_computes_agreement_rate() -> None:
         CalibrationExample(
             example_id="e:2",
             dimension=JudgeDimension.ATTRIBUTION,
-            input_payload={"fail": True},
+            input_payload={"result": "fail"},
             expected_passed=False,
             expected_score_min=0.0,
             expected_score_max=0.69,
         ),
     ]
 
-    judge.score_by_input_key["fail"] = 0.3
+    judge.score_by_input_field_value["result"] = {"fail": 0.3}
     report = calibrator.run(judge=judge, examples=examples)
 
     assert report.agreement_rate == pytest.approx(1.0)
     assert report.total_examples == 2
+    assert len(report.case_results) == 2
 
 
 def test_judge_calibrator_counts_false_positives_and_false_negatives() -> None:
     calibrator = JudgeCalibrator()
     judge = _fake_judge()
-    judge.score_by_input_key = {"high": 0.9, "low": 0.1}
+    judge.score_by_input_field_value = {"result": {"high": 0.9, "low": 0.1}}
 
     examples = [
         CalibrationExample(
             example_id="e:fp",
             dimension=JudgeDimension.ATTRIBUTION,
-            input_payload={"high": True},
+            input_payload={"result": "high"},
             expected_passed=False,
             expected_score_min=0.0,
             expected_score_max=1.0,
@@ -210,7 +236,7 @@ def test_judge_calibrator_counts_false_positives_and_false_negatives() -> None:
         CalibrationExample(
             example_id="e:fn",
             dimension=JudgeDimension.ATTRIBUTION,
-            input_payload={"low": True},
+            input_payload={"result": "low"},
             expected_passed=True,
             expected_score_min=0.0,
             expected_score_max=1.0,
@@ -221,18 +247,20 @@ def test_judge_calibrator_counts_false_positives_and_false_negatives() -> None:
 
     assert report.false_positive_count == 1
     assert report.false_negative_count == 1
+    assert report.case_results[0].error_type == "false_positive"
+    assert report.case_results[1].error_type == "false_negative"
 
 
 def test_judge_calibrator_counts_ambiguous_score_cases() -> None:
     calibrator = JudgeCalibrator()
     judge = _fake_judge()
-    judge.score_by_input_key = {"ambiguous": 0.2}
+    judge.score_by_input_field_value = {"result": {"ambiguous": 0.2}}
 
     examples = [
         CalibrationExample(
             example_id="e:amb",
             dimension=JudgeDimension.ATTRIBUTION,
-            input_payload={"ambiguous": True},
+            input_payload={"result": "ambiguous"},
             expected_passed=False,
             expected_score_min=0.5,
             expected_score_max=0.7,
@@ -242,12 +270,15 @@ def test_judge_calibrator_counts_ambiguous_score_cases() -> None:
     report = calibrator.run(judge=judge, examples=examples)
 
     assert report.ambiguous_count == 1
+    assert report.score_out_of_range_count == 1
+    assert report.human_review_count == 0
 
 
 def test_should_promote_to_golden_candidate_from_jury_flags_key_conditions() -> None:
     disagreement = JuryVerdict(
         jury_id="jury:1",
         verdicts=[_verdict(verdict_id="v:1", passed=True, score=0.8)],
+        dimensions=[JudgeDimension.ATTRIBUTION],
         passed=True,
         aggregate_score=0.8,
         disagreement=True,
@@ -256,6 +287,7 @@ def test_should_promote_to_golden_candidate_from_jury_flags_key_conditions() -> 
     human_review = JuryVerdict(
         jury_id="jury:2",
         verdicts=[_verdict(verdict_id="v:2", passed=True, score=0.8)],
+        dimensions=[JudgeDimension.ATTRIBUTION],
         passed=True,
         aggregate_score=0.8,
         needs_human_review=True,
@@ -264,6 +296,7 @@ def test_should_promote_to_golden_candidate_from_jury_flags_key_conditions() -> 
     failed = JuryVerdict(
         jury_id="jury:3",
         verdicts=[_verdict(verdict_id="v:3", passed=False, score=0.2)],
+        dimensions=[JudgeDimension.ATTRIBUTION],
         passed=False,
         aggregate_score=0.2,
         created_at=datetime.now(UTC),
@@ -278,6 +311,7 @@ def test_build_golden_candidate_reason_from_jury_returns_stable_reason_strings()
     base = {
         "jury_id": "jury:x",
         "verdicts": [_verdict(verdict_id="v:1", passed=True, score=0.8)],
+        "dimensions": [JudgeDimension.ATTRIBUTION],
         "aggregate_score": 0.8,
         "created_at": datetime.now(UTC),
     }
@@ -285,26 +319,54 @@ def test_build_golden_candidate_reason_from_jury_returns_stable_reason_strings()
     disagreement = JuryVerdict(**base, passed=True, disagreement=True)
     human_review = JuryVerdict(**base, passed=True, needs_human_review=True)
     failed = JuryVerdict(**base, passed=False)
+    combined = JuryVerdict(**base, passed=False, disagreement=True)
 
     assert build_golden_candidate_reason_from_jury(disagreement) == "judge_disagreement"
     assert build_golden_candidate_reason_from_jury(human_review) == "judge_human_review_required"
     assert build_golden_candidate_reason_from_jury(failed) == "judge_failed"
+    assert build_golden_candidate_reason_from_jury(combined) == "judge_disagreement+judge_failed"
 
 
 def test_fake_single_dimension_judge_can_be_used_without_llm_calls() -> None:
+    fixed_created_at = datetime(2026, 1, 10, tzinfo=UTC)
     judge = FakeSingleDimensionJudge(
         judge_id="judge:test",
         dimension=JudgeDimension.ATTRIBUTION,
         rubric=_rubric(),
         default_score=0.9,
         default_rationale="Fake judge",
-        score_by_input_key={"bad": 0.2},
-        failure_mode_by_input_key={"bad": "missing_evidence"},
+        score_by_input_field_value={"result": {"bad": 0.2}},
+        failure_mode_by_input_field_value={"result": {"bad": "missing_evidence"}},
+        created_at_factory=lambda: fixed_created_at,
     )
 
-    passing = judge.judge(input_payload={"ok": True}, snapshot_id="snap:1")
-    failing = judge.judge(input_payload={"bad": True}, trace_id="trace:1")
+    passing = judge.judge(input_payload={"result": "ok"}, snapshot_id="snap:1")
+    failing = judge.judge(input_payload={"result": "bad"}, trace_id="trace:1")
 
     assert passing.passed is True
     assert failing.passed is False
     assert failing.failure_mode == "missing_evidence"
+    assert passing.created_at == fixed_created_at
+    assert failing.created_at == fixed_created_at
+
+
+def test_jury_aggregator_reports_multiple_dimensions_explicitly() -> None:
+    aggregator = JuryAggregator()
+    jury = aggregator.aggregate(
+        verdicts=[
+            _verdict(
+                verdict_id="v:1",
+                passed=True,
+                score=0.9,
+                dimension=JudgeDimension.ATTRIBUTION,
+            ),
+            _verdict(
+                verdict_id="v:2",
+                passed=True,
+                score=0.9,
+                dimension=JudgeDimension.TEMPORAL_VALIDITY,
+            ),
+        ]
+    )
+
+    assert jury.dimensions == [JudgeDimension.ATTRIBUTION, JudgeDimension.TEMPORAL_VALIDITY]
