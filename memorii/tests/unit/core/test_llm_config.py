@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
 import pytest
 
 from memorii.core.llm_config import LLMRuntimeConfig
@@ -66,14 +68,14 @@ def test_invalid_timeout_retry_raise() -> None:
 
 
 def test_gitignore_env_rules() -> None:
-    gitignore = Path(".gitignore").read_text()
+    gitignore = (REPO_ROOT / ".gitignore").read_text()
     assert ".env" in gitignore
     assert ".env.*" in gitignore
     assert "!.env.example" in gitignore
 
 
 def test_env_example_placeholders_only() -> None:
-    body = Path(".env.example").read_text()
+    body = (REPO_ROOT / ".env.example").read_text()
     assert "OPENAI_API_KEY=" in body
     assert "ANTHROPIC_API_KEY=" in body
     assert not re.search(r"sk-[A-Za-z0-9]", body)
