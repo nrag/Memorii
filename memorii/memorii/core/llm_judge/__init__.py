@@ -1,6 +1,6 @@
-from memorii.core.llm_judge.artifacts import JudgeArtifactPolicy, JudgeArtifactWriteResult, JudgeArtifactWriter
 """Single-dimension LLM judge contracts, models, and calibration helpers."""
 
+from memorii.core.llm_judge.artifacts import JudgeArtifactPolicy, JudgeArtifactWriteResult, JudgeArtifactWriter
 from memorii.core.llm_judge.calibration import (
     JudgeCalibrator,
     build_golden_candidate_reason_from_jury,
