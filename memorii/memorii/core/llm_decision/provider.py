@@ -37,7 +37,7 @@ class DisabledLLMDecisionProvider:
         return LLMDecisionTrace(
             trace_id=f"trace:{uuid4().hex}",
             decision_point=decision_point,
-            mode=LLMDecisionMode.RULE_BASED,
+            mode=LLMDecisionMode.RULE,
             prompt_version=prompt_version,
             input_payload=input_payload,
             fallback_used=True,

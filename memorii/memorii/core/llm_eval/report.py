@@ -23,6 +23,15 @@ def summarize_eval_report(report: EvalRunReport) -> str:
     if requires_review_ids:
         lines.append(f"requires_judge_review_snapshot_ids: {','.join(requires_review_ids)}")
 
+    fallback_ids = [result.snapshot_id for result in report.results if result.fallback_used]
+    disagreement_ids = [result.snapshot_id for result in report.results if result.disagreement]
+    lines.append(f"fallback_cases: {len(fallback_ids)}")
+    if fallback_ids:
+        lines.append(f"fallback_snapshot_ids: {','.join(fallback_ids)}")
+    lines.append(f"disagreement_cases: {len(disagreement_ids)}")
+    if disagreement_ids:
+        lines.append(f"disagreement_snapshot_ids: {','.join(disagreement_ids)}")
+
     failed_ids = [result.snapshot_id for result in report.results if not result.passed]
     lines.append(f"failed_snapshot_ids: {','.join(failed_ids) if failed_ids else '(none)'}")
     return "\n".join(lines)
