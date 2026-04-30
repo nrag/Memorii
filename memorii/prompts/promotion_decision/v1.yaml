@@ -1,0 +1,30 @@
+prompt_id: promotion_decision
+version: v1
+task: Decide memory promotion target for a candidate memory.
+description: Evaluates PromotionContext and outputs a cautious promotion decision.
+input_schema:
+  type: object
+output_schema:
+  type: object
+  required: [promote, target_plane, confidence, rationale, failure_mode, requires_judge_review]
+  properties:
+    promote: {type: boolean}
+    target_plane: {type: [string, 'null'], enum: [episodic, semantic, user_memory, project_fact, null]}
+    confidence: {type: number}
+    rationale: {type: string}
+    failure_mode: {type: [string, 'null']}
+    requires_judge_review: {type: boolean}
+system_template: "You are a cautious memory promotion assessor. Use only the provided context and abstain when uncertain. Return strict JSON only."
+user_template: "PromotionContext: {context_json}\nCandidate: {candidate_summary}\nOutput strict JSON matching schema."
+model_defaults:
+  provider: openai
+  model: null
+  temperature: 0.0
+  max_tokens: 1000
+  timeout_seconds: null
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+allowed_failure_modes: [noise, one_off_preference, unsupported_inference, speculative_claim, insufficient_repetition, ambiguous_scope, temporal_scope, attribution_unclear, wrong_plane_risk, duplicate_or_merge_needed]
+tags: [promotion, wave1]

@@ -1,0 +1,23 @@
+prompt_id: judges/attribution
+version: v1
+task: Evaluate attribution quality for one decision.
+description: Single-dimension Wave 1 judge contract for attribution.
+input_schema: {type: object}
+output_schema:
+  type: object
+  required: [passed, score, rationale, failure_mode, needs_human_review]
+  properties:
+    passed: {type: boolean}
+    score: {type: number}
+    rationale: {type: string}
+    failure_mode: {type: [string, 'null']}
+    needs_human_review: {type: boolean}
+system_template: "Evaluate exactly one dimension: attribution. Do not judge other dimensions. Use the provided rubric only. Return strict JSON matching schema."
+user_template: "Rubric: {rubric_json}\nCase payload: {input_payload}\nReturn strict JSON only."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+allowed_failure_modes: [missing_attribution, agent_claim_as_user_claim, verifier_hypothesis_as_fact, external_source_as_user_memory, ambiguous_source]
+tags: [judge, wave1, attribution]

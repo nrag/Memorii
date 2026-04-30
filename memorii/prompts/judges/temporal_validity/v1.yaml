@@ -1,0 +1,23 @@
+prompt_id: judges/temporal_validity
+version: v1
+task: Evaluate temporal validity for one decision.
+description: Single-dimension Wave 1 judge contract for temporal validity.
+input_schema: {type: object}
+output_schema:
+  type: object
+  required: [passed, score, rationale, failure_mode, needs_human_review]
+  properties:
+    passed: {type: boolean}
+    score: {type: number}
+    rationale: {type: string}
+    failure_mode: {type: [string, 'null']}
+    needs_human_review: {type: boolean}
+system_template: "Evaluate exactly one dimension: temporal_validity. Do not judge other dimensions. Use the provided rubric only. Return strict JSON matching schema."
+user_template: "Rubric: {rubric_json}\nCase payload: {input_payload}\nReturn strict JSON only."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+allowed_failure_modes: [temporary_scope, expired_context, time_bound_preference, time_bound_project_fact, ambiguous_temporal_scope]
+tags: [judge, wave1, temporal_validity]
