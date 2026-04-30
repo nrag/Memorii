@@ -18,6 +18,7 @@ class LLMDecisionPoint(str, Enum):
 
 class LLMDecisionMode(str, Enum):
     RULE = "rule"
+    RULE_BASED = "rule"
     LLM = "llm"
     HYBRID = "hybrid"
 
