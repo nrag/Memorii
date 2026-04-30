@@ -35,7 +35,7 @@ class RuleBasedBeliefUpdateProvider:
         trace = LLMDecisionTrace(
             trace_id=f"trace:{uuid4().hex}",
             decision_point=LLMDecisionPoint.BELIEF_UPDATE,
-            mode=LLMDecisionMode.RULE_BASED,
+            mode=LLMDecisionMode.RULE,
             input_payload=context.model_dump(mode="json"),
             parsed_output=decision.model_dump(mode="json"),
             final_output=decision.model_dump(mode="json"),
