@@ -106,6 +106,27 @@ def test_request_metadata_redacts_secrets_and_result_is_serializable() -> None:
     json.dumps(dumped)
 
 
+def test_request_metadata_redaction_is_recursive_and_non_mutating() -> None:
+    runner, client = _runner(_VALID)
+    metadata = {"token": "top", "nested": {"password": "pw"}, "items": [{"authorization": "a1"}]}
+    original = {"token": "top", "nested": {"password": "pw"}, "items": [{"authorization": "a1"}]}
+    result = runner.run(
+        contract=_contract(),
+        variables={"context_json": {}, "candidate_summary": "s"},
+        request_id="r-nested",
+        metadata=metadata,
+    )
+    assert client.last_request is not None
+    assert client.last_request.metadata["token"] == "[REDACTED]"
+    assert client.last_request.metadata["nested"]["password"] == "[REDACTED]"
+    assert client.last_request.metadata["items"][0]["authorization"] == "[REDACTED]"
+    assert metadata == original
+    dumped = json.dumps(result.model_dump(mode="json"))
+    assert "top" not in dumped
+    assert "\"pw\"" not in dumped
+    assert "\"a1\"" not in dumped
+
+
 def test_schema_error_message_is_safe_and_does_not_echo_values() -> None:
     secret = "TOP_SECRET_SHOULD_NOT_APPEAR"
     bad_payload = f'{{"promote": true, "target_plane": "semantic", "rationale": "{secret}", "confidence": 5, "failure_mode": null, "requires_judge_review": false}}'
