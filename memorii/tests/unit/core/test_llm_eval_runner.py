@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionPoint
+from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionMode, LLMDecisionPoint
 from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
 from memorii.core.llm_eval.models import EvalCaseResult
 from memorii.core.llm_eval.report import summarize_eval_report
@@ -293,3 +293,69 @@ def test_judge_verdict_refs_defaults_to_empty_list() -> None:
     )
 
     assert result.judge_verdict_refs == []
+
+
+def test_trace_store_rule_mode_appends_one_trace() -> None:
+    trace_store = InMemoryLLMDecisionTraceStore()
+    snapshot = _snapshot(snapshot_id="snap:trace:rule", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_input(), expected_output={"promote": True})
+    report = OfflineLLMEvalRunner(decision_mode=LLMDecisionMode.RULE, trace_store=trace_store).run_snapshots([snapshot])
+    assert report.total_cases == 1
+    assert len(trace_store.list_traces()) == 1
+
+
+def test_trace_store_llm_failure_fallback_appends_rule_trace() -> None:
+    from types import SimpleNamespace
+
+    class _FailAdapter:
+        def decide(self, *, context, request_id, metadata=None):
+            return SimpleNamespace(success=False, output={})
+
+    trace_store = InMemoryLLMDecisionTraceStore()
+    snapshot = _snapshot(snapshot_id="snap:trace:fallback", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_input(), expected_output=None)
+    report = OfflineLLMEvalRunner(decision_mode=LLMDecisionMode.LLM, promotion_llm_adapter=_FailAdapter(), trace_store=trace_store).run_snapshots([snapshot])
+    assert report.results[0].fallback_used is True
+    assert len(trace_store.list_traces()) == 1
+
+
+def test_trace_store_hybrid_appends_rule_trace() -> None:
+    from types import SimpleNamespace
+
+    class _OkAdapter:
+        def decide(self, *, context, request_id, metadata=None):
+            return SimpleNamespace(success=True, output={"promote": True, "target_plane": "semantic", "confidence": 0.9, "rationale": "ok"})
+
+    trace_store = InMemoryLLMDecisionTraceStore()
+    snapshot = _snapshot(snapshot_id="snap:trace:hybrid", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_input(), expected_output=None)
+    OfflineLLMEvalRunner(decision_mode=LLMDecisionMode.HYBRID, promotion_llm_adapter=_OkAdapter(), trace_store=trace_store).run_snapshots([snapshot])
+    assert len(trace_store.list_traces()) == 1
+
+
+def test_trace_store_llm_success_does_not_append_rule_trace_and_trace_id_is_none() -> None:
+    from types import SimpleNamespace
+
+    class _OkAdapter:
+        def decide(self, *, context, request_id, metadata=None):
+            return SimpleNamespace(
+                success=True,
+                output={
+                    "promote": True,
+                    "target_plane": "semantic",
+                    "confidence": 0.9,
+                    "rationale": "ok",
+                },
+            )
+
+    trace_store = InMemoryLLMDecisionTraceStore()
+    snapshot = _snapshot(
+        snapshot_id="snap:trace:llm-success",
+        decision_point=LLMDecisionPoint.PROMOTION,
+        input_payload=_promotion_input(),
+        expected_output=None,
+    )
+    report = OfflineLLMEvalRunner(
+        decision_mode=LLMDecisionMode.LLM,
+        promotion_llm_adapter=_OkAdapter(),
+        trace_store=trace_store,
+    ).run_snapshots([snapshot])
+    assert len(trace_store.list_traces()) == 0
+    assert report.results[0].trace_id is None
