@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from copy import deepcopy
 from string import Formatter
 
 from memorii.core.prompts.models import PromptContract, PromptRedactionPolicy, RenderedPrompt
+
+_PLACEHOLDER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _serialize_value(value: object) -> str:
@@ -16,43 +19,58 @@ def _serialize_value(value: object) -> str:
     return str(value)
 
 
+def _deep_redact(value: object, redact_fields: set[str]) -> object:
+    if isinstance(value, dict):
+        redacted: dict[str, object] = {}
+        for key, nested in value.items():
+            if key in redact_fields:
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = _deep_redact(nested, redact_fields)
+        return redacted
+    if isinstance(value, list):
+        return [_deep_redact(item, redact_fields) for item in value]
+    return value
+
+
 def redact_variables(*, variables: dict[str, object], policy: PromptRedactionPolicy) -> dict[str, object]:
     redacted = deepcopy(variables)
+    input_fields = set(policy.redact_input_fields)
 
-    for key in policy.redact_input_fields:
+    for key in input_fields:
         if key in redacted:
             redacted[key] = "[REDACTED]"
 
-    input_payload = redacted.get("input_payload")
-    if isinstance(input_payload, dict):
-        for key in policy.redact_input_fields:
-            if key in input_payload:
-                input_payload[key] = "[REDACTED]"
-
-    for output_key in ("actual_output", "expected_output"):
-        output_payload = redacted.get(output_key)
-        if isinstance(output_payload, dict):
-            for key in policy.redact_output_fields:
-                if key in output_payload:
-                    output_payload[key] = "[REDACTED]"
-
-    metadata = redacted.get("metadata")
-    if isinstance(metadata, dict):
-        for key in policy.redact_metadata_fields:
-            if key in metadata:
-                metadata[key] = "[REDACTED]"
+    for key in ("input_payload", "actual_output", "expected_output", "metadata"):
+        if key in redacted:
+            if key == "metadata":
+                redacted[key] = _deep_redact(redacted[key], set(policy.redact_metadata_fields))
+            elif key in ("actual_output", "expected_output"):
+                redacted[key] = _deep_redact(redacted[key], set(policy.redact_output_fields))
+            else:
+                redacted[key] = _deep_redact(redacted[key], input_fields)
 
     return redacted
+
+
+def _validate_templates(contract: PromptContract, variables: dict[str, str]) -> None:
+    for template in (contract.system_template, contract.user_template):
+        for _, field_name, format_spec, conversion in Formatter().parse(template):
+            if field_name is None:
+                continue
+            if conversion is not None or format_spec:
+                raise ValueError("Only simple {variable_name} placeholders are allowed")
+            if not _PLACEHOLDER_PATTERN.match(field_name):
+                raise ValueError("Only simple {variable_name} placeholders are allowed")
+            if field_name not in variables:
+                raise KeyError(field_name)
 
 
 class PromptRenderer:
     def render(self, *, contract: PromptContract, variables: dict[str, object]) -> RenderedPrompt:
         safe_variables = redact_variables(variables=variables, policy=contract.redaction)
         formatted_variables = {k: _serialize_value(v) for k, v in safe_variables.items()}
-
-        for _, field_name, _, _ in Formatter().parse(contract.system_template + contract.user_template):
-            if field_name and field_name not in formatted_variables:
-                raise KeyError(field_name)
+        _validate_templates(contract, formatted_variables)
 
         system = contract.system_template.format(**formatted_variables)
         user = contract.user_template.format(**formatted_variables)

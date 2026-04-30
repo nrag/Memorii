@@ -24,88 +24,124 @@ def test_prompt_contract_rejects_extra_fields() -> None:
 
 
 def test_prompt_contract_validates_temperature_range() -> None:
-    contract = _load("promotion_decision:v1")
-    payload = contract.model_dump()
-    payload["model_defaults"]["temperature"] = 2.5
+    payload = _load("promotion_decision:v1").model_dump()
+    payload["model_defaults"]["temperature"] = 2.1
     with pytest.raises(ValidationError):
         PromptContract.model_validate(payload)
 
 
 def test_prompt_contract_validates_max_tokens() -> None:
-    contract = _load("promotion_decision:v1")
-    payload = contract.model_dump()
+    payload = _load("promotion_decision:v1").model_dump()
     payload["model_defaults"]["max_tokens"] = 0
     with pytest.raises(ValidationError):
         PromptContract.model_validate(payload)
 
 
-def test_registry_loads_refs_and_list() -> None:
+def test_registry_loads_and_lists_all() -> None:
     reg = PromptRegistry(prompt_root=PROMPT_ROOT)
-    assert reg.load("promotion_decision:v1").prompt_id == "promotion_decision"
-    assert reg.load("belief_update:v1").prompt_id == "belief_update"
-    for ref in [
+    expected = {
+        "promotion_decision:v1",
+        "belief_update:v1",
         "judges/promotion_precision:v1",
         "judges/temporal_validity:v1",
         "judges/attribution:v1",
         "judges/belief_direction:v1",
         "judges/memory_plane:v1",
-    ]:
-        assert reg.load(ref).prompt_id.startswith("judges/")
-    refs = reg.list_prompt_refs()
-    assert set(refs) >= {"promotion_decision:v1", "belief_update:v1", "judges/promotion_precision:v1", "judges/temporal_validity:v1", "judges/attribution:v1", "judges/belief_direction:v1", "judges/memory_plane:v1"}
+    }
+    assert expected.issubset(set(reg.list_prompt_refs()))
+    for ref in expected:
+        assert reg.load(ref).version == "v1"
 
 
-def test_registry_rejects_invalid_ref_and_missing() -> None:
+def test_registry_rejects_malformed_missing_and_traversal() -> None:
     reg = PromptRegistry(prompt_root=PROMPT_ROOT)
     with pytest.raises(ValueError):
         reg.load("badref")
     with pytest.raises(FileNotFoundError):
-        reg.load("not_here:v1")
+        reg.load("unknown:v1")
+    with pytest.raises(ValueError):
+        reg.load("../x:v1")
+    with pytest.raises(ValueError):
+        reg.load("judges/../../x:v1")
 
 
-def test_renderer_and_hash_and_serialization() -> None:
+def test_registry_rejects_malformed_yaml(tmp_path: Path) -> None:
+    root = tmp_path / "prompts"
+    (root / "a").mkdir(parents=True)
+    (root / "a" / "v1.yaml").write_text("- not-a-mapping")
+    with pytest.raises(ValueError):
+        PromptRegistry(prompt_root=root).load("a:v1")
+
+
+def test_renderer_renders_and_hash_changes() -> None:
     contract = _load("promotion_decision:v1")
     renderer = PromptRenderer()
-    variables = {"context_json": {"b": 1, "a": [2, 3]}, "candidate_summary": "x"}
-    rendered = renderer.render(contract=contract, variables=variables)
-    assert "{\"a\":[2,3],\"b\":1}" in rendered.user
-    again = renderer.render(contract=contract, variables=variables)
-    assert rendered.prompt_hash == again.prompt_hash
-    changed = renderer.render(contract=contract, variables={"context_json": {"a": [2, 4], "b": 1}, "candidate_summary": "x"})
-    assert rendered.prompt_hash != changed.prompt_hash
-    assert rendered.prompt_id == contract.prompt_id
-    assert rendered.version == contract.version
-    assert rendered.model_defaults == contract.model_defaults
-    assert rendered.expected_output_schema == contract.output_schema
+    vars1 = {"context_json": {"b": 1, "a": [2, 3]}, "candidate_summary": "x"}
+    out1 = renderer.render(contract=contract, variables=vars1)
+    out2 = renderer.render(contract=contract, variables=vars1)
+    out3 = renderer.render(contract=contract, variables={"context_json": {"a": [2, 4], "b": 1}, "candidate_summary": "x"})
+    assert out1.prompt_hash == out2.prompt_hash
+    assert out1.prompt_hash != out3.prompt_hash
+    assert "{\"a\":[2,3],\"b\":1}" in out1.user
 
 
-def test_missing_template_variable_raises() -> None:
+def test_renderer_rejects_unsafe_placeholders_and_missing() -> None:
+    payload = _load("promotion_decision:v1").model_dump()
+    for template in ["bad {x.y}", "bad {x[0]}", "bad {x!r}", "bad {x:>5}"]:
+        payload["system_template"] = template
+        contract = PromptContract.model_validate(payload)
+        with pytest.raises(ValueError):
+            PromptRenderer().render(contract=contract, variables={"x": "ok", "context_json": {}, "candidate_summary": "c"})
+
     with pytest.raises(KeyError):
         PromptRenderer().render(contract=_load("promotion_decision:v1"), variables={"context_json": {}})
 
 
-def test_redaction_rules_and_no_mutation() -> None:
+def test_redaction_nested_and_non_mutating() -> None:
     policy = _load("promotion_decision:v1").redaction
     variables = {
         "api_key": "abc",
-        "input_payload": {"token": "t", "keep": "ok"},
-        "actual_output": {"password": "p"},
-        "expected_output": {"secret": "s"},
-        "metadata": {"cookie": "c"},
+        "input_payload": {"metadata": {"token": "nested"}, "items": [{"password": "p1"}]},
+        "actual_output": {"deep": {"secret": "s1"}},
+        "metadata": {"trace": [{"cookie": "c"}]},
     }
-    snapshot = deepcopy(variables)
+    before = deepcopy(variables)
     redacted = redact_variables(variables=variables, policy=policy)
     assert redacted["api_key"] == "[REDACTED]"
-    assert redacted["input_payload"]["token"] == "[REDACTED]"
-    assert redacted["actual_output"]["password"] == "[REDACTED]"
-    assert variables == snapshot
+    assert redacted["input_payload"]["metadata"]["token"] == "[REDACTED]"
+    assert redacted["input_payload"]["items"][0]["password"] == "[REDACTED]"
+    assert redacted["actual_output"]["deep"]["secret"] == "[REDACTED]"
+    assert redacted["metadata"]["trace"][0]["cookie"] == "[REDACTED]"
+    assert variables == before
 
 
-def test_prompt_yaml_security_defaults() -> None:
-    keys = {"api_key", "token", "password", "secret", "authorization", "cookie"}
+def test_prompt_yaml_security_and_schema_strength() -> None:
+    expected_keys = {"api_key", "token", "password", "secret", "authorization", "cookie"}
     for path in PROMPT_ROOT.glob("**/*.yaml"):
-        body = path.read_text()
-        assert "sk-" not in body
-        data = yaml.safe_load(body)
-        redaction = data["redaction"]
-        assert keys.issubset(set(redaction["redact_input_fields"]))
+        text = path.read_text()
+        assert "sk-" not in text
+        data = yaml.safe_load(text)
+        assert data["output_schema"]["additionalProperties"] is False
+        if path.name == "v1.yaml":
+            props = data["output_schema"]["properties"]
+            for key in ("confidence", "score", "belief"):
+                if key in props:
+                    assert props[key]["minimum"] == 0.0
+                    assert props[key]["maximum"] == 1.0
+        assert expected_keys.issubset(set(data["redaction"]["redact_input_fields"]))
+
+
+def test_all_prompts_render_with_expected_variables() -> None:
+    renderer = PromptRenderer()
+    samples = {
+        "promotion_decision:v1": {"context_json": {}, "candidate_summary": "candidate"},
+        "belief_update:v1": {"context_json": {}, "prior_belief": 0.4},
+    }
+    for ref in PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs():
+        contract = _load(ref)
+        if ref.startswith("judges/"):
+            variables = {"rubric_json": {}, "input_payload": {}}
+        else:
+            variables = samples[ref]
+        rendered = renderer.render(contract=contract, variables=variables)
+        assert rendered.prompt_ref == ref

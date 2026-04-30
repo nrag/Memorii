@@ -1,14 +1,21 @@
 prompt_id: judges/promotion_precision
 version: v1
-task: Evaluate promotion precision for one decision.
-description: Single-dimension Wave 1 judge contract for promotion precision.
-input_schema: {type: object}
+task: Evaluate promotion_precision for one candidate decision.
+description: Single-dimension Wave 1 judge contract for promotion_precision.
+input_schema:
+  type: object
+  required: [rubric_json, input_payload]
+  additionalProperties: false
+  properties:
+    rubric_json: {type: object}
+    input_payload: {type: object}
 output_schema:
   type: object
+  additionalProperties: false
   required: [passed, score, rationale, failure_mode, needs_human_review]
   properties:
     passed: {type: boolean}
-    score: {type: number}
+    score: {type: number, minimum: 0.0, maximum: 1.0}
     rationale: {type: string}
     failure_mode: {type: [string, 'null']}
     needs_human_review: {type: boolean}

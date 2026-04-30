@@ -4,24 +4,25 @@ task: Decide memory promotion target for a candidate memory.
 description: Evaluates PromotionContext and outputs a cautious promotion decision.
 input_schema:
   type: object
+  required: [context_json, candidate_summary]
+  additionalProperties: false
+  properties:
+    context_json: {type: object}
+    candidate_summary: {type: string}
 output_schema:
   type: object
+  additionalProperties: false
   required: [promote, target_plane, confidence, rationale, failure_mode, requires_judge_review]
   properties:
     promote: {type: boolean}
     target_plane: {type: [string, 'null'], enum: [episodic, semantic, user_memory, project_fact, null]}
-    confidence: {type: number}
+    confidence: {type: number, minimum: 0.0, maximum: 1.0}
     rationale: {type: string}
     failure_mode: {type: [string, 'null']}
     requires_judge_review: {type: boolean}
 system_template: "You are a cautious memory promotion assessor. Use only the provided context and abstain when uncertain. Return strict JSON only."
 user_template: "PromotionContext: {context_json}\nCandidate: {candidate_summary}\nOutput strict JSON matching schema."
-model_defaults:
-  provider: openai
-  model: null
-  temperature: 0.0
-  max_tokens: 1000
-  timeout_seconds: null
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
 redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]

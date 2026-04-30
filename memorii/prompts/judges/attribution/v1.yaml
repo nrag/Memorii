@@ -1,14 +1,21 @@
 prompt_id: judges/attribution
 version: v1
-task: Evaluate attribution quality for one decision.
+task: Evaluate attribution for one candidate decision.
 description: Single-dimension Wave 1 judge contract for attribution.
-input_schema: {type: object}
+input_schema:
+  type: object
+  required: [rubric_json, input_payload]
+  additionalProperties: false
+  properties:
+    rubric_json: {type: object}
+    input_payload: {type: object}
 output_schema:
   type: object
+  additionalProperties: false
   required: [passed, score, rationale, failure_mode, needs_human_review]
   properties:
     passed: {type: boolean}
-    score: {type: number}
+    score: {type: number, minimum: 0.0, maximum: 1.0}
     rationale: {type: string}
     failure_mode: {type: [string, 'null']}
     needs_human_review: {type: boolean}
