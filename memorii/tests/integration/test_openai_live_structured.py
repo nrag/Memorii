@@ -9,7 +9,7 @@ from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 
-PROMPT_ROOT = Path(__file__).resolve().parents[2] / "prompts"
+PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
 
 
 @pytest.mark.integration

@@ -33,6 +33,14 @@ def test_live_permission_requires_flag_and_key() -> None:
     assert LLMLiveTestConfig(enable_live_llm_tests=True).should_run_live_llm_tests(runtime_with_key) is True
 
 
+def test_live_permission_rejects_none_and_fake_even_with_key() -> None:
+    runtime_none = LLMRuntimeConfig(provider="none", api_key="secret")
+    runtime_fake = LLMRuntimeConfig(provider="fake", api_key="secret")
+    live = LLMLiveTestConfig(enable_live_llm_tests=True)
+    assert live.should_run_live_llm_tests(runtime_none) is False
+    assert live.should_run_live_llm_tests(runtime_fake) is False
+
+
 def test_redacted_no_secret_and_no_test_flag() -> None:
     cfg = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "super-secret-value"})
     data = cfg.redacted_dict()

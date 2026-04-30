@@ -4,7 +4,6 @@ from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.base import LLMStructuredClient
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
 from memorii.core.llm_provider.noop import NoopLLMStructuredClient
-from memorii.core.llm_provider.openai_provider import OpenAIStructuredClient
 
 
 class LLMClientFactory:
@@ -16,5 +15,7 @@ class LLMClientFactory:
         if provider == "fake":
             return FakeLLMStructuredClient(default_response="{}")
         if provider == "openai":
+            from memorii.core.llm_provider.openai_provider import OpenAIStructuredClient
+
             return OpenAIStructuredClient()
         raise ValueError(f"Unsupported LLM provider: {provider}")

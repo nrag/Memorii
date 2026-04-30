@@ -19,24 +19,10 @@ class OpenAIStructuredClient:
         api_key = config.require_api_key().get_secret_value()
         model = request.model_defaults.model or config.model or "gpt-4.1-mini"
         timeout = request.model_defaults.timeout_seconds or config.timeout_seconds
-        client = OpenAI(api_key=api_key, timeout=timeout)
+        client = OpenAI(api_key=api_key, timeout=timeout, max_retries=config.max_retries)
 
         started = time.perf_counter()
-        response = client.responses.create(
-            model=model,
-            input=[
-                {"role": "system", "content": [{"type": "input_text", "text": request.system}]},
-                {"role": "user", "content": [{"type": "input_text", "text": request.user}]},
-            ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "memorii_structured_output",
-                    "strict": True,
-                    "schema": request.output_schema,
-                }
-            },
-        )
+        response = client.responses.create(**_build_structured_request_kwargs(request=request, model=model))
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         return LLMStructuredResponse(
@@ -91,3 +77,25 @@ def _extract_refusal(response: Any) -> str | None:
             if isinstance(candidate, str) and candidate.strip():
                 return candidate
     return None
+
+
+def _build_structured_request_kwargs(*, request: LLMStructuredRequest, model: str) -> dict[str, object]:
+    """Build OpenAI Responses API request kwargs for strict structured output.
+
+    Isolated for easier compatibility updates across SDK/API shape changes.
+    """
+    return {
+        "model": model,
+        "input": [
+            {"role": "system", "content": [{"type": "input_text", "text": request.system}]},
+            {"role": "user", "content": [{"type": "input_text", "text": request.user}]},
+        ],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "memorii_structured_output",
+                "strict": True,
+                "schema": request.output_schema,
+            }
+        },
+    }

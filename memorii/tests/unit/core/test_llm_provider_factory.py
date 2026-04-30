@@ -27,3 +27,11 @@ def test_unsupported_provider_raises() -> None:
         assert "Unsupported LLM provider" in str(exc)
     else:
         raise AssertionError("Expected ValueError")
+
+
+def test_factory_fake_does_not_require_openai_module(monkeypatch) -> None:
+    import sys
+
+    monkeypatch.setitem(sys.modules, "openai", None)
+    client = LLMClientFactory.from_config(LLMRuntimeConfig(provider="fake"))
+    assert isinstance(client, FakeLLMStructuredClient)

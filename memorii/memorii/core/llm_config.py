@@ -70,7 +70,8 @@ class LLMLiveTestConfig(BaseModel):
         return cls(enable_live_llm_tests=_parse_bool(source.get("MEMORII_ENABLE_LIVE_LLM_TESTS"), default=False))
 
     def should_run_live_llm_tests(self, runtime_config: LLMRuntimeConfig) -> bool:
-        return self.enable_live_llm_tests and runtime_config.has_api_key()
+        provider = runtime_config.provider.strip().lower()
+        return self.enable_live_llm_tests and provider not in {"none", "fake"} and runtime_config.has_api_key()
 
 
 def _parse_bool(value: str | None, *, default: bool) -> bool:

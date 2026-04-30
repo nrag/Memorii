@@ -7,7 +7,7 @@ import pytest
 
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest
-from memorii.core.llm_provider.openai_provider import OpenAIStructuredClient
+from memorii.core.llm_provider.openai_provider import OpenAIStructuredClient, _build_structured_request_kwargs
 from memorii.core.prompts.models import PromptModelDefaults
 
 
@@ -54,6 +54,14 @@ def test_fake_sdk_response_maps_fields(monkeypatch: pytest.MonkeyPatch) -> None:
     assert resp.usage["total_tokens"] == 12
     assert resp.latency_ms is not None
     assert captured["text"]["format"]["schema"]["type"] == "object"
+    assert captured["client_kwargs"]["max_retries"] == 2
+
+
+def test_structured_request_kwargs_shape() -> None:
+    kwargs = _build_structured_request_kwargs(request=_request(), model="gpt-4.1-mini")
+    assert kwargs["model"] == "gpt-4.1-mini"
+    assert kwargs["text"]["format"]["type"] == "json_schema"
+    assert kwargs["text"]["format"]["strict"] is True
 
 
 def test_refusal_extraction(monkeypatch: pytest.MonkeyPatch) -> None:
