@@ -11,13 +11,20 @@ _SECRET_METADATA_KEYS = {"api_key", "apikey", "token", "password", "secret", "au
 
 
 def _sanitize_metadata(metadata: dict[str, object] | None) -> dict[str, object]:
-    cleaned: dict[str, object] = {}
-    for key, value in (metadata or {}).items():
-        if key.lower() in _SECRET_METADATA_KEYS:
-            cleaned[key] = "[REDACTED]"
-        else:
-            cleaned[key] = value
-    return cleaned
+    def _redact(value: object) -> object:
+        if isinstance(value, dict):
+            cleaned: dict[str, object] = {}
+            for key, nested in value.items():
+                if key.lower() in _SECRET_METADATA_KEYS:
+                    cleaned[key] = "[REDACTED]"
+                else:
+                    cleaned[key] = _redact(nested)
+            return cleaned
+        if isinstance(value, list):
+            return [_redact(item) for item in value]
+        return value
+
+    return _redact(metadata or {}) if isinstance(metadata or {}, dict) else {}
 
 
 class PromptLLMRunner:

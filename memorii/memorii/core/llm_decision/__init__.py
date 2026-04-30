@@ -10,6 +10,11 @@ from memorii.core.llm_decision.evals import (
     build_golden_candidate_from_trace,
     should_harvest_golden_candidate,
 )
+from memorii.core.llm_decision.adapters import (
+    LLMBeliefUpdateAdapter,
+    LLMJudgeDecisionAdapter,
+    LLMPromotionDecisionAdapter,
+)
 from memorii.core.llm_decision.models import (
     EvalSnapshot,
     GoldenCandidate,
@@ -39,6 +44,9 @@ __all__ = [
     "JsonlEvalSnapshotStore",
     "JsonlGoldenCandidateStore",
     "JsonlLLMDecisionTraceStore",
+    "LLMBeliefUpdateAdapter",
+    "LLMJudgeDecisionAdapter",
+    "LLMPromotionDecisionAdapter",
     "JudgeVerdict",
     "JuryVerdict",
     "LLMDecisionMode",
