@@ -1,0 +1,30 @@
+prompt_id: belief_update
+version: v1
+task: Update a belief score from new evidence.
+description: Produces updated belief and confidence from BeliefUpdateContext.
+input_schema:
+  type: object
+  required: [context_json, prior_belief]
+  additionalProperties: false
+  properties:
+    context_json: {type: object}
+    prior_belief: {type: number, minimum: 0.0, maximum: 1.0}
+output_schema:
+  type: object
+  additionalProperties: false
+  required: [belief, confidence, rationale, failure_mode, requires_judge_review]
+  properties:
+    belief: {type: number, minimum: 0.0, maximum: 1.0}
+    confidence: {type: number, minimum: 0.0, maximum: 1.0}
+    rationale: {type: string}
+    failure_mode: {type: [string, 'null']}
+    requires_judge_review: {type: boolean}
+system_template: "You update belief values only from the supplied evidence. If direction is unclear, preserve uncertainty. Return strict JSON only."
+user_template: "BeliefUpdateContext: {context_json}\nPrior belief: {prior_belief}\nReturn strict JSON matching schema."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+allowed_failure_modes: [should_increase, should_decrease, should_not_increase, should_remain_uncertain, ambiguous_direction, missing_evidence, verifier_downgrade, conflict_present, evidence_irrelevant]
+tags: [belief, wave1]
