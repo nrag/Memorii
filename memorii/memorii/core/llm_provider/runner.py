@@ -7,6 +7,18 @@ from memorii.core.llm_provider.parser import parse_structured_response
 from memorii.core.prompts.models import PromptContract
 from memorii.core.prompts.render import PromptRenderer
 
+_SECRET_METADATA_KEYS = {"api_key", "apikey", "token", "password", "secret", "authorization", "cookie"}
+
+
+def _sanitize_metadata(metadata: dict[str, object] | None) -> dict[str, object]:
+    cleaned: dict[str, object] = {}
+    for key, value in (metadata or {}).items():
+        if key.lower() in _SECRET_METADATA_KEYS:
+            cleaned[key] = "[REDACTED]"
+        else:
+            cleaned[key] = value
+    return cleaned
+
 
 class PromptLLMRunner:
     def __init__(
@@ -29,7 +41,7 @@ class PromptLLMRunner:
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
         rendered = self._renderer.render(contract=contract, variables=variables)
-        request_metadata = dict(metadata or {})
+        request_metadata = _sanitize_metadata(metadata)
         request_metadata.update(
             {
                 "prompt_ref": rendered.prompt_ref,
@@ -60,6 +72,18 @@ class PromptLLMRunner:
                 error=f"Provider request failed: {type(exc).__name__}",
             )
             return LLMDecisionResult(request=request, response=failed_response, output=None, success=False, failure_mode="provider_error")
+
+        if raw_response.request_id != request_id:
+            mismatch_response = raw_response.model_copy(
+                update={
+                    "request_id": request_id,
+                    "valid_json": False,
+                    "schema_valid": False,
+                    "parsed_json": None,
+                    "error": "Provider returned mismatched request identifier.",
+                }
+            )
+            return LLMDecisionResult(request=request, response=mismatch_response, output=None, success=False, failure_mode="provider_error")
 
         parsed_response = parse_structured_response(response=raw_response, output_schema=rendered.expected_output_schema)
         success = parsed_response.valid_json and parsed_response.schema_valid and parsed_response.parsed_json is not None

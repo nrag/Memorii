@@ -22,7 +22,14 @@ def parse_structured_response(
 
     try:
         validate(instance=parsed, schema=output_schema)
-    except ValidationError as exc:
-        return response.model_copy(update={"valid_json": True, "schema_valid": False, "parsed_json": parsed, "error": f"Schema validation failed: {exc.message}"})
+    except ValidationError:
+        return response.model_copy(
+            update={
+                "valid_json": True,
+                "schema_valid": False,
+                "parsed_json": parsed,
+                "error": "Response failed schema validation.",
+            }
+        )
 
     return response.model_copy(update={"valid_json": True, "schema_valid": True, "parsed_json": parsed, "error": None})

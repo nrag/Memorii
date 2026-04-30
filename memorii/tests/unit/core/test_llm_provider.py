@@ -7,10 +7,12 @@ import pytest
 
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
+from memorii.core.llm_provider.models import LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 
 PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
+_VALID = '{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}'
 
 
 def _contract():
@@ -24,13 +26,20 @@ def _runner(response_text: str, raise_on_request: bool = False) -> tuple[PromptL
 
 
 def test_fake_provider_returns_default_structured_json() -> None:
-    runner, _ = _runner('{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}')
+    runner, _ = _runner(_VALID)
     result = runner.run(contract=_contract(), variables={"context_json": {}, "candidate_summary": "s"}, request_id="r1")
     assert result.success is True
 
 
 def test_invalid_json_returns_failure() -> None:
     runner, _ = _runner("not-json")
+    result = runner.run(contract=_contract(), variables={"context_json": {}, "candidate_summary": "s"}, request_id="r1")
+    assert result.success is False
+    assert result.failure_mode == "invalid_json"
+
+
+def test_non_object_json_returns_failure() -> None:
+    runner, _ = _runner('[{"promote": false}]')
     result = runner.run(contract=_contract(), variables={"context_json": {}, "candidate_summary": "s"}, request_id="r1")
     assert result.success is False
     assert result.failure_mode == "invalid_json"
@@ -43,10 +52,11 @@ def test_schema_missing_required_field_returns_failure() -> None:
     assert result.failure_mode == "schema_validation"
 
 
-def test_schema_type_enum_and_additional_properties_are_enforced() -> None:
+def test_schema_type_enum_additional_properties_and_bounds_are_enforced() -> None:
     bad_cases = [
         '{"promote": "no", "target_plane": null, "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}',
         '{"promote": true, "target_plane": "bad", "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}',
+        '{"promote": true, "target_plane": "semantic", "rationale": "x", "confidence": 1.5, "failure_mode": null, "requires_judge_review": false}',
         '{"promote": true, "target_plane": "semantic", "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false, "extra": 1}',
     ]
     for payload in bad_cases:
@@ -64,29 +74,52 @@ def test_provider_exception_returns_failure_safely() -> None:
     assert "Provider request failed" in (result.response.error or "")
 
 
-def test_request_includes_prompt_ref_hash_and_redaction_and_serializable() -> None:
-    runner, client = _runner('{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}')
+def test_mismatched_provider_request_id_fails_safely() -> None:
+    class _MismatchClient(FakeLLMStructuredClient):
+        def complete_structured(self, request, *, config):
+            response = super().complete_structured(request, config=config)
+            return response.model_copy(update={"request_id": "different"})
+
+    runner = PromptLLMRunner(client=_MismatchClient(default_response=_VALID), config=LLMRuntimeConfig(provider="none"))
+    result = runner.run(contract=_contract(), variables={"context_json": {}, "candidate_summary": "s"}, request_id="r1")
+    assert result.success is False
+    assert result.failure_mode == "provider_error"
+
+
+def test_request_metadata_redacts_secrets_and_result_is_serializable() -> None:
+    runner, client = _runner(_VALID)
     result = runner.run(
         contract=_contract(),
         variables={"context_json": {}, "candidate_summary": "s", "api_key": "secret-123"},
         request_id="r1",
-        metadata={"k": "v"},
+        metadata={"k": "v", "api_key": "should-not-store", "token": "hide-me"},
     )
     assert client.last_request is not None
     assert client.last_request.prompt_ref == "promotion_decision:v1"
     assert client.last_request.prompt_hash
+    assert client.last_request.metadata["api_key"] == "[REDACTED]"
+    assert client.last_request.metadata["token"] == "[REDACTED]"
     assert "secret-123" not in client.last_request.system
     assert "secret-123" not in client.last_request.user
-    assert client.last_request.metadata["provider"] == "fake"
     dumped = result.model_dump(mode="json")
     assert isinstance(dumped, dict)
     json.dumps(dumped)
 
 
+def test_schema_error_message_is_safe_and_does_not_echo_values() -> None:
+    secret = "TOP_SECRET_SHOULD_NOT_APPEAR"
+    bad_payload = f'{{"promote": true, "target_plane": "semantic", "rationale": "{secret}", "confidence": 5, "failure_mode": null, "requires_judge_review": false}}'
+    runner, _ = _runner(bad_payload)
+    result = runner.run(contract=_contract(), variables={"context_json": {}, "candidate_summary": "s"}, request_id="r1")
+    assert result.success is False
+    assert result.response.error == "Response failed schema validation."
+    assert secret not in (result.response.error or "")
+
+
 def test_no_api_key_required_and_provider_none_works_with_fake() -> None:
     config = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "none"})
     assert config.has_api_key() is False
-    runner = PromptLLMRunner(client=FakeLLMStructuredClient(default_response='{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}'), config=config)
+    runner = PromptLLMRunner(client=FakeLLMStructuredClient(default_response=_VALID), config=config)
     result = runner.run(contract=_contract(), variables={"context_json": {}, "candidate_summary": "s"}, request_id="r1")
     assert result.success is True
 
