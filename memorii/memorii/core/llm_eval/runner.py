@@ -17,6 +17,53 @@ from memorii.core.llm_eval.models import EvalCaseResult, EvalRunReport
 from memorii.core.promotion.models import PromotionContext, PromotionDecision
 from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
 
+class PromotionLLMAdapter(Protocol):
+    def decide(self, *, context: PromotionContext, request_id: str, metadata: dict[str, object] | None = None): ...
+
+
+class BeliefLLMAdapter(Protocol):
+    def update(self, *, context: BeliefUpdateContext, request_id: str, metadata: dict[str, object] | None = None): ...
+
+
+class PromotionDecisionEngine:
+    def __init__(self, *, rule_engine: RuleBasedPromotionDecisionProvider, llm_adapter: PromotionLLMAdapter | None, mode: LLMDecisionMode) -> None:
+        self._rule_engine = rule_engine
+        self._llm_adapter = llm_adapter
+        self._mode = mode
+
+    def decide(self, context: PromotionContext, request_id: str) -> tuple[PromotionDecision, bool, bool | None, bool, bool]:
+        rule_decision, _ = self._rule_engine.decide(context=context)
+        if self._mode == LLMDecisionMode.RULE or self._llm_adapter is None:
+            return rule_decision, False, None, False, False
+        llm_result = self._llm_adapter.decide(context=context, request_id=request_id)
+        if not llm_result.success:
+            return rule_decision, True, False, True, False
+        llm_decision = PromotionDecision.model_validate(llm_result.output)
+        if self._mode == LLMDecisionMode.LLM:
+            return llm_decision, True, True, False, False
+        disagreement = llm_decision.model_dump(mode="json") != rule_decision.model_dump(mode="json")
+        return llm_decision, True, True, False, disagreement
+
+
+class BeliefUpdateEngine:
+    def __init__(self, *, rule_engine: RuleBasedBeliefUpdateProvider, llm_adapter: BeliefLLMAdapter | None, mode: LLMDecisionMode) -> None:
+        self._rule_engine = rule_engine
+        self._llm_adapter = llm_adapter
+        self._mode = mode
+
+    def update(self, context: BeliefUpdateContext, request_id: str) -> tuple[BeliefUpdateDecision, bool, bool | None, bool, bool]:
+        rule_decision, _ = self._rule_engine.update(context=context)
+        if self._mode == LLMDecisionMode.RULE or self._llm_adapter is None:
+            return rule_decision, False, None, False, False
+        llm_result = self._llm_adapter.update(context=context, request_id=request_id)
+        if not llm_result.success:
+            return rule_decision, True, False, True, False
+        llm_decision = BeliefUpdateDecision.model_validate(llm_result.output)
+        if self._mode == LLMDecisionMode.LLM:
+            return llm_decision, True, True, False, False
+        disagreement = llm_decision.model_dump(mode="json") != rule_decision.model_dump(mode="json")
+        return llm_decision, True, True, False, disagreement
+
 
 class PromotionLLMAdapter(Protocol):
     def decide(self, *, context: PromotionContext, request_id: str, metadata: dict[str, object] | None = None): ...
