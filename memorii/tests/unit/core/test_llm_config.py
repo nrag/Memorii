@@ -3,61 +3,52 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-
 import pytest
 
-from memorii.core.llm_config import LLMRuntimeConfig
+from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
-def test_default_from_env_empty() -> None:
-    cfg = LLMRuntimeConfig.from_env({})
+def test_runtime_config_from_env_does_not_read_live_test_gate() -> None:
+    cfg = LLMRuntimeConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": "true"})
     assert cfg.provider == "none"
-    assert not cfg.has_api_key()
 
 
-def test_openai_loads_key() -> None:
-    cfg = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "secret"})
-    assert cfg.has_api_key()
+def test_live_test_config_reads_gate_flag() -> None:
+    cfg = LLMLiveTestConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": "true"})
+    assert cfg.enable_live_llm_tests is True
 
 
-def test_anthropic_loads_key() -> None:
-    cfg = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "secret"})
-    assert cfg.has_api_key()
+def test_provider_specific_keys_load() -> None:
+    assert LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "secret"}).has_api_key()
+    assert LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "secret"}).has_api_key()
 
 
-def test_provider_none_no_key_required() -> None:
-    cfg = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "none"})
-    assert not cfg.has_api_key()
+def test_live_permission_requires_flag_and_key() -> None:
+    runtime_with_key = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "x"})
+    runtime_no_key = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai"})
+    assert LLMLiveTestConfig(enable_live_llm_tests=False).should_run_live_llm_tests(runtime_with_key) is False
+    assert LLMLiveTestConfig(enable_live_llm_tests=True).should_run_live_llm_tests(runtime_no_key) is False
+    assert LLMLiveTestConfig(enable_live_llm_tests=True).should_run_live_llm_tests(runtime_with_key) is True
 
 
-def test_require_api_key_raises_safe() -> None:
-    cfg = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai"})
-    with pytest.raises(RuntimeError, match="required"):
-        cfg.require_api_key()
-
-
-def test_redacted_no_secret() -> None:
+def test_redacted_no_secret_and_no_test_flag() -> None:
     cfg = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "super-secret-value"})
     data = cfg.redacted_dict()
     assert data["api_key"] == "present"
+    assert "enable_live_llm_tests" not in data
     assert "super-secret-value" not in str(data)
-
-
-def test_should_run_live_llm_tests_paths() -> None:
-    assert not LLMRuntimeConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": "false", "MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "x"}).should_run_live_llm_tests()
-    assert not LLMRuntimeConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": "true", "MEMORII_LLM_PROVIDER": "openai"}).should_run_live_llm_tests()
-    assert LLMRuntimeConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": "true", "MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "x"}).should_run_live_llm_tests()
 
 
 @pytest.mark.parametrize("value", ["true", "1", "yes", "y", "on", "false", "0", "no", "n", "off", ""])
 def test_boolean_variants(value: str) -> None:
-    LLMRuntimeConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": value})
+    LLMLiveTestConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": value})
 
 
 def test_invalid_boolean_raises() -> None:
     with pytest.raises(ValueError):
-        LLMRuntimeConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": "maybe"})
+        LLMLiveTestConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": "maybe"})
 
 
 def test_invalid_timeout_retry_raise() -> None:

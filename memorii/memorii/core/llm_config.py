@@ -9,12 +9,11 @@ from pydantic import BaseModel, ConfigDict, SecretStr
 
 
 class LLMRuntimeConfig(BaseModel):
-    provider: str
+    provider: str = "none"
     model: str | None = None
     api_key: SecretStr | None = None
     timeout_seconds: int = 60
     max_retries: int = 2
-    enable_live_llm_tests: bool = False
 
     model_config = ConfigDict(extra="forbid")
 
@@ -25,7 +24,6 @@ class LLMRuntimeConfig(BaseModel):
         model = (source.get("MEMORII_LLM_MODEL") or "").strip() or None
         timeout = _parse_int(source.get("MEMORII_LLM_TIMEOUT_SECONDS"), default=60, minimum=1)
         retries = _parse_int(source.get("MEMORII_LLM_MAX_RETRIES"), default=2, minimum=0)
-        enable_live = _parse_bool(source.get("MEMORII_ENABLE_LIVE_LLM_TESTS"), default=False)
 
         key: SecretStr | None = None
         if provider == "openai":
@@ -41,7 +39,6 @@ class LLMRuntimeConfig(BaseModel):
             api_key=key,
             timeout_seconds=timeout,
             max_retries=retries,
-            enable_live_llm_tests=enable_live,
         )
 
     def has_api_key(self) -> bool:
@@ -58,12 +55,22 @@ class LLMRuntimeConfig(BaseModel):
             "model": self.model,
             "timeout_seconds": self.timeout_seconds,
             "max_retries": self.max_retries,
-            "enable_live_llm_tests": self.enable_live_llm_tests,
             "api_key": "present" if self.has_api_key() else "missing",
         }
 
-    def should_run_live_llm_tests(self) -> bool:
-        return self.enable_live_llm_tests and self.has_api_key()
+
+class LLMLiveTestConfig(BaseModel):
+    enable_live_llm_tests: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "LLMLiveTestConfig":
+        source = env if env is not None else os.environ
+        return cls(enable_live_llm_tests=_parse_bool(source.get("MEMORII_ENABLE_LIVE_LLM_TESTS"), default=False))
+
+    def should_run_live_llm_tests(self, runtime_config: LLMRuntimeConfig) -> bool:
+        return self.enable_live_llm_tests and runtime_config.has_api_key()
 
 
 def _parse_bool(value: str | None, *, default: bool) -> bool:
