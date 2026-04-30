@@ -40,28 +40,28 @@ def _belief_context() -> BeliefUpdateContext:
 
 def test_rule_mode_uses_only_rule_engine() -> None:
     adapter = StubPromotionAdapter(success=True, output={"promote": False, "confidence": 0.1, "rationale": "llm"})
-    decision, llm_used, _, fallback_used, _, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=adapter, mode=LLMDecisionMode.RULE).decide(_promotion_context(), "r1")
+    decision, _, llm_used, _, fallback_used, _, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=adapter, mode=LLMDecisionMode.RULE).decide(_promotion_context(), "r1")
     assert llm_used is False and fallback_used is False and adapter.calls == 0 and decision.promote is False
 
 
 def test_llm_mode_and_fallback_and_hybrid_disagreement() -> None:
     pctx = _promotion_context()
     llm_ok = StubPromotionAdapter(success=True, output={"promote": True, "target_plane": "semantic", "confidence": 0.95, "rationale": "llm"})
-    _, llm_used, llm_success, fallback_used, _, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_ok, mode=LLMDecisionMode.LLM).decide(pctx, "r2")
+    _, _, llm_used, llm_success, fallback_used, _, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_ok, mode=LLMDecisionMode.LLM).decide(pctx, "r2")
     assert llm_used and llm_success and not fallback_used
 
     llm_fail = StubPromotionAdapter(success=False, output={})
-    _, _, llm_success2, fallback_used2, _, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_fail, mode=LLMDecisionMode.LLM).decide(pctx, "r3")
+    _, _, _, llm_success2, fallback_used2, _, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_fail, mode=LLMDecisionMode.LLM).decide(pctx, "r3")
     assert llm_success2 is False and fallback_used2 is True
 
-    _, _, _, _, disagreement, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_ok, mode=LLMDecisionMode.HYBRID).decide(pctx, "r4")
+    _, _, _, _, _, disagreement, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_ok, mode=LLMDecisionMode.HYBRID).decide(pctx, "r4")
     assert disagreement is True
 
 
 def test_belief_hybrid_runs_both_and_detects_disagreement() -> None:
-    bctx = _belief_context()
+    bctx = _belief_context().model_copy(update={"prior_belief": 0.8})
     adapter = StubBeliefAdapter(success=True, output={"belief": 0.01, "confidence": 0.9, "rationale": "llm"})
-    _, llm_used, llm_success, fallback_used, disagreement, _ = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=adapter, mode=LLMDecisionMode.HYBRID).update(bctx, "b1")
+    _, _, llm_used, llm_success, fallback_used, disagreement, _ = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=adapter, mode=LLMDecisionMode.HYBRID).update(bctx, "b1")
     assert llm_used and llm_success and not fallback_used and disagreement
 
 
@@ -105,4 +105,43 @@ def test_validation_failure_from_llm_falls_back() -> None:
     report = OfflineLLMEvalRunner(decision_mode=LLMDecisionMode.LLM, belief_llm_adapter=bad).run_snapshots([snapshot])
     assert not isinstance(report, dict)
     assert report.results[0].fallback_used is True
+    assert "llm_decision_validation_failed" in report.results[0].errors
+
+
+def test_hybrid_mode_without_adapter_does_not_claim_fallback_or_llm_use() -> None:
+    snapshot = EvalSnapshot(snapshot_id="s5", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_context().model_dump(mode="json"), expected_output=None, source="test", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    report = OfflineLLMEvalRunner(decision_mode=LLMDecisionMode.HYBRID).run_snapshots([snapshot])
+    assert not isinstance(report, dict)
+    assert report.results[0].llm_used is False
+    assert report.results[0].fallback_used is False
+    assert report.results[0].disagreement is False
+    assert "llm_adapter_missing" in report.results[0].errors
+
+
+def test_hybrid_disagreement_ignores_promotion_rationale_text() -> None:
+    pctx = _promotion_context()
+    adapter = StubPromotionAdapter(success=True, output={"promote": False, "target_plane": None, "confidence": 0.95, "rationale": "different text"})
+    _, _, _, _, _, disagreement, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=adapter, mode=LLMDecisionMode.HYBRID).decide(pctx, "r5")
+    assert disagreement is False
+
+
+def test_hybrid_belief_disagreement_uses_direction_and_confidence_band() -> None:
+    bctx = _belief_context().model_copy(update={"prior_belief": 0.8})
+    tiny = StubBeliefAdapter(success=True, output={"belief": 0.9, "confidence": 0.79, "rationale": "tiny diff"})
+    _, _, _, _, _, disagreement_tiny, _ = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=tiny, mode=LLMDecisionMode.HYBRID).update(bctx, "b2")
+    assert disagreement_tiny is False
+
+    opposite = StubBeliefAdapter(success=True, output={"belief": 0.1, "confidence": 0.79, "rationale": "opposite"})
+    _, _, _, _, _, disagreement_opp, _ = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=opposite, mode=LLMDecisionMode.HYBRID).update(bctx, "b3")
+    assert disagreement_opp is True
+
+
+def test_internal_validation_error_falls_back_for_promotion_without_crash() -> None:
+    snapshot = EvalSnapshot(snapshot_id="s6", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_context().model_dump(mode="json"), expected_output=None, source="test", created_at=datetime(2026, 1, 1, tzinfo=UTC))
+    bad = StubPromotionAdapter(success=True, output={"bad": "shape"})
+    report = OfflineLLMEvalRunner(decision_mode=LLMDecisionMode.LLM, promotion_llm_adapter=bad).run_snapshots([snapshot])
+    assert not isinstance(report, dict)
+    assert report.results[0].fallback_used is True
+    assert report.results[0].llm_used is True
+    assert report.results[0].llm_success is False
     assert "llm_decision_validation_failed" in report.results[0].errors
