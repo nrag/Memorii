@@ -24,7 +24,7 @@ def _sanitize_metadata(metadata: dict[str, object] | None) -> dict[str, object]:
             return [_redact(item) for item in value]
         return value
 
-    return _redact(metadata or {}) if isinstance(metadata or {}, dict) else {}
+    return _redact(metadata or {})
 
 
 class PromptLLMRunner:
