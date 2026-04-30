@@ -328,3 +328,34 @@ def test_trace_store_hybrid_appends_rule_trace() -> None:
     snapshot = _snapshot(snapshot_id="snap:trace:hybrid", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_input(), expected_output=None)
     OfflineLLMEvalRunner(decision_mode=LLMDecisionMode.HYBRID, promotion_llm_adapter=_OkAdapter(), trace_store=trace_store).run_snapshots([snapshot])
     assert len(trace_store.list_traces()) == 1
+
+
+def test_trace_store_llm_success_does_not_append_rule_trace_and_trace_id_is_none() -> None:
+    from types import SimpleNamespace
+
+    class _OkAdapter:
+        def decide(self, *, context, request_id, metadata=None):
+            return SimpleNamespace(
+                success=True,
+                output={
+                    "promote": True,
+                    "target_plane": "semantic",
+                    "confidence": 0.9,
+                    "rationale": "ok",
+                },
+            )
+
+    trace_store = InMemoryLLMDecisionTraceStore()
+    snapshot = _snapshot(
+        snapshot_id="snap:trace:llm-success",
+        decision_point=LLMDecisionPoint.PROMOTION,
+        input_payload=_promotion_input(),
+        expected_output=None,
+    )
+    report = OfflineLLMEvalRunner(
+        decision_mode=LLMDecisionMode.LLM,
+        promotion_llm_adapter=_OkAdapter(),
+        trace_store=trace_store,
+    ).run_snapshots([snapshot])
+    assert len(trace_store.list_traces()) == 0
+    assert report.results[0].trace_id is None
