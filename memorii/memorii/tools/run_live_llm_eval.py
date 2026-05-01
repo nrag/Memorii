@@ -15,7 +15,7 @@ from memorii.core.llm_eval.golden import belief_golden_v1, promotion_golden_v1
 from memorii.core.llm_eval.models import EvalRunReport
 from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
 from memorii.core.llm_trace.policy import LLMTracePolicy
-from memorii.core.llm_decision.trace import JsonlLLMDecisionTraceStore
+from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -133,6 +133,7 @@ def _write_artifacts(
     model: str | None,
     golden_set: str,
     mode: str,
+    trace_rows: list[dict[str, object]],
 ) -> Path:
     run_dir = (
         storage_root
@@ -165,6 +166,7 @@ def _write_artifacts(
         [result.model_dump(mode="json") for result in report.results if result.disagreement],
     )
     _write_jsonl(run_dir / "inputs" / "snapshots.jsonl", [snapshot.model_dump(mode="json") for snapshot in snapshots])
+    _write_jsonl(run_dir / "traces.jsonl", trace_rows)
 
     fallback_cases = sum(1 for result in report.results if result.fallback_used)
     disagreement_cases = sum(1 for result in report.results if result.disagreement)
@@ -234,9 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         min_judge_score_to_keep=args.min_judge_score_to_keep,
     )
     for mode in modes:
-        trace_store = JsonlLLMDecisionTraceStore(
-            Path(args.storage_root) / "eval_runs" / "llm_traces" / f"{mode}.jsonl"
-        )
+        trace_store = InMemoryLLMDecisionTraceStore()
         report = OfflineLLMEvalRunner(
             promotion_llm_adapter=promotion_adapter,
             belief_llm_adapter=belief_adapter,
@@ -253,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
             model=runtime_config.model,
             golden_set=args.golden_set,
             mode=mode,
+            trace_rows=[trace.model_dump(mode="json") for trace in trace_store.list_traces()],
         )
         print(
             f"mode={mode} total_cases={report.total_cases} "

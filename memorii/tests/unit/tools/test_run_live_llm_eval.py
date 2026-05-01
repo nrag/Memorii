@@ -103,6 +103,7 @@ def test_artifact_layout_and_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
         "fallbacks.jsonl",
         "disagreements.jsonl",
         "inputs/snapshots.jsonl",
+        "traces.jsonl",
     ]:
         assert (run_dir / rel).exists()
 
@@ -167,6 +168,7 @@ def test_invalid_cli_exits_nonzero() -> None:
 def test_trace_flags_persist_traces_when_store_wired(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _set_env(monkeypatch, MEMORII_LLM_PROVIDER="none")
     main(["--mode", "llm", "--dry-run", "--trace-successes", "--storage-root", str(tmp_path)])
-    trace_file = tmp_path / "eval_runs" / "llm_traces" / "llm.jsonl"
+    run_dir = _latest_run_dir(tmp_path)
+    trace_file = run_dir / "traces.jsonl"
     assert trace_file.exists()
     assert trace_file.read_text(encoding="utf-8").strip()
