@@ -15,7 +15,7 @@ def test_builder_success_and_failed_and_redaction() -> None:
     assert t.parsed_output == {'a':1}
     dumped=t.model_dump_json()
     assert '"[REDACTED]"' in dumped and '"k"' not in dumped and '"p"' not in dumped
-    m=t.final_output['_response_meta']
+    m=t.input_payload['response_meta']
     assert m['provider']=='openai' and m['model']=='gpt' and m['usage']=={'prompt_tokens':1} and m['latency_ms']==7
     f=build_llm_decision_trace_from_result(decision_point=LLMDecisionPoint.BELIEF_UPDATE, mode=LLMDecisionMode.LLM, result=_result(False), final_output=None, fallback_used=True)
     assert f.fallback_used is True

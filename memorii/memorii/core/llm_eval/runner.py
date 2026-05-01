@@ -14,6 +14,7 @@ from memorii.core.llm_decision.models import (
     EvalSnapshot,
     LLMDecisionMode,
     LLMDecisionPoint,
+    LLMDecisionStatus,
 )
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
 from memorii.core.llm_eval.comparators import compare_belief_update, compare_promotion
@@ -83,6 +84,7 @@ class PromotionDecisionEngine:
                 result=llm_result,
                 final_output=rule_output,
                 fallback_used=True,
+                status=LLMDecisionStatus.PROVIDER_ERROR,
             )
             return DecisionEngineResult(
                 decision=rule_output,
@@ -103,6 +105,7 @@ class PromotionDecisionEngine:
                 result=llm_result,
                 final_output=rule_output,
                 fallback_used=True,
+                status=LLMDecisionStatus.VALIDATION_FAILED,
             )
             return DecisionEngineResult(
                 decision=rule_output,
@@ -121,6 +124,7 @@ class PromotionDecisionEngine:
             result=llm_result,
             final_output=llm_output,
             fallback_used=False,
+            status=LLMDecisionStatus.SUCCEEDED,
         )
 
         if self._mode == LLMDecisionMode.LLM:
@@ -181,6 +185,7 @@ class BeliefUpdateEngine:
                 result=llm_result,
                 final_output=rule_output,
                 fallback_used=True,
+                status=LLMDecisionStatus.PROVIDER_ERROR,
             )
             return DecisionEngineResult(
                 decision=rule_output,
@@ -201,6 +206,7 @@ class BeliefUpdateEngine:
                 result=llm_result,
                 final_output=rule_output,
                 fallback_used=True,
+                status=LLMDecisionStatus.VALIDATION_FAILED,
             )
             return DecisionEngineResult(
                 decision=rule_output,
@@ -219,6 +225,7 @@ class BeliefUpdateEngine:
             result=llm_result,
             final_output=llm_output,
             fallback_used=False,
+            status=LLMDecisionStatus.SUCCEEDED,
         )
 
         if self._mode == LLMDecisionMode.LLM:
@@ -393,14 +400,14 @@ class OfflineLLMEvalRunner:
         persisted_rule_trace = None
         persisted_llm_trace = None
 
-        should_persist_rule_trace = (
-            engine_result.rule_trace is not None
-            and (
-                mode == LLMDecisionMode.RULE
-                or engine_result.fallback_used
-                or mode == LLMDecisionMode.HYBRID
-            )
-        )
+        should_persist_rule_trace = False
+        if engine_result.rule_trace is not None:
+            if mode == LLMDecisionMode.RULE:
+                should_persist_rule_trace = True
+            elif mode == LLMDecisionMode.HYBRID:
+                should_persist_rule_trace = True
+            elif mode == LLMDecisionMode.LLM and engine_result.fallback_used:
+                should_persist_rule_trace = True
         if should_persist_rule_trace:
             self._trace_store.append_trace(engine_result.rule_trace)
             persisted_rule_trace = engine_result.rule_trace
