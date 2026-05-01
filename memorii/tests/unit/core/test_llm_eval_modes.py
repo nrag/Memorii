@@ -1,12 +1,19 @@
-from types import SimpleNamespace
 from datetime import UTC, datetime
 
 from memorii.core.belief.models import BeliefUpdateContext
 from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionMode, LLMDecisionPoint
 from memorii.core.llm_eval.runner import BeliefUpdateEngine, OfflineLLMEvalRunner, PromotionDecisionEngine
+from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
 from memorii.core.solver.abstention import SolverDecision
 
+
+
+
+def _llm_result(*, request_id: str, success: bool, output: dict[str, object]) -> LLMDecisionResult:
+    request = LLMStructuredRequest(request_id=request_id, prompt_ref="p:v1", prompt_hash="h", system="s", user="u", output_schema={}, model_defaults={})
+    response = LLMStructuredResponse(request_id=request_id, provider="fake", raw_text="{}", parsed_json=output if success else None, valid_json=success, schema_valid=success)
+    return LLMDecisionResult(request=request, response=response, output=output if success else None, success=success, failure_mode=None if success else "provider_error")
 
 class StubPromotionAdapter:
     def __init__(self, *, success: bool, output: dict[str, object]):
@@ -16,7 +23,7 @@ class StubPromotionAdapter:
 
     def decide(self, *, context, request_id, metadata=None):
         self.calls += 1
-        return SimpleNamespace(success=self.success, output=self.output)
+        return _llm_result(request_id=request_id, success=self.success, output=self.output)
 
 
 class StubBeliefAdapter:
@@ -27,7 +34,7 @@ class StubBeliefAdapter:
 
     def update(self, *, context, request_id, metadata=None):
         self.calls += 1
-        return SimpleNamespace(success=self.success, output=self.output)
+        return _llm_result(request_id=request_id, success=self.success, output=self.output)
 
 
 def _promotion_context() -> PromotionContext:
@@ -40,29 +47,29 @@ def _belief_context() -> BeliefUpdateContext:
 
 def test_rule_mode_uses_only_rule_engine() -> None:
     adapter = StubPromotionAdapter(success=True, output={"promote": False, "confidence": 0.1, "rationale": "llm"})
-    decision, _, llm_used, _, fallback_used, _, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=adapter, mode=LLMDecisionMode.RULE).decide(_promotion_context(), "r1")
-    assert llm_used is False and fallback_used is False and adapter.calls == 0 and decision.promote is False
+    res = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=adapter, mode=LLMDecisionMode.RULE).decide(_promotion_context(), "r1")
+    assert res.llm_used is False and res.fallback_used is False and adapter.calls == 0 and res.decision["promote"] is False
 
 
 def test_llm_mode_and_fallback_and_hybrid_disagreement() -> None:
     pctx = _promotion_context()
     llm_ok = StubPromotionAdapter(success=True, output={"promote": True, "target_plane": "semantic", "confidence": 0.95, "rationale": "llm"})
-    _, _, llm_used, llm_success, fallback_used, _, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_ok, mode=LLMDecisionMode.LLM).decide(pctx, "r2")
-    assert llm_used and llm_success and not fallback_used
+    res = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_ok, mode=LLMDecisionMode.LLM).decide(pctx, "r2")
+    assert res.llm_used and res.llm_success and not res.fallback_used
 
     llm_fail = StubPromotionAdapter(success=False, output={})
-    _, _, _, llm_success2, fallback_used2, _, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_fail, mode=LLMDecisionMode.LLM).decide(pctx, "r3")
-    assert llm_success2 is False and fallback_used2 is True
+    res2 = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_fail, mode=LLMDecisionMode.LLM).decide(pctx, "r3")
+    assert res2.llm_success is False and res2.fallback_used is True
 
-    _, _, _, _, _, disagreement, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_ok, mode=LLMDecisionMode.HYBRID).decide(pctx, "r4")
-    assert disagreement is True
+    res3 = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=llm_ok, mode=LLMDecisionMode.HYBRID).decide(pctx, "r4")
+    assert res3.disagreement is True
 
 
 def test_belief_hybrid_runs_both_and_detects_disagreement() -> None:
     bctx = _belief_context().model_copy(update={"prior_belief": 0.8})
     adapter = StubBeliefAdapter(success=True, output={"belief": 0.01, "confidence": 0.9, "rationale": "llm"})
-    _, _, llm_used, llm_success, fallback_used, disagreement, _ = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=adapter, mode=LLMDecisionMode.HYBRID).update(bctx, "b1")
-    assert llm_used and llm_success and not fallback_used and disagreement
+    res = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=adapter, mode=LLMDecisionMode.HYBRID).update(bctx, "b1")
+    assert res.llm_used and res.llm_success and not res.fallback_used and res.disagreement
 
 
 def test_eval_runner_runs_multiple_modes_and_emits_flags() -> None:
@@ -121,19 +128,19 @@ def test_hybrid_mode_without_adapter_does_not_claim_fallback_or_llm_use() -> Non
 def test_hybrid_disagreement_ignores_promotion_rationale_text() -> None:
     pctx = _promotion_context()
     adapter = StubPromotionAdapter(success=True, output={"promote": False, "target_plane": None, "confidence": 0.95, "rationale": "different text"})
-    _, _, _, _, _, disagreement, _ = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=adapter, mode=LLMDecisionMode.HYBRID).decide(pctx, "r5")
-    assert disagreement is False
+    res = PromotionDecisionEngine(rule_engine=OfflineLLMEvalRunner()._promotion_provider, llm_adapter=adapter, mode=LLMDecisionMode.HYBRID).decide(pctx, "r5")
+    assert res.disagreement is False
 
 
 def test_hybrid_belief_disagreement_uses_direction_and_confidence_band() -> None:
     bctx = _belief_context().model_copy(update={"prior_belief": 0.8})
     tiny = StubBeliefAdapter(success=True, output={"belief": 0.9, "confidence": 0.79, "rationale": "tiny diff"})
-    _, _, _, _, _, disagreement_tiny, _ = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=tiny, mode=LLMDecisionMode.HYBRID).update(bctx, "b2")
-    assert disagreement_tiny is False
+    res_tiny = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=tiny, mode=LLMDecisionMode.HYBRID).update(bctx, "b2")
+    assert res_tiny.disagreement is False
 
     opposite = StubBeliefAdapter(success=True, output={"belief": 0.1, "confidence": 0.79, "rationale": "opposite"})
-    _, _, _, _, _, disagreement_opp, _ = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=opposite, mode=LLMDecisionMode.HYBRID).update(bctx, "b3")
-    assert disagreement_opp is True
+    res_opp = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=opposite, mode=LLMDecisionMode.HYBRID).update(bctx, "b3")
+    assert res_opp.disagreement is True
 
 
 def test_internal_validation_error_falls_back_for_promotion_without_crash() -> None:

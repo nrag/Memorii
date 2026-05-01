@@ -14,6 +14,8 @@ from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionMode
 from memorii.core.llm_eval.golden import belief_golden_v1, promotion_golden_v1
 from memorii.core.llm_eval.models import EvalRunReport
 from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
+from memorii.core.llm_trace.policy import LLMTracePolicy
+from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -131,6 +133,7 @@ def _write_artifacts(
     model: str | None,
     golden_set: str,
     mode: str,
+    trace_rows: list[dict[str, object]],
 ) -> Path:
     run_dir = (
         storage_root
@@ -163,6 +166,7 @@ def _write_artifacts(
         [result.model_dump(mode="json") for result in report.results if result.disagreement],
     )
     _write_jsonl(run_dir / "inputs" / "snapshots.jsonl", [snapshot.model_dump(mode="json") for snapshot in snapshots])
+    _write_jsonl(run_dir / "traces.jsonl", trace_rows)
 
     fallback_cases = sum(1 for result in report.results if result.fallback_used)
     disagreement_cases = sum(1 for result in report.results if result.disagreement)
@@ -193,6 +197,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prompt-root", default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
+    parser.add_argument("--trace-successes", action="store_true")
+    parser.add_argument("--no-trace-failures", action="store_true")
+    parser.add_argument("--no-trace-fallbacks", action="store_true")
+    parser.add_argument("--no-trace-disagreements", action="store_true")
+    parser.add_argument("--no-trace-human-review", action="store_true")
+    parser.add_argument("--min-judge-score-to-keep", type=float, default=None)
     args = parser.parse_args(argv)
 
     runtime_config = LLMRuntimeConfig.from_env()
@@ -217,11 +227,22 @@ def main(argv: list[str] | None = None) -> int:
     belief_adapter = LLMBeliefUpdateAdapter(runner=runner, registry=registry)
 
     snapshots = _load_snapshots(args.golden_set)
+    trace_policy = LLMTracePolicy(
+        trace_successes=args.trace_successes,
+        trace_failures=not args.no_trace_failures,
+        trace_fallbacks=not args.no_trace_fallbacks,
+        trace_disagreements=not args.no_trace_disagreements,
+        trace_human_review=not args.no_trace_human_review,
+        min_judge_score_to_keep=args.min_judge_score_to_keep,
+    )
     for mode in modes:
+        trace_store = InMemoryLLMDecisionTraceStore()
         report = OfflineLLMEvalRunner(
             promotion_llm_adapter=promotion_adapter,
             belief_llm_adapter=belief_adapter,
             decision_mode=LLMDecisionMode(mode),
+            trace_policy=trace_policy,
+            trace_store=trace_store,
         ).run_snapshots(snapshots)
         assert isinstance(report, EvalRunReport)
         run_dir = _write_artifacts(
@@ -232,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
             model=runtime_config.model,
             golden_set=args.golden_set,
             mode=mode,
+            trace_rows=[trace.model_dump(mode="json") for trace in trace_store.list_traces()],
         )
         print(
             f"mode={mode} total_cases={report.total_cases} "

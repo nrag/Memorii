@@ -33,7 +33,7 @@ def test_llm_without_allow_live_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_env(
         monkeypatch,
         MEMORII_LLM_PROVIDER="openai",
-        OPENAI_API_KEY="sk-test",
+        OPENAI_API_KEY="test-key",
         MEMORII_ENABLE_LIVE_LLM_TESTS="true",
     )
     with pytest.raises(SystemExit):
@@ -44,7 +44,7 @@ def test_mode_all_without_allow_live_fails(monkeypatch: pytest.MonkeyPatch) -> N
     _set_env(
         monkeypatch,
         MEMORII_LLM_PROVIDER="openai",
-        OPENAI_API_KEY="sk-test",
+        OPENAI_API_KEY="test-key",
         MEMORII_ENABLE_LIVE_LLM_TESTS="true",
     )
     with pytest.raises(SystemExit):
@@ -55,7 +55,7 @@ def test_hybrid_without_live_gate_fails(monkeypatch: pytest.MonkeyPatch) -> None
     _set_env(
         monkeypatch,
         MEMORII_LLM_PROVIDER="openai",
-        OPENAI_API_KEY="sk-test",
+        OPENAI_API_KEY="test-key",
         MEMORII_ENABLE_LIVE_LLM_TESTS="false",
     )
     with pytest.raises(SystemExit):
@@ -84,10 +84,10 @@ def test_runtime_redacted_output_no_key(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
-    _set_env(monkeypatch, MEMORII_LLM_PROVIDER="openai", OPENAI_API_KEY="sk-secret")
+    _set_env(monkeypatch, MEMORII_LLM_PROVIDER="openai", OPENAI_API_KEY="secret-key")
     main(["--mode", "rule", "--storage-root", str(tmp_path)])
     out = capsys.readouterr().out
-    assert "sk-secret" not in out
+    assert "secret-key" not in out
     assert "runtime_config=" in out
 
 
@@ -103,17 +103,18 @@ def test_artifact_layout_and_files(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
         "fallbacks.jsonl",
         "disagreements.jsonl",
         "inputs/snapshots.jsonl",
+        "traces.jsonl",
     ]:
         assert (run_dir / rel).exists()
 
 
 def test_artifacts_do_not_contain_api_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _set_env(monkeypatch, MEMORII_LLM_PROVIDER="openai", OPENAI_API_KEY="sk-secret")
+    _set_env(monkeypatch, MEMORII_LLM_PROVIDER="openai", OPENAI_API_KEY="secret-key")
     main(["--mode", "rule", "--storage-root", str(tmp_path)])
     run_dir = _latest_run_dir(tmp_path)
     for file_path in run_dir.rglob("*"):
         if file_path.is_file():
-            assert "sk-secret" not in file_path.read_text(encoding="utf-8")
+            assert "secret-key" not in file_path.read_text(encoding="utf-8")
 
 
 def test_default_prompt_root_works_in_dry_run_llm(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -162,3 +163,12 @@ def test_mode_all_produces_three_reports(monkeypatch: pytest.MonkeyPatch, tmp_pa
 def test_invalid_cli_exits_nonzero() -> None:
     with pytest.raises(SystemExit):
         main(["--mode", "bad"])
+
+
+def test_trace_flags_persist_traces_when_store_wired(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _set_env(monkeypatch, MEMORII_LLM_PROVIDER="none")
+    main(["--mode", "llm", "--dry-run", "--trace-successes", "--storage-root", str(tmp_path)])
+    run_dir = _latest_run_dir(tmp_path)
+    trace_file = run_dir / "traces.jsonl"
+    assert trace_file.exists()
+    assert trace_file.read_text(encoding="utf-8").strip()
