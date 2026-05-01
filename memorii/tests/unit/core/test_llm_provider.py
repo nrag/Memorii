@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from memorii.core.llm_config import LLMRuntimeConfig
+from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
 from memorii.core.llm_provider.models import LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -147,7 +147,8 @@ def test_no_api_key_required_and_provider_none_works_with_fake() -> None:
 
 def test_optional_live_llm_tests_are_gated() -> None:
     env = {"MEMORII_ENABLE_LIVE_LLM_TESTS": "true", "MEMORII_LLM_PROVIDER": "openai"}
-    config = LLMRuntimeConfig.from_env(env)
-    if not config.should_run_live_llm_tests():
+    runtime_config = LLMRuntimeConfig.from_env(env)
+    live_config = LLMLiveTestConfig.from_env(env)
+    if not live_config.should_run_live_llm_tests(runtime_config):
         pytest.skip("live LLM tests are disabled unless key + flag are present")
     pytest.fail("live network test intentionally not implemented in unit tests")
