@@ -14,6 +14,7 @@ from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionMode
 from memorii.core.llm_eval.golden import belief_golden_v1, promotion_golden_v1
 from memorii.core.llm_eval.models import EvalRunReport
 from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
+from memorii.core.llm_trace.policy import LLMTracePolicy
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -193,6 +194,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prompt-root", default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
+    parser.add_argument("--trace-successes", action="store_true")
+    parser.add_argument("--no-trace-failures", action="store_true")
+    parser.add_argument("--no-trace-fallbacks", action="store_true")
+    parser.add_argument("--no-trace-disagreements", action="store_true")
+    parser.add_argument("--no-trace-human-review", action="store_true")
+    parser.add_argument("--min-judge-score-to-keep", type=float, default=None)
     args = parser.parse_args(argv)
 
     runtime_config = LLMRuntimeConfig.from_env()
@@ -217,11 +224,20 @@ def main(argv: list[str] | None = None) -> int:
     belief_adapter = LLMBeliefUpdateAdapter(runner=runner, registry=registry)
 
     snapshots = _load_snapshots(args.golden_set)
+    trace_policy = LLMTracePolicy(
+        trace_successes=args.trace_successes,
+        trace_failures=not args.no_trace_failures,
+        trace_fallbacks=not args.no_trace_fallbacks,
+        trace_disagreements=not args.no_trace_disagreements,
+        trace_human_review=not args.no_trace_human_review,
+        min_judge_score_to_keep=args.min_judge_score_to_keep,
+    )
     for mode in modes:
         report = OfflineLLMEvalRunner(
             promotion_llm_adapter=promotion_adapter,
             belief_llm_adapter=belief_adapter,
             decision_mode=LLMDecisionMode(mode),
+            trace_policy=trace_policy,
         ).run_snapshots(snapshots)
         assert isinstance(report, EvalRunReport)
         run_dir = _write_artifacts(
