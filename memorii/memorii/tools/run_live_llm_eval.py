@@ -15,6 +15,7 @@ from memorii.core.llm_eval.golden import belief_golden_v1, promotion_golden_v1
 from memorii.core.llm_eval.models import EvalRunReport
 from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
 from memorii.core.llm_trace.policy import LLMTracePolicy
+from memorii.core.llm_decision.trace import JsonlLLMDecisionTraceStore
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -233,11 +234,15 @@ def main(argv: list[str] | None = None) -> int:
         min_judge_score_to_keep=args.min_judge_score_to_keep,
     )
     for mode in modes:
+        trace_store = JsonlLLMDecisionTraceStore(
+            Path(args.storage_root) / "eval_runs" / "llm_traces" / f"{mode}.jsonl"
+        )
         report = OfflineLLMEvalRunner(
             promotion_llm_adapter=promotion_adapter,
             belief_llm_adapter=belief_adapter,
             decision_mode=LLMDecisionMode(mode),
             trace_policy=trace_policy,
+            trace_store=trace_store,
         ).run_snapshots(snapshots)
         assert isinstance(report, EvalRunReport)
         run_dir = _write_artifacts(

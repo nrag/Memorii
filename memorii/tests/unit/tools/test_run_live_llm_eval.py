@@ -162,3 +162,11 @@ def test_mode_all_produces_three_reports(monkeypatch: pytest.MonkeyPatch, tmp_pa
 def test_invalid_cli_exits_nonzero() -> None:
     with pytest.raises(SystemExit):
         main(["--mode", "bad"])
+
+
+def test_trace_flags_persist_traces_when_store_wired(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _set_env(monkeypatch, MEMORII_LLM_PROVIDER="none")
+    main(["--mode", "llm", "--dry-run", "--trace-successes", "--storage-root", str(tmp_path)])
+    trace_file = tmp_path / "eval_runs" / "llm_traces" / "llm.jsonl"
+    assert trace_file.exists()
+    assert trace_file.read_text(encoding="utf-8").strip()
