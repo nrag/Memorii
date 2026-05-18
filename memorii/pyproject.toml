@@ -19,6 +19,10 @@ dependencies = [
 openai = [
   "openai>=1.0",
 ]
+azure = [
+  "azure-identity>=1.16",
+  "azure-keyvault-secrets>=4.8",
+]
 dev = [
   "pytest>=8.0",
 ]
