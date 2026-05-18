@@ -5,6 +5,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_decision.adapters import (
     LLMBeliefUpdateAdapter,
@@ -14,8 +15,8 @@ from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionMode
 from memorii.core.llm_eval.golden import belief_golden_v1, promotion_golden_v1
 from memorii.core.llm_eval.models import EvalRunReport
 from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
-from memorii.core.llm_trace.policy import LLMTracePolicy
 from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
+from memorii.core.llm_trace.policy import LLMTracePolicy
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -205,8 +206,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-judge-score-to-keep", type=float, default=None)
     args = parser.parse_args(argv)
 
-    runtime_config = LLMRuntimeConfig.from_env()
-    live_config = LLMLiveTestConfig.from_env()
+    env_snapshot = load_memorii_environment()
+    runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
+    live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
     print(f"runtime_config={runtime_config.redacted_dict()}")
 
     modes = _requested_modes(args.mode)

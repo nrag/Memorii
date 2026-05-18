@@ -12,7 +12,7 @@ from memorii.core.env_config import (
 
 
 def test_local_dotenv_file_is_loaded_without_mutating_process_env(tmp_path: Path) -> None:
-    local_env_path = tmp_path / "memory.env"
+    local_env_path = tmp_path / "memorii.env"
     local_env_path.write_text(
         "\n".join(
             [
@@ -36,8 +36,23 @@ def test_local_dotenv_file_is_loaded_without_mutating_process_env(tmp_path: Path
     assert snapshot.env["ANTHROPIC_API_KEY"] == "key#with-hash"
 
 
+def test_default_local_path_uses_canonical_memorii_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    canonical_path = tmp_path / "memorii.env"
+    canonical_path.write_text("MEMORII_LLM_PROVIDER=openai\n", encoding="utf-8")
+    monkeypatch.setattr("memorii.core.env_config.DEFAULT_LOCAL_ENV_PATH", canonical_path)
+
+    snapshot = load_memorii_environment(env={})
+
+    assert snapshot.secret_source is SecretSource.LOCAL_FILE
+    assert snapshot.env["MEMORII_LLM_PROVIDER"] == "openai"
+    assert str(canonical_path) in snapshot.source_description
+
+
 def test_process_environment_overrides_local_file_values(tmp_path: Path) -> None:
-    local_env_path = tmp_path / "memory.env"
+    local_env_path = tmp_path / "memorii.env"
     local_env_path.write_text("OPENAI_API_KEY=from-file\n", encoding="utf-8")
 
     snapshot = load_memorii_environment(
@@ -71,7 +86,7 @@ def test_explicit_secret_source_overrides_runtime_default(tmp_path: Path) -> Non
 def test_test_environment_defaults_to_process_source(tmp_path: Path) -> None:
     snapshot = load_memorii_environment(
         env={"MEMORII_ENV": "test"},
-        local_env_path=tmp_path / "memory.env",
+        local_env_path=tmp_path / "memorii.env",
     )
 
     assert snapshot.runtime_environment is RuntimeEnvironment.TEST

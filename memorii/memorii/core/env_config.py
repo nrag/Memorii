@@ -38,7 +38,7 @@ class EnvironmentSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-DEFAULT_LOCAL_ENV_PATH = Path.home() / ".config" / "memorii" / "memory.env"
+DEFAULT_LOCAL_ENV_PATH = Path.home() / ".config" / "memorii" / "memorii.env"
 MEMORII_ENV_KEY = "MEMORII_ENV"
 MEMORII_SECRET_SOURCE_KEY = "MEMORII_SECRET_SOURCE"
 MEMORII_AKV_URL_KEY = "MEMORII_AKV_URL"
@@ -54,7 +54,7 @@ def load_memorii_environment(
     """Load a source-aware environment mapping without mutating ``os.environ``."""
 
     process_env = _string_mapping(os.environ if env is None else env)
-    resolved_local_env_path = local_env_path or DEFAULT_LOCAL_ENV_PATH
+    resolved_local_env_path = _resolve_local_env_path(local_env_path)
     local_file_exists = resolved_local_env_path.exists()
     runtime_environment = _detect_runtime_environment(process_env, local_file_exists)
     secret_source = _detect_secret_source(process_env, runtime_environment, local_file_exists)
@@ -81,6 +81,12 @@ def load_memorii_environment(
         source_description=source_description,
         env=merged_env,
     )
+
+
+def _resolve_local_env_path(local_env_path: Path | None) -> Path:
+    if local_env_path is not None:
+        return local_env_path
+    return DEFAULT_LOCAL_ENV_PATH
 
 
 def require_environment_keys(
