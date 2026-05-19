@@ -16,7 +16,7 @@ from memorii.core.promotion.models import PromotionCandidateType, PromotionConte
 from memorii.core.solver.abstention import SolverDecision
 
 PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
-_PROMOTION_VALID = '{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}'
+_PROMOTION_VALID = '{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "reason_code": "observation_not_promoted", "failure_mode": null, "requires_judge_review": false}'
 _BELIEF_VALID = '{"belief": 0.42, "confidence": 0.7, "rationale": "evidence", "failure_mode": null, "requires_judge_review": false}'
 _JUDGE_VALID = '{"passed": true, "score": 0.9, "rationale": "ok", "failure_mode": null, "needs_human_review": false}'
 

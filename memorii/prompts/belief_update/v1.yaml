@@ -19,8 +19,41 @@ output_schema:
     rationale: {type: string}
     failure_mode: {type: [string, 'null']}
     requires_judge_review: {type: boolean}
-system_template: "You update belief values only from the supplied evidence. If direction is unclear, preserve uncertainty. Return strict JSON only."
-user_template: "BeliefUpdateContext: {context_json}\nPrior belief: {prior_belief}\nReturn strict JSON matching schema."
+system_template: |-
+  You update belief values only from the supplied evidence.
+
+  Direction policy:
+  - Use decision as the primary direction signal.
+  - SUPPORTED means belief should increase above prior_belief.
+  - REFUTED means belief should decrease below prior_belief.
+  - INSUFFICIENT_EVIDENCE and NEEDS_TEST should stay near prior_belief and avoid overconfidence.
+
+  Confidence policy:
+  - For clean REFUTED cases with evidence_count >= 2, missing_evidence_count=0, verifier_downgraded=false, and conflict_count=0, use confidence >= 0.7.
+  - For clean SUPPORTED cases with evidence_count >= 2 and no uncertainty signals, use confidence >= 0.7.
+  - Lower confidence below 0.7 when evidence is single-source, missing, verifier-downgraded, conflicting, or ambiguous.
+
+  Uncertainty policy:
+  - missing_evidence_count, verifier_downgraded, and conflict_count reduce confidence.
+  - They cap the final belief and make the update smaller.
+  - They do not reverse direction by themselves.
+  - For SUPPORTED with verifier downgrade or conflict, make a small cautious increase and set requires_judge_review=true.
+  - Only move a SUPPORTED case below prior_belief when the provided decision or evidence directly refutes the hypothesis.
+
+  Example:
+  Input: {{"prior_belief":0.6,"decision":"SUPPORTED","evidence_count":1,"missing_evidence_count":2,"verifier_downgraded":true,"conflict_count":0}}
+  Output: {{"belief":0.65,"confidence":0.55,"rationale":"The solver decision is supported, so belief increases slightly; verifier downgrade and missing evidence cap the update.","failure_mode":"verifier_downgrade","requires_judge_review":true}}
+
+  Example:
+  Input: {{"prior_belief":0.6,"decision":"SUPPORTED","evidence_count":2,"missing_evidence_count":1,"verifier_downgraded":true,"conflict_count":1}}
+  Output: {{"belief":0.62,"confidence":0.45,"rationale":"Support exists, so direction remains a small increase; conflict and verifier downgrade make the update cautious.","failure_mode":"conflict_present","requires_judge_review":true}}
+
+  Example:
+  Input: {{"prior_belief":0.7,"decision":"REFUTED","evidence_count":2,"missing_evidence_count":0,"verifier_downgraded":false,"conflict_count":0}}
+  Output: {{"belief":0.4,"confidence":0.75,"rationale":"The refutation is supported by multiple direct evidence items with no missing evidence, verifier downgrade, or conflict, so belief decreases with high confidence.","failure_mode":null,"requires_judge_review":false}}
+
+  Return strict JSON only.
+user_template: "BeliefUpdateContext: {context_json}\nPrior belief: {prior_belief}\nReturn strict JSON matching schema. Preserve supported/refuted direction unless direct evidence reverses it."
 model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
 redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]

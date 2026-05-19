@@ -14,7 +14,7 @@ class OpenAIStructuredClient:
         try:
             from openai import OpenAI
         except ImportError as exc:
-            raise RuntimeError("OpenAI SDK is required for OpenAIStructuredClient. Install the openai extra.") from exc
+            raise RuntimeError("OpenAI SDK is required for OpenAIStructuredClient. Install the local, live, or prod extra.") from exc
 
         api_key = config.require_api_key().get_secret_value()
         model = request.model_defaults.model or config.model or "gpt-4.1-mini"

@@ -5,6 +5,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from memorii.core.belief.models import BeliefUpdateContext
+from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_decision.adapters import (
@@ -21,6 +23,18 @@ from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.promotion.models import PromotionContext
+from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+
+
+def _extract_context_json(*, label: str, text: str) -> dict[str, object]:
+    prefix = f"{label}: "
+    for line in text.splitlines():
+        if line.startswith(prefix):
+            parsed = json.loads(line.removeprefix(prefix))
+            if isinstance(parsed, dict):
+                return parsed
+    raise ValueError(f"Missing {label} payload")
 
 
 class EvalFakeClient:
@@ -34,23 +48,32 @@ class EvalFakeClient:
     ) -> LLMStructuredResponse:
         del config
         if request.prompt_ref == "promotion_decision:v1":
+            context = PromotionContext.model_validate(
+                _extract_context_json(label="PromotionContext", text=request.user)
+            )
+            decision, _ = RuleBasedPromotionDecisionProvider().decide(context=context)
             raw = json.dumps(
                 {
-                    "promote": False,
-                    "target_plane": None,
-                    "confidence": 0.5,
-                    "rationale": "dry run",
+                    "promote": decision.promote,
+                    "target_plane": decision.target_plane,
+                    "confidence": decision.confidence,
+                    "reason_code": decision.tags[0] if decision.tags else "observation_not_promoted",
+                    "rationale": decision.rationale,
                     "failure_mode": None,
                     "requires_judge_review": True,
                 },
                 sort_keys=True,
             )
         elif request.prompt_ref == "belief_update:v1":
+            context = BeliefUpdateContext.model_validate(
+                _extract_context_json(label="BeliefUpdateContext", text=request.user)
+            )
+            decision, _ = RuleBasedBeliefUpdateProvider().update(context=context)
             raw = json.dumps(
                 {
-                    "belief": 0.5,
-                    "confidence": 0.5,
-                    "rationale": "dry run",
+                    "belief": decision.belief,
+                    "confidence": decision.confidence,
+                    "rationale": decision.rationale,
                     "failure_mode": None,
                     "requires_judge_review": True,
                 },

@@ -21,6 +21,7 @@ _SUPPORTED_PROMOTION_FIELDS = {
     "target_plane",
     "min_confidence",
     "max_confidence",
+    "reason_code",
     "rationale_contains",
     "requires_judge_review",
 }
@@ -79,6 +80,13 @@ def compare_promotion(
             passed_checks += 1
         else:
             errors.append("confidence_above_max")
+
+    if "reason_code" in expected_output:
+        checks += 1
+        if str(expected_output["reason_code"]) in actual.tags:
+            passed_checks += 1
+        else:
+            errors.append("reason_code_mismatch")
 
     if "rationale_contains" in expected_output:
         checks += 1

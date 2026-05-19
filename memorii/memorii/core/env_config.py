@@ -224,7 +224,7 @@ def _load_azure_key_vault_env(env: Mapping[str, str]) -> dict[str, str]:
     except ImportError as error:
         raise EnvironmentConfigError(
             "Azure Key Vault environment loading requires the 'azure' optional dependency. "
-            "Install Memorii with the azure extra."
+            "Install Memorii with the prod extra."
         ) from error
 
     credential = DefaultAzureCredential()
