@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -14,8 +15,9 @@ PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
 
 @pytest.mark.integration
 def test_openai_live_structured_prompt_contract() -> None:
-    runtime_config = LLMRuntimeConfig.from_env()
-    live_config = LLMLiveTestConfig.from_env()
+    env_snapshot = load_memorii_environment()
+    runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
+    live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
     if not live_config.should_run_live_llm_tests(runtime_config):
         pytest.skip("live LLM tests are disabled unless gate flag and API key are present")
 

@@ -12,7 +12,7 @@ from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 
 PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
-_VALID = '{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}'
+_VALID = '{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "reason_code": "observation_not_promoted", "failure_mode": null, "requires_judge_review": false}'
 
 
 def _contract():
@@ -54,10 +54,10 @@ def test_schema_missing_required_field_returns_failure() -> None:
 
 def test_schema_type_enum_additional_properties_and_bounds_are_enforced() -> None:
     bad_cases = [
-        '{"promote": "no", "target_plane": null, "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}',
-        '{"promote": true, "target_plane": "bad", "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false}',
-        '{"promote": true, "target_plane": "semantic", "rationale": "x", "confidence": 1.5, "failure_mode": null, "requires_judge_review": false}',
-        '{"promote": true, "target_plane": "semantic", "rationale": "x", "confidence": 0.5, "failure_mode": null, "requires_judge_review": false, "extra": 1}',
+        '{"promote": "no", "target_plane": null, "rationale": "x", "confidence": 0.5, "reason_code": "observation_not_promoted", "failure_mode": null, "requires_judge_review": false}',
+        '{"promote": true, "target_plane": "bad", "rationale": "x", "confidence": 0.5, "reason_code": "observation_not_promoted", "failure_mode": null, "requires_judge_review": false}',
+        '{"promote": true, "target_plane": "semantic", "rationale": "x", "confidence": 1.5, "reason_code": "repeated_across_episodes", "failure_mode": null, "requires_judge_review": false}',
+        '{"promote": true, "target_plane": "semantic", "rationale": "x", "confidence": 0.5, "reason_code": "observation_not_promoted", "failure_mode": null, "requires_judge_review": false, "extra": 1}',
     ]
     for payload in bad_cases:
         runner, _ = _runner(payload)
@@ -129,7 +129,7 @@ def test_request_metadata_redaction_is_recursive_and_non_mutating() -> None:
 
 def test_schema_error_message_is_safe_and_does_not_echo_values() -> None:
     secret = "TOP_SECRET_SHOULD_NOT_APPEAR"
-    bad_payload = f'{{"promote": true, "target_plane": "semantic", "rationale": "{secret}", "confidence": 5, "failure_mode": null, "requires_judge_review": false}}'
+    bad_payload = f'{{"promote": true, "target_plane": "semantic", "rationale": "{secret}", "confidence": 5, "reason_code": "repeated_across_episodes", "failure_mode": null, "requires_judge_review": false}}'
     runner, _ = _runner(bad_payload)
     result = runner.run(contract=_contract(), variables={"context_json": {}, "candidate_summary": "s"}, request_id="r1")
     assert result.success is False

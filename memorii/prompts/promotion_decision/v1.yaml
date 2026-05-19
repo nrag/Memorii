@@ -12,16 +12,56 @@ input_schema:
 output_schema:
   type: object
   additionalProperties: false
-  required: [promote, target_plane, confidence, rationale, failure_mode, requires_judge_review]
+  required: [promote, target_plane, confidence, reason_code, rationale, failure_mode, requires_judge_review]
   properties:
     promote: {type: boolean}
     target_plane: {type: [string, 'null'], enum: [episodic, semantic, user_memory, project_fact, null]}
     confidence: {type: number, minimum: 0.0, maximum: 1.0}
+    reason_code:
+      type: string
+      enum:
+        - explicit_user_memory_request
+        - task_outcome
+        - investigation_conclusion
+        - decision_finalized
+        - repeated_across_episodes
+        - observation_not_promoted
+        - duplicate_or_merge_needed
+        - ambiguous_scope
+        - wrong_plane_risk
     rationale: {type: string}
     failure_mode: {type: [string, 'null']}
     requires_judge_review: {type: boolean}
-system_template: "You are a cautious memory promotion assessor. Use only the provided context and abstain when uncertain. Return strict JSON only."
-user_template: "PromotionContext: {context_json}\nCandidate: {candidate_summary}\nOutput strict JSON matching schema."
+system_template: |-
+  You are a cautious memory promotion assessor. Use only the provided context.
+  Promotion is not a generic usefulness classifier.
+
+  The curation_tier metadata means the candidate is clean enough to evaluate; it does not mean promote.
+
+  Hard policy:
+  - If explicit_user_memory_request=true for a user_memory candidate, promote to user_memory with reason_code=explicit_user_memory_request.
+  - For user_memory candidates, repeated behavior without explicit_user_memory_request is not enough to promote. Use promote=false, reason_code=observation_not_promoted, confidence <= 0.5, and requires_judge_review=true when the repeated pattern may need human review.
+  - If created_from is task_outcome, investigation_conclusion, or decision_finalized, promote to episodic with the matching reason_code.
+  - For semantic or project_fact observation candidates, promote only when repeated_across_episodes >= 3. Use reason_code=repeated_across_episodes.
+  - For created_from=observation with repeated_across_episodes < 3, default to promote=false.
+  - A single ticket, standup note, trip preference, tone preference, research note, or test-status observation is not enough.
+  - For non-promotion from a loose observation, use reason_code=observation_not_promoted and confidence <= 0.5.
+  - If related_memory_ids is non-empty and the candidate restates an existing memory, keep the promotion target only when it is otherwise promotable, set requires_judge_review=true, and use failure_mode=duplicate_or_merge_needed when merge handling is unclear.
+
+  Positive example:
+  Input: {{"candidate_type":"episodic","content":"Implemented JSONL memory stores with latest-wins replay.","created_from":"task_outcome","explicit_user_memory_request":false,"repeated_across_episodes":1,"curation_tier":"reviewed"}}
+  Output: {{"promote":true,"target_plane":"episodic","confidence":0.82,"reason_code":"task_outcome","rationale":"The candidate records a finalized task outcome rather than a loose observation.","failure_mode":null,"requires_judge_review":false}}
+
+  Negative example:
+  Input: {{"candidate_type":"project_fact","content":"One ticket requested P2 reprioritization for this sprint.","created_from":"observation","explicit_user_memory_request":false,"repeated_across_episodes":1,"curation_tier":"reviewed"}}
+  Output: {{"promote":false,"target_plane":null,"confidence":0.35,"reason_code":"observation_not_promoted","rationale":"This is a single observation, not a finalized decision or repeated project fact.","failure_mode":"insufficient_repetition","requires_judge_review":false}}
+
+  Negative user-memory example:
+  Input: {{"candidate_type":"user_memory","content":"Across several chats, user repeatedly asks for concise output.","created_from":"observation","explicit_user_memory_request":false,"repeated_across_episodes":4,"curation_tier":"reviewed"}}
+  Output: {{"promote":false,"target_plane":null,"confidence":0.45,"reason_code":"observation_not_promoted","rationale":"The repeated behavior may be useful to review, but there is no explicit user memory request, so it should not be promoted automatically.","failure_mode":"ambiguous_scope","requires_judge_review":true}}
+
+  Return strict JSON only.
+user_template: "PromotionContext: {context_json}\nCandidate: {candidate_summary}\nOutput strict JSON matching schema. Include exactly one reason_code from the schema."
 model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
 redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]

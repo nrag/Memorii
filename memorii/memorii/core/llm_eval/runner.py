@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from memorii.core.belief.models import BeliefUpdateContext, BeliefUpdateDecision
 from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
@@ -85,6 +85,34 @@ def _ensure_llm_result(result: object, *, request_id: str, decision_point: LLMDe
         failure_mode=None if success else "adapter_error",
     )
 
+
+def _normalize_llm_output(
+    result: LLMDecisionResult,
+    *,
+    model: type[BaseModel],
+) -> tuple[LLMDecisionResult, dict[str, object]]:
+    """Split prompt/eval fields from strict runtime decision fields."""
+    if result.output is None:
+        return result, {}
+
+    output = dict(result.output)
+    if model is PromotionDecision and "reason_code" in output:
+        tags = list(output.get("tags") or [])
+        reason_code = output["reason_code"]
+        if isinstance(reason_code, str) and reason_code not in tags:
+            tags.append(reason_code)
+        output["tags"] = tags
+
+    runtime_fields = set(model.model_fields)
+    runtime_output = {
+        key: value for key, value in output.items() if key in runtime_fields
+    }
+    extra_output = {
+        key: value for key, value in output.items() if key not in runtime_fields
+    }
+    normalized = result.model_copy(update={"output": runtime_output})
+    return normalized, {"llm_extra_output": extra_output} if extra_output else {}
+
 class PromotionDecisionEngine:
     def __init__(
         self,
@@ -118,6 +146,10 @@ class PromotionDecisionEngine:
             request_id=request_id,
             decision_point=LLMDecisionPoint.PROMOTION,
         )
+        normalized_llm_result, llm_metadata = _normalize_llm_output(
+            llm_result,
+            model=PromotionDecision,
+        )
 
         if not llm_result.success:
             llm_trace = build_llm_decision_trace_from_result(
@@ -139,14 +171,15 @@ class PromotionDecisionEngine:
             )
 
         try:
-            llm_decision = PromotionDecision.model_validate(llm_result.output)
+            llm_decision = PromotionDecision.model_validate(normalized_llm_result.output)
         except ValidationError:
             llm_trace = build_llm_decision_trace_from_result(
                 decision_point=LLMDecisionPoint.PROMOTION,
                 mode=self._mode,
-                result=llm_result,
+                result=normalized_llm_result,
                 final_output=rule_output,
                 fallback_used=True,
+                metadata={**llm_result.request.metadata, **llm_metadata},
                 status=LLMDecisionStatus.VALIDATION_FAILED,
             )
             return DecisionEngineResult(
@@ -163,9 +196,10 @@ class PromotionDecisionEngine:
         llm_trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.PROMOTION,
             mode=self._mode,
-            result=llm_result,
+            result=normalized_llm_result,
             final_output=llm_output,
             fallback_used=False,
+            metadata={**llm_result.request.metadata, **llm_metadata},
             status=LLMDecisionStatus.SUCCEEDED,
         )
 
@@ -223,6 +257,10 @@ class BeliefUpdateEngine:
             request_id=request_id,
             decision_point=LLMDecisionPoint.BELIEF_UPDATE,
         )
+        normalized_llm_result, llm_metadata = _normalize_llm_output(
+            llm_result,
+            model=BeliefUpdateDecision,
+        )
 
         if not llm_result.success:
             llm_trace = build_llm_decision_trace_from_result(
@@ -244,14 +282,15 @@ class BeliefUpdateEngine:
             )
 
         try:
-            llm_decision = BeliefUpdateDecision.model_validate(llm_result.output)
+            llm_decision = BeliefUpdateDecision.model_validate(normalized_llm_result.output)
         except ValidationError:
             llm_trace = build_llm_decision_trace_from_result(
                 decision_point=LLMDecisionPoint.BELIEF_UPDATE,
                 mode=self._mode,
-                result=llm_result,
+                result=normalized_llm_result,
                 final_output=rule_output,
                 fallback_used=True,
+                metadata={**llm_result.request.metadata, **llm_metadata},
                 status=LLMDecisionStatus.VALIDATION_FAILED,
             )
             return DecisionEngineResult(
@@ -268,9 +307,10 @@ class BeliefUpdateEngine:
         llm_trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.BELIEF_UPDATE,
             mode=self._mode,
-            result=llm_result,
+            result=normalized_llm_result,
             final_output=llm_output,
             fallback_used=False,
+            metadata={**llm_result.request.metadata, **llm_metadata},
             status=LLMDecisionStatus.SUCCEEDED,
         )
 

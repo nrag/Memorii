@@ -22,7 +22,7 @@ Workflow file: `.github/workflows/pr-gates.yml`
 - Trigger on `pull_request` to `main`.
 - Trigger on `merge_group` to support GitHub merge queue usage.
 - Use Python 3.11.
-- Install dev dependencies via `pip install -e '.[dev]'`.
+- Install local development dependencies via `pip install -e '.[local]'`.
 - Run: `pytest tests/unit`.
 - Test import path is pinned in `memorii/pyproject.toml` (`[tool.pytest.ini_options].pythonpath = ["."]`) so `pytest tests/unit` behaves consistently in local and CI environments.
 

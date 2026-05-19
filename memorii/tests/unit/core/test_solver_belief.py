@@ -56,6 +56,51 @@ def test_verifier_downgrade_penalty_applies() -> None:
     assert downgraded < normal
 
 
+def test_conflicting_supported_evidence_increases_but_caps_belief() -> None:
+    belief = update_solver_belief(
+        prior_belief=0.6,
+        decision=SolverDecision.SUPPORTED,
+        evidence_count=2,
+        conflict_count=1,
+    )
+
+    assert 0.6 < belief <= 0.8
+
+
+def test_verifier_downgrade_with_conflict_preserves_cautious_supported_increase() -> None:
+    belief = update_solver_belief(
+        prior_belief=0.6,
+        decision=SolverDecision.SUPPORTED,
+        evidence_count=2,
+        missing_evidence_count=1,
+        verifier_downgraded=True,
+        conflict_count=1,
+    )
+
+    assert 0.6 < belief <= 0.75
+
+
+def test_many_missing_evidence_caps_overconfidence() -> None:
+    belief = update_solver_belief(
+        prior_belief=0.7,
+        decision=SolverDecision.SUPPORTED,
+        evidence_count=5,
+        missing_evidence_count=3,
+    )
+
+    assert belief <= 0.65
+
+
+def test_refuted_still_decreases_even_with_evidence() -> None:
+    belief = update_solver_belief(
+        prior_belief=0.6,
+        decision=SolverDecision.REFUTED,
+        evidence_count=3,
+    )
+
+    assert belief < 0.6
+
+
 def test_belief_clamps_to_bounds() -> None:
     high = update_solver_belief(
         prior_belief=0.95,

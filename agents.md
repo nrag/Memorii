@@ -851,7 +851,7 @@ Assume these commands unless the repo says otherwise:
 
 Install:
 
-pip install -e ".[dev]"
+pip install -e ".[local]"
 
 Run tests:
 

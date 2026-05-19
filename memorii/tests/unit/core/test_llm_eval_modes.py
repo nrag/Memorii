@@ -65,11 +65,81 @@ def test_llm_mode_and_fallback_and_hybrid_disagreement() -> None:
     assert res3.disagreement is True
 
 
+def test_promotion_llm_output_allows_prompt_only_metadata_fields() -> None:
+    pctx = _promotion_context()
+    adapter = StubPromotionAdapter(
+        success=True,
+        output={
+            "promote": True,
+            "target_plane": "semantic",
+            "confidence": 0.95,
+            "reason_code": "repeated_across_episodes",
+            "rationale": "llm",
+            "failure_mode": None,
+            "requires_judge_review": False,
+        },
+    )
+
+    res = PromotionDecisionEngine(
+        rule_engine=OfflineLLMEvalRunner()._promotion_provider,
+        llm_adapter=adapter,
+        mode=LLMDecisionMode.LLM,
+    ).decide(pctx, "r-meta")
+
+    assert res.llm_used is True
+    assert res.llm_success is True
+    assert res.fallback_used is False
+    assert res.decision["promote"] is True
+    assert res.decision["tags"] == ["repeated_across_episodes"]
+    assert "failure_mode" not in res.decision
+    assert "requires_judge_review" not in res.decision
+    assert res.llm_trace is not None
+    assert res.llm_trace.status.value == "succeeded"
+    assert res.llm_trace.input_payload["metadata"]["llm_extra_output"] == {
+        "reason_code": "repeated_across_episodes",
+        "failure_mode": None,
+        "requires_judge_review": False,
+    }
+
+
 def test_belief_hybrid_runs_both_and_detects_disagreement() -> None:
     bctx = _belief_context().model_copy(update={"prior_belief": 0.8})
     adapter = StubBeliefAdapter(success=True, output={"belief": 0.01, "confidence": 0.9, "rationale": "llm"})
     res = BeliefUpdateEngine(rule_engine=OfflineLLMEvalRunner()._belief_update_provider, llm_adapter=adapter, mode=LLMDecisionMode.HYBRID).update(bctx, "b1")
     assert res.llm_used and res.llm_success and not res.fallback_used and res.disagreement
+
+
+def test_belief_llm_output_allows_prompt_only_metadata_fields() -> None:
+    bctx = _belief_context().model_copy(update={"prior_belief": 0.4})
+    adapter = StubBeliefAdapter(
+        success=True,
+        output={
+            "belief": 0.8,
+            "confidence": 0.9,
+            "rationale": "llm",
+            "failure_mode": None,
+            "requires_judge_review": False,
+        },
+    )
+
+    res = BeliefUpdateEngine(
+        rule_engine=OfflineLLMEvalRunner()._belief_update_provider,
+        llm_adapter=adapter,
+        mode=LLMDecisionMode.LLM,
+    ).update(bctx, "b-meta")
+
+    assert res.llm_used is True
+    assert res.llm_success is True
+    assert res.fallback_used is False
+    assert res.decision["belief"] == 0.8
+    assert "failure_mode" not in res.decision
+    assert "requires_judge_review" not in res.decision
+    assert res.llm_trace is not None
+    assert res.llm_trace.status.value == "succeeded"
+    assert res.llm_trace.input_payload["metadata"]["llm_extra_output"] == {
+        "failure_mode": None,
+        "requires_judge_review": False,
+    }
 
 
 def test_eval_runner_runs_multiple_modes_and_emits_flags() -> None:

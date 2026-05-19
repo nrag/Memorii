@@ -17,7 +17,7 @@ Supported `MEMORII_ENV` values:
 
 | Environment | Default secret source | Read mechanism |
 | --- | --- | --- |
-| `local` | `local_file` when `~/.config/memorii/memory.env` exists, otherwise `process` | Dotenv-style chezmoi file or process env |
+| `local` | `local_file` when `~/.config/memorii/memorii.env` exists, otherwise `process` | Dotenv-style chezmoi file or process env |
 | `test` | `process` | Injected mapping or process env |
 | `ci` | `github_actions` | GitHub Actions-injected process env |
 | `production` | `azure_key_vault` | Azure Key Vault via managed identity |
@@ -62,7 +62,7 @@ The loader provides `require_environment_keys(...)` for simple required-key chec
 Local development uses a chezmoi-instantiated dotenv file:
 
 ```text
-~/.config/memorii/memory.env
+~/.config/memorii/memorii.env
 ```
 
 Example:

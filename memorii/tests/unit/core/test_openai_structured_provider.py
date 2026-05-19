@@ -25,7 +25,7 @@ def _request() -> LLMStructuredRequest:
 
 def test_sdk_missing_raises_safe(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "openai", None)
-    with pytest.raises(RuntimeError, match="Install the openai extra"):
+    with pytest.raises(RuntimeError, match="Install the local, live, or prod extra"):
         OpenAIStructuredClient().complete_structured(_request(), config=LLMRuntimeConfig(provider="openai", api_key=None))
 
 

@@ -28,7 +28,7 @@ jobs:
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[dev]'
+        run: pip install -e '.[local]'
 
       - name: Run unit tests
         working-directory: memorii
