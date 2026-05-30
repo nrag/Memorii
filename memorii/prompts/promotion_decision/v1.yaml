@@ -40,13 +40,21 @@ system_template: |-
 
   Hard policy:
   - If explicit_user_memory_request=true for a user_memory candidate, promote to user_memory with reason_code=explicit_user_memory_request.
+  - Exception: if an explicit memory request contradicts or overwrites a related existing memory, or is scoped to one PR/session/trip/task, do not auto-promote; use confidence <= 0.5 and requires_judge_review=true.
+  - Reason-code priority for explicit request exceptions:
+    - If related_memory_ids is non-empty and the candidate corrects, supersedes, restates, strengthens, or overwrites an existing memory, use reason_code=duplicate_or_merge_needed.
+    - If the issue is only task/session/trip/PR scope and there is no related existing memory, use reason_code=ambiguous_scope.
+    - If the issue is wrong person, customer, project, module, or memory plane, use reason_code=wrong_plane_risk.
   - For user_memory candidates, repeated behavior without explicit_user_memory_request is not enough to promote. Use promote=false, reason_code=observation_not_promoted, confidence <= 0.5, and requires_judge_review=true when the repeated pattern may need human review.
   - If created_from is task_outcome, investigation_conclusion, or decision_finalized, promote to episodic with the matching reason_code.
   - For semantic or project_fact observation candidates, promote only when repeated_across_episodes >= 3. Use reason_code=repeated_across_episodes.
   - For created_from=observation with repeated_across_episodes < 3, default to promote=false.
+  - For non-explicit user_memory observations with repeated_across_episodes < 3, use reason_code=observation_not_promoted even when the observation is trip/session/task scoped.
   - A single ticket, standup note, trip preference, tone preference, research note, or test-status observation is not enough.
+  - Wrong entity links, stale facts, obsolete project constraints, delayed corrections, temporary debugging states, spam/noise, and hallucinated importance override repetition. Use promote=false and reason_code=observation_not_promoted, ambiguous_scope, duplicate_or_merge_needed, or wrong_plane_risk.
+  - A repeated project_fact that is time-bound but not stale, obsolete, superseded, temporary, or wrong-entity can still be promoted with requires_judge_review=true. Do not reject only because the fact has a temporal boundary.
   - For non-promotion from a loose observation, use reason_code=observation_not_promoted and confidence <= 0.5.
-  - If related_memory_ids is non-empty and the candidate restates an existing memory, keep the promotion target only when it is otherwise promotable, set requires_judge_review=true, and use failure_mode=duplicate_or_merge_needed when merge handling is unclear.
+  - If related_memory_ids is non-empty and the candidate is an exact or near duplicate of an existing memory, do not create a new standalone promotion; use promote=false, reason_code=duplicate_or_merge_needed, confidence <= 0.5, and requires_judge_review=true.
 
   Positive example:
   Input: {{"candidate_type":"episodic","content":"Implemented JSONL memory stores with latest-wins replay.","created_from":"task_outcome","explicit_user_memory_request":false,"repeated_across_episodes":1,"curation_tier":"reviewed"}}
@@ -56,9 +64,33 @@ system_template: |-
   Input: {{"candidate_type":"project_fact","content":"One ticket requested P2 reprioritization for this sprint.","created_from":"observation","explicit_user_memory_request":false,"repeated_across_episodes":1,"curation_tier":"reviewed"}}
   Output: {{"promote":false,"target_plane":null,"confidence":0.35,"reason_code":"observation_not_promoted","rationale":"This is a single observation, not a finalized decision or repeated project fact.","failure_mode":"insufficient_repetition","requires_judge_review":false}}
 
+  Negative trip observation example:
+  Input: {{"candidate_type":"user_memory","content":"For this Iceland trip, prefer one hotel base.","created_from":"observation","explicit_user_memory_request":false,"repeated_across_episodes":1,"curation_tier":"reviewed"}}
+  Output: {{"promote":false,"target_plane":null,"confidence":0.35,"reason_code":"observation_not_promoted","rationale":"This is a single trip-scoped observation and not an explicit durable user-memory request.","failure_mode":"one_off_preference","requires_judge_review":false}}
+
   Negative user-memory example:
   Input: {{"candidate_type":"user_memory","content":"Across several chats, user repeatedly asks for concise output.","created_from":"observation","explicit_user_memory_request":false,"repeated_across_episodes":4,"curation_tier":"reviewed"}}
   Output: {{"promote":false,"target_plane":null,"confidence":0.45,"reason_code":"observation_not_promoted","rationale":"The repeated behavior may be useful to review, but there is no explicit user memory request, so it should not be promoted automatically.","failure_mode":"ambiguous_scope","requires_judge_review":true}}
+
+  Scoped explicit request example:
+  Input: {{"candidate_type":"user_memory","content":"Remember for this PR that I want very verbose review notes.","created_from":"explicit_memory_request","explicit_user_memory_request":true,"repeated_across_episodes":0,"curation_tier":"reviewed"}}
+  Output: {{"promote":false,"target_plane":null,"confidence":0.4,"reason_code":"ambiguous_scope","rationale":"The request is explicit but scoped to one PR, so it should not become a durable user memory without review.","failure_mode":"temporal_scope","requires_judge_review":true}}
+
+  Correction merge example:
+  Input: {{"candidate_type":"user_memory","content":"Remember that I now prefer concise coding answers; this corrects the older memory that said I prefer detailed answers by default.","created_from":"explicit_memory_request","explicit_user_memory_request":true,"repeated_across_episodes":0,"related_memory_ids":["mem:user:detailed-answers-default"],"curation_tier":"reviewed"}}
+  Output: {{"promote":false,"target_plane":null,"confidence":0.4,"reason_code":"duplicate_or_merge_needed","rationale":"The request is explicit, but it corrects a related existing memory, so it should go through merge or supersession review rather than standalone promotion.","failure_mode":"duplicate_or_merge_needed","requires_judge_review":true}}
+
+  Time-bound repeated project fact example:
+  Input: {{"candidate_type":"project_fact","content":"Release freeze every Friday appears repeatedly in recent sprints.","created_from":"observation","explicit_user_memory_request":false,"repeated_across_episodes":3,"curation_tier":"reviewed"}}
+  Output: {{"promote":true,"target_plane":"project_fact","confidence":0.65,"reason_code":"repeated_across_episodes","rationale":"The repeated observation is a project fact with a temporal boundary; it can be promoted but should be reviewed for scope and freshness.","failure_mode":"temporal_scope","requires_judge_review":true}}
+
+  Wrong-entity example:
+  Input: {{"candidate_type":"project_fact","content":"Contoso requires manual validation before rollout, but the source ticket is for ACME and only mentions Contoso in a pasted example.","created_from":"observation","explicit_user_memory_request":false,"repeated_across_episodes":3,"curation_tier":"reviewed"}}
+  Output: {{"promote":false,"target_plane":null,"confidence":0.35,"reason_code":"wrong_plane_risk","rationale":"The structured repetition looks promotable, but the content links the fact to the wrong entity, so it should not become a project fact.","failure_mode":"attribution_unclear","requires_judge_review":true}}
+
+  Stale duplicate example:
+  Input: {{"candidate_type":"project_fact","content":"The old beta rollout checklist requires manual QA, but metadata says the checklist was superseded by an automated gate.","created_from":"observation","explicit_user_memory_request":false,"repeated_across_episodes":4,"related_memory_ids":["mem:project:rollout-checklist"],"curation_tier":"reviewed"}}
+  Output: {{"promote":false,"target_plane":null,"confidence":0.35,"reason_code":"duplicate_or_merge_needed","rationale":"The candidate points at an existing memory and appears stale or superseded, so it needs merge/update review rather than standalone promotion.","failure_mode":"duplicate_or_merge_needed","requires_judge_review":true}}
 
   Return strict JSON only.
 user_template: "PromotionContext: {context_json}\nCandidate: {candidate_summary}\nOutput strict JSON matching schema. Include exactly one reason_code from the schema."
