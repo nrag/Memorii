@@ -11,6 +11,7 @@ def _judge_review_snapshots() -> list[EvalSnapshot]:
         snapshot
         for snapshot in promotion_golden_v1()
         if bool((snapshot.expected_output or {}).get("requires_judge_review") is True)
+        and not bool(snapshot.input_payload.get("metadata", {}).get("expected_rule_failure") is True)
     ]
 
 
@@ -19,6 +20,23 @@ def _deterministic_snapshots() -> list[EvalSnapshot]:
         snapshot
         for snapshot in promotion_golden_v1()
         if not bool((snapshot.expected_output or {}).get("requires_judge_review") is True)
+        and not bool(snapshot.input_payload.get("metadata", {}).get("expected_rule_failure") is True)
+    ]
+
+
+def _rule_baseline_snapshots() -> list[EvalSnapshot]:
+    return [
+        snapshot
+        for snapshot in promotion_golden_v1()
+        if not bool(snapshot.input_payload.get("metadata", {}).get("expected_rule_failure") is True)
+    ]
+
+
+def _expected_rule_failure_snapshots() -> list[EvalSnapshot]:
+    return [
+        snapshot
+        for snapshot in promotion_golden_v1()
+        if bool(snapshot.input_payload.get("metadata", {}).get("expected_rule_failure") is True)
     ]
 
 
@@ -112,13 +130,23 @@ def test_promotion_golden_v1_counts_positive_negative_and_judge_review_cases() -
 
 
 def test_offline_eval_runner_runs_full_promotion_golden_set() -> None:
-    snapshots = promotion_golden_v1()
+    snapshots = _rule_baseline_snapshots()
     runner = OfflineLLMEvalRunner()
 
     report = runner.run_snapshots(snapshots)
 
     assert report.total_cases == len(snapshots)
     assert report.failed_cases == 0
+
+
+def test_promotion_golden_v1_includes_rule_breaker_cases() -> None:
+    snapshots = _expected_rule_failure_snapshots()
+    runner = OfflineLLMEvalRunner()
+
+    report = runner.run_snapshots(snapshots)
+
+    assert len(snapshots) >= 1
+    assert report.failed_cases >= 1
 
 
 def test_offline_eval_runner_reports_deterministic_pass_rate_for_non_judge_cases() -> None:
@@ -170,7 +198,7 @@ def test_duplicate_merge_placeholder_is_marked_for_judge_review() -> None:
 
 def test_running_promotion_golden_requires_no_live_llm_or_judge_calls() -> None:
     runner = OfflineLLMEvalRunner()
-    report = runner.run_snapshots(promotion_golden_v1())
+    report = runner.run_snapshots(_rule_baseline_snapshots())
 
     assert all(result.trace_id is not None for result in report.results)
     assert all(result.requires_judge_review is False or result.passed is True for result in report.results)

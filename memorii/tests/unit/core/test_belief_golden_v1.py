@@ -39,6 +39,7 @@ def _judge_review_with_constraints_snapshots() -> list[EvalSnapshot]:
         for snapshot in belief_golden_v1()
         if bool((snapshot.expected_output or {}).get("requires_judge_review") is True)
         and bool((snapshot.expected_output or {}).keys() - {"requires_judge_review"})
+        and not bool(snapshot.input_payload.get("metadata", {}).get("expected_rule_failure") is True)
     ]
 
 
@@ -55,6 +56,15 @@ def _deterministic_snapshots() -> list[EvalSnapshot]:
         snapshot
         for snapshot in belief_golden_v1()
         if not bool((snapshot.expected_output or {}).get("requires_judge_review") is True)
+        and not bool(snapshot.input_payload.get("metadata", {}).get("expected_rule_failure") is True)
+    ]
+
+
+def _expected_rule_failure_snapshots() -> list[EvalSnapshot]:
+    return [
+        snapshot
+        for snapshot in belief_golden_v1()
+        if bool(snapshot.input_payload.get("metadata", {}).get("expected_rule_failure") is True)
     ]
 
 
@@ -162,6 +172,16 @@ def test_judge_review_with_constraints_cases_run_separately_and_are_marked() -> 
     assert all(result.requires_judge_review is True for result in report.results)
 
 
+def test_belief_golden_v1_includes_rule_breaker_cases() -> None:
+    runner = OfflineLLMEvalRunner()
+    snapshots = _expected_rule_failure_snapshots()
+
+    report = runner.run_snapshots(snapshots)
+
+    assert len(snapshots) >= 1
+    assert report.failed_cases >= 1
+
+
 def test_judge_only_cases_run_separately_and_are_marked() -> None:
     runner = OfflineLLMEvalRunner()
     judge_only_snapshots = _judge_only_snapshots()
@@ -215,6 +235,8 @@ def test_every_clean_supported_case_expects_direction_increase() -> None:
         if context.conflict_count > 0:
             continue
         if context.verifier_downgraded:
+            continue
+        if bool(context.metadata.get("expected_rule_failure") is True):
             continue
         expected_output = snapshot.expected_output or {}
         assert expected_output.get("direction") == "increase"

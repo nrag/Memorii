@@ -59,6 +59,32 @@ Additional rules:
 
 This loop continuously improves offline eval quality while keeping provenance explicit.
 
+## Current live baseline
+
+The current promotion and belief-update live eval baseline is:
+
+```text
+rule   43/61
+llm    61/61
+hybrid 61/61
+```
+
+The rule failures are intentional. They represent semantic traps that require reasoning about duplicate memories, stale evidence, wrong entity links, partial tool failures, delayed corrections, and soft falsification.
+
+Future changes should preserve this shape unless the rule baseline is intentionally improved. If the LLM or hybrid path regresses on these cases, inspect the run artifacts before changing golden expectations.
+
+## Next architecture step
+
+The next belief-update improvement is the calibrated evidence-quality layer described in [Calibrated Evidence Quality Design](calibrated_evidence_quality.md).
+
+The goal is to move from prompt-specific numeric caps to:
+
+```text
+semantic evidence-quality assessment -> deterministic calibrated belief update
+```
+
+New adversarial cases should ideally specify expected evidence-quality dimensions before adding new final-belief thresholds.
+
 ## Filesystem storage
 
 JSONL is the preferred first storage layer.
