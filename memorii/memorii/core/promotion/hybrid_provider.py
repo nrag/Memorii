@@ -13,7 +13,7 @@ class HybridPromotionDecisionProvider:
         self,
         *,
         llm_provider: LLMPromotionDecisionProvider,
-        strong_rule_threshold: float = 0.85,
+        strong_rule_threshold: float = 0.8,
     ) -> None:
         self._rule_provider = RuleBasedPromotionDecisionProvider()
         self._llm_provider = llm_provider

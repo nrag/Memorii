@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, SecretStr
 
@@ -44,6 +45,9 @@ class LLMRuntimeConfig(BaseModel):
     def has_api_key(self) -> bool:
         return self.api_key is not None and bool(self.api_key.get_secret_value())
 
+    def has_live_provider(self) -> bool:
+        return self.provider.strip().lower() not in {"none", "fake"} and self.has_api_key()
+
     def require_api_key(self) -> SecretStr:
         if not self.has_api_key():
             raise RuntimeError("LLM API key is required for configured provider but is missing.")
@@ -72,6 +76,31 @@ class LLMLiveTestConfig(BaseModel):
     def should_run_live_llm_tests(self, runtime_config: LLMRuntimeConfig) -> bool:
         provider = runtime_config.provider.strip().lower()
         return self.enable_live_llm_tests and provider not in {"none", "fake"} and runtime_config.has_api_key()
+
+
+DecisionModeName = Literal["auto", "rule", "llm", "hybrid"]
+ResolvedDecisionModeName = Literal["rule", "llm", "hybrid"]
+
+
+class LLMDecisionRuntimeConfig(BaseModel):
+    mode: DecisionModeName = "auto"
+
+    model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "LLMDecisionRuntimeConfig":
+        source = env if env is not None else os.environ
+        mode = (source.get("MEMORII_DECISION_MODE") or "auto").strip().lower()
+        if mode not in {"auto", "rule", "llm", "hybrid"}:
+            raise ValueError("Invalid MEMORII_DECISION_MODE value")
+        return cls(mode=mode)  # type: ignore[arg-type]
+
+    def resolve(self, runtime_config: LLMRuntimeConfig) -> ResolvedDecisionModeName:
+        if self.mode == "auto":
+            return "hybrid" if runtime_config.has_live_provider() else "rule"
+        if self.mode == "hybrid" and not runtime_config.has_live_provider():
+            return "rule"
+        return self.mode  # type: ignore[return-value]
 
 
 def _parse_bool(value: str | None, *, default: bool) -> bool:

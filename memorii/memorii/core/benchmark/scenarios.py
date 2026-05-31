@@ -76,26 +76,132 @@ class ScenarioExecutor:
             BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
             BenchmarkScenarioType.EPISODIC_RETRIEVAL,
         }:
-            return self._run_retrieval(fixture, system)
+            observation = self._run_retrieval(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         if fixture.category == BenchmarkScenarioType.ROUTING_CORRECTNESS:
-            return self._run_routing(fixture, system)
+            observation = self._run_routing(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         if fixture.category == BenchmarkScenarioType.EXECUTION_RESUME:
-            return self._run_execution_resume(fixture, system)
+            observation = self._run_execution_resume(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         if fixture.category == BenchmarkScenarioType.SOLVER_RESUME:
-            return self._run_solver_resume(fixture, system)
+            observation = self._run_solver_resume(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         if fixture.category == BenchmarkScenarioType.SOLVER_VALIDATION:
-            return self._run_solver_validation(fixture, system)
+            observation = self._run_solver_validation(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         if fixture.category == BenchmarkScenarioType.END_TO_END:
-            return self._run_end_to_end(fixture, system)
+            observation = self._run_end_to_end(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         if fixture.category == BenchmarkScenarioType.LEARNING_ACROSS_EPISODES:
-            return self._run_learning_across_episodes(fixture, system)
+            observation = self._run_learning_across_episodes(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         if fixture.category == BenchmarkScenarioType.LONG_HORIZON_DEGRADATION:
-            return self._run_long_horizon_degradation(fixture, system)
+            observation = self._run_long_horizon_degradation(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         if fixture.category == BenchmarkScenarioType.CONFLICT_RESOLUTION:
-            return self._run_conflict_resolution(fixture, system)
+            observation = self._run_conflict_resolution(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         if fixture.category == BenchmarkScenarioType.IMPLICIT_RECALL:
-            return self._run_implicit_recall(fixture, system)
+            observation = self._run_implicit_recall(fixture, system)
+            return self._apply_lifecycle_expectations(fixture=fixture, observation=observation)
         raise ValueError(f"Unsupported scenario category: {fixture.category}")
+
+    def _apply_lifecycle_expectations(
+        self,
+        *,
+        fixture: BenchmarkScenarioFixture,
+        observation: ScenarioObservation,
+    ) -> ScenarioObservation:
+        lifecycle = fixture.lifecycle
+        if lifecycle is None:
+            return observation
+
+        active_ids = set(observation.active_memory_ids)
+        if not active_ids:
+            active_ids = set(observation.promotion_committed_memory_ids) | set(observation.retrieved_ids)
+
+        inactive_ids = set(observation.inactive_memory_ids)
+        archived_ids = set(observation.archived_memory_ids)
+        retrieved_ids = set(observation.retrieved_ids)
+
+        expected_active_ids = set(lifecycle.expected_active_memory_ids)
+        expected_inactive_ids = set(lifecycle.expected_inactive_memory_ids)
+        expected_archived_ids = set(lifecycle.expected_archived_memory_ids)
+        expected_retrieval_ids = set(lifecycle.expected_retrieval_ids)
+        expected_excluded_retrieval_ids = set(lifecycle.expected_excluded_retrieval_ids)
+
+        active_correct = (
+            expected_active_ids.issubset(active_ids | retrieved_ids)
+            if expected_active_ids
+            else None
+        )
+        inactive_correct = (
+            expected_inactive_ids.isdisjoint(active_ids | retrieved_ids)
+            if expected_inactive_ids
+            else None
+        )
+        archived_correct = (
+            expected_archived_ids.isdisjoint(active_ids | retrieved_ids)
+            if expected_archived_ids and not archived_ids
+            else (
+                expected_archived_ids.issubset(archived_ids)
+                if expected_archived_ids
+                else None
+            )
+        )
+        retrieval_currentness_correct = (
+            expected_retrieval_ids.issubset(retrieved_ids)
+            and expected_excluded_retrieval_ids.isdisjoint(retrieved_ids)
+            if expected_retrieval_ids or expected_excluded_retrieval_ids
+            else None
+        )
+        duplicate_avoidance_correct = (
+            inactive_correct if lifecycle.expect_duplicate_avoidance else None
+        )
+        scope_preservation_correct = (
+            expected_excluded_retrieval_ids.isdisjoint(retrieved_ids)
+            if lifecycle.expect_scope_preservation
+            else None
+        )
+        pollution_avoidance_correct = (
+            not bool(observation.semantic_pollution) and not bool(observation.user_memory_pollution)
+            if lifecycle.expect_pollution_avoidance
+            else None
+        )
+        checks = [
+            active_correct,
+            inactive_correct,
+            archived_correct,
+            retrieval_currentness_correct,
+            duplicate_avoidance_correct,
+            scope_preservation_correct,
+            pollution_avoidance_correct,
+        ]
+        applicable_checks = [check for check in checks if check is not None]
+        lifecycle_success = all(applicable_checks) if applicable_checks else None
+
+        return observation.model_copy(
+            update={
+                "lifecycle_family": lifecycle.family,
+                "active_memory_ids": sorted(active_ids),
+                "inactive_memory_ids": sorted(inactive_ids),
+                "archived_memory_ids": sorted(archived_ids),
+                "expected_active_memory_ids": list(lifecycle.expected_active_memory_ids),
+                "expected_inactive_memory_ids": list(lifecycle.expected_inactive_memory_ids),
+                "expected_archived_memory_ids": list(lifecycle.expected_archived_memory_ids),
+                "expected_lifecycle_retrieval_ids": list(lifecycle.expected_retrieval_ids),
+                "expected_lifecycle_excluded_retrieval_ids": list(lifecycle.expected_excluded_retrieval_ids),
+                "active_memory_correct": active_correct,
+                "inactive_memory_correct": inactive_correct,
+                "archived_memory_correct": archived_correct,
+                "retrieval_currentness_correct": retrieval_currentness_correct,
+                "duplicate_avoidance_correct": duplicate_avoidance_correct,
+                "scope_preservation_correct": scope_preservation_correct,
+                "pollution_avoidance_correct": pollution_avoidance_correct,
+                "lifecycle_success": lifecycle_success,
+            }
+        )
 
     def _run_retrieval(self, fixture: BenchmarkScenarioFixture, system: BenchmarkSystem) -> ScenarioObservation:
         if fixture.retrieval is None:
@@ -366,6 +472,12 @@ class ScenarioExecutor:
             conflict_resolution_correct=winner_matches,
             stale_memory_rejected=stale_rejected,
             contradictory_handling_correct=contradictory_correct,
+            active_memory_ids=[selected.candidate_id] if selected is not None else [],
+            inactive_memory_ids=[
+                candidate.candidate_id
+                for candidate in fx.candidates
+                if selected is not None and candidate.candidate_id != selected.candidate_id
+            ],
             scenario_success=contradictory_correct,
         )
 

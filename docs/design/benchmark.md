@@ -124,6 +124,9 @@ This includes:
 - conflict resolution
 - implicit recall
 
+Memory Lifecycle Benchmark v1 is the next priority in this layer. It is specified in
+[Memory Lifecycle Benchmark v1](memory_lifecycle_benchmark_v1.md) and should be implemented before expanding HotpotQA-style parity benchmarks.
+
 ---
 
 ## 5. Benchmark directory structure
@@ -212,6 +215,24 @@ Rules:
 - report output must preserve the execution level
 
 ### 6.3 Entry points
+Deterministic benchmark suites are invoked with:
+
+```bash
+PYTHONPATH=memorii python -m memorii.tools.run_eval --suite memory_lifecycle_v1 --storage-root .memorii
+```
+
+The unified eval entry point defaults to `--suite all`, which runs both promotion/belief decision evals and the memory lifecycle benchmark:
+
+```bash
+PYTHONPATH=memorii python -m memorii.tools.run_eval --mode all --allow-live --storage-root .memorii
+```
+
+The command writes canonical artifacts under:
+
+```text
+.memorii/benchmark_runs/<suite>/<mode>/<run_id>/
+```
+
 For system-level scenarios, the benchmark executor must use either:
 - the public runtime API, or
 - `RuntimeStepService`

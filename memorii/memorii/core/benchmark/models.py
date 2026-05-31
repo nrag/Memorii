@@ -54,6 +54,26 @@ class ScenarioVerdict(str, Enum):
     MEMORII_PASSED_BUT_WORSE_THAN_BASELINE = "memorii_passed_but_worse_than_baseline"
 
 
+class MemoryLifecycleFamily(str, Enum):
+    CREATE_AND_REUSE_USER_PREFERENCE = "create_and_reuse_user_preference"
+    BLOCK_INFERRED_USER_PREFERENCE = "block_inferred_user_preference"
+    MERGE_NEAR_DUPLICATE_PREFERENCE = "merge_near_duplicate_preference"
+    SUPERSEDE_CORRECTED_PREFERENCE = "supersede_corrected_preference"
+    PRESERVE_TASK_SCOPED_PREFERENCE = "preserve_task_scoped_preference"
+    PROMOTE_REPEATED_PROJECT_FACT = "promote_repeated_project_fact"
+    SUPERSEDE_STALE_PROJECT_FACT = "supersede_stale_project_fact"
+    AVOID_WRONG_ENTITY_CARRYOVER = "avoid_wrong_entity_carryover"
+    RETRIEVAL_AFTER_EXPIRATION = "retrieval_after_expiration"
+    END_TO_END_LIFECYCLE_WITH_NOISE = "end_to_end_lifecycle_with_noise"
+
+
+class WorkspaceLifecycleStage(str, Enum):
+    PROJECT = "project"
+    AREA = "area"
+    RESOURCE = "resource"
+    ARCHIVE = "archive"
+
+
 class BaselinePolicy(str, Enum):
     RUN = "run"
     SKIP = "skip"
@@ -249,6 +269,21 @@ class ImplicitRecallFixture(BaseModel):
         return self
 
 
+class MemoryLifecycleExpectation(BaseModel):
+    family: MemoryLifecycleFamily
+    expected_stage_by_memory_id: dict[str, WorkspaceLifecycleStage] = Field(default_factory=dict)
+    expected_active_memory_ids: list[str] = Field(default_factory=list)
+    expected_inactive_memory_ids: list[str] = Field(default_factory=list)
+    expected_archived_memory_ids: list[str] = Field(default_factory=list)
+    expected_retrieval_ids: list[str] = Field(default_factory=list)
+    expected_excluded_retrieval_ids: list[str] = Field(default_factory=list)
+    expect_duplicate_avoidance: bool = False
+    expect_scope_preservation: bool = False
+    expect_pollution_avoidance: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class BenchmarkScenarioFixture(BaseModel):
     scenario_id: str
     category: BenchmarkScenarioType
@@ -262,6 +297,7 @@ class BenchmarkScenarioFixture(BaseModel):
     long_horizon_degradation: LongHorizonDegradationFixture | None = None
     conflict_resolution: ConflictResolutionFixture | None = None
     implicit_recall: ImplicitRecallFixture | None = None
+    lifecycle: MemoryLifecycleExpectation | None = None
     baseline_applicability: dict[BenchmarkSystem, BaselineApplicability] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -361,6 +397,23 @@ class ScenarioObservation(BaseModel):
     contradictory_handling_correct: bool | None = None
     implicit_recall_success: bool | None = None
     retrieval_plan_relevance_accuracy: bool | None = None
+    lifecycle_family: MemoryLifecycleFamily | None = None
+    active_memory_ids: list[str] = Field(default_factory=list)
+    inactive_memory_ids: list[str] = Field(default_factory=list)
+    archived_memory_ids: list[str] = Field(default_factory=list)
+    expected_active_memory_ids: list[str] = Field(default_factory=list)
+    expected_inactive_memory_ids: list[str] = Field(default_factory=list)
+    expected_archived_memory_ids: list[str] = Field(default_factory=list)
+    expected_lifecycle_retrieval_ids: list[str] = Field(default_factory=list)
+    expected_lifecycle_excluded_retrieval_ids: list[str] = Field(default_factory=list)
+    active_memory_correct: bool | None = None
+    inactive_memory_correct: bool | None = None
+    archived_memory_correct: bool | None = None
+    retrieval_currentness_correct: bool | None = None
+    duplicate_avoidance_correct: bool | None = None
+    scope_preservation_correct: bool | None = None
+    pollution_avoidance_correct: bool | None = None
+    lifecycle_success: bool | None = None
     false_positive_retrieval_rate: float | None = None
     precision_at_1: float | None = None
     gold_rank: int | None = None
@@ -406,6 +459,14 @@ class ScenarioMetrics(BaseModel):
     contradictory_memory_handling_correctness: float | None = None
     implicit_recall_success_rate: float | None = None
     retrieval_plan_relevance_accuracy: float | None = None
+    lifecycle_success_rate: float | None = None
+    active_memory_accuracy: float | None = None
+    inactive_memory_accuracy: float | None = None
+    archived_memory_accuracy: float | None = None
+    retrieval_currentness_accuracy: float | None = None
+    duplicate_avoidance_accuracy: float | None = None
+    scope_preservation_accuracy: float | None = None
+    pollution_avoidance_accuracy: float | None = None
     false_positive_retrieval_rate: float | None = None
     precision_at_1: float | None = None
     hard_distractor_outrank_rate: float | None = None

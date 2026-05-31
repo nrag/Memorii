@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
+from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -23,6 +23,35 @@ def test_live_test_config_reads_gate_flag() -> None:
 def test_provider_specific_keys_load() -> None:
     assert LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "secret"}).has_api_key()
     assert LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": "secret"}).has_api_key()
+
+
+def test_live_provider_requires_real_provider_and_key() -> None:
+    assert LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "secret"}).has_live_provider()
+    assert not LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai"}).has_live_provider()
+    assert not LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "none", "OPENAI_API_KEY": "secret"}).has_live_provider()
+
+
+def test_decision_mode_auto_resolves_from_provider_configuration() -> None:
+    runtime_with_key = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "secret"})
+    runtime_without_key = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "openai"})
+
+    assert LLMDecisionRuntimeConfig.from_env({}).resolve(runtime_with_key) == "hybrid"
+    assert LLMDecisionRuntimeConfig.from_env({}).resolve(runtime_without_key) == "rule"
+
+
+def test_decision_mode_hybrid_falls_back_to_rule_without_provider() -> None:
+    runtime = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "none"})
+    assert LLMDecisionRuntimeConfig.from_env({"MEMORII_DECISION_MODE": "hybrid"}).resolve(runtime) == "rule"
+
+
+def test_decision_mode_llm_is_explicit() -> None:
+    runtime = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "none"})
+    assert LLMDecisionRuntimeConfig.from_env({"MEMORII_DECISION_MODE": "llm"}).resolve(runtime) == "llm"
+
+
+def test_invalid_decision_mode_raises() -> None:
+    with pytest.raises(ValueError):
+        LLMDecisionRuntimeConfig.from_env({"MEMORII_DECISION_MODE": "maybe"})
 
 
 def test_live_permission_requires_flag_and_key() -> None:
