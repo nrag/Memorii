@@ -86,9 +86,9 @@ class SolverUpdateEngine:
     ) -> None:
         self._verifier = verifier or SolverDecisionVerifier()
         if belief_update_provider is None:
-            from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
+            from memorii.core.llm_decision.runtime_factory import build_belief_update_provider_from_env
 
-            self._belief_update_provider = RuleBasedBeliefUpdateProvider()
+            self._belief_update_provider = build_belief_update_provider_from_env()
         else:
             self._belief_update_provider = belief_update_provider
         self._llm_decision_trace_store = llm_decision_trace_store

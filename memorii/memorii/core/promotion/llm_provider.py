@@ -15,10 +15,22 @@ class LLMPromotionDecisionProvider:
 
     def decide(self, *, context: PromotionContext) -> tuple[PromotionDecision, LLMDecisionTrace]:
         input_payload = context.model_dump(mode="json")
-        trace = self._llm_provider.decide(
-            decision_point=LLMDecisionPoint.PROMOTION,
-            input_payload=input_payload,
-        )
+        try:
+            trace = self._llm_provider.decide(
+                decision_point=LLMDecisionPoint.PROMOTION,
+                input_payload=input_payload,
+            )
+        except Exception as exc:
+            fallback_decision, fallback_trace = self._rule_provider.decide(context=context)
+            return fallback_decision, fallback_trace.model_copy(
+                update={
+                    "status": LLMDecisionStatus.PROVIDER_ERROR,
+                    "fallback_used": True,
+                    "final_output": fallback_decision.model_dump(mode="json"),
+                    "parsed_output": fallback_decision.model_dump(mode="json"),
+                    "validation_errors": [str(exc)],
+                }
+            )
 
         fallback_decision, _ = self._rule_provider.decide(context=context)
 

@@ -16,7 +16,7 @@ from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
 from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
 from memorii.core.promotion.provider import PromotionDecisionProvider
-from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from memorii.core.llm_decision.runtime_factory import build_promotion_decision_provider_from_env
 from memorii.core.provider.models import (
     ProviderEvent,
     ProviderOperation,
@@ -81,7 +81,7 @@ class ProviderMemoryService:
         else:
             self._decision_state_service = decision_state_service
         if promotion_decision_provider is self._DEFAULT_PROMOTION_DECISION_PROVIDER:
-            self._promotion_decision_provider: PromotionDecisionProvider | None = RuleBasedPromotionDecisionProvider()
+            self._promotion_decision_provider: PromotionDecisionProvider | None = build_promotion_decision_provider_from_env()
         else:
             self._promotion_decision_provider = promotion_decision_provider
         self._llm_decision_trace_store = llm_decision_trace_store

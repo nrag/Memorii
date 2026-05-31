@@ -10,7 +10,34 @@ def validate_fixture_set(fixtures: list[BenchmarkScenarioFixture]) -> list[Bench
     for fixture in validated:
         if fixture.long_horizon_degradation is not None:
             _validate_long_horizon_fixture(fixture)
+        _validate_lifecycle_expectation(fixture)
     return validated
+
+
+def _validate_lifecycle_expectation(fixture: BenchmarkScenarioFixture) -> None:
+    lifecycle = fixture.lifecycle
+    if lifecycle is None:
+        return
+
+    has_expected_state = any(
+        (
+            lifecycle.expected_active_memory_ids,
+            lifecycle.expected_inactive_memory_ids,
+            lifecycle.expected_archived_memory_ids,
+            lifecycle.expected_retrieval_ids,
+            lifecycle.expected_excluded_retrieval_ids,
+            lifecycle.expected_stage_by_memory_id,
+        )
+    )
+    has_expected_behavior = any(
+        (
+            lifecycle.expect_duplicate_avoidance,
+            lifecycle.expect_scope_preservation,
+            lifecycle.expect_pollution_avoidance,
+        )
+    )
+    if not has_expected_state and not has_expected_behavior:
+        raise ValueError(f"{fixture.scenario_id} lifecycle expectation must define at least one check")
 
 
 def _validate_long_horizon_fixture(fixture: BenchmarkScenarioFixture) -> None:

@@ -119,9 +119,9 @@ class RuntimeStepService:
         self._consolidator = consolidator or Consolidator()
         self._directory = directory or MemoryDirectory()
         if belief_update_provider is None:
-            from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
+            from memorii.core.llm_decision.runtime_factory import build_belief_update_provider_from_env
 
-            default_belief_provider = RuleBasedBeliefUpdateProvider()
+            default_belief_provider = build_belief_update_provider_from_env()
         else:
             default_belief_provider = belief_update_provider
         self._solver_update_engine = solver_update_engine or SolverUpdateEngine(
