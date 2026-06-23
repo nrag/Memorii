@@ -316,6 +316,8 @@ def test_execution_graph_hybrid_falls_back_to_rule_on_invalid_llm_output(
             )
 
     monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", InvalidFakeClient)
+    monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     assert main(
         [
