@@ -65,6 +65,8 @@ def compute_metrics(observation: ScenarioObservation) -> ScenarioMetrics:
         hits = len(set(observation.retrieved_ids) & set(observation.relevant_ids))
         recall = _safe_ratio(hits, len(set(observation.relevant_ids)))
         precision = _safe_ratio(hits, len(observation.retrieved_ids))
+        if precision is None:
+            precision = 0.0
 
     routing_accuracy = None
     blocked_write_accuracy = None

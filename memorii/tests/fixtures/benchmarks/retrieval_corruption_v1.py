@@ -1,0 +1,366 @@
+"""Retrieval Corruption Benchmark v1 fixture set."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+from memorii.core.benchmark.models import (
+    BenchmarkScenarioFixture,
+    BenchmarkScenarioType,
+    RetrievalFixture,
+    RetrievalFixtureMemoryItem,
+)
+from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
+from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
+
+
+def load_retrieval_corruption_v1_fixture_set() -> list[BenchmarkScenarioFixture]:
+    reference = datetime(2026, 1, 1, tzinfo=UTC)
+
+    return [
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_high_similarity_roles",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="who should own the Orion billing escalation",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:orion-billing"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:orion:billing:owner",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Orion billing escalation owner is Nadia; route ownership questions to Nadia.",
+                        task_id="task:orion-billing",
+                        role="gold",
+                        entity_tags=["orion", "billing"],
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:orion:billing:approver",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Orion billing escalation approver is Nikhil; route approval questions to Nikhil.",
+                        task_id="task:orion-billing",
+                        role="hard_distractor",
+                        distractor_type="same_entity_wrong_role",
+                        entity_tags=["orion", "billing"],
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:orion:billing:api-owner",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Orion billing API owner is Nikhil for endpoint maintenance.",
+                        task_id="task:orion-billing",
+                        role="hard_distractor",
+                        distractor_type="same_entity_adjacent_subsystem",
+                        entity_tags=["orion", "billing"],
+                    ),
+                ],
+                expected_relevant_ids=["sem:orion:billing:owner"],
+                expected_hard_distractor_ids=[
+                    "sem:orion:billing:approver",
+                    "sem:orion:billing:api-owner",
+                ],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_current_beats_invalidated",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="current Atlas deployment gate",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:atlas-release"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:atlas:gate:current",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Current Atlas deployment gate is automated smoke plus migration verification.",
+                        task_id="task:atlas-release",
+                        role="gold",
+                        validity_status=TemporalValidityStatus.ACTIVE,
+                        valid_from=reference - timedelta(days=2),
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:atlas:gate:old",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Current Atlas deployment gate is manual QA signoff.",
+                        task_id="task:atlas-release",
+                        role="hard_distractor",
+                        distractor_type="invalidated_same_claim_shape",
+                        validity_status=TemporalValidityStatus.INVALIDATED,
+                        valid_to=reference - timedelta(days=5),
+                    ),
+                ],
+                expected_relevant_ids=["sem:atlas:gate:current"],
+                expected_hard_distractor_ids=["sem:atlas:gate:old"],
+                expected_excluded_ids=["sem:atlas:gate:old"],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_candidate_suppression",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="Phoenix queue timeout root cause",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:phoenix-timeout"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:phoenix:timeout:verified",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Phoenix queue timeout root cause is worker pool starvation verified by logs.",
+                        task_id="task:phoenix-timeout",
+                        role="gold",
+                        status=CommitStatus.COMMITTED,
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="cand:phoenix:timeout:speculative",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Phoenix queue timeout root cause is database lock contention.",
+                        task_id="task:phoenix-timeout",
+                        role="hard_distractor",
+                        distractor_type="uncommitted_speculation",
+                        status=CommitStatus.CANDIDATE,
+                    ),
+                ],
+                expected_relevant_ids=["sem:phoenix:timeout:verified"],
+                expected_hard_distractor_ids=["cand:phoenix:timeout:speculative"],
+                expected_excluded_ids=["cand:phoenix:timeout:speculative"],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_wrong_entity_near_alias",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="Atlas Search ingestion owner",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:atlas-search"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:atlas-search:ingestion:owner",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Atlas Search ingestion owner is Priya for search pipeline incidents.",
+                        task_id="task:atlas-search",
+                        role="gold",
+                        entity_tags=["atlas-search"],
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:atlas:ingestion:owner",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Atlas ingestion owner is Parker for warehouse import incidents.",
+                        task_id="task:atlas-search",
+                        role="hard_distractor",
+                        distractor_type="near_alias_wrong_entity",
+                        entity_tags=["atlas"],
+                    ),
+                ],
+                expected_relevant_ids=["sem:atlas-search:ingestion:owner"],
+                expected_hard_distractor_ids=["sem:atlas:ingestion:owner"],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_source_priority_verified_over_transcript",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="Hermes rollout region",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:hermes-rollout"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:hermes:rollout:verified",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Verified Hermes rollout region is eu-west after release approval.",
+                        task_id="task:hermes-rollout",
+                        role="gold",
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="tx:hermes:rollout:speculative",
+                        domain=MemoryDomain.TRANSCRIPT,
+                        text="Earlier chat guessed Hermes rollout region might be us-east.",
+                        task_id="task:hermes-rollout",
+                        role="hard_distractor",
+                        distractor_type="lower_trust_same_topic",
+                    ),
+                ],
+                expected_relevant_ids=["sem:hermes:rollout:verified"],
+                expected_hard_distractor_ids=["tx:hermes:rollout:speculative"],
+                expected_domain_priority=["semantic", "episodic", "transcript"],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_task_scope_boundary",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="Zephyr rollback command",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:zephyr-prod"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:zephyr:prod:rollback",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Zephyr prod rollback command is deployctl rollback zephyr --env prod.",
+                        task_id="task:zephyr-prod",
+                        role="gold",
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:zephyr:staging:rollback",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Zephyr staging rollback command is deployctl rollback zephyr --env staging.",
+                        task_id="task:zephyr-staging",
+                        role="hard_distractor",
+                        distractor_type="same_entity_wrong_task_scope",
+                    ),
+                ],
+                expected_relevant_ids=["sem:zephyr:prod:rollback"],
+                expected_hard_distractor_ids=["sem:zephyr:staging:rollback"],
+                expected_excluded_ids=["sem:zephyr:staging:rollback"],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_debug_state_not_durable_fact",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="Mercury incident mitigation",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:mercury-incident"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:mercury:incident:mitigation",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Mercury incident mitigation is to cap importer concurrency at four.",
+                        task_id="task:mercury-incident",
+                        role="gold",
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="tx:mercury:debug:noise",
+                        domain=MemoryDomain.TRANSCRIPT,
+                        text="Temporary debug note: retry null null mitigation maybe restart importer.",
+                        task_id="task:mercury-incident",
+                        role="hard_distractor",
+                        distractor_type="temporary_debug_state",
+                    ),
+                ],
+                expected_relevant_ids=["sem:mercury:incident:mitigation"],
+                expected_hard_distractor_ids=["tx:mercury:debug:noise"],
+                expected_domain_priority=["semantic", "episodic", "transcript"],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_multi_fact_same_entity",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="Nova cache eviction policy",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:nova-cache"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:nova:cache:eviction",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Nova cache eviction policy is least recently used for tenant metadata.",
+                        task_id="task:nova-cache",
+                        role="gold",
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:nova:cache:ttl",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Nova cache TTL policy is six hours for tenant metadata.",
+                        task_id="task:nova-cache",
+                        role="hard_distractor",
+                        distractor_type="same_entity_adjacent_fact",
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:nova:cache:owner",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Nova cache owner is Leo for tenant metadata support.",
+                        task_id="task:nova-cache",
+                        role="hard_distractor",
+                        distractor_type="same_entity_adjacent_fact",
+                    ),
+                ],
+                expected_relevant_ids=["sem:nova:cache:eviction"],
+                expected_hard_distractor_ids=["sem:nova:cache:ttl", "sem:nova:cache:owner"],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_solver_beats_surface_symptom",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="Delta import failure root cause",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:delta-import", solver_run_id="solver:delta-import"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="solver:delta:root-cause:schema-drift",
+                        domain=MemoryDomain.SOLVER,
+                        text="Solver conclusion: Delta import failure root cause is supplier schema drift.",
+                        task_id="task:delta-import",
+                        solver_run_id="solver:delta-import",
+                        role="gold",
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:delta:surface:timeout",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Delta import failure showed timeout symptoms during retry.",
+                        task_id="task:delta-import",
+                        role="hard_distractor",
+                        distractor_type="surface_symptom_not_root_cause",
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="tx:delta:debug:timeout",
+                        domain=MemoryDomain.TRANSCRIPT,
+                        text="Debug chat repeated Delta import failure timeout root cause maybe network timeout.",
+                        task_id="task:delta-import",
+                        role="hard_distractor",
+                        distractor_type="transcript_speculation",
+                    ),
+                ],
+                expected_relevant_ids=["solver:delta:root-cause:schema-drift"],
+                expected_hard_distractor_ids=["sem:delta:surface:timeout", "tx:delta:debug:timeout"],
+                expected_domain_priority=["solver", "episodic", "semantic", "execution", "transcript"],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_solver_frontier_beats_old_fix",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="Quasar auth next investigation step",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:quasar-auth", solver_run_id="solver:quasar-auth"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="solver:quasar:frontier:jwt-rotation",
+                        domain=MemoryDomain.SOLVER,
+                        text="Solver frontier: next investigation step is verify JWT rotation mismatch.",
+                        task_id="task:quasar-auth",
+                        solver_run_id="solver:quasar-auth",
+                        role="gold",
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:quasar:old-fix:cookie",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Quasar auth old fix was cookie domain update after login failure.",
+                        task_id="task:quasar-auth",
+                        role="hard_distractor",
+                        distractor_type="stale_successful_fix_wrong_frontier",
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="tx:quasar:debug:login",
+                        domain=MemoryDomain.TRANSCRIPT,
+                        text="Quasar auth investigation step discussed login failure and cookie domain.",
+                        task_id="task:quasar-auth",
+                        role="hard_distractor",
+                        distractor_type="surface_discussion_not_frontier",
+                    ),
+                ],
+                expected_relevant_ids=["solver:quasar:frontier:jwt-rotation"],
+                expected_hard_distractor_ids=["sem:quasar:old-fix:cookie", "tx:quasar:debug:login"],
+                expected_domain_priority=["solver", "episodic", "semantic", "execution", "transcript"],
+            ),
+        ),
+    ]
