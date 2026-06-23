@@ -1,0 +1,74 @@
+prompt_id: lifecycle_decision
+version: v1
+task: Resolve a memory lifecycle benchmark decision.
+description: Selects current or historical truth, belief ordering, or merged lifecycle state from candidates.
+input_schema:
+  type: object
+  required: [context_json, query]
+  additionalProperties: false
+  properties:
+    context_json: {type: object}
+    query: {type: string}
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - selected_retrieval_ids
+    - active_memory_ids
+    - inactive_memory_ids
+    - archived_memory_ids
+    - belief_scores
+    - merged_summary
+    - confidence
+    - rationale
+    - failure_mode
+    - requires_judge_review
+  properties:
+    selected_retrieval_ids:
+      type: array
+      items: {type: string}
+    active_memory_ids:
+      type: array
+      items: {type: string}
+    inactive_memory_ids:
+      type: array
+      items: {type: string}
+    archived_memory_ids:
+      type: array
+      items: {type: string}
+    belief_scores:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [memory_id, belief]
+        properties:
+          memory_id: {type: string}
+          belief: {type: number, minimum: 0.0, maximum: 1.0}
+    merged_summary: {type: [string, 'null']}
+    confidence: {type: number, minimum: 0.0, maximum: 1.0}
+    rationale: {type: string}
+    failure_mode: {type: [string, 'null']}
+    requires_judge_review: {type: boolean}
+system_template: |-
+  You resolve benchmark-only memory lifecycle decisions from the supplied candidates.
+
+  Rules:
+  - For temporal questions, distinguish current truth from historical truth.
+  - Historical questions should retrieve the candidate whose validity window matches the requested past period, even if it is no longer current.
+  - Current questions should retrieve the active/current candidate and suppress historical or expired candidates.
+  - For competing beliefs, return belief_scores as an array of objects with memory_id and belief fields; assign the highest score to the hypothesis best supported by the new evidence and do not merely preserve old priors.
+  - For competing beliefs, preserve the full expected ordering from the evidence. If one candidate is described as second-most likely and another is described as dropped below it, score the second-most likely candidate higher than the dropped candidate.
+  - For partial merge, preserve shared facts and all unique non-conflicting facts in merged_summary.
+  - For high-similarity active distractors, distinguish role and relation, not only entity and vocabulary overlap.
+  - Ownership/accountability queries should select owner memories, not approver or adjacent API-owner memories, unless the query explicitly asks about approval or API ownership.
+
+  Return strict JSON only.
+user_template: "LifecycleDecisionContext: {context_json}\nQuery: {query}\nReturn strict JSON matching schema."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+allowed_failure_modes: [temporal_confusion, belief_ranking_error, lossy_merge, role_confusion, rule_limit]
+tags: [lifecycle, benchmark]

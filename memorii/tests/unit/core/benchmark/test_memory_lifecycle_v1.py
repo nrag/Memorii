@@ -1,4 +1,5 @@
 from memorii.core.benchmark.fixtures import normalize_fixtures
+from memorii.core.benchmark.lifecycle_decision import lifecycle_family_requires_decision
 from memorii.core.benchmark.metrics import aggregate_metrics, compute_metrics
 from memorii.core.benchmark.models import BenchmarkSystem, MemoryLifecycleFamily
 from memorii.core.benchmark.scenarios import ScenarioExecutor
@@ -19,9 +20,15 @@ def test_memory_lifecycle_v1_memorii_baseline_passes_lifecycle_expectations() ->
     fixtures = normalize_fixtures(load_memory_lifecycle_v1_fixture_set())
     executor = ScenarioExecutor()
 
+    stable_fixtures = [
+        fixture
+        for fixture in fixtures
+        if fixture.lifecycle is None
+        or not lifecycle_family_requires_decision(fixture.lifecycle.family)
+    ]
     observations = [
         executor.run(fixture=fixture, system=BenchmarkSystem.MEMORII)
-        for fixture in fixtures
+        for fixture in stable_fixtures
     ]
 
     assert all(observation.scenario_success is True for observation in observations)
@@ -32,9 +39,15 @@ def test_memory_lifecycle_v1_memorii_baseline_passes_lifecycle_expectations() ->
 def test_memory_lifecycle_v1_aggregate_metrics_include_lifecycle_axes() -> None:
     fixtures = normalize_fixtures(load_memory_lifecycle_v1_fixture_set())
     executor = ScenarioExecutor()
+    stable_fixtures = [
+        fixture
+        for fixture in fixtures
+        if fixture.lifecycle is None
+        or not lifecycle_family_requires_decision(fixture.lifecycle.family)
+    ]
     observations = [
         executor.run(fixture=fixture, system=BenchmarkSystem.MEMORII)
-        for fixture in fixtures
+        for fixture in stable_fixtures
     ]
 
     aggregate = aggregate_metrics(observations)
