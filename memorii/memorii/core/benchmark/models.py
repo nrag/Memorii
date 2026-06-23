@@ -65,6 +65,20 @@ class MemoryLifecycleFamily(str, Enum):
     AVOID_WRONG_ENTITY_CARRYOVER = "avoid_wrong_entity_carryover"
     RETRIEVAL_AFTER_EXPIRATION = "retrieval_after_expiration"
     END_TO_END_LIFECYCLE_WITH_NOISE = "end_to_end_lifecycle_with_noise"
+    MULTI_EVENT_CREATE_UPDATE_INVALIDATE_RETRIEVE = "multi_event_create_update_invalidate_retrieve"
+    MERGE_WITH_PROVENANCE_LINK = "merge_with_provenance_link"
+    SPLIT_MEMORY_BY_ENTITY = "split_memory_by_entity"
+    BELIEF_DEPENDENCY_INVALIDATION = "belief_dependency_invalidation"
+    SOURCE_TRUST_CONFLICT = "source_trust_conflict"
+    EXPIRE_AND_ARCHIVE_OVER_TIME = "expire_and_archive_over_time"
+    TASK_SCOPED_DOES_NOT_OVERWRITE_GLOBAL = "task_scoped_does_not_overwrite_global"
+    NEAR_MATCH_VALIDITY_DISTRACTOR = "near_match_validity_distractor"
+    ABANDONED_RESUMED_WORK_LIFECYCLE = "abandoned_resumed_work_lifecycle"
+    HISTORICAL_TRUTH_RETRIEVAL = "historical_truth_retrieval"
+    CURRENT_TRUTH_RETRIEVAL = "current_truth_retrieval"
+    COMPETING_BELIEF_RERANKING = "competing_belief_reranking"
+    PARTIAL_MERGE_PRESERVE_UNIQUE_FACTS = "partial_merge_preserve_unique_facts"
+    HIGH_SIMILARITY_ACTIVE_DISTRACTOR = "high_similarity_active_distractor"
 
 
 class WorkspaceLifecycleStage(str, Enum):
@@ -277,9 +291,14 @@ class MemoryLifecycleExpectation(BaseModel):
     expected_archived_memory_ids: list[str] = Field(default_factory=list)
     expected_retrieval_ids: list[str] = Field(default_factory=list)
     expected_excluded_retrieval_ids: list[str] = Field(default_factory=list)
+    expected_belief_ranking: list[str] = Field(default_factory=list)
+    expected_merged_fact_tokens: list[str] = Field(default_factory=list)
     expect_duplicate_avoidance: bool = False
     expect_scope_preservation: bool = False
     expect_pollution_avoidance: bool = False
+    expect_temporal_addressability: bool = False
+    expect_partial_merge: bool = False
+    require_lifecycle_decision: bool = False
 
     model_config = ConfigDict(extra="forbid")
 

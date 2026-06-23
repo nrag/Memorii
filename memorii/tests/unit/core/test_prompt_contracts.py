@@ -136,6 +136,8 @@ def test_all_prompts_render_with_expected_variables() -> None:
     samples = {
         "promotion_decision:v1": {"context_json": {}, "candidate_summary": "candidate"},
         "belief_update:v1": {"context_json": {}, "prior_belief": 0.4},
+        "lifecycle_decision:v1": {"context_json": {}, "query": "query"},
+        "execution_graph_decision:v1": {"context_json": {}, "task": "task"},
     }
     for ref in PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs():
         contract = _load(ref)

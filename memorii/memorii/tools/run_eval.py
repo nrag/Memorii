@@ -12,7 +12,7 @@ DECISION_SUITES = {
     "promotion_v1": "promotion",
     "belief_v1": "belief",
 }
-BENCHMARK_SUITES = {"memory_lifecycle_v1"}
+BENCHMARK_SUITES = {"memory_lifecycle_v1", "execution_graph_v1"}
 AGGREGATE_SUITES = {"all"}
 
 
@@ -89,7 +89,13 @@ def _run_all_suites(args: argparse.Namespace) -> int:
     benchmark_args.suite = "memory_lifecycle_v1"
     benchmark_status = _run_benchmark_suite(benchmark_args)
     print(f"suite=memory_lifecycle_v1 status=finished exit_code={benchmark_status}")
-    return decision_status or benchmark_status
+
+    print("suite=execution_graph_v1 status=starting")
+    execution_args = argparse.Namespace(**vars(args))
+    execution_args.suite = "execution_graph_v1"
+    execution_status = _run_benchmark_suite(execution_args)
+    print(f"suite=execution_graph_v1 status=finished exit_code={execution_status}")
+    return decision_status or benchmark_status or execution_status
 
 
 def main(argv: list[str] | None = None) -> int:
