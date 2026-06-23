@@ -64,6 +64,59 @@ class LLMBeliefUpdateAdapter:
         return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
 
 
+class LLMLifecycleDecisionAdapter:
+    def __init__(
+        self,
+        *,
+        runner: PromptLLMRunner,
+        registry: PromptRegistry,
+        prompt_ref: str = "lifecycle_decision:v1",
+    ) -> None:
+        self._runner = runner
+        self._registry = registry
+        self._prompt_ref = prompt_ref
+
+    def decide(
+        self,
+        context: object,
+        *,
+        request_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> LLMDecisionResult:
+        contract = self._registry.load(self._prompt_ref)
+        context_json = context.model_dump(mode="json")  # type: ignore[attr-defined]
+        variables = {"context_json": context_json, "query": str(context_json.get("query", ""))}
+        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+
+
+class LLMExecutionGraphDecisionAdapter:
+    def __init__(
+        self,
+        *,
+        runner: PromptLLMRunner,
+        registry: PromptRegistry,
+        prompt_ref: str = "execution_graph_decision:v1",
+    ) -> None:
+        self._runner = runner
+        self._registry = registry
+        self._prompt_ref = prompt_ref
+
+    def decide(
+        self,
+        context: object,
+        *,
+        request_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> LLMDecisionResult:
+        contract = self._registry.load(self._prompt_ref)
+        context_json = context.model_dump(mode="json")  # type: ignore[attr-defined]
+        variables = {
+            "context_json": context_json,
+            "task": str(context_json.get("task", "")),
+        }
+        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+
+
 class LLMJudgeDecisionAdapter:
     def __init__(
         self,

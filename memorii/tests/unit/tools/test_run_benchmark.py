@@ -5,9 +5,25 @@ from pathlib import Path
 
 import pytest
 
+from memorii.core.benchmark.lifecycle_decision import lifecycle_family_requires_decision
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.tools.run_benchmark import main
+from tests.fixtures.benchmarks.execution_graph_v1 import load_execution_graph_v1_fixture_set
+from tests.fixtures.benchmarks.memory_lifecycle_v1 import load_memory_lifecycle_v1_fixture_set
+
+
+MEMORY_LIFECYCLE_CASE_COUNT = len(load_memory_lifecycle_v1_fixture_set())
+EXECUTION_GRAPH_CASE_COUNT = len(load_execution_graph_v1_fixture_set())
+EXECUTION_GRAPH_DISCRIMINATIVE_CASE_COUNT = sum(
+    1 for scenario in load_execution_graph_v1_fixture_set() if scenario.expectation.discriminative
+)
+DISCRIMINATIVE_CASE_COUNT = sum(
+    1
+    for fixture in load_memory_lifecycle_v1_fixture_set()
+    if fixture.lifecycle is not None
+    and lifecycle_family_requires_decision(fixture.lifecycle.family)
+)
 
 
 def _clear_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,9 +53,9 @@ def test_memory_lifecycle_benchmark_cli_runs_and_writes_artifacts(
     output = capsys.readouterr().out
     assert "suite=memory_lifecycle_v1" in output
     assert "mode=auto" in output
-    assert "memorii_cases=11" in output
-    assert "lifecycle_cases=11" in output
-    assert "lifecycle_failed=0" in output
+    assert f"memorii_cases={MEMORY_LIFECYCLE_CASE_COUNT}" in output
+    assert f"lifecycle_cases={MEMORY_LIFECYCLE_CASE_COUNT}" in output
+    assert f"lifecycle_failed={DISCRIMINATIVE_CASE_COUNT}" in output
     assert "llm_calls=0" in output
 
     run_dir = _latest_run_dir(tmp_path, "memory_lifecycle_v1")
@@ -66,9 +82,9 @@ def test_memory_lifecycle_benchmark_report_contains_lifecycle_metrics(
     payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
     memorii_metrics = payload["summary"]["aggregate_metrics"]["memorii"]
 
-    assert payload["summary"]["scenario_fixtures_total"] == 11
-    assert memorii_metrics["lifecycle_success_rate"] == 1.0
-    assert memorii_metrics["retrieval_currentness_accuracy"] == 1.0
+    assert payload["summary"]["scenario_fixtures_total"] == MEMORY_LIFECYCLE_CASE_COUNT
+    assert memorii_metrics["lifecycle_success_rate"] == 0.8
+    assert memorii_metrics["retrieval_currentness_accuracy"] < 1.0
 
 
 def test_run_benchmark_rejects_unknown_suite() -> None:
@@ -99,10 +115,10 @@ def test_memory_lifecycle_benchmark_dry_run_llm_makes_traced_calls(
 
     output = capsys.readouterr().out
     assert "mode=llm" in output
-    assert "llm_calls=11" in output
+    assert f"llm_calls={MEMORY_LIFECYCLE_CASE_COUNT}" in output
     run_dir = sorted((tmp_path / "benchmark_runs" / "memory_lifecycle_v1" / "llm").glob("bench-*"))[-1]
-    assert len((run_dir / "llm_traces.jsonl").read_text(encoding="utf-8").splitlines()) == 11
-    assert len((run_dir / "lifecycle_traces.jsonl").read_text(encoding="utf-8").splitlines()) == 11
+    assert len((run_dir / "llm_traces.jsonl").read_text(encoding="utf-8").splitlines()) == MEMORY_LIFECYCLE_CASE_COUNT
+    assert len((run_dir / "lifecycle_traces.jsonl").read_text(encoding="utf-8").splitlines()) == MEMORY_LIFECYCLE_CASE_COUNT
 
 
 def test_memory_lifecycle_hybrid_falls_back_to_rule_on_invalid_llm_output(
@@ -128,6 +144,8 @@ def test_memory_lifecycle_hybrid_falls_back_to_rule_on_invalid_llm_output(
             )
 
     monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", InvalidFakeClient)
+    monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
     assert main(
         [
@@ -147,9 +165,12 @@ def test_memory_lifecycle_hybrid_falls_back_to_rule_on_invalid_llm_output(
         for line in (run_dir / "lifecycle_traces.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert rows
-    assert all(row["fallback_used"] is True for row in rows)
-    assert all(row["final_output_source"] == "rule" for row in rows)
-    assert all(row["transition_assertion_passed"] is True for row in rows)
+    fallback_rows = [row for row in rows if row["fallback_used"] is True]
+    failed_rows = [row for row in rows if row["transition_assertion_passed"] is False]
+    assert len(fallback_rows) == MEMORY_LIFECYCLE_CASE_COUNT
+    assert all(row["final_output_source"] == "rule" for row in fallback_rows)
+    assert len(failed_rows) == DISCRIMINATIVE_CASE_COUNT
+    assert {row["transition_type"] for row in failed_rows} == {"lifecycle_decision"}
 
 
 def test_memory_lifecycle_llm_fails_on_invalid_llm_output(
@@ -209,7 +230,7 @@ def test_memory_lifecycle_benchmark_auto_uses_hybrid_when_llm_configured(
 
     output = capsys.readouterr().out
     assert "mode=auto" in output
-    assert "llm_calls=11" in output
+    assert f"llm_calls={MEMORY_LIFECYCLE_CASE_COUNT}" in output
     run_dir = _latest_run_dir(tmp_path, "memory_lifecycle_v1")
     row = json.loads((run_dir / "lifecycle_traces.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert row["effective_decision_mode"] == "hybrid"
@@ -219,3 +240,106 @@ def test_memory_lifecycle_benchmark_auto_uses_hybrid_when_llm_configured(
 def test_memory_lifecycle_benchmark_llm_requires_live_gate() -> None:
     with pytest.raises(SystemExit, match="Refusing"):
         main(["--suite", "memory_lifecycle_v1", "--mode", "llm"])
+
+
+def test_execution_graph_benchmark_cli_runs_and_writes_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    _clear_llm_env(monkeypatch)
+
+    assert main(["--suite", "execution_graph_v1", "--storage-root", str(tmp_path)]) == 0
+
+    output = capsys.readouterr().out
+    assert "suite=execution_graph_v1" in output
+    assert f"execution_cases={EXECUTION_GRAPH_CASE_COUNT}" in output
+    assert f"failed={EXECUTION_GRAPH_DISCRIMINATIVE_CASE_COUNT}" in output
+    assert "llm_calls=0" in output
+    run_dir = _latest_run_dir(tmp_path, "execution_graph_v1")
+    for relative_path in [
+        "report.json",
+        "report.md",
+        "baseline.json",
+        "fixtures.json",
+        "execution_graph_traces.jsonl",
+        "llm_traces.jsonl",
+        "failures.jsonl",
+    ]:
+        assert (run_dir / relative_path).exists()
+
+
+def test_execution_graph_benchmark_dry_run_llm_passes_all_cases(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    assert main(
+        [
+            "--suite",
+            "execution_graph_v1",
+            "--mode",
+            "llm",
+            "--dry-run",
+            "--storage-root",
+            str(tmp_path),
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    assert f"execution_cases={EXECUTION_GRAPH_CASE_COUNT}" in output
+    assert "failed=0" in output
+    assert f"llm_calls={EXECUTION_GRAPH_CASE_COUNT}" in output
+    run_dir = _latest_run_dir(tmp_path, "execution_graph_v1", "llm")
+    assert len((run_dir / "llm_traces.jsonl").read_text(encoding="utf-8").splitlines()) == EXECUTION_GRAPH_CASE_COUNT
+
+
+def test_execution_graph_hybrid_falls_back_to_rule_on_invalid_llm_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class InvalidFakeClient:
+        provider_name = "fake-invalid"
+
+        def complete_structured(
+            self,
+            request: LLMStructuredRequest,
+            *,
+            config: LLMRuntimeConfig,
+        ) -> LLMStructuredResponse:
+            del config
+            return LLMStructuredResponse(
+                request_id=request.request_id,
+                provider=self.provider_name,
+                raw_text="{}",
+                valid_json=False,
+                schema_valid=False,
+            )
+
+    monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", InvalidFakeClient)
+    monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    assert main(
+        [
+            "--suite",
+            "execution_graph_v1",
+            "--mode",
+            "hybrid",
+            "--dry-run",
+            "--storage-root",
+            str(tmp_path),
+        ]
+    ) == 0
+
+    run_dir = _latest_run_dir(tmp_path, "execution_graph_v1", "hybrid")
+    rows = [
+        json.loads(line)
+        for line in (run_dir / "execution_graph_traces.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert len([row for row in rows if row["fallback_used"] is True]) == EXECUTION_GRAPH_CASE_COUNT
+    assert len([row for row in rows if row["success"] is False]) == EXECUTION_GRAPH_DISCRIMINATIVE_CASE_COUNT
+
+
+def test_execution_graph_benchmark_rejects_all_systems() -> None:
+    with pytest.raises(SystemExit, match="memorii only"):
+        main(["--suite", "execution_graph_v1", "--systems", "all"])

@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field
 class LLMDecisionPoint(str, Enum):
     PROMOTION = "promotion"
     BELIEF_UPDATE = "belief_update"
+    LIFECYCLE_DECISION = "lifecycle_decision"
+    EXECUTION_GRAPH_DECISION = "execution_graph_decision"
     MEMORY_EXTRACTION = "memory_extraction"
     CONFLICT_DETECTION = "conflict_detection"
     DECISION_SUMMARY = "decision_summary"
