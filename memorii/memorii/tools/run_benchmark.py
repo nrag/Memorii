@@ -29,6 +29,16 @@ from memorii.core.benchmark.lifecycle_decision import (
     lifecycle_trace_for_rule,
     rule_lifecycle_decision_for_fixture,
 )
+from memorii.core.benchmark.retrieval_relevance_decision import (
+    RetrievalRelevanceContext,
+    expected_retrieval_relevance_decision_for_fixture,
+    fake_llm_result_for_retrieval_relevance,
+    retrieval_relevance_assertion_passed,
+    retrieval_relevance_context_for_fixture,
+    retrieval_relevance_engine_result_from_llm,
+    retrieval_relevance_trace_for_rule,
+    rule_retrieval_relevance_decision_for_fixture,
+)
 from memorii.core.benchmark.fixtures import normalize_fixtures
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.metrics import aggregate_metrics, compute_metrics
@@ -51,6 +61,7 @@ from memorii.core.llm_decision.adapters import (
     LLMBeliefUpdateAdapter,
     LLMLifecycleDecisionAdapter,
     LLMPromotionDecisionAdapter,
+    LLMRetrievalRelevanceDecisionAdapter,
 )
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest
@@ -337,6 +348,36 @@ def _apply_transition_assertions(
     )
 
 
+def _apply_retrieval_relevance_assertions(
+    *,
+    report: BenchmarkRunReport,
+    retrieval_rows: list[dict[str, object]],
+) -> BenchmarkRunReport:
+    row_by_scenario = {str(row["scenario_id"]): row for row in retrieval_rows}
+    updated_results: list[ScenarioResult] = []
+    for result in report.scenario_results:
+        if result.system != BenchmarkSystem.MEMORII:
+            updated_results.append(result)
+            continue
+        row = row_by_scenario.get(result.scenario_id)
+        if row is None:
+            updated_results.append(result)
+            continue
+        relevance_passed = row.get("retrieval_relevance_assertion_passed") is True
+        scenario_success = result.observation.scenario_success is True and relevance_passed
+        observation = result.observation.model_copy(update={"scenario_success": scenario_success})
+        updated_results.append(
+            result.model_copy(update={"observation": observation, "metrics": compute_metrics(observation)})
+        )
+    return report.model_copy(
+        update={
+            "scenario_results": updated_results,
+            "aggregate_by_system": _aggregate_by_system(updated_results),
+            "aggregate_by_category": _aggregate_by_category(updated_results),
+        }
+    )
+
+
 def _run_rule_lifecycle_transitions(
     *,
     fixtures: list[BenchmarkScenarioFixture],
@@ -593,6 +634,161 @@ class _ExpectedExecutionGraphFakeAdapter:
             decision=decision,
             provider_name=self.provider_name,
         )
+
+
+class _ExpectedRetrievalRelevanceFakeAdapter:
+    provider_name = "fake"
+
+    def __init__(self, *, fixtures: list[BenchmarkScenarioFixture], registry: PromptRegistry) -> None:
+        self._registry = registry
+        self._expected_by_scenario = {
+            fixture.scenario_id: expected_retrieval_relevance_decision_for_fixture(fixture)
+            for fixture in normalize_fixtures(fixtures)
+            if fixture.retrieval is not None
+        }
+
+    def decide(
+        self,
+        context: object,
+        *,
+        request_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> LLMDecisionResult:
+        relevance_context = RetrievalRelevanceContext.model_validate(context)
+        contract = self._registry.load("retrieval_relevance:v1")
+        request = LLMStructuredRequest(
+            request_id=request_id,
+            prompt_ref="retrieval_relevance:v1",
+            prompt_hash="dry-run",
+            system="",
+            user="",
+            output_schema=contract.output_schema,
+            model_defaults=contract.model_defaults,
+            metadata=metadata or {},
+        )
+        decision = self._expected_by_scenario[relevance_context.scenario_id]
+        return fake_llm_result_for_retrieval_relevance(
+            request=request,
+            decision=decision,
+            provider_name=self.provider_name,
+        )
+
+
+def _run_retrieval_relevance_decisions(
+    *,
+    fixtures: list[BenchmarkScenarioFixture],
+    mode: str,
+    dry_run: bool,
+    allow_live: bool,
+    prompt_root: Path,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    env_snapshot = load_memorii_environment()
+    runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
+    decision_config = (
+        LLMDecisionRuntimeConfig(mode=mode)
+        if mode != "auto"
+        else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
+    )
+    effective_mode = decision_config.resolve(runtime_config)
+    if effective_mode in {"llm", "hybrid"}:
+        live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
+        _validate_live_safety(
+            modes=[effective_mode],
+            dry_run=dry_run,
+            allow_live=allow_live,
+            runtime_config=runtime_config,
+            live_config=live_config,
+        )
+
+    registry = PromptRegistry(prompt_root=prompt_root)
+    adapter = None
+    if effective_mode in {"llm", "hybrid"}:
+        client = EvalFakeClient() if dry_run else LLMClientFactory.from_config(runtime_config)
+        runner = PromptLLMRunner(client=client, config=runtime_config)
+        adapter = (
+            _ExpectedRetrievalRelevanceFakeAdapter(fixtures=fixtures, registry=registry)
+            if dry_run and EvalFakeClient is _DEFAULT_EVAL_FAKE_CLIENT
+            else LLMRetrievalRelevanceDecisionAdapter(runner=runner, registry=registry)
+        )
+
+    rows: list[dict[str, object]] = []
+    llm_rows: list[dict[str, object]] = []
+    for fixture in normalize_fixtures(fixtures):
+        if fixture.retrieval is None:
+            continue
+        context = retrieval_relevance_context_for_fixture(fixture)
+        rule_decision = rule_retrieval_relevance_decision_for_fixture(fixture)
+        rule_output = rule_decision.model_dump(mode="json")
+        rule_trace = retrieval_relevance_trace_for_rule(
+            context=context,
+            decision=rule_decision,
+            mode="rule",
+        )
+        request_id = f"retrieval_relevance:{mode}:{fixture.scenario_id}"
+        output = rule_output
+        llm_success = False
+        llm_used = False
+        fallback_used = effective_mode in {"auto", "hybrid"} and effective_mode == "rule"
+        fallback_reason = "llm_not_configured" if fallback_used else None
+        final_output_source = "rule"
+
+        if effective_mode in {"llm", "hybrid"} and adapter is not None:
+            llm_used = True
+            llm_result = adapter.decide(
+                context,
+                request_id=request_id,
+                metadata={
+                    "suite": "retrieval_corruption_v1",
+                    "scenario_id": fixture.scenario_id,
+                    "decision_mode": mode,
+                    "transition_type": "retrieval_relevance",
+                },
+            )
+            output, llm_trace, llm_success, fallback_reason = retrieval_relevance_engine_result_from_llm(
+                result=llm_result,
+                mode=LLMDecisionMode(effective_mode),
+                rule_output=rule_output,
+            )
+            final_output_source = "llm" if llm_success else "rule"
+            llm_rows.append(
+                {
+                    "scenario_id": fixture.scenario_id,
+                    "transition_type": "retrieval_relevance",
+                    "decision_mode": mode,
+                    "effective_decision_mode": effective_mode,
+                    "trace": llm_trace.model_dump(mode="json"),
+                    "success": llm_success,
+                    "fallback_used": not llm_success,
+                    "failure_mode": fallback_reason,
+                    "output": output,
+                }
+            )
+        else:
+            llm_trace = rule_trace
+
+        assertion_passed = retrieval_relevance_assertion_passed(fixture=fixture, decision=output)
+        success = assertion_passed and (effective_mode != "llm" or llm_success or not llm_used)
+        rows.append(
+            {
+                "scenario_id": fixture.scenario_id,
+                "transition_type": "retrieval_relevance",
+                "decision_mode": mode,
+                "effective_decision_mode": effective_mode,
+                "llm_call_made": llm_used,
+                "fallback_used": (effective_mode in {"auto", "hybrid"} and not llm_success)
+                if llm_used
+                else fallback_used,
+                "fallback_reason": fallback_reason,
+                "final_output_source": final_output_source,
+                "request_id": request_id if llm_used else llm_trace.trace_id,
+                "success": success,
+                "failure_mode": None if success else (fallback_reason or "retrieval_relevance_assertion_failed"),
+                "transition_assertion_passed": assertion_passed,
+                "retrieval_relevance_assertion_passed": assertion_passed,
+                "output": output,
+            }
+        )
+    return rows, llm_rows
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
@@ -882,6 +1078,7 @@ def main(argv: list[str] | None = None) -> int:
             report = _run_memorii_only(fixtures=fixtures, config=config)
 
         lifecycle_rows: list[dict[str, object]] = []
+        retrieval_rows: list[dict[str, object]] = []
         llm_rows: list[dict[str, object]] = []
         if args.suite == "memory_lifecycle_v1":
             lifecycle_rows, llm_rows = _run_lifecycle_transitions(
@@ -892,6 +1089,15 @@ def main(argv: list[str] | None = None) -> int:
                 prompt_root=prompt_root,
             )
             report = _apply_transition_assertions(report=report, transition_rows=lifecycle_rows)
+        if args.suite == "retrieval_corruption_v1":
+            retrieval_rows, llm_rows = _run_retrieval_relevance_decisions(
+                fixtures=fixtures,
+                mode=mode,
+                dry_run=args.dry_run,
+                allow_live=args.allow_live,
+                prompt_root=prompt_root,
+            )
+            report = _apply_retrieval_relevance_assertions(report=report, retrieval_rows=retrieval_rows)
 
         root_dir = Path(args.storage_root) / "benchmark_runs" / args.suite / mode
         run_dir = write_artifacts(
@@ -904,9 +1110,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         if lifecycle_rows:
             _write_jsonl(run_dir / "lifecycle_traces.jsonl", lifecycle_rows)
+        if retrieval_rows:
+            _write_jsonl(run_dir / "retrieval_relevance_traces.jsonl", retrieval_rows)
         _write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
         failures = [
-            row for row in lifecycle_rows
+            row for row in [*lifecycle_rows, *retrieval_rows]
             if row.get("success") is False
         ]
         _write_jsonl(run_dir / "failures.jsonl", failures)

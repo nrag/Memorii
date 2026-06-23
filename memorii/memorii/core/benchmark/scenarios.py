@@ -232,19 +232,25 @@ class ScenarioExecutor:
             hard_distractor_ids=hard_distractor_ids,
             expected_domain_priority=retrieval.expected_domain_priority,
         )
-        rank_sensitive_success = (
-            precision_at_1 == 1.0
-            and hard_distractor_outrank_rate == 0.0
-            if hard_distractor_ids
-            else True
-        )
+        if not relevant_ids:
+            rank_sensitive_success = retrieved.isdisjoint(hard_distractor_ids | excluded_ids)
+        else:
+            rank_sensitive_success = (
+                precision_at_1 == 1.0
+                and hard_distractor_outrank_rate == 0.0
+                if hard_distractor_ids
+                else True
+            )
         domain_priority_success = domain_priority_correctness is not False
-        scenario_success = (
-            relevant_ids.issubset(retrieved)
-            and retrieved.isdisjoint(excluded_ids)
-            and rank_sensitive_success
-            and domain_priority_success
-        )
+        if not relevant_ids and excluded_ids:
+            scenario_success = retrieved.isdisjoint(excluded_ids) and rank_sensitive_success
+        else:
+            scenario_success = (
+                relevant_ids.issubset(retrieved)
+                and retrieved.isdisjoint(excluded_ids)
+                and rank_sensitive_success
+                and domain_priority_success
+            )
 
         return ScenarioObservation(
             scenario_id=fixture.scenario_id,
@@ -1272,6 +1278,8 @@ def _compute_hard_distractor_outrank_rate(
 ) -> float:
     if not hard_distractor_ids:
         return 0.0
+    if not relevant_ids:
+        return 1.0 if set(retrieved_ids) & hard_distractor_ids else 0.0
     best_gold_rank = _first_rank(retrieved_ids, relevant_ids)
     if best_gold_rank is None:
         return 1.0

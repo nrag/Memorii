@@ -65,7 +65,7 @@ def load_retrieval_corruption_v1_fixture_set() -> list[BenchmarkScenarioFixture]
             scenario_id="retrieval_corruption_current_beats_invalidated",
             category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
             retrieval=RetrievalFixture(
-                query="current Atlas deployment gate",
+                query="current Atlas deployment gate after manual QA signoff was replaced",
                 intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
                 scope=RetrievalScope(task_id="task:atlas-release"),
                 top_k=3,
@@ -99,7 +99,7 @@ def load_retrieval_corruption_v1_fixture_set() -> list[BenchmarkScenarioFixture]
             scenario_id="retrieval_corruption_candidate_suppression",
             category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
             retrieval=RetrievalFixture(
-                query="Phoenix queue timeout root cause",
+                query="Phoenix queue timeout root cause after database lock contention was ruled out",
                 intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
                 scope=RetrievalScope(task_id="task:phoenix-timeout"),
                 top_k=3,
@@ -192,7 +192,7 @@ def load_retrieval_corruption_v1_fixture_set() -> list[BenchmarkScenarioFixture]
             scenario_id="retrieval_corruption_task_scope_boundary",
             category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
             retrieval=RetrievalFixture(
-                query="Zephyr rollback command",
+                query="Zephyr production rollback command staging rollback",
                 intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
                 scope=RetrievalScope(task_id="task:zephyr-prod"),
                 top_k=3,
@@ -361,6 +361,46 @@ def load_retrieval_corruption_v1_fixture_set() -> list[BenchmarkScenarioFixture]
                 expected_relevant_ids=["solver:quasar:frontier:jwt-rotation"],
                 expected_hard_distractor_ids=["sem:quasar:old-fix:cookie", "tx:quasar:debug:login"],
                 expected_domain_priority=["solver", "episodic", "semantic", "execution", "transcript"],
+            ),
+        ),
+        BenchmarkScenarioFixture(
+            scenario_id="retrieval_corruption_no_reliable_current_answer",
+            category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+            retrieval=RetrievalFixture(
+                query="current Lyra export owner",
+                intent=RetrievalIntent.DEBUG_OR_INVESTIGATE,
+                scope=RetrievalScope(task_id="task:lyra-export"),
+                top_k=3,
+                corpus=[
+                    RetrievalFixtureMemoryItem(
+                        item_id="sem:lyra:export:owner:expired",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Current Lyra export owner is Omar.",
+                        task_id="task:lyra-export",
+                        role="hard_distractor",
+                        distractor_type="expired_exact_match_no_current_answer",
+                        validity_status=TemporalValidityStatus.EXPIRED,
+                        valid_to=reference - timedelta(days=10),
+                    ),
+                    RetrievalFixtureMemoryItem(
+                        item_id="cand:lyra:export:owner:speculative",
+                        domain=MemoryDomain.SEMANTIC,
+                        text="Current Lyra export owner might be Imani based on a draft handoff.",
+                        task_id="task:lyra-export",
+                        role="hard_distractor",
+                        distractor_type="uncommitted_speculation_no_current_answer",
+                        status=CommitStatus.CANDIDATE,
+                    ),
+                ],
+                expected_relevant_ids=[],
+                expected_hard_distractor_ids=[
+                    "sem:lyra:export:owner:expired",
+                    "cand:lyra:export:owner:speculative",
+                ],
+                expected_excluded_ids=[
+                    "sem:lyra:export:owner:expired",
+                    "cand:lyra:export:owner:speculative",
+                ],
             ),
         ),
     ]
