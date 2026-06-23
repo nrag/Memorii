@@ -99,6 +99,8 @@ def _validate_min_fixture_counts(fixtures: list[BenchmarkScenarioFixture]) -> No
     counts: dict[BenchmarkScenarioType, int] = {}
     for fixture in fixtures:
         counts[fixture.category] = counts.get(fixture.category, 0) + 1
+    if not set(counts).intersection(MIN_FIXTURES_BY_CATEGORY):
+        return
     for category, minimum in MIN_FIXTURES_BY_CATEGORY.items():
         if counts.get(category, 0) < minimum:
             raise ValueError(

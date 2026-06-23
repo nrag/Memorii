@@ -37,7 +37,8 @@ def test_memory_lifecycle_benchmark_cli_runs_and_writes_artifacts(
     output = capsys.readouterr().out
     assert "suite=memory_lifecycle_v1" in output
     assert "mode=auto" in output
-    assert "memorii_cases=11" in output
+    assert "scenarios=11" in output
+    assert "memorii_runs=11" in output
     assert "lifecycle_cases=11" in output
     assert "lifecycle_failed=0" in output
     assert "llm_calls=0" in output
@@ -79,6 +80,54 @@ def test_run_benchmark_rejects_unknown_suite() -> None:
 def test_memory_lifecycle_benchmark_is_memorii_only_for_now() -> None:
     with pytest.raises(SystemExit, match="memorii only"):
         main(["--suite", "memory_lifecycle_v1", "--systems", "all"])
+
+
+def test_retrieval_corruption_benchmark_cli_runs_and_writes_artifacts(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    _clear_llm_env(monkeypatch)
+    assert main(["--suite", "retrieval_corruption_v1", "--storage-root", str(tmp_path)]) == 0
+
+    output = capsys.readouterr().out
+    assert "suite=retrieval_corruption_v1" in output
+    assert "scenarios=10" in output
+    assert "memorii_runs=10" in output
+    assert "memorii_runs_passed=10" in output
+    assert "llm_calls=0" in output
+
+    run_dir = _latest_run_dir(tmp_path, "retrieval_corruption_v1")
+    payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    memorii_metrics = payload["summary"]["aggregate_metrics"]["memorii"]
+    assert memorii_metrics["precision_at_1"] == 1.0
+    assert memorii_metrics["hard_distractor_outrank_rate"] == 0.0
+
+
+def test_retrieval_corruption_benchmark_systems_all_is_discriminatory(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    _clear_llm_env(monkeypatch)
+    assert main(["--suite", "retrieval_corruption_v1", "--systems", "all", "--storage-root", str(tmp_path)]) == 0
+
+    output = capsys.readouterr().out
+    assert "scenarios=10" in output
+    assert "memorii_runs=10" in output
+    assert "baseline_runs=30" in output
+    assert "baseline_runs_passed=13" in output
+    assert "baseline_runs_failed=17" in output
+
+    run_dir = _latest_run_dir(tmp_path, "retrieval_corruption_v1")
+    payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    metrics = payload["summary"]["aggregate_metrics"]
+
+    assert metrics["memorii"]["scenario_success_rate"] == 1.0
+    assert metrics["flat_retrieval_baseline"]["scenario_success_rate"] == 0.5
+    assert metrics["no_solver_graph_baseline"]["scenario_success_rate"] == 0.8
+    assert metrics["transcript_only_baseline"]["scenario_success_rate"] == 0.0
+    assert payload["summary"]["baseline_runs_failed"] == 17
 
 
 def test_memory_lifecycle_benchmark_dry_run_llm_makes_traced_calls(

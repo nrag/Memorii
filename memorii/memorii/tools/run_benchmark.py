@@ -37,6 +37,7 @@ from memorii.core.solver.abstention import SolverDecision
 from memorii.tools.run_live_llm_eval import EvalFakeClient, _validate_live_safety
 from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
 from tests.fixtures.benchmarks.memory_lifecycle_v1 import load_memory_lifecycle_v1_fixture_set
+from tests.fixtures.benchmarks.retrieval_corruption_v1 import load_retrieval_corruption_v1_fixture_set
 
 
 def _load_suite(suite: str) -> tuple[list[BenchmarkScenarioFixture], str]:
@@ -44,6 +45,11 @@ def _load_suite(suite: str) -> tuple[list[BenchmarkScenarioFixture], str]:
         return (
             load_memory_lifecycle_v1_fixture_set(),
             "tests/fixtures/benchmarks/memory_lifecycle_v1.py",
+        )
+    if suite == "retrieval_corruption_v1":
+        return (
+            load_retrieval_corruption_v1_fixture_set(),
+            "tests/fixtures/benchmarks/retrieval_corruption_v1.py",
         )
     if suite == "minimal":
         return (
@@ -412,17 +418,30 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
 
 def _print_summary(*, suite: str, systems: str, mode: str, report: BenchmarkRunReport, run_dir: Path, llm_call_count: int) -> None:
     memorii_results = [result for result in report.scenario_results if result.system == BenchmarkSystem.MEMORII]
+    scenario_count = len({result.scenario_id for result in report.scenario_results})
     passed = sum(1 for result in memorii_results if result.observation.scenario_success is True)
     failed = sum(1 for result in memorii_results if result.observation.scenario_success is False)
+    baseline_results = [result for result in report.scenario_results if result.system != BenchmarkSystem.MEMORII]
+    baseline_passed = sum(1 for result in baseline_results if result.observation.scenario_success is True)
+    baseline_failed = sum(1 for result in baseline_results if result.observation.scenario_success is False)
     lifecycle_results = [
         result for result in memorii_results if result.observation.lifecycle_success is not None
     ]
     lifecycle_passed = sum(1 for result in lifecycle_results if result.observation.lifecycle_success is True)
     lifecycle_failed = sum(1 for result in lifecycle_results if result.observation.lifecycle_success is False)
+    baseline_summary = (
+        f"baseline_runs={len(baseline_results)} "
+        f"baseline_runs_passed={baseline_passed} baseline_runs_failed={baseline_failed} "
+        if baseline_results
+        else ""
+    )
 
     print(
         f"suite={suite} mode={mode} systems={systems} "
-        f"memorii_cases={len(memorii_results)} passed={passed} failed={failed} "
+        f"scenarios={scenario_count} "
+        f"memorii_runs={len(memorii_results)} "
+        f"memorii_runs_passed={passed} memorii_runs_failed={failed} "
+        f"{baseline_summary}"
         f"lifecycle_cases={len(lifecycle_results)} "
         f"lifecycle_passed={lifecycle_passed} lifecycle_failed={lifecycle_failed} "
         f"llm_calls={llm_call_count} "
@@ -432,7 +451,7 @@ def _print_summary(*, suite: str, systems: str, mode: str, report: BenchmarkRunR
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--suite", choices=["memory_lifecycle_v1", "minimal"], default="memory_lifecycle_v1")
+    parser.add_argument("--suite", choices=["memory_lifecycle_v1", "retrieval_corruption_v1", "minimal"], default="memory_lifecycle_v1")
     parser.add_argument("--mode", choices=["auto", "rule", "llm", "hybrid", "all"], default="auto")
     parser.add_argument("--systems", choices=["memorii", "all"], default="memorii")
     parser.add_argument("--storage-root", default=".memorii")

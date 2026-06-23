@@ -19,6 +19,21 @@ def test_metrics_compute_recall_precision_and_routing() -> None:
     assert metrics.retrieval_latency_ms == 10.0
 
 
+def test_retrieval_metrics_score_empty_results_as_zero_precision() -> None:
+    observation = ScenarioObservation(
+        scenario_id="empty_retrieval",
+        category=BenchmarkScenarioType.SEMANTIC_RETRIEVAL,
+        system=BenchmarkSystem.TRANSCRIPT_ONLY_BASELINE,
+        retrieved_ids=[],
+        relevant_ids=["gold"],
+    )
+
+    metrics = compute_metrics(observation)
+
+    assert metrics.recall_at_k == 0.0
+    assert metrics.precision_at_k == 0.0
+
+
 def test_metrics_compute_extended_benchmark_fields() -> None:
     observation = ScenarioObservation(
         scenario_id="benchmark_eval",

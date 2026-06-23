@@ -213,8 +213,38 @@ class ScenarioExecutor:
         retrieved_ids = [item.item_id for item in top]
         relevant_ids = set(retrieval.expected_relevant_ids)
         excluded_ids = set(retrieval.expected_excluded_ids)
+        hard_distractor_ids = set(retrieval.expected_hard_distractor_ids)
         retrieved = set(retrieved_ids)
-        scenario_success = relevant_ids.issubset(retrieved) and retrieved.isdisjoint(excluded_ids)
+        gold_rank = _first_rank(retrieved_ids, relevant_ids)
+        precision_at_1 = 1.0 if retrieved_ids and retrieved_ids[0] in relevant_ids else 0.0
+        top_k_contamination_rate = _safe_ratio(
+            len([item_id for item_id in retrieved_ids if item_id not in relevant_ids]),
+            len(retrieved_ids),
+        ) or 0.0
+        hard_distractor_outrank_rate = _compute_hard_distractor_outrank_rate(
+            retrieved_ids=retrieved_ids,
+            relevant_ids=relevant_ids,
+            hard_distractor_ids=hard_distractor_ids,
+        )
+        domain_priority_correctness = _domain_priority_correctness(
+            retrieved=top,
+            relevant_ids=relevant_ids,
+            hard_distractor_ids=hard_distractor_ids,
+            expected_domain_priority=retrieval.expected_domain_priority,
+        )
+        rank_sensitive_success = (
+            precision_at_1 == 1.0
+            and hard_distractor_outrank_rate == 0.0
+            if hard_distractor_ids
+            else True
+        )
+        domain_priority_success = domain_priority_correctness is not False
+        scenario_success = (
+            relevant_ids.issubset(retrieved)
+            and retrieved.isdisjoint(excluded_ids)
+            and rank_sensitive_success
+            and domain_priority_success
+        )
 
         return ScenarioObservation(
             scenario_id=fixture.scenario_id,
@@ -225,6 +255,12 @@ class ScenarioExecutor:
             relevant_ids=list(retrieval.expected_relevant_ids),
             excluded_ids=list(retrieval.expected_excluded_ids),
             retrieval_latency_ms=latency_ms,
+            false_positive_retrieval_rate=top_k_contamination_rate,
+            precision_at_1=precision_at_1 if relevant_ids else None,
+            gold_rank=gold_rank,
+            hard_distractor_outrank_rate=hard_distractor_outrank_rate,
+            top_k_contamination_rate=top_k_contamination_rate,
+            domain_priority_correctness=domain_priority_correctness,
             scenario_success=scenario_success,
         )
 
@@ -1121,6 +1157,7 @@ class ScenarioExecutor:
         else:
             plan = self._planner.build_plan(intent=fixture.intent, scope=fixture.scope)
             query_domains = {query.domain for query in plan.queries}
+            domain_rank = {query.domain: index for index, query in enumerate(plan.queries)}
             if system == BenchmarkSystem.TRANSCRIPT_ONLY_BASELINE:
                 query_domains = {domain for domain in query_domains if domain.value == "transcript"}
             if system == BenchmarkSystem.NO_SOLVER_GRAPH_BASELINE:
@@ -1130,14 +1167,24 @@ class ScenarioExecutor:
             candidates = [item for item in candidates if item.status != CommitStatus.CANDIDATE]
             if _intent_requires_active_validity(fixture.intent):
                 candidates = [item for item in candidates if _is_active(item, valid_at=BENCHMARK_REFERENCE_TIME)]
+        if system == BenchmarkSystem.FLAT_RETRIEVAL_BASELINE:
+            domain_rank = {}
+        domain_count = len(domain_rank)
 
         ranked = sorted(
             candidates,
             key=lambda item: (
-                -_retrieval_score(
-                    fixture.query,
-                    item.text,
-                    language=fixture.language or item.language or "und",
+                -(
+                    _retrieval_score(
+                        fixture.query,
+                        item.text,
+                        language=fixture.language or item.language or "und",
+                    )
+                    + _domain_priority_boost(
+                        item.domain,
+                        domain_rank=domain_rank,
+                        domain_count=domain_count,
+                    )
                 ),
                 item.item_id,
             ),
@@ -1194,6 +1241,20 @@ def _retrieval_score(query: str, text: str, *, language: str = "und") -> float:
     char_ngram_overlap = _safe_ratio(len(query_ngrams & text_ngrams), len(query_ngrams | text_ngrams)) or 0.0
     phrase_bonus = 1.0 if " ".join(query_tokens) in " ".join(text_tokens) else 0.0
     return (0.45 * token_overlap) + (0.35 * char_ngram_overlap) + (0.20 * phrase_bonus)
+
+
+def _domain_priority_boost(
+    domain: MemoryDomain,
+    *,
+    domain_rank: dict[MemoryDomain, int],
+    domain_count: int,
+) -> float:
+    if not domain_rank:
+        return 0.0
+    rank = domain_rank.get(domain)
+    if rank is None:
+        return 0.0
+    return 0.02 * float(domain_count - rank)
 
 
 def _first_rank(retrieved_ids: list[str], relevant_ids: set[str]) -> int | None:
