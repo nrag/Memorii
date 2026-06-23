@@ -13,6 +13,7 @@ class LLMDecisionPoint(str, Enum):
     BELIEF_UPDATE = "belief_update"
     LIFECYCLE_DECISION = "lifecycle_decision"
     EXECUTION_GRAPH_DECISION = "execution_graph_decision"
+    RETRIEVAL_RELEVANCE = "retrieval_relevance"
     MEMORY_EXTRACTION = "memory_extraction"
     CONFLICT_DETECTION = "conflict_detection"
     DECISION_SUMMARY = "decision_summary"

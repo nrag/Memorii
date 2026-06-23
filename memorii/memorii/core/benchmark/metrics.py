@@ -67,6 +67,10 @@ def compute_metrics(observation: ScenarioObservation) -> ScenarioMetrics:
         precision = _safe_ratio(hits, len(observation.retrieved_ids))
         if precision is None:
             precision = 0.0
+    elif observation.excluded_ids:
+        excluded_hits = len(set(observation.retrieved_ids) & set(observation.excluded_ids))
+        recall = 1.0 if excluded_hits == 0 else 0.0
+        precision = 1.0 if not observation.retrieved_ids else 0.0
 
     routing_accuracy = None
     blocked_write_accuracy = None
