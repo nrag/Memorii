@@ -1,0 +1,56 @@
+prompt_id: hotpotqa_answer
+version: v1
+task: Answer a HotpotQA question and cite exact supporting facts.
+description: Produces official-compatible HotpotQA answer and supporting-fact predictions from provided context paragraphs.
+input_schema:
+  type: object
+  required: [context_json, question]
+  additionalProperties: false
+  properties:
+    context_json: {type: object}
+    question: {type: string}
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - answer
+    - supporting_facts
+    - confidence
+    - rationale
+  properties:
+    answer: {type: string}
+    supporting_facts:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [title, sentence_index]
+        properties:
+          title: {type: string}
+          sentence_index: {type: integer, minimum: 0}
+    confidence: {type: number, minimum: 0.0, maximum: 1.0}
+    rationale: {type: string}
+system_template: |-
+  You answer HotpotQA questions using only the provided candidate sentences.
+
+  Rules:
+  - Return the shortest complete and unambiguous answer supported by the evidence.
+  - For yes/no questions, answer exactly "yes" or "no".
+  - Preserve complete entity and location names when the evidence gives a more specific form.
+  - Avoid sentence-length answers unless the correct answer is itself a phrase or clause.
+  - Select all and only the candidate sentences required to justify the answer.
+  - supporting_facts must be objects with exact paragraph title and zero-based sentence_index values from the candidates.
+  - Do not cite a title or sentence index that is not present in the candidates.
+  - For comparison questions, cite evidence for both compared entities when both are needed.
+  - For bridge questions, cite the bridge sentence and the answer-bearing sentence when both are needed.
+  - If evidence is insufficient, answer "noanswer" and return an empty supporting_facts list.
+
+  Return strict JSON only.
+user_template: "HotpotQAAnswerContext: {context_json}\nQuestion: {question}\nReturn strict JSON matching schema."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+allowed_failure_modes: [insufficient_evidence, invalid_supporting_fact, noanswer, provider_error, validation_error]
+tags: [hotpotqa, benchmark, official]

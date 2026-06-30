@@ -13,7 +13,13 @@ DECISION_SUITES = {
     "belief_v1": "belief",
 }
 
-BENCHMARK_SUITES = {"memory_lifecycle_v1", "execution_graph_v1", "retrieval_corruption_v1"}
+BENCHMARK_SUITES = {
+    "memory_lifecycle_v1",
+    "execution_graph_v1",
+    "retrieval_corruption_v1",
+    "hotpotqa_v1",
+    "hotpotqa_official_v1",
+}
 
 AGGREGATE_SUITES = {"all"}
 
@@ -74,6 +80,21 @@ def _run_benchmark_suite(args: argparse.Namespace) -> int:
         argv.extend(["--prompt-root", args.prompt_root])
     if args.run_label is not None:
         argv.extend(["--run-label", args.run_label])
+    if args.suite in {"hotpotqa_v1", "hotpotqa_official_v1"}:
+        argv.extend(
+            [
+                "--hotpotqa-dataset",
+                args.hotpotqa_dataset,
+                "--hotpotqa-split",
+                args.hotpotqa_split,
+                "--hotpotqa-subset-size",
+                str(args.hotpotqa_subset_size),
+            ]
+        )
+        if args.hotpotqa_question_type is not None:
+            argv.extend(["--hotpotqa-question-type", args.hotpotqa_question_type])
+        if args.suite == "hotpotqa_official_v1":
+            argv.extend(["--hotpotqa-diagnostics", args.hotpotqa_diagnostics])
     _add_bool_flag(argv, enabled=args.dry_run, flag="--dry-run")
     _add_bool_flag(argv, enabled=args.allow_live, flag="--allow-live")
     return run_benchmark.main(argv)
@@ -129,6 +150,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--systems", choices=["memorii", "all"], default="memorii")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--run-label", default=None)
+    parser.add_argument("--hotpotqa-dataset", default=str(run_benchmark._DEFAULT_HOTPOTQA_DATASET))
+    parser.add_argument("--hotpotqa-split", default="validation")
+    parser.add_argument("--hotpotqa-subset-size", type=int, default=3)
+    parser.add_argument("--hotpotqa-question-type", choices=["bridge", "comparison"], default=None)
+    parser.add_argument("--hotpotqa-diagnostics", choices=["none", "oracle"], default="none")
     args = parser.parse_args(argv)
 
     if args.suite in AGGREGATE_SUITES:

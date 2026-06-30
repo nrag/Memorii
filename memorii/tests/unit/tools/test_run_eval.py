@@ -7,6 +7,8 @@ import pytest
 
 from memorii.tools.run_eval import main
 
+HOTPOTQA_SAMPLE_PATH = Path(__file__).resolve().parents[2] / "fixtures" / "benchmarks" / "hotpotqa_sample.json"
+
 
 def _summary_fields(output: str, *, suite: str) -> dict[str, str]:
     for line in output.splitlines():
@@ -93,6 +95,67 @@ def test_run_eval_routes_execution_graph_suite(
     assert int(fields["passed"]) == payload["passed"]
     assert int(fields["failed"]) == payload["failed"]
     assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
+
+
+def test_run_eval_routes_hotpotqa_suite(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    assert main(
+        [
+            "--suite",
+            "hotpotqa_v1",
+            "--storage-root",
+            str(tmp_path),
+            "--hotpotqa-dataset",
+            str(HOTPOTQA_SAMPLE_PATH),
+            "--hotpotqa-subset-size",
+            "2",
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    run_dir = sorted((tmp_path / "benchmark_runs" / "hotpotqa_v1" / "auto").glob("bench-*"))[-1]
+    payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    metadata = json.loads((run_dir / "hotpotqa_metadata.json").read_text(encoding="utf-8"))
+    fields = _summary_fields(output, suite="hotpotqa_v1")
+
+    assert int(fields["scenarios"]) == payload["summary"]["scenario_fixtures_total"]
+    assert int(fields["memorii_runs"]) == payload["summary"]["memorii_runs_total"]
+    assert int(fields["llm_calls"]) == 0
+    assert metadata["subset_size_requested"] == 2
+
+
+def test_run_eval_routes_hotpotqa_official_suite(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    assert main(
+        [
+            "--suite",
+            "hotpotqa_official_v1",
+            "--mode",
+            "llm",
+            "--dry-run",
+            "--storage-root",
+            str(tmp_path),
+            "--hotpotqa-dataset",
+            str(HOTPOTQA_SAMPLE_PATH),
+            "--hotpotqa-subset-size",
+            "2",
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    run_dir = sorted((tmp_path / "benchmark_runs" / "hotpotqa_official_v1" / "llm").glob("bench-*"))[-1]
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    metrics = json.loads((run_dir / "official_metrics.json").read_text(encoding="utf-8"))
+    fields = _summary_fields(output, suite="hotpotqa_official_v1")
+
+    assert int(fields["examples"]) == report["examples"]
+    assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
+    assert metrics["joint_f1"] == 1.0
+
 
 def test_run_eval_routes_promotion_belief_decision_suite(
     monkeypatch: pytest.MonkeyPatch,

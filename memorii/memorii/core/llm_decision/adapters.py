@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from memorii.core.belief.models import BeliefUpdateContext
+from memorii.core.grounding.models import (
+    AnswerVerificationContext,
+    EvidenceSelectionContext,
+    GroundedAnswerContext,
+)
 from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric
 from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -141,6 +146,115 @@ class LLMRetrievalRelevanceDecisionAdapter:
         variables = {
             "context_json": context_json,
             "query": str(context_json.get("query", "")),
+        }
+        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+
+
+class LLMEvidenceSelectionAdapter:
+    def __init__(
+        self,
+        *,
+        runner: PromptLLMRunner,
+        registry: PromptRegistry,
+        prompt_ref: str = "evidence_selection:v1",
+    ) -> None:
+        self._runner = runner
+        self._registry = registry
+        self._prompt_ref = prompt_ref
+
+    def decide(
+        self,
+        context: EvidenceSelectionContext,
+        *,
+        request_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> LLMDecisionResult:
+        contract = self._registry.load(self._prompt_ref)
+        variables = {
+            "context_json": context.model_dump(mode="json"),
+            "query": context.query,
+        }
+        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+
+
+class LLMGroundedAnswerAdapter:
+    def __init__(
+        self,
+        *,
+        runner: PromptLLMRunner,
+        registry: PromptRegistry,
+        prompt_ref: str = "grounded_answer:v1",
+    ) -> None:
+        self._runner = runner
+        self._registry = registry
+        self._prompt_ref = prompt_ref
+
+    def decide(
+        self,
+        context: GroundedAnswerContext,
+        *,
+        request_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> LLMDecisionResult:
+        contract = self._registry.load(self._prompt_ref)
+        variables = {
+            "context_json": context.model_dump(mode="json"),
+            "query": context.query,
+        }
+        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+
+
+class LLMAnswerVerificationAdapter:
+    def __init__(
+        self,
+        *,
+        runner: PromptLLMRunner,
+        registry: PromptRegistry,
+        prompt_ref: str = "answer_verification:v1",
+    ) -> None:
+        self._runner = runner
+        self._registry = registry
+        self._prompt_ref = prompt_ref
+
+    def decide(
+        self,
+        context: AnswerVerificationContext,
+        *,
+        request_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> LLMDecisionResult:
+        contract = self._registry.load(self._prompt_ref)
+        variables = {
+            "context_json": context.model_dump(mode="json"),
+            "query": context.query,
+        }
+        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+
+
+class LLMHotpotQAAnswerAdapter:
+    def __init__(
+        self,
+        *,
+        runner: PromptLLMRunner,
+        registry: PromptRegistry,
+        prompt_ref: str = "hotpotqa_answer:v1",
+    ) -> None:
+        self._runner = runner
+        self._registry = registry
+        self._prompt_ref = prompt_ref
+
+    def decide(
+        self,
+        context: object,
+        *,
+        request_id: str,
+        metadata: dict[str, object] | None = None,
+    ) -> LLMDecisionResult:
+        contract = self._registry.load(self._prompt_ref)
+        context_json = context.model_dump(mode="json")  # type: ignore[attr-defined]
+        variables = {
+            "context_json": context_json,
+            "question": str(context_json.get("question", "")),
         }
         return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
 

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from memorii.core.benchmark.hotpotqa import (
+    build_hotpotqa_benchmark_fixtures,
     build_hotpotqa_fixtures,
     load_hotpotqa_examples,
     run_hotpotqa_benchmark,
@@ -75,3 +76,24 @@ def test_hotpotqa_fixture_transform_and_harness_run(tmp_path: Path) -> None:
     assert report.baseline_comparison
     assert (run_dir / "report.json").exists()
     assert (run_dir / "baseline.json").exists()
+    assert (run_dir / "hotpotqa_metadata.json").exists()
+
+
+def test_hotpotqa_benchmark_fixture_builder_records_selection_metadata() -> None:
+    source = HOTSPOT_FIXTURE_PATH
+
+    fixtures, metadata = build_hotpotqa_benchmark_fixtures(
+        dataset_path=source,
+        split="validation",
+        seed=7,
+        subset_size=2,
+        question_type="comparison",
+    )
+
+    assert fixtures
+    assert metadata.dataset_path == str(source)
+    assert metadata.split == "validation"
+    assert metadata.subset_size_requested == 2
+    assert metadata.question_type == "comparison"
+    assert metadata.selected_example_ids
+    assert metadata.fixture_count == len(fixtures)
