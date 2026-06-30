@@ -1,0 +1,127 @@
+prompt_id: grounded_answer
+version: v1
+task: Answer a query using only selected evidence.
+description: Produces a concise answer and citations from a preselected evidence set.
+input_schema:
+  type: object
+  required: [context_json, query]
+  additionalProperties: false
+  properties:
+    context_json: {type: object}
+    query: {type: string}
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - answer
+    - citation_candidate_ids
+    - answer_requirements
+    - candidate_answers_considered
+    - answer_type
+    - answer_span_candidate_id
+    - answer_span_text
+    - confidence
+    - rationale
+    - failure_mode
+    - requires_judge_review
+  properties:
+    answer: {type: string}
+    citation_candidate_ids:
+      type: array
+      items: {type: string}
+    answer_requirements:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [requirement_id, description, requirement_type, candidate_ids, rationale]
+        properties:
+          requirement_id: {type: string}
+          description: {type: string}
+          requirement_type:
+            type: string
+            enum: [bridge_entity, relation, comparison, temporal_scope, answer_type, direct_answer, disambiguation, constraint_support]
+          candidate_ids:
+            type: array
+            items: {type: string}
+          rationale: {type: string}
+    candidate_answers_considered:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [answer, candidate_ids, selected, answer_type, requirement_coverage, satisfied_requirement_ids, missing_requirement_ids, rationale]
+        properties:
+          answer: {type: string}
+          candidate_ids:
+            type: array
+            items: {type: string}
+          selected: {type: boolean}
+          answer_type:
+            type: string
+            enum: [short_span, yes_no, number, date, entity, location, description, noanswer]
+          requirement_coverage:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              required: [requirement_id, satisfied, candidate_ids, rationale]
+              properties:
+                requirement_id: {type: string}
+                satisfied: {type: boolean}
+                candidate_ids:
+                  type: array
+                  items: {type: string}
+                rationale: {type: string}
+          satisfied_requirement_ids:
+            type: array
+            items: {type: string}
+          missing_requirement_ids:
+            type: array
+            items: {type: string}
+          rationale: {type: string}
+    answer_type:
+      type: string
+      enum: [short_span, yes_no, number, date, entity, location, description, noanswer]
+    answer_span_candidate_id: {type: [string, 'null']}
+    answer_span_text: {type: [string, 'null']}
+    confidence: {type: number, minimum: 0.0, maximum: 1.0}
+    rationale: {type: string}
+    failure_mode: {type: [string, 'null']}
+    requires_judge_review: {type: boolean}
+system_template: |-
+  You answer using only the provided evidence.
+
+  Rules:
+  - Candidate IDs are short local IDs for this request only; copy them exactly from the provided evidence.
+  - Do not use outside knowledge.
+  - Use candidate text as factual evidence. Treat title, source_id, and metadata as locators or disambiguators, not as factual support by themselves.
+  - Return the shortest exact span, value, category, or entity name that completely answers the query and is supported by evidence text.
+  - First decompose the query into answer_requirements that a correct answer must satisfy.
+  - Include requirements for bridge entities, relations, comparison criteria, temporal scope, requested answer type, direct answer support, and disambiguation when needed.
+  - Prefer copying answer from the exact supporting text. Use answer_span_candidate_id and answer_span_text to identify the copied textual support when possible.
+  - answer_type must describe the kind of answer returned. If the evidence is insufficient, use answer_type="noanswer".
+  - If the requested answer format is yes/no, answer exactly "yes" or "no".
+  - Preserve complete entity, person, organization, date, and location names when the evidence gives a specific form.
+  - Avoid sentence-length answers unless the answer is naturally a phrase or clause.
+  - citation_candidate_ids must cite the evidence candidates actually needed to support the answer.
+  - candidate_answers_considered must list plausible answer candidates found in the evidence, including the selected answer.
+  - For each candidate answer, candidate_ids must cite the text that supports that candidate, selected must be true only for the chosen answer, and rationale must explain why it was selected or rejected.
+  - For each candidate answer, requirement_coverage must evaluate every answer requirement using evidence text.
+  - Select the candidate that satisfies the most required requirements, not merely a locally supported answer span.
+  - For bridge questions, candidates must satisfy both the bridge entity and final property requirements.
+  - For comparison questions, include compared sides and the comparison criterion.
+  - For yes/no questions, include the supported yes/no outcome and evidence for each side.
+  - For "what do X and Y have in common" questions, candidates must satisfy the shared-property requirement, not just a property of one entity.
+  - Do not include candidate answers that are not supported by evidence text.
+  - If the evidence is insufficient, answer "noanswer", cite no candidates, and explain why in failure_mode/rationale.
+
+  Return strict JSON only.
+user_template: "GroundedAnswerContext: {context_json}\nQuery: {query}\nReturn strict JSON matching schema."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1400, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+allowed_failure_modes: [insufficient_evidence, ambiguous_answer, contradictory_evidence, noanswer, provider_error, validation_error]
+tags: [grounding, answer]

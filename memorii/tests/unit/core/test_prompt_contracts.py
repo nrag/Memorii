@@ -115,6 +115,48 @@ def test_redaction_nested_and_non_mutating() -> None:
     assert variables == before
 
 
+def test_grounding_prompts_require_textual_evidence_and_local_ids() -> None:
+    for ref in ("evidence_selection:v1", "grounded_answer:v1", "answer_verification:v1"):
+        system = _load(ref).system_template
+        assert "short local IDs" in system
+        assert "Use candidate text as factual evidence" in system
+        assert "metadata as locators or disambiguators" in system
+
+
+def test_answer_verification_prompt_requires_question_constraint_coverage() -> None:
+    contract = _load("answer_verification:v1")
+    assert "question_constraints" in contract.output_schema["required"]
+    assert "question_constraints" in contract.output_schema["properties"]
+    assert "alternative_answers" in contract.output_schema["required"]
+    assert "alternative_answers" in contract.output_schema["properties"]
+    system = contract.system_template
+    assert "Break the question into the required constraints" in system
+    assert "A locally supported answer is not enough" in system
+    assert "plausible alternative answers" in system
+    assert "candidate_answers_considered" in system
+
+
+def test_grounding_prompt_schemas_expose_required_proof_and_answer_span_diagnostics() -> None:
+    evidence_contract = _load("evidence_selection:v1")
+    proof_step_schema = evidence_contract.output_schema["properties"]["proof_steps"]["items"]
+    assert "required_candidate_ids" in proof_step_schema["required"]
+    assert "required_candidate_ids" in proof_step_schema["properties"]
+    assert "citations" in proof_step_schema["required"]
+    citation_schema = proof_step_schema["properties"]["citations"]["items"]
+    assert "role" in citation_schema["properties"]
+    assert "background_context" in citation_schema["properties"]["role"]["enum"]
+    assert "required_for_final_support" in citation_schema["required"]
+
+    answer_contract = _load("grounded_answer:v1")
+    for key in ("answer_requirements", "candidate_answers_considered", "answer_type", "answer_span_candidate_id", "answer_span_text"):
+        assert key in answer_contract.output_schema["required"]
+        assert key in answer_contract.output_schema["properties"]
+    candidate_schema = answer_contract.output_schema["properties"]["candidate_answers_considered"]["items"]
+    for key in ("answer_type", "requirement_coverage", "satisfied_requirement_ids", "missing_requirement_ids"):
+        assert key in candidate_schema["required"]
+        assert key in candidate_schema["properties"]
+
+
 def test_prompt_yaml_security_and_schema_strength() -> None:
     expected_keys = {"api_key", "token", "password", "secret", "authorization", "cookie"}
     for path in PROMPT_ROOT.glob("**/*.yaml"):
@@ -139,6 +181,10 @@ def test_all_prompts_render_with_expected_variables() -> None:
             "lifecycle_decision:v1": {"context_json": {}, "query": "query"},
             "execution_graph_decision:v1": {"context_json": {}, "task": "task"},
             "retrieval_relevance:v1": {"context_json": {}, "query": "query"},
+            "evidence_selection:v1": {"context_json": {}, "query": "query"},
+            "grounded_answer:v1": {"context_json": {}, "query": "query"},
+            "answer_verification:v1": {"context_json": {}, "query": "query"},
+            "hotpotqa_answer:v1": {"context_json": {}, "question": "question"},
         }
     for ref in PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs():
         contract = _load(ref)

@@ -52,6 +52,18 @@ class HotpotQAExample(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class HotpotQABenchmarkSelection(BaseModel):
+    dataset_path: str
+    split: str
+    seed: int
+    subset_size_requested: int
+    question_type: Literal["bridge", "comparison"] | None = None
+    selected_example_ids: list[str] = Field(default_factory=list)
+    fixture_count: int
+
+    model_config = ConfigDict(extra="forbid")
+
+
 def load_hotpotqa_examples(path: str | Path, *, split: str | None = None) -> list[HotpotQAExample]:
     source = Path(path)
     if source.suffix == ".jsonl":
@@ -92,6 +104,8 @@ def select_hotpotqa_subset(
             item.example_id,
         ),
     )
+    if subset_size == 0:
+        return ranked
     return ranked[:subset_size]
 
 
@@ -182,15 +196,15 @@ def build_hotpotqa_fixtures(examples: list[HotpotQAExample]) -> list[BenchmarkSc
     return fixtures
 
 
-def run_hotpotqa_benchmark(
+def build_hotpotqa_benchmark_fixtures(
     *,
     dataset_path: str | Path,
     split: str,
     seed: int = 7,
     subset_size: int = 25,
     question_type: Literal["bridge", "comparison"] | None = None,
-    output_root: str = "artifacts/benchmarks",
-) -> tuple[BenchmarkRunReport, Path]:
+    include_preflight_controls: bool = True,
+) -> tuple[list[BenchmarkScenarioFixture], HotpotQABenchmarkSelection]:
     examples = load_hotpotqa_examples(dataset_path, split=split)
     selected = select_hotpotqa_subset(
         examples,
@@ -200,7 +214,37 @@ def run_hotpotqa_benchmark(
         subset_size=subset_size,
         question_type=question_type,
     )
-    fixtures = build_hotpotqa_fixtures(selected) + _preflight_control_fixtures()
+    fixtures = build_hotpotqa_fixtures(selected)
+    if include_preflight_controls:
+        fixtures += _preflight_control_fixtures()
+    metadata = HotpotQABenchmarkSelection(
+        dataset_path=str(dataset_path),
+        split=split,
+        seed=seed,
+        subset_size_requested=subset_size,
+        question_type=question_type,
+        selected_example_ids=[example.example_id for example in selected],
+        fixture_count=len(fixtures),
+    )
+    return fixtures, metadata
+
+
+def run_hotpotqa_benchmark(
+    *,
+    dataset_path: str | Path,
+    split: str,
+    seed: int = 7,
+    subset_size: int = 25,
+    question_type: Literal["bridge", "comparison"] | None = None,
+    output_root: str = "artifacts/benchmarks",
+) -> tuple[BenchmarkRunReport, Path]:
+    fixtures, metadata = build_hotpotqa_benchmark_fixtures(
+        dataset_path=dataset_path,
+        split=split,
+        seed=seed,
+        subset_size=subset_size,
+        question_type=question_type,
+    )
     report = BenchmarkHarness().run(
         fixtures=fixtures,
         config=BenchmarkRunConfig(seed=seed, run_label=f"hotpotqa-{split}"),
@@ -210,8 +254,12 @@ def run_hotpotqa_benchmark(
         fixtures=fixtures,
         dataset="hotpotqa",
         fixture_source=str(dataset_path),
-        subset_size=len(selected),
+        subset_size=len(metadata.selected_example_ids),
         root_dir=output_root,
+    )
+    (run_dir / "hotpotqa_metadata.json").write_text(
+        metadata.model_dump_json(indent=2),
+        encoding="utf-8",
     )
     return report, run_dir
 
