@@ -74,6 +74,9 @@ class MemoryPlaneService:
     def stage_record(self, record: CanonicalMemoryRecord) -> None:
         self._records.stage_record(record)
 
+    def upsert_record(self, record: CanonicalMemoryRecord) -> None:
+        self._records.upsert_record(record)
+
     def update_candidate_lifecycle(
         self,
         *,

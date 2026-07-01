@@ -16,6 +16,7 @@ DECISION_SUITES = {
 BENCHMARK_SUITES = {
     "memory_lifecycle_v1",
     "execution_graph_v1",
+    "memory_evolution_v1",
     "retrieval_corruption_v1",
     "hotpotqa_v1",
     "hotpotqa_official_v1",

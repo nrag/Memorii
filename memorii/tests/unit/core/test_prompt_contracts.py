@@ -180,6 +180,8 @@ def test_all_prompts_render_with_expected_variables() -> None:
             "belief_update:v1": {"context_json": {}, "prior_belief": 0.4},
             "lifecycle_decision:v1": {"context_json": {}, "query": "query"},
             "execution_graph_decision:v1": {"context_json": {}, "task": "task"},
+            "memory_evolution_decision:v1": {"context_json": {}, "query": "query"},
+            "memory_extraction:v1": {"source_observations": []},
             "retrieval_relevance:v1": {"context_json": {}, "query": "query"},
             "evidence_selection:v1": {"context_json": {}, "query": "query"},
             "grounded_answer:v1": {"context_json": {}, "query": "query"},

@@ -97,6 +97,26 @@ def test_run_eval_routes_execution_graph_suite(
     assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
 
 
+def test_run_eval_routes_memory_evolution_suite(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    _clear_llm_env(monkeypatch)
+    assert main(["--suite", "memory_evolution_v1", "--storage-root", str(tmp_path)]) == 0
+
+    output = capsys.readouterr().out
+    run_dir = sorted((tmp_path / "benchmark_runs" / "memory_evolution_v1" / "auto").glob("bench-*"))[-1]
+    payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    fields = _summary_fields(output, suite="memory_evolution_v1")
+
+    assert int(fields["scenarios"]) == payload["scenarios"] == 10
+    assert int(fields["checkpoints"]) == payload["checkpoints"]
+    assert int(fields["passed"]) == payload["passed"]
+    assert int(fields["failed"]) == payload["failed"]
+    assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
+
+
 def test_run_eval_routes_hotpotqa_suite(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
@@ -261,6 +281,7 @@ def test_run_eval_default_suite_runs_promotion_belief_and_lifecycle(
     assert "suite=retrieval_corruption_v1 status=finished exit_code=0" in output
     assert "suite=execution_graph_v1 status=starting" in output
     assert "suite=execution_graph_v1 status=finished exit_code=0" in output
+    assert "suite=memory_evolution_v1" not in output
     assert "mode=rule total_cases=" in output
     assert "suite=memory_lifecycle_v1" in output
     assert "suite=retrieval_corruption_v1" in output
@@ -269,6 +290,7 @@ def test_run_eval_default_suite_runs_promotion_belief_and_lifecycle(
     assert (tmp_path / "benchmark_runs" / "memory_lifecycle_v1" / "rule").exists()
     assert (tmp_path / "benchmark_runs" / "retrieval_corruption_v1" / "rule").exists()
     assert (tmp_path / "benchmark_runs" / "execution_graph_v1" / "rule").exists()
+    assert not (tmp_path / "benchmark_runs" / "memory_evolution_v1").exists()
 
 
 def test_run_eval_suite_all_runs_promotion_belief_and_lifecycle(
@@ -286,7 +308,9 @@ def test_run_eval_suite_all_runs_promotion_belief_and_lifecycle(
 
     assert "suite=retrieval_corruption_v1 status=starting" in output
     assert "suite=execution_graph_v1 status=starting" in output
+    assert "suite=memory_evolution_v1" not in output
     assert "mode=rule total_cases=" in output
     assert "suite=memory_lifecycle_v1" in output
     assert "suite=retrieval_corruption_v1" in output
     assert "suite=execution_graph_v1" in output
+    assert not (tmp_path / "benchmark_runs" / "memory_evolution_v1").exists()
