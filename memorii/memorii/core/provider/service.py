@@ -14,6 +14,12 @@ from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.next_step import NextStepEngine, NextStepRequest
 from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
+from memorii.core.memory_evolution import (
+    MemoryEvolutionResult,
+    MemoryEvolutionService,
+    MemoryExtractor,
+    build_memory_extractor_from_env,
+)
 from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
 from memorii.core.promotion.provider import PromotionDecisionProvider
 from memorii.core.llm_decision.runtime_factory import build_promotion_decision_provider_from_env
@@ -69,6 +75,8 @@ class ProviderMemoryService:
         solver_store: SolverGraphStore | None = None,
         overlay_store: OverlayStore | None = None,
         emit_work_state_event_candidates: bool = True,
+        memory_evolution_enabled: bool = False,
+        memory_evolution_extractor: MemoryExtractor | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
         self._work_state_service = work_state_service
@@ -93,6 +101,15 @@ class ProviderMemoryService:
             overlay_store=overlay_store,
         )
         self._emit_work_state_event_candidates = emit_work_state_event_candidates
+        self._memory_evolution_service = (
+            MemoryEvolutionService(
+                memory_plane=self._memory_plane,
+                extractor=memory_evolution_extractor or build_memory_extractor_from_env(),
+            )
+            if memory_evolution_enabled
+            else None
+        )
+        self._last_memory_evolution_result: MemoryEvolutionResult | None = None
         self._sequence = 0
         self._last_recall_bundle: RecallStateBundle | None = None
 
@@ -122,6 +139,7 @@ class ProviderMemoryService:
             timestamp=datetime.now(UTC),
         )
         result = self._memory_plane.ingest_provider_event(event)
+        self._evolve_from_source_ids(result.transcript_ids)
         self._ingest_work_state(self._agent_event_from_provider_event(event=event))
         return result
 
@@ -148,6 +166,8 @@ class ProviderMemoryService:
             user_id=user_id,
         )
         decision = self._memory_plane.apply_provider_memory_write(event=event)
+        source_ids = [f"tx:{event.event_id}"] if decision.raw_append_domains else []
+        self._evolve_from_source_ids(source_ids)
         self._ingest_work_state(self._agent_event_from_provider_event(event=event))
         return decision
 
@@ -696,6 +716,9 @@ class ProviderMemoryService:
     def last_recall_bundle(self) -> RecallStateBundle | None:
         return self._last_recall_bundle
 
+    def last_memory_evolution_result(self) -> MemoryEvolutionResult | None:
+        return self._last_memory_evolution_result
+
     def list_work_states(
         self,
         *,
@@ -714,6 +737,11 @@ class ProviderMemoryService:
             kinds=kinds,
             statuses=statuses,
         )
+
+    def _evolve_from_source_ids(self, source_ids: list[str]) -> None:
+        if self._memory_evolution_service is None or not source_ids:
+            return
+        self._last_memory_evolution_result = self._memory_evolution_service.evolve_source_ids(source_ids)
 
     def _build_state_summary_result(
         self,
