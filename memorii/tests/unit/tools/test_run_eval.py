@@ -117,6 +117,37 @@ def test_run_eval_routes_memory_evolution_suite(
     assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
 
 
+def test_run_eval_routes_memory_evolution_sim_suite(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    _clear_llm_env(monkeypatch)
+    assert main(
+        [
+            "--suite",
+            "memory_evolution_sim_v1",
+            "--storage-root",
+            str(tmp_path),
+            "--sim-profile",
+            "smoke",
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    run_dir = sorted((tmp_path / "benchmark_runs" / "memory_evolution_sim_v1" / "auto").glob("bench-*"))[-1]
+    payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    fields = _summary_fields(output, suite="memory_evolution_sim_v1")
+
+    assert fields["profile"] == "smoke"
+    assert int(fields["scenarios"]) == payload["scenario_count"] == 10
+    assert int(fields["events"]) == payload["event_count"]
+    assert int(fields["checkpoints"]) == payload["checkpoint_count"]
+    assert int(fields["passed"]) == payload["passed"]
+    assert int(fields["failed"]) == payload["failed"]
+    assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
+
+
 def test_run_eval_routes_hotpotqa_suite(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,

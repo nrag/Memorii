@@ -5,15 +5,33 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid5, NAMESPACE_URL
 
+from memorii.core.memory_evolution.confidence import ConfidenceAggregator
+from memorii.core.memory_evolution.contradictions import ContradictionResolver
+from memorii.core.memory_evolution.entity_resolution import EntityResolutionService
 from memorii.core.memory_evolution.extraction import RuleMemoryExtractor
+from memorii.core.memory_evolution.graph import (
+    MemoryGraphProjector,
+    MemoryGraphStore,
+    MemoryGraphValidator,
+    subgraph_from_ids,
+)
+from memorii.core.memory_evolution.modality import ExtractionTriggerPolicy, SourceModalityClassifier, classify_and_mark_observation
 from memorii.core.memory_evolution.models import (
     ClaimLifecycleState,
     ClaimLifecycleTransition,
     ClaimState,
     ClaimTransitionType,
+    ContradictionSet,
+    EntityLinkState,
+    ExtractionTriggerMode,
+    ExtractedAction,
     ExtractedClaim,
+    MemoryGraphEdgeType,
+    MemoryGraphNodeType,
+    MemoryGraphSnapshot,
     MemoryEvolutionResult,
     RetrievalView,
+    SourceModality,
     SourceObservation,
     ValidationResult,
 )
@@ -32,29 +50,75 @@ class MemoryEvolutionService:
         predicate_registry: PredicateRegistry | None = None,
         extractor: RuleMemoryExtractor | None = None,
         validator: MemoryEvolutionValidator | None = None,
+        modality_classifier: SourceModalityClassifier | None = None,
+        trigger_policy: ExtractionTriggerPolicy | None = None,
+        entity_resolver: EntityResolutionService | None = None,
+        confidence_aggregator: ConfidenceAggregator | None = None,
+        contradiction_resolver: ContradictionResolver | None = None,
+        graph_projector: MemoryGraphProjector | None = None,
+        graph_store: MemoryGraphStore | None = None,
+        graph_validator: MemoryGraphValidator | None = None,
     ) -> None:
         self._memory_plane = memory_plane
         self._predicates = predicate_registry or PredicateRegistry()
         self._extractor = extractor or RuleMemoryExtractor()
         self._validator = validator or MemoryEvolutionValidator(predicate_registry=self._predicates)
+        self._modality_classifier = modality_classifier or SourceModalityClassifier()
+        self._trigger_policy = trigger_policy or ExtractionTriggerPolicy()
+        self._entity_resolver = entity_resolver or EntityResolutionService()
+        self._confidence_aggregator = confidence_aggregator or ConfidenceAggregator()
+        self._contradiction_resolver = contradiction_resolver or ContradictionResolver()
+        self._graph_projector = graph_projector or MemoryGraphProjector()
+        self._graph_store = graph_store or MemoryGraphStore(memory_plane=memory_plane)
+        self._graph_validator = graph_validator or MemoryGraphValidator()
 
     def evolve_records(self, records: list[CanonicalMemoryRecord]) -> MemoryEvolutionResult:
-        observations = [source_observation_from_record(record) for record in records if record.is_raw_event or record.domain == MemoryDomain.TRANSCRIPT]
-        run, entities, claims, actions = self._extractor.extract(observations)
-        validation_results = self._validator.validate_claims(claims=claims, observations=observations)
+        observations = [
+            classify_and_mark_observation(
+                source_observation_from_record(record),
+                classifier=self._modality_classifier,
+                trigger_policy=self._trigger_policy,
+            )
+            for record in records
+            if record.is_raw_event or record.domain == MemoryDomain.TRANSCRIPT
+        ]
+        immediate_observations = [obs for obs in observations if obs.trigger_mode == ExtractionTriggerMode.IMMEDIATE]
+        deferred_observation_ids = [
+            obs.source_id
+            for obs in observations
+            if obs.trigger_mode in {ExtractionTriggerMode.DEFERRED, ExtractionTriggerMode.BATCH_ONLY}
+        ]
+        skipped_observation_ids = [obs.source_id for obs in observations if obs.trigger_mode == ExtractionTriggerMode.SKIP]
+        run, entities, claims, actions = self._extractor.extract(immediate_observations)
+        validation_results = self._validator.validate_claims(claims=claims, observations=immediate_observations)
         run = run.model_copy(update={"validation_summary": self._validator.summary(validation_results)})
+
+        entity_links = self._entity_resolver.resolve_mentions(entities, self._list_entity_links())
+        for link in entity_links:
+            self._memory_plane.upsert_record(_record_from_entity_link(link))
 
         claim_states: list[ClaimState] = []
         transitions: list[ClaimLifecycleTransition] = []
+        contradiction_sets: list[ContradictionSet] = []
         written_record_ids: list[str] = []
         for claim in claims:
             results = validation_results.get(claim.claim_id, [])
             if not self._validator.accepted(results):
                 continue
-            state, claim_transitions, record_id = self._apply_claim(claim=claim, validation_results=results)
+            state, claim_transitions, record_id, contradiction_set = self._apply_claim(
+                claim=claim,
+                validation_results=results,
+                source_observations=immediate_observations,
+                entity_links=entity_links,
+            )
             claim_states.append(state)
             transitions.extend(claim_transitions)
             written_record_ids.append(record_id)
+            if contradiction_set is not None:
+                contradiction_sets.append(contradiction_set)
+                contradiction_record = _record_from_contradiction_set(contradiction_set)
+                self._memory_plane.upsert_record(contradiction_record)
+                written_record_ids.append(contradiction_record.memory_id)
 
         for action in actions:
             record = CanonicalMemoryRecord(
@@ -75,15 +139,41 @@ class MemoryEvolutionService:
             self._memory_plane.stage_record(record)
             written_record_ids.append(record.memory_id)
 
-        return MemoryEvolutionResult(
+        partial_result = MemoryEvolutionResult(
             extraction_run=run,
             entities=entities,
             claims=claims,
             actions=actions,
+            observations=observations,
+            entity_links=entity_links,
+            contradiction_sets=contradiction_sets,
+            deferred_observation_ids=deferred_observation_ids,
+            skipped_observation_ids=skipped_observation_ids,
             validation_results=validation_results,
             claim_states=claim_states,
             transitions=transitions,
             written_record_ids=written_record_ids,
+        )
+        graph_input = partial_result.model_copy(
+            update={
+                "observations": self._list_source_observations(),
+                "entity_links": self._list_entity_links(),
+                "claim_states": self._list_claim_states(),
+                "actions": self._list_actions(),
+                "contradiction_sets": self._list_contradiction_sets(),
+            }
+        )
+        graph_snapshot = self._graph_projector.project_evolution_result(result=graph_input)
+        graph_errors = self._graph_validator.validate_snapshot(graph_snapshot)
+        written_graph_ids = self._graph_store.upsert_snapshot(graph_snapshot)
+        return partial_result.model_copy(
+            update={
+                "graph_nodes": graph_snapshot.nodes,
+                "graph_edges": graph_snapshot.edges,
+                "graph_snapshot_id": graph_snapshot.snapshot_id,
+                "graph_validation_errors": graph_errors,
+                "written_record_ids": [*partial_result.written_record_ids, *written_graph_ids],
+            }
         )
 
     def evolve_source_ids(self, source_ids: list[str]) -> MemoryEvolutionResult:
@@ -113,17 +203,150 @@ class MemoryEvolutionService:
         if view == RetrievalView.CONFLICTS:
             return [state for state in states if state.conflict_with_claim_ids or state.lifecycle_state == ClaimLifecycleState.INVALIDATED]
         if view == RetrievalView.EVIDENCE_ONLY:
-            return []
+            return [state for state in states if state.evidence_spans]
         return states
+
+    def retrieve_graph_snapshot(self) -> MemoryGraphSnapshot:
+        return self._graph_store.snapshot()
+
+    def retrieve_current_truth_graph(
+        self,
+        *,
+        subject_entity_id: str | None = None,
+        predicate_id: str | None = None,
+    ) -> MemoryGraphSnapshot:
+        snapshot = self.retrieve_graph_snapshot()
+        matching_claims = {
+            node.node_id
+            for node in snapshot.nodes
+            if node.node_type == MemoryGraphNodeType.CLAIM
+            and node.lifecycle_state == ClaimLifecycleState.ACTIVE.value
+            and (predicate_id is None or node.properties.get("predicate_id") == predicate_id)
+            and (subject_entity_id is None or node.properties.get("subject_entity_id") == subject_entity_id)
+        }
+        return _claim_subgraph(
+            snapshot=snapshot,
+            claim_node_ids=matching_claims,
+            include_edge_types={
+                MemoryGraphEdgeType.HAS_SUBJECT,
+                MemoryGraphEdgeType.HAS_OBJECT,
+                MemoryGraphEdgeType.HAS_LITERAL_OBJECT,
+                MemoryGraphEdgeType.HAS_SCOPE,
+                MemoryGraphEdgeType.OBSERVED_IN,
+            },
+        )
+
+    def retrieve_entity_subgraph(
+        self,
+        entity_id: str,
+        *,
+        include_historical: bool = False,
+        include_conflicts: bool = False,
+    ) -> MemoryGraphSnapshot:
+        snapshot = self.retrieve_graph_snapshot()
+        node_by_id = {node.node_id: node for node in snapshot.nodes}
+        entity_node_ids = {
+            node.node_id
+            for node in snapshot.nodes
+            if node.node_type == MemoryGraphNodeType.ENTITY
+            and (node.node_id == entity_id or node.canonical_id == entity_id)
+        }
+        claim_node_ids: set[str] = set()
+        edge_ids: set[str] = set()
+        for edge in snapshot.edges:
+            if edge.edge_type == MemoryGraphEdgeType.ALIAS_OF and edge.source_node_id in entity_node_ids:
+                edge_ids.add(edge.edge_id)
+            if edge.edge_type not in {MemoryGraphEdgeType.HAS_SUBJECT, MemoryGraphEdgeType.HAS_OBJECT}:
+                continue
+            if edge.target_node_id not in entity_node_ids:
+                continue
+            claim = node_by_id.get(edge.source_node_id)
+            if claim is None or claim.node_type != MemoryGraphNodeType.CLAIM:
+                continue
+            if include_historical or claim.lifecycle_state == ClaimLifecycleState.ACTIVE.value:
+                claim_node_ids.add(claim.node_id)
+        claim_graph = _claim_subgraph(
+            snapshot=snapshot,
+            claim_node_ids=claim_node_ids,
+            include_edge_types={
+                MemoryGraphEdgeType.HAS_SUBJECT,
+                MemoryGraphEdgeType.HAS_OBJECT,
+                MemoryGraphEdgeType.HAS_LITERAL_OBJECT,
+                MemoryGraphEdgeType.HAS_SCOPE,
+                MemoryGraphEdgeType.OBSERVED_IN,
+            },
+        )
+        node_ids = {node.node_id for node in claim_graph.nodes} | entity_node_ids
+        edge_ids |= {edge.edge_id for edge in claim_graph.edges}
+        if include_conflicts:
+            for edge in snapshot.edges:
+                if edge.edge_type in {
+                    MemoryGraphEdgeType.CONFLICTS_WITH,
+                    MemoryGraphEdgeType.CONTRADICTS,
+                    MemoryGraphEdgeType.MEMBER_OF_CONTRADICTION_SET,
+                } and (edge.source_node_id in node_ids or edge.target_node_id in node_ids):
+                    edge_ids.add(edge.edge_id)
+                    node_ids.add(edge.source_node_id)
+                    node_ids.add(edge.target_node_id)
+        return subgraph_from_ids(snapshot=snapshot, node_ids=node_ids, edge_ids=edge_ids)
+
+    def retrieve_claim_lineage(self, claim_id: str) -> MemoryGraphSnapshot:
+        snapshot = self.retrieve_graph_snapshot()
+        claim_node_ids = {
+            node.node_id
+            for node in snapshot.nodes
+            if node.node_type == MemoryGraphNodeType.CLAIM
+            and (node.node_id == claim_id or node.canonical_id == claim_id)
+        }
+        edge_types = {
+            MemoryGraphEdgeType.HAS_SUBJECT,
+            MemoryGraphEdgeType.HAS_OBJECT,
+            MemoryGraphEdgeType.HAS_LITERAL_OBJECT,
+            MemoryGraphEdgeType.HAS_SCOPE,
+            MemoryGraphEdgeType.OBSERVED_IN,
+            MemoryGraphEdgeType.SUPERSEDES,
+            MemoryGraphEdgeType.CONFLICTS_WITH,
+            MemoryGraphEdgeType.CONTRADICTS,
+        }
+        return _claim_subgraph(snapshot=snapshot, claim_node_ids=claim_node_ids, include_edge_types=edge_types)
+
+    def retrieve_conflict_graph(self) -> MemoryGraphSnapshot:
+        snapshot = self.retrieve_graph_snapshot()
+        node_ids = {
+            node.node_id
+            for node in snapshot.nodes
+            if node.node_type == MemoryGraphNodeType.CONTRADICTION_SET
+        }
+        edge_ids: set[str] = set()
+        for edge in snapshot.edges:
+            if edge.edge_type in {
+                MemoryGraphEdgeType.MEMBER_OF_CONTRADICTION_SET,
+                MemoryGraphEdgeType.CONTRADICTS,
+                MemoryGraphEdgeType.CONFLICTS_WITH,
+            } and (edge.source_node_id in node_ids or edge.target_node_id in node_ids):
+                edge_ids.add(edge.edge_id)
+                node_ids.add(edge.source_node_id)
+                node_ids.add(edge.target_node_id)
+        for edge in snapshot.edges:
+            if edge.edge_type == MemoryGraphEdgeType.OBSERVED_IN and edge.source_node_id in node_ids:
+                edge_ids.add(edge.edge_id)
+                node_ids.add(edge.target_node_id)
+        return subgraph_from_ids(snapshot=snapshot, node_ids=node_ids, edge_ids=edge_ids)
 
     def _apply_claim(
         self,
         *,
         claim: ExtractedClaim,
         validation_results: list[ValidationResult],
-    ) -> tuple[ClaimState, list[ClaimLifecycleTransition], str]:
+        source_observations: list[SourceObservation],
+        entity_links: list[EntityLinkState],
+    ) -> tuple[ClaimState, list[ClaimLifecycleTransition], str, ContradictionSet | None]:
         now = datetime.now(UTC)
         policy = self._predicates.require(claim.claim_key.predicate_id)
+        modality = _modality_for_claim(claim, source_observations)
+        claim = claim.model_copy(update={"confidence": self._confidence_aggregator.initial_for_claim(claim, modality=modality)})
+        subject_link = self._entity_resolver.link_for_entity(claim.claim_key.subject_entity_id, entity_links)
+        object_link = self._entity_resolver.link_for_entity(claim.object_entity_id, entity_links)
         existing_active = [
             state
             for state in self._list_claim_states()
@@ -135,12 +358,31 @@ class MemoryEvolutionService:
         transitions: list[ClaimLifecycleTransition] = []
 
         if same_value:
-            lifecycle_state = ClaimLifecycleState.ACTIVE
-            transition_type = ClaimTransitionType.REINFORCE
-            related = [state.claim_id for state in same_value]
-            supersedes: list[str] = []
-            conflicts: list[str] = []
-            rationale = "new claim reinforces existing active claim"
+            existing = same_value[0]
+            confidence, update = self._confidence_aggregator.reinforce(
+                existing=existing,
+                claim=claim,
+                modality=modality,
+            )
+            state = existing.model_copy(
+                update={
+                    "confidence": confidence,
+                    "validation_results": [*existing.validation_results, *validation_results],
+                    "evidence_spans": [*existing.evidence_spans, *claim.evidence_spans],
+                    "confidence_history": [*existing.confidence_history, update],
+                    "updated_at": now,
+                }
+            )
+            transition = ClaimLifecycleTransition(
+                transition_id=_stable_id("transition", f"{existing.claim_id}:reinforce:{claim.claim_id}"),
+                transition_type=ClaimTransitionType.REINFORCE,
+                claim_id=existing.claim_id,
+                related_claim_ids=[claim.claim_id],
+                rationale="new claim reinforces existing active claim",
+            )
+            record = _record_from_claim_state(state=state, source_candidate_id=claim.extraction_run_id)
+            self._memory_plane.upsert_record(record)
+            return state, [transition], record.memory_id, None
         elif policy.is_single_value and different_value:
             strongest = max(different_value, key=lambda state: _state_strength(policy.predicate_id, state))
             if _claim_strength(policy.predicate_id, claim) >= _state_strength(policy.predicate_id, strongest):
@@ -178,6 +420,8 @@ class MemoryEvolutionService:
             evidence_spans=claim.evidence_spans,
             supersedes_claim_ids=supersedes,
             conflict_with_claim_ids=conflicts,
+            subject_link_id=subject_link.link_id if subject_link is not None else None,
+            object_link_id=object_link.link_id if object_link is not None else None,
             valid_from=claim.valid_from,
             valid_to=claim.valid_to,
             created_at=now,
@@ -194,7 +438,13 @@ class MemoryEvolutionService:
         )
         record = _record_from_claim_state(state=state, source_candidate_id=claim.extraction_run_id)
         self._memory_plane.stage_record(record)
-        return state, transitions, record.memory_id
+        contradiction_set = self._contradiction_resolver.contradiction_for(
+            policy=policy,
+            claim=claim,
+            existing_active=different_value,
+            active_claim_id=state.claim_id if state.lifecycle_state == ClaimLifecycleState.ACTIVE else (strongest.claim_id if policy.is_single_value and different_value else None),
+        )
+        return state, transitions, record.memory_id, contradiction_set
 
     def _mark_superseded(
         self,
@@ -207,6 +457,7 @@ class MemoryEvolutionService:
             update={
                 "lifecycle_state": ClaimLifecycleState.SUPERSEDED,
                 "superseded_by_claim_id": superseded_by_claim_id,
+                "conflict_with_claim_ids": sorted({*old_state.conflict_with_claim_ids, superseded_by_claim_id}),
                 "valid_to": valid_to,
                 "updated_at": datetime.now(UTC),
             }
@@ -222,6 +473,38 @@ class MemoryEvolutionService:
             states.append(ClaimState.model_validate(record.content["claim_state"]))
         return states
 
+    def _list_entity_links(self) -> list[EntityLinkState]:
+        links: list[EntityLinkState] = []
+        for record in self._memory_plane.list_records(domains=[MemoryDomain.SEMANTIC]):
+            if record.content.get("memory_evolution_kind") != "entity_link":
+                continue
+            links.append(EntityLinkState.model_validate(record.content["entity_link"]))
+        return links
+
+    def _list_contradiction_sets(self) -> list[ContradictionSet]:
+        contradiction_sets: list[ContradictionSet] = []
+        for record in self._memory_plane.list_records(domains=[MemoryDomain.SEMANTIC]):
+            if record.content.get("memory_evolution_kind") != "contradiction_set":
+                continue
+            contradiction_sets.append(ContradictionSet.model_validate(record.content["contradiction_set"]))
+        return contradiction_sets
+
+    def _list_actions(self) -> list[ExtractedAction]:
+        actions: list[ExtractedAction] = []
+        for record in self._memory_plane.list_records(domains=[MemoryDomain.EXECUTION]):
+            if record.content.get("memory_evolution_kind") != "action":
+                continue
+            actions.append(ExtractedAction.model_validate(record.content["action"]))
+        return actions
+
+    def _list_source_observations(self) -> list[SourceObservation]:
+        observations: list[SourceObservation] = []
+        for record in self._memory_plane.list_records(domains=[MemoryDomain.TRANSCRIPT]):
+            if not record.is_raw_event:
+                continue
+            observations.append(source_observation_from_record(record))
+        return observations
+
 
 def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObservation:
     return SourceObservation(
@@ -233,6 +516,22 @@ def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObser
         session_id=record.session_id,
         task_id=record.task_id,
         user_id=record.user_id,
+    )
+
+
+def _record_from_entity_link(link: EntityLinkState) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=f"mem:evolution:entity-link:{link.link_id}",
+        domain=MemoryDomain.SEMANTIC,
+        text=f"{link.canonical_entity_id} aliases: {', '.join(link.aliases)}",
+        content={
+            "memory_evolution_kind": "entity_link",
+            "entity_link": link.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        validity_status=TemporalValidityStatus.ACTIVE,
+        source_kind="memory_evolution",
+        timestamp=link.updated_at,
     )
 
 
@@ -267,8 +566,29 @@ def _record_from_claim_state(*, state: ClaimState, source_candidate_id: str) -> 
     )
 
 
+def _record_from_contradiction_set(contradiction_set: ContradictionSet) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=f"mem:evolution:contradiction:{contradiction_set.contradiction_set_id}",
+        domain=MemoryDomain.SEMANTIC,
+        text=f"Contradiction for {contradiction_set.claim_key.stable_id()}",
+        content={
+            "memory_evolution_kind": "contradiction_set",
+            "contradiction_set": contradiction_set.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        validity_status=TemporalValidityStatus.ACTIVE,
+        source_kind="memory_evolution",
+        timestamp=contradiction_set.updated_at,
+    )
+
+
 def _source_type_from_record(record: CanonicalMemoryRecord) -> SourceType:
     source_kind = record.source_kind.lower()
+    operation = str(record.content.get("operation") or "").lower()
+    if operation in {"memory_write_longterm", "memory_write_user", "memory_write_dailylog"}:
+        return SourceType.USER
+    if operation in {"delegation_result"}:
+        return SourceType.TOOL
     if "user" in source_kind:
         return SourceType.USER
     if "tool" in source_kind:
@@ -315,9 +635,35 @@ def _state_strength(predicate_id: str, state: ClaimState) -> tuple[float, dateti
     return (min(1.0, state.confidence.calibrated + trust_bonus), state.valid_from or datetime.min.replace(tzinfo=UTC))
 
 
+def _modality_for_claim(claim: ExtractedClaim, observations: list[SourceObservation]) -> SourceModality:
+    observation_by_id = {observation.source_id: observation for observation in observations}
+    for span in claim.evidence_spans:
+        if (observation := observation_by_id.get(span.source_id)) is not None:
+            return observation.modality
+    return SourceModality.ASSERTION
+
+
 def _norm(value: str) -> str:
     return " ".join(value.lower().strip(" .").split())
 
 
 def _stable_id(prefix: str, value: str) -> str:
     return f"{prefix}:{uuid5(NAMESPACE_URL, value)}"
+
+
+def _claim_subgraph(
+    *,
+    snapshot: MemoryGraphSnapshot,
+    claim_node_ids: set[str],
+    include_edge_types: set[MemoryGraphEdgeType],
+) -> MemoryGraphSnapshot:
+    node_ids = set(claim_node_ids)
+    edge_ids: set[str] = set()
+    for edge in snapshot.edges:
+        if edge.edge_type not in include_edge_types:
+            continue
+        if edge.source_node_id in claim_node_ids or edge.target_node_id in claim_node_ids:
+            edge_ids.add(edge.edge_id)
+            node_ids.add(edge.source_node_id)
+            node_ids.add(edge.target_node_id)
+    return subgraph_from_ids(snapshot=snapshot, node_ids=node_ids, edge_ids=edge_ids)

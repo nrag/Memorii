@@ -17,6 +17,7 @@ BENCHMARK_SUITES = {
     "memory_lifecycle_v1",
     "execution_graph_v1",
     "memory_evolution_v1",
+    "memory_evolution_sim_v1",
     "retrieval_corruption_v1",
     "hotpotqa_v1",
     "hotpotqa_official_v1",
@@ -96,6 +97,26 @@ def _run_benchmark_suite(args: argparse.Namespace) -> int:
             argv.extend(["--hotpotqa-question-type", args.hotpotqa_question_type])
         if args.suite == "hotpotqa_official_v1":
             argv.extend(["--hotpotqa-diagnostics", args.hotpotqa_diagnostics])
+    if args.suite == "memory_evolution_sim_v1":
+        argv.extend(
+            [
+                "--sim-profile",
+                args.sim_profile,
+                "--sim-scenario-count",
+                str(args.sim_scenario_count),
+            ]
+        )
+        if args.sim_min_events is not None:
+            argv.extend(["--sim-min-events", str(args.sim_min_events)])
+        if args.sim_max_events is not None:
+            argv.extend(["--sim-max-events", str(args.sim_max_events)])
+        if args.sim_noise_rate is not None:
+            argv.extend(["--sim-noise-rate", str(args.sim_noise_rate)])
+        if args.sim_fixture_path is not None:
+            argv.extend(["--sim-fixture-path", args.sim_fixture_path])
+        if args.sim_export_review_set is not None:
+            argv.extend(["--sim-export-review-set", args.sim_export_review_set])
+        _add_bool_flag(argv, enabled=args.sim_freeze_output, flag="--sim-freeze-output")
     _add_bool_flag(argv, enabled=args.dry_run, flag="--dry-run")
     _add_bool_flag(argv, enabled=args.allow_live, flag="--allow-live")
     return run_benchmark.main(argv)
@@ -156,6 +177,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--hotpotqa-subset-size", type=int, default=3)
     parser.add_argument("--hotpotqa-question-type", choices=["bridge", "comparison"], default=None)
     parser.add_argument("--hotpotqa-diagnostics", choices=["none", "oracle"], default="none")
+    parser.add_argument("--sim-profile", choices=["smoke", "adversarial", "long_horizon"], default="smoke")
+    parser.add_argument("--sim-scenario-count", type=int, default=10)
+    parser.add_argument("--sim-min-events", type=int, default=None)
+    parser.add_argument("--sim-max-events", type=int, default=None)
+    parser.add_argument("--sim-noise-rate", type=float, default=None)
+    parser.add_argument("--sim-fixture-path", default=None)
+    parser.add_argument("--sim-freeze-output", action="store_true")
+    parser.add_argument("--sim-export-review-set", default=None)
     args = parser.parse_args(argv)
 
     if args.suite in AGGREGATE_SUITES:

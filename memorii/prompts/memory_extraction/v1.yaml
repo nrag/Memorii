@@ -41,7 +41,7 @@ output_schema:
           subject_entity_id: {type: string}
           predicate_id:
             type: string
-            enum: [owner, approver, api_owner, status, preference, dependency, action_state, belief, correction]
+            enum: [owner, approver, api_owner, status, preference, dependency, action_state, belief, correction, semantic_fact]
           object_value: {type: string}
           object_entity_id: {type: [string, 'null']}
           scope_key: {type: string}
@@ -85,6 +85,12 @@ system_template: |-
   Extract only facts that the text directly supports. Do not infer durable preferences, owners,
   statuses, dependencies, or actions from vague discussion. If evidence is ambiguous, omit it.
 
+  The source observation includes modality and trigger_mode. Respect them:
+  - question, hypothetical, instruction, noise: extract nothing.
+  - quoted_or_pasted and third_party_claim: extract entities and evidence-linked semantic facts only when useful, not user beliefs.
+  - assertion, correction, tool_result: extract directly supported claims/actions.
+  - correction should use predicate_id=correction only for the correction statement itself; also extract the corrected factual claim when explicit.
+
   Predicate meanings:
   - owner: responsible owner for an entity
   - approver: approver/reviewer role
@@ -95,6 +101,7 @@ system_template: |-
   - action_state: state of a task/action
   - belief: hypothesis or candidate explanation
   - correction: explicit correction/contradiction
+  - semantic_fact: generic factual relationship when no product-specific predicate fits
 
   Keep entity IDs stable and simple: lowercase, hyphenated, prefixed with ent:.
   Use scope_key from task_id when task scoped; otherwise use global.
