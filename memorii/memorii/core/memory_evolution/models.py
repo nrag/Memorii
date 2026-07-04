@@ -69,6 +69,38 @@ class ClaimTransitionType(str, Enum):
     EXPIRE = "expire"
     ARCHIVE = "archive"
     REOPEN = "reopen"
+    ENTITY_MERGE = "entity_merge"
+    ENTITY_SPLIT = "entity_split"
+    ENTITY_RELINK = "entity_relink"
+    CLAIM_REKEY = "claim_rekey"
+
+
+class SourceModality(str, Enum):
+    ASSERTION = "assertion"
+    CORRECTION = "correction"
+    QUOTED_OR_PASTED = "quoted_or_pasted"
+    HYPOTHETICAL = "hypothetical"
+    QUESTION = "question"
+    INSTRUCTION = "instruction"
+    TOOL_RESULT = "tool_result"
+    ASSISTANT_CLAIM = "assistant_claim"
+    THIRD_PARTY_CLAIM = "third_party_claim"
+    NOISE = "noise"
+
+
+class ExtractionTriggerMode(str, Enum):
+    IMMEDIATE = "immediate"
+    DEFERRED = "deferred"
+    BATCH_ONLY = "batch_only"
+    SKIP = "skip"
+
+
+class EntityLinkLifecycleState(str, Enum):
+    ACTIVE = "active"
+    MERGED = "merged"
+    SPLIT = "split"
+    RELINKED = "relinked"
+    INVALIDATED = "invalidated"
 
 
 class ValidationVerdict(str, Enum):
@@ -85,6 +117,43 @@ class RetrievalView(str, Enum):
     EVIDENCE_ONLY = "evidence_only"
 
 
+class MemoryGraphNodeType(str, Enum):
+    SOURCE_OBSERVATION = "source_observation"
+    ENTITY = "entity"
+    CLAIM = "claim"
+    ACTION = "action"
+    LITERAL = "literal"
+    SCOPE = "scope"
+    TASK = "task"
+    CONTRADICTION_SET = "contradiction_set"
+    REFERENCE_ENTITY = "reference_entity"
+    REFERENCE_CLAIM = "reference_claim"
+
+
+class MemoryGraphEdgeType(str, Enum):
+    OBSERVED_IN = "observed_in"
+    MENTIONS = "mentions"
+    HAS_SUBJECT = "has_subject"
+    HAS_OBJECT = "has_object"
+    HAS_LITERAL_OBJECT = "has_literal_object"
+    HAS_SCOPE = "has_scope"
+    SUPPORTS = "supports"
+    CONTRADICTS = "contradicts"
+    SUPERSEDES = "supersedes"
+    REINFORCES = "reinforces"
+    CONFLICTS_WITH = "conflicts_with"
+    ALIAS_OF = "alias_of"
+    SAME_AS = "same_as"
+    MERGED_INTO = "merged_into"
+    SPLIT_FROM = "split_from"
+    REKEYED_FROM = "rekeyed_from"
+    DEPENDS_ON = "depends_on"
+    BLOCKS = "blocks"
+    MEMBER_OF_CONTRADICTION_SET = "member_of_contradiction_set"
+    TYPED_AS = "typed_as"
+    REFERENCE_SUPPORTS = "reference_supports"
+
+
 class SourceObservation(BaseModel):
     source_id: str
     text: str
@@ -94,6 +163,8 @@ class SourceObservation(BaseModel):
     session_id: str | None = None
     task_id: str | None = None
     user_id: str | None = None
+    modality: SourceModality = SourceModality.ASSERTION
+    trigger_mode: ExtractionTriggerMode = ExtractionTriggerMode.IMMEDIATE
 
     model_config = ConfigDict(extra="forbid")
 
@@ -135,6 +206,23 @@ class EntityMention(BaseModel):
     entity_type: EntityType = EntityType.UNKNOWN
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EntityLinkState(BaseModel):
+    link_id: str
+    mention_text: str
+    canonical_entity_id: str
+    normalized_name: str
+    entity_type: EntityType = EntityType.UNKNOWN
+    aliases: list[str] = Field(default_factory=list)
+    evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    lifecycle_state: EntityLinkLifecycleState = EntityLinkLifecycleState.ACTIVE
+    superseded_by_entity_id: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(extra="forbid")
 
@@ -211,8 +299,40 @@ class ClaimState(BaseModel):
     supersedes_claim_ids: list[str] = Field(default_factory=list)
     superseded_by_claim_id: str | None = None
     conflict_with_claim_ids: list[str] = Field(default_factory=list)
+    confidence_history: list[ConfidenceUpdate] = Field(default_factory=list)
+    subject_link_id: str | None = None
+    object_link_id: str | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ConfidenceUpdate(BaseModel):
+    update_id: str
+    claim_id: str
+    prior_confidence: float = Field(ge=0.0, le=1.0)
+    new_confidence: float = Field(ge=0.0, le=1.0)
+    evidence_delta: float = 0.0
+    agreement_delta: float = 0.0
+    contradiction_delta: float = 0.0
+    source_trust_delta: float = 0.0
+    modality: SourceModality
+    rationale: str
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ContradictionSet(BaseModel):
+    contradiction_set_id: str
+    predicate_id: str
+    claim_key: ClaimKey
+    active_claim_id: str | None = None
+    conflicting_claim_ids: list[str] = Field(default_factory=list)
+    rationale: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -226,6 +346,50 @@ class ClaimLifecycleTransition(BaseModel):
     related_claim_ids: list[str] = Field(default_factory=list)
     rationale: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MemoryGraphNode(BaseModel):
+    node_id: str
+    node_type: MemoryGraphNodeType
+    label: str
+    canonical_id: str | None = None
+    lifecycle_state: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    source_record_ids: list[str] = Field(default_factory=list)
+    payload_ref: str
+    properties: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MemoryGraphEdge(BaseModel):
+    edge_id: str
+    edge_type: MemoryGraphEdgeType
+    source_node_id: str
+    target_node_id: str
+    directed: bool = True
+    lifecycle_state: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_span_ids: list[str] = Field(default_factory=list)
+    source_record_ids: list[str] = Field(default_factory=list)
+    properties: dict[str, str] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MemoryGraphSnapshot(BaseModel):
+    snapshot_id: str
+    nodes: list[MemoryGraphNode] = Field(default_factory=list)
+    edges: list[MemoryGraphEdge] = Field(default_factory=list)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    source_run_id: str | None = None
+    validation_errors: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -251,9 +415,18 @@ class MemoryEvolutionResult(BaseModel):
     entities: list[EntityMention] = Field(default_factory=list)
     claims: list[ExtractedClaim] = Field(default_factory=list)
     actions: list[ExtractedAction] = Field(default_factory=list)
+    observations: list[SourceObservation] = Field(default_factory=list)
+    entity_links: list[EntityLinkState] = Field(default_factory=list)
+    contradiction_sets: list[ContradictionSet] = Field(default_factory=list)
+    deferred_observation_ids: list[str] = Field(default_factory=list)
+    skipped_observation_ids: list[str] = Field(default_factory=list)
     validation_results: dict[str, list[ValidationResult]] = Field(default_factory=dict)
     claim_states: list[ClaimState] = Field(default_factory=list)
     transitions: list[ClaimLifecycleTransition] = Field(default_factory=list)
     written_record_ids: list[str] = Field(default_factory=list)
+    graph_nodes: list[MemoryGraphNode] = Field(default_factory=list)
+    graph_edges: list[MemoryGraphEdge] = Field(default_factory=list)
+    graph_snapshot_id: str | None = None
+    graph_validation_errors: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")

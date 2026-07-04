@@ -158,6 +158,17 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             temporal_policy=PredicateTemporalPolicy.HISTORICAL_EVENT,
             trust_precedence=[SourceType.USER, SourceType.TOOL, SourceType.ENVIRONMENT, SourceType.DERIVED],
         ),
+        PredicatePolicy(
+            predicate_id="semantic_fact",
+            description="A generic source-grounded factual relationship.",
+            value_type=ClaimValueType.TEXT,
+            cardinality=PredicateCardinality.MULTI,
+            conflict_policy=PredicateConflictPolicy.ACCUMULATE,
+            merge_policy=PredicateMergePolicy.MERGE_UNIQUE_VALUES,
+            default_scope=MemoryScope.TASK,
+            temporal_policy=PredicateTemporalPolicy.HISTORICAL_EVENT,
+            trust_precedence=strong_sources,
+        ),
     ]
 
 
@@ -166,4 +177,3 @@ def source_trust_rank(policy: PredicatePolicy, source_type: SourceType) -> int:
         return len(policy.trust_precedence) - policy.trust_precedence.index(source_type)
     except ValueError:
         return 0
-

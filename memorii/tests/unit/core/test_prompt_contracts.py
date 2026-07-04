@@ -157,6 +157,20 @@ def test_grounding_prompt_schemas_expose_required_proof_and_answer_span_diagnost
         assert key in candidate_schema["properties"]
 
 
+def test_memory_evolution_sim_prompt_distinguishes_subject_and_answer_object_entities() -> None:
+    contract = _load("memory_evolution_sim_reconstruction:v1")
+    system = contract.system_template
+
+    assert "selected_entity_role_policy" in system
+    assert "subject_entity_id" in system
+    assert "answer-object entities" in system
+    assert "what does Y own" in system
+    assert "defining identity/type/rekey fact" in system
+    assert "set operation=graph_reconstruction" in system
+    assert "Previous owners, superseded facts" in system
+    assert "active current state that the next action continues" in system
+
+
 def test_prompt_yaml_security_and_schema_strength() -> None:
     expected_keys = {"api_key", "token", "password", "secret", "authorization", "cookie"}
     for path in PROMPT_ROOT.glob("**/*.yaml"):
@@ -181,6 +195,7 @@ def test_all_prompts_render_with_expected_variables() -> None:
             "lifecycle_decision:v1": {"context_json": {}, "query": "query"},
             "execution_graph_decision:v1": {"context_json": {}, "task": "task"},
             "memory_evolution_decision:v1": {"context_json": {}, "query": "query"},
+            "memory_evolution_sim_reconstruction:v1": {"context_json": {}, "query": "query"},
             "memory_extraction:v1": {"source_observations": []},
             "retrieval_relevance:v1": {"context_json": {}, "query": "query"},
             "evidence_selection:v1": {"context_json": {}, "query": "query"},

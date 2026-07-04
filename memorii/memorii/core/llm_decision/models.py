@@ -14,6 +14,7 @@ class LLMDecisionPoint(str, Enum):
     LIFECYCLE_DECISION = "lifecycle_decision"
     EXECUTION_GRAPH_DECISION = "execution_graph_decision"
     MEMORY_EVOLUTION_DECISION = "memory_evolution_decision"
+    MEMORY_EVOLUTION_SIM_RECONSTRUCTION = "memory_evolution_sim_reconstruction"
     RETRIEVAL_RELEVANCE = "retrieval_relevance"
     EVIDENCE_SELECTION = "evidence_selection"
     GROUNDED_ANSWER = "grounded_answer"
