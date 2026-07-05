@@ -1093,3 +1093,46 @@ The implementation must be:
 - self-contained
 - rigorous enough to stand up to scrutiny from experienced ML researchers
 - concrete enough that a junior engineer can implement it without inventing benchmark semantics
+
+## Current implemented suite map
+
+This section records the benchmark suites implemented after the original benchmark design. It should be kept true to code rather than aspirational.
+
+### Contract and decision suites
+
+- `promotion_belief_v1`: decision-level promotion and belief update regression suite. Rule failures are intentionally discriminative; LLM/hybrid are expected to pass when providers are healthy.
+- `memory_lifecycle_v1`: lifecycle contract suite for stable memory behavior and semantic lifecycle traps. Intended dry/live profile is rule-discriminative and LLM/hybrid green.
+- `execution_graph_v1`: benchmark-only execution graph decision suite for branch selection, blocked dependency detection, abandoned work suppression, resumed continuation, and next-step selection.
+- `retrieval_corruption_v1`: retrieval corruption suite for high-overlap wrong facts, stale facts, scope leakage, distractors, and precision failures. It uses LLM relevance decisions in LLM/hybrid modes.
+- `memory_evolution_v1`: hand-authored end-to-end episode-chain suite for evolving facts, preferences, beliefs, and execution state over time.
+
+### External/industry parity suites
+
+- `hotpotqa_v1`: fast deterministic HotpotQA-style fixture/retrieval sanity suite.
+- `hotpotqa_official_v1`: official-compatible HotpotQA distractor-style evaluation. It writes `predictions.json` with exactly `answer` and `sp`, computes answer/support/joint metrics, and uses the generic grounded-answer pipeline.
+
+### Simulator and calibration suites
+
+- `memory_evolution_sim_v1`: latent graph simulator. It generates hidden latent graphs, exposes only surface observations, uses live LLM only as the system-under-test path, and scores outputs with deterministic programmatic judges.
+
+Current important distinction:
+
+```text
+memory_evolution_sim_v1 validates benchmark reconstruction behavior.
+memory_evolution_runtime_v1 is still needed to validate provider/runtime graph construction behavior.
+```
+
+### Planned runtime-backed suite
+
+- `memory_evolution_runtime_v1`: planned suite that should run simulator surface observations through `ProviderMemoryService` / `MemoryEvolutionService`, project the runtime graph, align runtime items to latent oracle items, and reuse judge/calibration reporting.
+
+### Reporting expectations
+
+Modern benchmark reports may include:
+
+- provider health fields: `llm_calls`, `llm_successes`, `llm_failures`, `fallbacks`, `provider_errors`
+- output source counts: `live_llm`, `fake_oracle`, `rule`
+- role-aware channel diagnostics for simulator suites
+- calibration reports and decision quality reports
+
+Calibration warnings are not automatically benchmark failures. Hidden hallucination, selected/supporting excluded IDs, required judge failures, provider/schema failures, and high-confidence wrong selected truth are the important benchmark-risk signals.

@@ -664,3 +664,82 @@ Agent calls memorii_get_next_step.
 Memorii returns the highest-value next action with evidence and rationale.
 
 This moves Memorii from a memory harness to a real memory-backed decision-state system.
+
+## Current implementation status
+
+This section records what exists in the codebase now, and where it differs from the earlier design sketch.
+
+### Implemented provider-facing pieces
+
+The provider-facing surface exists through `ProviderMemoryService` and `HermesMemoryProvider`.
+
+Implemented provider hooks include:
+
+- `prefetch`
+- `sync_turn`
+- `on_session_end`
+- `on_pre_compress`
+- `on_memory_write`
+- `on_delegation`
+
+Implemented provider tools include:
+
+- `memorii_get_state_summary`
+- `memorii_get_next_step`
+- `memorii_open_or_resume_work`
+- `memorii_record_progress`
+- `memorii_record_outcome`
+- decision-state tools for adding options, criteria, evidence, recommendations, and final decisions
+
+### Implemented state pieces
+
+Implemented state layers include:
+
+- work-state records, bindings, events, store, selector, and service
+- decision-state records and service
+- recall-state bundle models and work-state summaries
+- next-step engine with solver-frontier support when solver dependencies are configured
+- runtime memory evolution primitives
+- runtime graph projection and retrieval APIs
+
+### Current runtime evolution behavior
+
+`ProviderMemoryService` supports runtime memory evolution through `memory_evolution_enabled=True`.
+
+This path is currently opt-in. When enabled, provider transcript/source IDs are passed into `MemoryEvolutionService`, which can extract entities, claims, and actions, validate claims, update claim lifecycle state, resolve contradictions, and project graph records.
+
+Provider prefetch currently returns memory context plus work-state summaries. It does not yet fully use the runtime graph as the default current-truth retrieval mechanism.
+
+### Current next-step behavior
+
+`memorii_get_next_step` is no longer only a placeholder. It can use solver frontier planning when solver stores and planner are configured. If no solver run is resolved, it falls back to work-state-based recommendations.
+
+This means next-step behavior is useful for a pilot, but not yet a fully graph-driven decision-state planner.
+
+### Current benchmark evidence
+
+Recent benchmark work validates:
+
+- lifecycle decisions
+- retrieval corruption traps
+- execution graph decision behavior
+- hand-authored memory evolution episodes
+- HotpotQA official-style grounded QA
+- latent graph simulator reconstruction behavior
+- report-only calibration and decision quality
+
+The key remaining gap is runtime-backed graph validation. The latent graph simulator currently validates a benchmark reconstruction adapter, not the full provider-event-to-runtime-graph loop.
+
+### Updated readiness position
+
+Memorii is ready for controlled agent integration pilots with runtime evolution behind a feature flag.
+
+Memorii should not yet enable runtime memory evolution by default for all agent traffic. The gate for that is a passing `memory_evolution_runtime_v1` suite that validates:
+
+```text
+agent/provider events
+  -> runtime memory evolution
+  -> graph projection
+  -> graph-to-oracle alignment
+  -> recall / next-step behavior
+```
