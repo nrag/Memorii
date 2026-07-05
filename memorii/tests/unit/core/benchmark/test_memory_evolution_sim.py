@@ -157,6 +157,44 @@ def test_memory_evolution_sim_smoke_profile_does_not_create_hidden_latent_items(
     assert hidden_ids == set()
 
 
+def test_memory_evolution_sim_visible_claim_relation_evidence_matches_exposing_observation() -> None:
+    scenarios = generate_memory_evolution_sim_scenarios(
+        profile="adversarial", scenario_count=10, seed=19, noise_rate=0.35
+    )
+    for scenario in scenarios:
+        exposed_claim_events: dict[str, set[str]] = {}
+        exposed_relation_events: dict[str, set[str]] = {}
+        for observation in scenario.observations:
+            for claim_id in observation.exposed_claim_ids:
+                exposed_claim_events.setdefault(claim_id, set()).add(observation.event_id)
+            for relation_id in observation.exposed_relation_ids:
+                exposed_relation_events.setdefault(relation_id, set()).add(observation.event_id)
+        for claim in scenario.claims:
+            if claim.claim_id not in exposed_claim_events or claim.observability == ObservabilityLabel.HIDDEN:
+                continue
+            assert set(claim.evidence.source_event_ids) & exposed_claim_events[claim.claim_id], claim.claim_id
+        for relation in scenario.relations:
+            if relation.relation_id not in exposed_relation_events or relation.observability == ObservabilityLabel.HIDDEN:
+                continue
+            assert set(relation.provenance.source_event_ids) & exposed_relation_events[relation.relation_id], relation.relation_id
+
+
+def test_memory_evolution_sim_seed_19_conflict_evidence_uses_ambiguity_event_not_noise() -> None:
+    scenario = generate_memory_evolution_sim_scenarios(
+        profile="adversarial", scenario_count=4, seed=19, noise_rate=0.35
+    )[3]
+    context = sim_reconstruction_context_for_checkpoint(scenario=scenario, checkpoint=scenario.checkpoints[0])
+    ambiguous_claim = next(claim for claim in context.visible_claims if claim.claim_id == "claim_03_ambiguous_service_owner_atlas")
+    conflict_relation = next(relation for relation in context.visible_relations if relation.relation_id == "rel_03_owner_conflict")
+
+    assert ambiguous_claim.evidence_event_ids == ["event_03_006"]
+    assert conflict_relation.evidence_event_ids == ["event_03_006"]
+    assert "standup" in ambiguous_claim.evidence_quote
+    assert "standup" in conflict_relation.evidence_quote
+    assert all("_noise_" not in event_id for event_id in ambiguous_claim.evidence_event_ids)
+    assert all("_noise_" not in event_id for event_id in conflict_relation.evidence_event_ids)
+
+
 def test_memory_evolution_sim_uses_role_stable_ids_not_seeded_names() -> None:
     scenarios = generate_memory_evolution_sim_scenarios(profile="smoke", scenario_count=10, seed=19)
     all_ids = [

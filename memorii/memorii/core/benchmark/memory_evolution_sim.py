@@ -414,6 +414,7 @@ class SimOutputNormalization(BaseModel):
     auto_closed_selected_entity_ids: list[str] = Field(default_factory=list)
     auto_closed_rejected_entity_ids: list[str] = Field(default_factory=list)
     auto_closed_context_entity_ids: list[str] = Field(default_factory=list)
+    auto_closed_context_relation_ids: list[str] = Field(default_factory=list)
     auto_promoted_selected_claim_ids: list[str] = Field(default_factory=list)
     auto_promoted_supporting_claim_ids: list[str] = Field(default_factory=list)
     auto_promoted_supporting_citation_event_ids: list[str] = Field(default_factory=list)
@@ -644,6 +645,31 @@ class LatentGraphScenario(BaseModel):
         claim_ids = {item.claim_id for item in self.claims}
         relation_ids = {item.relation_id for item in self.relations}
         event_ids = {item.event_id for item in self.observations}
+        exposed_claims_by_event: dict[str, set[str]] = {}
+        exposed_relations_by_event: dict[str, set[str]] = {}
+        for observation in self.observations:
+            for claim_id in observation.exposed_claim_ids:
+                exposed_claims_by_event.setdefault(claim_id, set()).add(observation.event_id)
+            for relation_id in observation.exposed_relation_ids:
+                exposed_relations_by_event.setdefault(relation_id, set()).add(observation.event_id)
+        for claim in self.claims:
+            if claim.observability == ObservabilityLabel.HIDDEN:
+                continue
+            exposed_events = exposed_claims_by_event.get(claim.claim_id, set())
+            evidence_events = set(claim.evidence.source_event_ids)
+            if exposed_events and not (evidence_events & exposed_events):
+                raise ValueError(
+                    f"claim {claim.claim_id} evidence does not reference an observation that exposes it"
+                )
+        for relation in self.relations:
+            if relation.observability == ObservabilityLabel.HIDDEN:
+                continue
+            exposed_events = exposed_relations_by_event.get(relation.relation_id, set())
+            evidence_events = set(relation.provenance.source_event_ids)
+            if exposed_events and not (evidence_events & exposed_events):
+                raise ValueError(
+                    f"relation {relation.relation_id} evidence does not reference an observation that exposes it"
+                )
         for checkpoint in self.checkpoints:
             if set(checkpoint.expected_entity_ids) - entity_ids:
                 raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown entities")
@@ -846,6 +872,7 @@ def _checkpoint_contract_for_type(checkpoint_type: str) -> dict[str, object]:
         "excluded_ids_must_be_rejected_or_contextualized": True,
         "definition_claims_required_in_selected": False,
         "supporting_citations_must_be_direct_current_evidence": True,
+        "conflict_relation_ids_belong_in": ["context_relation_ids"],
     }
     overrides: dict[str, dict[str, object]] = {
         "entity_reconstruction": {
@@ -860,6 +887,9 @@ def _checkpoint_contract_for_type(checkpoint_type: str) -> dict[str, object]:
         },
         "entity_split_repair": {
             "wrong_entity_claims_belong_in": ["rejected", "context"],
+        },
+        "source_trust_conflict": {
+            "conflict_relation_ids_belong_in": ["context_relation_ids", "supporting_relation_ids"],
         },
         "claim_rekey": {
             "allowed_operations": ["graph_reconstruction"],
@@ -982,6 +1012,10 @@ def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSyste
     selected_relation_ids = list(checkpoint.expected_relation_ids)
     supporting_claim_ids = list(checkpoint.expected_claim_ids)
     supporting_relation_ids = list(checkpoint.expected_relation_ids)
+    if checkpoint.checkpoint_type == "source_trust_conflict":
+        selected_relation_ids = []
+        supporting_relation_ids = []
+        context_relation_ids = _ordered_unique([*context_relation_ids, *checkpoint.expected_relation_ids])
     supporting_citation_event_ids = list(checkpoint.expected_citation_event_ids)
     return SimSystemOutput(
         operation=operation,
@@ -1032,6 +1066,7 @@ def normalize_sim_system_output_for_checkpoint(
     rejected_entity_ids = list(output.rejected_entity_ids)
     rejected_claim_ids = list(output.rejected_claim_ids)
     context_entity_ids = list(output.context_entity_ids)
+    context_relation_ids = list(output.context_relation_ids)
 
     auto_selected_entities: list[str] = []
     auto_rejected_entities: list[str] = []
@@ -1040,6 +1075,7 @@ def normalize_sim_system_output_for_checkpoint(
     auto_supporting_claims: list[str] = []
     auto_supporting_events: list[str] = []
     auto_rejected_claims: list[str] = []
+    auto_context_relations: list[str] = []
     reason_codes: list[str] = []
 
     def add_once(items: list[str], item: str, added: list[str], reason: str | None = None) -> None:
@@ -1056,6 +1092,12 @@ def normalize_sim_system_output_for_checkpoint(
         claim.claim_id
         for claim in scenario.claims
         if claim.observability != ObservabilityLabel.HIDDEN and _is_visible_claim(scenario, claim.claim_id)
+    }
+    visible_relations = {
+        relation.relation_id
+        for relation in scenario.relations
+        if relation.observability != ObservabilityLabel.HIDDEN
+        and any(relation.relation_id in observation.exposed_relation_ids for observation in scenario.observations)
     }
     selected_or_supporting_claims = set(selected_claim_ids) | set(supporting_claim_ids)
 
@@ -1136,6 +1178,28 @@ def normalize_sim_system_output_for_checkpoint(
         if subject_entity_id not in context_entity_ids:
             add_once(context_entity_ids, subject_entity_id, auto_context_entities, "context_claim_subject_closed")
 
+    role_claim_ids = set(selected_claim_ids) | set(supporting_claim_ids) | set(rejected_claim_ids) | set(output.context_claim_ids)
+    role_relation_ids = (
+        set(output.selected_relation_ids)
+        | set(output.supporting_relation_ids)
+        | set(output.rejected_relation_ids)
+        | set(context_relation_ids)
+    )
+    for relation in scenario.relations:
+        if relation.relation_id not in visible_relations or relation.relation_id in role_relation_ids:
+            continue
+        if relation.relation_type not in {"contradicts", "corrects", "supersedes"}:
+            continue
+        if relation.source.endpoint_type != "claim" or relation.target.endpoint_type != "claim":
+            continue
+        if relation.source.endpoint_id in role_claim_ids and relation.target.endpoint_id in role_claim_ids:
+            add_once(
+                context_relation_ids,
+                relation.relation_id,
+                auto_context_relations,
+                "visible_conflict_relation_closed_from_claim_channels",
+            )
+
     normalized = output.model_copy(
         update={
             "selected_entity_ids": _ordered_unique(selected_entity_ids),
@@ -1145,6 +1209,7 @@ def normalize_sim_system_output_for_checkpoint(
             "rejected_entity_ids": _ordered_unique(rejected_entity_ids),
             "rejected_claim_ids": _ordered_unique(rejected_claim_ids),
             "context_entity_ids": _ordered_unique(context_entity_ids),
+            "context_relation_ids": _ordered_unique(context_relation_ids),
         }
     )
     normalized = SimSystemOutput.model_validate(normalized.model_dump(mode="json"))
@@ -1157,10 +1222,12 @@ def normalize_sim_system_output_for_checkpoint(
             or auto_supporting_claims
             or auto_supporting_events
             or auto_rejected_claims
+            or auto_context_relations
         ),
         auto_closed_selected_entity_ids=_ordered_unique(auto_selected_entities),
         auto_closed_rejected_entity_ids=_ordered_unique(auto_rejected_entities),
         auto_closed_context_entity_ids=_ordered_unique(auto_context_entities),
+        auto_closed_context_relation_ids=_ordered_unique(auto_context_relations),
         auto_promoted_selected_claim_ids=_ordered_unique(auto_selected_claims),
         auto_promoted_supporting_claim_ids=_ordered_unique(auto_supporting_claims),
         auto_promoted_supporting_citation_event_ids=_ordered_unique(auto_supporting_events),
@@ -1390,14 +1457,14 @@ def judge_sim_checkpoint(
             checkpoint,
             expected=checkpoint.expected_relation_ids,
             actual=_role_relation_ids(output),
-            bucket="claim_rekey_error",
+            bucket=_relation_bucket(checkpoint),
         ),
         _set_judge(
             "support_contradiction_judge",
             checkpoint,
             expected=checkpoint.expected_relation_ids,
             actual=_role_relation_ids(output),
-            bucket="belief_dependency_not_degraded",
+            bucket=_relation_bucket(checkpoint),
         ),
         _set_judge(
             "scope_judge",
@@ -2345,6 +2412,8 @@ def _failure_classifications(
         classifications.add("wrong_output_shape")
     if missing.get("relation_ids"):
         visible_relations = {item for obs in scenario.observations for item in obs.exposed_relation_ids}
+        if checkpoint.checkpoint_type == "source_trust_conflict":
+            classifications.add("missing_conflict_relation")
         if all(item in visible_relations for item in missing["relation_ids"]):
             classifications.add("missing_visible_relation")
         else:
@@ -2799,6 +2868,8 @@ def _build_family_scenario(
             )
         )
 
+    ambiguity_observation = next((obs for obs in observations if obs.event_id == f"event_{suffix}_006"), None)
+
     _add_noise_observations(
         observations=observations,
         suffix=suffix,
@@ -2917,10 +2988,10 @@ def _build_family_scenario(
             predicate_id="owner",
             object_value=service_owner_name,
             object_entity_id=carol,
-            event_id=observations[-1].event_id,
-            quote=observations[-1].text,
-            transition_id=observations[-1].transition_id,
-            timestamp=observations[-1].timestamp,
+            event_id=ambiguity_observation.event_id if ambiguity_observation is not None else event_5,
+            quote=ambiguity_observation.text if ambiguity_observation is not None else observations[4].text,
+            transition_id=ambiguity_observation.transition_id if ambiguity_observation is not None else observations[4].transition_id,
+            timestamp=ambiguity_observation.timestamp if ambiguity_observation is not None else observations[4].timestamp,
             state=SimLifecycleState.INVALIDATED,
             roles=["modality_suppression", "conflict_detection"],
             observability=ObservabilityLabel.AMBIGUOUS,
@@ -2974,14 +3045,18 @@ def _build_family_scenario(
                 label=f"{current_owner_name} owns Atlas migration",
             ),
             directionality="directed",
-            temporal=RelationTemporal(valid_from=observations[-1].timestamp),
+            temporal=RelationTemporal(valid_from=(ambiguity_observation.timestamp if ambiguity_observation is not None else observations[4].timestamp)),
             lifecycle_state=SimLifecycleState.ACTIVE,
-            evidence_spans=[_span(observations[-1].event_id, observations[-1].text, "contradiction_support")],
+            evidence_spans=[_span(
+                ambiguity_observation.event_id if ambiguity_observation is not None else event_5,
+                ambiguity_observation.text if ambiguity_observation is not None else observations[4].text,
+                "contradiction_support",
+            )],
             provenance=RelationProvenance(
-                transition_id=observations[-1].transition_id,
-                source_event_ids=[observations[-1].event_id],
-                source_modality=observations[-1].modality,
-                source_trust=observations[-1].trust_level,
+                transition_id=ambiguity_observation.transition_id if ambiguity_observation is not None else observations[4].transition_id,
+                source_event_ids=[ambiguity_observation.event_id if ambiguity_observation is not None else event_5],
+                source_modality=ambiguity_observation.modality if ambiguity_observation is not None else observations[4].modality,
+                source_trust=ambiguity_observation.trust_level if ambiguity_observation is not None else observations[4].trust_level,
             ),
             confidence=_confidence(0.8),
             observability=ObservabilityLabel.OBSERVED,
@@ -3532,6 +3607,16 @@ def _confidence(score: float) -> LatentConfidence:
         band="low" if score < 0.40 else "medium" if score < 0.75 else "high",
         rationale="deterministic simulator confidence",
     )
+
+
+def _relation_bucket(checkpoint: OracleCheckpoint) -> str:
+    if checkpoint.checkpoint_type == "source_trust_conflict":
+        return "missing_conflict_relation"
+    if checkpoint.checkpoint_type == "belief_ranking":
+        return "belief_dependency_not_degraded"
+    if checkpoint.checkpoint_type in {"entity_reconstruction", "claim_rekey"}:
+        return "claim_rekey_error"
+    return "missing_relation"
 
 
 def _claim_bucket(checkpoint: OracleCheckpoint) -> str:
