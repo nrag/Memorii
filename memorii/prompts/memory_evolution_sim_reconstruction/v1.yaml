@@ -141,7 +141,8 @@ system_template: |-
   - Include citation_event_ids that directly support the selected answer or next action.
   - Include direct support citations in supporting_citation_event_ids. Do not put noisy, stale pasted, or third-party ambiguity events in supporting_citation_event_ids unless the query explicitly asks for that evidence.
   - Use uncertain_ids when evidence is ambiguous instead of overcommitting.
-  - For source-trust conflict and entity split/rekey checkpoints, include visible contradiction/correction relation IDs when present.
+  - For source-trust conflict checkpoints, include visible contradiction/conflict relation IDs in context_relation_ids or supporting_relation_ids when present. These relation IDs explain why lower-trust or ambiguous claims were rejected; they are audit/conflict context, not the winning ownership claim.
+  - For entity split/rekey checkpoints, include visible contradiction/correction relation IDs when present.
   - For belief_ranking checkpoints, set operation=graph_reconstruction, populate belief_ranking_ids in best-to-worst order, put only the winner in selected_claim_ids, and put lower-ranked alternatives in rejected_* or context_*.
   - For execution_continuation checkpoints, set operation=next_action, answer=null, and populate next_action. Also populate selected_claim_ids, selected_entity_ids, supporting_claim_ids, and supporting_citation_event_ids with the active current state that the next action continues.
   - For entity_reconstruction checkpoints, set operation=graph_reconstruction; put active entity/type/role facts in selected/supporting and invalidated or contradicted facts in rejected/context.

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from memorii.core.belief.models import BeliefUpdateContext
 from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
+from memorii.core.calibration.reports import build_calibration_artifacts
 from memorii.core.benchmark.execution_graph_decision import (
     ExecutionGraphDecisionContext,
     ExecutionGraphScenario,
@@ -1757,6 +1758,7 @@ def _run_memory_evolution_sim_transitions(
                 "auto_closed_selected_entity_ids": normalization.auto_closed_selected_entity_ids,
                 "auto_closed_rejected_entity_ids": normalization.auto_closed_rejected_entity_ids,
                 "auto_closed_context_entity_ids": normalization.auto_closed_context_entity_ids,
+                "auto_closed_context_relation_ids": normalization.auto_closed_context_relation_ids,
                 "auto_promoted_selected_claim_ids": normalization.auto_promoted_selected_claim_ids,
                 "auto_promoted_supporting_claim_ids": normalization.auto_promoted_supporting_claim_ids,
                 "auto_promoted_supporting_citation_event_ids": normalization.auto_promoted_supporting_citation_event_ids,
@@ -1782,6 +1784,7 @@ def _run_memory_evolution_sim_transitions(
                 "precision_failure_classification": diagnostics["precision_failure_classification"],
                 "required_judge_ids": diagnostics["required_judge_ids"],
                 "expected": checkpoint.model_dump(mode="json"),
+                "candidate_cards": context.model_dump(mode="json"),
                 "raw_output": raw_output_json,
                 "normalized_output": output_json,
                 "output": output_json,
@@ -1937,6 +1940,11 @@ def _write_memory_evolution_sim_artifacts(
             "selected_pollution_count": float(selected_pollution_count),
         }
     )
+    calibration_events, calibration_report, calibration_slices, decision_cost_report = build_calibration_artifacts(
+        suite=suite,
+        profile=args.sim_profile,
+        checkpoint_rows=checkpoint_rows,
+    )
     report = {
         "suite": suite,
         "mode": mode,
@@ -1963,6 +1971,8 @@ def _write_memory_evolution_sim_artifacts(
         "fallbacks": fallbacks,
         "final_output_source_counts": dict(sorted(final_output_source_counts.items())),
         "metrics": base_metrics,
+        "calibration": calibration_report.model_dump(mode="json"),
+        "decision_quality": decision_cost_report.model_dump(mode="json"),
         "failure_bucket_counts": dict(sorted(failure_bucket_counts.items())),
         "critical_failure_bucket_counts": dict(sorted(failure_bucket_counts.items())),
         "warning_bucket_counts": dict(sorted(warning_bucket_counts.items())),
@@ -1998,6 +2008,19 @@ def _write_memory_evolution_sim_artifacts(
     )
     _write_jsonl(run_dir / "candidate_cards.jsonl", candidate_card_payload)
     _write_jsonl(run_dir / "sim_checkpoint_results.jsonl", checkpoint_rows)
+    _write_jsonl(run_dir / "calibration_events.jsonl", [event.model_dump(mode="json") for event in calibration_events])
+    (run_dir / "calibration_report.json").write_text(
+        json.dumps(calibration_report.model_dump(mode="json"), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (run_dir / "slice_calibration_report.json").write_text(
+        json.dumps(calibration_slices, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (run_dir / "decision_quality_report.json").write_text(
+        json.dumps(decision_cost_report.model_dump(mode="json"), indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     _write_jsonl(run_dir / "judge_votes.jsonl", [vote for row in judge_rows for vote in row.get("votes", [])])
     (run_dir / "judge_aggregate.json").write_text(
         json.dumps(judge_rows, indent=2, sort_keys=True),

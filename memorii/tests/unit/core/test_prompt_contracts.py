@@ -168,6 +168,8 @@ def test_memory_evolution_sim_prompt_distinguishes_subject_and_answer_object_ent
     assert "defining identity/type/rekey fact" in system
     assert "set operation=graph_reconstruction" in system
     assert "Previous owners, superseded facts" in system
+    assert "context_relation_ids or supporting_relation_ids" in system
+    assert "lower-trust or ambiguous claims were rejected" in system
     assert "active current state that the next action continues" in system
 
 
