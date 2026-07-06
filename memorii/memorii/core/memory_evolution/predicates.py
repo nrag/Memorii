@@ -159,6 +159,17 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             trust_precedence=[SourceType.USER, SourceType.TOOL, SourceType.ENVIRONMENT, SourceType.DERIVED],
         ),
         PredicatePolicy(
+            predicate_id="entity_type",
+            description="The semantic type of an entity, such as project, service, or person.",
+            value_type=ClaimValueType.TEXT,
+            cardinality=PredicateCardinality.SINGLE,
+            conflict_policy=PredicateConflictPolicy.SUPERSEDE_BY_TRUST_AND_TIME,
+            merge_policy=PredicateMergePolicy.REINFORCE_SAME_VALUE,
+            default_scope=MemoryScope.GLOBAL,
+            temporal_policy=PredicateTemporalPolicy.CURRENT_VALUE,
+            trust_precedence=strong_sources,
+        ),
+        PredicatePolicy(
             predicate_id="semantic_fact",
             description="A generic source-grounded factual relationship.",
             value_type=ClaimValueType.TEXT,

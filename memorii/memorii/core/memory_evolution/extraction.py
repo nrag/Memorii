@@ -60,6 +60,8 @@ class RuleMemoryExtractor:
             claims.extend(obs_claims)
             actions.extend(obs_actions)
 
+        entity_list = list(entities.values())
+        claims = _canonicalize_claim_arguments(claims, entity_list)
         run = ExtractionRun(
             extraction_run_id=run_id,
             provider=self.provider,
@@ -72,7 +74,7 @@ class RuleMemoryExtractor:
             validation_summary={},
             errors=errors,
         )
-        return run, list(entities.values()), claims, actions
+        return run, entity_list, claims, actions
 
     def _extract_observation(
         self,
@@ -180,13 +182,16 @@ class LLMMemoryExtractor:
         self.model = result.response.model
         self.prompt_hash = result.request.prompt_hash
         if not result.success or result.output is None:
+            errors = [result.failure_mode or "llm_extraction_failed"]
+            if result.response.error:
+                errors.append(result.response.error)
             run = ExtractionRun(
                 extraction_run_id=run_id,
                 provider=self.provider,
                 model=result.response.model,
                 prompt_hash=result.request.prompt_hash,
                 input_source_ids=[obs.source_id for obs in observations],
-                errors=[result.failure_mode or "llm_extraction_failed"],
+                errors=errors,
             )
             return run, [], [], []
         return _models_from_llm_output(
@@ -231,22 +236,37 @@ class HybridMemoryExtractor:
 
 def _extract_fact_matches(text: str) -> list[tuple[str, str, str, str]]:
     patterns: list[tuple[str, str]] = [
-        ("api_owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:API\s+owner|api\s+owner)\s*(?:is|:)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("approver", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+approver\s*(?:is|:)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+owner\s*(?:is|:)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
+        ("api_owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:API\s+owner|api\s+owner)\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
+        ("approver", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+approver\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
+        ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+owner\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
         ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+ownership\s+(?:in\s+\w+\s+)?(?:belonged to|belongs to)\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("status", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:state|status)\s*(?:is|:)\s*(?P<value>failed|succeeded|blocked|running|done|active|inactive)"),
+        ("owner", r"(?P<value>[A-Z][A-Za-z0-9 _:-]+?)\s+owns\s+(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)(?=\s+for now|\s+currently|[.,;]|$)"),
+        ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?:project|service|task|workstream)\b\s+owned\s+by\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
+        ("entity_type", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?P<value>project|service|task|incident|document|preference)\b"),
+        ("status", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:state|status)\s*(?:is|:|=)\s*(?P<value>failed|succeeded|blocked|running|done|active|inactive)"),
         ("status", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:deploy|deployment)\s+(?P<value>failed|succeeded)"),
         ("preference", r"(?:prefers|preference is|style is)\s+(?P<value>[a-z][A-Za-z0-9 _:-]+)"),
     ]
     matches: list[tuple[str, str, str, str]] = []
+    seen: set[tuple[str, str, str, str]] = set()
     for predicate, pattern in patterns:
-        for match in re.finditer(pattern, text, re.IGNORECASE):
-            subject = match.groupdict().get("subject") or "user"
-            value = match.group("value").strip(" .")
+        for match in re.finditer(pattern, text):
+            subject = _clean_extracted_value(match.groupdict().get("subject") or "user")
+            value = _clean_extracted_value(match.group("value"))
             quote = match.group(0).strip(" .")
-            matches.append((predicate, subject.strip(" ."), value, quote))
+            key = (predicate, subject.lower(), value.lower(), quote.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            matches.append((predicate, subject, value, quote))
     return matches
+
+
+def _clean_extracted_value(value: str) -> str:
+    cleaned = re.sub(r"^(?:the|a|an)\s+", "", value.strip(" .:"), flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+for now$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+currently$", "", cleaned, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", cleaned).strip(" .:")
 
 
 def _models_from_llm_output(
@@ -267,7 +287,7 @@ def _models_from_llm_output(
     for idx, item in enumerate(_list_output(output, "entities")):
         try:
             source_id = str(item.get("source_id") or "")
-            observation = observation_by_id[source_id]
+            observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
             span = _span(observation=observation, quote=str(item.get("quote") or item.get("mention_text") or ""))
             entities.append(
                 EntityMention(
@@ -280,12 +300,12 @@ def _models_from_llm_output(
                 )
             )
         except Exception as exc:
-            errors.append(f"entity[{idx}]: {type(exc).__name__}")
+            errors.append(f"entity[{idx}]: {type(exc).__name__}:{exc}")
 
     for idx, item in enumerate(_list_output(output, "claims")):
         try:
             source_id = str(item.get("source_id") or "")
-            observation = observation_by_id[source_id]
+            observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
             predicate_id = str(item["predicate_id"])
             subject_entity_id = str(item["subject_entity_id"])
             object_value = str(item["object_value"]).strip()
@@ -297,15 +317,43 @@ def _models_from_llm_output(
                 qualifier_key=str(item.get("qualifier_key") or "default"),
             )
             confidence = float(item.get("confidence", 0.6))
+            object_entity_id = str(item["object_entity_id"]) if item.get("object_entity_id") else None
+            raw_claim_id = str(item.get("claim_id") or "").strip()
+            qualifiers = {str(key): str(value) for key, value in dict(item.get("qualifiers") or {}).items()}
+            valid_from, valid_from_normalization = _parse_dt_with_normalization(item.get("valid_from"))
+            valid_to, valid_to_normalization = _parse_dt_with_normalization(item.get("valid_to"))
+            if valid_from_normalization:
+                qualifiers.setdefault("valid_from_date_normalization", valid_from_normalization)
+                qualifiers.setdefault("date_normalization", valid_from_normalization)
+            if valid_to_normalization:
+                qualifiers.setdefault("valid_to_date_normalization", valid_to_normalization)
+                qualifiers.setdefault("date_normalization", valid_to_normalization)
+            if raw_claim_id:
+                qualifiers.setdefault("model_claim_id", raw_claim_id)
+            claim_id = _stable_id(
+                "claim",
+                "|".join(
+                    [
+                        run_id,
+                        observation.source_id,
+                        predicate_id,
+                        subject_entity_id,
+                        object_value,
+                        object_entity_id or "",
+                        claim_key.scope_key,
+                        claim_key.qualifier_key,
+                    ]
+                ),
+            )
             claims.append(
                 ExtractedClaim(
-                    claim_id=str(item.get("claim_id") or _stable_id("claim", f"{run_id}:{source_id}:{predicate_id}:{subject_entity_id}:{object_value}")),
+                    claim_id=claim_id,
                     claim_key=claim_key,
                     object_value=object_value,
-                    object_entity_id=str(item["object_entity_id"]) if item.get("object_entity_id") else None,
-                    qualifiers={str(key): str(value) for key, value in dict(item.get("qualifiers") or {}).items()},
-                    valid_from=_parse_dt(item.get("valid_from")) or observation.timestamp,
-                    valid_to=_parse_dt(item.get("valid_to")),
+                    object_entity_id=object_entity_id,
+                    qualifiers=qualifiers,
+                    valid_from=valid_from or observation.timestamp,
+                    valid_to=valid_to,
                     evidence_spans=[span],
                     confidence=ConfidenceComponents(
                         extraction=confidence,
@@ -317,21 +365,28 @@ def _models_from_llm_output(
                 )
             )
         except Exception as exc:
-            errors.append(f"claim[{idx}]: {type(exc).__name__}")
+            errors.append(f"claim[{idx}]: {type(exc).__name__}:{exc}")
 
     for idx, item in enumerate(_list_output(output, "actions")):
         try:
             source_id = str(item.get("source_id") or "")
-            observation = observation_by_id[source_id]
+            observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
             quote = str(item.get("quote") or item.get("status") or item.get("action_type") or "")
             span = _span(observation=observation, quote=quote)
+            action_type = str(item["action_type"])
+            target_entity_ids = [str(value) for value in item.get("target_entity_ids", [])]
+            status = str(item["status"])
+            action_id = _stable_id(
+                "action",
+                "|".join([run_id, observation.source_id, action_type, "|".join(target_entity_ids), status]),
+            )
             actions.append(
                 ExtractedAction(
-                    action_id=str(item.get("action_id") or _stable_id("action", f"{run_id}:{source_id}:{item.get('action_type')}:{item.get('status')}")),
+                    action_id=action_id,
                     actor_entity_id=str(item["actor_entity_id"]) if item.get("actor_entity_id") else None,
-                    action_type=str(item["action_type"]),
-                    target_entity_ids=[str(value) for value in item.get("target_entity_ids", [])],
-                    status=str(item["status"]),
+                    action_type=action_type,
+                    target_entity_ids=target_entity_ids,
+                    status=status,
                     dependency_ids=[str(value) for value in item.get("dependency_ids", [])],
                     blocking_ids=[str(value) for value in item.get("blocking_ids", [])],
                     timestamp=_parse_dt(item.get("timestamp")) or observation.timestamp,
@@ -340,8 +395,9 @@ def _models_from_llm_output(
                 )
             )
         except Exception as exc:
-            errors.append(f"action[{idx}]: {type(exc).__name__}")
+            errors.append(f"action[{idx}]: {type(exc).__name__}:{exc}")
 
+    claims = _canonicalize_claim_arguments(claims, entities)
     run = ExtractionRun(
         extraction_run_id=run_id,
         provider=provider,
@@ -354,6 +410,82 @@ def _models_from_llm_output(
         errors=errors,
     )
     return run, entities, claims, actions
+
+
+def _canonicalize_claim_arguments(claims: list[ExtractedClaim], entities: list[EntityMention]) -> list[ExtractedClaim]:
+    entities_by_id = {entity.entity_id: entity for entity in entities}
+    return [_canonicalize_claim_argument(claim, entities_by_id) for claim in claims]
+
+
+def _canonicalize_claim_argument(claim: ExtractedClaim, entities_by_id: dict[str, EntityMention]) -> ExtractedClaim:
+    if claim.claim_key.predicate_id != "owner" or not claim.object_entity_id:
+        return claim
+
+    subject = entities_by_id.get(claim.claim_key.subject_entity_id)
+    obj = entities_by_id.get(claim.object_entity_id)
+    if not _looks_like_inverse_owner_claim(subject=subject, obj=obj):
+        return claim
+
+    original_subject_id = claim.claim_key.subject_entity_id
+    original_object_entity_id = claim.object_entity_id
+    original_object_value = claim.object_value
+    object_value = _entity_display_name(subject, fallback=original_subject_id)
+    source_id = claim.evidence_spans[0].source_id if claim.evidence_spans else ""
+    new_claim_key = claim.claim_key.model_copy(update={"subject_entity_id": original_object_entity_id})
+    qualifiers = {
+        **claim.qualifiers,
+        "argument_normalization": "owner_inverse_subject_object_swap",
+        "original_subject_entity_id": original_subject_id,
+        "original_object_entity_id": original_object_entity_id,
+        "original_object_value": original_object_value,
+    }
+    claim_id = _stable_id(
+        "claim",
+        "|".join(
+            [
+                claim.extraction_run_id,
+                source_id,
+                new_claim_key.predicate_id,
+                new_claim_key.subject_entity_id,
+                object_value,
+                original_subject_id,
+                new_claim_key.scope_key,
+                new_claim_key.qualifier_key,
+            ]
+        ),
+    )
+    return claim.model_copy(
+        update={
+            "claim_id": claim_id,
+            "claim_key": new_claim_key,
+            "object_value": object_value,
+            "object_entity_id": original_subject_id,
+            "qualifiers": qualifiers,
+        }
+    )
+
+
+def _looks_like_inverse_owner_claim(*, subject: EntityMention | None, obj: EntityMention | None) -> bool:
+    if subject is None or obj is None:
+        return False
+    owner_types = {EntityType.PERSON}
+    owned_types = {EntityType.PROJECT, EntityType.SERVICE, EntityType.TASK, EntityType.PREFERENCE}
+    return subject.entity_type in owner_types and obj.entity_type in owned_types
+
+
+def _entity_display_name(entity: EntityMention | None, *, fallback: str) -> str:
+    if entity is not None and entity.mention_text.strip():
+        return entity.mention_text.strip()
+    return fallback.removeprefix("ent:").replace("-", " ").title()
+
+
+def _resolve_observation(*, source_id: str, observation_by_id: dict[str, SourceObservation]) -> SourceObservation:
+    observation = observation_by_id.get(source_id)
+    if observation is not None:
+        return observation
+    if len(observation_by_id) == 1:
+        return next(iter(observation_by_id.values()))
+    raise KeyError(source_id)
 
 
 def _list_output(output: dict[str, object], key: str) -> list[dict[str, object]]:
@@ -371,14 +503,25 @@ def _entity_type(value: str) -> EntityType:
 
 
 def _parse_dt(value: object) -> datetime | None:
+    parsed, _ = _parse_dt_with_normalization(value)
+    return parsed
+
+
+def _parse_dt_with_normalization(value: object) -> tuple[datetime | None, str | None]:
     if value in {None, ""}:
-        return None
+        return None, None
     if isinstance(value, datetime):
-        return value
+        return (value if value.tzinfo is not None else value.replace(tzinfo=UTC)), None
     if isinstance(value, str):
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-    return None
+        stripped = value.strip()
+        quarter_match = re.fullmatch(r"(\d{4})-Q([1-4])", stripped, flags=re.IGNORECASE)
+        if quarter_match:
+            year = int(quarter_match.group(1))
+            month = {"1": 1, "2": 4, "3": 7, "4": 10}[quarter_match.group(2)]
+            return datetime(year, month, 1, tzinfo=UTC), "quarter_start"
+        parsed = datetime.fromisoformat(stripped.replace("Z", "+00:00"))
+        return (parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)), None
+    return None, None
 
 
 def _span(*, observation: SourceObservation, quote: str) -> EvidenceSpan:

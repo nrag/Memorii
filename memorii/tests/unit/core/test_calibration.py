@@ -147,7 +147,7 @@ def test_calibration_artifacts_emit_hierarchy_and_label_provenance() -> None:
     assert decision_report.regret_total == 0.0
 
 
-def test_calibration_partial_context_events_are_not_treated_as_high_confidence_failures() -> None:
+def test_calibration_context_events_in_passing_rows_are_correct_audit_evidence() -> None:
     rows = [
         {
             "scenario_id": "scenario",
@@ -171,10 +171,44 @@ def test_calibration_partial_context_events_are_not_treated_as_high_confidence_f
     )
 
     context_event = next(event for event in events if event.item_id == "claim_context")
-    assert context_event.label == CalibrationLabel.PARTIAL
-    assert context_event.confidence == 0.5
+    assert context_event.label == CalibrationLabel.CORRECT
+    assert context_event.confidence == 0.95
     assert report.overconfident_wrong_count == 0
+    assert report.overall_accuracy == 1.0
 
+
+
+def test_calibration_rejected_expected_item_is_incorrect_but_rejected_excluded_is_correct() -> None:
+    rows = [
+        {
+            "scenario_id": "scenario",
+            "checkpoint_id": "checkpoint",
+            "checkpoint_type": "current_truth",
+            "success": True,
+            "failure_buckets": [],
+            "output": {
+                "confidence": 0.9,
+                "rejected_claim_ids": ["claim_current", "claim_old"],
+            },
+            "expected": {
+                "expected_claim_ids": ["claim_current"],
+                "expected_excluded_claim_ids": ["claim_old"],
+            },
+            "judge_aggregate": {"votes": [{"judge_id": "rejection_classification_judge"}]},
+        }
+    ]
+
+    events, _report, _slices, _decision_report = build_calibration_artifacts(
+        suite="memory_evolution_sim_v1",
+        profile="adversarial",
+        checkpoint_rows=rows,
+    )
+
+    current = next(event for event in events if event.item_id == "claim_current")
+    old = next(event for event in events if event.item_id == "claim_old")
+    assert current.label == CalibrationLabel.INCORRECT
+    assert "expected_item_rejected" in current.failure_buckets
+    assert old.label == CalibrationLabel.CORRECT
 
 def test_calibration_artifacts_mark_excluded_support_as_oracle_failure() -> None:
     rows = [

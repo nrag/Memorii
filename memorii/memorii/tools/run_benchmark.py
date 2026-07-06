@@ -60,6 +60,12 @@ from memorii.core.benchmark.memory_evolution_sim import (
     sim_metrics_from_rows,
     sim_reconstruction_context_for_checkpoint,
 )
+from memorii.core.benchmark.memory_evolution_runtime import (
+    run_runtime_scenarios,
+    runtime_summary_metrics,
+    runtime_warning_policy,
+    write_runtime_artifacts,
+)
 from memorii.core.benchmark.retrieval_relevance_decision import (
     RetrievalRelevanceContext,
     expected_retrieval_relevance_decision_for_fixture,
@@ -1901,6 +1907,26 @@ def _write_memory_evolution_sim_artifacts(
     latent_graph_json = json.dumps(fixture_payload, indent=2, sort_keys=True)
     surface_rows = [observation.model_dump(mode="json") for scenario in scenarios for observation in scenario.observations]
     checkpoint_payload = [checkpoint.model_dump(mode="json") for scenario in scenarios for checkpoint in scenario.checkpoints]
+    validation_scenario_catalog = [
+        {
+            "scenario_id": scenario.scenario_id,
+            "family": scenario.family,
+            "profile": scenario.profile,
+            "observation_count": len(scenario.observations),
+            "checkpoint_count": len(scenario.checkpoints),
+            "checkpoint_types": sorted({checkpoint.checkpoint_type for checkpoint in scenario.checkpoints}),
+            "difficulty_tags": sorted({tag for checkpoint in scenario.checkpoints for tag in checkpoint.difficulty_tags}),
+            "hidden_item_count": sum(
+                1
+                for collection_name in ("entities", "claims", "relations")
+                for item in getattr(scenario, collection_name)
+                if getattr(item, "observability", None) == "hidden"
+            ),
+            "observed_claim_count": sum(1 for claim in scenario.claims if getattr(claim, "observability", None) == "observed"),
+            "inferable_claim_count": sum(1 for claim in scenario.claims if getattr(claim, "observability", None) == "inferable"),
+        }
+        for scenario in scenarios
+    ]
     candidate_card_payload = [
         sim_reconstruction_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint).model_dump(mode="json")
         for scenario in scenarios
@@ -1961,6 +1987,7 @@ def _write_memory_evolution_sim_artifacts(
             "candidate_cards": hashlib.sha256(candidate_card_jsonl.encode("utf-8")).hexdigest(),
         },
         "scenario_count": len(scenario_rows),
+        "validation_scenario_catalog": validation_scenario_catalog,
         "event_count": sum(len(scenario.observations) for scenario in scenarios),
         "checkpoint_count": len(checkpoint_rows),
         "passed": passed,
@@ -2007,6 +2034,10 @@ def _write_memory_evolution_sim_artifacts(
         checkpoint_payload,
     )
     _write_jsonl(run_dir / "candidate_cards.jsonl", candidate_card_payload)
+    (run_dir / "validation_scenario_catalog.json").write_text(
+        json.dumps(validation_scenario_catalog, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
     _write_jsonl(run_dir / "sim_checkpoint_results.jsonl", checkpoint_rows)
     _write_jsonl(run_dir / "calibration_events.jsonl", [event.model_dump(mode="json") for event in calibration_events])
     (run_dir / "calibration_report.json").write_text(
@@ -2092,6 +2123,7 @@ def _sim_warning_examples(checkpoint_rows: list[dict[str, object]]) -> list[dict
                     "checkpoint_id": row.get("checkpoint_id"),
                     "checkpoint_type": row.get("checkpoint_type"),
                     "warning_bucket": "graph_answer_optional_missing",
+                    "warning_buckets": ["graph_answer_optional_missing"],
                     "reason": "answer text is optional for this checkpoint; structured graph/action channels are authoritative",
                     "selected_claim_ids": output.get("selected_claim_ids", []),
                     "selected_entity_ids": output.get("selected_entity_ids", []),
@@ -2104,6 +2136,7 @@ def _sim_warning_examples(checkpoint_rows: list[dict[str, object]]) -> list[dict
                     "checkpoint_id": row.get("checkpoint_id"),
                     "checkpoint_type": row.get("checkpoint_type"),
                     "warning_bucket": "extra_context_provenance",
+                    "warning_buckets": ["extra_context_provenance"],
                     "reason": "context/audit evidence is broader than selected support but is not selected or supporting truth",
                     "context_claim_ids": output.get("context_claim_ids", []),
                     "context_entity_ids": output.get("context_entity_ids", []),
@@ -2124,6 +2157,7 @@ def _sim_warning_examples(checkpoint_rows: list[dict[str, object]]) -> list[dict
                             "checkpoint_id": row.get("checkpoint_id"),
                             "checkpoint_type": row.get("checkpoint_type"),
                             "warning_bucket": bucket,
+                            "warning_buckets": [bucket],
                             "reason": vote.get("rationale", "warning emitted by passing judge"),
                             "failed_ids": vote.get("failed_ids", []),
                             "covered_ids": vote.get("covered_ids", []),
@@ -2204,6 +2238,59 @@ def _run_memory_evolution_sim_suite(args: argparse.Namespace, *, prompt_root: Pa
         )
     return 0
 
+
+
+
+def _run_memory_evolution_runtime_suite(args: argparse.Namespace, *, prompt_root: Path) -> int:
+    scenarios, fixture_source = _load_memory_evolution_sim_suite(args)
+    modes = ["rule", "llm", "hybrid"] if args.mode == "all" else [args.mode]
+    for mode in modes:
+        runtime_rows = run_runtime_scenarios(
+            scenarios=scenarios,
+            mode=mode,
+            dry_run=args.dry_run,
+            allow_live=args.allow_live,
+            prompt_root=prompt_root,
+        )
+        run_dir = _write_memory_evolution_sim_artifacts(
+            scenarios=scenarios,
+            scenario_rows=runtime_rows.scenario_rows,
+            checkpoint_rows=runtime_rows.checkpoint_rows,
+            judge_rows=runtime_rows.judge_rows,
+            llm_rows=runtime_rows.llm_rows,
+            suite=args.suite,
+            mode=mode,
+            storage_root=args.storage_root,
+            fixture_source=fixture_source,
+            args=args,
+        )
+        write_runtime_artifacts(run_dir=run_dir, rows=runtime_rows)
+        summary = runtime_summary_metrics(runtime_rows)
+        report_path = run_dir / "report.json"
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            report.setdefault("runtime", {}).update(summary)
+            if isinstance(summary.get("runtime_graph_summary"), dict):
+                report["runtime_graph_summary"] = summary["runtime_graph_summary"]
+            if isinstance(summary.get("runtime_graph_alignments_summary"), dict):
+                report["runtime_graph_alignments_summary"] = summary["runtime_graph_alignments_summary"]
+            report["warning_policy"] = runtime_warning_policy()
+            scalar_summary = {key: value for key, value in summary.items() if not isinstance(value, dict)}
+            report["metrics"] = {**report.get("metrics", {}), **scalar_summary}
+            report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+        except OSError:
+            pass
+        _print_memory_evolution_sim_summary(
+            suite=args.suite,
+            mode=mode,
+            profile=args.sim_profile,
+            run_dir=run_dir,
+            scenarios=scenarios,
+            scenario_rows=runtime_rows.scenario_rows,
+            checkpoint_rows=runtime_rows.checkpoint_rows,
+            llm_rows=runtime_rows.llm_rows,
+        )
+    return 0
 
 def _role_eligible_proof_citation_ids(decision: EvidenceSelectionDecision) -> list[str]:
     final_support_roles = {
@@ -2743,6 +2830,7 @@ def main(argv: list[str] | None = None) -> int:
             "execution_graph_v1",
             "memory_evolution_v1",
             "memory_evolution_sim_v1",
+            "memory_evolution_runtime_v1",
             "retrieval_corruption_v1",
             "hotpotqa_v1",
             "hotpotqa_official_v1",
@@ -2786,6 +2874,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.systems == "all":
             raise SystemExit("memory_evolution_sim_v1 currently supports --systems memorii only")
         return _run_memory_evolution_sim_suite(args, prompt_root=prompt_root)
+    if args.suite == "memory_evolution_runtime_v1":
+        if args.systems == "all":
+            raise SystemExit("memory_evolution_runtime_v1 currently supports --systems memorii only")
+        return _run_memory_evolution_runtime_suite(args, prompt_root=prompt_root)
     if args.suite == "hotpotqa_official_v1":
         if args.systems == "all":
             raise SystemExit("hotpotqa_official_v1 currently supports --systems memorii only")

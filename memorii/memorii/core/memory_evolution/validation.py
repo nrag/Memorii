@@ -162,7 +162,7 @@ class MemoryEvolutionValidator:
         predicate = claim.claim_key.predicate_id
         text = _source_text_for_claim(claim, observation_by_id)
         support_terms = {
-            "owner": ["owner", "ownership", "belongs to", "belonged to"],
+            "owner": ["owner", "owns", "owned", "ownership", "belongs to", "belonged to"],
             "approver": ["approver", "approval"],
             "api_owner": ["api owner", "api_owner"],
             "status": ["status", "state", "deploy", "deployment", "failed", "succeeded", "blocked"],
@@ -171,6 +171,7 @@ class MemoryEvolutionValidator:
             "action_state": ["started", "blocked", "resumed", "abandoned", "completed", "failed", "succeeded"],
             "belief": ["hypothesis", "belief", "root cause", "candidate"],
             "correction": ["correction", "actually", "not", "instead", "should be"],
+            "entity_type": ["is", "project", "service", "type", "workstream"],
             "semantic_fact": [],
         }.get(predicate, [])
         if not support_terms or any(term in text for term in support_terms):
