@@ -18,6 +18,7 @@ from memorii.core.memory_evolution import (
     SourceModalityClassifier,
     build_memory_extractor_from_env,
 )
+from memorii.core.memory_evolution.extraction import _models_from_llm_output
 from memorii.core.memory_evolution.models import ConfidenceComponents
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -210,6 +211,313 @@ def test_source_modality_classifier_identifies_non_assertions() -> None:
             }
         )
     ) == SourceModality.HYPOTHETICAL
+
+
+def test_rule_extractor_handles_runtime_fact_phrasings() -> None:
+    extractor = RuleMemoryExtractor()
+    observations = [
+        validator_source_from_dict(
+            {
+                "source_id": "tx:owns",
+                "text": "Marta owns Atlas for now.",
+                "source_type": SourceType.USER,
+                "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+                "task_id": "task:evolution",
+            }
+        ),
+        validator_source_from_dict(
+            {
+                "source_id": "tx:eq",
+                "text": "org_directory result: Atlas billing migration owner = Nadia.",
+                "source_type": SourceType.TOOL,
+                "timestamp": datetime(2026, 3, 1, tzinfo=UTC),
+                "task_id": "task:evolution",
+            }
+        ),
+        validator_source_from_dict(
+            {
+                "source_id": "tx:type",
+                "text": "The Atlas workstream is the Q2 billing migration project owned by Finance Ops.",
+                "source_type": SourceType.USER,
+                "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+                "task_id": "task:evolution",
+            }
+        ),
+    ]
+
+    _, entities, claims, _ = extractor.extract(observations)
+
+    claim_pairs = {(claim.claim_key.subject_entity_id, claim.claim_key.predicate_id, claim.object_value) for claim in claims}
+    assert ("ent:atlas", "owner", "Marta") in claim_pairs
+    assert ("ent:atlas-billing-migration", "owner", "Nadia") in claim_pairs
+    assert any(claim.claim_key.predicate_id == "entity_type" and claim.object_value.lower() == "project" for claim in claims)
+    assert {entity.entity_id for entity in entities} >= {"ent:atlas", "ent:marta", "ent:atlas-billing-migration", "ent:nadia"}
+
+
+def test_llm_extraction_rekeys_model_local_claim_and_action_ids() -> None:
+    observations = [
+        validator_source_from_dict(
+            {
+                "source_id": "tx:one",
+                "text": "Atlas owner is Alice.",
+                "source_type": SourceType.USER,
+                "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+            }
+        ),
+        validator_source_from_dict(
+            {
+                "source_id": "tx:two",
+                "text": "Atlas owner is Bob.",
+                "source_type": SourceType.USER,
+                "timestamp": datetime(2026, 2, 1, tzinfo=UTC),
+            }
+        ),
+    ]
+    output = {
+        "entities": [],
+        "claims": [
+            {
+                "claim_id": "claim1",
+                "subject_entity_id": "ent:atlas",
+                "predicate_id": "owner",
+                "object_value": "Alice",
+                "object_entity_id": "ent:alice",
+                "scope_key": "global",
+                "qualifier_key": "default",
+                "qualifiers": {},
+                "valid_from": None,
+                "valid_to": None,
+                "source_id": "tx:one",
+                "quote": "Atlas owner is Alice",
+                "confidence": 0.8,
+            },
+            {
+                "claim_id": "claim1",
+                "subject_entity_id": "ent:atlas",
+                "predicate_id": "owner",
+                "object_value": "Bob",
+                "object_entity_id": "ent:bob",
+                "scope_key": "global",
+                "qualifier_key": "default",
+                "qualifiers": {},
+                "valid_from": None,
+                "valid_to": None,
+                "source_id": "tx:two",
+                "quote": "Atlas owner is Bob",
+                "confidence": 0.8,
+            },
+        ],
+        "actions": [
+            {
+                "action_id": "action1",
+                "actor_entity_id": None,
+                "action_type": "work_state",
+                "target_entity_ids": ["ent:atlas"],
+                "status": "blocked",
+                "dependency_ids": [],
+                "blocking_ids": [],
+                "timestamp": None,
+                "source_id": "tx:one",
+                "quote": "Atlas",
+            },
+            {
+                "action_id": "action1",
+                "actor_entity_id": None,
+                "action_type": "work_state",
+                "target_entity_ids": ["ent:atlas"],
+                "status": "resumed",
+                "dependency_ids": [],
+                "blocking_ids": [],
+                "timestamp": None,
+                "source_id": "tx:two",
+                "quote": "Atlas",
+            },
+        ],
+    }
+
+    run, _, claims, actions = _models_from_llm_output(
+        run_id="run:llm-local-ids",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=observations,
+        output=output,
+    )
+
+    assert run.errors == []
+    assert len({claim.claim_id for claim in claims}) == 2
+    assert all(claim.claim_id != "claim1" for claim in claims)
+    assert {claim.qualifiers["model_claim_id"] for claim in claims} == {"claim1"}
+    assert len({action.action_id for action in actions}) == 2
+    assert all(action.action_id != "action1" for action in actions)
+
+
+def test_llm_extraction_canonicalizes_inverse_owner_claim_arguments() -> None:
+    observations = [
+        validator_source_from_dict(
+            {
+                "source_id": "tx:owns",
+                "text": "Iris owns Atlas Service.",
+                "source_type": SourceType.USER,
+                "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+            }
+        )
+    ]
+    output = {
+        "entities": [
+            {
+                "entity_id": "ent:iris",
+                "mention_text": "Iris",
+                "normalized_name": "iris",
+                "entity_type": "person",
+                "source_id": "tx:owns",
+                "quote": "Iris",
+                "confidence": 0.8,
+            },
+            {
+                "entity_id": "ent:atlas-service",
+                "mention_text": "Atlas Service",
+                "normalized_name": "atlas service",
+                "entity_type": "service",
+                "source_id": "tx:owns",
+                "quote": "Atlas Service",
+                "confidence": 0.8,
+            },
+        ],
+        "claims": [
+            {
+                "claim_id": "claim_inverse_owner",
+                "subject_entity_id": "ent:iris",
+                "predicate_id": "owner",
+                "object_value": "Atlas Service",
+                "object_entity_id": "ent:atlas-service",
+                "scope_key": "global",
+                "qualifier_key": "default",
+                "qualifiers": {},
+                "valid_from": None,
+                "valid_to": None,
+                "source_id": "tx:owns",
+                "quote": "Iris owns Atlas Service",
+                "confidence": 0.8,
+            }
+        ],
+        "actions": [],
+    }
+
+    run, _, claims, _ = _models_from_llm_output(
+        run_id="run:inverse-owner",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=observations,
+        output=output,
+    )
+
+    assert run.errors == []
+    assert len(claims) == 1
+    claim = claims[0]
+    assert claim.claim_key.subject_entity_id == "ent:atlas-service"
+    assert claim.object_entity_id == "ent:iris"
+    assert claim.object_value == "Iris"
+    assert claim.qualifiers["argument_normalization"] == "owner_inverse_subject_object_swap"
+
+
+
+
+def test_llm_extraction_normalizes_quarter_valid_from() -> None:
+    observations = [
+        validator_source_from_dict(
+            {
+                "source_id": "tx:quarter",
+                "text": "Atlas owner is Bob in Q2.",
+                "source_type": SourceType.USER,
+                "timestamp": datetime(2026, 5, 1, tzinfo=UTC),
+            }
+        )
+    ]
+    output = {
+        "entities": [],
+        "claims": [
+            {
+                "claim_id": "claim_quarter",
+                "subject_entity_id": "ent:atlas",
+                "predicate_id": "owner",
+                "object_value": "Bob",
+                "object_entity_id": "ent:bob",
+                "scope_key": "global",
+                "qualifier_key": "default",
+                "qualifiers": {},
+                "valid_from": "2026-Q2",
+                "valid_to": None,
+                "source_id": "tx:quarter",
+                "quote": "Atlas owner is Bob",
+                "confidence": 0.8,
+            }
+        ],
+        "actions": [],
+    }
+
+    run, _, claims, _ = _models_from_llm_output(
+        run_id="run:quarter-date",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=observations,
+        output=output,
+    )
+
+    assert run.errors == []
+    assert len(claims) == 1
+    assert claims[0].valid_from == datetime(2026, 4, 1, tzinfo=UTC)
+    assert claims[0].qualifiers["date_normalization"] == "quarter_start"
+    assert claims[0].qualifiers["valid_from_date_normalization"] == "quarter_start"
+
+
+def test_llm_extraction_invalid_date_still_fails_claim() -> None:
+    observations = [
+        validator_source_from_dict(
+            {
+                "source_id": "tx:bad-date",
+                "text": "Atlas owner is Bob sometime later.",
+                "source_type": SourceType.USER,
+                "timestamp": datetime(2026, 5, 1, tzinfo=UTC),
+            }
+        )
+    ]
+    output = {
+        "entities": [],
+        "claims": [
+            {
+                "claim_id": "claim_bad_date",
+                "subject_entity_id": "ent:atlas",
+                "predicate_id": "owner",
+                "object_value": "Bob",
+                "object_entity_id": "ent:bob",
+                "scope_key": "global",
+                "qualifier_key": "default",
+                "qualifiers": {},
+                "valid_from": "Q2 2026-ish",
+                "valid_to": None,
+                "source_id": "tx:bad-date",
+                "quote": "Atlas owner is Bob",
+                "confidence": 0.8,
+            }
+        ],
+        "actions": [],
+    }
+
+    run, _, claims, _ = _models_from_llm_output(
+        run_id="run:bad-date",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=observations,
+        output=output,
+    )
+
+    assert claims == []
+    assert run.errors
+    assert "Invalid isoformat" in run.errors[0]
 
 
 def test_current_and_historical_truth_are_both_addressable() -> None:

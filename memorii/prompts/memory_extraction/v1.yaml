@@ -41,12 +41,15 @@ output_schema:
           subject_entity_id: {type: string}
           predicate_id:
             type: string
-            enum: [owner, approver, api_owner, status, preference, dependency, action_state, belief, correction, semantic_fact]
+            enum: [owner, approver, api_owner, status, preference, dependency, action_state, belief, correction, entity_type, semantic_fact]
           object_value: {type: string}
           object_entity_id: {type: [string, 'null']}
           scope_key: {type: string}
           qualifier_key: {type: string}
-          qualifiers: {type: object}
+          qualifiers:
+            type: object
+            additionalProperties: false
+            properties: {}
           valid_from: {type: [string, 'null']}
           valid_to: {type: [string, 'null']}
           source_id: {type: string}
@@ -101,7 +104,17 @@ system_template: |-
   - action_state: state of a task/action
   - belief: hypothesis or candidate explanation
   - correction: explicit correction/contradiction
+  - entity_type: type/classification of an entity, e.g. project, service, person, task
   - semantic_fact: generic factual relationship when no product-specific predicate fits
+
+  Direct extraction examples:
+  - "Atlas billing migration owner = Nadia" -> owner claim with subject Atlas billing migration and object Nadia.
+  - "Atlas service is the internal platform service" -> entity_type claim with object service.
+  - "Atlas workstream is the Q2 billing migration project" -> entity_type claim with object project.
+  - "Marta owns Atlas" -> owner claim where Atlas is the owned subject and Marta is the owner object.
+  - "Iris owns Atlas Service" -> owner claim with subject Atlas Service and object Iris; do not make Iris the subject.
+
+  For each observation, copy the exact source_id from that observation. If there is one source observation, every extracted item must use that source_id.
 
   Keep entity IDs stable and simple: lowercase, hyphenated, prefixed with ent:.
   Use scope_key from task_id when task scoped; otherwise use global.

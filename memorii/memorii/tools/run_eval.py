@@ -18,6 +18,7 @@ BENCHMARK_SUITES = {
     "execution_graph_v1",
     "memory_evolution_v1",
     "memory_evolution_sim_v1",
+    "memory_evolution_runtime_v1",
     "retrieval_corruption_v1",
     "hotpotqa_v1",
     "hotpotqa_official_v1",
@@ -97,7 +98,7 @@ def _run_benchmark_suite(args: argparse.Namespace) -> int:
             argv.extend(["--hotpotqa-question-type", args.hotpotqa_question_type])
         if args.suite == "hotpotqa_official_v1":
             argv.extend(["--hotpotqa-diagnostics", args.hotpotqa_diagnostics])
-    if args.suite == "memory_evolution_sim_v1":
+    if args.suite in {"memory_evolution_sim_v1", "memory_evolution_runtime_v1"}:
         argv.extend(
             [
                 "--sim-profile",

@@ -65,8 +65,8 @@ def calibration_events_from_checkpoint_rows(
             (CalibrationDecisionChannel.SUPPORTING, "supporting_claim_ids", CalibrationItemType.CLAIM, "expected_claim_ids"),
             (CalibrationDecisionChannel.SUPPORTING, "supporting_relation_ids", CalibrationItemType.RELATION, "expected_relation_ids"),
             (CalibrationDecisionChannel.SUPPORTING, "supporting_citation_event_ids", CalibrationItemType.SOURCE_OBSERVATION, "expected_citation_event_ids"),
-            (CalibrationDecisionChannel.REJECTED, "rejected_entity_ids", CalibrationItemType.ENTITY, "expected_excluded_entity_ids"),
-            (CalibrationDecisionChannel.REJECTED, "rejected_claim_ids", CalibrationItemType.CLAIM, "expected_excluded_claim_ids"),
+            (CalibrationDecisionChannel.REJECTED, "rejected_entity_ids", CalibrationItemType.ENTITY, "expected_entity_ids"),
+            (CalibrationDecisionChannel.REJECTED, "rejected_claim_ids", CalibrationItemType.CLAIM, "expected_claim_ids"),
             (CalibrationDecisionChannel.REJECTED, "rejected_relation_ids", CalibrationItemType.RELATION, "expected_relation_ids"),
             (CalibrationDecisionChannel.CONTEXT, "context_entity_ids", CalibrationItemType.ENTITY, "expected_entity_ids"),
             (CalibrationDecisionChannel.CONTEXT, "context_claim_ids", CalibrationItemType.CLAIM, "expected_claim_ids"),
@@ -367,17 +367,31 @@ def _label_for_item(
     row_success: bool,
     base_failure_buckets: list[str],
 ) -> tuple[CalibrationLabel, CalibrationLabelSource, str, list[str]]:
-    if item_id in excluded_ids and channel in {CalibrationDecisionChannel.SELECTED, CalibrationDecisionChannel.SUPPORTING}:
-        return CalibrationLabel.INCORRECT, CalibrationLabelSource.LATENT_ORACLE, "excluded item appeared in selected/supporting channel", [*base_failure_buckets, "stale_memory_selected"]
-    if channel == CalibrationDecisionChannel.REJECTED and item_id in excluded_ids:
-        return CalibrationLabel.CORRECT, CalibrationLabelSource.LATENT_ORACLE, "excluded item was rejected", []
-    if expected_ids and item_id in expected_ids:
-        return CalibrationLabel.CORRECT, CalibrationLabelSource.LATENT_ORACLE, "item matched expected oracle id", []
+    if channel in {CalibrationDecisionChannel.SELECTED, CalibrationDecisionChannel.SUPPORTING}:
+        if item_id in excluded_ids:
+            return CalibrationLabel.INCORRECT, CalibrationLabelSource.LATENT_ORACLE, "excluded item appeared in selected/supporting channel", [*base_failure_buckets, "stale_memory_selected"]
+        if expected_ids and item_id in expected_ids:
+            return CalibrationLabel.CORRECT, CalibrationLabelSource.LATENT_ORACLE, "item matched expected oracle id in answer-bearing channel", []
+        if row_success and not base_failure_buckets:
+            return CalibrationLabel.CORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item was accepted as selected/supporting by programmatic judges", []
+        return CalibrationLabel.INCORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item did not match selected/supporting channel semantics", list(base_failure_buckets)
+    if channel == CalibrationDecisionChannel.REJECTED:
+        if item_id in excluded_ids:
+            return CalibrationLabel.CORRECT, CalibrationLabelSource.LATENT_ORACLE, "excluded item was correctly rejected", []
+        if expected_ids and item_id in expected_ids:
+            return CalibrationLabel.INCORRECT, CalibrationLabelSource.LATENT_ORACLE, "expected item was incorrectly rejected", [*base_failure_buckets, "expected_item_rejected"]
+        if row_success and not base_failure_buckets:
+            return CalibrationLabel.CORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item was accepted as rejected audit evidence by programmatic judges", []
+        return CalibrationLabel.INCORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item did not match rejected channel semantics", list(base_failure_buckets)
     if channel == CalibrationDecisionChannel.CONTEXT:
-        return CalibrationLabel.PARTIAL, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "context item is diagnostic provenance rather than final truth", []
+        if row_success and not base_failure_buckets:
+            return CalibrationLabel.CORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "context item was accepted as audit evidence without being answer support", []
+        if item_id in excluded_ids:
+            return CalibrationLabel.PARTIAL, CalibrationLabelSource.LATENT_ORACLE, "excluded item appeared only as context during a failed checkpoint", list(base_failure_buckets)
+        return CalibrationLabel.INCORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "context item appeared in a failed checkpoint", list(base_failure_buckets)
     if row_success and not base_failure_buckets:
-        return CalibrationLabel.PARTIAL, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item was accepted by programmatic judges but not directly expected", []
-    return CalibrationLabel.INCORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item did not match expected channel semantics", list(base_failure_buckets)
+        return CalibrationLabel.CORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item was accepted by programmatic judges", []
+    return CalibrationLabel.INCORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item did not match channel semantics", list(base_failure_buckets)
 
 
 def _abstained_event(*, suite: str, profile: str, row: dict[str, object], index: int, confidence: float, judge_ids: list[str]) -> CalibrationEvent:

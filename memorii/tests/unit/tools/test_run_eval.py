@@ -345,3 +345,39 @@ def test_run_eval_suite_all_runs_promotion_belief_and_lifecycle(
     assert "suite=retrieval_corruption_v1" in output
     assert "suite=execution_graph_v1" in output
     assert not (tmp_path / "benchmark_runs" / "memory_evolution_v1").exists()
+
+
+def test_run_eval_routes_memory_evolution_runtime_suite(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    assert main(
+        [
+            "--suite",
+            "memory_evolution_runtime_v1",
+            "--mode",
+            "llm",
+            "--dry-run",
+            "--storage-root",
+            str(tmp_path),
+            "--sim-profile",
+            "adversarial",
+            "--sim-scenario-count",
+            "10",
+            "--sim-noise-rate",
+            "0.35",
+            "--seed",
+            "7",
+        ]
+    ) == 0
+
+    output = capsys.readouterr().out
+    run_dir = sorted((tmp_path / "benchmark_runs" / "memory_evolution_runtime_v1" / "llm").glob("bench-*"))[-1]
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    fields = _summary_fields(output, suite="memory_evolution_runtime_v1")
+
+    assert fields["profile"] == "adversarial"
+    assert int(fields["scenarios"]) == report["scenario_count"]
+    assert int(fields["checkpoints"]) == report["checkpoint_count"]
+    assert report["passed"] == 10
+    assert (run_dir / "runtime_graph_alignments.jsonl").exists()

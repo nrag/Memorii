@@ -157,6 +157,16 @@ def test_grounding_prompt_schemas_expose_required_proof_and_answer_span_diagnost
         assert key in candidate_schema["properties"]
 
 
+def test_memory_extraction_prompt_schema_is_strict_for_openai() -> None:
+    contract = _load("memory_extraction:v1")
+    claim_schema = contract.output_schema["properties"]["claims"]["items"]
+    qualifiers_schema = claim_schema["properties"]["qualifiers"]
+
+    assert qualifiers_schema["type"] == "object"
+    assert qualifiers_schema["additionalProperties"] is False
+    assert qualifiers_schema["properties"] == {}
+
+
 def test_memory_evolution_sim_prompt_distinguishes_subject_and_answer_object_entities() -> None:
     contract = _load("memory_evolution_sim_reconstruction:v1")
     system = contract.system_template
