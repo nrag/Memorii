@@ -336,6 +336,7 @@ class SurfaceObservation(BaseModel):
     timestamp: datetime
     source_type: Literal["user", "assistant", "tool", "verified_observation", "transcript"]
     modality: str
+    phase: Literal["setup", "interference", "evolution", "dormancy", "checkpoint"] = "setup"
     trust_level: int = Field(ge=0, le=5)
     text: str
     exposed_entity_ids: list[str] = Field(default_factory=list)
@@ -352,6 +353,7 @@ class VisibleSurfaceObservation(BaseModel):
     timestamp: datetime
     source_type: Literal["user", "assistant", "tool", "verified_observation", "transcript"]
     modality: str
+    phase: Literal["setup", "interference", "evolution", "dormancy", "checkpoint"] = "setup"
     trust_level: int = Field(ge=0, le=5)
     text: str
     exposed_entity_ids: list[str] = Field(default_factory=list)
@@ -395,6 +397,7 @@ class OracleCheckpoint(BaseModel):
     expected_entity_ids: list[str] = Field(default_factory=list)
     expected_claim_ids: list[str] = Field(default_factory=list)
     expected_relation_ids: list[str] = Field(default_factory=list)
+    expected_action_ids: list[str] = Field(default_factory=list)
     expected_citation_event_ids: list[str] = Field(default_factory=list)
     expected_excluded_entity_ids: list[str] = Field(default_factory=list)
     expected_excluded_claim_ids: list[str] = Field(default_factory=list)
@@ -405,6 +408,20 @@ class OracleCheckpoint(BaseModel):
     difficulty_tags: list[str] = Field(default_factory=list)
     required_judge_ids: list[str] = Field(default_factory=list)
     severity: Literal["low", "medium", "high", "critical"] = "medium"
+    horizon_distance: int = 0
+    interference_count: int = 0
+    source_event_age_days: float = 0.0
+    required_retrieval_view: Literal["current", "historical_at", "all_versions", "conflicts", "evidence_only"] = "current"
+    expected_stage_path: list[Literal["extraction", "validation", "lifecycle_evolution", "graph_projection", "alignment", "retrieval_decision"]] = Field(
+        default_factory=lambda: [
+            "extraction",
+            "validation",
+            "lifecycle_evolution",
+            "graph_projection",
+            "alignment",
+            "retrieval_decision",
+        ]
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -511,6 +528,7 @@ class VisibleEventCandidate(BaseModel):
     timestamp: datetime
     source_type: str
     modality: str
+    phase: str = "setup"
     trust_level: int
     text: str
 
@@ -572,6 +590,11 @@ class VisibleCheckpointCandidate(BaseModel):
     query_or_task: str
     difficulty_tags: list[str] = Field(default_factory=list)
     severity: str
+    horizon_distance: int = 0
+    interference_count: int = 0
+    source_event_age_days: float = 0.0
+    required_retrieval_view: str = "current"
+    stage_path: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -761,6 +784,7 @@ def sim_reconstruction_context_for_checkpoint(
             timestamp=obs.timestamp,
             source_type=obs.source_type,
             modality=obs.modality,
+            phase=obs.phase,
             trust_level=obs.trust_level,
             text=obs.text,
         )
@@ -832,6 +856,7 @@ def sim_reconstruction_context_for_checkpoint(
                 timestamp=obs.timestamp,
                 source_type=obs.source_type,
                 modality=obs.modality,
+                phase=obs.phase,
                 trust_level=obs.trust_level,
                 text=obs.text,
                 exposed_entity_ids=obs.exposed_entity_ids,
@@ -847,6 +872,11 @@ def sim_reconstruction_context_for_checkpoint(
             query_or_task=checkpoint.query_or_task,
             difficulty_tags=checkpoint.difficulty_tags,
             severity=checkpoint.severity,
+            horizon_distance=checkpoint.horizon_distance,
+            interference_count=checkpoint.interference_count,
+            source_event_age_days=checkpoint.source_event_age_days,
+            required_retrieval_view=checkpoint.required_retrieval_view,
+            stage_path=list(checkpoint.expected_stage_path),
         ),
         difficulty_tags=checkpoint.difficulty_tags,
         visible_entity_ids=visible_entity_ids,
@@ -859,6 +889,13 @@ def sim_reconstruction_context_for_checkpoint(
         metadata={
             "discriminative": scenario.discriminative,
             "checkpoint_contract": _checkpoint_contract_for_type(checkpoint.checkpoint_type),
+            "long_horizon": {
+                "horizon_distance": checkpoint.horizon_distance,
+                "interference_count": checkpoint.interference_count,
+                "source_event_age_days": checkpoint.source_event_age_days,
+                "required_retrieval_view": checkpoint.required_retrieval_view,
+                "stage_path": list(checkpoint.expected_stage_path),
+            },
         },
     )
 
@@ -2757,6 +2794,12 @@ def _build_family_scenario(
     claim_bob_owner = f"claim_{suffix}_current_owner"
     claim_carol_service = f"claim_{suffix}_service_owner"
     claim_ambiguous = f"claim_{suffix}_ambiguous_service_owner_atlas"
+    branch_a = f"ent_{suffix}_branch_a"
+    branch_b = f"ent_{suffix}_branch_b"
+    claim_branch_a_started = f"claim_{suffix}_branch_a_started"
+    claim_branch_a_blocked = f"claim_{suffix}_branch_a_blocked"
+    claim_branch_b_started = f"claim_{suffix}_branch_b_started"
+    claim_branch_b_progress = f"claim_{suffix}_branch_b_progress"
     relation_contradicts = f"rel_{suffix}_owner_conflict"
     relation_alias = f"rel_{suffix}_alias"
 
@@ -2767,6 +2810,7 @@ def _build_family_scenario(
             timestamp=base,
             source_type="user",
             modality="assertion",
+            phase="setup",
             trust_level=3,
             text=rng.choice([
                 "Atlas is the Q2 billing migration project for Finance Ops.",
@@ -2783,6 +2827,7 @@ def _build_family_scenario(
             timestamp=base + timedelta(minutes=5),
             source_type="user",
             modality="assertion",
+            phase="setup",
             trust_level=3,
             text=f"{old_owner_name} owns Atlas for now.",
             exposed_entity_ids=[project, alice],
@@ -2794,6 +2839,7 @@ def _build_family_scenario(
             timestamp=base + timedelta(days=4),
             source_type="user",
             modality="assertion",
+            phase="interference",
             trust_level=3,
             text=f"Separate note: Atlas service is the internal platform service, and {service_owner_name} owns that service.",
             exposed_entity_ids=[service, carol],
@@ -2805,6 +2851,7 @@ def _build_family_scenario(
             timestamp=base + timedelta(days=46),
             source_type="user",
             modality="quoted_or_pasted",
+            phase="interference",
             trust_level=1,
             text=f"Pasting old onboarding notes: Atlas owner is {old_owner_name}. This might be stale.",
             exposed_entity_ids=[project, alice],
@@ -2816,6 +2863,7 @@ def _build_family_scenario(
             timestamp=base + timedelta(days=66),
             source_type="tool",
             modality="tool_result",
+            phase="evolution",
             trust_level=5,
             text=f"org_directory result: Atlas billing migration owner = {current_owner_name}.",
             exposed_entity_ids=[project, bob],
@@ -2836,6 +2884,7 @@ def _build_family_scenario(
                 timestamp=base + timedelta(days=67),
                 source_type="transcript",
                 modality="third_party_claim",
+                phase="interference",
                 trust_level=1,
                 text=f"In standup, someone said {service_owner_name} owns Atlas, but they may have meant the Atlas service.",
                 exposed_entity_ids=[project, service, carol],
@@ -2846,14 +2895,15 @@ def _build_family_scenario(
 
     hidden_ids = _hidden_graph_ids_for_profile(profile=profile, suffix=suffix)
     if hidden_ids is not None:
-        hidden_event_id = f"event_{suffix}_hidden_hint"
+        hidden_event_id = f"event_{suffix}_uncertainty_hint"
         observations.append(
             SurfaceObservation(
                 event_id=hidden_event_id,
-                transition_id=f"transition_{suffix}_hidden_hint",
+                transition_id=f"transition_{suffix}_uncertainty_hint",
                 timestamp=base + timedelta(days=69),
                 source_type="transcript",
                 modality=rng.choice(["third_party_claim", "hypothetical", "noise"]),
+                phase="interference",
                 trust_level=rng.choice([0, 1]),
                 text=rng.choice([
                     "Someone hinted there may be another Atlas owner, but no source confirmed who.",
@@ -2870,11 +2920,93 @@ def _build_family_scenario(
 
     ambiguity_observation = next((obs for obs in observations if obs.event_id == f"event_{suffix}_006"), None)
 
+    if profile == "long_horizon":
+        if family == "abandoned_then_resumed_work":
+            observations.extend(
+                [
+                    SurfaceObservation(
+                        event_id=f"event_{suffix}_branch_a_started",
+                        transition_id=f"transition_{suffix}_branch_a_started",
+                        timestamp=base + timedelta(days=72),
+                        source_type="user",
+                        modality="assertion",
+                        phase="setup",
+                        trust_level=3,
+                        text="Atlas cleanup Branch A started: re-open old owner notes.",
+                        exposed_entity_ids=[branch_a, project],
+                        exposed_claim_ids=[claim_branch_a_started],
+                    ),
+                    SurfaceObservation(
+                        event_id=f"event_{suffix}_branch_a_blocked",
+                        transition_id=f"transition_{suffix}_branch_a_blocked",
+                        timestamp=base + timedelta(days=73),
+                        source_type="user",
+                        modality="assertion",
+                        phase="interference",
+                        trust_level=3,
+                        text="Atlas cleanup Branch A blocked on stale onboarding notes.",
+                        exposed_entity_ids=[branch_a, project],
+                        exposed_claim_ids=[claim_branch_a_blocked],
+                    ),
+                    SurfaceObservation(
+                        event_id=f"event_{suffix}_branch_b_started",
+                        transition_id=f"transition_{suffix}_branch_b_started",
+                        timestamp=base + timedelta(days=74),
+                        source_type="user",
+                        modality="assertion",
+                        phase="evolution",
+                        trust_level=3,
+                        text="Atlas cleanup Branch B started: verify the org-directory owner path.",
+                        exposed_entity_ids=[branch_b, project],
+                        exposed_claim_ids=[claim_branch_b_started],
+                    ),
+                    SurfaceObservation(
+                        event_id=f"event_{suffix}_branch_b_progress",
+                        transition_id=f"transition_{suffix}_branch_b_progress",
+                        timestamp=base + timedelta(days=75),
+                        source_type="user",
+                        modality="assertion",
+                        phase="evolution",
+                        trust_level=3,
+                        text="Atlas cleanup Branch B in_progress: continue the org-directory owner cleanup.",
+                        exposed_entity_ids=[branch_b, project],
+                        exposed_claim_ids=[claim_branch_b_progress],
+                    ),
+                ]
+            )
+        observations.append(
+            SurfaceObservation(
+                event_id=f"event_{suffix}_late_stale_resurface",
+                transition_id=f"transition_{suffix}_late_stale_resurface",
+                timestamp=base + timedelta(days=92),
+                source_type="transcript",
+                modality="quoted_or_pasted",
+                phase="dormancy",
+                trust_level=1,
+                text=f"Archived kickoff notes resurfaced and still list Atlas owner as {old_owner_name}; treat this as archival context unless verified.",
+                exposed_entity_ids=[project, alice],
+                exposed_claim_ids=[claim_alice_owner],
+            )
+        )
+        observations.append(
+            SurfaceObservation(
+                event_id=f"event_{suffix}_late_scope_interference",
+                transition_id=f"transition_{suffix}_late_scope_interference",
+                timestamp=base + timedelta(days=96),
+                source_type="assistant",
+                modality="noise",
+                phase="dormancy",
+                trust_level=0,
+                text="Scratchpad: incident-review formatting preferences should not leak into normal Atlas status updates.",
+            )
+        )
+
     _add_noise_observations(
         observations=observations,
         suffix=suffix,
         base=base,
         rng=rng,
+        profile=profile,
         min_events=min_events,
         max_events=max_events,
         noise_rate=noise_rate,
@@ -2899,6 +3031,13 @@ def _build_family_scenario(
         _person(bob, current_owner_name, base + timedelta(days=66), event_5),
         _person(carol, service_owner_name, base + timedelta(days=4), event_3),
     ]
+    if profile == "long_horizon" and family == "abandoned_then_resumed_work":
+        entities.extend(
+            [
+                _task_entity(branch_a, "Atlas Cleanup Branch A", base + timedelta(days=72), f"event_{suffix}_branch_a_started", claim_branch_a_started),
+                _task_entity(branch_b, "Atlas Cleanup Branch B", base + timedelta(days=74), f"event_{suffix}_branch_b_started", claim_branch_b_started),
+            ]
+        )
     claims = [
         _claim(
             claim_id=claim_type_project,
@@ -2998,6 +3137,31 @@ def _build_family_scenario(
             confidence=_confidence(0.35),
         ),
     ]
+    if profile == "long_horizon" and family == "abandoned_then_resumed_work":
+        action_claim_specs = [
+            (claim_branch_a_started, branch_a, "Atlas Cleanup Branch A", "started", f"event_{suffix}_branch_a_started", f"transition_{suffix}_branch_a_started", base + timedelta(days=72), "Atlas cleanup Branch A started: re-open old owner notes.", SimLifecycleState.SUPERSEDED),
+            (claim_branch_a_blocked, branch_a, "Atlas Cleanup Branch A", "blocked", f"event_{suffix}_branch_a_blocked", f"transition_{suffix}_branch_a_blocked", base + timedelta(days=73), "Atlas cleanup Branch A blocked on stale onboarding notes.", SimLifecycleState.ACTIVE),
+            (claim_branch_b_started, branch_b, "Atlas Cleanup Branch B", "started", f"event_{suffix}_branch_b_started", f"transition_{suffix}_branch_b_started", base + timedelta(days=74), "Atlas cleanup Branch B started: verify the org-directory owner path.", SimLifecycleState.SUPERSEDED),
+            (claim_branch_b_progress, branch_b, "Atlas Cleanup Branch B", "in_progress", f"event_{suffix}_branch_b_progress", f"transition_{suffix}_branch_b_progress", base + timedelta(days=75), "Atlas cleanup Branch B in_progress: continue the org-directory owner cleanup.", SimLifecycleState.ACTIVE),
+        ]
+        for claim_id, subject_id, subject_name, object_value, event_id, transition_id, timestamp, quote, state in action_claim_specs:
+            claims.append(
+                _claim(
+                    claim_id=claim_id,
+                    kind="action_state",
+                    subject_id=subject_id,
+                    subject_name=subject_name,
+                    subject_type="task",
+                    predicate_id="action_state",
+                    object_value=object_value,
+                    event_id=event_id,
+                    quote=quote,
+                    transition_id=transition_id,
+                    timestamp=timestamp,
+                    state=state,
+                    roles=["execution_continuation", "action_state"],
+                )
+            )
     if hidden_ids is not None:
         entities.append(_hidden_person(hidden_ids["entity_id"], hidden_ids["name"], base + timedelta(days=69)))
         claims.append(
@@ -3096,7 +3260,7 @@ def _build_family_scenario(
             )
         )
 
-    checkpoint_time = base + timedelta(days=68)
+    checkpoint_time = base + timedelta(days=120 if profile == "long_horizon" else 68)
     checkpoints = [_checkpoint_for_family(
         family=family,
         suffix=suffix,
@@ -3107,9 +3271,10 @@ def _build_family_scenario(
         claim_type_service=claim_type_service,
         claim_alice_owner=claim_alice_owner,
         claim_bob_owner=claim_bob_owner,
-        claim_carol_service=claim_carol_service,
-        claim_ambiguous=claim_ambiguous,
-        relation_contradicts=relation_contradicts,
+            claim_carol_service=claim_carol_service,
+            claim_ambiguous=claim_ambiguous,
+            expected_action_claim_id=claim_branch_b_progress if profile == "long_horizon" and family == "abandoned_then_resumed_work" else None,
+            relation_contradicts=relation_contradicts,
         event_1=event_1,
         event_2=event_2,
         event_3=event_3,
@@ -3152,6 +3317,14 @@ def _build_family_scenario(
             )
         )
 
+    checkpoints = [
+        _checkpoint_with_horizon_metadata(
+            checkpoint=checkpoint,
+            observations=observations,
+        )
+        for checkpoint in checkpoints
+    ]
+
     return LatentGraphScenario(
         scenario_id=f"sim_{suffix}_{family}",
         family=family,
@@ -3179,6 +3352,7 @@ def _checkpoint_for_family(
     claim_bob_owner: str,
     claim_carol_service: str,
     claim_ambiguous: str,
+    expected_action_claim_id: str | None,
     relation_contradicts: str,
     event_1: str,
     event_2: str,
@@ -3304,14 +3478,27 @@ def _checkpoint_for_family(
             severity="high",
         )
     if family == "abandoned_then_resumed_work":
+        expected_claim_ids = [claim_bob_owner]
+        expected_entity_ids = [project]
+        expected_citation_event_ids = [event_5]
+        expected_action_ids: list[str] = []
+        expected_excluded_claim_ids: list[str] = []
+        if expected_action_claim_id is not None:
+            expected_claim_ids.append(expected_action_claim_id)
+            expected_entity_ids.append(f"ent_{suffix}_branch_b")
+            expected_citation_event_ids.append(f"event_{suffix}_branch_b_progress")
+            expected_action_ids.append(f"action:{expected_action_claim_id}")
+            expected_excluded_claim_ids.append(f"claim_{suffix}_branch_a_blocked")
         return OracleCheckpoint(
             checkpoint_id=f"cp_{suffix}_branch",
             timestamp=timestamp,
             checkpoint_type="execution_continuation",
             query_or_task="Continue the previous Atlas ownership cleanup.",
-            expected_entity_ids=[project],
-            expected_claim_ids=[claim_bob_owner],
-            expected_citation_event_ids=[event_5],
+            expected_entity_ids=expected_entity_ids,
+            expected_claim_ids=expected_claim_ids,
+            expected_action_ids=expected_action_ids,
+            expected_citation_event_ids=expected_citation_event_ids,
+            expected_excluded_claim_ids=expected_excluded_claim_ids,
             expected_next_action=f"continue {current_owner_name} owner cleanup",
             difficulty_tags=["execution_continuation"],
             severity="high",
@@ -3337,6 +3524,7 @@ def _add_noise_observations(
     suffix: str,
     base: datetime,
     rng: random.Random,
+    profile: str,
     min_events: int | None,
     max_events: int | None,
     noise_rate: float | None,
@@ -3369,14 +3557,78 @@ def _add_noise_observations(
             SurfaceObservation(
                 event_id=f"event_{suffix}_noise_{noise_index:02d}",
                 transition_id=f"transition_{suffix}_noise_{noise_index:02d}",
-                timestamp=base + timedelta(days=70, minutes=noise_index),
+                timestamp=base + timedelta(days=97 if profile == "long_horizon" else 70, minutes=noise_index),
                 source_type=rng.choice(["user", "transcript", "assistant"]),
                 modality=rng.choice(["noise", "quoted_or_pasted", "third_party_claim"]),
+                phase="dormancy" if profile == "long_horizon" else "interference",
                 trust_level=rng.choice([0, 1]),
                 text=text,
                 hidden_distractor_ids=[f"hidden_{suffix}_noise_{noise_index:02d}"],
             )
         )
+
+
+def _checkpoint_with_horizon_metadata(
+    *,
+    checkpoint: OracleCheckpoint,
+    observations: list[SurfaceObservation],
+) -> OracleCheckpoint:
+    event_by_id = {observation.event_id: observation for observation in observations}
+    support_observations = [
+        event_by_id[event_id]
+        for event_id in checkpoint.expected_citation_event_ids
+        if event_id in event_by_id
+    ]
+    if support_observations:
+        earliest_support_time = min(observation.timestamp for observation in support_observations)
+        latest_support_time = max(observation.timestamp for observation in support_observations)
+        horizon_distance = sum(
+            1
+            for observation in observations
+            if latest_support_time < observation.timestamp <= checkpoint.timestamp
+        )
+        source_event_age_days = max(
+            0.0,
+            (checkpoint.timestamp - earliest_support_time).total_seconds() / 86400.0,
+        )
+        interference_count = sum(
+            1
+            for observation in observations
+            if earliest_support_time < observation.timestamp <= checkpoint.timestamp
+            and observation.phase in {"interference", "dormancy"}
+        )
+    else:
+        horizon_distance = 0
+        source_event_age_days = 0.0
+        interference_count = sum(1 for observation in observations if observation.phase in {"interference", "dormancy"})
+    return checkpoint.model_copy(
+        update={
+            "horizon_distance": horizon_distance,
+            "interference_count": interference_count,
+            "source_event_age_days": round(source_event_age_days, 3),
+            "required_retrieval_view": _retrieval_view_for_checkpoint_type(checkpoint.checkpoint_type),
+            "expected_stage_path": [
+                "extraction",
+                "validation",
+                "lifecycle_evolution",
+                "graph_projection",
+                "alignment",
+                "retrieval_decision",
+            ],
+        }
+    )
+
+
+def _retrieval_view_for_checkpoint_type(checkpoint_type: str) -> str:
+    if checkpoint_type == "historical_truth":
+        return "historical_at"
+    if checkpoint_type in {"source_trust_conflict", "conflict_audit"}:
+        return "conflicts"
+    if checkpoint_type in {"entity_reconstruction", "claim_rekey", "entity_split_repair", "belief_ranking"}:
+        return "all_versions"
+    if checkpoint_type == "modality_suppression":
+        return "evidence_only"
+    return "current"
 
 
 def _hidden_graph_ids_for_profile(*, profile: str, suffix: str) -> dict[str, str] | None:
@@ -3437,6 +3689,30 @@ def _person(entity_id: str, name: str, created_at: datetime, event_id: str) -> L
         observability=ObservabilityLabel.OBSERVED,
         observability_reason="directly mentioned in surface observation",
         evaluation_roles=["entity_reconstruction"],
+    )
+
+
+def _task_entity(entity_id: str, name: str, created_at: datetime, event_id: str, defining_claim_id: str) -> LatentEntity:
+    return LatentEntity(
+        entity_id=entity_id,
+        canonical_name=name,
+        entity_type="task",
+        description=f"{name} task branch",
+        aliases=[
+            LatentEntityAlias(
+                alias_text=name,
+                valid_from=created_at,
+                confidence=0.9,
+                evidence_spans=[_span(event_id, name, "direct_mention")],
+            )
+        ],
+        created_at=created_at,
+        defining_claim_ids=[defining_claim_id],
+        evidence_spans=[_span(event_id, name, "direct_mention")],
+        confidence=_confidence(0.85),
+        observability=ObservabilityLabel.OBSERVED,
+        observability_reason="directly mentioned in action-state surface observation",
+        evaluation_roles=["execution_continuation", "action_state"],
     )
 
 

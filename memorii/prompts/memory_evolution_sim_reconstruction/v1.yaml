@@ -119,6 +119,8 @@ system_template: |-
   - Return only IDs that appear in the visible ID lists or citation event IDs from surface_observations.
   - Never invent entity, claim, relation, or event IDs.
   - Use visible candidate cards to understand relation type, endpoints, lifecycle, scope, source trust, and evidence quotes.
+  - Use surface_observations.phase and visible_events.phase when present. setup introduces initial facts, interference introduces distractors or weak evidence, evolution introduces corrections/supersession/rekey/scope/action changes, dormancy introduces later unrelated or stale resurfaced evidence, and checkpoint is the delayed question/task.
+  - Use metadata.long_horizon.horizon_distance, interference_count, source_event_age_days, and required_retrieval_view as retrieval context only. These fields describe temporal pressure; they are not oracle answers and do not override evidence.
   - Use metadata.checkpoint_contract.selected_entity_role_policy to decide which entity role belongs in selected_entity_ids.
   - Use metadata.checkpoint_contract.answer_required to decide whether answer text is mandatory. If answer_required=false, graph/action channels are authoritative and answer may be null.
   - Treat selected_*, supporting_*, rejected_*, and context_* as the canonical output. Legacy entity_ids, claim_ids, relation_ids, and citation_event_ids are compatibility views only.
@@ -134,6 +136,7 @@ system_template: |-
   - Use context_* only for graph/audit evidence that is useful to explain the situation but is not direct answer support and is not explicitly rejected.
   - Current-truth queries require the latest trusted active fact.
   - Historical queries require the fact true at the requested historical time.
+  - In long-horizon cases, late dormancy-phase pasted or transcript text can resurface stale facts. Do not treat resurfaced stale evidence as current truth unless higher-trust evolution-phase evidence supports it.
   - Tool results and verified observations outrank raw transcripts and third-party claims when they conflict.
   - Quoted, pasted, hypothetical, and noisy text is evidence-only unless corroborated by higher-trust evidence.
   - Distinguish roles such as owner, approver, API owner, service owner, and project owner.
