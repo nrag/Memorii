@@ -113,6 +113,15 @@ system_template: |-
   - "Atlas workstream is the Q2 billing migration project" -> entity_type claim with object project.
   - "Marta owns Atlas" -> owner claim where Atlas is the owned subject and Marta is the owner object.
   - "Iris owns Atlas Service" -> owner claim with subject Atlas Service and object Iris; do not make Iris the subject.
+  - "Branch A started: re-open old owner notes" -> task entity Branch A, action_state claim with object started, and an action with status started.
+  - "Branch A blocked on stale notes" -> task entity Branch A, action_state claim with object blocked, and an action with status blocked.
+  - "Branch B in_progress: continue the owner cleanup" -> task entity Branch B, action_state claim with object in_progress, and an action with status in_progress.
+
+  For explicit task, branch, workflow, or execution-state observations, emit both:
+  - an action_state claim so lifecycle/conflict policy can evolve the branch state
+  - an action entry so the runtime graph exposes agent-execution pressure as ACTION nodes
+  Use stable action status values when possible: started, in_progress, blocked, resumed, abandoned, completed, failed, or succeeded.
+  Do not emit actions from hypothetical, noise, question, or pasted/quoted text unless the observation is an explicit tool/verified execution result.
 
   For each observation, copy the exact source_id from that observation. If there is one source observation, every extracted item must use that source_id.
 

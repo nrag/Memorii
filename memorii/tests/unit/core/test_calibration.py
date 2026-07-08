@@ -147,6 +147,65 @@ def test_calibration_artifacts_emit_hierarchy_and_label_provenance() -> None:
     assert decision_report.regret_total == 0.0
 
 
+def test_calibration_retrieval_decision_phase_comes_from_evidence_event() -> None:
+    rows = [
+        {
+            "scenario_id": "scenario",
+            "checkpoint_id": "checkpoint",
+            "checkpoint_type": "execution_continuation",
+            "phase": "checkpoint",
+            "success": True,
+            "failure_buckets": [],
+            "output": {
+                "confidence": 0.86,
+                "selected_claim_ids": ["claim_branch_progress"],
+            },
+            "expected": {
+                "expected_claim_ids": ["claim_branch_progress"],
+            },
+            "candidate_cards": {
+                "visible_events": [
+                    {
+                        "event_id": "event_branch_progress",
+                        "modality": "assertion",
+                        "trust_level": 4,
+                        "phase": "evolution",
+                    }
+                ],
+                "visible_claims": [
+                    {
+                        "claim_id": "claim_branch_progress",
+                        "predicate_id": "action_state",
+                        "scope_key": "task:atlas",
+                        "lifecycle_state": "active",
+                        "source_modality": "assertion",
+                        "source_trust": 4,
+                        "evidence_event_ids": ["event_branch_progress"],
+                    }
+                ],
+            },
+            "judge_aggregate": {"votes": [{"judge_id": "execution_branch_judge"}]},
+        }
+    ]
+
+    events, _report, slices, _decision_report = build_calibration_artifacts(
+        suite="memory_evolution_runtime_v1",
+        profile="long_horizon",
+        checkpoint_rows=rows,
+    )
+
+    selected = next(
+        event
+        for event in events
+        if event.item_id == "claim_branch_progress"
+        and event.hierarchy_layer == CalibrationHierarchyLayer.RETRIEVAL_DECISION
+    )
+    assert selected.metadata["phase"] == "evolution"
+    assert selected.metadata["evidence_phases"] == "evolution"
+    phase_slices = [item for item in slices if item["slice_key"] == "phase"]
+    assert any(item["slice_values"] == {"phase": "evolution"} for item in phase_slices)
+
+
 def test_calibration_context_events_in_passing_rows_are_correct_audit_evidence() -> None:
     rows = [
         {

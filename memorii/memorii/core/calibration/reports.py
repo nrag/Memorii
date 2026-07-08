@@ -80,6 +80,8 @@ def calibration_events_from_checkpoint_rows(
             excluded_ids = set(_excluded_ids_for_item_type(expected, item_type))
             for item_id in ids:
                 item = str(item_id)
+                evidence_event_ids = _evidence_event_ids(row, item)
+                evidence_phases = _evidence_phases(row, item, evidence_event_ids=evidence_event_ids)
                 label, label_source, rationale, buckets = _label_for_item(
                     item_id=item,
                     channel=channel,
@@ -106,6 +108,9 @@ def calibration_events_from_checkpoint_rows(
                         label_rationale=rationale,
                         failure_buckets=buckets,
                         judge_ids=judge_ids,
+                        evidence_event_ids=evidence_event_ids,
+                        phase=_phase_from_evidence(evidence_phases),
+                        evidence_phases=evidence_phases,
                         output_key=output_key,
                     )
                 )
@@ -218,6 +223,7 @@ def _hierarchy_events_from_candidate_cards(*, suite: str, profile: str, row: dic
                 label_rationale="surface observation is oracle-visible evidence",
                 source_modality=str(visible_event.get("modality", "unknown")),
                 source_trust=trust,
+                phase=str(visible_event.get("phase", "unknown")),
                 output_key="visible_events",
             )
         )
@@ -317,12 +323,20 @@ def _calibration_event(
     scope_key: str | None = None,
     lifecycle_state: str | None = None,
     evidence_event_ids: list[str] | None = None,
+    phase: str | None = None,
+    evidence_phases: list[str] | None = None,
     output_key: str = "unknown",
 ) -> CalibrationEvent:
     item_failure_buckets = list(failure_buckets or [])
     label_sources = [label_source]
     if item_failure_buckets and CalibrationLabelSource.PROGRAMMATIC_JUDGE not in label_sources:
         label_sources.append(CalibrationLabelSource.PROGRAMMATIC_JUDGE)
+    resolved_evidence_event_ids = evidence_event_ids if evidence_event_ids is not None else _evidence_event_ids(row, item_id)
+    resolved_evidence_phases = evidence_phases if evidence_phases is not None else _evidence_phases(
+        row,
+        item_id,
+        evidence_event_ids=resolved_evidence_event_ids,
+    )
     return CalibrationEvent(
         event_id=f"cal:{row.get('scenario_id')}:{row.get('checkpoint_id')}:{row_index}:{hierarchy_layer.value}:{decision_channel.value}:{output_key}:{item_id}",
         timestamp=datetime.now(UTC),
@@ -347,12 +361,18 @@ def _calibration_event(
         lifecycle_state=lifecycle_state or _row_lifecycle_state(row, item_id),
         retrieval_view=_retrieval_view_for_checkpoint(str(row.get("checkpoint_type", "unknown"))),
         entity_ambiguity="ambiguous" if "ambiguous" in item_id else "none",
-        evidence_event_ids=evidence_event_ids if evidence_event_ids is not None else _evidence_event_ids(row, item_id),
+        evidence_event_ids=resolved_evidence_event_ids,
         judge_ids=judge_ids or [],
         decision_action=_decision_action_for_checkpoint(str(row.get("checkpoint_type", "unknown"))),
         metadata={
             "checkpoint_type": str(row.get("checkpoint_type", "unknown")),
             "profile": profile,
+            "phase": phase or _phase_from_evidence(resolved_evidence_phases) or str(row.get("phase", "checkpoint")),
+            "evidence_phases": "|".join(resolved_evidence_phases),
+            "horizon_distance_bucket": str(row.get("horizon_distance_bucket", "unknown")),
+            "interference_count_bucket": str(row.get("interference_count_bucket", "unknown")),
+            "source_event_age_days_bucket": str(row.get("source_event_age_days_bucket", "unknown")),
+            "required_retrieval_view": str(row.get("required_retrieval_view", "unknown")),
             "output_key": output_key,
         },
     )
@@ -459,16 +479,54 @@ def _row_lifecycle_state(row: dict[str, object], item_id: str) -> str | None:
 
 
 def _evidence_event_ids(row: dict[str, object], item_id: str) -> list[str]:
+    if item_id in _visible_event_phase_map(row):
+        return [item_id]
     for claim in _visible_claims(row):
         if claim.get("claim_id") == item_id and isinstance(claim.get("evidence_event_ids"), list):
             return [str(item) for item in claim["evidence_event_ids"]]
+    for relation in _visible_relations(row):
+        if relation.get("relation_id") == item_id and isinstance(relation.get("evidence_event_ids"), list):
+            return [str(item) for item in relation["evidence_event_ids"]]
     return []
+
+
+def _evidence_phases(row: dict[str, object], item_id: str, *, evidence_event_ids: list[str] | None = None) -> list[str]:
+    phase_by_event = _visible_event_phase_map(row)
+    event_ids = evidence_event_ids if evidence_event_ids is not None else _evidence_event_ids(row, item_id)
+    phases = sorted({phase_by_event[event_id] for event_id in event_ids if event_id in phase_by_event})
+    return [phase for phase in phases if phase]
+
+
+def _phase_from_evidence(phases: list[str]) -> str | None:
+    if not phases:
+        return None
+    if len(phases) == 1:
+        return phases[0]
+    return "mixed"
+
+
+def _visible_event_phase_map(row: dict[str, object]) -> dict[str, str]:
+    candidate_cards = row.get("candidate_cards")
+    if not isinstance(candidate_cards, dict) or not isinstance(candidate_cards.get("visible_events"), list):
+        return {}
+    phase_by_event: dict[str, str] = {}
+    for event in candidate_cards["visible_events"]:
+        if isinstance(event, dict):
+            phase_by_event[str(event.get("event_id", ""))] = str(event.get("phase", "unknown"))
+    return {event_id: phase for event_id, phase in phase_by_event.items() if event_id}
 
 
 def _visible_claims(row: dict[str, object]) -> list[dict[str, object]]:
     candidate_cards = row.get("candidate_cards")
     if isinstance(candidate_cards, dict) and isinstance(candidate_cards.get("visible_claims"), list):
         return [item for item in candidate_cards["visible_claims"] if isinstance(item, dict)]
+    return []
+
+
+def _visible_relations(row: dict[str, object]) -> list[dict[str, object]]:
+    candidate_cards = row.get("candidate_cards")
+    if isinstance(candidate_cards, dict) and isinstance(candidate_cards.get("visible_relations"), list):
+        return [item for item in candidate_cards["visible_relations"] if isinstance(item, dict)]
     return []
 
 

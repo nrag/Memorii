@@ -1738,8 +1738,18 @@ def _run_memory_evolution_sim_transitions(
             checkpoint_row = {
                 "scenario_id": scenario.scenario_id,
                 "family": scenario.family,
+                "profile": scenario.profile,
                 "checkpoint_id": checkpoint.checkpoint_id,
                 "checkpoint_type": checkpoint.checkpoint_type,
+                "phase": "checkpoint",
+                "horizon_distance": checkpoint.horizon_distance,
+                "horizon_distance_bucket": _horizon_distance_bucket(checkpoint.horizon_distance),
+                "interference_count": checkpoint.interference_count,
+                "interference_count_bucket": _interference_count_bucket(checkpoint.interference_count),
+                "source_event_age_days": checkpoint.source_event_age_days,
+                "source_event_age_days_bucket": _source_event_age_days_bucket(checkpoint.source_event_age_days),
+                "required_retrieval_view": checkpoint.required_retrieval_view,
+                "expected_stage_path": list(checkpoint.expected_stage_path),
                 "query_or_task": checkpoint.query_or_task,
                 "decision_mode": mode,
                 "effective_decision_mode": effective_mode,
@@ -1916,6 +1926,9 @@ def _write_memory_evolution_sim_artifacts(
             "checkpoint_count": len(scenario.checkpoints),
             "checkpoint_types": sorted({checkpoint.checkpoint_type for checkpoint in scenario.checkpoints}),
             "difficulty_tags": sorted({tag for checkpoint in scenario.checkpoints for tag in checkpoint.difficulty_tags}),
+            "phase_counts": dict(sorted(Counter(observation.phase for observation in scenario.observations).items())),
+            "max_horizon_distance": max((checkpoint.horizon_distance for checkpoint in scenario.checkpoints), default=0),
+            "max_interference_count": max((checkpoint.interference_count for checkpoint in scenario.checkpoints), default=0),
             "hidden_item_count": sum(
                 1
                 for collection_name in ("entities", "claims", "relations")
@@ -1998,6 +2011,7 @@ def _write_memory_evolution_sim_artifacts(
         "fallbacks": fallbacks,
         "final_output_source_counts": dict(sorted(final_output_source_counts.items())),
         "metrics": base_metrics,
+        "long_horizon_slice_counts": _long_horizon_slice_counts(checkpoint_rows),
         "calibration": calibration_report.model_dump(mode="json"),
         "decision_quality": decision_cost_report.model_dump(mode="json"),
         "failure_bucket_counts": dict(sorted(failure_bucket_counts.items())),
@@ -2163,7 +2177,15 @@ def _sim_warning_examples(checkpoint_rows: list[dict[str, object]]) -> list[dict
                             "covered_ids": vote.get("covered_ids", []),
                         }
                     )
-    return examples
+    deduped: list[dict[str, object]] = []
+    seen: set[tuple[object, object, object]] = set()
+    for example in examples:
+        key = (example.get("scenario_id"), example.get("checkpoint_id"), example.get("warning_bucket"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(example)
+    return deduped
 
 
 def _sim_row_needs_review(row: dict[str, object]) -> bool:
@@ -2201,6 +2223,54 @@ def _print_memory_evolution_sim_summary(
         f"passed={passed} failed={failed} "
         f"llm_calls={len(llm_rows)} artifacts={run_dir}"
     )
+
+
+def _horizon_distance_bucket(distance: int | float | object) -> str:
+    value = int(distance) if isinstance(distance, (int, float)) else 0
+    if value < 5:
+        return "short"
+    if value < 15:
+        return "medium"
+    if value < 40:
+        return "long"
+    return "very_long"
+
+
+def _interference_count_bucket(count: int | float | object) -> str:
+    value = int(count) if isinstance(count, (int, float)) else 0
+    if value == 0:
+        return "none"
+    if value < 10:
+        return "low"
+    if value < 25:
+        return "medium"
+    return "high"
+
+
+def _source_event_age_days_bucket(days: int | float | object) -> str:
+    value = float(days) if isinstance(days, (int, float)) else 0.0
+    if value < 7:
+        return "fresh"
+    if value < 30:
+        return "aged"
+    if value < 90:
+        return "old"
+    return "stale_long_horizon"
+
+
+def _long_horizon_slice_counts(checkpoint_rows: list[dict[str, object]]) -> dict[str, dict[str, int]]:
+    slice_keys = [
+        "phase",
+        "horizon_distance_bucket",
+        "interference_count_bucket",
+        "source_event_age_days_bucket",
+        "checkpoint_type",
+        "required_retrieval_view",
+    ]
+    return {
+        key: dict(sorted(Counter(str(row.get(key, "unknown")) for row in checkpoint_rows).items()))
+        for key in slice_keys
+    }
 
 
 def _run_memory_evolution_sim_suite(args: argparse.Namespace, *, prompt_root: Path) -> int:
@@ -2274,7 +2344,13 @@ def _run_memory_evolution_runtime_suite(args: argparse.Namespace, *, prompt_root
                 report["runtime_graph_summary"] = summary["runtime_graph_summary"]
             if isinstance(summary.get("runtime_graph_alignments_summary"), dict):
                 report["runtime_graph_alignments_summary"] = summary["runtime_graph_alignments_summary"]
+            if isinstance(summary.get("runtime_failure_bucket_counts"), dict):
+                report["runtime_failure_bucket_counts"] = summary["runtime_failure_bucket_counts"]
             report["warning_policy"] = runtime_warning_policy()
+            metrics = report.get("metrics", {}) if isinstance(report.get("metrics"), dict) else {}
+            for key in ("hidden_item_count", "hidden_hallucination_rate", "hidden_answer_leak_rate"):
+                if key in metrics:
+                    report[key] = metrics[key]
             scalar_summary = {key: value for key, value in summary.items() if not isinstance(value, dict)}
             report["metrics"] = {**report.get("metrics", {}), **scalar_summary}
             report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
