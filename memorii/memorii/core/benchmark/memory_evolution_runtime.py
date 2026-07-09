@@ -412,6 +412,7 @@ def run_runtime_scenarios(
                 "extra_selected_ids": diagnostics["extra_selected_ids"],
                 "answer_match_type": diagnostics["answer_match_type"],
                 "failure_classification": _runtime_failure_classification(runtime_buckets, diagnostics),
+                "runtime_failure_classification": _runtime_failure_classification(runtime_buckets, diagnostics),
                 "selected_excluded_ids": diagnostics["selected_excluded_ids"],
                 "supporting_excluded_ids": diagnostics["supporting_excluded_ids"],
                 "rejected_expected_ids": diagnostics["rejected_expected_ids"],
@@ -1082,11 +1083,19 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
 def runtime_summary_metrics(rows: RuntimeSuiteRows) -> dict[str, object]:
     checkpoint_count = len(rows.checkpoint_rows)
     bucket_counts = Counter(bucket for row in rows.checkpoint_rows for bucket in row.get("runtime_failure_buckets", []))
+    final_output_source_counts = Counter(str(row.get("final_output_source", "unknown")) for row in rows.checkpoint_rows)
+    provider_successes = sum(int(row.get("provider_successes", 0) or 0) for row in rows.checkpoint_rows)
+    provider_failures = sum(int(row.get("provider_failures", 0) or 0) for row in rows.checkpoint_rows)
+    fallbacks = sum(int(row.get("fallbacks", 0) or 0) for row in rows.checkpoint_rows)
     graph_summary = runtime_graph_completeness_metrics(rows)
     alignment_summary = runtime_alignment_summary(rows)
     summary: dict[str, object] = {
         "runtime_checkpoint_count": checkpoint_count,
         "runtime_failure_bucket_counts": dict(sorted(bucket_counts.items())),
+        "provider_successes": provider_successes,
+        "provider_failures": provider_failures,
+        "fallbacks": fallbacks,
+        "final_output_source_counts": dict(sorted(final_output_source_counts.items())),
         "runtime_alignment_count": len(rows.alignments),
         "runtime_graph_item_count": len(rows.graph_items),
         "runtime_graph_summary": graph_summary,

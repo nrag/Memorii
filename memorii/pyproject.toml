@@ -40,3 +40,32 @@ include = ["memorii*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["memorii", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = [
+  "E501",  # keep line-length advisory during the warning-first rollout
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["B011"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+include = [
+  "memorii/core/memory_evolution",
+  "memorii/core/benchmark/memory_evolution_sim.py",
+  "memorii/core/benchmark/memory_evolution_runtime.py",
+  "memorii/core/calibration",
+  "memorii/core/prompts",
+]
+exclude = [
+  "**/__pycache__",
+]
+reportMissingTypeStubs = false
