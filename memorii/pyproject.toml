@@ -60,8 +60,8 @@ pythonVersion = "3.11"
 typeCheckingMode = "basic"
 include = [
   "memorii/core/memory_evolution",
-  "memorii/core/benchmark/memory_evolution_sim.py",
-  "memorii/core/benchmark/memory_evolution_runtime.py",
+  "memorii/core/benchmark/memory_evolution_sim",
+  "memorii/core/benchmark/memory_evolution_runtime",
   "memorii/core/calibration",
   "memorii/core/prompts",
 ]

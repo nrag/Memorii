@@ -38,6 +38,29 @@ def test_memory_evolution_public_imports_remain_compatible() -> None:
         assert importlib.import_module(module_name)
 
 
+def test_memory_evolution_split_submodule_imports_remain_compatible() -> None:
+    expected_symbols = {
+        "memorii.core.benchmark.memory_evolution_sim.schemas": "SimSystemOutput",
+        "memorii.core.benchmark.memory_evolution_sim.generation": "generate_memory_evolution_sim_scenarios",
+        "memorii.core.benchmark.memory_evolution_sim.candidate_cards": "sim_reconstruction_context_for_checkpoint",
+        "memorii.core.benchmark.memory_evolution_sim.normalization": "normalize_sim_system_output_for_checkpoint",
+        "memorii.core.benchmark.memory_evolution_sim.judges": "judge_sim_checkpoint",
+        "memorii.core.benchmark.memory_evolution_sim.diagnostics": "sim_checkpoint_diagnostics",
+        "memorii.core.benchmark.memory_evolution_sim.metrics": "sim_metrics_from_rows",
+        "memorii.core.benchmark.memory_evolution_runtime.ingestion": "ingest_scenario_surface_observations",
+        "memorii.core.benchmark.memory_evolution_runtime.graph_items": "graph_items_from_snapshot",
+        "memorii.core.benchmark.memory_evolution_runtime.alignment": "align_runtime_graph_to_oracle",
+        "memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection": "project_runtime_checkpoint",
+        "memorii.core.benchmark.memory_evolution_runtime.execution_state_projection": "RuntimeProjection",
+        "memorii.core.benchmark.memory_evolution_runtime.artifacts": "write_runtime_artifacts",
+        "memorii.core.benchmark.memory_evolution_runtime.runner": "run_runtime_scenarios",
+    }
+
+    for module_name, symbol_name in expected_symbols.items():
+        module = importlib.import_module(module_name)
+        assert hasattr(module, symbol_name), f"{module_name} must export {symbol_name}"
+
+
 def test_memory_evolution_sim_public_checkpoint_contract() -> None:
     scenario = generate_memory_evolution_sim_scenarios(
         profile="adversarial",
