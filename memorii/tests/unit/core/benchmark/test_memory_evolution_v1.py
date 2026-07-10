@@ -3,7 +3,7 @@ from memorii.core.benchmark.memory_evolution_decision import (
     memory_evolution_assertion_passed,
     rule_memory_evolution_decision_for_checkpoint,
 )
-from tests.fixtures.benchmarks.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
+from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
 
 
 def test_memory_evolution_v1_has_ten_episode_chain_scenarios() -> None:
@@ -137,6 +137,31 @@ def test_memory_evolution_assertion_requires_belief_degradation() -> None:
         checkpoint=checkpoint,
         decision=output,
     ) is False
+
+
+def test_memory_evolution_assertion_allows_top_selection_for_belief_ranking() -> None:
+    scenario = next(
+        item
+        for item in load_memory_evolution_v1_fixture_set()
+        if item.scenario_id == "evolution_competing_belief_reranking"
+    )
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["selected_memory_ids"] = ["belief:b-worker-exhaustion"]
+    output["active_memory_ids"] = [
+        "belief:b-worker-exhaustion",
+        "belief:c-database-locks",
+        "belief:a-network-saturation",
+    ]
+
+    assert memory_evolution_assertion_passed(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
 
 
 def test_memory_evolution_assertion_suppresses_abandoned_branch() -> None:

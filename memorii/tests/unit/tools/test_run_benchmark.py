@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import argparse
+import importlib
 import json
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
 
+from memorii.core.benchmark.memory_evolution_runtime import RuntimeSuiteRows
+from memorii.core.benchmark.memory_evolution_runtime.runner import build_runtime_extractor
+from memorii.core.benchmark.memory_evolution_sim import generate_memory_evolution_sim_scenarios
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
-from memorii.tools.run_benchmark import main
+from memorii.tools.benchmark_registry import BenchmarkSuiteRegistry, FunctionBenchmarkSuiteRunner
+from memorii.tools.benchmark_suites import memory_evolution_runtime as runtime_suite
+from memorii.tools.run_benchmark import _build_benchmark_suite_registry, main
 
-HOTPOTQA_SAMPLE_PATH = Path(__file__).resolve().parents[2] / "fixtures" / "benchmarks" / "hotpotqa_sample.json"
+HOTPOTQA_SAMPLE_PATH = files("memorii.core.benchmark.fixture_sets").joinpath("hotpotqa_sample.json")
 
 
 def _clear_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -25,7 +33,10 @@ def _clear_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _latest_run_dir(storage_root: Path, suite: str, mode: str = "auto") -> Path:
-    return sorted((storage_root / "benchmark_runs" / suite / mode).glob("bench-*"))[-1]
+    return max(
+        (storage_root / "benchmark_runs" / suite / mode).glob("bench-*"),
+        key=lambda path: path.stat().st_mtime_ns,
+    )
 
 
 def _summary_fields(output: str) -> dict[str, str]:
@@ -100,9 +111,219 @@ def test_run_benchmark_rejects_unknown_suite() -> None:
         main(["--suite", "unknown"])
 
 
+def test_benchmark_suite_registry_contains_cli_suites() -> None:
+    registry = _build_benchmark_suite_registry()
+
+    assert registry.suite_names() == [
+        "memory_lifecycle_v1",
+        "execution_graph_v1",
+        "memory_evolution_v1",
+        "memory_evolution_sim_v1",
+        "memory_evolution_runtime_v1",
+        "retrieval_corruption_v1",
+        "hotpotqa_v1",
+        "hotpotqa_official_v1",
+        "minimal",
+    ]
+    assert registry.get("memory_evolution_runtime_v1").supports_mode("hybrid")
+    assert registry.get("hotpotqa_v1").supports_mode("rule")
+    assert not registry.get("hotpotqa_v1").supports_mode("llm")
+    assert not registry.get("hotpotqa_v1").supports_mode("hybrid")
+
+
+def test_benchmark_suite_registry_rejects_duplicate_names() -> None:
+    def _noop(_args, _prompt_root):
+        return 0
+
+    with pytest.raises(ValueError, match="Duplicate benchmark suite runner"):
+        BenchmarkSuiteRegistry([
+            FunctionBenchmarkSuiteRunner("duplicate", _noop, frozenset({"rule"})),
+            FunctionBenchmarkSuiteRunner("duplicate", _noop, frozenset({"rule"})),
+        ])
+
+
+def test_run_benchmark_dispatches_to_registered_runner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, str, Path]] = []
+
+    class RecordingRunner:
+        suite_name = "custom_v1"
+
+        def supports_mode(self, mode: str) -> bool:
+            return mode == "rule"
+
+        def unsupported_mode_message(self, mode: str) -> str:
+            return f"custom_v1 rejects {mode}"
+
+        def run(self, args, *, prompt_root: Path) -> int:
+            calls.append((args.suite, args.mode, prompt_root))
+            return 7
+
+    monkeypatch.setattr(
+        "memorii.tools.run_benchmark._build_benchmark_suite_registry",
+        lambda: BenchmarkSuiteRegistry([RecordingRunner()]),
+    )
+
+    assert main(["--suite", "custom_v1", "--mode", "rule", "--prompt-root", str(tmp_path)]) == 7
+    assert calls == [("custom_v1", "rule", tmp_path)]
+
+
+def test_run_benchmark_uses_runner_unsupported_mode_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class RuleOnlyRunner:
+        suite_name = "custom_v1"
+
+        def supports_mode(self, mode: str) -> bool:
+            return mode == "rule"
+
+        def unsupported_mode_message(self, mode: str) -> str:
+            return f"custom_v1 rejects {mode}"
+
+        def run(self, args, *, prompt_root: Path) -> int:
+            raise AssertionError("unsupported mode should not dispatch")
+
+    monkeypatch.setattr(
+        "memorii.tools.run_benchmark._build_benchmark_suite_registry",
+        lambda: BenchmarkSuiteRegistry([RuleOnlyRunner()]),
+    )
+
+    with pytest.raises(SystemExit, match="custom_v1 rejects llm"):
+        main(["--suite", "custom_v1", "--mode", "llm"])
+
+
+def test_benchmark_suite_runner_modules_import() -> None:
+    modules = [
+        "memorii.tools.benchmark_suites.execution_graph",
+        "memorii.tools.benchmark_suites.fixture_harness",
+        "memorii.tools.benchmark_suites.fixture_loaders",
+        "memorii.tools.benchmark_suites.hotpotqa_v1",
+        "memorii.tools.benchmark_suites.hotpotqa_official",
+        "memorii.tools.benchmark_suites.memory_evolution",
+        "memorii.tools.benchmark_suites.memory_evolution_runtime",
+        "memorii.tools.benchmark_suites.memory_evolution_sim",
+        "memorii.tools.benchmark_suites.memory_lifecycle_fixture",
+        "memorii.tools.benchmark_suites.minimal",
+        "memorii.tools.benchmark_suites.registry",
+        "memorii.tools.benchmark_suites.retrieval_corruption",
+    ]
+
+    for module_name in modules:
+        assert importlib.import_module(module_name)
+
+
+def test_benchmark_suite_modules_do_not_use_compatibility_scaffolding() -> None:
+    suite_root = Path(__file__).resolve().parents[3] / "memorii" / "tools" / "benchmark_suites"
+
+    assert not (suite_root / "_implementation.py").exists()
+    assert not (suite_root / "shared.py").exists()
+    assert not (suite_root / "fixture_backed.py").exists()
+
+
+
+def test_runtime_benchmark_report_write_failure_is_not_swallowed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    args = argparse.Namespace(
+        mode="hybrid",
+        dry_run=True,
+        allow_live=False,
+        storage_root=str(tmp_path),
+        sim_profile="smoke",
+    )
+    run_dir = tmp_path / "runtime-artifacts"
+
+    def _fake_load(_args: argparse.Namespace):
+        return [], "unit"
+
+    def _fake_rows(**_kwargs: object) -> RuntimeSuiteRows:
+        return RuntimeSuiteRows(scenario_rows=[], checkpoint_rows=[], judge_rows=[], llm_rows=[])
+
+    def _fake_artifacts(**_kwargs: object) -> Path:
+        run_dir.mkdir(parents=True)
+        with (run_dir / "report.json").open("w", encoding="utf-8") as handle:
+            json.dump({"metrics": {}}, handle)
+        return run_dir
+
+    def _raise_on_report_write(self: Path, *_args: object, **_kwargs: object) -> int:
+        if self == run_dir / "report.json":
+            raise OSError("report write failed")
+        return original_write_text(self, *_args, **_kwargs)
+
+    original_write_text = Path.write_text
+    monkeypatch.setattr(runtime_suite, "_load_memory_evolution_sim_suite", _fake_load)
+    monkeypatch.setattr(runtime_suite, "run_runtime_scenarios", _fake_rows)
+    monkeypatch.setattr(runtime_suite, "_write_memory_evolution_sim_artifacts", _fake_artifacts)
+    monkeypatch.setattr(runtime_suite, "write_runtime_artifacts", lambda **_kwargs: None)
+    monkeypatch.setattr(runtime_suite, "runtime_summary_metrics", lambda _rows: {})
+    monkeypatch.setattr(runtime_suite, "runtime_warning_policy", lambda: {})
+    monkeypatch.setattr(runtime_suite, "_print_memory_evolution_sim_summary", lambda **_kwargs: None)
+    monkeypatch.setattr(Path, "write_text", _raise_on_report_write)
+
+    with pytest.raises(OSError, match="report write failed"):
+        runtime_suite._run_memory_evolution_runtime_suite(
+            args,
+            prompt_root=tmp_path,
+            dependencies=runtime_suite.BenchmarkRuntimeDependencies(),
+        )
+
+
+def test_runtime_extractor_uses_injected_llm_client_factory(tmp_path: Path) -> None:
+    calls: list[LLMRuntimeConfig] = []
+
+    class StubClient:
+        def complete_structured(
+            self,
+            request: LLMStructuredRequest,
+            *,
+            config: LLMRuntimeConfig | None = None,
+        ) -> LLMStructuredResponse:
+            raise AssertionError("extractor construction should not call the client")
+
+    class StubFactory:
+        @staticmethod
+        def from_config(config: LLMRuntimeConfig) -> StubClient:
+            calls.append(config)
+            return StubClient()
+
+    scenario = generate_memory_evolution_sim_scenarios(profile="smoke", scenario_count=1, seed=7)[0]
+
+    extractor = build_runtime_extractor(
+        scenario=scenario,
+        effective_mode="llm",
+        dry_run=False,
+        runtime_config=LLMRuntimeConfig(provider="fake"),
+        prompt_root=tmp_path,
+        llm_client_factory=StubFactory,
+    )
+
+    assert calls == [LLMRuntimeConfig(provider="fake")]
+    assert extractor is not None
+
+
 def test_memory_lifecycle_benchmark_is_memorii_only_for_now() -> None:
     with pytest.raises(SystemExit, match="memorii only"):
         main(["--suite", "memory_lifecycle_v1", "--systems", "all"])
+
+
+def test_non_hotpotqa_suite_does_not_resolve_hotpotqa_default_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_llm_env(monkeypatch)
+
+    def _unexpected_hotpotqa_default():
+        raise AssertionError("non-HotPotQA suites must not resolve HotPotQA package data")
+
+    monkeypatch.setattr(
+        "memorii.tools.benchmark_suites.runtime_dependencies.hotpotqa_default_dataset_path",
+        _unexpected_hotpotqa_default,
+    )
+
+    assert main(["--suite", "memory_lifecycle_v1", "--storage-root", str(tmp_path)]) == 0
 
 
 def test_hotpotqa_benchmark_cli_runs_and_writes_metadata(
@@ -135,6 +356,26 @@ def test_hotpotqa_benchmark_cli_runs_and_writes_metadata(
     assert int(fields["llm_calls"]) == 0
     assert metadata["dataset_path"] == str(HOTPOTQA_SAMPLE_PATH)
     assert metadata["subset_size_requested"] == 2
+    assert metadata["selected_example_ids"]
+
+
+def test_hotpotqa_benchmark_uses_package_default_dataset(
+    tmp_path: Path,
+) -> None:
+    assert main(
+        [
+            "--suite",
+            "hotpotqa_v1",
+            "--storage-root",
+            str(tmp_path),
+            "--hotpotqa-subset-size",
+            "1",
+        ]
+    ) == 0
+
+    run_dir = _latest_run_dir(tmp_path, "hotpotqa_v1")
+    metadata = json.loads((run_dir / "hotpotqa_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["dataset_path"].endswith("hotpotqa_sample.json")
     assert metadata["selected_example_ids"]
 
 

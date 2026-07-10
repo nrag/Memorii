@@ -3,7 +3,7 @@ from memorii.core.benchmark.lifecycle_decision import lifecycle_family_requires_
 from memorii.core.benchmark.metrics import aggregate_metrics, compute_metrics
 from memorii.core.benchmark.models import BenchmarkSystem, MemoryLifecycleFamily
 from memorii.core.benchmark.scenarios import ScenarioExecutor
-from tests.fixtures.benchmarks.memory_lifecycle_v1 import load_memory_lifecycle_v1_fixture_set
+from memorii.core.benchmark.fixture_sets.memory_lifecycle_v1 import load_memory_lifecycle_v1_fixture_set
 
 
 def test_memory_lifecycle_v1_covers_all_lifecycle_families() -> None:

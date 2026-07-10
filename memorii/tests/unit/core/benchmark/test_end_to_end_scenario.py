@@ -17,7 +17,7 @@ from memorii.core.benchmark.scenarios import ScenarioExecutor
 from memorii.core.provider.models import ProviderStoredRecord
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
 from memorii.domain.routing import InboundEvent, InboundEventClass
-from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
+from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 
 
 def test_end_to_end_scenario_success_and_pollution_signals() -> None:

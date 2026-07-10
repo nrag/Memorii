@@ -241,11 +241,16 @@ def memory_evolution_assertion_passed(
     selected_ids = list(parsed.selected_memory_ids)
     selected = set(selected_ids)
     expected_retrieval = list(checkpoint.expected_retrieval_ids)
-    if scenario.discriminative and expected_retrieval:
+    is_belief_ranking = bool(checkpoint.expected_belief_ranking)
+    if scenario.discriminative and expected_retrieval and not is_belief_ranking:
         if selected_ids != expected_retrieval:
             return False
-    elif expected_retrieval and not set(expected_retrieval).issubset(selected):
-        return False
+    elif expected_retrieval:
+        retrieved = selected | set(parsed.active_memory_ids)
+        if is_belief_ranking:
+            retrieved |= {score.memory_id for score in parsed.belief_scores}
+        if not set(expected_retrieval).issubset(retrieved):
+            return False
 
     if selected & set(checkpoint.expected_excluded_memory_ids):
         return False

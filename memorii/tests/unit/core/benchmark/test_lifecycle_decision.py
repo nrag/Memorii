@@ -11,9 +11,10 @@ from memorii.core.benchmark.lifecycle_decision import (
     rule_lifecycle_decision_for_fixture,
 )
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
-from memorii.tools.run_benchmark import _transition_kind, main
+from memorii.tools.benchmark_suites.memory_lifecycle_fixture import transition_kind
+from memorii.tools.run_benchmark import main
 from memorii.tools.run_live_llm_eval import EvalFakeClient
-from tests.fixtures.benchmarks.memory_lifecycle_v1 import load_memory_lifecycle_v1_fixture_set
+from memorii.core.benchmark.fixture_sets.memory_lifecycle_v1 import load_memory_lifecycle_v1_fixture_set
 
 
 def _discriminative_fixtures():
@@ -77,7 +78,7 @@ def test_required_lifecycle_decision_cases_are_routed_to_lifecycle_decision() ->
 
     assert all(fixture.lifecycle is not None for fixture in fixtures)
     assert all(fixture.lifecycle.require_lifecycle_decision for fixture in fixtures if fixture.lifecycle)
-    assert {_transition_kind(fixture) for fixture in fixtures} == {"lifecycle_decision"}
+    assert {transition_kind(fixture) for fixture in fixtures} == {"lifecycle_decision"}
 
 
 def test_lifecycle_decision_rejects_retrieval_only_outputs() -> None:

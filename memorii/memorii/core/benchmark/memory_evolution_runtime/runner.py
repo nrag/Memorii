@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
@@ -31,6 +31,7 @@ from memorii.core.benchmark.memory_evolution_runtime.utils import _claim_by_id, 
 from memorii.core.calibration.alignment import normalize_alignment_value
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
+from memorii.core.llm_provider.base import LLMStructuredClient
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.memory_evolution import (
@@ -54,6 +55,14 @@ from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.tools.run_live_llm_eval import _validate_live_safety
+
+
+class LLMClientFactoryProtocol(Protocol):
+    """Factory interface used by runtime benchmark extraction."""
+
+    @staticmethod
+    def from_config(config: LLMRuntimeConfig) -> LLMStructuredClient:
+        ...
 
 
 class OracleVisibleMemoryExtractor:
@@ -229,13 +238,14 @@ def build_runtime_extractor(
     dry_run: bool,
     runtime_config: LLMRuntimeConfig,
     prompt_root: Path,
+    llm_client_factory: LLMClientFactoryProtocol = LLMClientFactory,
 ) -> MemoryExtractor:
     if effective_mode == "rule":
         delegate: MemoryExtractor = RuleMemoryExtractor()
     elif dry_run:
         delegate = OracleVisibleMemoryExtractor(scenario=scenario)
     else:
-        runner = PromptLLMRunner(client=LLMClientFactory.from_config(runtime_config), config=runtime_config)
+        runner = PromptLLMRunner(client=llm_client_factory.from_config(runtime_config), config=runtime_config)
         llm_extractor = LLMMemoryExtractor(runner=runner, prompt_root=prompt_root)
         if effective_mode == "llm":
             delegate = llm_extractor
@@ -268,6 +278,7 @@ def run_runtime_scenarios(
     dry_run: bool,
     allow_live: bool,
     prompt_root: Path,
+    llm_client_factory: LLMClientFactoryProtocol = LLMClientFactory,
 ) -> RuntimeSuiteRows:
     effective_mode, runtime_config = validate_runtime_live_safety(mode=mode, dry_run=dry_run, allow_live=allow_live)
     scenario_rows: list[dict[str, object]] = []
@@ -286,6 +297,7 @@ def run_runtime_scenarios(
             dry_run=dry_run,
             runtime_config=runtime_config,
             prompt_root=prompt_root,
+            llm_client_factory=llm_client_factory,
         )
         memory_plane = MemoryPlaneService()
         provider = ProviderMemoryService(

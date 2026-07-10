@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from importlib.resources import files
 from pathlib import Path
 
 from memorii.core.benchmark.hotpotqa import (
@@ -12,7 +13,7 @@ from memorii.core.benchmark.hotpotqa import (
 )
 from memorii.core.benchmark.models import BenchmarkScenarioType
 
-HOTSPOT_FIXTURE_PATH = Path(__file__).resolve().parents[3] / "fixtures" / "benchmarks" / "hotpotqa_sample.json"
+HOTSPOT_FIXTURE_PATH = files("memorii.core.benchmark.fixture_sets").joinpath("hotpotqa_sample.json")
 
 
 def test_hotpotqa_adapter_parses_json_and_jsonl(tmp_path: Path) -> None:

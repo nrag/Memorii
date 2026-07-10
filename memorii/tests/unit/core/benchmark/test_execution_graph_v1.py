@@ -5,7 +5,7 @@ from memorii.core.benchmark.execution_graph_decision import (
     expected_execution_graph_decision_for_scenario,
     rule_execution_graph_decision_for_scenario,
 )
-from tests.fixtures.benchmarks.execution_graph_v1 import load_execution_graph_v1_fixture_set
+from memorii.core.benchmark.fixture_sets.execution_graph_v1 import load_execution_graph_v1_fixture_set
 
 
 def test_execution_graph_v1_has_compact_contract_and_discriminative_cases() -> None:
