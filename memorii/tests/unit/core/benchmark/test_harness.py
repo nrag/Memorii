@@ -1,7 +1,7 @@
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkRunConfig, BenchmarkScenarioFixture, BenchmarkSystem
 from memorii.core.benchmark.reporting import to_markdown
-from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
+from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 
 
 def test_harness_executes_all_scenarios_for_all_systems() -> None:

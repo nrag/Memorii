@@ -11,7 +11,7 @@ from memorii.core.benchmark.models import (
 from memorii.core.promotion import PromotionAction, PromotionReasonCode
 from memorii.core.benchmark.scenarios import ScenarioExecutor
 from memorii.domain.enums import MemoryDomain
-from tests.fixtures.benchmarks.benchmark_minimal import load_benchmark_fixture_set
+from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 
 
 def _result(report, scenario_id: str, system: BenchmarkSystem):

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
 
+from memorii.tools import run_benchmark, run_eval as run_eval_module
 from memorii.tools.run_eval import main
 
-HOTPOTQA_SAMPLE_PATH = Path(__file__).resolve().parents[2] / "fixtures" / "benchmarks" / "hotpotqa_sample.json"
+HOTPOTQA_SAMPLE_PATH = files("memorii.core.benchmark.fixture_sets").joinpath("hotpotqa_sample.json")
 
 
 def _summary_fields(output: str, *, suite: str) -> dict[str, str]:
@@ -38,6 +40,10 @@ def _clear_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
     ]:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("MEMORII_LLM_PROVIDER", "none")
+
+
+def test_run_eval_benchmark_suites_match_run_benchmark_registry() -> None:
+    assert list(run_eval_module.BENCHMARK_SUITES) == run_benchmark.benchmark_suite_names()
 
 
 def test_run_eval_routes_memory_lifecycle_suite(
@@ -175,6 +181,26 @@ def test_run_eval_routes_hotpotqa_suite(
     assert int(fields["memorii_runs"]) == payload["summary"]["memorii_runs_total"]
     assert int(fields["llm_calls"]) == 0
     assert metadata["subset_size_requested"] == 2
+
+
+def test_run_eval_hotpotqa_uses_package_default_dataset(
+    tmp_path: Path,
+) -> None:
+    assert main(
+        [
+            "--suite",
+            "hotpotqa_v1",
+            "--storage-root",
+            str(tmp_path),
+            "--hotpotqa-subset-size",
+            "1",
+        ]
+    ) == 0
+
+    run_dir = sorted((tmp_path / "benchmark_runs" / "hotpotqa_v1" / "auto").glob("bench-*"))[-1]
+    metadata = json.loads((run_dir / "hotpotqa_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["dataset_path"].endswith("hotpotqa_sample.json")
+    assert metadata["selected_example_ids"]
 
 
 def test_run_eval_routes_hotpotqa_official_suite(

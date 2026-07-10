@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMRuntimeConfig
@@ -13,16 +14,7 @@ DECISION_SUITES = {
     "belief_v1": "belief",
 }
 
-BENCHMARK_SUITES = {
-    "memory_lifecycle_v1",
-    "execution_graph_v1",
-    "memory_evolution_v1",
-    "memory_evolution_sim_v1",
-    "memory_evolution_runtime_v1",
-    "retrieval_corruption_v1",
-    "hotpotqa_v1",
-    "hotpotqa_official_v1",
-}
+BENCHMARK_SUITES = tuple(run_benchmark.benchmark_suite_names())
 
 AGGREGATE_SUITES = {"all"}
 
@@ -67,60 +59,66 @@ def _run_decision_suite(args: argparse.Namespace) -> int:
 
 
 def _run_benchmark_suite(args: argparse.Namespace) -> int:
-    argv = [
-        "--suite",
-        args.suite,
-        "--mode",
-        args.mode,
-        "--systems",
-        args.systems,
-        "--storage-root",
-        args.storage_root,
-        "--seed",
-        str(args.seed),
-    ]
-    if args.prompt_root is not None:
-        argv.extend(["--prompt-root", args.prompt_root])
-    if args.run_label is not None:
-        argv.extend(["--run-label", args.run_label])
-    if args.suite in {"hotpotqa_v1", "hotpotqa_official_v1"}:
-        argv.extend(
-            [
-                "--hotpotqa-dataset",
-                args.hotpotqa_dataset,
-                "--hotpotqa-split",
-                args.hotpotqa_split,
-                "--hotpotqa-subset-size",
-                str(args.hotpotqa_subset_size),
-            ]
-        )
-        if args.hotpotqa_question_type is not None:
-            argv.extend(["--hotpotqa-question-type", args.hotpotqa_question_type])
-        if args.suite == "hotpotqa_official_v1":
-            argv.extend(["--hotpotqa-diagnostics", args.hotpotqa_diagnostics])
-    if args.suite in {"memory_evolution_sim_v1", "memory_evolution_runtime_v1"}:
-        argv.extend(
-            [
-                "--sim-profile",
-                args.sim_profile,
-                "--sim-scenario-count",
-                str(args.sim_scenario_count),
-            ]
-        )
-        if args.sim_min_events is not None:
-            argv.extend(["--sim-min-events", str(args.sim_min_events)])
-        if args.sim_max_events is not None:
-            argv.extend(["--sim-max-events", str(args.sim_max_events)])
-        if args.sim_noise_rate is not None:
-            argv.extend(["--sim-noise-rate", str(args.sim_noise_rate)])
-        if args.sim_fixture_path is not None:
-            argv.extend(["--sim-fixture-path", args.sim_fixture_path])
-        if args.sim_export_review_set is not None:
-            argv.extend(["--sim-export-review-set", args.sim_export_review_set])
-        _add_bool_flag(argv, enabled=args.sim_freeze_output, flag="--sim-freeze-output")
-    _add_bool_flag(argv, enabled=args.dry_run, flag="--dry-run")
-    _add_bool_flag(argv, enabled=args.allow_live, flag="--allow-live")
-    return run_benchmark.main(argv)
+    hotpotqa_default = (
+        run_benchmark.runtime_dependencies.hotpotqa_default_dataset_path()
+        if args.hotpotqa_dataset is None and args.suite in {"hotpotqa_v1", "hotpotqa_official_v1"}
+        else nullcontext(None)
+    )
+    with hotpotqa_default as default_hotpotqa_dataset:
+        argv = [
+            "--suite",
+            args.suite,
+            "--mode",
+            args.mode,
+            "--systems",
+            args.systems,
+            "--storage-root",
+            args.storage_root,
+            "--seed",
+            str(args.seed),
+        ]
+        if args.prompt_root is not None:
+            argv.extend(["--prompt-root", args.prompt_root])
+        if args.run_label is not None:
+            argv.extend(["--run-label", args.run_label])
+        if args.suite in {"hotpotqa_v1", "hotpotqa_official_v1"}:
+            argv.extend(
+                [
+                    "--hotpotqa-dataset",
+                    str(args.hotpotqa_dataset or default_hotpotqa_dataset),
+                    "--hotpotqa-split",
+                    args.hotpotqa_split,
+                    "--hotpotqa-subset-size",
+                    str(args.hotpotqa_subset_size),
+                ]
+            )
+            if args.hotpotqa_question_type is not None:
+                argv.extend(["--hotpotqa-question-type", args.hotpotqa_question_type])
+            if args.suite == "hotpotqa_official_v1":
+                argv.extend(["--hotpotqa-diagnostics", args.hotpotqa_diagnostics])
+        if args.suite in {"memory_evolution_sim_v1", "memory_evolution_runtime_v1"}:
+            argv.extend(
+                [
+                    "--sim-profile",
+                    args.sim_profile,
+                    "--sim-scenario-count",
+                    str(args.sim_scenario_count),
+                ]
+            )
+            if args.sim_min_events is not None:
+                argv.extend(["--sim-min-events", str(args.sim_min_events)])
+            if args.sim_max_events is not None:
+                argv.extend(["--sim-max-events", str(args.sim_max_events)])
+            if args.sim_noise_rate is not None:
+                argv.extend(["--sim-noise-rate", str(args.sim_noise_rate)])
+            if args.sim_fixture_path is not None:
+                argv.extend(["--sim-fixture-path", args.sim_fixture_path])
+            if args.sim_export_review_set is not None:
+                argv.extend(["--sim-export-review-set", args.sim_export_review_set])
+            _add_bool_flag(argv, enabled=args.sim_freeze_output, flag="--sim-freeze-output")
+        _add_bool_flag(argv, enabled=args.dry_run, flag="--dry-run")
+        _add_bool_flag(argv, enabled=args.allow_live, flag="--allow-live")
+        return run_benchmark.main(argv)
 
 
 def _run_all_suites(args: argparse.Namespace) -> int:
@@ -173,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--systems", choices=["memorii", "all"], default="memorii")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--run-label", default=None)
-    parser.add_argument("--hotpotqa-dataset", default=str(run_benchmark._DEFAULT_HOTPOTQA_DATASET))
+    parser.add_argument("--hotpotqa-dataset", default=None)
     parser.add_argument("--hotpotqa-split", default="validation")
     parser.add_argument("--hotpotqa-subset-size", type=int, default=3)
     parser.add_argument("--hotpotqa-question-type", choices=["bridge", "comparison"], default=None)
