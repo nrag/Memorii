@@ -6,14 +6,15 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from memorii.core.benchmark.artifact_rows import AlignmentSummary, RuntimeGraphSummary, artifact_rows_to_json
 from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeSuiteRows
 
 
 def write_runtime_artifacts(*, run_dir: Path, rows: RuntimeSuiteRows) -> None:
     _write_jsonl(run_dir / "runtime_graph_items.jsonl", rows.graph_items)
-    _write_jsonl(run_dir / "runtime_graph_alignments.jsonl", rows.alignments)
-    _write_jsonl(run_dir / "runtime_checkpoint_results.jsonl", rows.checkpoint_rows)
-    _write_jsonl(run_dir / "runtime_failures.jsonl", rows.runtime_failures)
+    _write_jsonl(run_dir / "runtime_graph_alignments.jsonl", artifact_rows_to_json(rows.alignments))
+    _write_jsonl(run_dir / "runtime_checkpoint_results.jsonl", artifact_rows_to_json(rows.checkpoint_rows))
+    _write_jsonl(run_dir / "runtime_failures.jsonl", artifact_rows_to_json(rows.runtime_failures))
     (run_dir / "runtime_graph_alignments_summary.json").write_text(
         json.dumps(runtime_alignment_summary(rows), indent=2, sort_keys=True),
         encoding="utf-8",
@@ -66,6 +67,7 @@ def _long_horizon_slice_counts(checkpoint_rows: list[dict[str, object]]) -> dict
     }
 
 def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, object]:
+    checkpoint_rows = artifact_rows_to_json(rows.checkpoint_rows)
     node_counts: Counter[str] = Counter()
     edge_counts: Counter[str] = Counter()
     validation_error_count = 0
@@ -137,11 +139,11 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
         action_observed_in_count += len(action_has_observed_in)
     item_counts = Counter(str(item.get("item_type", "unknown")) for item in rows.graph_items)
     relation_support_modes = Counter()
-    for row in rows.checkpoint_rows:
+    for row in checkpoint_rows:
         for item in row.get("runtime_relation_support", []) or []:
             if isinstance(item, dict):
                 relation_support_modes[str(item.get("support_mode", "unknown"))] += 1
-    return {
+    return RuntimeGraphSummary.from_flat_row({
         "source_observation_count": source_observation_count,
         "entity_count": node_counts.get("entity", 0),
         "claim_count": node_counts.get("claim", 0),
@@ -167,15 +169,16 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
         "active_claim_with_observed_in_rate": claim_observed_in_count / max(1, active_claim_count),
         "active_action_with_observed_in_rate": action_observed_in_count / max(1, active_action_count),
         "runtime_graph_validation_error_count": validation_error_count,
-    }
+    }).to_json_row()
 
 def runtime_summary_metrics(rows: RuntimeSuiteRows) -> dict[str, object]:
-    checkpoint_count = len(rows.checkpoint_rows)
-    bucket_counts = Counter(bucket for row in rows.checkpoint_rows for bucket in row.get("runtime_failure_buckets", []))
-    final_output_source_counts = Counter(str(row.get("final_output_source", "unknown")) for row in rows.checkpoint_rows)
-    provider_successes = sum(int(row.get("provider_successes", 0) or 0) for row in rows.checkpoint_rows)
-    provider_failures = sum(int(row.get("provider_failures", 0) or 0) for row in rows.checkpoint_rows)
-    fallbacks = sum(int(row.get("fallbacks", 0) or 0) for row in rows.checkpoint_rows)
+    checkpoint_rows = artifact_rows_to_json(rows.checkpoint_rows)
+    checkpoint_count = len(checkpoint_rows)
+    bucket_counts = Counter(bucket for row in checkpoint_rows for bucket in row.get("runtime_failure_buckets", []))
+    final_output_source_counts = Counter(str(row.get("final_output_source", "unknown")) for row in checkpoint_rows)
+    provider_successes = sum(1 for row in rows.llm_rows if row.get("success") is True)
+    provider_failures = sum(1 for row in rows.llm_rows if row.get("success") is not True)
+    fallbacks = sum(1 for row in rows.llm_rows if row.get("fallback_used") is True)
     graph_summary = runtime_graph_completeness_metrics(rows)
     alignment_summary = runtime_alignment_summary(rows)
     summary: dict[str, object] = {
@@ -189,14 +192,16 @@ def runtime_summary_metrics(rows: RuntimeSuiteRows) -> dict[str, object]:
         "runtime_graph_item_count": len(rows.graph_items),
         "runtime_graph_summary": graph_summary,
         "runtime_graph_alignments_summary": alignment_summary,
-        "long_horizon_slice_counts": _long_horizon_slice_counts(rows.checkpoint_rows),
+        "long_horizon_slice_counts": _long_horizon_slice_counts(checkpoint_rows),
     }
     summary.update(graph_summary)
     return summary
 
 def runtime_alignment_summary(rows: RuntimeSuiteRows) -> dict[str, object]:
+    checkpoint_rows = artifact_rows_to_json(rows.checkpoint_rows)
+    alignments = artifact_rows_to_json(rows.alignments)
     checkpoint_expected_ids: dict[tuple[str, str], set[str]] = {}
-    for row in rows.checkpoint_rows:
+    for row in checkpoint_rows:
         expected = row.get("expected") if isinstance(row.get("expected"), dict) else {}
         expected_ids: set[str] = set()
         if isinstance(expected, dict):
@@ -209,7 +214,7 @@ def runtime_alignment_summary(rows: RuntimeSuiteRows) -> dict[str, object]:
     required_counts: Counter[str] = Counter()
     required_item_counts: Counter[str] = Counter()
     required_total = 0
-    for alignment in rows.alignments:
+    for alignment in alignments:
         if not isinstance(alignment, dict):
             continue
         verdict = str(alignment.get("verdict", "unknown"))
@@ -217,18 +222,18 @@ def runtime_alignment_summary(rows: RuntimeSuiteRows) -> dict[str, object]:
         full_counts[verdict] += 1
         full_item_counts[f"{item_type}:{verdict}"] += 1
         key = (str(alignment.get("scenario_id")), str(alignment.get("checkpoint_id")))
-        oracle_id = str(alignment.get("oracle_item_id") or "")
+        oracle_id = str(alignment.get("oracle_id") or alignment.get("oracle_item_id") or "")
         if oracle_id and oracle_id in checkpoint_expected_ids.get(key, set()):
             required_total += 1
             required_counts[verdict] += 1
             required_item_counts[f"{item_type}:{verdict}"] += 1
-    scored_verdict_counts = Counter(str(row.get("verdict", "unknown")) for row in rows.checkpoint_rows)
+    scored_verdict_counts = Counter(str(row.get("verdict", "unknown")) for row in checkpoint_rows)
     scored_failure_bucket_counts = Counter(
         str(bucket)
-        for row in rows.checkpoint_rows
+        for row in checkpoint_rows
         for bucket in row.get("failure_buckets", []) or []
     )
-    return {
+    return AlignmentSummary.from_flat_row({
         "alignment_summary_policy": {
             "checkpoint_expected_alignment_audit": "Diagnostic-only alignment of checkpoint expected ids against runtime graph items; partial, ambiguous_alignment, and unmatched_runtime are not failures unless reflected in checkpoint_scored_* fields.",
             "full_graph_audit_alignment": "Diagnostic-only alignment over the broader recoverable latent graph slice.",
@@ -238,12 +243,12 @@ def runtime_alignment_summary(rows: RuntimeSuiteRows) -> dict[str, object]:
         "checkpoint_expected_alignment_audit_counts": dict(sorted(required_counts.items())),
         "checkpoint_expected_alignment_audit_counts_by_item_type": dict(sorted(required_item_counts.items())),
         "checkpoint_scored_verdict_counts": dict(sorted(scored_verdict_counts.items())),
-        "checkpoint_scored_review_required_count": sum(1 for row in rows.checkpoint_rows if row.get("review_required") is True),
+        "checkpoint_scored_review_required_count": sum(1 for row in checkpoint_rows if row.get("review_required") is True),
         "checkpoint_scored_failure_bucket_counts": dict(sorted(scored_failure_bucket_counts.items())),
-        "full_graph_audit_alignment_count": len(rows.alignments),
+        "full_graph_audit_alignment_count": len(alignments),
         "full_graph_audit_alignment_counts": dict(sorted(full_counts.items())),
         "full_graph_audit_alignment_counts_by_item_type": dict(sorted(full_item_counts.items())),
-    }
+    }).to_json_row()
 
 def runtime_warning_policy() -> dict[str, dict[str, str]]:
     return {

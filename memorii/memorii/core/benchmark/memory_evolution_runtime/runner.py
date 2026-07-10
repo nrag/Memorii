@@ -8,12 +8,27 @@ from typing import Literal, Protocol
 from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
     ObservabilityLabel,
+    OracleCheckpoint,
+    SimOutputNormalization,
     SurfaceObservation,
     judge_sim_checkpoint,
     normalize_sim_system_output_for_checkpoint,
     rule_sim_output_for_checkpoint,
     sim_checkpoint_diagnostics,
     sim_reconstruction_context_for_checkpoint,
+)
+from memorii.core.benchmark.artifact_rows import (
+    CheckpointDecisionTraceSection,
+    CheckpointDiagnosticsSection,
+    CheckpointHorizonSection,
+    CheckpointVerdictSection,
+    NormalizationDiagnosticsSection,
+    RuntimeCheckpointResultRow,
+    RuntimeActionAlignmentRow,
+    RuntimeDiagnosticsSection,
+    RuntimeGraphAlignmentRow,
+    artifact_section_legacy_fields,
+    checkpoint_warning_buckets,
 )
 from memorii.core.benchmark.memory_evolution_runtime.artifacts import _horizon_distance_bucket, _interference_count_bucket, _source_event_age_days_bucket
 from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import _runtime_relation_support_rows, project_runtime_checkpoint, runtime_failure_buckets
@@ -26,7 +41,7 @@ from memorii.core.benchmark.memory_evolution_runtime.graph_items import (
     graph_items_from_snapshot,
 )
 from memorii.core.benchmark.memory_evolution_runtime.ingestion import ingest_scenario_surface_observations
-from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeSuiteRows
+from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeProjection, RuntimeSuiteRows
 from memorii.core.benchmark.memory_evolution_runtime.utils import _claim_by_id, _entity_by_id, _ordered_unique, _stable_id, _text_key
 from memorii.core.calibration.alignment import normalize_alignment_value
 from memorii.core.env_config import load_memorii_environment
@@ -282,13 +297,13 @@ def run_runtime_scenarios(
 ) -> RuntimeSuiteRows:
     effective_mode, runtime_config = validate_runtime_live_safety(mode=mode, dry_run=dry_run, allow_live=allow_live)
     scenario_rows: list[dict[str, object]] = []
-    checkpoint_rows: list[dict[str, object]] = []
+    checkpoint_rows: list[RuntimeCheckpointResultRow] = []
     judge_rows: list[dict[str, object]] = []
     llm_rows: list[dict[str, object]] = []
     graph_snapshots: list[dict[str, object]] = []
     graph_items: list[dict[str, object]] = []
-    alignments: list[dict[str, object]] = []
-    runtime_failures: list[dict[str, object]] = []
+    alignments: list[RuntimeGraphAlignmentRow] = []
+    runtime_failures: list[RuntimeCheckpointResultRow] = []
 
     for scenario in scenarios:
         extractor = build_runtime_extractor(
@@ -320,13 +335,16 @@ def run_runtime_scenarios(
         )
         graph_items.extend(runtime_graph_items)
 
-        scenario_checkpoint_rows: list[dict[str, object]] = []
+        scenario_checkpoint_rows: list[RuntimeCheckpointResultRow] = []
         extractor_call_rows = extractor_trace_rows(
             scenario=scenario,
             extractor=extractor,
             effective_mode=effective_mode,
             dry_run=dry_run,
         )
+        extractor_provider_successes = sum(1 for call_row in extractor_call_rows if call_row.get("success") is True)
+        extractor_provider_failures = sum(1 for call_row in extractor_call_rows if call_row.get("success") is not True)
+        extractor_fallbacks = sum(1 for call_row in extractor_call_rows if call_row.get("fallback_used") is True)
         llm_rows.extend(extractor_call_rows)
         for checkpoint in scenario.checkpoints:
             projection = project_runtime_checkpoint(
@@ -336,10 +354,14 @@ def run_runtime_scenarios(
                 graph_items=runtime_graph_items,
                 source_id_to_event_id=source_id_to_event_id,
             )
-            alignments.extend([
-                {"scenario_id": scenario.scenario_id, "checkpoint_id": checkpoint.checkpoint_id, **alignment.model_dump(mode="json")}
+            alignments.extend(
+                RuntimeGraphAlignmentRow.from_runtime_alignment({
+                    "scenario_id": scenario.scenario_id,
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    **alignment.model_dump(mode="json"),
+                })
                 for alignment in projection.alignments
-            ])
+            )
             raw_output = projection.output
             output, normalization = normalize_sim_system_output_for_checkpoint(
                 scenario=scenario,
@@ -357,98 +379,38 @@ def run_runtime_scenarios(
             )
             success = aggregate.verdict.value == "pass" and not runtime_buckets
             final_output_source = runtime_final_output_source(effective_mode=effective_mode, dry_run=dry_run, extractor=extractor)
-            row = {
-                "scenario_id": scenario.scenario_id,
-                "family": scenario.family,
-                "profile": scenario.profile,
-                "checkpoint_id": checkpoint.checkpoint_id,
-                "checkpoint_type": checkpoint.checkpoint_type,
-                "phase": "checkpoint",
-                "horizon_distance": checkpoint.horizon_distance,
-                "horizon_distance_bucket": _horizon_distance_bucket(checkpoint.horizon_distance),
-                "interference_count": checkpoint.interference_count,
-                "interference_count_bucket": _interference_count_bucket(checkpoint.interference_count),
-                "source_event_age_days": checkpoint.source_event_age_days,
-                "source_event_age_days_bucket": _source_event_age_days_bucket(checkpoint.source_event_age_days),
-                "required_retrieval_view": checkpoint.required_retrieval_view,
-                "expected_stage_path": list(checkpoint.expected_stage_path),
-                "query_or_task": checkpoint.query_or_task,
-                "decision_mode": mode,
-                "effective_decision_mode": effective_mode,
-                "llm_call_made": effective_mode in {"llm", "hybrid"},
-                "fallback_used": extractor_fallback_count(extractor) > 0,
-                "fallback_reason": "runtime_extractor_fallback" if extractor_fallback_count(extractor) > 0 else None,
-                "final_output_source": final_output_source,
-                "request_id": f"memory_evolution_runtime:{mode}:{scenario.scenario_id}:{checkpoint.checkpoint_id}",
-                "success": success,
-                "passed": True if aggregate.verdict.value == "pass" and not runtime_buckets else False,
-                "verdict": "fail" if runtime_buckets else aggregate.verdict.value,
-                "score": aggregate.score,
-                "confidence": aggregate.confidence,
-                "review_required": aggregate.review_required or bool(runtime_buckets),
-                "failure_buckets": sorted({*aggregate.critical_failure_buckets, *runtime_buckets}),
-                "runtime_failure_buckets": runtime_buckets,
-                "missing_expected_ids": diagnostics["missing_expected_ids"],
-                "extra_selected_ids": diagnostics["extra_selected_ids"],
-                "answer_match_type": diagnostics["answer_match_type"],
-                "failure_classification": _runtime_failure_classification(runtime_buckets, diagnostics),
-                "runtime_failure_classification": _runtime_failure_classification(runtime_buckets, diagnostics),
-                "selected_excluded_ids": diagnostics["selected_excluded_ids"],
-                "supporting_excluded_ids": diagnostics["supporting_excluded_ids"],
-                "rejected_expected_ids": diagnostics["rejected_expected_ids"],
-                "missing_rejected_ids": diagnostics["missing_rejected_ids"],
-                "missing_rejected_claim_subject_entity_ids": diagnostics["missing_rejected_claim_subject_entity_ids"],
-                "supporting_wrong_entity_claim_ids": diagnostics["supporting_wrong_entity_claim_ids"],
-                "auto_closed_selected_entity_ids": normalization.auto_closed_selected_entity_ids,
-                "auto_closed_rejected_entity_ids": normalization.auto_closed_rejected_entity_ids,
-                "auto_closed_context_entity_ids": normalization.auto_closed_context_entity_ids,
-                "auto_closed_context_relation_ids": normalization.auto_closed_context_relation_ids,
-                "auto_promoted_selected_claim_ids": normalization.auto_promoted_selected_claim_ids,
-                "auto_promoted_supporting_claim_ids": normalization.auto_promoted_supporting_claim_ids,
-                "auto_promoted_supporting_citation_event_ids": normalization.auto_promoted_supporting_citation_event_ids,
-                "auto_rejected_claim_ids": normalization.auto_rejected_claim_ids,
-                "normalization_reason_codes": normalization.normalization_reason_codes,
-                "normalization_applied": normalization.normalization_applied,
-                "selected_noncurrent_claim_ids": diagnostics["selected_noncurrent_claim_ids"],
-                "required_definition_claim_ids": diagnostics["required_definition_claim_ids"],
-                "missing_definition_claim_ids": diagnostics["missing_definition_claim_ids"],
-                "missing_definition_support_claim_ids": diagnostics["missing_definition_support_claim_ids"],
-                "selected_entity_role_mismatches": diagnostics["selected_entity_role_mismatches"],
-                "missing_selected_subject_entity_ids": diagnostics["missing_selected_subject_entity_ids"],
-                "selected_object_entity_instead_of_subject_ids": diagnostics["selected_object_entity_instead_of_subject_ids"],
-                "selected_graph_entity_overbreadth": diagnostics["selected_graph_entity_overbreadth"],
-                "selected_nonrequired_graph_entity_ids": diagnostics["selected_nonrequired_graph_entity_ids"],
-                "selected_context_only_entity_ids": diagnostics["selected_context_only_entity_ids"],
-                "selected_rejected_or_context_entity_ids": diagnostics["selected_rejected_or_context_entity_ids"],
-                "supporting_noisy_citation_event_ids": diagnostics["supporting_noisy_citation_event_ids"],
-                "context_only_noise_event_ids": diagnostics["context_only_noise_event_ids"],
-                "role_misclassification": diagnostics["role_misclassification"],
-                "precision_failure_classification": diagnostics["precision_failure_classification"],
-                "required_judge_ids": diagnostics["required_judge_ids"],
-                "runtime_graph_validation_errors": list(graph_snapshot.validation_errors),
-                "runtime_relation_support": _runtime_relation_support_rows(projection),
-                "runtime_action_support": _runtime_action_support_rows(projection),
-                "runtime_action_alignments": list(projection.action_alignment_rows),
-                "runtime_execution_state": dict(projection.execution_state),
-                "active_continuation_branch": projection.execution_state.get("active_continuation_branch"),
-                "suppressed_branch_ids": list(projection.execution_state.get("suppressed_branch_ids", [])),
-                "action_alignment_failure_reason": _action_alignment_failure_reason(projection.action_alignment_rows),
-                "expected": checkpoint.model_dump(mode="json"),
-                "candidate_cards": sim_reconstruction_context_for_checkpoint(
-                    scenario=scenario,
-                    checkpoint=checkpoint,
-                ).model_dump(mode="json"),
-                "raw_output": raw_output.model_dump(mode="json"),
-                "normalized_output": output.model_dump(mode="json"),
-                "output": output.model_dump(mode="json"),
-                "judge_aggregate": aggregate.model_dump(mode="json"),
-            }
+            output_json = output.model_dump(mode="json")
+            runtime_action_alignments = [
+                RuntimeActionAlignmentRow.from_flat_row(row).to_json_row()
+                for row in projection.action_alignment_rows
+            ]
+            row = _build_runtime_checkpoint_result_row(
+                scenario=scenario,
+                checkpoint=checkpoint,
+                mode=mode,
+                effective_mode=effective_mode,
+                final_output_source=final_output_source,
+                success=success,
+                aggregate=aggregate,
+                diagnostics=diagnostics,
+                runtime_buckets=runtime_buckets,
+                normalization=normalization,
+                graph_snapshot=graph_snapshot,
+                projection=projection,
+                runtime_action_alignments=runtime_action_alignments,
+                raw_output_json=raw_output.model_dump(mode="json"),
+                output_json=output_json,
+                provider_successes=extractor_provider_successes,
+                provider_failures=extractor_provider_failures,
+                fallbacks=extractor_fallbacks,
+                fallback_used=extractor_fallback_count(extractor) > 0,
+            )
             checkpoint_rows.append(row)
             scenario_checkpoint_rows.append(row)
             judge_rows.append(aggregate.model_dump(mode="json"))
             if not success:
                 runtime_failures.append(row)
-        scenario_success = all(row["success"] is True for row in scenario_checkpoint_rows)
+        scenario_success = all(row.success is True for row in scenario_checkpoint_rows)
         scenario_rows.append(
             {
                 "scenario_id": scenario.scenario_id,
@@ -459,8 +421,8 @@ def run_runtime_scenarios(
                 "checkpoint_count": len(scenario_checkpoint_rows),
                 "success": scenario_success,
                 "failure_mode": None if scenario_success else "one_or_more_runtime_checkpoints_failed",
-                "checkpoints_passed": sum(1 for row in scenario_checkpoint_rows if row["success"] is True),
-                "checkpoints_failed": sum(1 for row in scenario_checkpoint_rows if row["success"] is False),
+                "checkpoints_passed": sum(1 for row in scenario_checkpoint_rows if row.success is True),
+                "checkpoints_failed": sum(1 for row in scenario_checkpoint_rows if row.success is False),
             }
         )
     return RuntimeSuiteRows(
@@ -473,6 +435,132 @@ def run_runtime_scenarios(
         alignments=alignments,
         runtime_failures=runtime_failures,
     )
+
+
+def _build_runtime_checkpoint_result_row(
+    *,
+    scenario: LatentGraphScenario,
+    checkpoint: OracleCheckpoint,
+    mode: str,
+    effective_mode: str,
+    final_output_source: str,
+    success: bool,
+    aggregate: object,
+    diagnostics: dict[str, object],
+    runtime_buckets: list[str],
+    normalization: SimOutputNormalization,
+    graph_snapshot: MemoryGraphSnapshot,
+    projection: RuntimeProjection,
+    runtime_action_alignments: list[dict[str, object]],
+    raw_output_json: dict[str, object],
+    output_json: dict[str, object],
+    provider_successes: int,
+    provider_failures: int,
+    fallbacks: int,
+    fallback_used: bool,
+) -> RuntimeCheckpointResultRow:
+    runtime_failure_classification = _runtime_failure_classification(runtime_buckets, diagnostics)
+    horizon = CheckpointHorizonSection(
+        family=scenario.family,
+        profile=scenario.profile,
+        horizon_distance=checkpoint.horizon_distance,
+        horizon_distance_bucket=_horizon_distance_bucket(checkpoint.horizon_distance),
+        interference_count=checkpoint.interference_count,
+        interference_count_bucket=_interference_count_bucket(checkpoint.interference_count),
+        source_event_age_days=checkpoint.source_event_age_days,
+        source_event_age_days_bucket=_source_event_age_days_bucket(checkpoint.source_event_age_days),
+        required_retrieval_view=checkpoint.required_retrieval_view,
+        expected_stage_path=list(checkpoint.expected_stage_path),
+        query_or_task=checkpoint.query_or_task,
+    )
+    decision_trace = CheckpointDecisionTraceSection(
+        decision_mode=mode,
+        effective_decision_mode=effective_mode,
+        llm_call_made=effective_mode in {"llm", "hybrid"},
+        fallback_used=fallback_used,
+        fallback_reason="runtime_extractor_fallback" if fallback_used else None,
+        final_output_source=final_output_source,
+        request_id=f"memory_evolution_runtime:{mode}:{scenario.scenario_id}:{checkpoint.checkpoint_id}",
+    )
+    diagnostic_section = CheckpointDiagnosticsSection.model_validate(diagnostics)
+    warning_buckets = checkpoint_warning_buckets(
+        answer_match_type=diagnostic_section.answer_match_type,
+        output=output_json,
+    )
+    verdict = CheckpointVerdictSection(
+        success=success,
+        passed=bool(getattr(aggregate, "verdict").value == "pass" and not runtime_buckets),
+        verdict="fail" if runtime_buckets else getattr(aggregate, "verdict").value,
+        score=getattr(aggregate, "score"),
+        confidence=getattr(aggregate, "confidence"),
+        review_required=getattr(aggregate, "review_required") or bool(runtime_buckets),
+        failure_buckets=sorted({*getattr(aggregate, "critical_failure_buckets"), *runtime_buckets}),
+        warning_buckets=warning_buckets,
+    )
+    normalization_section = NormalizationDiagnosticsSection.from_normalization(normalization)
+    runtime_section = RuntimeDiagnosticsSection(
+        runtime_graph_validation_errors=list(graph_snapshot.validation_errors),
+        runtime_relation_support=_runtime_relation_support_rows(projection),
+        runtime_action_support=_runtime_action_support_rows(projection),
+        runtime_action_alignments=runtime_action_alignments,
+        runtime_execution_state=dict(projection.execution_state),
+        active_continuation_branch=projection.execution_state.get("active_continuation_branch"),
+        suppressed_branch_ids=list(projection.execution_state.get("suppressed_branch_ids", [])),
+        action_alignment_failure_reason=_action_alignment_failure_reason(projection.action_alignment_rows),
+    )
+    diagnostics_payload = {
+        **diagnostic_section.to_flat_fields(),
+        **runtime_section.to_flat_fields(),
+    }
+    legacy_fields = {
+        **artifact_section_legacy_fields(RuntimeCheckpointResultRow, horizon, decision_trace),
+        "llm_call_made": decision_trace.llm_call_made,
+        "fallback_used": decision_trace.fallback_used,
+        "fallback_reason": decision_trace.fallback_reason,
+        "request_id": decision_trace.request_id,
+        "confidence": verdict.confidence,
+        "provider_successes": provider_successes,
+        "provider_failures": provider_failures,
+        "fallbacks": fallbacks,
+        **diagnostic_section.to_flat_fields(),
+        **normalization_section.to_flat_fields(),
+        **runtime_section.to_flat_fields(),
+        "expected": checkpoint.model_dump(mode="json"),
+        "candidate_cards": sim_reconstruction_context_for_checkpoint(
+            scenario=scenario,
+            checkpoint=checkpoint,
+        ).model_dump(mode="json"),
+        "raw_output": raw_output_json,
+        "normalized_output": output_json,
+        "judge_aggregate": getattr(aggregate, "model_dump")(mode="json"),
+    }
+    return RuntimeCheckpointResultRow(
+        scenario_id=scenario.scenario_id,
+        checkpoint_id=checkpoint.checkpoint_id,
+        checkpoint_type=checkpoint.checkpoint_type,
+        success=verdict.success,
+        passed=verdict.passed,
+        verdict=verdict.verdict,
+        score=verdict.score,
+        review_required=verdict.review_required,
+        failure_buckets=verdict.failure_buckets,
+        warning_buckets=verdict.warning_buckets,
+        diagnostics=diagnostics_payload,
+        output=output_json,
+        profile=horizon.profile,
+        family=horizon.family,
+        decision_mode=decision_trace.decision_mode,
+        effective_decision_mode=decision_trace.effective_decision_mode,
+        final_output_source=decision_trace.final_output_source,
+        runtime_failure_buckets=runtime_buckets,
+        runtime_failure_classification=runtime_failure_classification,
+        scenario_provider_successes=provider_successes,
+        scenario_provider_failures=provider_failures,
+        scenario_fallbacks=fallbacks,
+        provider_count_scope="scenario_extractor_calls",
+        legacy_fields=legacy_fields,
+    )
+
 
 def extractor_trace_rows(*, scenario: LatentGraphScenario, extractor: MemoryExtractor, effective_mode: str, dry_run: bool) -> list[dict[str, object]]:
     if effective_mode not in {"llm", "hybrid"}:
