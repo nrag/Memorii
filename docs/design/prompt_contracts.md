@@ -6,6 +6,12 @@ Memorii prompt behavior is governed by checked-in YAML prompt contracts, strict
 JSON schemas, typed adapter inputs, and no-leakage tests. These contracts are the
 runtime and benchmark source of truth.
 
+The executable manifest in `memorii.core.prompts.manifest` records ownership,
+representative render inputs, fake valid outputs, intentionally invalid outputs,
+and no-leakage rules for every checked-in prompt. See
+`docs/design/prompt_contracts_and_offline_prompt_search_policy.md` for the
+prompt-change gate and offline prompt-search policy.
+
 Prompt optimization frameworks are out of scope for v1. Any future prompt-search
 tooling must export accepted prompt candidates back into the YAML contract system
 before evaluation or shipping.

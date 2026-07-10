@@ -21,6 +21,10 @@ _DEFAULT_JUDGE_PROMPTS: dict[JudgeDimension, str] = {
 }
 
 
+def default_judge_prompt_refs() -> dict[JudgeDimension, str]:
+    return dict(_DEFAULT_JUDGE_PROMPTS)
+
+
 class LLMPromotionDecisionAdapter:
     def __init__(
         self,

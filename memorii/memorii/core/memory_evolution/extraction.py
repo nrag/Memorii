@@ -152,6 +152,7 @@ class RuleMemoryExtractor:
 
 class LLMMemoryExtractor:
     provider = "llm"
+    prompt_ref = "memory_extraction:v1"
 
     def __init__(
         self,
@@ -167,7 +168,7 @@ class LLMMemoryExtractor:
 
     def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
-        contract = self._registry.load("memory_extraction:v1")
+        contract = self._registry.load(self.prompt_ref)
         result = self._runner.run(
             contract=contract,
             variables={

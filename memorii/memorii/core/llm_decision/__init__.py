@@ -14,6 +14,7 @@ from memorii.core.llm_decision.adapters import (
     LLMBeliefUpdateAdapter,
     LLMJudgeDecisionAdapter,
     LLMPromotionDecisionAdapter,
+    default_judge_prompt_refs,
 )
 from memorii.core.llm_decision.models import (
     EvalSnapshot,
@@ -56,5 +57,6 @@ __all__ = [
     "LLMDecisionTrace",
     "LLMDecisionTraceStore",
     "build_golden_candidate_from_trace",
+    "default_judge_prompt_refs",
     "should_harvest_golden_candidate",
 ]

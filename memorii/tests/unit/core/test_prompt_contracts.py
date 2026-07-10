@@ -1,12 +1,33 @@
 from __future__ import annotations
 
+import json
+from inspect import signature
 from copy import deepcopy
 from pathlib import Path
 
 import pytest
 import yaml
+from jsonschema import Draft7Validator
 from pydantic import ValidationError
 
+from memorii.core.llm_decision.adapters import (
+    LLMAnswerVerificationAdapter,
+    LLMBeliefUpdateAdapter,
+    LLMEvidenceSelectionAdapter,
+    LLMExecutionGraphDecisionAdapter,
+    LLMGroundedAnswerAdapter,
+    LLMHotpotQAAnswerAdapter,
+    LLMLifecycleDecisionAdapter,
+    LLMMemoryEvolutionDecisionAdapter,
+    LLMMemoryEvolutionSimReconstructionAdapter,
+    LLMPromotionDecisionAdapter,
+    LLMRetrievalRelevanceDecisionAdapter,
+    default_judge_prompt_refs,
+)
+from memorii.core.llm_provider.models import LLMStructuredResponse
+from memorii.core.llm_provider.parser import parse_structured_response
+from memorii.core.memory_evolution.extraction import LLMMemoryExtractor
+from memorii.core.prompts.manifest import PromptContractManifestEntry, PromptOwner, prompt_contract_manifest_by_ref
 from memorii.core.prompts.models import PromptContract
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.render import PromptRenderer, redact_variables
@@ -16,6 +37,57 @@ PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
 
 def _load(ref: str) -> PromptContract:
     return PromptRegistry(prompt_root=PROMPT_ROOT).load(ref)
+
+
+def _contains_key(value: object, key: str) -> bool:
+    if isinstance(value, dict):
+        return key in value or any(_contains_key(nested, key) for nested in value.values())
+    if isinstance(value, list):
+        return any(_contains_key(item, key) for item in value)
+    return False
+
+
+def _walk_schema_objects(schema: object) -> list[dict[str, object]]:
+    objects: list[dict[str, object]] = []
+    if isinstance(schema, dict):
+        if schema.get("type") == "object":
+            objects.append(schema)
+        for nested in schema.values():
+            objects.extend(_walk_schema_objects(nested))
+    elif isinstance(schema, list):
+        for item in schema:
+            objects.extend(_walk_schema_objects(item))
+    return objects
+
+
+def _parsed_schema_output(ref: str, output: dict[str, object]) -> LLMStructuredResponse:
+    contract = _load(ref)
+    response = LLMStructuredResponse(
+        request_id="test",
+        provider="fake",
+        raw_text=json.dumps(output, sort_keys=True),
+        valid_json=False,
+        schema_valid=False,
+    )
+    return parse_structured_response(response=response, output_schema=contract.output_schema)
+
+
+_OWNER_DEFAULT_PROMPT_REFS = {
+    PromptOwner.LLM_ANSWER_VERIFICATION_ADAPTER: (LLMAnswerVerificationAdapter, "answer_verification:v1"),
+    PromptOwner.LLM_BELIEF_UPDATE_ADAPTER: (LLMBeliefUpdateAdapter, "belief_update:v1"),
+    PromptOwner.LLM_EVIDENCE_SELECTION_ADAPTER: (LLMEvidenceSelectionAdapter, "evidence_selection:v1"),
+    PromptOwner.LLM_EXECUTION_GRAPH_DECISION_ADAPTER: (LLMExecutionGraphDecisionAdapter, "execution_graph_decision:v1"),
+    PromptOwner.LLM_GROUNDED_ANSWER_ADAPTER: (LLMGroundedAnswerAdapter, "grounded_answer:v1"),
+    PromptOwner.LLM_HOTPOTQA_ANSWER_ADAPTER: (LLMHotpotQAAnswerAdapter, "hotpotqa_answer:v1"),
+    PromptOwner.LLM_LIFECYCLE_DECISION_ADAPTER: (LLMLifecycleDecisionAdapter, "lifecycle_decision:v1"),
+    PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER: (LLMMemoryEvolutionDecisionAdapter, "memory_evolution_decision:v1"),
+    PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER: (
+        LLMMemoryEvolutionSimReconstructionAdapter,
+        "memory_evolution_sim_reconstruction:v1",
+    ),
+    PromptOwner.LLM_PROMOTION_DECISION_ADAPTER: (LLMPromotionDecisionAdapter, "promotion_decision:v1"),
+    PromptOwner.LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER: (LLMRetrievalRelevanceDecisionAdapter, "retrieval_relevance:v1"),
+}
 
 
 def test_prompt_contract_rejects_extra_fields() -> None:
@@ -223,3 +295,90 @@ def test_all_prompts_render_with_expected_variables() -> None:
             variables = samples[ref]
         rendered = renderer.render(contract=contract, variables=variables)
         assert rendered.prompt_ref == ref
+
+
+def test_prompt_manifest_covers_every_checked_in_prompt() -> None:
+    registry_refs = set(PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs())
+    manifest_refs = set(prompt_contract_manifest_by_ref())
+
+    assert manifest_refs == registry_refs
+
+
+@pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))
+def test_prompt_manifest_matches_yaml_input_contract(ref: str, entry: PromptContractManifestEntry) -> None:
+    contract = _load(ref)
+
+    assert entry.prompt_ref == ref
+    assert entry.owning_adapter
+    assert entry.output_schema_owner == f"{ref}.output_schema"
+    assert entry.expected_input_variables == contract.input_schema["required"]
+    assert set(entry.representative_variables) == set(entry.expected_input_variables)
+
+
+def test_prompt_manifest_ownership_matches_adapter_defaults() -> None:
+    manifest = prompt_contract_manifest_by_ref()
+
+    for owner, (adapter_cls, prompt_ref) in _OWNER_DEFAULT_PROMPT_REFS.items():
+        prompt_ref_parameter = signature(adapter_cls.__init__).parameters["prompt_ref"]
+        assert prompt_ref_parameter.default == prompt_ref
+        assert manifest[prompt_ref].owning_adapter == owner
+
+    judge_prompt_refs = set(default_judge_prompt_refs().values())
+    assert {
+        ref
+        for ref, entry in manifest.items()
+        if entry.owning_adapter == PromptOwner.LLM_JUDGE_DECISION_ADAPTER
+    } == judge_prompt_refs
+    assert manifest["memory_extraction:v1"].owning_adapter == PromptOwner.LLM_MEMORY_EXTRACTOR
+    assert LLMMemoryExtractor.provider == "llm"
+    assert LLMMemoryExtractor.prompt_ref == "memory_extraction:v1"
+
+
+def test_prompt_manifest_rejects_unknown_owner_and_schema_owner_drift() -> None:
+    base_payload = prompt_contract_manifest_by_ref()["promotion_decision:v1"].model_dump(mode="json")
+
+    with pytest.raises(ValidationError):
+        PromptContractManifestEntry.model_validate({**base_payload, "owning_adapter": "LLMFakePotatoAdapter"})
+
+    with pytest.raises(ValidationError):
+        PromptContractManifestEntry.model_validate({**base_payload, "output_schema_owner": "other:v1.output_schema"})
+
+
+@pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))
+def test_prompt_manifest_render_variables_are_clean_and_renderable(ref: str, entry: PromptContractManifestEntry) -> None:
+    rendered = PromptRenderer().render(contract=_load(ref), variables=entry.render_variables())
+    rendered_text = f"{rendered.system}\n{rendered.user}"
+
+    assert rendered.prompt_ref == ref
+    for key in entry.forbidden_live_prompt_keys:
+        assert not _contains_key(entry.representative_variables, key), f"{ref} representative variables contain forbidden key {key}"
+        assert f'"{key}"' not in rendered_text, f"{ref} rendered prompt leaked forbidden JSON key {key}"
+    for fragment in entry.forbidden_live_prompt_fragments:
+        assert fragment not in rendered_text
+
+
+@pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))
+def test_prompt_manifest_fake_outputs_parse_against_yaml_schema(ref: str, entry: PromptContractManifestEntry) -> None:
+    valid_response = _parsed_schema_output(ref, entry.fake_valid_output)
+    invalid_response = _parsed_schema_output(ref, entry.fake_invalid_output)
+
+    assert valid_response.valid_json is True
+    assert valid_response.schema_valid is True
+    assert valid_response.parsed_json == entry.fake_valid_output
+    assert invalid_response.valid_json is True
+    assert invalid_response.schema_valid is False
+
+
+@pytest.mark.parametrize("ref", PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs())
+def test_prompt_output_schemas_are_recursively_strict(ref: str) -> None:
+    contract = _load(ref)
+    Draft7Validator.check_schema(contract.output_schema)
+    assert contract.output_schema["additionalProperties"] is False
+    for object_schema in _walk_schema_objects(contract.output_schema):
+        assert object_schema["additionalProperties"] is False
+
+
+def test_prompt_manifest_does_not_import_prompt_optimization_frameworks() -> None:
+    import memorii.core.prompts.manifest as manifest
+
+    assert "dspy" not in manifest.__dict__

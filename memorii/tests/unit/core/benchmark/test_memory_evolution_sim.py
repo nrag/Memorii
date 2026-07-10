@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
@@ -16,6 +18,10 @@ from memorii.core.benchmark.memory_evolution_sim import (
     sim_checkpoint_diagnostics,
     sim_reconstruction_context_for_checkpoint,
 )
+from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.render import PromptRenderer
+
+PROMPT_ROOT = Path(__file__).resolve().parents[4] / "prompts"
 
 
 def test_memory_evolution_sim_smoke_profile_has_required_families() -> None:
@@ -329,6 +335,50 @@ def test_memory_evolution_sim_context_exposes_candidate_cards_without_oracle_fie
         item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN
     }
     assert not any(hidden_id in serialized for hidden_id in hidden_ids)
+
+
+def test_memory_evolution_sim_rendered_reconstruction_prompt_rejects_adversarial_oracle_leakage() -> None:
+    scenario = generate_memory_evolution_sim_scenarios(
+        profile="adversarial", scenario_count=1, seed=7, noise_rate=0.35
+    )[0]
+    checkpoint = scenario.checkpoints[0].model_copy(
+        update={
+            "expected_answer": "ORACLE_EXPECTED_SHOULD_NOT_RENDER",
+            "expected_claim_ids": ["ORACLE_EXPECTED_SHOULD_NOT_RENDER"],
+            "expected_excluded_claim_ids": ["ORACLE_EXPECTED_SHOULD_NOT_RENDER"],
+        }
+    )
+    observations = [
+        scenario.observations[0].model_copy(
+            update={"hidden_distractor_ids": ["HIDDEN_ID_SHOULD_NOT_RENDER"]}
+        ),
+        *scenario.observations[1:],
+    ]
+    hidden_entities = [
+        entity.model_copy(update={"canonical_name": "HIDDEN_NAME_SHOULD_NOT_RENDER"})
+        if entity.observability == ObservabilityLabel.HIDDEN
+        else entity
+        for entity in scenario.entities
+    ]
+    adversarial_scenario = scenario.model_copy(update={"observations": observations, "entities": hidden_entities})
+    context = sim_reconstruction_context_for_checkpoint(scenario=adversarial_scenario, checkpoint=checkpoint)
+    contract = PromptRegistry(prompt_root=PROMPT_ROOT).load("memory_evolution_sim_reconstruction:v1")
+    rendered = PromptRenderer().render(
+        contract=contract,
+        variables={"context_json": context.model_dump(mode="json"), "query": checkpoint.query_or_task},
+    )
+    rendered_text = f"{rendered.system}\n{rendered.user}"
+
+    for forbidden in (
+        "expected_answer",
+        "expected_claim_ids",
+        "expected_excluded_claim_ids",
+        "hidden_distractor_ids",
+        "ORACLE_EXPECTED_SHOULD_NOT_RENDER",
+        "HIDDEN_ID_SHOULD_NOT_RENDER",
+        "HIDDEN_NAME_SHOULD_NOT_RENDER",
+    ):
+        assert forbidden not in rendered_text
 
 
 def test_memory_evolution_sim_legacy_fields_are_derived_from_role_channels() -> None:
