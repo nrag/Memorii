@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
+from memorii.core.benchmark.artifact_rows import BenchmarkReportSummary
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.core.benchmark.memory_evolution_runtime import (
     run_runtime_scenarios,
@@ -71,6 +72,7 @@ def _run_memory_evolution_runtime_suite(
                 report[key] = metrics[key]
         scalar_summary = {key: value for key, value in summary.items() if not isinstance(value, dict)}
         report["metrics"] = {**report.get("metrics", {}), **scalar_summary}
+        report = BenchmarkReportSummary.from_flat_row(report).to_json_row()
         report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
         _print_memory_evolution_sim_summary(
             suite=SUITE_NAME,

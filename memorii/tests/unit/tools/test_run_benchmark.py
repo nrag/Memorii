@@ -245,7 +245,52 @@ def test_runtime_benchmark_report_write_failure_is_not_swallowed(
     def _fake_artifacts(**_kwargs: object) -> Path:
         run_dir.mkdir(parents=True)
         with (run_dir / "report.json").open("w", encoding="utf-8") as handle:
-            json.dump({"metrics": {}}, handle)
+            json.dump(
+                {
+                    "suite": "memory_evolution_runtime_v1",
+                    "mode": "hybrid",
+                    "profile": "smoke",
+                    "seed": 0,
+                    "scenario_count": 0,
+                    "event_count": 0,
+                    "checkpoint_count": 0,
+                    "passed": 0,
+                    "failed": 0,
+                    "llm_calls": 0,
+                    "provider_successes": 0,
+                    "provider_failures": 0,
+                    "fallbacks": 0,
+                    "final_output_source_counts": {},
+                    "metrics": {},
+                    "calibration": {
+                        "event_count": 0,
+                        "labeled_event_count": 0,
+                        "overall_accuracy": None,
+                        "ece": None,
+                        "brier_score": None,
+                        "overconfident_wrong_count": 0,
+                        "low_confidence_correct_count": 0,
+                        "hidden_hallucination_rate": 0.0,
+                        "ambiguous_overcommit_rate": 0.0,
+                        "worst_slices": [],
+                        "rolling_windows": {},
+                        "response_recommendations": {},
+                        "label_source_counts": {},
+                        "hierarchy_layer_counts": {},
+                    },
+                    "decision_quality": {
+                        "decision_cost_total": 0.0,
+                        "decision_cost_mean": 0.0,
+                        "cost_by_failure_bucket": {},
+                        "cost_by_checkpoint_type": {},
+                        "cost_by_source_modality": {},
+                        "cost_by_decision_action": {},
+                        "regret_total": 0.0,
+                        "regret_mean": 0.0,
+                    },
+                },
+                handle,
+            )
         return run_dir
 
     def _raise_on_report_write(self: Path, *_args: object, **_kwargs: object) -> int:
@@ -1294,6 +1339,21 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     assert not any(key.startswith("expected_") for key in candidate_card["checkpoint"])
     first_row = json.loads((run_dir / "sim_checkpoint_results.jsonl").read_text(encoding="utf-8").splitlines()[0])
     for field_name in [
+        "scenario_id",
+        "checkpoint_id",
+        "checkpoint_type",
+        "success",
+        "passed",
+        "verdict",
+        "score",
+        "review_required",
+        "failure_buckets",
+        "warning_buckets",
+        "diagnostics",
+        "output",
+    ]:
+        assert first_row.get(field_name) is not None
+    for field_name in [
         "selected_excluded_ids",
         "supporting_excluded_ids",
         "rejected_expected_ids",
@@ -1566,6 +1626,15 @@ def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
     assert (run_dir / "runtime_graph_snapshot.json").exists()
     assert (run_dir / "runtime_graph_items.jsonl").exists()
     assert (run_dir / "runtime_graph_alignments.jsonl").exists()
+    runtime_alignment_rows = [
+        json.loads(line)
+        for line in (run_dir / "runtime_graph_alignments.jsonl").read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert runtime_alignment_rows
+    for row in runtime_alignment_rows:
+        for field_name in ["scenario_id", "checkpoint_id", "item_type", "verdict", "score"]:
+            assert row.get(field_name) is not None
     assert (run_dir / "runtime_checkpoint_results.jsonl").exists()
     assert _jsonl_count(run_dir / "runtime_checkpoint_results.jsonl") == report["checkpoint_count"]
     assert (run_dir / "runtime_graph_alignments_summary.json").exists()
@@ -1586,6 +1655,32 @@ def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
         assert row["verdict"] in {"pass", "fail", "abstain"}
         assert row["score"] is not None
         assert row["review_required"] is not None
+        for field_name in [
+            "scenario_id",
+            "checkpoint_id",
+            "checkpoint_type",
+            "success",
+            "failure_buckets",
+            "warning_buckets",
+            "diagnostics",
+            "output",
+        ]:
+            assert row.get(field_name) is not None
+    for row in runtime_checkpoint_rows:
+        for field_name in [
+            "runtime_failure_buckets",
+            "runtime_failure_classification",
+            "final_output_source",
+            "scenario_provider_successes",
+            "scenario_provider_failures",
+            "scenario_fallbacks",
+            "provider_count_scope",
+            "provider_successes",
+            "provider_failures",
+            "fallbacks",
+        ]:
+            assert row.get(field_name) is not None
+        assert row["provider_count_scope"] == "scenario_extractor_calls"
     warning_rows = [
         json.loads(line)
         for line in (run_dir / "sim_warning_examples.jsonl").read_text(encoding="utf-8").splitlines()

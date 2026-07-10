@@ -1,3 +1,4 @@
+from memorii.core.benchmark.artifact_rows import RuntimeCheckpointResultRow
 from memorii.core.benchmark.memory_evolution_runtime import (
     RuntimeSuiteRows,
     _expected_action_alignment_rows,
@@ -9,6 +10,35 @@ from memorii.core.benchmark.memory_evolution_runtime import (
 )
 from memorii.core.benchmark.memory_evolution_sim import generate_memory_evolution_sim_scenarios
 from memorii.core.memory_evolution.models import MemoryGraphSnapshot
+
+
+def _runtime_checkpoint_row(**legacy_fields: object) -> RuntimeCheckpointResultRow:
+    return RuntimeCheckpointResultRow(
+        scenario_id=str(legacy_fields.pop("scenario_id", "scenario_1")),
+        checkpoint_id=str(legacy_fields.pop("checkpoint_id", "checkpoint_1")),
+        checkpoint_type=str(legacy_fields.pop("checkpoint_type", "current_truth")),
+        success=bool(legacy_fields.pop("success", True)),
+        passed=bool(legacy_fields.pop("passed", True)),
+        verdict=str(legacy_fields.pop("verdict", "pass")),
+        score=float(legacy_fields.pop("score", 1.0)),
+        review_required=bool(legacy_fields.pop("review_required", False)),
+        failure_buckets=list(legacy_fields.pop("failure_buckets", [])),
+        warning_buckets=list(legacy_fields.pop("warning_buckets", [])),
+        diagnostics=dict(legacy_fields.pop("diagnostics", {})),
+        output=dict(legacy_fields.pop("output", {})),
+        profile=str(legacy_fields.pop("profile", "long_horizon")),
+        family=str(legacy_fields.pop("family", "current_truth")),
+        decision_mode=str(legacy_fields.pop("decision_mode", "llm")),
+        effective_decision_mode=str(legacy_fields.pop("effective_decision_mode", "llm")),
+        final_output_source=str(legacy_fields.pop("final_output_source", "fake_oracle")),
+        runtime_failure_buckets=list(legacy_fields.pop("runtime_failure_buckets", [])),
+        runtime_failure_classification=list(legacy_fields.pop("runtime_failure_classification", [])),
+        scenario_provider_successes=int(legacy_fields.pop("scenario_provider_successes", 0)),
+        scenario_provider_failures=int(legacy_fields.pop("scenario_provider_failures", 0)),
+        scenario_fallbacks=int(legacy_fields.pop("scenario_fallbacks", 0)),
+        provider_count_scope=str(legacy_fields.pop("provider_count_scope", "scenario_extractor_calls")),
+        legacy_fields=legacy_fields,
+    )
 
 
 def _runtime_entity(*, scenario_id: str, runtime_id: str, canonical_id: str, name: str, entity_type: str, aliases: list[str], events: list[str]) -> dict[str, object]:
@@ -144,18 +174,14 @@ def test_runtime_summary_reports_long_horizon_slice_counts() -> None:
     rows = RuntimeSuiteRows(
         scenario_rows=[],
         checkpoint_rows=[
-            {
-                "checkpoint_type": "current_truth",
-                "phase": "checkpoint",
-                "horizon_distance_bucket": "long",
-                "interference_count_bucket": "medium",
-                "source_event_age_days_bucket": "old",
-                "required_retrieval_view": "current",
-                "runtime_failure_buckets": [],
-                "failure_buckets": [],
-                "verdict": "pass",
-                "review_required": False,
-            }
+            _runtime_checkpoint_row(
+                checkpoint_type="current_truth",
+                phase="checkpoint",
+                horizon_distance_bucket="long",
+                interference_count_bucket="medium",
+                source_event_age_days_bucket="old",
+                required_retrieval_view="current",
+            )
         ],
         judge_rows=[],
         llm_rows=[],
@@ -541,12 +567,12 @@ def test_runtime_graph_completeness_metrics_report_claim_provenance_and_edge_cou
     rows = RuntimeSuiteRows(
         scenario_rows=[],
         checkpoint_rows=[
-            {
-                "runtime_relation_support": [
+            _runtime_checkpoint_row(
+                runtime_relation_support=[
                     {"relation_id": "rel_claim_derived", "support_mode": "claim_derived"},
                     {"relation_id": "rel_item", "support_mode": "runtime_relation_item"},
                 ]
-            }
+            )
         ],
         judge_rows=[],
         llm_rows=[],
