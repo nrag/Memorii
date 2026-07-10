@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TypeVar
 
 from memorii.core.benchmark.artifact_rows import RuntimeCheckpointResultRow, RuntimeGraphAlignmentRow
 from memorii.core.calibration.alignment import RuntimeGraphAlignment
 from memorii.core.benchmark.memory_evolution_sim import SimSystemOutput
 from memorii.core.memory_evolution import MemoryGraphSnapshot
+
+
+T = TypeVar("T")
 
 
 @dataclass
@@ -27,7 +31,7 @@ class RuntimeSuiteRows:
         _require_row_type("runtime_failures", self.runtime_failures, RuntimeCheckpointResultRow)
 
 
-def _require_row_type[T](field_name: str, rows: list[object], row_type: type[T]) -> None:
+def _require_row_type(field_name: str, rows: list[object], row_type: type[T]) -> None:
     invalid = [type(row).__name__ for row in rows if not isinstance(row, row_type)]
     if invalid:
         raise TypeError(f"{field_name} must contain {row_type.__name__} rows, got {invalid}")
