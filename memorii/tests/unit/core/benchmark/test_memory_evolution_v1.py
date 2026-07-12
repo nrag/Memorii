@@ -1,6 +1,12 @@
 from memorii.core.benchmark.memory_evolution_decision import (
+    MemoryEvolutionEvent,
+    MemoryEvolutionFailureBucket,
+    MemoryEvolutionSourceType,
+    MemoryEvolutionWarningBucket,
     expected_memory_evolution_decision_for_checkpoint,
     memory_evolution_assertion_passed,
+    memory_evolution_context_for_checkpoint,
+    memory_evolution_decision_diagnostics,
     rule_memory_evolution_decision_for_checkpoint,
 )
 from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
@@ -164,6 +170,149 @@ def test_memory_evolution_assertion_allows_top_selection_for_belief_ranking() ->
     )
 
 
+def test_memory_evolution_context_declares_belief_channel_contract() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+
+    context = memory_evolution_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
+    contract = context.metadata["output_channel_contract"]
+
+    assert "belief_scores" in contract
+    assert "citation_memory_ids" in contract
+    assert "Direct evidence" in contract["citation_memory_ids"]
+    assert "evaluated_belief_ids" in contract
+
+
+def test_memory_evolution_context_excludes_oracle_checkpoint_fields() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+
+    context = memory_evolution_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
+    context_payload = context.model_dump(mode="json")
+
+    assert context_payload["checkpoint"] == {
+        "checkpoint_id": checkpoint.checkpoint_id,
+        "timestamp": checkpoint.timestamp.isoformat().replace("+00:00", "Z"),
+        "query_or_task": checkpoint.query_or_task,
+    }
+    assert not _contains_key_prefix(context_payload["checkpoint"], "expected_")
+
+
+def test_memory_evolution_diagnostics_fail_belief_ids_used_as_citations() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["citation_memory_ids"] = [
+        "evidence:workers-exhausted",
+        "belief:b-worker-exhaustion",
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.CITATION_CHANNEL_POLLUTION in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.BELIEF_ID_USED_AS_CITATION in diagnostics.failure_buckets
+    assert diagnostics.belief_ids_used_as_citations == ["belief:b-worker-exhaustion"]
+
+
+def test_memory_evolution_diagnostics_fail_missing_required_belief_evidence() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["citation_memory_ids"] = []
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert diagnostics.missing_citation_ids == ["evidence:workers-exhausted"]
+    assert MemoryEvolutionFailureBucket.EXPECTED_CITATION_MISSING in diagnostics.failure_buckets
+
+
+def test_memory_evolution_diagnostics_fail_extra_citations_for_non_discriminative_checkpoint() -> None:
+    scenario = _scenario_by_id("evolution_current_vs_historical_truth").model_copy(update={"discriminative": False})
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["citation_memory_ids"] = [*checkpoint.expected_citation_ids, "mem:unrelated-extra-citation"]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert diagnostics.extra_citation_ids == ["mem:unrelated-extra-citation"]
+    assert MemoryEvolutionFailureBucket.CITATION_CHANNEL_POLLUTION in diagnostics.failure_buckets
+
+
+def test_memory_evolution_diagnostics_warn_when_beliefs_marked_active() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["active_memory_ids"] = [
+        "belief:b-worker-exhaustion",
+        "belief:c-database-locks",
+        "belief:a-network-saturation",
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert diagnostics.failure_buckets == []
+    assert MemoryEvolutionWarningBucket.ACTIVE_CHANNEL_POLLUTION in diagnostics.warning_buckets
+    assert MemoryEvolutionWarningBucket.BELIEF_CANDIDATE_MARKED_ACTIVE in diagnostics.warning_buckets
+
+
+def test_memory_evolution_diagnostics_fail_wrong_belief_ranking_order() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["belief_scores"] = [
+        {"memory_id": "belief:a-network-saturation", "belief": 0.7},
+        {"memory_id": "belief:b-worker-exhaustion", "belief": 0.2},
+        {"memory_id": "belief:c-database-locks", "belief": 0.1},
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.BELIEF_RANKING_WRONG_ORDER in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.BELIEF_SCORE_MISMATCH not in diagnostics.failure_buckets
+    assert MemoryEvolutionWarningBucket.BELIEF_SCORE_CALIBRATION_DRIFT in diagnostics.warning_buckets
+    assert diagnostics.actual_belief_ranking[0] == "belief:a-network-saturation"
+
+
 def test_memory_evolution_assertion_suppresses_abandoned_branch() -> None:
     scenario = next(
         item
@@ -184,3 +333,211 @@ def test_memory_evolution_assertion_suppresses_abandoned_branch() -> None:
         checkpoint=checkpoint,
         decision=output,
     ) is False
+
+
+def test_memory_evolution_belief_degradation_accepts_none_as_no_answer_equivalent() -> None:
+    scenario = _scenario_by_id("evolution_belief_dependency_degradation")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["answer"] = "None of the dependent beliefs remain confident after A is falsified."
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionFailureBucket.ANSWER_MISMATCH not in diagnostics.failure_buckets
+
+
+def test_memory_evolution_belief_ranking_allows_calibration_drift_when_order_is_correct() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["belief_scores"] = [
+        {"memory_id": "belief:b-worker-exhaustion", "belief": 0.6},
+        {"memory_id": "belief:c-database-locks", "belief": 0.3},
+        {"memory_id": "belief:a-network-saturation", "belief": 0.1},
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionWarningBucket.BELIEF_SCORE_CALIBRATION_DRIFT in diagnostics.warning_buckets
+
+
+def test_memory_evolution_belief_degradation_accepts_low_confidence_scores_without_exact_match() -> None:
+    scenario = _scenario_by_id("evolution_belief_dependency_degradation")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["selected_memory_ids"] = [
+        "belief:b-worker-retry-backed-by-a",
+        "belief:c-customer-latency-backed-by-b",
+    ]
+    output["active_memory_ids"] = []
+    output["belief_scores"] = [
+        {"memory_id": "belief:a-cache-miss-root", "belief": 0.0},
+        {"memory_id": "belief:b-worker-retry-backed-by-a", "belief": 0.0},
+        {"memory_id": "belief:c-customer-latency-backed-by-b", "belief": 0.0},
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionWarningBucket.EXTRA_SELECTED_EVALUATED_BELIEF_IDS in diagnostics.warning_buckets
+    assert MemoryEvolutionWarningBucket.BELIEF_SCORE_CALIBRATION_DRIFT in diagnostics.warning_buckets
+
+
+def test_memory_evolution_execution_uses_structured_branch_not_exact_next_action_text() -> None:
+    scenario = _scenario_by_id("evolution_abandoned_then_resumed_work")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["next_action"] = "Continue working on Approach B to complete the fix."
+    output["citation_memory_ids"] = [
+        "exec:approach-b-progressed",
+        "exec:approach-a-blocked",
+    ]
+    output["archived_memory_ids"] = []
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionWarningBucket.CONTEXT_CITATION_IN_DIRECT_CHANNEL in diagnostics.warning_buckets
+    assert MemoryEvolutionWarningBucket.LIFECYCLE_CHANNEL_DRIFT in diagnostics.warning_buckets
+
+
+def test_memory_evolution_historical_answer_allows_lifecycle_channel_drift_warning() -> None:
+    scenario = _scenario_by_id("evolution_expired_fact_historical_query")
+    checkpoint = next(
+        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:beta-flag-release-week"
+    )
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["active_memory_ids"] = []
+    output["archived_memory_ids"] = ["mem:beta-flag-archived-now"]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionWarningBucket.LIFECYCLE_CHANNEL_DRIFT in diagnostics.warning_buckets
+
+
+def test_memory_evolution_context_includes_surface_derived_evidence_effect_cards() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+
+    context = memory_evolution_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
+
+    assert [card.memory_id for card in context.visible_memory_cards] == [event.event_id for event in scenario.events]
+    effect = next(
+        card for card in context.evidence_effect_cards if card.evidence_memory_id == "evidence:workers-exhausted"
+    )
+    assert effect.supports_memory_ids == ["belief:b-worker-exhaustion"]
+    assert effect.weakens_memory_ids == ["belief:a-network-saturation"]
+    assert effect.falsifies_memory_ids == []
+    assert context.metadata["evidence_effect_policy"]["ranking_order"] == "supported > neutral > weakened > falsified"
+
+
+def test_memory_evolution_evidence_effect_cards_handle_passive_and_equivalent_phrasing() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+    rewritten_events = [
+        event
+        if event.event_id != "evidence:workers-exhausted"
+        else MemoryEvolutionEvent(
+            event_id=event.event_id,
+            timestamp=event.timestamp,
+            source_type=MemoryEvolutionSourceType.TOOL,
+            content="Worker telemetry shows B is supported, while A is now less likely.",
+            entity_ids=list(event.entity_ids),
+            trust_level=event.trust_level,
+        )
+        for event in scenario.events
+    ]
+    rewritten = scenario.model_copy(update={"events": rewritten_events})
+
+    context = memory_evolution_context_for_checkpoint(scenario=rewritten, checkpoint=checkpoint)
+
+    effect = next(
+        card for card in context.evidence_effect_cards if card.evidence_memory_id == "evidence:workers-exhausted"
+    )
+    assert effect.supports_memory_ids == ["belief:b-worker-exhaustion"]
+    assert effect.weakens_memory_ids == ["belief:a-network-saturation"]
+
+
+def test_memory_evolution_diagnostics_name_weakened_above_neutral_belief_order() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["belief_scores"] = [
+        {"memory_id": "belief:b-worker-exhaustion", "belief": 0.6},
+        {"memory_id": "belief:a-network-saturation", "belief": 0.3},
+        {"memory_id": "belief:c-database-locks", "belief": 0.1},
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.BELIEF_RANKING_WRONG_ORDER in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.WEAKENED_BELIEF_RANKED_ABOVE_NEUTRAL in diagnostics.failure_buckets
+    assert diagnostics.belief_effect_order_errors == [
+        "belief:a-network-saturation>belief:c-database-locks"
+    ]
+
+
+def _scenario_by_id(scenario_id: str):
+    return next(
+        item
+        for item in load_memory_evolution_v1_fixture_set()
+        if item.scenario_id == scenario_id
+    )
+
+
+def _contains_key_prefix(value: object, prefix: str) -> bool:
+    if isinstance(value, dict):
+        return any(
+            (isinstance(key, str) and key.startswith(prefix))
+            or _contains_key_prefix(nested, prefix)
+            for key, nested in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_key_prefix(item, prefix) for item in value)
+    return False
