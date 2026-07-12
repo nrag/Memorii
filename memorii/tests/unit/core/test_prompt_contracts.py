@@ -26,6 +26,8 @@ from memorii.core.llm_decision.adapters import (
 )
 from memorii.core.llm_provider.models import LLMStructuredResponse
 from memorii.core.llm_provider.parser import parse_structured_response
+from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
+from memorii.core.benchmark.memory_evolution_decision import memory_evolution_context_for_checkpoint
 from memorii.core.memory_evolution.extraction import LLMMemoryExtractor
 from memorii.core.prompts.manifest import PromptContractManifestEntry, PromptOwner, prompt_contract_manifest_by_ref
 from memorii.core.prompts.models import PromptContract
@@ -355,6 +357,39 @@ def test_prompt_manifest_render_variables_are_clean_and_renderable(ref: str, ent
         assert f'"{key}"' not in rendered_text, f"{ref} rendered prompt leaked forbidden JSON key {key}"
     for fragment in entry.forbidden_live_prompt_fragments:
         assert fragment not in rendered_text
+
+
+def test_memory_evolution_decision_real_context_render_excludes_oracle_fields() -> None:
+    scenario = next(
+        item
+        for item in load_memory_evolution_v1_fixture_set()
+        if item.scenario_id == "evolution_competing_belief_reranking"
+    )
+    checkpoint = scenario.checkpoints[0]
+    context = memory_evolution_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
+    rendered = PromptRenderer().render(
+        contract=_load("memory_evolution_decision:v1"),
+        variables={
+            "context_json": context.model_dump(mode="json"),
+            "query": checkpoint.query_or_task,
+        },
+    )
+    rendered_text = f"{rendered.system}\n{rendered.user}"
+    forbidden_expected_keys = [
+        "expected_answer",
+        "expected_next_action",
+        "expected_retrieval_ids",
+        "expected_citation_ids",
+        "expected_excluded_memory_ids",
+        "expected_active_memory_ids",
+        "expected_inactive_memory_ids",
+        "expected_archived_memory_ids",
+        "expected_belief_ranking",
+        "expected_belief_scores",
+    ]
+
+    for forbidden_key in forbidden_expected_keys:
+        assert f'"{forbidden_key}"' not in rendered_text
 
 
 @pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))

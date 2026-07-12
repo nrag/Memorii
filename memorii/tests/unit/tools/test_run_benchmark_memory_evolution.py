@@ -8,6 +8,7 @@ import pytest
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.tools.run_benchmark import main
+from memorii.tools.benchmark_suites.memory_evolution import memory_evolution_artifact_run_metadata
 from tests.unit.tools.run_benchmark_test_helpers import (
     _clear_llm_env,
     _jsonl_count,
@@ -75,6 +76,50 @@ def test_memory_evolution_benchmark_dry_run_llm_passes_all_cases(
     assert int(fields["failed"]) == payload["failed"] == 0
     assert int(fields["llm_calls"]) == payload["checkpoints"]
     assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
+    assert payload["run_id"] == payload["benchmark_key"]
+    assert payload["dry_run"] is True
+    assert payload["live_run"] is False
+    assert payload["artifact_version"] == "memory_evolution_v1_artifacts:2"
+    checkpoint_rows = [
+        json.loads(line)
+        for line in (run_dir / "memory_evolution_checkpoint_traces.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert all("diagnostics" in row for row in checkpoint_rows)
+    assert all("failure_buckets" in row for row in checkpoint_rows)
+    assert all("warning_buckets" in row for row in checkpoint_rows)
+
+
+def test_memory_evolution_live_artifact_run_id_uses_resolved_effective_mode() -> None:
+    scenario_rows = [
+        {
+            "scenario_id": "scenario",
+            "decision_mode": "auto",
+            "effective_decision_mode": "llm",
+            "success": True,
+        }
+    ]
+    checkpoint_rows = [
+        {
+            "checkpoint_id": "checkpoint",
+            "decision_mode": "auto",
+            "effective_decision_mode": "llm",
+            "success": True,
+        }
+    ]
+
+    metadata = memory_evolution_artifact_run_metadata(
+        suite="memory_evolution_v1",
+        mode="auto",
+        scenario_rows=scenario_rows,
+        checkpoint_rows=checkpoint_rows,
+        dry_run=False,
+        allow_live=True,
+    )
+
+    assert metadata["effective_decision_modes"] == ["llm"]
+    assert metadata["live_run"] is True
+    assert metadata["dry_run"] is False
+    assert str(metadata["run_id"]).startswith(str(metadata["benchmark_key"]) + "-")
 
 
 def test_memory_evolution_hybrid_falls_back_to_rule_on_invalid_llm_output(
@@ -127,5 +172,4 @@ def test_memory_evolution_hybrid_falls_back_to_rule_on_invalid_llm_output(
 def test_memory_evolution_benchmark_rejects_all_systems() -> None:
     with pytest.raises(SystemExit, match="memorii only"):
         main(["--suite", "memory_evolution_v1", "--systems", "all"])
-
 

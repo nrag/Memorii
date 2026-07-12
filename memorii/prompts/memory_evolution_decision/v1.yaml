@@ -17,6 +17,11 @@ output_schema:
     - answer
     - next_action
     - citation_memory_ids
+    - supporting_memory_ids
+    - context_memory_ids
+    - rejected_memory_ids
+    - evaluated_belief_ids
+    - context_citation_memory_ids
     - active_memory_ids
     - inactive_memory_ids
     - archived_memory_ids
@@ -32,6 +37,21 @@ output_schema:
     answer: {type: [string, 'null']}
     next_action: {type: [string, 'null']}
     citation_memory_ids:
+      type: array
+      items: {type: string}
+    supporting_memory_ids:
+      type: array
+      items: {type: string}
+    context_memory_ids:
+      type: array
+      items: {type: string}
+    rejected_memory_ids:
+      type: array
+      items: {type: string}
+    evaluated_belief_ids:
+      type: array
+      items: {type: string}
+    context_citation_memory_ids:
       type: array
       items: {type: string}
     active_memory_ids:
@@ -66,8 +86,29 @@ system_template: |-
   - Respect scope. Task scoped preferences should not overwrite global preferences outside that task.
   - Distinguish entity roles and relations. Owner, approver, and API owner are different facts even when entity and vocabulary overlap.
   - For belief chains, degrade downstream beliefs when their supporting premise is falsified.
+  - Use role-aware channels precisely:
+    - selected_memory_ids is only for final answer/current winner memories.
+    - supporting_memory_ids and citation_memory_ids are only for direct answer or next-action support.
+    - context_memory_ids and context_citation_memory_ids are for audit context that is useful but not direct support.
+    - rejected_memory_ids is for stale, blocked, falsified, lower-trust, wrong-scope, or wrong-entity memories.
+  - The context may include visible_memory_cards and evidence_effect_cards derived only from surface event text. Use them as visible structure, not as oracle answers.
   - For competing beliefs, return belief_scores in the evidence-supported order; do not preserve stale priors.
+  - For belief-ranking checkpoints, first apply evidence_effect_cards: supported beliefs outrank neutral beliefs; neutral beliefs outrank explicitly weakened beliefs; falsified beliefs rank last.
+  - A hypothesis explicitly weakened by new evidence should rank below a neutral alternative unless separate evidence supports it.
+  - For belief-ranking checkpoints:
+    - Put ranked belief or hypothesis ids and probabilities in belief_scores.
+    - Put selected or retrieved belief ids in selected_memory_ids when useful.
+    - citation_memory_ids must contain only direct evidence or source memory ids that justify the ranking.
+    - Do not put ranked belief/hypothesis ids in citation_memory_ids unless the belief record itself is the direct evidence.
+    - active_memory_ids is for current active factual/action memories; do not mark belief candidates active merely because they are ranked.
+  - For belief-degradation checkpoints where no beliefs remain confident:
+    - Select and cite the falsifying/current evidence.
+    - Put degraded belief ids in evaluated_belief_ids, inactive_memory_ids, rejected_memory_ids, or context_memory_ids.
+    - Do not use degraded belief ids as direct citation_memory_ids.
   - For execution continuation, suppress abandoned/stale branches and resume the active branch unless the user explicitly reopens a blocked branch.
+    - Select/support the active branch or action.
+    - Put blocked or abandoned branches in rejected_memory_ids or context_memory_ids.
+    - Put user continuation requests or blocked-branch explanations in context_citation_memory_ids rather than citation_memory_ids.
   - citation_memory_ids must directly support the answer or next action.
 
   Return strict JSON only.

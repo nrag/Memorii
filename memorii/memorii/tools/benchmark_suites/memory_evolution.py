@@ -14,8 +14,8 @@ from datetime import (
 )
 from memorii.core.benchmark.memory_evolution_decision import (
     MemoryEvolutionScenario,
-    memory_evolution_assertion_passed,
     memory_evolution_context_for_checkpoint,
+    memory_evolution_decision_diagnostics,
     memory_evolution_engine_result_from_llm,
     memory_evolution_trace_for_rule,
     rule_memory_evolution_decision_for_checkpoint,
@@ -154,11 +154,12 @@ def _run_memory_evolution_transitions(
             else:
                 llm_trace = rule_trace
 
-            assertion_passed = memory_evolution_assertion_passed(
+            diagnostics = memory_evolution_decision_diagnostics(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 decision=output,
             )
+            assertion_passed = diagnostics.assertion_passed
             success = assertion_passed and (effective_mode != "llm" or llm_success or not llm_used)
             checkpoint_row = {
                 "scenario_id": scenario.scenario_id,
@@ -181,6 +182,9 @@ def _run_memory_evolution_transitions(
                 "memory_evolution_assertion_passed": assertion_passed,
                 "expected": checkpoint.model_dump(mode="json"),
                 "output": output,
+                "diagnostics": diagnostics.model_dump(mode="json"),
+                "failure_buckets": diagnostics.failure_buckets,
+                "warning_buckets": diagnostics.warning_buckets,
             }
             checkpoint_rows.append(checkpoint_row)
             scenario_checkpoint_rows.append(checkpoint_row)
@@ -202,6 +206,48 @@ def _run_memory_evolution_transitions(
         )
     return scenario_rows, checkpoint_rows, llm_rows
 
+
+def memory_evolution_artifact_run_metadata(
+    *,
+    suite: str,
+    mode: str,
+    scenario_rows: list[dict[str, object]],
+    checkpoint_rows: list[dict[str, object]],
+    dry_run: bool,
+    allow_live: bool,
+) -> dict[str, object]:
+    benchmark_key = build_run_id(
+        config=BenchmarkRunConfig(seed=7, run_label=f"{suite}_{mode}"),
+        fixtures=[],
+    )
+    effective_modes = _effective_modes_for_rows(scenario_rows=scenario_rows, checkpoint_rows=checkpoint_rows)
+    live_run = bool(allow_live and not dry_run and effective_modes & {"llm", "hybrid"})
+    run_id = benchmark_key
+    if live_run:
+        run_id = f"{benchmark_key}-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S%fZ')}"
+    return {
+        "run_id": run_id,
+        "benchmark_key": benchmark_key,
+        "effective_decision_modes": sorted(effective_modes),
+        "dry_run": dry_run,
+        "allow_live": allow_live,
+        "live_run": live_run,
+    }
+
+
+def _effective_modes_for_rows(
+    *,
+    scenario_rows: list[dict[str, object]],
+    checkpoint_rows: list[dict[str, object]],
+) -> set[str]:
+    modes: set[str] = set()
+    for row in [*scenario_rows, *checkpoint_rows]:
+        value = row.get("effective_decision_mode")
+        if isinstance(value, str) and value:
+            modes.add(value)
+    return modes
+
+
 def _write_memory_evolution_artifacts(
     *,
     scenarios: list[MemoryEvolutionScenario],
@@ -212,11 +258,19 @@ def _write_memory_evolution_artifacts(
     mode: str,
     storage_root: str,
     fixture_source: str,
+    dry_run: bool,
+    allow_live: bool,
 ) -> Path:
-    run_id = build_run_id(
-        config=BenchmarkRunConfig(seed=7, run_label=f"{suite}_{mode}"),
-        fixtures=[],
+    run_metadata = memory_evolution_artifact_run_metadata(
+        suite=suite,
+        mode=mode,
+        scenario_rows=scenario_rows,
+        checkpoint_rows=checkpoint_rows,
+        dry_run=dry_run,
+        allow_live=allow_live,
     )
+    run_id = str(run_metadata["run_id"])
+    benchmark_key = str(run_metadata["benchmark_key"])
     run_dir = Path(storage_root) / "benchmark_runs" / suite / mode / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     passed = sum(1 for row in scenario_rows if row["success"] is True)
@@ -224,8 +278,11 @@ def _write_memory_evolution_artifacts(
     report = {
         "suite": suite,
         "mode": mode,
+        **run_metadata,
         "generated_at": datetime.now(UTC).isoformat(),
         "fixture_source": fixture_source,
+        "storage_root": storage_root,
+        "artifact_version": "memory_evolution_v1_artifacts:2",
         "scenarios": len(scenario_rows),
         "checkpoints": len(checkpoint_rows),
         "passed": passed,
@@ -298,6 +355,8 @@ def _run_memory_evolution_suite(
             mode=mode,
             storage_root=args.storage_root,
             fixture_source=fixture_source,
+            dry_run=args.dry_run,
+            allow_live=args.allow_live,
         )
         _print_memory_evolution_summary(
             suite=SUITE_NAME,
