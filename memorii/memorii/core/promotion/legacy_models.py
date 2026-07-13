@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,13 +10,13 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.domain.enums import MemoryDomain
 
 
-class PromotionAction(str, Enum):
+class PromotionAction(StrEnum):
     COMMIT = "commit"
     REJECT = "reject"
     KEEP_STAGED = "keep_staged"
 
 
-class PromotionReasonCode(str, Enum):
+class PromotionReasonCode(StrEnum):
     DUPLICATE_COMMITTED_MEMORY_EXISTS = "duplicate_committed_memory_exists"
     POSSIBLE_CONFLICT_WITH_COMMITTED_MEMORY = "possible_conflict_with_committed_memory"
     EPISODIC_CANDIDATE_TRUSTED_SOURCE = "episodic_candidate_trusted_source"

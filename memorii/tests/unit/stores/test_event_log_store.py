@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from memorii.domain.enums import EventType
 from memorii.domain.events import EventRecord
 from memorii.stores.event_log import InMemoryEventLogStore

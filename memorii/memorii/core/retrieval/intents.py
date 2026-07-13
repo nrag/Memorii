@@ -3,7 +3,6 @@
 from memorii.domain.enums import MemoryDomain
 from memorii.domain.retrieval import RetrievalIntent
 
-
 INTENT_DOMAIN_POLICY: dict[RetrievalIntent, list[MemoryDomain]] = {
     RetrievalIntent.CONTINUE_EXECUTION: [MemoryDomain.EXECUTION, MemoryDomain.TRANSCRIPT],
     RetrievalIntent.DEBUG_OR_INVESTIGATE: [MemoryDomain.SOLVER, MemoryDomain.EPISODIC, MemoryDomain.SEMANTIC],

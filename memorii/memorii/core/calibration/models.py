@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class CalibrationItemType(str, Enum):
+class CalibrationItemType(StrEnum):
     SOURCE_OBSERVATION = "source_observation"
     ENTITY = "entity"
     CLAIM = "claim"
@@ -19,7 +19,7 @@ class CalibrationItemType(str, Enum):
     ANSWER = "answer"
 
 
-class CalibrationHierarchyLayer(str, Enum):
+class CalibrationHierarchyLayer(StrEnum):
     OBSERVATION = "observation"
     EXTRACTION = "extraction"
     VALIDATION = "validation"
@@ -28,7 +28,7 @@ class CalibrationHierarchyLayer(str, Enum):
     RETRIEVAL_DECISION = "retrieval_decision"
 
 
-class CalibrationDecisionChannel(str, Enum):
+class CalibrationDecisionChannel(StrEnum):
     SELECTED = "selected"
     SUPPORTING = "supporting"
     REJECTED = "rejected"
@@ -36,21 +36,21 @@ class CalibrationDecisionChannel(str, Enum):
     ABSTAINED = "abstained"
 
 
-class CalibrationLabel(str, Enum):
+class CalibrationLabel(StrEnum):
     CORRECT = "correct"
     INCORRECT = "incorrect"
     PARTIAL = "partial"
     UNKNOWN = "unknown"
 
 
-class CalibrationLabelSource(str, Enum):
+class CalibrationLabelSource(StrEnum):
     LATENT_ORACLE = "latent_oracle"
     PROGRAMMATIC_JUDGE = "programmatic_judge"
     HUMAN_REVIEW = "human_review"
     RUNTIME_UNKNOWN = "runtime_unknown"
 
 
-class CalibrationResponseLevel(str, Enum):
+class CalibrationResponseLevel(StrEnum):
     REPORT_ONLY = "report_only"
     REVIEW = "review"
     CONFIDENCE_CAP = "confidence_cap"
@@ -58,7 +58,7 @@ class CalibrationResponseLevel(str, Enum):
     BENCHMARK_FAIL = "benchmark_fail"
 
 
-class DecisionAction(str, Enum):
+class DecisionAction(StrEnum):
     ANSWER_CURRENT_TRUTH = "answer_current_truth"
     ANSWER_HISTORICAL_TRUTH = "answer_historical_truth"
     SELECT_SUPPORT = "select_support"

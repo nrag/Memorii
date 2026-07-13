@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import re
 
-from memorii.core.benchmark.memory_evolution_sim.schemas import *  # noqa: F403
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    LatentClaim,
+    LatentGraphScenario,
+    ObservabilityLabel,
+    OracleCheckpoint,
+    SimLifecycleState,
+    SimSystemOutput,
+    SurfaceObservation,
+)
 
 
 def _ordered_unique(items: list[str]) -> list[str]:

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class LLMDecisionPoint(str, Enum):
+class LLMDecisionPoint(StrEnum):
     PROMOTION = "promotion"
     BELIEF_UPDATE = "belief_update"
     LIFECYCLE_DECISION = "lifecycle_decision"
@@ -25,14 +25,14 @@ class LLMDecisionPoint(str, Enum):
     DECISION_SUMMARY = "decision_summary"
 
 
-class LLMDecisionMode(str, Enum):
+class LLMDecisionMode(StrEnum):
     RULE = "rule"
     RULE_BASED = "rule"
     LLM = "llm"
     HYBRID = "hybrid"
 
 
-class LLMDecisionStatus(str, Enum):
+class LLMDecisionStatus(StrEnum):
     SUCCEEDED = "succeeded"
     FALLBACK_USED = "fallback_used"
     VALIDATION_FAILED = "validation_failed"

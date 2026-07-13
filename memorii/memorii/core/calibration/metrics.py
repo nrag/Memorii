@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from math import sqrt
-from typing import Iterable
 
 from memorii.core.calibration.models import CalibrationEvent, CalibrationLabel, CalibrationLabelSource, CalibrationSlice
 from memorii.core.calibration.policy import response_for_slice

@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
+
+
+def _json_sequence(value: object) -> Sequence[object]:
+    return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
 
 
 def sim_metrics_from_rows(rows: list[dict[str, object]]) -> dict[str, float]:
@@ -13,7 +18,7 @@ def sim_metrics_from_rows(rows: list[dict[str, object]]) -> dict[str, float]:
     bucket_counts = Counter(
         bucket
         for row in rows
-        for bucket in row.get("failure_buckets", [])
+        for bucket in _json_sequence(row.get("failure_buckets"))
     )
     return {
         "checkpoint_accuracy": passed / total,

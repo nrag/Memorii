@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from memorii.core.memory_evolution.models import (
     EvidenceSpan,
-    ExtractionTriggerMode,
     ExtractedClaim,
-    SourceObservation,
+    ExtractionTriggerMode,
     SourceModality,
+    SourceObservation,
     ValidationResult,
     ValidationVerdict,
 )

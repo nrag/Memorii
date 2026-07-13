@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from memorii.core.benchmark.artifact_rows import AlignmentSummary, RuntimeGraphSummary, artifact_rows_to_json
@@ -52,6 +53,14 @@ def _source_event_age_days_bucket(days: int | float | object) -> str:
         return "old"
     return "stale_long_horizon"
 
+
+def _json_mapping(value: object) -> Mapping[str, object]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _json_sequence(value: object) -> Sequence[object]:
+    return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
+
 def _long_horizon_slice_counts(checkpoint_rows: list[dict[str, object]]) -> dict[str, dict[str, int]]:
     slice_keys = [
         "phase",
@@ -81,20 +90,21 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
     action_observed_in_count = 0
     graph_edge_count = 0
     for snapshot in rows.graph_snapshots:
-        nodes = snapshot.get("nodes", []) if isinstance(snapshot, dict) else []
-        edges = snapshot.get("edges", []) if isinstance(snapshot, dict) else []
-        validation_error_count += len(snapshot.get("validation_errors", []) or []) if isinstance(snapshot, dict) else 0
+        snapshot_map = _json_mapping(snapshot)
+        nodes = _json_sequence(snapshot_map.get("nodes"))
+        edges = _json_sequence(snapshot_map.get("edges"))
+        validation_error_count += len(_json_sequence(snapshot_map.get("validation_errors")))
         graph_edge_count += len(edges)
-        node_type_by_id = {str(node.get("node_id")): str(node.get("node_type")) for node in nodes if isinstance(node, dict)}
+        node_type_by_id = {str(node.get("node_id")): str(node.get("node_type")) for node in nodes if isinstance(node, Mapping)}
         active_claim_node_ids = {
             str(node.get("node_id"))
             for node in nodes
-            if isinstance(node, dict) and node.get("node_type") == "claim" and node.get("lifecycle_state") == "active"
+            if isinstance(node, Mapping) and node.get("node_type") == "claim" and node.get("lifecycle_state") == "active"
         }
         active_action_node_ids = {
             str(node.get("node_id"))
             for node in nodes
-            if isinstance(node, dict) and node.get("node_type") == "action" and node.get("lifecycle_state") == "active"
+            if isinstance(node, Mapping) and node.get("node_type") == "action" and node.get("lifecycle_state") == "active"
         }
         active_claim_count += len(active_claim_node_ids)
         active_action_count += len(active_action_node_ids)
@@ -104,14 +114,14 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
         claim_has_observed_in: set[str] = set()
         action_has_observed_in: set[str] = set()
         for node in nodes:
-            if not isinstance(node, dict):
+            if not isinstance(node, Mapping):
                 continue
             node_type = str(node.get("node_type", "unknown"))
             node_counts[node_type] += 1
             if node_type == "source_observation":
                 source_observation_count += 1
         for edge in edges:
-            if not isinstance(edge, dict):
+            if not isinstance(edge, Mapping):
                 continue
             edge_type = str(edge.get("edge_type", "unknown"))
             edge_counts[edge_type] += 1
@@ -140,8 +150,8 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
     item_counts = Counter(str(item.get("item_type", "unknown")) for item in rows.graph_items)
     relation_support_modes = Counter()
     for row in checkpoint_rows:
-        for item in row.get("runtime_relation_support", []) or []:
-            if isinstance(item, dict):
+        for item in _json_sequence(row.get("runtime_relation_support")):
+            if isinstance(item, Mapping):
                 relation_support_modes[str(item.get("support_mode", "unknown"))] += 1
     return RuntimeGraphSummary.from_flat_row({
         "source_observation_count": source_observation_count,
@@ -174,7 +184,7 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
 def runtime_summary_metrics(rows: RuntimeSuiteRows) -> dict[str, object]:
     checkpoint_rows = artifact_rows_to_json(rows.checkpoint_rows)
     checkpoint_count = len(checkpoint_rows)
-    bucket_counts = Counter(bucket for row in checkpoint_rows for bucket in row.get("runtime_failure_buckets", []))
+    bucket_counts = Counter(bucket for row in checkpoint_rows for bucket in _json_sequence(row.get("runtime_failure_buckets")))
     final_output_source_counts = Counter(str(row.get("final_output_source", "unknown")) for row in checkpoint_rows)
     provider_successes = sum(1 for row in rows.llm_rows if row.get("success") is True)
     provider_failures = sum(1 for row in rows.llm_rows if row.get("success") is not True)
@@ -202,11 +212,10 @@ def runtime_alignment_summary(rows: RuntimeSuiteRows) -> dict[str, object]:
     alignments = artifact_rows_to_json(rows.alignments)
     checkpoint_expected_ids: dict[tuple[str, str], set[str]] = {}
     for row in checkpoint_rows:
-        expected = row.get("expected") if isinstance(row.get("expected"), dict) else {}
+        expected = _json_mapping(row.get("expected"))
         expected_ids: set[str] = set()
-        if isinstance(expected, dict):
-            for key in ("expected_entity_ids", "expected_claim_ids", "expected_relation_ids", "expected_citation_event_ids"):
-                expected_ids.update(str(value) for value in expected.get(key, []) or [])
+        for key in ("expected_entity_ids", "expected_claim_ids", "expected_relation_ids", "expected_citation_event_ids"):
+            expected_ids.update(str(value) for value in _json_sequence(expected.get(key)))
         checkpoint_expected_ids[(str(row.get("scenario_id")), str(row.get("checkpoint_id")))] = expected_ids
 
     full_counts: Counter[str] = Counter()
@@ -215,7 +224,7 @@ def runtime_alignment_summary(rows: RuntimeSuiteRows) -> dict[str, object]:
     required_item_counts: Counter[str] = Counter()
     required_total = 0
     for alignment in alignments:
-        if not isinstance(alignment, dict):
+        if not isinstance(alignment, Mapping):
             continue
         verdict = str(alignment.get("verdict", "unknown"))
         item_type = str(alignment.get("item_type", "unknown"))
@@ -231,7 +240,7 @@ def runtime_alignment_summary(rows: RuntimeSuiteRows) -> dict[str, object]:
     scored_failure_bucket_counts = Counter(
         str(bucket)
         for row in checkpoint_rows
-        for bucket in row.get("failure_buckets", []) or []
+        for bucket in _json_sequence(row.get("failure_buckets"))
     )
     return AlignmentSummary.from_flat_row({
         "alignment_summary_policy": {

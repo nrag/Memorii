@@ -12,7 +12,6 @@ from memorii.core.benchmark.memory_evolution_sim import (
     generate_memory_evolution_sim_scenarios,
 )
 
-
 SimProfile = Literal["smoke", "adversarial", "long_horizon"]
 T = TypeVar("T")
 

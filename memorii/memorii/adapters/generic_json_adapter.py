@@ -3,8 +3,8 @@
 from memorii.adapters.contracts import HarnessOutput
 from memorii.adapters.events import HarnessEvent, to_runtime_observation
 from memorii.api.models import TaskInput
-from memorii.core.execution import RuntimeStepResult
 from memorii.api.service import MemoriiRuntimeAPI
+from memorii.core.execution import RuntimeStepResult
 
 
 class GenericJSONHarnessAdapter:

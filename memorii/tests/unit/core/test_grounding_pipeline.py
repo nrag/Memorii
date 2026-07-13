@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from memorii.core.grounding.models import (
     AlternativeAnswerCheck,
     AnswerRequirement,

@@ -18,7 +18,13 @@ from memorii.domain.enums import (
 )
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.memory_object import MemoryObject
-from memorii.domain.retrieval import DomainRetrievalQuery, FreshnessPolicy, RetrievalNamespace, RetrievalScope, ValidityStatus
+from memorii.domain.retrieval import (
+    DomainRetrievalQuery,
+    FreshnessPolicy,
+    RetrievalNamespace,
+    RetrievalScope,
+    ValidityStatus,
+)
 from memorii.stores.event_log import InMemoryEventLogStore
 from memorii.stores.execution_graph import InMemoryExecutionGraphStore
 from memorii.stores.overlays import InMemoryOverlayStore

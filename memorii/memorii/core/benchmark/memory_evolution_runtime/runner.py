@@ -2,37 +2,39 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Protocol, cast
 
-from memorii.core.benchmark.memory_evolution_sim import (
-    LatentGraphScenario,
-    ObservabilityLabel,
-    OracleCheckpoint,
-    SimOutputNormalization,
-    SurfaceObservation,
-    judge_sim_checkpoint,
-    normalize_sim_system_output_for_checkpoint,
-    rule_sim_output_for_checkpoint,
-    sim_checkpoint_diagnostics,
-    sim_reconstruction_context_for_checkpoint,
-)
 from memorii.core.benchmark.artifact_rows import (
     CheckpointDecisionTraceSection,
     CheckpointDiagnosticsSection,
     CheckpointHorizonSection,
     CheckpointVerdictSection,
+    DecisionMode,
+    FinalOutputSource,
     NormalizationDiagnosticsSection,
-    RuntimeCheckpointResultRow,
     RuntimeActionAlignmentRow,
+    RuntimeCheckpointResultRow,
     RuntimeDiagnosticsSection,
     RuntimeGraphAlignmentRow,
     artifact_section_legacy_fields,
     checkpoint_warning_buckets,
 )
-from memorii.core.benchmark.memory_evolution_runtime.artifacts import _horizon_distance_bucket, _interference_count_bucket, _source_event_age_days_bucket
-from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import _runtime_relation_support_rows, project_runtime_checkpoint, runtime_failure_buckets
-from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection import _action_alignment_failure_reason, _runtime_action_support_rows
+from memorii.core.benchmark.memory_evolution_runtime.artifacts import (
+    _horizon_distance_bucket,
+    _interference_count_bucket,
+    _source_event_age_days_bucket,
+)
+from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import (
+    _runtime_relation_support_rows,
+    project_runtime_checkpoint,
+    runtime_failure_buckets,
+)
+from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection import (
+    _action_alignment_failure_reason,
+    _runtime_action_support_rows,
+)
 from memorii.core.benchmark.memory_evolution_runtime.graph_items import (
     _claim_quote,
     _entity_quote,
@@ -42,10 +44,28 @@ from memorii.core.benchmark.memory_evolution_runtime.graph_items import (
 )
 from memorii.core.benchmark.memory_evolution_runtime.ingestion import ingest_scenario_surface_observations
 from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeProjection, RuntimeSuiteRows
-from memorii.core.benchmark.memory_evolution_runtime.utils import _claim_by_id, _entity_by_id, _ordered_unique, _stable_id, _text_key
+from memorii.core.benchmark.memory_evolution_runtime.utils import (
+    _claim_by_id,
+    _entity_by_id,
+    _ordered_unique,
+    _stable_id,
+    _text_key,
+)
+from memorii.core.benchmark.memory_evolution_sim import (
+    JudgeAggregate,
+    LatentGraphScenario,
+    ObservabilityLabel,
+    OracleCheckpoint,
+    SimOutputNormalization,
+    SurfaceObservation,
+    judge_sim_checkpoint,
+    normalize_sim_system_output_for_checkpoint,
+    sim_checkpoint_diagnostics,
+    sim_reconstruction_context_for_checkpoint,
+)
 from memorii.core.calibration.alignment import normalize_alignment_value
 from memorii.core.env_config import load_memorii_environment
-from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
+from memorii.core.llm_config import DecisionModeName, LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_provider.base import LLMStructuredClient
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -59,15 +79,12 @@ from memorii.core.memory_evolution import (
     HybridMemoryExtractor,
     LLMMemoryExtractor,
     MemoryExtractor,
-    MemoryGraphEdgeType,
-    MemoryGraphNodeType,
     MemoryGraphSnapshot,
     RuleMemoryExtractor,
     SourceObservation,
 )
 from memorii.core.memory_evolution.models import ConfidenceComponents
 from memorii.core.memory_plane import MemoryPlaneService
-from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.tools.run_live_llm_eval import _validate_live_safety
 
@@ -270,10 +287,10 @@ def build_runtime_extractor(
             delegate = RuleMemoryExtractor()
     return RecordingMemoryExtractor(delegate=delegate)
 
-def validate_runtime_live_safety(*, mode: str, dry_run: bool, allow_live: bool) -> tuple[str, LLMRuntimeConfig]:
+def validate_runtime_live_safety(*, mode: str, dry_run: bool, allow_live: bool) -> tuple[DecisionMode, LLMRuntimeConfig]:
     env_snapshot = load_memorii_environment()
     runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
-    decision_config = LLMDecisionRuntimeConfig(mode=mode) if mode != "auto" else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
+    decision_config = LLMDecisionRuntimeConfig(mode=_decision_mode(mode)) if mode != "auto" else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     effective_mode = decision_config.resolve(runtime_config)
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
@@ -295,6 +312,7 @@ def run_runtime_scenarios(
     prompt_root: Path,
     llm_client_factory: LLMClientFactoryProtocol = LLMClientFactory,
 ) -> RuntimeSuiteRows:
+    requested_mode = _decision_mode(mode)
     effective_mode, runtime_config = validate_runtime_live_safety(mode=mode, dry_run=dry_run, allow_live=allow_live)
     scenario_rows: list[dict[str, object]] = []
     checkpoint_rows: list[RuntimeCheckpointResultRow] = []
@@ -387,7 +405,7 @@ def run_runtime_scenarios(
             row = _build_runtime_checkpoint_result_row(
                 scenario=scenario,
                 checkpoint=checkpoint,
-                mode=mode,
+                mode=requested_mode,
                 effective_mode=effective_mode,
                 final_output_source=final_output_source,
                 success=success,
@@ -441,11 +459,11 @@ def _build_runtime_checkpoint_result_row(
     *,
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
-    mode: str,
-    effective_mode: str,
-    final_output_source: str,
+    mode: DecisionMode,
+    effective_mode: DecisionMode,
+    final_output_source: FinalOutputSource,
     success: bool,
-    aggregate: object,
+    aggregate: JudgeAggregate,
     diagnostics: dict[str, object],
     runtime_buckets: list[str],
     normalization: SimOutputNormalization,
@@ -489,12 +507,12 @@ def _build_runtime_checkpoint_result_row(
     )
     verdict = CheckpointVerdictSection(
         success=success,
-        passed=bool(getattr(aggregate, "verdict").value == "pass" and not runtime_buckets),
-        verdict="fail" if runtime_buckets else getattr(aggregate, "verdict").value,
-        score=getattr(aggregate, "score"),
-        confidence=getattr(aggregate, "confidence"),
-        review_required=getattr(aggregate, "review_required") or bool(runtime_buckets),
-        failure_buckets=sorted({*getattr(aggregate, "critical_failure_buckets"), *runtime_buckets}),
+        passed=bool(aggregate.verdict.value == "pass" and not runtime_buckets),
+        verdict="fail" if runtime_buckets else aggregate.verdict.value,
+        score=aggregate.score,
+        confidence=aggregate.confidence,
+        review_required=aggregate.review_required or bool(runtime_buckets),
+        failure_buckets=sorted({*aggregate.critical_failure_buckets, *runtime_buckets}),
         warning_buckets=warning_buckets,
     )
     normalization_section = NormalizationDiagnosticsSection.from_normalization(normalization)
@@ -505,7 +523,7 @@ def _build_runtime_checkpoint_result_row(
         runtime_action_alignments=runtime_action_alignments,
         runtime_execution_state=dict(projection.execution_state),
         active_continuation_branch=projection.execution_state.get("active_continuation_branch"),
-        suppressed_branch_ids=list(projection.execution_state.get("suppressed_branch_ids", [])),
+        suppressed_branch_ids=[str(item) for item in _json_sequence(projection.execution_state.get("suppressed_branch_ids"))],
         action_alignment_failure_reason=_action_alignment_failure_reason(projection.action_alignment_rows),
     )
     diagnostics_payload = {
@@ -532,7 +550,7 @@ def _build_runtime_checkpoint_result_row(
         ).model_dump(mode="json"),
         "raw_output": raw_output_json,
         "normalized_output": output_json,
-        "judge_aggregate": getattr(aggregate, "model_dump")(mode="json"),
+        "judge_aggregate": aggregate.model_dump(mode="json"),
     }
     return RuntimeCheckpointResultRow(
         scenario_id=scenario.scenario_id,
@@ -601,7 +619,7 @@ def extractor_trace_rows(*, scenario: LatentGraphScenario, extractor: MemoryExtr
         )
     return rows
 
-def runtime_final_output_source(*, effective_mode: str, dry_run: bool, extractor: MemoryExtractor) -> str:
+def runtime_final_output_source(*, effective_mode: str, dry_run: bool, extractor: MemoryExtractor) -> FinalOutputSource:
     if effective_mode == "rule":
         return "rule"
     if dry_run:
@@ -617,7 +635,7 @@ def extractor_fallback_count(extractor: MemoryExtractor) -> int:
     return int(getattr(extractor, "fallbacks", 0))
 
 def _runtime_failure_classification(runtime_buckets: list[str], diagnostics: dict[str, object]) -> list[str]:
-    classifications = list(diagnostics.get("failure_classification", []) or [])
+    classifications = [str(item) for item in _json_sequence(diagnostics.get("failure_classification"))]
     mapping = {
         "runtime_missing_expected_entity": "runtime_missing_expected_entity",
         "runtime_missing_expected_claim": "runtime_missing_expected_claim",
@@ -649,3 +667,13 @@ def _runtime_failure_classification(runtime_buckets: list[str], diagnostics: dic
     }
     classifications.extend(mapping[bucket] for bucket in runtime_buckets if bucket in mapping)
     return _ordered_unique(classifications)
+
+
+def _decision_mode(mode: str) -> DecisionModeName:
+    if mode in {"auto", "rule", "llm", "hybrid"}:
+        return cast(DecisionModeName, mode)
+    raise ValueError(f"Unsupported memory evolution runtime mode: {mode}")
+
+
+def _json_sequence(value: object) -> Sequence[object]:
+    return value if isinstance(value, Sequence) and not isinstance(value, str) else ()

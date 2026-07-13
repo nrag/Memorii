@@ -5,8 +5,6 @@ import json
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.benchmark.artifact_rows import (
     BenchmarkReportSummary,
     RuntimeCheckpointResultRow,
@@ -26,6 +24,7 @@ from memorii.core.benchmark.memory_evolution_sim import (
     sim_reconstruction_context_for_checkpoint,
 )
 from memorii.tools.run_benchmark import main
+from pydantic import ValidationError
 
 
 def _runtime_graph_summary_payload() -> dict[str, object]:

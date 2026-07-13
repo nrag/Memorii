@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
     ObservabilityLabel,
@@ -10,6 +8,7 @@ from memorii.core.benchmark.memory_evolution_sim import (
     generate_memory_evolution_sim_scenarios,
     sim_reconstruction_context_for_checkpoint,
 )
+from pydantic import ValidationError
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
     claim_by_role,

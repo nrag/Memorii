@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from memorii.core.benchmark.memory_evolution_runtime import (
     _expected_action_alignment_rows as expected_action_alignment_rows,
+)
+from memorii.core.benchmark.memory_evolution_runtime import (
     align_runtime_graph_to_oracle,
 )
 from tests.unit.core.benchmark.memory_evolution_runtime_test_helpers import (

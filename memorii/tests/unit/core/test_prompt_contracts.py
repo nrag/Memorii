@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import json
-from inspect import signature
 from copy import deepcopy
+from inspect import signature
 from pathlib import Path
 
 import pytest
 import yaml
 from jsonschema import Draft7Validator
-from pydantic import ValidationError
-
+from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
+from memorii.core.benchmark.memory_evolution_decision import memory_evolution_context_for_checkpoint
 from memorii.core.llm_decision.adapters import (
     LLMAnswerVerificationAdapter,
     LLMBeliefUpdateAdapter,
@@ -26,13 +26,12 @@ from memorii.core.llm_decision.adapters import (
 )
 from memorii.core.llm_provider.models import LLMStructuredResponse
 from memorii.core.llm_provider.parser import parse_structured_response
-from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
-from memorii.core.benchmark.memory_evolution_decision import memory_evolution_context_for_checkpoint
 from memorii.core.memory_evolution.extraction import LLMMemoryExtractor
 from memorii.core.prompts.manifest import PromptContractManifestEntry, PromptOwner, prompt_contract_manifest_by_ref
 from memorii.core.prompts.models import PromptContract
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.render import PromptRenderer, redact_variables
+from pydantic import ValidationError
 
 PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
 
@@ -291,10 +290,7 @@ def test_all_prompts_render_with_expected_variables() -> None:
         }
     for ref in PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs():
         contract = _load(ref)
-        if ref.startswith("judges/"):
-            variables = {"rubric_json": {}, "input_payload": {}}
-        else:
-            variables = samples[ref]
+        variables = {"rubric_json": {}, "input_payload": {}} if ref.startswith("judges/") else samples[ref]
         rendered = renderer.render(contract=contract, variables=variables)
         assert rendered.prompt_ref == ref
 

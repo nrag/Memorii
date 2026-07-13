@@ -9,8 +9,8 @@ from memorii.core.grounding.models import (
 from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric
 from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.promotion.models import PromotionContext
+from memorii.core.prompts.registry import PromptRegistry
 
 _DEFAULT_JUDGE_PROMPTS: dict[JudgeDimension, str] = {
     JudgeDimension.PROMOTION_PRECISION: "judges/promotion_precision:v1",

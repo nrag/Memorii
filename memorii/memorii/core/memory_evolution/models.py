@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.domain.enums import MemoryDomain, SourceType
 
 
-class EntityType(str, Enum):
+class EntityType(StrEnum):
     PROJECT = "project"
     PERSON = "person"
     SERVICE = "service"
@@ -19,7 +19,7 @@ class EntityType(str, Enum):
     UNKNOWN = "unknown"
 
 
-class ClaimValueType(str, Enum):
+class ClaimValueType(StrEnum):
     TEXT = "text"
     ENTITY = "entity"
     BOOLEAN = "boolean"
@@ -27,30 +27,30 @@ class ClaimValueType(str, Enum):
     DATE = "date"
 
 
-class PredicateCardinality(str, Enum):
+class PredicateCardinality(StrEnum):
     SINGLE = "single"
     MULTI = "multi"
 
 
-class PredicateConflictPolicy(str, Enum):
+class PredicateConflictPolicy(StrEnum):
     SUPERSEDE_BY_TRUST_AND_TIME = "supersede_by_trust_and_time"
     ACCUMULATE = "accumulate"
     CONTRADICT = "contradict"
 
 
-class PredicateMergePolicy(str, Enum):
+class PredicateMergePolicy(StrEnum):
     REINFORCE_SAME_VALUE = "reinforce_same_value"
     MERGE_UNIQUE_VALUES = "merge_unique_values"
     NO_MERGE = "no_merge"
 
 
-class PredicateTemporalPolicy(str, Enum):
+class PredicateTemporalPolicy(StrEnum):
     CURRENT_VALUE = "current_value"
     HISTORICAL_EVENT = "historical_event"
     EXPIRING_VALUE = "expiring_value"
 
 
-class ClaimLifecycleState(str, Enum):
+class ClaimLifecycleState(StrEnum):
     CANDIDATE = "candidate"
     ACTIVE = "active"
     SUPERSEDED = "superseded"
@@ -59,7 +59,7 @@ class ClaimLifecycleState(str, Enum):
     ARCHIVED = "archived"
 
 
-class ClaimTransitionType(str, Enum):
+class ClaimTransitionType(StrEnum):
     CREATE = "create"
     REINFORCE = "reinforce"
     MERGE = "merge"
@@ -75,7 +75,7 @@ class ClaimTransitionType(str, Enum):
     CLAIM_REKEY = "claim_rekey"
 
 
-class SourceModality(str, Enum):
+class SourceModality(StrEnum):
     ASSERTION = "assertion"
     CORRECTION = "correction"
     QUOTED_OR_PASTED = "quoted_or_pasted"
@@ -88,14 +88,14 @@ class SourceModality(str, Enum):
     NOISE = "noise"
 
 
-class ExtractionTriggerMode(str, Enum):
+class ExtractionTriggerMode(StrEnum):
     IMMEDIATE = "immediate"
     DEFERRED = "deferred"
     BATCH_ONLY = "batch_only"
     SKIP = "skip"
 
 
-class EntityLinkLifecycleState(str, Enum):
+class EntityLinkLifecycleState(StrEnum):
     ACTIVE = "active"
     MERGED = "merged"
     SPLIT = "split"
@@ -103,13 +103,13 @@ class EntityLinkLifecycleState(str, Enum):
     INVALIDATED = "invalidated"
 
 
-class ValidationVerdict(str, Enum):
+class ValidationVerdict(StrEnum):
     PASS = "pass"
     WARN = "warn"
     FAIL = "fail"
 
 
-class RetrievalView(str, Enum):
+class RetrievalView(StrEnum):
     CURRENT = "current"
     HISTORICAL_AT = "historical_at"
     ALL_VERSIONS = "all_versions"
@@ -117,7 +117,7 @@ class RetrievalView(str, Enum):
     EVIDENCE_ONLY = "evidence_only"
 
 
-class MemoryGraphNodeType(str, Enum):
+class MemoryGraphNodeType(StrEnum):
     SOURCE_OBSERVATION = "source_observation"
     ENTITY = "entity"
     CLAIM = "claim"
@@ -130,7 +130,7 @@ class MemoryGraphNodeType(str, Enum):
     REFERENCE_CLAIM = "reference_claim"
 
 
-class MemoryGraphEdgeType(str, Enum):
+class MemoryGraphEdgeType(StrEnum):
     OBSERVED_IN = "observed_in"
     MENTIONS = "mentions"
     HAS_SUBJECT = "has_subject"
@@ -180,7 +180,7 @@ class EvidenceSpan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_offsets(self) -> "EvidenceSpan":
+    def validate_offsets(self) -> EvidenceSpan:
         if (self.char_start is None) != (self.char_end is None):
             raise ValueError("char_start and char_end must be provided together")
         if self.char_start is not None and self.char_end is not None and self.char_start > self.char_end:

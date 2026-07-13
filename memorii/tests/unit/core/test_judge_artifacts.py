@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pytest
-
 from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionPoint
 from memorii.core.llm_eval.models import EvalCaseResult
 from memorii.core.llm_judge.artifacts import JudgeArtifactPolicy, JudgeArtifactWriter
 from memorii.core.llm_judge.models import JudgeDimension, JudgeVerdict, JuryVerdict
 from memorii.core.llm_judge.runner import JudgeRunCaseResult, JudgeRunReport
+from pydantic import ValidationError
 
-
-FIXED_NOW = datetime(2026, 4, 28, 12, 0, tzinfo=timezone.utc)
+FIXED_NOW = datetime(2026, 4, 28, 12, 0, tzinfo=UTC)
 
 
 def _case(idx: int, passed: bool, review: bool, disagreement: bool, golden: bool) -> JudgeRunCaseResult:
@@ -125,5 +124,5 @@ def test_policies_overwrite_and_append_only_review(tmp_path):
 
 
 def test_policy_extra_forbidden() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         JudgeArtifactPolicy(extra_field=True)  # type: ignore[arg-type]

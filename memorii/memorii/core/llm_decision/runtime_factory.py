@@ -15,12 +15,12 @@ from memorii.core.llm_decision.provider import LLMDecisionProvider
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
-from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.promotion.hybrid_provider import HybridPromotionDecisionProvider
 from memorii.core.promotion.llm_provider import LLMPromotionDecisionProvider
 from memorii.core.promotion.models import PromotionContext
 from memorii.core.promotion.provider import PromotionDecisionProvider
 from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from memorii.core.prompts.registry import PromptRegistry
 
 
 class PromptBackedLLMDecisionProvider:

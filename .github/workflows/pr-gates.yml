@@ -28,7 +28,15 @@ jobs:
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local]'
+        run: pip install -e '.[local,dev]'
+
+      - name: Run Ruff
+        working-directory: memorii
+        run: ruff check memorii tests
+
+      - name: Run Pyright
+        working-directory: memorii
+        run: pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
 
       - name: Run unit tests
         working-directory: memorii

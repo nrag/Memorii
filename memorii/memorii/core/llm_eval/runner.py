@@ -488,13 +488,13 @@ class OfflineLLMEvalRunner:
         persisted_llm_trace = None
 
         should_persist_rule_trace = False
-        if engine_result.rule_trace is not None:
-            if mode == LLMDecisionMode.RULE:
-                should_persist_rule_trace = True
-            elif mode == LLMDecisionMode.HYBRID:
-                should_persist_rule_trace = True
-            elif mode == LLMDecisionMode.LLM and engine_result.fallback_used:
-                should_persist_rule_trace = True
+        if engine_result.rule_trace is not None and (
+            mode == LLMDecisionMode.RULE
+            or mode == LLMDecisionMode.HYBRID
+            or mode == LLMDecisionMode.LLM
+            and engine_result.fallback_used
+        ):
+            should_persist_rule_trace = True
         if should_persist_rule_trace:
             self._trace_store.append_trace(engine_result.rule_trace)
             persisted_rule_trace = engine_result.rule_trace

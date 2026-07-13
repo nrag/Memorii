@@ -7,13 +7,13 @@ import json
 from pathlib import Path
 
 from memorii.core.benchmark.artifact_rows import BenchmarkReportSummary
-from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.core.benchmark.memory_evolution_runtime import (
     run_runtime_scenarios,
     runtime_summary_metrics,
     runtime_warning_policy,
     write_runtime_artifacts,
 )
+from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
 from memorii.tools.benchmark_suites.memory_evolution_sim import (
     _load_memory_evolution_sim_suite,

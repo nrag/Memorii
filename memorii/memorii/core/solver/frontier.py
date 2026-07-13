@@ -1,6 +1,6 @@
 """Deterministic frontier planner over persisted solver overlays."""
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,7 +10,7 @@ from memorii.domain.solver_graph.overlays import SolverNodeOverlay
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
 
 
-class FrontierSelectionReason(str, Enum):
+class FrontierSelectionReason(StrEnum):
     HIGHEST_PRIORITY_FRONTIER = "highest_priority_frontier"
     NO_FRONTIER_FOUND = "no_frontier_found"
     FRONTIER_WITH_STRUCTURED_ACTION = "frontier_with_structured_action"

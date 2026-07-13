@@ -7,7 +7,14 @@ from memorii.core.router.routing_policy import RoutingPolicy
 from memorii.domain.common import Provenance, RoutingInfo
 from memorii.domain.enums import MemoryDomain, SourceType
 from memorii.domain.memory_object import MemoryObject
-from memorii.domain.routing import InboundEvent, InboundEventClass, NamespaceKey, RoutedMemoryObject, RoutingDecision, RoutingMetadata
+from memorii.domain.routing import (
+    InboundEvent,
+    InboundEventClass,
+    NamespaceKey,
+    RoutedMemoryObject,
+    RoutingDecision,
+    RoutingMetadata,
+)
 
 
 class MemoryRouter:

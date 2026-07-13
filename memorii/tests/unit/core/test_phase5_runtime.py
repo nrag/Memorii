@@ -2,9 +2,9 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
 from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
-from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.retrieval import RetrievalPlanner
 from memorii.core.router import MemoryRouter
 from memorii.core.router.routing_policy import RoutingPolicy
@@ -22,7 +22,13 @@ from memorii.domain.enums import (
 )
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.memory_object import MemoryObject
-from memorii.domain.retrieval import DomainRetrievalQuery, FreshnessPolicy, RetrievalNamespace, RetrievalScope, ValidityStatus
+from memorii.domain.retrieval import (
+    DomainRetrievalQuery,
+    FreshnessPolicy,
+    RetrievalNamespace,
+    RetrievalScope,
+    ValidityStatus,
+)
 from memorii.domain.routing import InboundEventClass
 from memorii.stores.event_log import InMemoryEventLogStore
 from memorii.stores.execution_graph import InMemoryExecutionGraphStore

@@ -4,8 +4,6 @@ from datetime import UTC, datetime
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.provider.service import ProviderMemoryService
-from memorii.core.provider.models import ProviderOperation
 from memorii.core.promotion import (
     PromotionAction,
     PromotionContext,
@@ -17,6 +15,8 @@ from memorii.core.promotion import (
     RuleBasedPromotionDecider,
     build_promotion_decider,
 )
+from memorii.core.provider.models import ProviderOperation
+from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain
 
 

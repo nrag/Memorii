@@ -16,6 +16,4 @@ class ConsolidationPolicy:
             return is_validated and not is_speculative
         if domain == MemoryDomain.USER:
             return is_durable_user_signal and is_validated and not is_speculative
-        if domain in {MemoryDomain.EPISODIC, MemoryDomain.SOLVER, MemoryDomain.EXECUTION, MemoryDomain.TRANSCRIPT}:
-            return True
-        return False
+        return domain in {MemoryDomain.EPISODIC, MemoryDomain.SOLVER, MemoryDomain.EXECUTION, MemoryDomain.TRANSCRIPT}

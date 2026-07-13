@@ -34,7 +34,7 @@ class FilesystemStorageBundle:
         cls,
         storage_root: str | Path,
         policy: FilesystemStoragePolicy | None = None,
-    ) -> "FilesystemStorageBundle":
+    ) -> FilesystemStorageBundle:
         resolved_root = Path(storage_root)
         resolved_root.mkdir(parents=True, exist_ok=True)
         resolved_policy = policy or FilesystemStoragePolicy()

@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.domain.enums import MemoryDomain
 
 
-class ProviderOperation(str, Enum):
+class ProviderOperation(StrEnum):
     CHAT_USER_TURN = "chat_user_turn"
     CHAT_ASSISTANT_TURN = "chat_assistant_turn"
     MEMORY_WRITE_LONGTERM = "memory_write_longterm"
@@ -23,7 +23,7 @@ class ProviderOperation(str, Enum):
     UNKNOWN = "unknown"
 
 
-class ProviderWriteKind(str, Enum):
+class ProviderWriteKind(StrEnum):
     RAW_APPEND = "raw_append"
     CANDIDATE_STAGE = "candidate_stage"
     COMMIT = "commit"
@@ -87,7 +87,7 @@ class ProviderSyncResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ProviderQueryClass(str, Enum):
+class ProviderQueryClass(StrEnum):
     PREFERENCE_PROFILE = "preference_profile"
     FACT_CONFIG = "fact_config"
     EVENT_HISTORY = "event_history"

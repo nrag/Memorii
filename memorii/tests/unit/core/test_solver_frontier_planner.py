@@ -9,7 +9,6 @@ from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverla
 from memorii.stores.overlays import InMemoryOverlayStore
 from memorii.stores.solver_graph import InMemorySolverGraphStore
 
-
 NOW = datetime.now(UTC)
 
 

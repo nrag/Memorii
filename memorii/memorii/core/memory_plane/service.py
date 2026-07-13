@@ -330,9 +330,7 @@ class MemoryPlaneService:
             return False
         if scope.agent_id is not None and item.agent_id not in {None, scope.agent_id}:
             return False
-        if scope.user_id is not None and item.user_id not in {None, scope.user_id}:
-            return False
-        return True
+        return not (scope.user_id is not None and item.user_id not in {None, scope.user_id})
 
     def _matches_semantics(self, item: CanonicalMemoryRecord, *, include_candidates: bool, freshness: object) -> bool:
         if not include_candidates and item.status == CommitStatus.CANDIDATE:

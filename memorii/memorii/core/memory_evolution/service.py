@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import uuid5, NAMESPACE_URL
+from uuid import NAMESPACE_URL, uuid5
 
 from memorii.core.memory_evolution.confidence import ConfidenceAggregator
 from memorii.core.memory_evolution.contradictions import ContradictionResolver
@@ -15,7 +15,11 @@ from memorii.core.memory_evolution.graph import (
     MemoryGraphValidator,
     subgraph_from_ids,
 )
-from memorii.core.memory_evolution.modality import ExtractionTriggerPolicy, SourceModalityClassifier, classify_and_mark_observation
+from memorii.core.memory_evolution.modality import (
+    ExtractionTriggerPolicy,
+    SourceModalityClassifier,
+    classify_and_mark_observation,
+)
 from memorii.core.memory_evolution.models import (
     ClaimLifecycleState,
     ClaimLifecycleTransition,
@@ -23,13 +27,13 @@ from memorii.core.memory_evolution.models import (
     ClaimTransitionType,
     ContradictionSet,
     EntityLinkState,
-    ExtractionTriggerMode,
     ExtractedAction,
     ExtractedClaim,
+    ExtractionTriggerMode,
+    MemoryEvolutionResult,
     MemoryGraphEdgeType,
     MemoryGraphNodeType,
     MemoryGraphSnapshot,
-    MemoryEvolutionResult,
     RetrievalView,
     SourceModality,
     SourceObservation,
@@ -615,9 +619,7 @@ def _domain_for_predicate(predicate_id: str) -> MemoryDomain:
 def _valid_at(state: ClaimState, valid_at: datetime) -> bool:
     if state.valid_from is not None and state.valid_from > valid_at:
         return False
-    if state.valid_to is not None and state.valid_to < valid_at:
-        return False
-    return True
+    return not (state.valid_to is not None and state.valid_to < valid_at)
 
 
 def _claim_strength(predicate_id: str, claim: ExtractedClaim) -> tuple[float, datetime]:

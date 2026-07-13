@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from memorii.core.benchmark.fixtures import normalize_fixtures
 from memorii.core.benchmark.metrics import compute_metrics
@@ -20,7 +21,7 @@ from memorii.core.benchmark.retrieval_relevance_decision import (
     rule_retrieval_relevance_decision_for_fixture,
 )
 from memorii.core.env_config import load_memorii_environment
-from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
+from memorii.core.llm_config import DecisionModeName, LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_decision.adapters import LLMRetrievalRelevanceDecisionAdapter
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -38,6 +39,12 @@ from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntime
 from memorii.tools.run_live_llm_eval import _validate_live_safety
 
 SUITE_NAME = "retrieval_corruption_v1"
+
+
+def _decision_mode(mode: str) -> DecisionModeName:
+    if mode in {"auto", "rule", "llm", "hybrid"}:
+        return cast(DecisionModeName, mode)
+    raise ValueError(f"Unsupported retrieval corruption mode: {mode}")
 
 
 def apply_retrieval_relevance_assertions(
@@ -80,7 +87,7 @@ def run_retrieval_relevance_decisions(
     env_snapshot = load_memorii_environment()
     runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
     decision_config = (
-        LLMDecisionRuntimeConfig(mode=mode)
+        LLMDecisionRuntimeConfig(mode=_decision_mode(mode))
         if mode != "auto"
         else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     )
@@ -129,15 +136,16 @@ def run_retrieval_relevance_decisions(
 
         if effective_mode in {"llm", "hybrid"} and adapter is not None:
             llm_used = True
+            metadata: dict[str, object] = {
+                "suite": SUITE_NAME,
+                "scenario_id": fixture.scenario_id,
+                "decision_mode": mode,
+                "transition_type": "retrieval_relevance",
+            }
             llm_result = adapter.decide(
                 context,
                 request_id=request_id,
-                metadata={
-                    "suite": SUITE_NAME,
-                    "scenario_id": fixture.scenario_id,
-                    "decision_mode": mode,
-                    "transition_type": "retrieval_relevance",
-                },
+                metadata=metadata,
             )
             output, llm_trace, llm_success, fallback_reason = retrieval_relevance_engine_result_from_llm(
                 result=llm_result,

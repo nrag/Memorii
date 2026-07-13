@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from memorii.core.benchmark.memory_evolution_sim import (
     JudgeVerdict,
-    ObservabilityLabel,
-    SimSystemOutput,
     expected_sim_output_for_checkpoint,
     judge_sim_checkpoint,
-    normalize_sim_system_output_for_checkpoint,
     rule_sim_output_for_checkpoint,
     sim_checkpoint_diagnostics,
     sim_reconstruction_context_for_checkpoint,

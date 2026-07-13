@@ -8,12 +8,12 @@ JSON boundary.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.calibration.models import CalibrationReport, DecisionCostReport
-
 
 _CALIBRATION_REQUIRED_SUITES = {"memory_evolution_sim_v1", "memory_evolution_runtime_v1"}
 
@@ -50,7 +50,7 @@ class FlatArtifactModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
-    def from_flat_row(cls, row: dict[str, object]) -> "FlatArtifactModel":
+    def from_flat_row(cls, row: dict[str, object]) -> FlatArtifactModel:
         model_fields = set(cls.model_fields) - {"legacy_fields"}
         payload = {key: value for key, value in row.items() if key in model_fields}
         payload["legacy_fields"] = {key: value for key, value in row.items() if key not in model_fields}
@@ -75,7 +75,7 @@ def artifact_row_to_json(row: FlatArtifactModel) -> dict[str, object]:
     return row.to_json_row()
 
 
-def artifact_rows_to_json(rows: list[FlatArtifactModel]) -> list[dict[str, object]]:
+def artifact_rows_to_json(rows: Sequence[FlatArtifactModel]) -> list[dict[str, object]]:
     """Serialize artifact rows at explicit JSON/report boundaries."""
 
     return [artifact_row_to_json(row) for row in rows]
@@ -239,7 +239,7 @@ class NormalizationDiagnosticsSection(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
-    def from_normalization(cls, normalization: Any) -> "NormalizationDiagnosticsSection":
+    def from_normalization(cls, normalization: Any) -> NormalizationDiagnosticsSection:
         return cls(
             auto_closed_selected_entity_ids=list(normalization.auto_closed_selected_entity_ids),
             auto_closed_rejected_entity_ids=list(normalization.auto_closed_rejected_entity_ids),
@@ -325,7 +325,7 @@ class RuntimeGraphAlignmentRow(FlatArtifactModel):
     failure_reason: str
 
     @classmethod
-    def from_runtime_alignment(cls, row: dict[str, object]) -> "RuntimeGraphAlignmentRow":
+    def from_runtime_alignment(cls, row: dict[str, object]) -> RuntimeGraphAlignmentRow:
         enriched = {
             **row,
             "oracle_id": str(row.get("oracle_id") or row.get("oracle_item_id") or ""),
@@ -335,7 +335,7 @@ class RuntimeGraphAlignmentRow(FlatArtifactModel):
         return cls.from_flat_row(enriched)
 
     @model_validator(mode="after")
-    def validate_identity_by_verdict(self) -> "RuntimeGraphAlignmentRow":
+    def validate_identity_by_verdict(self) -> RuntimeGraphAlignmentRow:
         verdict = self.verdict
         has_oracle = bool(self.oracle_id)
         has_runtime = bool(self.runtime_id)
@@ -366,7 +366,7 @@ class RuntimeActionAlignmentRow(FlatArtifactModel):
     evidence_event_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_identity_by_verdict(self) -> "RuntimeActionAlignmentRow":
+    def validate_identity_by_verdict(self) -> RuntimeActionAlignmentRow:
         has_runtime = bool(self.runtime_action_id or self.runtime_item_id)
         if self.verdict == "aligned" and not has_runtime:
             raise ValueError("aligned action rows require runtime_action_id or runtime_item_id")
@@ -483,7 +483,7 @@ class BenchmarkReportSummary(FlatArtifactModel):
     hidden_answer_leak_rate: float | int | None = None
 
     @model_validator(mode="after")
-    def validate_nested_report_sections(self) -> "BenchmarkReportSummary":
+    def validate_nested_report_sections(self) -> BenchmarkReportSummary:
         calibration_required = self.suite in _CALIBRATION_REQUIRED_SUITES
         if isinstance(self.runtime_graph_summary, dict) and self.runtime_graph_summary:
             self.runtime_graph_summary = RuntimeGraphSummary.from_flat_row(self.runtime_graph_summary)

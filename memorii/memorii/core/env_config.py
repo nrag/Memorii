@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 from collections.abc import Mapping
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,14 +15,14 @@ class EnvironmentConfigError(RuntimeError):
     """Raised when environment source detection or loading is invalid."""
 
 
-class RuntimeEnvironment(str, Enum):
+class RuntimeEnvironment(StrEnum):
     LOCAL = "local"
     TEST = "test"
     CI = "ci"
     PRODUCTION = "production"
 
 
-class SecretSource(str, Enum):
+class SecretSource(StrEnum):
     PROCESS = "process"
     LOCAL_FILE = "local_file"
     GITHUB_ACTIONS = "github_actions"

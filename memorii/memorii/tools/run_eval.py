@@ -7,7 +7,6 @@ from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMRuntimeConfig
 from memorii.tools import run_benchmark, run_live_llm_eval
 
-
 DECISION_SUITES = {
     "promotion_belief_v1": "all",
     "promotion_v1": "promotion",

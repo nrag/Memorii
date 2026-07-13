@@ -1,4 +1,3 @@
-from memorii.core.prompts.models import PromptContract, PromptModelDefaults, PromptRedactionPolicy, RenderedPrompt
 from memorii.core.prompts.manifest import (
     PromptContractManifest,
     PromptContractManifestEntry,
@@ -6,6 +5,7 @@ from memorii.core.prompts.manifest import (
     prompt_contract_manifest,
     prompt_contract_manifest_by_ref,
 )
+from memorii.core.prompts.models import PromptContract, PromptModelDefaults, PromptRedactionPolicy, RenderedPrompt
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.render import PromptRenderer, redact_variables
 

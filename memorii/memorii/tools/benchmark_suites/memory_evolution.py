@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-
-from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
-from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
 import json
 from datetime import (
     UTC,
     datetime,
 )
+from pathlib import Path
+from typing import cast
+
+from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
 from memorii.core.benchmark.memory_evolution_decision import (
     MemoryEvolutionScenario,
     memory_evolution_context_for_checkpoint,
@@ -24,6 +24,7 @@ from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import build_run_id
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import (
+    DecisionModeName,
     LLMDecisionRuntimeConfig,
     LLMLiveTestConfig,
     LLMRuntimeConfig,
@@ -32,13 +33,20 @@ from memorii.core.llm_decision.adapters import LLMMemoryEvolutionDecisionAdapter
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
+from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.artifact_io import _write_jsonl
+from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
 from memorii.tools.benchmark_suites.fake_adapters import _ExpectedMemoryEvolutionFakeAdapter
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
 from memorii.tools.run_live_llm_eval import _validate_live_safety
-from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
 
 SUITE_NAME = "memory_evolution_v1"
+
+
+def _decision_mode(mode: str) -> DecisionModeName:
+    if mode in {"auto", "rule", "llm", "hybrid"}:
+        return cast(DecisionModeName, mode)
+    raise ValueError(f"Unsupported memory evolution mode: {mode}")
 
 
 def _load_memory_evolution_suite(suite: str) -> tuple[list[MemoryEvolutionScenario], str]:
@@ -61,7 +69,7 @@ def _run_memory_evolution_transitions(
     env_snapshot = load_memorii_environment()
     runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
     decision_config = (
-        LLMDecisionRuntimeConfig(mode=mode)
+        LLMDecisionRuntimeConfig(mode=_decision_mode(mode))
         if mode != "auto"
         else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     )
@@ -117,16 +125,17 @@ def _run_memory_evolution_transitions(
 
             if effective_mode in {"llm", "hybrid"} and adapter is not None:
                 llm_used = True
+                metadata: dict[str, object] = {
+                    "suite": "memory_evolution_v1",
+                    "scenario_id": scenario.scenario_id,
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    "decision_mode": mode,
+                    "transition_type": "memory_evolution_decision",
+                }
                 llm_result = adapter.decide(
                     context,
                     request_id=request_id,
-                    metadata={
-                        "suite": "memory_evolution_v1",
-                        "scenario_id": scenario.scenario_id,
-                        "checkpoint_id": checkpoint.checkpoint_id,
-                        "decision_mode": mode,
-                        "transition_type": "memory_evolution_decision",
-                    },
+                    metadata=metadata,
                 )
                 output, llm_trace, llm_success, fallback_reason = memory_evolution_engine_result_from_llm(
                     result=llm_result,
@@ -270,7 +279,6 @@ def _write_memory_evolution_artifacts(
         allow_live=allow_live,
     )
     run_id = str(run_metadata["run_id"])
-    benchmark_key = str(run_metadata["benchmark_key"])
     run_dir = Path(storage_root) / "benchmark_runs" / suite / mode / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     passed = sum(1 for row in scenario_rows if row["success"] is True)

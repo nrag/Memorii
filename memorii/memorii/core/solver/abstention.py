@@ -1,9 +1,9 @@
 """Abstention-aware solver decision labels and policy helpers."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class SolverDecision(str, Enum):
+class SolverDecision(StrEnum):
     SUPPORTED = "SUPPORTED"
     REFUTED = "REFUTED"
     INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
@@ -11,7 +11,7 @@ class SolverDecision(str, Enum):
     MULTIPLE_PLAUSIBLE_OPTIONS = "MULTIPLE_PLAUSIBLE_OPTIONS"
 
 
-class ConfidenceBand(str, Enum):
+class ConfidenceBand(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"

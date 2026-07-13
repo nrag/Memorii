@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.llm_decision.models import (
     LLMDecisionMode,
     LLMDecisionPoint,
@@ -16,6 +14,7 @@ from memorii.core.promotion.hybrid_provider import HybridPromotionDecisionProvid
 from memorii.core.promotion.llm_provider import LLMPromotionDecisionProvider
 from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
 from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from pydantic import ValidationError
 
 
 class FakeLLMProvider:

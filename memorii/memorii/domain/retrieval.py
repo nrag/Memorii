@@ -1,14 +1,14 @@
 """Retrieval domain schemas and intent contracts."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.domain.enums import MemoryDomain
 
 
-class RetrievalIntent(str, Enum):
+class RetrievalIntent(StrEnum):
     CONTINUE_EXECUTION = "continue_execution"
     DEBUG_OR_INVESTIGATE = "debug_or_investigate"
     ANSWER_WITH_USER_CONTEXT = "answer_with_user_context"
@@ -16,7 +16,7 @@ class RetrievalIntent(str, Enum):
     CONSOLIDATE_CASE = "consolidate_case"
 
 
-class ValidityStatus(str, Enum):
+class ValidityStatus(StrEnum):
     ACTIVE = "active"
     EXPIRED = "expired"
     INVALIDATED = "invalidated"

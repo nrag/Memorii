@@ -3,10 +3,33 @@
 from __future__ import annotations
 
 import random
-import re
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
-from memorii.core.benchmark.memory_evolution_sim.schemas import *  # noqa: F403
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    ClaimArgument,
+    ClaimEvidence,
+    ClaimLifecycle,
+    ClaimObject,
+    ClaimPredicate,
+    ClaimProvenance,
+    ClaimScope,
+    LatentClaim,
+    LatentConfidence,
+    LatentEntity,
+    LatentEntityAlias,
+    LatentEvidenceSpan,
+    LatentGraphScenario,
+    LatentRelation,
+    ObservabilityLabel,
+    OracleCheckpoint,
+    RelationEndpoint,
+    RelationProvenance,
+    RelationTemporal,
+    SimLifecycleState,
+    SurfaceObservation,
+    WorldTransition,
+)
 
 
 def generate_memory_evolution_sim_scenarios(

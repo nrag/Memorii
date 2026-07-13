@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
 from memorii.core.memory_evolution.models import (
-    ClaimLifecycleState,
     ClaimState,
     ContradictionSet,
     EntityLinkLifecycleState,

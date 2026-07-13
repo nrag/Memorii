@@ -6,9 +6,9 @@ from memorii.api.models import ResumeTaskResult, RuntimeTaskState, StartTaskResu
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.persistence.resume import ResumeService
 from memorii.domain.enums import EventType, ExecutionNodeStatus, ExecutionNodeType
-from memorii.domain.routing import InboundEventClass
 from memorii.domain.events import EventRecord
 from memorii.domain.execution_graph.nodes import ExecutionNode
+from memorii.domain.routing import InboundEventClass
 from memorii.domain.solver_graph.state import ExecutionResumeState, SolverResumeState
 from memorii.stores.base.interfaces import EventLogStore, ExecutionGraphStore, OverlayStore, SolverGraphStore
 

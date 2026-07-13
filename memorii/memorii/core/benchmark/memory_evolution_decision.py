@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import TypeVar
 from uuid import uuid4
 
@@ -24,11 +24,10 @@ from memorii.core.llm_provider.models import (
 )
 from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
 
-
 BucketT = TypeVar("BucketT", bound=str)
 
 
-class MemoryEvolutionSourceType(str, Enum):
+class MemoryEvolutionSourceType(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"
     TOOL = "tool"
@@ -82,7 +81,7 @@ class MemoryEvolutionVisibleCheckpoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class MemoryEvolutionMemoryKind(str, Enum):
+class MemoryEvolutionMemoryKind(StrEnum):
     FACT = "fact"
     BELIEF = "belief"
     EVIDENCE = "evidence"
@@ -90,7 +89,7 @@ class MemoryEvolutionMemoryKind(str, Enum):
     UNKNOWN = "unknown"
 
 
-class MemoryEvolutionEvidenceEffectBasis(str, Enum):
+class MemoryEvolutionEvidenceEffectBasis(StrEnum):
     SURFACE_TEXT_PATTERN = "surface_text_pattern"
 
 
@@ -119,7 +118,7 @@ class MemoryEvolutionEvidenceEffectCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class MemoryEvolutionCheckpointKind(str, Enum):
+class MemoryEvolutionCheckpointKind(StrEnum):
     CURRENT_TRUTH = "current_truth"
     HISTORICAL_TRUTH = "historical_truth"
     BELIEF_RANKING = "belief_ranking"
@@ -127,24 +126,24 @@ class MemoryEvolutionCheckpointKind(str, Enum):
     EXECUTION_CONTINUATION = "execution_continuation"
 
 
-class MemoryEvolutionCitationPolicy(str, Enum):
+class MemoryEvolutionCitationPolicy(StrEnum):
     DIRECT_ONLY = "direct_only"
     DIRECT_WITH_CONTEXT_WARNING = "direct_with_context_warning"
 
 
-class MemoryEvolutionLifecyclePolicy(str, Enum):
+class MemoryEvolutionLifecyclePolicy(StrEnum):
     EXACT = "exact"
     WARNING = "warning"
 
 
-class MemoryEvolutionBeliefScorePolicy(str, Enum):
+class MemoryEvolutionBeliefScorePolicy(StrEnum):
     NONE = "none"
     RANKING_ONLY = "ranking_only"
     DEGRADED_THRESHOLD = "degraded_threshold"
     EXACT = "exact"
 
 
-class MemoryEvolutionNextActionPolicy(str, Enum):
+class MemoryEvolutionNextActionPolicy(StrEnum):
     NONE = "none"
     NONEMPTY_STRUCTURED = "nonempty_structured"
 
@@ -169,7 +168,7 @@ class MemoryEvolutionScenario(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_references(self) -> "MemoryEvolutionScenario":
+    def validate_references(self) -> MemoryEvolutionScenario:
         event_ids = {event.event_id for event in self.events}
         if len(self.events) < 2:
             raise ValueError("memory evolution scenarios require at least two events")
@@ -228,7 +227,7 @@ class MemoryEvolutionDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class MemoryEvolutionFailureBucket(str, Enum):
+class MemoryEvolutionFailureBucket(StrEnum):
     SCHEMA_VALIDATION_FAILED = "schema_validation_failed"
     ANSWER_MISMATCH = "answer_mismatch"
     NEXT_ACTION_MISMATCH = "next_action_mismatch"
@@ -248,7 +247,7 @@ class MemoryEvolutionFailureBucket(str, Enum):
     BELIEF_CONFIDENCE_NOT_DEGRADED = "belief_confidence_not_degraded"
 
 
-class MemoryEvolutionWarningBucket(str, Enum):
+class MemoryEvolutionWarningBucket(StrEnum):
     ACTIVE_CHANNEL_POLLUTION = "active_channel_pollution"
     BELIEF_CANDIDATE_MARKED_ACTIVE = "belief_candidate_marked_active"
     BELIEF_SCORE_CALIBRATION_DRIFT = "belief_score_calibration_drift"

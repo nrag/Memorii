@@ -4,7 +4,6 @@ import importlib
 from pathlib import Path
 
 import pytest
-
 from memorii.tools.benchmark_registry import BenchmarkSuiteRegistry, FunctionBenchmarkSuiteRunner
 from memorii.tools.run_benchmark import _build_benchmark_suite_registry, main
 

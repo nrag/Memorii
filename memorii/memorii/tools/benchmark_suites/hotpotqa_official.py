@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-
-from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
-from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
 import json
 from datetime import (
     UTC,
     datetime,
 )
+from pathlib import Path
+from typing import cast
+
 from memorii.core.benchmark.hotpotqa import (
+    HotpotQAExample,
     load_hotpotqa_examples,
     select_hotpotqa_subset,
 )
@@ -33,6 +33,7 @@ from memorii.core.env_config import load_memorii_environment
 from memorii.core.grounding.models import EvidenceSelectionDecision
 from memorii.core.grounding.pipeline import GroundedAnswerPipeline
 from memorii.core.llm_config import (
+    DecisionModeName,
     LLMDecisionRuntimeConfig,
     LLMLiveTestConfig,
     LLMRuntimeConfig,
@@ -45,7 +46,9 @@ from memorii.core.llm_decision.adapters import (
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
+from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.artifact_io import _write_jsonl
+from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
 from memorii.tools.benchmark_suites.fake_adapters import (
     _ExpectedHotpotQAAnswerVerificationFakeAdapter,
     _ExpectedHotpotQAEvidenceSelectionFakeAdapter,
@@ -57,7 +60,7 @@ from memorii.tools.run_live_llm_eval import _validate_live_safety
 SUITE_NAME = "hotpotqa_official_v1"
 
 
-def _load_hotpotqa_official_examples(args: argparse.Namespace):
+def _load_hotpotqa_official_examples(args: argparse.Namespace) -> list[HotpotQAExample]:
     examples = load_hotpotqa_examples(args.hotpotqa_dataset, split=args.hotpotqa_split)
     return select_hotpotqa_subset(
         examples,
@@ -90,10 +93,26 @@ def _role_eligible_proof_citation_ids(decision: EvidenceSelectionDecision) -> li
             ids.append(citation.candidate_id)
     return ids
 
+
+def _decision_modes_from_args(mode: str) -> list[DecisionModeName]:
+    if mode == "all":
+        return ["rule", "llm", "hybrid"]
+    if mode in {"auto", "rule", "llm", "hybrid"}:
+        return [cast(DecisionModeName, mode)]
+    raise ValueError(f"Unsupported HotpotQA mode: {mode}")
+
+
+def _trace_input_payload(row: dict[str, object]) -> dict[str, object]:
+    trace = row.get("trace")
+    if not isinstance(trace, dict):
+        return {}
+    payload = trace.get("input_payload")
+    return payload if isinstance(payload, dict) else {}
+
 def _run_hotpotqa_answer_decisions(
     *,
-    examples: list[object],
-    mode: str,
+    examples: list[HotpotQAExample],
+    mode: DecisionModeName,
     dry_run: bool,
     allow_live: bool,
     prompt_root: Path,
@@ -159,7 +178,7 @@ def _run_hotpotqa_answer_decisions(
                 "example_id": example.example_id,
                 "question": example.question,
                 "candidate_sentence_count": len(context.candidates),
-                "candidate_titles": sorted({candidate.title for candidate in context.candidates}),
+                "candidate_titles": sorted({candidate.title for candidate in context.candidates if candidate.title is not None}),
             }
         )
         request_id = f"grounded_answer:{mode}:{'gold_evidence:' if force_gold_evidence else ''}{example.example_id}"
@@ -280,7 +299,7 @@ def _run_hotpotqa_answer_decisions(
 
 def _write_hotpotqa_official_artifacts(
     *,
-    examples: list[object],
+    examples: list[HotpotQAExample],
     prediction: HotpotQAPrediction,
     answer_rows: list[dict[str, object]],
     retrieval_rows: list[dict[str, object]],
@@ -331,29 +350,23 @@ def _write_hotpotqa_official_artifacts(
         "dry_run": bool(args.dry_run),
         "prompt_hashes": sorted(
             {
-                str(((row.get("trace") or {}).get("input_payload") or {}).get("prompt_hash"))
+                str(_trace_input_payload(row).get("prompt_hash"))
                 for row in llm_rows
-                if isinstance(row.get("trace"), dict)
-                and isinstance((row.get("trace") or {}).get("input_payload"), dict)
-                and ((row.get("trace") or {}).get("input_payload") or {}).get("prompt_hash") is not None
+                if _trace_input_payload(row).get("prompt_hash") is not None
             }
         ),
         "models": sorted(
             {
-                str(((row.get("trace") or {}).get("input_payload") or {}).get("model"))
+                str(_trace_input_payload(row).get("model"))
                 for row in llm_rows
-                if isinstance(row.get("trace"), dict)
-                and isinstance((row.get("trace") or {}).get("input_payload"), dict)
-                and ((row.get("trace") or {}).get("input_payload") or {}).get("model") is not None
+                if _trace_input_payload(row).get("model") is not None
             }
         ),
         "providers": sorted(
             {
-                str(((row.get("trace") or {}).get("input_payload") or {}).get("provider"))
+                str(_trace_input_payload(row).get("provider"))
                 for row in llm_rows
-                if isinstance(row.get("trace"), dict)
-                and isinstance((row.get("trace") or {}).get("input_payload"), dict)
-                and ((row.get("trace") or {}).get("input_payload") or {}).get("provider") is not None
+                if _trace_input_payload(row).get("provider") is not None
             }
         ),
     }
@@ -402,7 +415,8 @@ def _write_hotpotqa_official_artifacts(
     )
     (run_dir / "hotpotqa_metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
     _write_jsonl(run_dir / "hotpotqa_answer_traces.jsonl", answer_rows)
-    _write_jsonl(run_dir / "hotpotqa_stage_diagnostics.jsonl", list(stage_diagnostics["rows"]))
+    stage_rows = stage_diagnostics.get("rows", [])
+    _write_jsonl(run_dir / "hotpotqa_stage_diagnostics.jsonl", stage_rows if isinstance(stage_rows, list) else [])
     _write_jsonl(run_dir / "hotpotqa_retrieval_traces.jsonl", retrieval_rows)
     _write_jsonl(
         run_dir / "evidence_selection_traces.jsonl",
@@ -449,8 +463,8 @@ def _write_hotpotqa_official_artifacts(
 
 def _write_hotpotqa_oracle_diagnostics(
     *,
-    examples: list[object],
-    mode: str,
+    examples: list[HotpotQAExample],
+    mode: DecisionModeName,
     dry_run: bool,
     allow_live: bool,
     prompt_root: Path,
@@ -479,7 +493,8 @@ def _write_hotpotqa_oracle_diagnostics(
         gold_citation_prediction.answer[example.example_id] = answer
         gold_citation_prediction.sp[example.example_id] = list(example.supporting_facts)
         gold_ids = set(hotpotqa_supporting_fact_candidate_ids(example))
-        proof_ids = set(row.get("proof_citation_candidate_ids", [])) if isinstance(row.get("proof_citation_candidate_ids"), list) else set()
+        proof_id_values = row.get("proof_citation_candidate_ids", [])
+        proof_ids = {str(value) for value in proof_id_values} if isinstance(proof_id_values, list) else set()
         evidence_selection_rows.append(
             {
                 "example_id": example.example_id,
@@ -531,7 +546,7 @@ def _print_hotpotqa_official_summary(
     suite: str,
     mode: str,
     run_dir: Path,
-    examples: list[object],
+    examples: list[HotpotQAExample],
     metrics: dict[str, float],
     llm_rows: list[dict[str, object]],
 ) -> None:
@@ -555,7 +570,7 @@ def _run_hotpotqa_official_suite(
     dependencies: BenchmarkRuntimeDependencies,
 ) -> int:
     examples = _load_hotpotqa_official_examples(args)
-    modes = ["rule", "llm", "hybrid"] if args.mode == "all" else [args.mode]
+    modes = _decision_modes_from_args(args.mode)
     for mode in modes:
         prediction, answer_rows, retrieval_rows, llm_rows = _run_hotpotqa_answer_decisions(
             examples=examples,

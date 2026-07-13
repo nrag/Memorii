@@ -6,7 +6,7 @@ backward compatibility with existing imports.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,7 +18,7 @@ from memorii.core.promotion.legacy_models import (
 )
 
 
-class PromotionCandidateType(str, Enum):
+class PromotionCandidateType(StrEnum):
     EPISODIC = "episodic"
     SEMANTIC = "semantic"
     USER_MEMORY = "user_memory"
