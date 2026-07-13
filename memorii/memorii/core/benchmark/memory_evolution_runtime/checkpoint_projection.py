@@ -2,23 +2,30 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from typing import Literal
 
-from memorii.core.benchmark.memory_evolution_sim import LatentGraphScenario, ObservabilityLabel, OracleCheckpoint, SimSystemOutput, expected_sim_output_for_checkpoint
-from memorii.core.benchmark.memory_evolution_runtime.alignment import align_runtime_graph_to_oracle, _best_alignment_map
-from memorii.core.benchmark.memory_evolution_runtime.graph_items import _title_from_normalized
+from memorii.core.benchmark.memory_evolution_runtime.alignment import _best_alignment_map, align_runtime_graph_to_oracle
 from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection import (
     _action_alignment_failure_reason,
     _action_backed_claim_ids,
     _expected_action_alignment_rows,
     _oracle_evidence_events_for_claims,
-    _runtime_action_support_rows,
     _runtime_execution_state,
     _suppressed_action_state_claim_ids,
-    _suppressed_branch_ids,
 )
+from memorii.core.benchmark.memory_evolution_runtime.graph_items import _title_from_normalized
 from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeProjection
 from memorii.core.benchmark.memory_evolution_runtime.utils import _claim_by_id, _ordered_unique, _relation_by_id
+from memorii.core.benchmark.memory_evolution_sim import (
+    JudgeAggregate,
+    LatentGraphScenario,
+    ObservabilityLabel,
+    OracleCheckpoint,
+    SimSystemOutput,
+    expected_sim_output_for_checkpoint,
+)
 from memorii.core.calibration.alignment import RuntimeGraphAlignmentVerdict
 from memorii.core.memory_evolution import MemoryGraphSnapshot
 
@@ -234,8 +241,8 @@ def _expected_relation_support_modes(
     *,
     scenario: LatentGraphScenario,
     expected_relation_ids: list[str],
-    relation_map: dict[str, str],
-    runtime_claim_by_oracle: dict[str, str],
+    relation_map: Mapping[str, object],
+    runtime_claim_by_oracle: Mapping[str, str | None],
 ) -> dict[str, str]:
     support: dict[str, str] = {}
     for relation_id in expected_relation_ids:
@@ -245,7 +252,13 @@ def _expected_relation_support_modes(
             support[relation_id] = "claim_derived"
     return support
 
-def _runtime_answer_for_checkpoint(*, checkpoint: OracleCheckpoint, selected_claim_ids: list[str], runtime_claim_by_oracle: dict[str, str], item_by_id: dict[str, dict[str, object]]) -> str | None:
+def _runtime_answer_for_checkpoint(
+    *,
+    checkpoint: OracleCheckpoint,
+    selected_claim_ids: list[str],
+    runtime_claim_by_oracle: Mapping[str, str | None],
+    item_by_id: Mapping[str, Mapping[str, object]],
+) -> str | None:
     if checkpoint.expected_abstention:
         return None
     if checkpoint.expected_next_action is not None or checkpoint.checkpoint_type in {"entity_reconstruction", "claim_rekey", "belief_ranking", "conflict_audit"}:
@@ -263,28 +276,42 @@ def _runtime_answer_for_checkpoint(*, checkpoint: OracleCheckpoint, selected_cla
         return _title_from_normalized(str(item.get("subject") or "")) or None
     return str(item.get("object_value") or item.get("object") or "") or None
 
-def _mean_runtime_confidence(*, selected_claim_ids: list[str], runtime_claim_by_oracle: dict[str, str], item_by_id: dict[str, dict[str, object]]) -> float:
+def _mean_runtime_confidence(
+    *,
+    selected_claim_ids: list[str],
+    runtime_claim_by_oracle: Mapping[str, str | None],
+    item_by_id: Mapping[str, Mapping[str, object]],
+) -> float:
     values = []
     for claim_id in selected_claim_ids:
         runtime_id = runtime_claim_by_oracle.get(claim_id)
         if runtime_id is None:
             continue
-        try:
-            values.append(float(item_by_id.get(runtime_id, {}).get("confidence", 0.5)))
-        except (TypeError, ValueError):
-            pass
+        raw_confidence = item_by_id.get(runtime_id, {}).get("confidence", 0.5)
+        if not isinstance(raw_confidence, (int, float, str)):
+            continue
+        with suppress(TypeError, ValueError):
+            values.append(float(raw_confidence))
     if not values:
         return 0.35
     return max(0.0, min(1.0, sum(values) / len(values)))
 
-def _supporting_events_for_claims(*, claim_ids: list[str], runtime_claim_by_oracle: dict[str, str], item_by_id: dict[str, dict[str, object]], expected_event_ids: list[str]) -> list[str]:
+def _supporting_events_for_claims(
+    *,
+    claim_ids: list[str],
+    runtime_claim_by_oracle: Mapping[str, str | None],
+    item_by_id: Mapping[str, Mapping[str, object]],
+    expected_event_ids: list[str],
+) -> list[str]:
     events: list[str] = []
     for claim_id in claim_ids:
         runtime_id = runtime_claim_by_oracle.get(claim_id)
         if runtime_id is None:
             continue
         item = item_by_id.get(runtime_id, {})
-        evidence = [str(event_id) for event_id in item.get("evidence_event_ids", []) if event_id]
+        evidence_value = item.get("evidence_event_ids", [])
+        evidence_items: Sequence[object] = evidence_value if isinstance(evidence_value, Sequence) and not isinstance(evidence_value, str) else ()
+        evidence = [str(event_id) for event_id in evidence_items if event_id]
         preferred = [event_id for event_id in evidence if event_id in expected_event_ids]
         events.extend(preferred or evidence)
     return _ordered_unique(events)
@@ -300,7 +327,7 @@ def _claim_exposed_but_runtime_suppressed(scenario: LatentGraphScenario, claim_i
             return True
     return False
 
-def _relation_supported_by_claims(scenario: LatentGraphScenario, relation_id: str, runtime_claim_by_oracle: dict[str, str]) -> bool:
+def _relation_supported_by_claims(scenario: LatentGraphScenario, relation_id: str, runtime_claim_by_oracle: Mapping[str, str | None]) -> bool:
     relation = _relation_by_id(scenario, relation_id)
     if relation is None:
         return False

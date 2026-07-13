@@ -1,7 +1,13 @@
 from datetime import UTC, datetime, timedelta
 
 from memorii.core.recall.builder import summarize_work_states
-from memorii.core.work_state.models import WorkStateEvent, WorkStateEventType, WorkStateKind, WorkStateRecord, WorkStateStatus
+from memorii.core.work_state.models import (
+    WorkStateEvent,
+    WorkStateEventType,
+    WorkStateKind,
+    WorkStateRecord,
+    WorkStateStatus,
+)
 
 
 def _state(work_state_id: str) -> WorkStateRecord:

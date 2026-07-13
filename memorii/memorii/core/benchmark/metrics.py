@@ -6,7 +6,6 @@ from collections import defaultdict
 
 from memorii.core.benchmark.models import ScenarioMetrics, ScenarioObservation
 
-
 METRIC_FIELDS: tuple[str, ...] = (
     "recall_at_k",
     "precision_at_k",

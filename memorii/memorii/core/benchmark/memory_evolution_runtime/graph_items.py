@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from memorii.core.benchmark.memory_evolution_sim import LatentClaim, LatentEntity, SurfaceObservation
-from memorii.core.benchmark.memory_evolution_runtime.utils import _stable_id
 from memorii.core.benchmark.memory_evolution_runtime.utils import _ordered_unique
-from memorii.core.memory_evolution import EvidenceSpan, MemoryGraphEdgeType, MemoryGraphNodeType, MemoryGraphSnapshot, SourceObservation
+from memorii.core.benchmark.memory_evolution_sim import LatentClaim, LatentEntity, SurfaceObservation
+from memorii.core.memory_evolution import (
+    EvidenceSpan,
+    MemoryGraphEdgeType,
+    MemoryGraphNodeType,
+    MemoryGraphSnapshot,
+    SourceObservation,
+)
 from memorii.domain.enums import SourceType
 
 

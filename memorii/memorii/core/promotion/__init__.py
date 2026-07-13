@@ -17,7 +17,11 @@ from memorii.core.promotion.legacy_models import (
 from memorii.core.promotion.llm_provider import LLMPromotionDecisionProvider
 from memorii.core.promotion.models import (
     PromotionCandidateType,
+)
+from memorii.core.promotion.models import (
     PromotionContext as ProviderPromotionContext,
+)
+from memorii.core.promotion.models import (
     PromotionDecision as ProviderPromotionDecision,
 )
 from memorii.core.promotion.provider import PromotionDecisionProvider

@@ -2,7 +2,14 @@ from datetime import UTC, datetime
 
 from memorii.core.persistence.replay import ReplayService
 from memorii.domain.common import SolverNodeMetadata
-from memorii.domain.enums import CommitStatus, EventType, ExecutionNodeStatus, ExecutionNodeType, SolverCreatedBy, SolverNodeType
+from memorii.domain.enums import (
+    CommitStatus,
+    EventType,
+    ExecutionNodeStatus,
+    ExecutionNodeType,
+    SolverCreatedBy,
+    SolverNodeType,
+)
 from memorii.domain.events import EventRecord
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.solver_graph.nodes import SolverNode

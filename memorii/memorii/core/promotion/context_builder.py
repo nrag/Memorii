@@ -70,6 +70,6 @@ class PromotionContextBuilder:
             return False
         if existing.valid_to is not None and candidate.valid_from is not None and existing.valid_to < candidate.valid_from:
             return False
-        if candidate.valid_to is not None and existing.valid_from is not None and candidate.valid_to < existing.valid_from:
-            return False
-        return True
+        return not (
+            candidate.valid_to is not None and existing.valid_from is not None and candidate.valid_to < existing.valid_from
+        )

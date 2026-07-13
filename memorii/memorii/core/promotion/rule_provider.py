@@ -55,15 +55,17 @@ class RuleBasedPromotionDecisionProvider:
                 tags=["observation_not_promoted"],
             )
 
-        if context.candidate_type in {PromotionCandidateType.SEMANTIC, PromotionCandidateType.PROJECT_FACT}:
-            if context.repeated_across_episodes >= 3:
-                return PromotionDecision(
-                    promote=True,
-                    target_plane=context.candidate_type.value,
-                    confidence=0.7,
-                    rationale="repeated_across_episodes",
-                    tags=["repeated_across_episodes"],
-                )
+        if (
+            context.candidate_type in {PromotionCandidateType.SEMANTIC, PromotionCandidateType.PROJECT_FACT}
+            and context.repeated_across_episodes >= 3
+        ):
+            return PromotionDecision(
+                promote=True,
+                target_plane=context.candidate_type.value,
+                confidence=0.7,
+                rationale="repeated_across_episodes",
+                tags=["repeated_across_episodes"],
+            )
 
         return PromotionDecision(
             promote=False,

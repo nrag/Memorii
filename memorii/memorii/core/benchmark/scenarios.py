@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
-from memorii.core.benchmark.multilingual_tokenization import icu_tokens, mixed_char_ngrams
 from memorii.core.benchmark.models import (
     BenchmarkScenarioFixture,
     BenchmarkScenarioType,
@@ -17,7 +16,10 @@ from memorii.core.benchmark.models import (
     ScenarioExecutionLevel,
     ScenarioObservation,
 )
+from memorii.core.benchmark.multilingual_tokenization import icu_tokens, mixed_char_ngrams
+from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.persistence.resume import ResumeService
 from memorii.core.promotion import (
     PromotionContextBuilder,
     PromotionExecutor,
@@ -25,17 +27,14 @@ from memorii.core.promotion import (
     PromotionService,
     RuleBasedPromotionDecider,
 )
-from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.integrations.hermes_provider import HermesMemoryProvider
-from memorii.core.persistence.resume import ResumeService
 from memorii.core.retrieval.planner import RetrievalPlanner
 from memorii.core.router.router import MemoryRouter
 from memorii.core.solver import SolverDecisionOutput, StaticSolverModelProvider
 from memorii.core.solver.abstention import SolverDecision
 from memorii.core.solver.verifier import SolverDecisionVerifier
-from memorii.domain.common import SolverNodeMetadata
+from memorii.domain.common import Provenance, RoutingInfo, SolverNodeMetadata
 from memorii.domain.enums import (
     CommitStatus,
     Durability,
@@ -43,19 +42,18 @@ from memorii.domain.enums import (
     ExecutionNodeType,
     MemoryDomain,
     MemoryScope,
-    SourceType,
     SolverCreatedBy,
     SolverNodeStatus,
     SolverNodeType,
+    SourceType,
 )
-from memorii.domain.memory_object import MemoryObject
-from memorii.domain.common import Provenance, RoutingInfo
-from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
-from memorii.domain.routing import InboundEventClass
-from memorii.domain.routing import ValidationState
 from memorii.domain.execution_graph.nodes import ExecutionNode
+from memorii.domain.memory_object import MemoryObject
+from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
+from memorii.domain.routing import InboundEventClass, ValidationState
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
+from memorii.integrations.hermes_provider import HermesMemoryProvider
 from memorii.stores.event_log.store import InMemoryEventLogStore
 from memorii.stores.execution_graph.store import InMemoryExecutionGraphStore
 from memorii.stores.overlays.store import InMemoryOverlayStore
@@ -1080,34 +1078,28 @@ class ScenarioExecutor:
     def _derive_pollution(
         self,
         *,
-        routed_records: list["_ObservedRoutedMemory"],
-        writeback_records: list["_ObservedWriteback"],
+        routed_records: list[_ObservedRoutedMemory],
+        writeback_records: list[_ObservedWriteback],
     ) -> tuple[bool, bool]:
         semantic_pollution = any(
-            (
-                (item.domain == MemoryDomain.SEMANTIC and item.is_raw_event)
-                for item in routed_records
-            )
+            item.domain == MemoryDomain.SEMANTIC and item.is_raw_event
+            for item in routed_records
         ) or any(
-            (
-                candidate.domain == MemoryDomain.SEMANTIC
-                and (candidate.status == CommitStatus.CANDIDATE and not candidate.validated)
-                and candidate.source_kind == "raw"
-                for candidate in writeback_records
-            )
+            candidate.domain == MemoryDomain.SEMANTIC
+            and candidate.status == CommitStatus.CANDIDATE
+            and not candidate.validated
+            and candidate.source_kind == "raw"
+            for candidate in writeback_records
         )
         user_pollution = any(
-            (
-                (item.domain == MemoryDomain.USER and item.is_raw_event)
-                for item in routed_records
-            )
+            item.domain == MemoryDomain.USER and item.is_raw_event
+            for item in routed_records
         ) or any(
-            (
-                candidate.domain == MemoryDomain.USER
-                and (candidate.status == CommitStatus.CANDIDATE and not candidate.validated)
-                and candidate.source_kind == "raw"
-                for candidate in writeback_records
-            )
+            candidate.domain == MemoryDomain.USER
+            and candidate.status == CommitStatus.CANDIDATE
+            and not candidate.validated
+            and candidate.source_kind == "raw"
+            for candidate in writeback_records
         )
         return semantic_pollution, user_pollution
 
@@ -1116,7 +1108,7 @@ class ScenarioExecutor:
         *,
         system: BenchmarkSystem,
         event_class: InboundEventClass,
-    ) -> list["_ObservedWriteback"]:
+    ) -> list[_ObservedWriteback]:
         if system != BenchmarkSystem.FLAT_RETRIEVAL_BASELINE:
             return []
         if event_class in {InboundEventClass.TOOL_RESULT, InboundEventClass.TOOL_STATE_UPDATE}:
@@ -1142,15 +1134,13 @@ class ScenarioExecutor:
         item_task_id = getattr(item, "task_id", None)
         item_execution_node_id = getattr(item, "execution_node_id", None)
         item_solver_run_id = getattr(item, "solver_run_id", None)
-        scope = getattr(retrieval, "scope")
+        scope = retrieval.scope
 
         if scope.task_id is not None and item_task_id not in {None, scope.task_id}:
             return False
         if scope.execution_node_id is not None and item_execution_node_id not in {None, scope.execution_node_id}:
             return False
-        if scope.solver_run_id is not None and item_solver_run_id not in {None, scope.solver_run_id}:
-            return False
-        return True
+        return not (scope.solver_run_id is not None and item_solver_run_id not in {None, scope.solver_run_id})
 
     def _retrieve(
         self,
@@ -1326,9 +1316,7 @@ def _is_active(item: RetrievalFixtureMemoryItem, *, valid_at: datetime) -> bool:
         return False
     if item.valid_from is not None and item.valid_from > valid_at:
         return False
-    if item.valid_to is not None and item.valid_to < valid_at:
-        return False
-    return True
+    return not (item.valid_to is not None and item.valid_to < valid_at)
 
 
 def _safe_ratio(numerator: int, denominator: int) -> float | None:

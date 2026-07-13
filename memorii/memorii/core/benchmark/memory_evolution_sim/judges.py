@@ -2,29 +2,32 @@
 
 from __future__ import annotations
 
-from collections import Counter
-
-from memorii.core.benchmark.memory_evolution_sim.schemas import *  # noqa: F403
+from memorii.core.benchmark.memory_evolution_sim.candidate_cards import _checkpoint_contract_for_type
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    JudgeAggregate,
+    JudgeVerdict,
+    JudgeVote,
+    LatentGraphScenario,
+    ObservabilityLabel,
+    OracleCheckpoint,
+    SimSystemOutput,
+)
 from memorii.core.benchmark.memory_evolution_sim.utils import (
     _answer_bucket,
     _bad_supporting_event_ids,
     _claim_bucket,
     _claim_by_id,
     _claim_is_bad_support,
-    _context_only_noise_event_ids,
-    _extract_rule_answer,
     _hidden_answer_leaks,
     _is_visible_claim,
     _is_visible_entity,
     _norm,
-    _observation_by_id,
     _ordered_unique,
     _relation_bucket,
     _required_definition_claim_ids_for_selected_claims,
     _role_relation_ids,
     _selected_noncurrent_claim_ids,
 )
-from memorii.core.benchmark.memory_evolution_sim.candidate_cards import _checkpoint_contract_for_type
 
 
 def judge_sim_checkpoint(
@@ -682,10 +685,7 @@ def _answer_judge(scenario: LatentGraphScenario, checkpoint: OracleCheckpoint, o
             rationale="no answer expectation",
         )
     expected = checkpoint.expected_answer or checkpoint.expected_next_action or ""
-    if checkpoint.expected_next_action is not None:
-        actual = output.next_action or ""
-    else:
-        actual = output.answer or ""
+    actual = output.next_action or "" if checkpoint.expected_next_action is not None else output.answer or ""
     passed = _answer_matches_expected(scenario, checkpoint, actual, expected)
     return JudgeVote(
         judge_id="answer_judge",

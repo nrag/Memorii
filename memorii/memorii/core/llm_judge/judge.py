@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Callable, Protocol
+from typing import Protocol
 
 from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric, JudgeVerdict
 

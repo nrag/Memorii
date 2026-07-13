@@ -1,8 +1,9 @@
+from datetime import UTC, datetime, timedelta
+
 from memorii.core.provider.models import ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.integrations.hermes_provider import HermesMemoryProvider
 from memorii.domain.enums import MemoryDomain
-from datetime import UTC, datetime, timedelta
+from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 
 def test_prefetch_excludes_candidate_only_records_and_formats_context() -> None:

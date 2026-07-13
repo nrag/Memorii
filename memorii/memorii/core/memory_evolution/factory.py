@@ -9,7 +9,12 @@ from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMRuntimeConfig
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.memory_evolution.extraction import HybridMemoryExtractor, LLMMemoryExtractor, MemoryExtractor, RuleMemoryExtractor
+from memorii.core.memory_evolution.extraction import (
+    HybridMemoryExtractor,
+    LLMMemoryExtractor,
+    MemoryExtractor,
+    RuleMemoryExtractor,
+)
 
 
 def build_memory_extractor_from_env(

@@ -8,8 +8,6 @@ from memorii.core.promotion.models import PromotionCandidateType, PromotionConte
 from memorii.core.solver.abstention import SolverDecision
 
 
-
-
 def _llm_result(*, request_id: str, success: bool, output: dict[str, object]) -> LLMDecisionResult:
     request = LLMStructuredRequest(request_id=request_id, prompt_ref="p:v1", prompt_hash="h", system="s", user="u", output_schema={}, model_defaults={})
     response = LLMStructuredResponse(request_id=request_id, provider="fake", raw_text="{}", parsed_json=output if success else None, valid_json=success, schema_valid=success)

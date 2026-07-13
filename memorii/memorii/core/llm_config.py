@@ -19,7 +19,7 @@ class LLMRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> "LLMRuntimeConfig":
+    def from_env(cls, env: Mapping[str, str] | None = None) -> LLMRuntimeConfig:
         source = env if env is not None else os.environ
         provider = (source.get("MEMORII_LLM_PROVIDER") or "none").strip().lower()
         model = (source.get("MEMORII_LLM_MODEL") or "").strip() or None
@@ -69,7 +69,7 @@ class LLMLiveTestConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> "LLMLiveTestConfig":
+    def from_env(cls, env: Mapping[str, str] | None = None) -> LLMLiveTestConfig:
         source = env if env is not None else os.environ
         return cls(enable_live_llm_tests=_parse_bool(source.get("MEMORII_ENABLE_LIVE_LLM_TESTS"), default=False))
 
@@ -88,7 +88,7 @@ class LLMDecisionRuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> "LLMDecisionRuntimeConfig":
+    def from_env(cls, env: Mapping[str, str] | None = None) -> LLMDecisionRuntimeConfig:
         source = env if env is not None else os.environ
         mode = (source.get("MEMORII_DECISION_MODE") or "auto").strip().lower()
         if mode not in {"auto", "rule", "llm", "hybrid"}:
@@ -115,10 +115,7 @@ def _parse_bool(value: str | None, *, default: bool) -> bool:
 
 
 def _parse_int(value: str | None, *, default: int, minimum: int) -> int:
-    if value is None or value.strip() == "":
-        parsed = default
-    else:
-        parsed = int(value)
+    parsed = default if value is None or value.strip() == "" else int(value)
     if parsed < minimum:
         raise ValueError("Invalid integer environment value")
     return parsed

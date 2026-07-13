@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.belief.hybrid_provider import HybridBeliefUpdateProvider
 from memorii.core.belief.llm_provider import LLMBeliefUpdateProvider
 from memorii.core.belief.models import BeliefUpdateContext
@@ -18,6 +16,7 @@ from memorii.core.llm_decision.models import (
 from memorii.core.llm_decision.provider import DisabledLLMDecisionProvider
 from memorii.core.solver.abstention import SolverDecision
 from memorii.core.solver.belief import update_solver_belief
+from pydantic import ValidationError
 
 
 class FakeLLMProvider:

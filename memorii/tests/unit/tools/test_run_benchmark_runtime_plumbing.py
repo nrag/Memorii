@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from memorii.core.benchmark.memory_evolution_runtime import RuntimeSuiteRows
 from memorii.core.benchmark.memory_evolution_runtime.runner import build_runtime_extractor
 from memorii.core.llm_config import LLMRuntimeConfig

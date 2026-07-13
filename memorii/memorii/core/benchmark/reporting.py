@@ -22,10 +22,10 @@ from memorii.core.benchmark.models import (
     CanonicalScenarioEntry,
     CanonicalScenarioTrace,
     CanonicalScenarioVerdictEntry,
-    ScenarioResult,
     ScenarioExecutionLevel,
     ScenarioMetrics,
     ScenarioOutcomeStatus,
+    ScenarioResult,
     ScenarioVerdict,
 )
 from memorii.core.benchmark.validation import validate_canonical_report

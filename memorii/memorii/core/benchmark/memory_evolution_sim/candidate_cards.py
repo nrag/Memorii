@@ -2,7 +2,17 @@
 
 from __future__ import annotations
 
-from memorii.core.benchmark.memory_evolution_sim.schemas import *  # noqa: F403
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    LatentGraphScenario,
+    MemoryEvolutionSimReconstructionContext,
+    OracleCheckpoint,
+    VisibleCheckpointCandidate,
+    VisibleClaimCandidate,
+    VisibleEntityCandidate,
+    VisibleEventCandidate,
+    VisibleRelationCandidate,
+    VisibleSurfaceObservation,
+)
 
 
 def sim_reconstruction_context_for_checkpoint(

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from memorii.core.benchmark.memory_evolution_sim import LatentGraphScenario, ObservabilityLabel
-from memorii.core.benchmark.memory_evolution_runtime.utils import _claim_by_id, _entity_by_id, _relation_by_id
+from collections.abc import Sequence
+
+from memorii.core.benchmark.memory_evolution_sim import (
+    LatentClaim,
+    LatentEntity,
+    LatentGraphScenario,
+    LatentRelation,
+    ObservabilityLabel,
+)
 from memorii.core.calibration.alignment import (
     RuntimeGraphAlignment,
     RuntimeGraphAlignmentVerdict,
-    align_claim_by_fields,
     align_entity_by_fields,
     align_relation_by_fields,
     normalize_alignment_value,
@@ -98,7 +104,9 @@ def _align_claim_with_entity_context(
         matched.append("object")
     if normalize_alignment_value(str(runtime.get("scope") or "")) == normalize_alignment_value(oracle_claim.scope.scope_key):
         matched.append("scope")
-    if set(str(event_id) for event_id in runtime.get("evidence_event_ids", []) or []) & {span.event_id for span in oracle_claim.evidence.spans}:
+    evidence_value = runtime.get("evidence_event_ids", [])
+    evidence_items: Sequence[object] = evidence_value if isinstance(evidence_value, Sequence) and not isinstance(evidence_value, str) else ()
+    if {str(event_id) for event_id in evidence_items} & {span.event_id for span in oracle_claim.evidence.spans}:
         matched.append("evidence_event_ids")
     alignment = _runtime_alignment_from_matches(
         runtime_item_id=runtime_item_id,

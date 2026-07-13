@@ -1,14 +1,13 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from memorii.core.memory_evolution import (
     ClaimKey,
     EntityLinkState,
     EntityResolutionService,
     EvidenceSpan,
-    ExtractionTriggerMode,
     ExtractedClaim,
+    ExtractionTriggerMode,
     MemoryEvolutionService,
     MemoryEvolutionValidator,
     PredicateRegistry,

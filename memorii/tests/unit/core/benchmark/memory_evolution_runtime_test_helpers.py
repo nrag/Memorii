@@ -2,10 +2,9 @@ from __future__ import annotations
 
 from typing import Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from memorii.core.benchmark.artifact_rows import RuntimeCheckpointResultRow
 from memorii.core.calibration.alignment import RuntimeGraphAlignment
+from pydantic import BaseModel, ConfigDict, Field
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
     generate_scenario_by_family,

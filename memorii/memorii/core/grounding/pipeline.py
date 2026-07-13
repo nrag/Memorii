@@ -87,7 +87,7 @@ class _CandidateIdAliases:
     local_by_original: dict[str, str]
 
     @classmethod
-    def from_candidates(cls, candidates: list[EvidenceCandidate]) -> "_CandidateIdAliases":
+    def from_candidates(cls, candidates: list[EvidenceCandidate]) -> _CandidateIdAliases:
         original_by_local = {f"e{index}": candidate.candidate_id for index, candidate in enumerate(candidates, start=1)}
         return cls(
             original_by_local=original_by_local,

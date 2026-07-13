@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-class ObservabilityLabel(str, Enum):
+
+class ObservabilityLabel(StrEnum):
     OBSERVED = "observed"
     INFERABLE = "inferable"
     AMBIGUOUS = "ambiguous"
     HIDDEN = "hidden"
 
 
-class SimLifecycleState(str, Enum):
+class SimLifecycleState(StrEnum):
     CANDIDATE = "candidate"
     ACTIVE = "active"
     SUPERSEDED = "superseded"
@@ -25,7 +26,7 @@ class SimLifecycleState(str, Enum):
     EVIDENCE_ONLY = "evidence_only"
 
 
-class JudgeVerdict(str, Enum):
+class JudgeVerdict(StrEnum):
     PASS = "pass"
     FAIL = "fail"
     ABSTAIN = "abstain"
@@ -51,7 +52,7 @@ class LatentEvidenceSpan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_span(self) -> "LatentEvidenceSpan":
+    def validate_span(self) -> LatentEvidenceSpan:
         if not self.quote:
             raise ValueError("evidence quote must be non-empty")
         if (self.char_start is None) != (self.char_end is None):
@@ -76,7 +77,7 @@ class LatentConfidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_band(self) -> "LatentConfidence":
+    def validate_band(self) -> LatentConfidence:
         expected = "low" if self.calibrated < 0.40 else "medium" if self.calibrated < 0.75 else "high"
         if self.band != expected:
             raise ValueError(f"confidence band {self.band!r} does not match calibrated score")
@@ -133,7 +134,7 @@ class LatentEntity(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_entity_support(self) -> "LatentEntity":
+    def validate_entity_support(self) -> LatentEntity:
         if self.observability != ObservabilityLabel.HIDDEN and not (
             self.evidence_spans or self.defining_claim_ids or self.relation_ids
         ):
@@ -241,7 +242,7 @@ class LatentClaim(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_claim_support(self) -> "LatentClaim":
+    def validate_claim_support(self) -> LatentClaim:
         if self.observability == ObservabilityLabel.OBSERVED:
             support_types = {span.support_type for span in self.evidence.spans}
             required = {"subject_support", "predicate_support", "object_support"}
@@ -312,7 +313,7 @@ class LatentRelation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_relation_support(self) -> "LatentRelation":
+    def validate_relation_support(self) -> LatentRelation:
         if self.observability == ObservabilityLabel.OBSERVED and not self.evidence_spans:
             raise ValueError("observed relations require evidence")
         if self.relation_type in {"supports", "contradicts"}:
@@ -474,7 +475,7 @@ class SimSystemOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def populate_legacy_and_role_views(self) -> "SimSystemOutput":
+    def populate_legacy_and_role_views(self) -> SimSystemOutput:
         role_channels_empty = not any(
             [
                 self.selected_entity_ids,
@@ -666,7 +667,7 @@ class LatentGraphScenario(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_references(self) -> "LatentGraphScenario":
+    def validate_references(self) -> LatentGraphScenario:
         entity_ids = {item.entity_id for item in self.entities}
         claim_ids = {item.claim_id for item in self.claims}
         relation_ids = {item.relation_id for item in self.relations}

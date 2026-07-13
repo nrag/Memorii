@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class RuntimeGraphAlignmentVerdict(str, Enum):
+class RuntimeGraphAlignmentVerdict(StrEnum):
     ALIGNED = "aligned"
     PARTIAL = "partial"
     UNMATCHED_RUNTIME = "unmatched_runtime"
@@ -145,7 +145,7 @@ def align_evidence_by_fields(
     oracle_fields: dict[str, object],
 ) -> RuntimeGraphAlignment:
     source_match = normalize_alignment_value(_as_str(runtime_fields.get("source_event_id"))) == normalize_alignment_value(_as_str(oracle_fields.get("source_event_id")))
-    quote_score = _quote_overlap(_as_str(runtime_fields.get("quote")), _as_str(oracle_fields.get("quote")))
+    quote_score = _quote_overlap(_as_str(runtime_fields.get("quote")) or "", _as_str(oracle_fields.get("quote")) or "")
     matched = []
     if source_match:
         matched.append("source_event_id")

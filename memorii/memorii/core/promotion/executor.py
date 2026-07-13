@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.promotion.legacy_models import PromotionAction, LegacyPromotionDecision as PromotionDecision, PromotionResult
+from memorii.core.promotion.legacy_models import LegacyPromotionDecision as PromotionDecision
+from memorii.core.promotion.legacy_models import PromotionAction, PromotionResult
 
 
 class PromotionExecutor:

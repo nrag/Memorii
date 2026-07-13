@@ -1,0 +1,67 @@
+# Static Tooling Workflow
+
+This project uses Ruff and scoped Pyright checks as PR gates. Ruff runs across the repository in error mode; Pyright is intentionally scoped to the memory-evolution, benchmark, calibration, prompt-contract, and benchmark-runner surfaces while type coverage is expanded deliberately.
+
+## Install
+
+From `memorii/`:
+
+```bash
+python -m pip install -e '.[dev]'
+```
+
+The `dev` extra installs the local test runner, live LLM dependency, Ruff, and Pyright. Production and benchmark semantics do not depend on these tools.
+
+## Commands
+
+Run unit tests:
+
+```bash
+python -m pytest tests/unit -p no:cacheprovider
+```
+
+Run the full lint check:
+
+```bash
+python -m ruff check memorii tests
+```
+
+Run scoped type checks:
+
+```bash
+pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
+```
+
+The Pyright scope is intentionally limited to:
+
+- `memorii/core/memory_evolution`
+- `memorii/core/benchmark/memory_evolution_sim`
+- `memorii/core/benchmark/memory_evolution_runtime`
+- `memorii/core/calibration`
+- `memorii/core/prompts`
+- `memorii/tools/benchmark_suites`
+
+Pyright is error-mode for the scoped surfaces above. Full-repo type checking is intentionally deferred until the rest of the repository has an explicit baseline.
+
+Pyright intentionally does not pin `venvPath` or `venv` in `pyproject.toml`; local developers and CI should pass the active Python interpreter with `--pythonpath` from the environment where project dependencies are installed.
+
+## Policy
+
+- Do not mass-format unrelated files.
+- Do not broaden type scope just to make a local edit feel cleaner.
+- Fix new violations in touched files.
+- Treat all configured Ruff findings as PR-gate failures.
+- Do not add per-package wildcard-import quarantines; simulator/runtime modules should use explicit imports.
+- If a tool finding requires a semantic change, add or update a behavior test before changing code.
+- Static tooling must not change benchmark pass/fail semantics, artifact schemas, prompt contracts, or production defaults.
+
+## Benchmark Smoke Checks
+
+After changes that touch benchmark, prompt, artifact, or runtime memory-evolution code, also run:
+
+```bash
+python -m memorii.tools.run_eval --suite memory_evolution_sim_v1 --mode all --dry-run --storage-root .memorii --sim-profile adversarial --sim-scenario-count 10 --sim-noise-rate 0.35 --seed 7
+python -m memorii.tools.run_eval --suite memory_evolution_runtime_v1 --mode all --dry-run --storage-root .memorii --sim-profile long_horizon --sim-scenario-count 10 --sim-noise-rate 0.35 --seed 7
+```
+
+Live gates remain explicit and should only be run when intentionally validating provider behavior.

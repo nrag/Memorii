@@ -7,6 +7,8 @@ from memorii.core.benchmark.execution_graph_decision import (
     fake_llm_result_for_execution_graph,
 )
 from memorii.core.benchmark.fixtures import normalize_fixtures
+from memorii.core.benchmark.hotpotqa import HotpotQAExample
+from memorii.core.benchmark.hotpotqa_official import expected_hotpotqa_grounding_decisions
 from memorii.core.benchmark.lifecycle_decision import (
     LifecycleDecisionContext,
     expected_lifecycle_decision_for_fixture,
@@ -41,9 +43,9 @@ from memorii.core.grounding.pipeline import (
     fake_llm_result_for_evidence_selection,
     fake_llm_result_for_grounded_answer,
 )
-from memorii.core.benchmark.hotpotqa_official import expected_hotpotqa_grounding_decisions
 from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest
 from memorii.core.prompts.registry import PromptRegistry
+
 
 class _ExpectedLifecycleFakeAdapter:
     provider_name = "fake"
@@ -238,7 +240,7 @@ class _ExpectedRetrievalRelevanceFakeAdapter:
 class _ExpectedHotpotQAEvidenceSelectionFakeAdapter:
     provider_name = "fake"
 
-    def __init__(self, *, examples: list[object], registry: PromptRegistry) -> None:
+    def __init__(self, *, examples: list[HotpotQAExample], registry: PromptRegistry) -> None:
         self._registry = registry
         self._expected_by_example = {
             example.example_id: expected_hotpotqa_grounding_decisions(example)[0]
@@ -275,7 +277,7 @@ class _ExpectedHotpotQAEvidenceSelectionFakeAdapter:
 class _ExpectedHotpotQAGroundedAnswerFakeAdapter:
     provider_name = "fake"
 
-    def __init__(self, *, examples: list[object], registry: PromptRegistry) -> None:
+    def __init__(self, *, examples: list[HotpotQAExample], registry: PromptRegistry) -> None:
         self._registry = registry
         self._expected_by_example = {
             example.example_id: expected_hotpotqa_grounding_decisions(example)[1]
@@ -312,7 +314,7 @@ class _ExpectedHotpotQAGroundedAnswerFakeAdapter:
 class _ExpectedHotpotQAAnswerVerificationFakeAdapter:
     provider_name = "fake"
 
-    def __init__(self, *, examples: list[object], registry: PromptRegistry) -> None:
+    def __init__(self, *, examples: list[HotpotQAExample], registry: PromptRegistry) -> None:
         self._registry = registry
         self._expected_by_example = {
             example.example_id: expected_hotpotqa_grounding_decisions(example)[2]

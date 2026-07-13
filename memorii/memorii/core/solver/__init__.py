@@ -3,7 +3,6 @@
 from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
 from memorii.core.solver.belief import update_solver_belief
 from memorii.core.solver.frontier import FrontierPlan, SolverFrontierPlanner
-from memorii.core.solver.models import NextTestAction
 from memorii.core.solver.model_integration import (
     OpenAIStyleCompletionClient,
     OpenAIStyleSolverModelProvider,
@@ -12,7 +11,13 @@ from memorii.core.solver.model_integration import (
     SolverModelProvider,
     StaticSolverModelProvider,
 )
-from memorii.core.solver.update_engine import SolverDecisionOutput, SolverUpdateEngine, SolverUpdateInput, SolverUpdateResult
+from memorii.core.solver.models import NextTestAction
+from memorii.core.solver.update_engine import (
+    SolverDecisionOutput,
+    SolverUpdateEngine,
+    SolverUpdateInput,
+    SolverUpdateResult,
+)
 from memorii.core.solver.verifier import SolverDecisionVerifier, VerificationOutcome
 
 __all__ = [

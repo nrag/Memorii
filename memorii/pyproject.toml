@@ -24,6 +24,12 @@ live = [
   "openai>=1.0",
   "pytest>=8.0",
 ]
+dev = [
+  "openai>=1.0",
+  "pytest>=8.0",
+  "ruff>=0.8,<1",
+  "pyright>=1.1,<2",
+]
 prod = [
   "openai>=1.0",
   "azure-identity>=1.16",
@@ -67,8 +73,17 @@ include = [
   "memorii/core/benchmark/memory_evolution_runtime",
   "memorii/core/calibration",
   "memorii/core/prompts",
+  "memorii/tools/benchmark_suites",
 ]
 exclude = [
   "**/__pycache__",
 ]
 reportMissingTypeStubs = false
+reportArgumentType = "error"
+reportAssignmentType = "error"
+reportAttributeAccessIssue = "error"
+reportCallIssue = "error"
+reportGeneralTypeIssues = "error"
+reportOperatorIssue = "error"
+reportOptionalMemberAccess = "error"
+reportReturnType = "error"

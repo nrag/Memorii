@@ -2,41 +2,34 @@
 
 from __future__ import annotations
 
-import random
-import re
-from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import ValidationError
 
-from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
-from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest, LLMStructuredResponse
-from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
-
-from memorii.core.benchmark.memory_evolution_sim.schemas import *  # noqa: F403
-from memorii.core.benchmark.memory_evolution_sim.utils import (
-    _answer_bucket,
-    _bad_supporting_event_ids,
-    _claim_bucket,
-    _claim_by_id,
-    _claim_is_bad_support,
-    _context_only_noise_event_ids,
-    _extract_rule_answer,
-    _hidden_answer_leaks,
-    _is_visible_claim,
-    _is_visible_entity,
-    _norm,
-    _observation_by_id,
-    _ordered_unique,
-    _relation_bucket,
-    _required_definition_claim_ids_for_selected_claims,
-    _role_relation_ids,
-    _selected_noncurrent_claim_ids,
-)
 from memorii.core.benchmark.memory_evolution_sim.candidate_cards import _checkpoint_contract_for_type
 from memorii.core.benchmark.memory_evolution_sim.diagnostics import sim_output_allowed_id_errors
 from memorii.core.benchmark.memory_evolution_sim.judges import _required_selected_entity_ids_for_policy
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    LatentGraphScenario,
+    MemoryEvolutionSimReconstructionContext,
+    ObservabilityLabel,
+    OracleCheckpoint,
+    SimOutputNormalization,
+    SimSystemOutput,
+    SurfaceObservation,
+)
+from memorii.core.benchmark.memory_evolution_sim.utils import (
+    _claim_by_id,
+    _extract_rule_answer,
+    _is_visible_claim,
+    _norm,
+    _ordered_unique,
+    _required_definition_claim_ids_for_selected_claims,
+)
+from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
+from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest, LLMStructuredResponse
+from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
 
 
 def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSystemOutput:
@@ -45,10 +38,10 @@ def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSyste
         operation = "abstain"
     elif checkpoint.expected_next_action is not None:
         operation = "next_action"
-    elif "graph_reconstruction" in _checkpoint_contract_for_type(checkpoint.checkpoint_type)["allowed_operations"]:
-        operation = "graph_reconstruction"
     else:
-        operation = "answer"
+        allowed_operations = _checkpoint_contract_for_type(checkpoint.checkpoint_type).get("allowed_operations", [])
+        graph_allowed = isinstance(allowed_operations, list) and "graph_reconstruction" in allowed_operations
+        operation = "graph_reconstruction" if graph_allowed else "answer"
     rejected_claim_ids = list(checkpoint.expected_excluded_claim_ids)
     rejected_entity_ids = list(checkpoint.expected_excluded_entity_ids)
     rejected_relation_ids: list[str] = []

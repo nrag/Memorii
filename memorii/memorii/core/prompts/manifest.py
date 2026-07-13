@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
 
 _SECRET_KEYS = ["api_key", "token", "password", "secret", "authorization", "cookie"]
 _ORACLE_KEYS = [
@@ -38,7 +37,7 @@ _FORBIDDEN_SENTINELS = [
 ]
 
 
-class PromptOwner(str, Enum):
+class PromptOwner(StrEnum):
     LLM_ANSWER_VERIFICATION_ADAPTER = "LLMAnswerVerificationAdapter"
     LLM_BELIEF_UPDATE_ADAPTER = "LLMBeliefUpdateAdapter"
     LLM_EVIDENCE_SELECTION_ADAPTER = "LLMEvidenceSelectionAdapter"

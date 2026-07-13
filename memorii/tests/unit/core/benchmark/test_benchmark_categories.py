@@ -1,6 +1,6 @@
-from memorii.core.benchmark.harness import BenchmarkHarness
 import pytest
-
+from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
+from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import (
     BenchmarkScenarioFixture,
     BenchmarkScenarioType,
@@ -8,10 +8,9 @@ from memorii.core.benchmark.models import (
     LearningAcrossEpisodesFixture,
     RetrievalFixtureMemoryItem,
 )
-from memorii.core.promotion import PromotionAction, PromotionReasonCode
 from memorii.core.benchmark.scenarios import ScenarioExecutor
+from memorii.core.promotion import PromotionAction, PromotionReasonCode
 from memorii.domain.enums import MemoryDomain
-from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 
 
 def _result(report, scenario_id: str, system: BenchmarkSystem):

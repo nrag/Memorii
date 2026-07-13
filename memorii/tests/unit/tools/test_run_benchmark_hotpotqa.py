@@ -5,7 +5,6 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
-
 from memorii.tools.run_benchmark import main
 from tests.unit.tools.run_benchmark_test_helpers import (
     _latest_run_dir,

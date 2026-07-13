@@ -4,7 +4,6 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest
 from memorii.core.llm_provider.openai_provider import OpenAIStructuredClient, _build_structured_request_kwargs

@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from memorii.core.belief.models import BeliefUpdateContext
 from memorii.core.grounding.models import (
     AnswerVerificationContext,
@@ -24,8 +23,8 @@ from memorii.core.llm_decision.adapters import (
 from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
+from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.solver.abstention import SolverDecision
 
 PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"

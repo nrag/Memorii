@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import pytest
-
-from memorii.core.benchmark.hotpotqa import HotpotContext, HotpotQAExample, load_hotpotqa_examples, select_hotpotqa_subset
+from memorii.core.benchmark.hotpotqa import (
+    HotpotContext,
+    HotpotQAExample,
+    load_hotpotqa_examples,
+    select_hotpotqa_subset,
+)
 from memorii.core.benchmark.hotpotqa_official import (
     HotpotQAPrediction,
     build_hotpotqa_error_analysis,

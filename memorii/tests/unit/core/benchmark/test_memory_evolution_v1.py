@@ -1,3 +1,4 @@
+from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
 from memorii.core.benchmark.memory_evolution_decision import (
     MemoryEvolutionEvent,
     MemoryEvolutionFailureBucket,
@@ -9,7 +10,6 @@ from memorii.core.benchmark.memory_evolution_decision import (
     memory_evolution_decision_diagnostics,
     rule_memory_evolution_decision_for_checkpoint,
 )
-from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
 
 
 def test_memory_evolution_v1_has_ten_episode_chain_scenarios() -> None:

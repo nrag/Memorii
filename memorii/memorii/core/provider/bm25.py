@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import string
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from math import log
-import string
-import unicodedata
 
 try:
     from icu import BreakIterator, Locale

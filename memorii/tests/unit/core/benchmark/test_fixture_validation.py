@@ -1,5 +1,4 @@
 import pytest
-
 from memorii.core.benchmark.fixtures import normalize_fixtures
 from memorii.core.benchmark.models import (
     BenchmarkScenarioFixture,

@@ -3,16 +3,33 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
-
-from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
-from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
 import hashlib
 import json
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from datetime import (
     UTC,
     datetime,
+)
+from pathlib import Path
+from typing import cast
+
+from memorii.core.benchmark.artifact_rows import (
+    BenchmarkReportSummary,
+    CheckpointDecisionTraceSection,
+    CheckpointDiagnosticsSection,
+    CheckpointHorizonSection,
+    CheckpointVerdictSection,
+    DecisionMode,
+    FinalOutputSource,
+    FlatArtifactModel,
+    JudgeVoteRow,
+    NormalizationDiagnosticsSection,
+    SimCheckpointResultRow,
+    WarningExampleRow,
+    artifact_rows_to_json,
+    artifact_section_legacy_fields,
+    checkpoint_warning_buckets,
 )
 from memorii.core.benchmark.memory_evolution_sim import (
     JudgeAggregate,
@@ -30,25 +47,12 @@ from memorii.core.benchmark.memory_evolution_sim import (
     sim_metrics_from_rows,
     sim_reconstruction_context_for_checkpoint,
 )
-from memorii.core.benchmark.artifact_rows import (
-    BenchmarkReportSummary,
-    CheckpointDecisionTraceSection,
-    CheckpointDiagnosticsSection,
-    CheckpointHorizonSection,
-    CheckpointVerdictSection,
-    JudgeVoteRow,
-    NormalizationDiagnosticsSection,
-    SimCheckpointResultRow,
-    WarningExampleRow,
-    artifact_section_legacy_fields,
-    artifact_rows_to_json,
-    checkpoint_warning_buckets,
-)
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import build_run_id
 from memorii.core.calibration.reports import build_calibration_artifacts
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import (
+    DecisionModeName,
     LLMDecisionRuntimeConfig,
     LLMLiveTestConfig,
     LLMRuntimeConfig,
@@ -57,12 +61,26 @@ from memorii.core.llm_decision.adapters import LLMMemoryEvolutionSimReconstructi
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
+from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.artifact_io import _write_jsonl
+from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
 from memorii.tools.benchmark_suites.fake_adapters import _ExpectedMemoryEvolutionSimFakeAdapter
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
 from memorii.tools.run_live_llm_eval import _validate_live_safety
 
 SUITE_NAME = "memory_evolution_sim_v1"
+
+
+def _decision_modes_from_args(mode: str) -> list[DecisionModeName]:
+    if mode == "all":
+        return ["rule", "llm", "hybrid"]
+    if mode in {"auto", "rule", "llm", "hybrid"}:
+        return [cast(DecisionModeName, mode)]
+    raise ValueError(f"Unsupported memory evolution sim mode: {mode}")
+
+
+def _json_sequence(value: object) -> Sequence[object]:
+    return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
 
 
 def _load_memory_evolution_sim_suite(args: argparse.Namespace) -> tuple[list[LatentGraphScenario], str]:
@@ -87,7 +105,7 @@ def _load_memory_evolution_sim_suite(args: argparse.Namespace) -> tuple[list[Lat
 def _run_memory_evolution_sim_transitions(
     *,
     scenarios: list[LatentGraphScenario],
-    mode: str,
+    mode: DecisionModeName,
     dry_run: bool,
     allow_live: bool,
     prompt_root: Path,
@@ -256,12 +274,12 @@ def _build_sim_checkpoint_result_row(
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
     context_json: dict[str, object],
-    mode: str,
-    effective_mode: str,
+    mode: DecisionMode,
+    effective_mode: DecisionMode,
     llm_call_made: bool,
     fallback_used: bool,
     fallback_reason: str | None,
-    final_output_source: str,
+    final_output_source: FinalOutputSource,
     request_id: str,
     success: bool,
     aggregate: JudgeAggregate,
@@ -346,7 +364,7 @@ def _write_memory_evolution_sim_artifacts(
     *,
     scenarios: list[LatentGraphScenario],
     scenario_rows: list[dict[str, object]],
-    checkpoint_rows: list[SimCheckpointResultRow],
+    checkpoint_rows: Sequence[FlatArtifactModel],
     judge_rows: list[dict[str, object]],
     llm_rows: list[dict[str, object]],
     suite: str,
@@ -368,14 +386,14 @@ def _write_memory_evolution_sim_artifacts(
     failure_bucket_counts = Counter(
         bucket
         for row in checkpoint_rows_json
-        for bucket in row.get("failure_buckets", [])
+        for bucket in _json_sequence(row.get("failure_buckets"))
     )
     warning_bucket_counts = Counter(
         bucket
         for row in judge_rows
-        for vote in row.get("votes", [])
-        if vote.get("verdict") == "pass"
-        for bucket in vote.get("failure_buckets", [])
+        for vote in _json_sequence(row.get("votes"))
+        if isinstance(vote, Mapping) and vote.get("verdict") == "pass"
+        for bucket in _json_sequence(vote.get("failure_buckets"))
     )
     graph_answer_optional_missing_count = sum(
         1 for row in checkpoint_rows_json if row.get("answer_match_type") == "optional_missing"
@@ -401,29 +419,29 @@ def _write_memory_evolution_sim_artifacts(
         for row in checkpoint_rows_json
         if _sim_row_needs_review(row)
         for bucket in [
-            *row.get("failure_buckets", []),
-            *row.get("precision_failure_classification", []),
+            *_json_sequence(row.get("failure_buckets")),
+            *_json_sequence(row.get("precision_failure_classification")),
         ]
     )
     required_judge_failures = sum(
         1
         for row in judge_rows
-        for vote in row.get("votes", [])
-        if vote.get("verdict") == "fail" and vote.get("judge_id") in _required_judge_ids_from_row(row)
+        for vote in _json_sequence(row.get("votes"))
+        if isinstance(vote, Mapping) and vote.get("verdict") == "fail" and vote.get("judge_id") in _required_judge_ids_from_row(row)
     )
     judge_coverage = {
-        "votes": sum(len(row.get("votes", [])) for row in judge_rows),
+        "votes": sum(len(_json_sequence(row.get("votes"))) for row in judge_rows),
         "abstentions": sum(
             1
             for row in judge_rows
-            for vote in row.get("votes", [])
-            if vote.get("verdict") == "abstain"
+            for vote in _json_sequence(row.get("votes"))
+            if isinstance(vote, Mapping) and vote.get("verdict") == "abstain"
         ),
         "failures": sum(
             1
             for row in judge_rows
-            for vote in row.get("votes", [])
-            if vote.get("verdict") == "fail"
+            for vote in _json_sequence(row.get("votes"))
+            if isinstance(vote, Mapping) and vote.get("verdict") == "fail"
         ),
         "required_judge_failures": required_judge_failures,
         "review_required": sum(1 for row in checkpoint_rows_json if row.get("review_required")),
@@ -483,7 +501,7 @@ def _write_memory_evolution_sim_artifacts(
                 sum(
                     1
                     for row in checkpoint_rows_json
-                    if "hidden_fact_answer_leak" in set(row.get("failure_buckets", []) or [])
+                    if "hidden_fact_answer_leak" in {str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))}
                 )
                 / max(1, len(checkpoint_rows_json))
             ),
@@ -586,7 +604,7 @@ def _write_memory_evolution_sim_artifacts(
         [
             JudgeVoteRow.from_flat_row(vote).to_json_row()
             for row in judge_rows
-            for vote in row.get("votes", [])
+            for vote in _json_sequence(row.get("votes"))
             if isinstance(vote, dict)
         ],
     )
@@ -717,7 +735,7 @@ def _sim_row_needs_review(row: dict[str, object]) -> bool:
         return True
     if row.get("precision_failure_classification"):
         return True
-    buckets = set(row.get("failure_buckets", []) or [])
+    buckets = {str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))}
     return bool(buckets & {"hidden_fact_hallucinated", "overconfident_wrong_answer", "ambiguous_fact_overcommitted"})
 
 def _print_memory_evolution_sim_summary(
@@ -728,7 +746,7 @@ def _print_memory_evolution_sim_summary(
     run_dir: Path,
     scenarios: list[LatentGraphScenario],
     scenario_rows: list[dict[str, object]],
-    checkpoint_rows: list[SimCheckpointResultRow],
+    checkpoint_rows: Sequence[FlatArtifactModel],
     llm_rows: list[dict[str, object]],
 ) -> None:
     checkpoint_rows_json = artifact_rows_to_json(checkpoint_rows)
@@ -793,7 +811,7 @@ def _run_memory_evolution_sim_suite(
     dependencies: BenchmarkRuntimeDependencies,
 ) -> int:
     scenarios, fixture_source = _load_memory_evolution_sim_suite(args)
-    modes = ["rule", "llm", "hybrid"] if args.mode == "all" else [args.mode]
+    modes = _decision_modes_from_args(args.mode)
     for mode in modes:
         scenario_rows, checkpoint_rows, judge_rows, llm_rows = _run_memory_evolution_sim_transitions(
             scenarios=scenarios,

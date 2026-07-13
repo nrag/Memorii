@@ -10,16 +10,16 @@ from memorii.core.consolidation.consolidator import Consolidator
 from memorii.core.directory.directory import MemoryDirectory
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
 from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.persistence.resume import ResumeService
 from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.provider.models import ProviderOperation, ProviderWriteDecision
-from memorii.core.persistence.resume import ResumeService
 from memorii.core.retrieval.planner import RetrievalPlanner
 from memorii.core.router.router import MemoryRouter
 from memorii.core.solver import (
+    NextTestAction,
     SolverContextItem,
     SolverDecision,
     SolverModelInput,
-    NextTestAction,
     SolverModelProvider,
     SolverUpdateEngine,
     SolverUpdateInput,

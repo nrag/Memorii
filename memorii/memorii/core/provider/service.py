@@ -9,10 +9,7 @@ from pydantic import ValidationError
 from memorii.core.decision_state.models import DecisionState, DecisionStatus
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.summary import DecisionStateSummary, summarize_decision_state
-from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.memory_plane import MemoryPlaneService
-from memorii.core.next_step import NextStepEngine, NextStepRequest
-from memorii.core.provider.classifier import build_event_id, make_event
+from memorii.core.llm_decision.runtime_factory import build_promotion_decision_provider_from_env
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
 from memorii.core.memory_evolution import (
     MemoryEvolutionResult,
@@ -20,9 +17,12 @@ from memorii.core.memory_evolution import (
     MemoryExtractor,
     build_memory_extractor_from_env,
 )
+from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.next_step import NextStepEngine, NextStepRequest
 from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
 from memorii.core.promotion.provider import PromotionDecisionProvider
-from memorii.core.llm_decision.runtime_factory import build_promotion_decision_provider_from_env
+from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.provider.models import (
     ProviderEvent,
     ProviderOperation,
@@ -45,7 +45,6 @@ from memorii.core.provider.tools import (
 )
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
 from memorii.core.solver import SolverFrontierPlanner
-from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.core.work_state.models import (
     AgentEventEnvelope,
     WorkStateEvent,
@@ -53,8 +52,9 @@ from memorii.core.work_state.models import (
     WorkStateRecord,
     WorkStateStatus,
 )
-from memorii.core.work_state.service import WorkStateService
 from memorii.core.work_state.selector import WorkStateSelector
+from memorii.core.work_state.service import WorkStateService
+from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
 
 

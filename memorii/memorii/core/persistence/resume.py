@@ -51,9 +51,10 @@ class ResumeService:
             overlay = None
             if latest_overlay is not None:
                 overlay = next((item for item in latest_overlay.node_overlays if item.node_id == node.id), None)
-            if node.type == SolverNodeType.QUESTION:
-                if overlay is None or overlay.status != SolverNodeStatus.RESOLVED:
-                    unresolved_questions.append(node.id)
+            if node.type == SolverNodeType.QUESTION and (
+                overlay is None or overlay.status != SolverNodeStatus.RESOLVED
+            ):
+                unresolved_questions.append(node.id)
 
         return SolverResumeState(
             solver_run_id=solver_run_id,

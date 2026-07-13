@@ -6,10 +6,10 @@ from datetime import UTC, datetime
 
 from memorii.core.benchmark.baselines import BASELINE_SYSTEMS, all_systems
 from memorii.core.benchmark.fixtures import normalize_fixtures
-from memorii.core.benchmark.metrics import compute_metrics, aggregate_metrics, METRIC_FIELDS
+from memorii.core.benchmark.metrics import METRIC_FIELDS, aggregate_metrics, compute_metrics
 from memorii.core.benchmark.models import (
-    BaselinePolicy,
     BaselineDelta,
+    BaselinePolicy,
     BenchmarkRunConfig,
     BenchmarkRunReport,
     BenchmarkScenarioFixture,

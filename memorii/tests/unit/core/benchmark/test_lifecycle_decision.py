@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
-
+from memorii.core.benchmark.fixture_sets.memory_lifecycle_v1 import load_memory_lifecycle_v1_fixture_set
 from memorii.core.benchmark.lifecycle_decision import (
     DISCRIMINATIVE_LIFECYCLE_FAMILIES,
     LifecycleDecision,
@@ -14,7 +14,6 @@ from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructured
 from memorii.tools.benchmark_suites.memory_lifecycle_fixture import transition_kind
 from memorii.tools.run_benchmark import main
 from memorii.tools.run_live_llm_eval import EvalFakeClient
-from memorii.core.benchmark.fixture_sets.memory_lifecycle_v1 import load_memory_lifecycle_v1_fixture_set
 
 
 def _discriminative_fixtures():

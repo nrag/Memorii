@@ -1,9 +1,15 @@
 """Runtime memory evolution primitives."""
 
-from memorii.core.memory_evolution.extraction import HybridMemoryExtractor, LLMMemoryExtractor, MemoryExtractor, RuleMemoryExtractor
 from memorii.core.memory_evolution.entity_resolution import EntityResolutionService
+from memorii.core.memory_evolution.extraction import (
+    HybridMemoryExtractor,
+    LLMMemoryExtractor,
+    MemoryExtractor,
+    RuleMemoryExtractor,
+)
 from memorii.core.memory_evolution.factory import build_memory_extractor_from_env
 from memorii.core.memory_evolution.graph import MemoryGraphProjector, MemoryGraphStore, MemoryGraphValidator
+from memorii.core.memory_evolution.modality import ExtractionTriggerPolicy, SourceModalityClassifier
 from memorii.core.memory_evolution.models import (
     ClaimKey,
     ClaimLifecycleState,
@@ -11,25 +17,24 @@ from memorii.core.memory_evolution.models import (
     ClaimState,
     ConfidenceUpdate,
     ContradictionSet,
-    EntityMention,
     EntityLinkState,
-    ExtractionTriggerMode,
+    EntityMention,
     EvidenceSpan,
     ExtractedAction,
     ExtractedClaim,
     ExtractionRun,
+    ExtractionTriggerMode,
+    MemoryEvolutionResult,
     MemoryGraphEdge,
     MemoryGraphEdgeType,
     MemoryGraphNode,
     MemoryGraphNodeType,
     MemoryGraphSnapshot,
-    MemoryEvolutionResult,
     RetrievalView,
     SourceModality,
     SourceObservation,
     ValidationResult,
 )
-from memorii.core.memory_evolution.modality import ExtractionTriggerPolicy, SourceModalityClassifier
 from memorii.core.memory_evolution.predicates import PredicatePolicy, PredicateRegistry
 from memorii.core.memory_evolution.reference import BuiltInReferenceKnowledgeProvider, ReferenceClaim, ReferenceEntity
 from memorii.core.memory_evolution.service import MemoryEvolutionService, source_observation_from_record

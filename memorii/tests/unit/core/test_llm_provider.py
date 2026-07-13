@@ -4,10 +4,8 @@ import json
 from pathlib import Path
 
 import pytest
-
 from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
-from memorii.core.llm_provider.models import LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 

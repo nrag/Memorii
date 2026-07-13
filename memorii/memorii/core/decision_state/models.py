@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class DecisionStatus(str, Enum):
+class DecisionStatus(StrEnum):
     OPEN = "open"
     DECIDED = "decided"
     ABANDONED = "abandoned"
 
 
-class DecisionEvidencePolarity(str, Enum):
+class DecisionEvidencePolarity(StrEnum):
     FOR_OPTION = "for_option"
     AGAINST_OPTION = "against_option"
     NEUTRAL = "neutral"

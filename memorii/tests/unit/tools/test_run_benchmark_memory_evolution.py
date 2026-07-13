@@ -4,11 +4,10 @@ import json
 from pathlib import Path
 
 import pytest
-
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
-from memorii.tools.run_benchmark import main
 from memorii.tools.benchmark_suites.memory_evolution import memory_evolution_artifact_run_metadata
+from memorii.tools.run_benchmark import main
 from tests.unit.tools.run_benchmark_test_helpers import (
     _clear_llm_env,
     _jsonl_count,

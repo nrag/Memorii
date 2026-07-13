@@ -2,8 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.execution_graph.edges import ExecutionEdge
+from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.solver_graph.edges import SolverEdge
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverOverlayVersion

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
-from uuid import uuid5, NAMESPACE_URL
+from uuid import NAMESPACE_URL, uuid5
 
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.memory_evolution.models import (
@@ -24,9 +25,14 @@ from memorii.core.prompts.registry import PromptRegistry
 
 
 class MemoryExtractor(Protocol):
-    provider: str
-    model: str | None
-    prompt_hash: str | None
+    @property
+    def provider(self) -> str: ...
+
+    @property
+    def model(self) -> str | None: ...
+
+    @property
+    def prompt_hash(self) -> str | None: ...
 
     def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]: ...
 
@@ -38,9 +44,9 @@ class RuleMemoryExtractor:
     deterministic coverage for source-linked facts and safe fallback behavior.
     """
 
-    provider = "rule"
-    model = None
-    prompt_hash = None
+    provider: str = "rule"
+    model: str | None = None
+    prompt_hash: str | None = None
 
     def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
@@ -151,7 +157,7 @@ class RuleMemoryExtractor:
 
 
 class LLMMemoryExtractor:
-    provider = "llm"
+    provider: str = "llm"
     prompt_ref = "memory_extraction:v1"
 
     def __init__(
@@ -206,7 +212,7 @@ class LLMMemoryExtractor:
 
 
 class HybridMemoryExtractor:
-    provider = "hybrid"
+    provider: str = "hybrid"
 
     def __init__(
         self,
@@ -297,7 +303,7 @@ def _models_from_llm_output(
                     normalized_name=str(item.get("normalized_name") or item["mention_text"]).strip().lower(),
                     entity_type=_entity_type(str(item.get("entity_type") or "unknown")),
                     evidence_spans=[span],
-                    confidence=float(item.get("confidence", 0.5)),
+                    confidence=_float_output(item.get("confidence"), default=0.5),
                 )
             )
         except Exception as exc:
@@ -317,10 +323,10 @@ def _models_from_llm_output(
                 scope_key=str(item.get("scope_key") or observation.task_id or "global"),
                 qualifier_key=str(item.get("qualifier_key") or "default"),
             )
-            confidence = float(item.get("confidence", 0.6))
+            confidence = _float_output(item.get("confidence"), default=0.6)
             object_entity_id = str(item["object_entity_id"]) if item.get("object_entity_id") else None
             raw_claim_id = str(item.get("claim_id") or "").strip()
-            qualifiers = {str(key): str(value) for key, value in dict(item.get("qualifiers") or {}).items()}
+            qualifiers = {str(key): str(value) for key, value in _dict_output(item.get("qualifiers")).items()}
             valid_from, valid_from_normalization = _parse_dt_with_normalization(item.get("valid_from"))
             valid_to, valid_to_normalization = _parse_dt_with_normalization(item.get("valid_to"))
             if valid_from_normalization:
@@ -375,7 +381,7 @@ def _models_from_llm_output(
             quote = str(item.get("quote") or item.get("status") or item.get("action_type") or "")
             span = _span(observation=observation, quote=quote)
             action_type = str(item["action_type"])
-            target_entity_ids = [str(value) for value in item.get("target_entity_ids", [])]
+            target_entity_ids = [str(value) for value in _sequence_output(item.get("target_entity_ids"))]
             status = str(item["status"])
             action_id = _stable_id(
                 "action",
@@ -388,8 +394,8 @@ def _models_from_llm_output(
                     action_type=action_type,
                     target_entity_ids=target_entity_ids,
                     status=status,
-                    dependency_ids=[str(value) for value in item.get("dependency_ids", [])],
-                    blocking_ids=[str(value) for value in item.get("blocking_ids", [])],
+                    dependency_ids=[str(value) for value in _sequence_output(item.get("dependency_ids"))],
+                    blocking_ids=[str(value) for value in _sequence_output(item.get("blocking_ids"))],
                     timestamp=_parse_dt(item.get("timestamp")) or observation.timestamp,
                     evidence_spans=[span],
                     extraction_run_id=run_id,
@@ -494,6 +500,20 @@ def _list_output(output: dict[str, object], key: str) -> list[dict[str, object]]
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _dict_output(value: object) -> Mapping[object, object]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _sequence_output(value: object) -> Sequence[object]:
+    return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
+
+
+def _float_output(value: object, *, default: float) -> float:
+    if isinstance(value, (int, float, str)):
+        return float(value)
+    return default
 
 
 def _entity_type(value: str) -> EntityType:

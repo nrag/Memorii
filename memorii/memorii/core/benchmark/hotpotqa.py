@@ -12,12 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import (
+    BaselineApplicability,
+    BaselinePolicy,
     BenchmarkRunConfig,
     BenchmarkRunReport,
     BenchmarkScenarioFixture,
     BenchmarkScenarioType,
-    BaselineApplicability,
-    BaselinePolicy,
     BenchmarkSystem,
     ConflictCandidate,
     ConflictResolutionFixture,

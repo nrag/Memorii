@@ -5,8 +5,8 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
-
-from memorii.tools import run_benchmark, run_eval as run_eval_module
+from memorii.tools import run_benchmark
+from memorii.tools import run_eval as run_eval_module
 from memorii.tools.run_eval import main
 
 HOTPOTQA_SAMPLE_PATH = files("memorii.core.benchmark.fixture_sets").joinpath("hotpotqa_sample.json")

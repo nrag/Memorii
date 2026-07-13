@@ -1,23 +1,22 @@
 from datetime import UTC, datetime
 
-from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
-from memorii.core.promotion.models import PromotionContext
-from memorii.core.solver import SolverFrontierPlanner
 from memorii.core.decision_state.models import DecisionEvidencePolarity, DecisionStatus
 from memorii.core.decision_state.service import DecisionStateService
-from memorii.domain.common import SolverNodeMetadata
+from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.promotion.models import PromotionContext
+from memorii.core.provider.models import ProviderOperation
+from memorii.core.provider.service import ProviderMemoryService, _decision_evidence_ids
+from memorii.core.solver import SolverFrontierPlanner
+from memorii.core.work_state.models import WorkStateKind, WorkStateStatus
+from memorii.core.work_state.service import WorkStateService
+from memorii.domain.common import SolverNodeMetadata
 from memorii.domain.enums import CommitStatus, MemoryDomain, SolverCreatedBy, SolverNodeStatus, SolverNodeType
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
-from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService, _decision_evidence_ids
-from memorii.core.work_state.models import WorkStateKind, WorkStateStatus
-from memorii.core.work_state.service import WorkStateService
 from memorii.stores.overlays import InMemoryOverlayStore
 from memorii.stores.solver_graph import InMemorySolverGraphStore
-
 
 NOW = datetime.now(UTC)
 

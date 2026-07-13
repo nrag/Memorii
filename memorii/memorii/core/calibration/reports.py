@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 
 from memorii.core.calibration.metrics import (
@@ -51,11 +52,11 @@ def calibration_events_from_checkpoint_rows(
     events: list[CalibrationEvent] = []
     for index, row in enumerate(checkpoint_rows):
         events.extend(_hierarchy_events_from_candidate_cards(suite=suite, profile=profile, row=row, row_index=index))
-        output = row.get("output") if isinstance(row.get("output"), dict) else {}
-        expected = row.get("expected") if isinstance(row.get("expected"), dict) else {}
-        aggregate = row.get("judge_aggregate") if isinstance(row.get("judge_aggregate"), dict) else {}
-        judge_ids = [str(vote.get("judge_id")) for vote in aggregate.get("votes", []) if isinstance(vote, dict)]
-        base_failure_buckets = [str(bucket) for bucket in row.get("failure_buckets", []) or []]
+        output = _json_mapping(row.get("output"))
+        expected = _json_mapping(row.get("expected"))
+        aggregate = _json_mapping(row.get("judge_aggregate"))
+        judge_ids = [str(vote.get("judge_id")) for vote in _json_sequence(aggregate.get("votes")) if isinstance(vote, Mapping)]
+        base_failure_buckets = [str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))]
         row_confidence = _float(output.get("confidence"), default=0.5) if isinstance(output, dict) else 0.5
         row_event_count = 0
         channel_specs = [
@@ -73,10 +74,8 @@ def calibration_events_from_checkpoint_rows(
             (CalibrationDecisionChannel.CONTEXT, "context_relation_ids", CalibrationItemType.RELATION, "expected_relation_ids"),
         ]
         for channel, output_key, item_type, expected_key in channel_specs:
-            ids = output.get(output_key, []) if isinstance(output, dict) else []
-            if not isinstance(ids, list):
-                continue
-            expected_ids = {str(item) for item in expected.get(expected_key, [])} if isinstance(expected, dict) else set()
+            ids = _json_sequence(output.get(output_key))
+            expected_ids = {str(item) for item in _json_sequence(expected.get(expected_key))}
             excluded_ids = set(_excluded_ids_for_item_type(expected, item_type))
             for item_id in ids:
                 item = str(item_id)
@@ -176,7 +175,7 @@ def build_decision_cost_report(checkpoint_rows: list[dict[str, object]]) -> Deci
     for row in checkpoint_rows:
         checkpoint_type = str(row.get("checkpoint_type", "unknown"))
         action = _decision_action_for_checkpoint(checkpoint_type).value
-        buckets = [str(bucket) for bucket in row.get("failure_buckets", []) or []]
+        buckets = [str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))]
         if not buckets and row.get("success") is False:
             buckets = ["unclassified_failure"]
         for bucket in buckets:
@@ -429,17 +428,17 @@ def _abstained_event(*, suite: str, profile: str, row: dict[str, object], index:
         label=label,
         label_source=CalibrationLabelSource.PROGRAMMATIC_JUDGE,
         label_rationale="checkpoint emitted no structured ids; calibrated as abstention",
-        failure_buckets=[str(bucket) for bucket in row.get("failure_buckets", []) or []],
+        failure_buckets=[str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))],
         judge_ids=judge_ids,
         output_key="abstained",
     )
 
 
-def _excluded_ids_for_item_type(expected: dict[str, object], item_type: CalibrationItemType) -> list[str]:
+def _excluded_ids_for_item_type(expected: Mapping[str, object], item_type: CalibrationItemType) -> list[str]:
     if item_type == CalibrationItemType.ENTITY:
-        return [str(item) for item in expected.get("expected_excluded_entity_ids", []) or []]
+        return [str(item) for item in _json_sequence(expected.get("expected_excluded_entity_ids"))]
     if item_type == CalibrationItemType.CLAIM:
-        return [str(item) for item in expected.get("expected_excluded_claim_ids", []) or []]
+        return [str(item) for item in _json_sequence(expected.get("expected_excluded_claim_ids"))]
     return []
 
 
@@ -483,10 +482,10 @@ def _evidence_event_ids(row: dict[str, object], item_id: str) -> list[str]:
         return [item_id]
     for claim in _visible_claims(row):
         if claim.get("claim_id") == item_id and isinstance(claim.get("evidence_event_ids"), list):
-            return [str(item) for item in claim["evidence_event_ids"]]
+            return [str(item) for item in _json_sequence(claim.get("evidence_event_ids"))]
     for relation in _visible_relations(row):
         if relation.get("relation_id") == item_id and isinstance(relation.get("evidence_event_ids"), list):
-            return [str(item) for item in relation["evidence_event_ids"]]
+            return [str(item) for item in _json_sequence(relation.get("evidence_event_ids"))]
     return []
 
 
@@ -506,28 +505,23 @@ def _phase_from_evidence(phases: list[str]) -> str | None:
 
 
 def _visible_event_phase_map(row: dict[str, object]) -> dict[str, str]:
-    candidate_cards = row.get("candidate_cards")
-    if not isinstance(candidate_cards, dict) or not isinstance(candidate_cards.get("visible_events"), list):
-        return {}
+    candidate_cards = _json_mapping(row.get("candidate_cards"))
+    visible_events = _json_sequence(candidate_cards.get("visible_events"))
     phase_by_event: dict[str, str] = {}
-    for event in candidate_cards["visible_events"]:
-        if isinstance(event, dict):
+    for event in visible_events:
+        if isinstance(event, Mapping):
             phase_by_event[str(event.get("event_id", ""))] = str(event.get("phase", "unknown"))
     return {event_id: phase for event_id, phase in phase_by_event.items() if event_id}
 
 
 def _visible_claims(row: dict[str, object]) -> list[dict[str, object]]:
-    candidate_cards = row.get("candidate_cards")
-    if isinstance(candidate_cards, dict) and isinstance(candidate_cards.get("visible_claims"), list):
-        return [item for item in candidate_cards["visible_claims"] if isinstance(item, dict)]
-    return []
+    candidate_cards = _json_mapping(row.get("candidate_cards"))
+    return [dict(item) for item in _json_sequence(candidate_cards.get("visible_claims")) if isinstance(item, Mapping)]
 
 
 def _visible_relations(row: dict[str, object]) -> list[dict[str, object]]:
-    candidate_cards = row.get("candidate_cards")
-    if isinstance(candidate_cards, dict) and isinstance(candidate_cards.get("visible_relations"), list):
-        return [item for item in candidate_cards["visible_relations"] if isinstance(item, dict)]
-    return []
+    candidate_cards = _json_mapping(row.get("candidate_cards"))
+    return [dict(item) for item in _json_sequence(candidate_cards.get("visible_relations")) if isinstance(item, Mapping)]
 
 
 def _first_modality(row: dict[str, object]) -> str:
@@ -560,6 +554,8 @@ def _decision_action_for_checkpoint(checkpoint_type: str) -> DecisionAction:
 
 
 def _float(value: object, *, default: float) -> float:
+    if not isinstance(value, (int, float, str)):
+        return default
     try:
         return max(0.0, min(1.0, float(value)))
     except (TypeError, ValueError):
@@ -567,7 +563,17 @@ def _float(value: object, *, default: float) -> float:
 
 
 def _int(value: object) -> int | None:
+    if not isinstance(value, (int, float, str)):
+        return None
     try:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _json_mapping(value: object) -> Mapping[str, object]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _json_sequence(value: object) -> Sequence[object]:
+    return value if isinstance(value, Sequence) and not isinstance(value, str) else ()

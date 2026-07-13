@@ -73,7 +73,7 @@ class ProofStep(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def required_candidates_must_be_cited(self) -> "ProofStep":
+    def required_candidates_must_be_cited(self) -> ProofStep:
         missing = [candidate_id for candidate_id in self.required_candidate_ids if candidate_id not in self.candidate_ids]
         if missing:
             raise ValueError(f"required_candidate_ids must be a subset of candidate_ids: {missing}")
@@ -173,7 +173,7 @@ class GroundedAnswerDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def selected_candidate_must_match_answer(self) -> "GroundedAnswerDecision":
+    def selected_candidate_must_match_answer(self) -> GroundedAnswerDecision:
         if self.answer != "noanswer" and not self.answer_requirements and self.citation_candidate_ids:
             self.answer_requirements = [
                 AnswerRequirement(

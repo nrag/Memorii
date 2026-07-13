@@ -1,7 +1,7 @@
 from memorii.core.benchmark.baselines import BASELINE_SYSTEMS
+from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkSystem
-from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 
 
 def test_all_required_baselines_present() -> None:

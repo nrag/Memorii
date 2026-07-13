@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionMode, LLMDecisionPoint
 from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
 from memorii.core.llm_eval.models import EvalCaseResult
@@ -12,6 +10,7 @@ from memorii.core.llm_eval.report import summarize_eval_report
 from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
 from memorii.core.promotion.models import PromotionCandidateType
 from memorii.core.solver.abstention import SolverDecision
+from pydantic import ValidationError
 
 
 def _snapshot(

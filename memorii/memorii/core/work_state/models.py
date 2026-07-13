@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -26,7 +26,7 @@ class AgentEventEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class WorkStateKind(str, Enum):
+class WorkStateKind(StrEnum):
     NONE = "none"
     TASK_EXECUTION = "task_execution"
     INVESTIGATION = "investigation"
@@ -34,7 +34,7 @@ class WorkStateKind(str, Enum):
     RESEARCH = "research"
 
 
-class WorkStateStatus(str, Enum):
+class WorkStateStatus(StrEnum):
     CANDIDATE = "candidate"
     ACTIVE = "active"
     PAUSED = "paused"
@@ -42,7 +42,7 @@ class WorkStateStatus(str, Enum):
     ABANDONED = "abandoned"
 
 
-class WorkStateBindingStatus(str, Enum):
+class WorkStateBindingStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"
     RESOLVED = "resolved"
@@ -80,7 +80,7 @@ class WorkStateBinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class WorkStateEventType(str, Enum):
+class WorkStateEventType(StrEnum):
     PROGRESS = "progress"
     OUTCOME = "outcome"
 
@@ -96,14 +96,14 @@ class WorkStateEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class WorkStateDetectionAction(str, Enum):
+class WorkStateDetectionAction(StrEnum):
     NO_STATE_UPDATE = "no_state_update"
     CREATE_CANDIDATE_STATE = "create_candidate_state"
     UPDATE_EXISTING_STATE = "update_existing_state"
     COMMIT_STATE_UPDATE = "commit_state_update"
 
 
-class WorkStateReasonCode(str, Enum):
+class WorkStateReasonCode(StrEnum):
     GENERIC_CHAT = "generic_chat"
     EXPLICIT_TASK_LANGUAGE = "explicit_task_language"
     TOOL_FAILURE_OR_ERROR = "tool_failure_or_error"

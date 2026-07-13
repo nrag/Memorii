@@ -9,7 +9,8 @@ Future intent:
 from __future__ import annotations
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.promotion.legacy_models import LegacyPromotionContext as PromotionContext, LegacyPromotionDecision as PromotionDecision
+from memorii.core.promotion.legacy_models import LegacyPromotionContext as PromotionContext
+from memorii.core.promotion.legacy_models import LegacyPromotionDecision as PromotionDecision
 
 
 class HybridPromotionDecider:

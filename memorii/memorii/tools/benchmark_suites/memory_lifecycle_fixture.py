@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from memorii.core.belief.models import BeliefUpdateContext
 from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
@@ -19,11 +20,11 @@ from memorii.core.benchmark.metrics import compute_metrics
 from memorii.core.benchmark.models import (
     BenchmarkRunReport,
     BenchmarkScenarioFixture,
-    BenchmarkSystem,
     MemoryLifecycleFamily,
     ScenarioResult,
 )
-from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
+from memorii.core.env_config import load_memorii_environment
+from memorii.core.llm_config import DecisionModeName, LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_decision.adapters import (
     LLMBeliefUpdateAdapter,
     LLMLifecycleDecisionAdapter,
@@ -37,7 +38,6 @@ from memorii.core.promotion.models import PromotionCandidateType, PromotionConte
 from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.solver.abstention import SolverDecision
-from memorii.core.env_config import load_memorii_environment
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES
 from memorii.tools.benchmark_suites.fake_adapters import _ExpectedLifecycleFakeAdapter
@@ -51,6 +51,12 @@ from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntime
 from memorii.tools.run_live_llm_eval import _validate_live_safety
 
 SUITE_NAME = "memory_lifecycle_v1"
+
+
+def _decision_mode(mode: str) -> DecisionModeName:
+    if mode in {"auto", "rule", "llm", "hybrid"}:
+        return cast(DecisionModeName, mode)
+    raise ValueError(f"Unsupported memory lifecycle mode: {mode}")
 
 
 def transition_kind(fixture: BenchmarkScenarioFixture) -> str:
@@ -290,7 +296,7 @@ def run_lifecycle_transitions(
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     env_snapshot = load_memorii_environment()
     runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
-    decision_config = LLMDecisionRuntimeConfig(mode=mode) if mode != "auto" else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
+    decision_config = LLMDecisionRuntimeConfig(mode=_decision_mode(mode)) if mode != "auto" else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     effective_mode = decision_config.resolve(runtime_config)
     if effective_mode == "rule":
         return _run_rule_lifecycle_transitions(fixtures=fixtures, mode=mode), []
@@ -331,7 +337,7 @@ def run_lifecycle_transitions(
     for fixture in normalize_fixtures(fixtures):
         kind = transition_kind(fixture)
         request_id = f"lifecycle:{mode}:{fixture.scenario_id}:{kind}"
-        metadata = {
+        metadata: dict[str, object] = {
             "suite": SUITE_NAME,
             "scenario_id": fixture.scenario_id,
             "decision_mode": mode,

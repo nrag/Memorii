@@ -172,11 +172,10 @@ def execution_graph_assertion_passed(
     if expected.require_resumed_node and parsed.resumed_node_id != expected.resumed_node_id:
         return False
     action = f"{parsed.next_action} {' '.join(parsed.selected_node_ids)}".lower()
-    if expected.require_next_action_tokens and not all(
-        token.lower() in action for token in expected.next_action_tokens
-    ):
-        return False
-    return True
+    return not (
+        expected.require_next_action_tokens
+        and not all(token.lower() in action for token in expected.next_action_tokens)
+    )
 
 
 def execution_graph_trace_for_rule(

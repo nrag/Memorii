@@ -1,7 +1,6 @@
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.solver import SolverDecisionOutput
+from pydantic import ValidationError
 
 
 def test_confidence_band_is_enum() -> None:

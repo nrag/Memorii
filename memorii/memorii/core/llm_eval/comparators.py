@@ -168,11 +168,7 @@ def compare_belief_update(
             errors.append("ambiguous_direction_without_prior")
         else:
             checks += 1
-            if direction == "increase" and actual.belief > context.prior_belief:
-                passed_checks += 1
-            elif direction == "decrease" and actual.belief < context.prior_belief:
-                passed_checks += 1
-            elif direction == "unchanged" and actual.belief == context.prior_belief:
+            if direction == "increase" and actual.belief > context.prior_belief or direction == "decrease" and actual.belief < context.prior_belief or direction == "unchanged" and actual.belief == context.prior_belief:
                 passed_checks += 1
             else:
                 errors.append("direction_mismatch")

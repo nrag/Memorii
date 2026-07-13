@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from memorii.core.calibration.models import CalibrationResponseLevel
 
-
 DEFAULT_DECISION_COSTS: dict[str, int] = {
     "hidden_fact_hallucinated": 100,
     "hidden_fact_answer_leak": 100,
