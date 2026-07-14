@@ -26,6 +26,7 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     RelationEndpoint,
     RelationProvenance,
     RelationTemporal,
+    SimCheckpointContract,
     SimLifecycleState,
     SurfaceObservation,
     WorldTransition,
@@ -71,6 +72,64 @@ def generate_memory_evolution_sim_scenarios(
         )
     return scenarios
 
+
+def _truth_contract(
+    *,
+    historical: bool = False,
+    answer_projection_policy: Literal["claim_object", "claim_subject", "none"] = "claim_object",
+) -> SimCheckpointContract:
+    return SimCheckpointContract(
+        answer_projection_policy=answer_projection_policy,
+        allow_stale_selected_claims=historical,
+        supporting_citations_must_be_direct_current_evidence=not historical,
+    )
+
+
+def _graph_contract(
+    *,
+    selected_entity_role_policy: Literal["active_graph_subjects", "audit_graph_entities"] = "active_graph_subjects",
+    definition_claims_required_in_selected: bool = False,
+    requires_belief_ranking_ids: bool = False,
+) -> SimCheckpointContract:
+    return SimCheckpointContract(
+        allowed_operations=["graph_reconstruction"],
+        answer_required=False,
+        answer_projection_policy="graph_channels_only",
+        selected_entity_role_policy=selected_entity_role_policy,
+        definition_claims_required_in_selected=definition_claims_required_in_selected,
+        requires_belief_ranking_ids=requires_belief_ranking_ids,
+    )
+
+
+def _source_trust_contract() -> SimCheckpointContract:
+    return SimCheckpointContract(
+        conflict_relation_ids_belong_in=["context_relation_ids", "supporting_relation_ids"],
+    )
+
+
+def _modality_suppression_contract() -> SimCheckpointContract:
+    return SimCheckpointContract(answer_required=False, answer_projection_policy="none")
+
+
+def _entity_split_contract(
+    *,
+    answer_projection_policy: Literal["claim_object", "claim_subject"] = "claim_object",
+) -> SimCheckpointContract:
+    return SimCheckpointContract(
+        answer_projection_policy=answer_projection_policy,
+        wrong_entity_claims_belong_in=["rejected", "context"],
+    )
+
+
+def _execution_contract() -> SimCheckpointContract:
+    return SimCheckpointContract(
+        allowed_operations=["next_action"],
+        answer_required=False,
+        answer_projection_policy="next_action",
+        requires_next_action=True,
+    )
+
+
 def _build_family_scenario(
     *,
     family: str,
@@ -113,6 +172,10 @@ def _build_family_scenario(
     claim_branch_a_blocked = f"claim_{suffix}_branch_a_blocked"
     claim_branch_b_started = f"claim_{suffix}_branch_b_started"
     claim_branch_b_progress = f"claim_{suffix}_branch_b_progress"
+    branch_a_started_time = base + timedelta(days=72 if profile == "long_horizon" else 66, hours=0 if profile == "long_horizon" else 3)
+    branch_a_blocked_time = base + timedelta(days=73 if profile == "long_horizon" else 66, hours=0 if profile == "long_horizon" else 8)
+    branch_b_started_time = base + timedelta(days=74 if profile == "long_horizon" else 67, hours=0 if profile == "long_horizon" else 1)
+    branch_b_progress_time = base + timedelta(days=75 if profile == "long_horizon" else 67, hours=0 if profile == "long_horizon" else 6)
     relation_contradicts = f"rel_{suffix}_owner_conflict"
     relation_alias = f"rel_{suffix}_alias"
 
@@ -233,60 +296,61 @@ def _build_family_scenario(
 
     ambiguity_observation = next((obs for obs in observations if obs.event_id == f"event_{suffix}_006"), None)
 
+    if family == "abandoned_then_resumed_work":
+        observations.extend(
+            [
+                SurfaceObservation(
+                    event_id=f"event_{suffix}_branch_a_started",
+                    transition_id=f"transition_{suffix}_branch_a_started",
+                    timestamp=branch_a_started_time,
+                    source_type="user",
+                    modality="assertion",
+                    phase="setup",
+                    trust_level=3,
+                    text="Atlas cleanup Branch A started: re-open old owner notes.",
+                    exposed_entity_ids=[branch_a, project],
+                    exposed_claim_ids=[claim_branch_a_started],
+                ),
+                SurfaceObservation(
+                    event_id=f"event_{suffix}_branch_a_blocked",
+                    transition_id=f"transition_{suffix}_branch_a_blocked",
+                    timestamp=branch_a_blocked_time,
+                    source_type="user",
+                    modality="assertion",
+                    phase="interference",
+                    trust_level=3,
+                    text="Atlas cleanup Branch A blocked on stale onboarding notes.",
+                    exposed_entity_ids=[branch_a, project],
+                    exposed_claim_ids=[claim_branch_a_blocked],
+                ),
+                SurfaceObservation(
+                    event_id=f"event_{suffix}_branch_b_started",
+                    transition_id=f"transition_{suffix}_branch_b_started",
+                    timestamp=branch_b_started_time,
+                    source_type="user",
+                    modality="assertion",
+                    phase="evolution",
+                    trust_level=3,
+                    text="Atlas cleanup Branch B started: verify the org-directory owner path.",
+                    exposed_entity_ids=[branch_b, project],
+                    exposed_claim_ids=[claim_branch_b_started],
+                ),
+                SurfaceObservation(
+                    event_id=f"event_{suffix}_branch_b_progress",
+                    transition_id=f"transition_{suffix}_branch_b_progress",
+                    timestamp=branch_b_progress_time,
+                    source_type="user",
+                    modality="assertion",
+                    phase="evolution",
+                    trust_level=3,
+                    text="Atlas cleanup Branch B in_progress: continue the org-directory owner cleanup.",
+                    exposed_entity_ids=[branch_b, project],
+                    exposed_claim_ids=[claim_branch_b_progress],
+                ),
+            ]
+        )
+
     if profile == "long_horizon":
-        if family == "abandoned_then_resumed_work":
-            observations.extend(
-                [
-                    SurfaceObservation(
-                        event_id=f"event_{suffix}_branch_a_started",
-                        transition_id=f"transition_{suffix}_branch_a_started",
-                        timestamp=base + timedelta(days=72),
-                        source_type="user",
-                        modality="assertion",
-                        phase="setup",
-                        trust_level=3,
-                        text="Atlas cleanup Branch A started: re-open old owner notes.",
-                        exposed_entity_ids=[branch_a, project],
-                        exposed_claim_ids=[claim_branch_a_started],
-                    ),
-                    SurfaceObservation(
-                        event_id=f"event_{suffix}_branch_a_blocked",
-                        transition_id=f"transition_{suffix}_branch_a_blocked",
-                        timestamp=base + timedelta(days=73),
-                        source_type="user",
-                        modality="assertion",
-                        phase="interference",
-                        trust_level=3,
-                        text="Atlas cleanup Branch A blocked on stale onboarding notes.",
-                        exposed_entity_ids=[branch_a, project],
-                        exposed_claim_ids=[claim_branch_a_blocked],
-                    ),
-                    SurfaceObservation(
-                        event_id=f"event_{suffix}_branch_b_started",
-                        transition_id=f"transition_{suffix}_branch_b_started",
-                        timestamp=base + timedelta(days=74),
-                        source_type="user",
-                        modality="assertion",
-                        phase="evolution",
-                        trust_level=3,
-                        text="Atlas cleanup Branch B started: verify the org-directory owner path.",
-                        exposed_entity_ids=[branch_b, project],
-                        exposed_claim_ids=[claim_branch_b_started],
-                    ),
-                    SurfaceObservation(
-                        event_id=f"event_{suffix}_branch_b_progress",
-                        transition_id=f"transition_{suffix}_branch_b_progress",
-                        timestamp=base + timedelta(days=75),
-                        source_type="user",
-                        modality="assertion",
-                        phase="evolution",
-                        trust_level=3,
-                        text="Atlas cleanup Branch B in_progress: continue the org-directory owner cleanup.",
-                        exposed_entity_ids=[branch_b, project],
-                        exposed_claim_ids=[claim_branch_b_progress],
-                    ),
-                ]
-            )
         observations.append(
             SurfaceObservation(
                 event_id=f"event_{suffix}_late_stale_resurface",
@@ -344,11 +408,11 @@ def _build_family_scenario(
         _person(bob, current_owner_name, base + timedelta(days=66), event_5),
         _person(carol, service_owner_name, base + timedelta(days=4), event_3),
     ]
-    if profile == "long_horizon" and family == "abandoned_then_resumed_work":
+    if family == "abandoned_then_resumed_work":
         entities.extend(
             [
-                _task_entity(branch_a, "Atlas Cleanup Branch A", base + timedelta(days=72), f"event_{suffix}_branch_a_started", claim_branch_a_started),
-                _task_entity(branch_b, "Atlas Cleanup Branch B", base + timedelta(days=74), f"event_{suffix}_branch_b_started", claim_branch_b_started),
+                _task_entity(branch_a, "Atlas Cleanup Branch A", branch_a_started_time, f"event_{suffix}_branch_a_started", claim_branch_a_started),
+                _task_entity(branch_b, "Atlas Cleanup Branch B", branch_b_started_time, f"event_{suffix}_branch_b_started", claim_branch_b_started),
             ]
         )
     claims = [
@@ -450,12 +514,12 @@ def _build_family_scenario(
             confidence=_confidence(0.35),
         ),
     ]
-    if profile == "long_horizon" and family == "abandoned_then_resumed_work":
+    if family == "abandoned_then_resumed_work":
         action_claim_specs = [
-            (claim_branch_a_started, branch_a, "Atlas Cleanup Branch A", "started", f"event_{suffix}_branch_a_started", f"transition_{suffix}_branch_a_started", base + timedelta(days=72), "Atlas cleanup Branch A started: re-open old owner notes.", SimLifecycleState.SUPERSEDED),
-            (claim_branch_a_blocked, branch_a, "Atlas Cleanup Branch A", "blocked", f"event_{suffix}_branch_a_blocked", f"transition_{suffix}_branch_a_blocked", base + timedelta(days=73), "Atlas cleanup Branch A blocked on stale onboarding notes.", SimLifecycleState.ACTIVE),
-            (claim_branch_b_started, branch_b, "Atlas Cleanup Branch B", "started", f"event_{suffix}_branch_b_started", f"transition_{suffix}_branch_b_started", base + timedelta(days=74), "Atlas cleanup Branch B started: verify the org-directory owner path.", SimLifecycleState.SUPERSEDED),
-            (claim_branch_b_progress, branch_b, "Atlas Cleanup Branch B", "in_progress", f"event_{suffix}_branch_b_progress", f"transition_{suffix}_branch_b_progress", base + timedelta(days=75), "Atlas cleanup Branch B in_progress: continue the org-directory owner cleanup.", SimLifecycleState.ACTIVE),
+            (claim_branch_a_started, branch_a, "Atlas Cleanup Branch A", "started", f"event_{suffix}_branch_a_started", f"transition_{suffix}_branch_a_started", branch_a_started_time, "Atlas cleanup Branch A started: re-open old owner notes.", SimLifecycleState.SUPERSEDED),
+            (claim_branch_a_blocked, branch_a, "Atlas Cleanup Branch A", "blocked", f"event_{suffix}_branch_a_blocked", f"transition_{suffix}_branch_a_blocked", branch_a_blocked_time, "Atlas cleanup Branch A blocked on stale onboarding notes.", SimLifecycleState.ACTIVE),
+            (claim_branch_b_started, branch_b, "Atlas Cleanup Branch B", "started", f"event_{suffix}_branch_b_started", f"transition_{suffix}_branch_b_started", branch_b_started_time, "Atlas cleanup Branch B started: verify the org-directory owner path.", SimLifecycleState.SUPERSEDED),
+            (claim_branch_b_progress, branch_b, "Atlas Cleanup Branch B", "in_progress", f"event_{suffix}_branch_b_progress", f"transition_{suffix}_branch_b_progress", branch_b_progress_time, "Atlas cleanup Branch B in_progress: continue the org-directory owner cleanup.", SimLifecycleState.ACTIVE),
         ]
         for claim_id, subject_id, subject_name, object_value, event_id, transition_id, timestamp, quote, state in action_claim_specs:
             claims.append(
@@ -586,7 +650,7 @@ def _build_family_scenario(
         claim_bob_owner=claim_bob_owner,
             claim_carol_service=claim_carol_service,
             claim_ambiguous=claim_ambiguous,
-            expected_action_claim_id=claim_branch_b_progress if profile == "long_horizon" and family == "abandoned_then_resumed_work" else None,
+            expected_action_claim_id=claim_branch_b_progress if family == "abandoned_then_resumed_work" else None,
             relation_contradicts=relation_contradicts,
         event_1=event_1,
         event_2=event_2,
@@ -603,6 +667,7 @@ def _build_family_scenario(
                 timestamp=checkpoint_time,
                 checkpoint_type="historical_truth",
                 query_or_task="Who owned Atlas in January before the org-directory update?",
+                checkpoint_contract=_truth_contract(historical=True),
                 expected_entity_ids=[project],
                 expected_claim_ids=[claim_alice_owner],
                 expected_citation_event_ids=[event_2],
@@ -619,6 +684,7 @@ def _build_family_scenario(
                 timestamp=checkpoint_time,
                 checkpoint_type="entity_split_repair",
                 query_or_task=f"What does {service_owner_name} own?",
+                checkpoint_contract=_entity_split_contract(answer_projection_policy="claim_subject"),
                 expected_entity_ids=[service],
                 expected_claim_ids=[claim_carol_service],
                 expected_citation_event_ids=[event_3],
@@ -680,6 +746,7 @@ def _checkpoint_for_family(
             timestamp=timestamp,
             checkpoint_type="entity_reconstruction",
             query_or_task="Reconstruct the Atlas project and service ownership graph.",
+            checkpoint_contract=_graph_contract(definition_claims_required_in_selected=True),
             expected_entity_ids=[project, service],
             expected_claim_ids=[claim_type_project, claim_type_service, claim_bob_owner, claim_carol_service],
             expected_relation_ids=[relation_contradicts],
@@ -695,6 +762,7 @@ def _checkpoint_for_family(
             timestamp=timestamp,
             checkpoint_type="entity_disambiguation",
             query_or_task="Who owns the Atlas billing migration now?",
+            checkpoint_contract=_truth_contract(),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_citation_event_ids=[event_5],
@@ -710,6 +778,7 @@ def _checkpoint_for_family(
             timestamp=timestamp,
             checkpoint_type="source_trust_conflict",
             query_or_task="Which Atlas owner should be trusted today?",
+            checkpoint_contract=_source_trust_contract(),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_relation_ids=[relation_contradicts],
@@ -725,6 +794,7 @@ def _checkpoint_for_family(
             timestamp=timestamp,
             checkpoint_type="modality_suppression",
             query_or_task="Should the pasted onboarding note make Alice the current Atlas owner?",
+            checkpoint_contract=_modality_suppression_contract(),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_citation_event_ids=[event_5],
@@ -739,6 +809,7 @@ def _checkpoint_for_family(
             timestamp=timestamp,
             checkpoint_type="scoped_truth",
             query_or_task="Outside the incident, what ownership summary should be used for Atlas?",
+            checkpoint_contract=_truth_contract(),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_citation_event_ids=[event_5],
@@ -752,6 +823,7 @@ def _checkpoint_for_family(
             timestamp=timestamp,
             checkpoint_type="claim_rekey",
             query_or_task="Resolve Atlas migration ownership after alias confirmation.",
+            checkpoint_contract=_graph_contract(definition_claims_required_in_selected=True),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_type_project, claim_bob_owner],
             expected_citation_event_ids=[event_1, event_5],
@@ -765,6 +837,7 @@ def _checkpoint_for_family(
             timestamp=timestamp,
             checkpoint_type="entity_split_repair",
             query_or_task="Who owns the Atlas billing migration, not the service?",
+            checkpoint_contract=_entity_split_contract(),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_relation_ids=[relation_contradicts],
@@ -781,6 +854,7 @@ def _checkpoint_for_family(
             timestamp=timestamp,
             checkpoint_type="belief_ranking",
             query_or_task="Which Atlas ownership hypothesis should rank highest?",
+            checkpoint_contract=_graph_contract(requires_belief_ranking_ids=True),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_relation_ids=[relation_contradicts],
@@ -790,26 +864,33 @@ def _checkpoint_for_family(
             severity="high",
         )
     if family == "abandoned_then_resumed_work":
-        expected_claim_ids = [claim_bob_owner]
-        expected_entity_ids = [project]
-        expected_citation_event_ids = [event_5]
         expected_action_ids: list[str] = []
+        expected_execution_claim_ids: list[str] = []
+        expected_execution_entity_ids: list[str] = []
+        expected_execution_citation_event_ids: list[str] = []
+        expected_excluded_entity_ids: list[str] = []
         expected_excluded_claim_ids: list[str] = []
         if expected_action_claim_id is not None:
-            expected_claim_ids.append(expected_action_claim_id)
-            expected_entity_ids.append(f"ent_{suffix}_branch_b")
-            expected_citation_event_ids.append(f"event_{suffix}_branch_b_progress")
+            expected_execution_claim_ids.append(expected_action_claim_id)
+            expected_execution_entity_ids.append(f"ent_{suffix}_branch_b")
+            expected_execution_citation_event_ids.append(f"event_{suffix}_branch_b_progress")
             expected_action_ids.append(f"action:{expected_action_claim_id}")
+            expected_excluded_entity_ids.append(f"ent_{suffix}_branch_a")
             expected_excluded_claim_ids.append(f"claim_{suffix}_branch_a_blocked")
         return OracleCheckpoint(
             checkpoint_id=f"cp_{suffix}_branch",
             timestamp=timestamp,
             checkpoint_type="execution_continuation",
             query_or_task="Continue the previous Atlas ownership cleanup.",
-            expected_entity_ids=expected_entity_ids,
-            expected_claim_ids=expected_claim_ids,
+            checkpoint_contract=_execution_contract(),
+            expected_entity_ids=[],
+            expected_claim_ids=[],
             expected_action_ids=expected_action_ids,
-            expected_citation_event_ids=expected_citation_event_ids,
+            expected_citation_event_ids=[],
+            expected_excluded_entity_ids=expected_excluded_entity_ids,
+            expected_execution_entity_ids=expected_execution_entity_ids,
+            expected_execution_claim_ids=expected_execution_claim_ids,
+            expected_execution_citation_event_ids=expected_execution_citation_event_ids,
             expected_excluded_claim_ids=expected_excluded_claim_ids,
             expected_next_action=f"continue {current_owner_name} owner cleanup",
             difficulty_tags=["execution_continuation"],
@@ -820,6 +901,7 @@ def _checkpoint_for_family(
         timestamp=timestamp,
         checkpoint_type="current_truth",
         query_or_task="Who owns the Atlas billing migration now?",
+        checkpoint_contract=_truth_contract(),
         expected_entity_ids=[project],
         expected_claim_ids=[claim_bob_owner],
         expected_citation_event_ids=[event_5],
@@ -884,9 +966,14 @@ def _checkpoint_with_horizon_metadata(
     observations: list[SurfaceObservation],
 ) -> OracleCheckpoint:
     event_by_id = {observation.event_id: observation for observation in observations}
+    expected_event_ids = (
+        checkpoint.expected_execution_citation_event_ids
+        if checkpoint.checkpoint_type == "execution_continuation"
+        else checkpoint.expected_citation_event_ids
+    )
     support_observations = [
         event_by_id[event_id]
-        for event_id in checkpoint.expected_citation_event_ids
+        for event_id in expected_event_ids
         if event_id in event_by_id
     ]
     if support_observations:

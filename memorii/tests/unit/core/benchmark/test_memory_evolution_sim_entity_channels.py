@@ -37,7 +37,79 @@ def test_memory_evolution_sim_entity_split_fails_when_service_owner_supports_pro
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "supporting_excluded_id" in aggregate.critical_failure_buckets
+    assert "supporting_role_violation" in aggregate.critical_failure_buckets
+    assert "wrong_entity_support_used" in aggregate.critical_failure_buckets
+    assert "disambiguation_evidence_used_as_support" in aggregate.critical_failure_buckets
     assert diagnostics["supporting_excluded_ids"]["claim_ids"] == [service_owner_claim]
+    assert diagnostics["supporting_role_violations"] == {
+        "rejection_support": [service_owner_claim],
+        "wrong_subject_support": [service_owner_claim],
+    }
+    assert diagnostics["supporting_wrong_subject_claim_ids"] == [service_owner_claim]
+    assert "disambiguation_evidence_used_as_support" in diagnostics["precision_failure_classification"]
+
+
+def test_memory_evolution_sim_entity_split_fails_when_sibling_definition_supports_project_owner() -> None:
+    scenario = generate_scenario_by_family(
+        profile="smoke",
+        family="entity_split",
+        seed=7,
+    )
+    checkpoint = checkpoint_by_type(scenario, "entity_split_repair")
+    service_owner_claim = next(
+        claim for claim in scenario.claims if claim.claim_id == checkpoint.expected_excluded_claim_ids[0]
+    )
+    service_type_claim = next(
+        claim
+        for claim in scenario.claims
+        if claim.subject.entity_id == service_owner_claim.subject.entity_id
+        and claim.predicate.predicate_id == "entity_type"
+    )
+    output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
+        update={
+            "supporting_claim_ids": [*checkpoint.expected_claim_ids, service_type_claim.claim_id],
+        }
+    )
+
+    aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
+    diagnostics = sim_checkpoint_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        output=output,
+        aggregate=aggregate,
+    )
+
+    assert aggregate.verdict == JudgeVerdict.FAIL
+    assert "supporting_role_violation" in aggregate.critical_failure_buckets
+    assert diagnostics["supporting_wrong_subject_claim_ids"] == [service_type_claim.claim_id]
+    assert diagnostics["supporting_wrong_subject_entity_ids"] == [service_type_claim.subject.entity_id]
+    assert diagnostics["supporting_disambiguation_claim_ids"] == [service_type_claim.claim_id]
+
+
+def test_memory_evolution_sim_entity_split_context_marks_sibling_claims_as_context_candidates() -> None:
+    scenario = generate_scenario_by_family(
+        profile="smoke",
+        family="entity_split",
+        seed=7,
+    )
+    checkpoint = checkpoint_by_type(scenario, "entity_split_repair")
+    context = sim_reconstruction_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
+    service_owner_card = next(
+        claim for claim in context.visible_claims if claim.claim_id == checkpoint.expected_excluded_claim_ids[0]
+    )
+    service_type_card = next(
+        claim
+        for claim in context.visible_claims
+        if claim.subject_entity_id == service_owner_card.subject_entity_id
+        and claim.is_definition_claim
+    )
+
+    assert context.metadata["channel_policy"]["query_focus_policy"]["sibling_entity_rule"]
+    assert not any(key.startswith("expected_") for key in context.metadata["channel_policy"])
+    assert service_owner_card.subject_entity_type == "service"
+    assert service_owner_card.object_entity_type == "person"
+    assert service_owner_card.support_channel_hint == "direct_answer_candidate"
+    assert service_type_card.support_channel_hint == "definition_candidate"
 
 
 def test_memory_evolution_sim_entity_split_requires_wrong_entity_subject_rejection() -> None:
@@ -265,5 +337,3 @@ def test_memory_evolution_sim_graph_reconstruction_allows_invalidated_claim_as_r
 
     assert aggregate.verdict == JudgeVerdict.PASS
     assert diagnostics["rejected_expected_ids"]["claim_ids"] == checkpoint.expected_excluded_claim_ids
-
-

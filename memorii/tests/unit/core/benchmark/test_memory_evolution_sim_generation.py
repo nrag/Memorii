@@ -70,7 +70,7 @@ def test_memory_evolution_sim_noise_and_event_bounds_affect_observations() -> No
         scenario_count=10,
         seed=7,
         noise_rate=0.0,
-        max_events=8,
+        max_events=10,
     )
     high_noise = generate_scenario_by_family(
         profile="adversarial",
@@ -78,7 +78,7 @@ def test_memory_evolution_sim_noise_and_event_bounds_affect_observations() -> No
         scenario_count=10,
         seed=7,
         noise_rate=0.35,
-        max_events=8,
+        max_events=10,
     )
     min_events = generate_scenario_by_family(
         profile="adversarial",
@@ -87,9 +87,9 @@ def test_memory_evolution_sim_noise_and_event_bounds_affect_observations() -> No
         seed=7,
         noise_rate=0.0,
         min_events=7,
-        max_events=8,
+        max_events=10,
     )
 
     assert len(high_noise.observations) > len(low_noise.observations)
     assert len(min_events.observations) >= 7
-    assert len(high_noise.observations) <= 8
+    assert len(high_noise.observations) <= 10

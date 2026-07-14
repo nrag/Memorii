@@ -83,6 +83,12 @@ def _json_sequence(value: object) -> Sequence[object]:
     return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
 
 
+def _mapping_has_values(value: object) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    return any(bool(item) for item in value.values())
+
+
 def _load_memory_evolution_sim_suite(args: argparse.Namespace) -> tuple[list[LatentGraphScenario], str]:
     if args.sim_fixture_path:
         payload = json.loads(Path(args.sim_fixture_path).read_text(encoding="utf-8"))
@@ -543,6 +549,9 @@ def _write_memory_evolution_sim_artifacts(
         "provider_failures": len(llm_rows) - llm_successes,
         "fallbacks": fallbacks,
         "final_output_source_counts": dict(sorted(final_output_source_counts.items())),
+        "hidden_item_count": base_metrics["hidden_item_count"],
+        "hidden_hallucination_rate": base_metrics["hidden_hallucination_rate"],
+        "hidden_answer_leak_rate": base_metrics["hidden_answer_leak_rate"],
         "metrics": base_metrics,
         "long_horizon_slice_counts": _long_horizon_slice_counts(checkpoint_rows_json),
         "calibration": calibration_report.model_dump(mode="json"),
@@ -725,15 +734,34 @@ def _sim_warning_examples(checkpoint_rows: list[dict[str, object]]) -> list[dict
     return deduped
 
 def _sim_row_needs_review(row: dict[str, object]) -> bool:
-    if row.get("success") is False or row.get("review_required") is True:
+    if row.get("success") is False:
         return True
-    if row.get("role_misclassification") is True:
-        return True
-    if row.get("selected_excluded_ids") or row.get("supporting_excluded_ids"):
+    if _mapping_has_values(row.get("selected_excluded_ids")) or _mapping_has_values(row.get("supporting_excluded_ids")):
         return True
     if row.get("supporting_noisy_citation_event_ids"):
         return True
-    if row.get("precision_failure_classification"):
+    if _mapping_has_values(row.get("supporting_role_violations")):
+        return True
+    if _mapping_has_values(row.get("supporting_rejection_provenance_overlap")):
+        return True
+    precision_failures = {str(item) for item in _json_sequence(row.get("precision_failure_classification"))}
+    actionable_precision_failures = {
+        "selected_excluded_id",
+        "supporting_excluded_id",
+        "selected_noncurrent_claim",
+        "supporting_noisy_or_stale_provenance",
+        "supporting_role_violation",
+        "wrong_entity_support_used",
+        "disambiguation_evidence_used_as_support",
+        "missing_wrong_entity_rejection",
+        "selected_claim_support_missing",
+        "selected_claim_provenance_missing",
+        "active_action_provenance_missing",
+        "selected_rejected_channel_overlap",
+        "supporting_rejected_channel_overlap",
+        "supporting_rejection_provenance_overlap",
+    }
+    if precision_failures & actionable_precision_failures:
         return True
     buckets = {str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))}
     return bool(buckets & {"hidden_fact_hallucinated", "overconfident_wrong_answer", "ambiguous_fact_overcommitted"})

@@ -377,9 +377,9 @@ def test_memory_evolution_decision_real_context_render_excludes_oracle_fields() 
         "expected_retrieval_ids",
         "expected_citation_ids",
         "expected_excluded_memory_ids",
-        "expected_active_memory_ids",
-        "expected_inactive_memory_ids",
-        "expected_archived_memory_ids",
+        "expected_checkpoint_active_record_ids",
+        "expected_checkpoint_superseded_record_ids",
+        "expected_checkpoint_retained_record_ids",
         "expected_belief_ranking",
         "expected_belief_scores",
     ]

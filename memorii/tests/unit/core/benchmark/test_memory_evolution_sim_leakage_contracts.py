@@ -17,6 +17,13 @@ from tests.unit.core.benchmark.memory_evolution_test_helpers import (
 PROMPT_ROOT = Path(__file__).resolve().parents[4] / "prompts"
 
 
+def test_memory_evolution_sim_reconstruction_prompt_examples_are_role_abstract() -> None:
+    prompt_text = (PROMPT_ROOT / "memory_evolution_sim_reconstruction" / "v1.yaml").read_text()
+
+    for fixture_term in ("Atlas", "Iris", "Rina", "billing migration"):
+        assert fixture_term not in prompt_text
+
+
 def test_memory_evolution_sim_surface_text_does_not_leak_hidden_ids() -> None:
     scenarios = generate_memory_evolution_sim_scenarios(
         profile="adversarial", scenario_count=10, seed=7, noise_rate=0.35
@@ -96,6 +103,26 @@ def test_memory_evolution_sim_context_exposes_candidate_cards_without_oracle_fie
         item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN
     }
     assert not any(hidden_id in serialized for hidden_id in hidden_ids)
+
+
+def test_memory_evolution_sim_execution_candidate_cards_expose_visible_action_eligibility() -> None:
+    scenario = generate_scenario_by_family(
+        profile="long_horizon",
+        family="abandoned_then_resumed_work",
+        scenario_count=10,
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "execution_continuation")
+
+    context = sim_reconstruction_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
+    claims = {claim.claim_id: claim for claim in context.visible_claims}
+
+    assert claims["claim_09_branch_b_progress"].action_state_status == "in_progress"
+    assert claims["claim_09_branch_b_progress"].continuation_eligibility == "active_candidate"
+    assert claims["claim_09_branch_a_blocked"].action_state_status == "blocked"
+    assert claims["claim_09_branch_a_blocked"].continuation_eligibility == "suppressed_candidate"
+    assert claims["claim_09_current_owner"].continuation_eligibility == "not_applicable"
 
 
 def test_memory_evolution_sim_rendered_reconstruction_prompt_rejects_adversarial_oracle_leakage() -> None:

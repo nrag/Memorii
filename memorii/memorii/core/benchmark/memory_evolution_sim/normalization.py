@@ -7,9 +7,8 @@ from typing import Literal
 
 from pydantic import ValidationError
 
-from memorii.core.benchmark.memory_evolution_sim.candidate_cards import _checkpoint_contract_for_type
 from memorii.core.benchmark.memory_evolution_sim.diagnostics import sim_output_allowed_id_errors
-from memorii.core.benchmark.memory_evolution_sim.judges import _required_selected_entity_ids_for_policy
+from memorii.core.benchmark.memory_evolution_sim.judge_features import required_selected_entity_ids_for_policy
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
@@ -39,8 +38,7 @@ def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSyste
     elif checkpoint.expected_next_action is not None:
         operation = "next_action"
     else:
-        allowed_operations = _checkpoint_contract_for_type(checkpoint.checkpoint_type).get("allowed_operations", [])
-        graph_allowed = isinstance(allowed_operations, list) and "graph_reconstruction" in allowed_operations
+        graph_allowed = "graph_reconstruction" in checkpoint.checkpoint_contract.allowed_operations
         operation = "graph_reconstruction" if graph_allowed else "answer"
     rejected_claim_ids = list(checkpoint.expected_excluded_claim_ids)
     rejected_entity_ids = list(checkpoint.expected_excluded_entity_ids)
@@ -52,16 +50,28 @@ def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSyste
         context_claim_ids = list(rejected_claim_ids)
         context_entity_ids = list(rejected_entity_ids)
         context_relation_ids = list(checkpoint.expected_relation_ids)
-    selected_claim_ids = list(checkpoint.expected_claim_ids)
-    selected_entity_ids = list(checkpoint.expected_entity_ids)
+    selected_claim_ids = list(
+        checkpoint.expected_execution_claim_ids
+        if checkpoint.checkpoint_type == "execution_continuation"
+        else checkpoint.expected_claim_ids
+    )
+    selected_entity_ids = list(
+        checkpoint.expected_execution_entity_ids
+        if checkpoint.checkpoint_type == "execution_continuation"
+        else checkpoint.expected_entity_ids
+    )
     selected_relation_ids = list(checkpoint.expected_relation_ids)
-    supporting_claim_ids = list(checkpoint.expected_claim_ids)
+    supporting_claim_ids = list(selected_claim_ids)
     supporting_relation_ids = list(checkpoint.expected_relation_ids)
     if checkpoint.checkpoint_type == "source_trust_conflict":
         selected_relation_ids = []
         supporting_relation_ids = []
         context_relation_ids = _ordered_unique([*context_relation_ids, *checkpoint.expected_relation_ids])
-    supporting_citation_event_ids = list(checkpoint.expected_citation_event_ids)
+    supporting_citation_event_ids = list(
+        checkpoint.expected_execution_citation_event_ids
+        if checkpoint.checkpoint_type == "execution_continuation"
+        else checkpoint.expected_citation_event_ids
+    )
     return SimSystemOutput(
         operation=operation,
         entity_ids=_ordered_unique([*selected_entity_ids, *context_entity_ids, *rejected_entity_ids]),
@@ -191,7 +201,7 @@ def normalize_sim_system_output_for_checkpoint(
                 add_once(rejected_claim_ids, claim_id, auto_rejected_claims, "visible_excluded_claim_rejected")
 
     selected_required_output = output.model_copy(update={"selected_claim_ids": _ordered_unique(selected_claim_ids)})
-    selected_required = _required_selected_entity_ids_for_policy(
+    selected_required = required_selected_entity_ids_for_policy(
         scenario=scenario,
         checkpoint=checkpoint,
         output=selected_required_output,

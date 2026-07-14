@@ -387,9 +387,42 @@ def test_memory_evolution_sim_public_checkpoint_contract() -> None:
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=normalized)
 
     assert context.checkpoint.checkpoint_id == checkpoint.checkpoint_id
+    assert context.metadata["checkpoint_contract"] == checkpoint.checkpoint_contract.model_dump(mode="json")
+    assert (
+        context.checkpoint.answer_projection_policy
+        == context.metadata["checkpoint_contract"]["answer_projection_policy"]
+    )
     assert isinstance(normalization.normalization_applied, bool)
     assert aggregate.verdict.value == "pass"
     assert aggregate.score >= 0.99
+
+
+def test_memory_evolution_sim_checkpoint_contract_is_single_source_for_all_generated_profiles() -> None:
+    scenarios = [
+        *generate_memory_evolution_sim_scenarios(
+            profile="adversarial",
+            scenario_count=10,
+            seed=7,
+            noise_rate=0.35,
+        ),
+        *generate_memory_evolution_sim_scenarios(
+            profile="long_horizon",
+            scenario_count=10,
+            seed=7,
+            noise_rate=0.35,
+        ),
+    ]
+
+    for scenario in scenarios:
+        for checkpoint in scenario.checkpoints:
+            context = sim_reconstruction_context_for_checkpoint(
+                scenario=scenario,
+                checkpoint=checkpoint,
+            )
+            contract = checkpoint.checkpoint_contract.model_dump(mode="json")
+
+            assert context.metadata["checkpoint_contract"] == contract
+            assert context.checkpoint.answer_projection_policy == contract["answer_projection_policy"]
 
 
 def test_memory_evolution_runtime_public_summary_contract() -> None:

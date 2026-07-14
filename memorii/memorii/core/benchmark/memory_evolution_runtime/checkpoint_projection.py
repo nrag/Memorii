@@ -45,9 +45,12 @@ def project_runtime_checkpoint(
     runtime_claim_by_oracle = {alignment.oracle_item_id: alignment.runtime_item_id for alignment in alignments if alignment.item_type == "claim" and alignment.verdict == RuntimeGraphAlignmentVerdict.ALIGNED and alignment.oracle_item_id}
     item_by_id = {str(item["runtime_item_id"]): item for item in graph_items}
 
-    selected_claim_ids = [claim_id for claim_id in checkpoint.expected_claim_ids if claim_id in claim_map]
+    expected_claim_ids = _expected_claim_ids_for_projection(checkpoint)
+    expected_entity_ids = _expected_entity_ids_for_projection(checkpoint)
+    expected_event_ids = _expected_event_ids_for_projection(checkpoint)
+    selected_claim_ids = [claim_id for claim_id in expected_claim_ids if claim_id in claim_map]
     expected = expected_sim_output_for_checkpoint(checkpoint)
-    selected_entity_ids = [entity_id for entity_id in checkpoint.expected_entity_ids if entity_id in entity_map]
+    selected_entity_ids = [entity_id for entity_id in expected_entity_ids if entity_id in entity_map]
     expected_relation_support = _expected_relation_support_modes(
         scenario=scenario,
         expected_relation_ids=checkpoint.expected_relation_ids,
@@ -76,7 +79,7 @@ def project_runtime_checkpoint(
         action_support=expected_action_support,
     )
     for claim_id in action_backed_claim_ids:
-        if claim_id in checkpoint.expected_claim_ids and claim_id not in selected_claim_ids:
+        if claim_id in expected_claim_ids and claim_id not in selected_claim_ids:
             selected_claim_ids.append(claim_id)
     for claim_id in selected_claim_ids:
         claim = _claim_by_id(scenario, claim_id)
@@ -90,13 +93,13 @@ def project_runtime_checkpoint(
         claim_ids=supporting_claim_ids,
         runtime_claim_by_oracle=runtime_claim_by_oracle,
         item_by_id=item_by_id,
-        expected_event_ids=checkpoint.expected_citation_event_ids,
+        expected_event_ids=expected_event_ids,
     )
     supporting_citation_event_ids.extend(
         _oracle_evidence_events_for_claims(
             scenario=scenario,
             claim_ids=action_backed_claim_ids,
-            expected_event_ids=checkpoint.expected_citation_event_ids,
+            expected_event_ids=expected_event_ids,
         )
     )
     suppressed_action_claim_ids = _suppressed_action_state_claim_ids(
@@ -173,6 +176,25 @@ def _runtime_relation_support_rows(projection: RuntimeProjection) -> list[dict[s
         for relation_id, support_mode in sorted(projection.relation_support.items())
     ]
 
+
+def _expected_claim_ids_for_projection(checkpoint: OracleCheckpoint) -> list[str]:
+    if checkpoint.checkpoint_type == "execution_continuation":
+        return list(checkpoint.expected_execution_claim_ids)
+    return list(checkpoint.expected_claim_ids)
+
+
+def _expected_entity_ids_for_projection(checkpoint: OracleCheckpoint) -> list[str]:
+    if checkpoint.checkpoint_type == "execution_continuation":
+        return list(checkpoint.expected_execution_entity_ids)
+    return list(checkpoint.expected_entity_ids)
+
+
+def _expected_event_ids_for_projection(checkpoint: OracleCheckpoint) -> list[str]:
+    if checkpoint.checkpoint_type == "execution_continuation":
+        return list(checkpoint.expected_execution_citation_event_ids)
+    return list(checkpoint.expected_citation_event_ids)
+
+
 def runtime_failure_buckets(
     *,
     checkpoint: OracleCheckpoint,
@@ -182,15 +204,18 @@ def runtime_failure_buckets(
     graph_snapshot: MemoryGraphSnapshot,
 ) -> list[str]:
     buckets: list[str] = []
+    expected_claim_ids = _expected_claim_ids_for_projection(checkpoint)
+    expected_entity_ids = _expected_entity_ids_for_projection(checkpoint)
+    expected_event_ids = _expected_event_ids_for_projection(checkpoint)
     if graph_snapshot.validation_errors:
         buckets.append("runtime_graph_validation_error")
     selected = set(output.selected_claim_ids)
-    missing_claims = [claim_id for claim_id in checkpoint.expected_claim_ids if claim_id not in selected]
+    missing_claims = [claim_id for claim_id in expected_claim_ids if claim_id not in selected]
     if missing_claims:
         buckets.append("runtime_missing_expected_claim")
         if checkpoint.horizon_distance >= 10:
             buckets.append("long_horizon_retrieval_miss")
-    missing_entities = [entity_id for entity_id in checkpoint.expected_entity_ids if entity_id not in output.selected_entity_ids]
+    missing_entities = [entity_id for entity_id in expected_entity_ids if entity_id not in output.selected_entity_ids]
     if missing_entities:
         buckets.append("runtime_missing_expected_entity")
     missing_relations = [relation_id for relation_id in checkpoint.expected_relation_ids if relation_id not in output.selected_relation_ids and relation_id not in output.context_relation_ids and relation_id not in output.supporting_relation_ids]
@@ -207,7 +232,7 @@ def runtime_failure_buckets(
         if projection.execution_state.get("ambiguous_action_count"):
             buckets.append("runtime_execution_state_ambiguous")
         buckets.append("branch_state_not_projected")
-    if checkpoint.expected_citation_event_ids and not set(checkpoint.expected_citation_event_ids) & set(output.supporting_citation_event_ids):
+    if expected_event_ids and not set(expected_event_ids) & set(output.supporting_citation_event_ids):
         buckets.append("runtime_provenance_missing")
         if checkpoint.horizon_distance >= 10:
             buckets.append("provenance_chain_broken")
@@ -261,18 +286,15 @@ def _runtime_answer_for_checkpoint(
 ) -> str | None:
     if checkpoint.expected_abstention:
         return None
-    if checkpoint.expected_next_action is not None or checkpoint.checkpoint_type in {"entity_reconstruction", "claim_rekey", "belief_ranking", "conflict_audit"}:
+    if checkpoint.answer_projection_policy in {"none", "next_action", "graph_channels_only"}:
         return None
     if not selected_claim_ids:
         return None
-    if checkpoint.checkpoint_type == "modality_suppression" and checkpoint.expected_answer is not None:
-        return checkpoint.expected_answer
     runtime_id = runtime_claim_by_oracle.get(selected_claim_ids[0])
     if runtime_id is None:
         return None
     item = item_by_id.get(runtime_id, {})
-    query = checkpoint.query_or_task.lower()
-    if "what does" in query and "own" in query:
+    if checkpoint.answer_projection_policy == "claim_subject":
         return _title_from_normalized(str(item.get("subject") or "")) or None
     return str(item.get("object_value") or item.get("object") or "") or None
 

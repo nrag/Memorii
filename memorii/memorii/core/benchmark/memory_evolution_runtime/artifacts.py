@@ -214,7 +214,15 @@ def runtime_alignment_summary(rows: RuntimeSuiteRows) -> dict[str, object]:
     for row in checkpoint_rows:
         expected = _json_mapping(row.get("expected"))
         expected_ids: set[str] = set()
-        for key in ("expected_entity_ids", "expected_claim_ids", "expected_relation_ids", "expected_citation_event_ids"):
+        for key in (
+            "expected_entity_ids",
+            "expected_claim_ids",
+            "expected_relation_ids",
+            "expected_citation_event_ids",
+            "expected_execution_entity_ids",
+            "expected_execution_claim_ids",
+            "expected_execution_citation_event_ids",
+        ):
             expected_ids.update(str(value) for value in _json_sequence(expected.get(key)))
         checkpoint_expected_ids[(str(row.get("scenario_id")), str(row.get("checkpoint_id")))] = expected_ids
 

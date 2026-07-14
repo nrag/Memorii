@@ -133,10 +133,20 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     for field_name in [
         "selected_excluded_ids",
         "supporting_excluded_ids",
+        "allowed_definition_selected_ids",
+        "allowed_context_selected_ids",
+        "forbidden_selected_ids",
         "rejected_expected_ids",
         "missing_rejected_ids",
         "selected_noncurrent_claim_ids",
         "supporting_noisy_citation_event_ids",
+        "supporting_wrong_subject_claim_ids",
+        "supporting_wrong_subject_entity_ids",
+        "supporting_disambiguation_claim_ids",
+        "missing_wrong_entity_rejection_claim_ids",
+        "missing_wrong_entity_rejection_subject_ids",
+        "supporting_role_violations",
+        "supporting_rejection_provenance_overlap",
         "context_only_noise_event_ids",
         "required_definition_claim_ids",
         "missing_definition_claim_ids",
@@ -208,6 +218,9 @@ def test_memory_evolution_sim_adversarial_artifacts_include_hidden_pressure_with
     assert payload["metrics"]["hidden_pressure_checkpoint_count"] == payload["checkpoint_count"]
     assert payload["metrics"]["hidden_hallucination_rate"] == 0.0
     assert payload["metrics"]["hidden_answer_leak_rate"] == 0.0
+    assert payload["hidden_item_count"] == payload["metrics"]["hidden_item_count"]
+    assert payload["hidden_hallucination_rate"] == payload["metrics"]["hidden_hallucination_rate"]
+    assert payload["hidden_answer_leak_rate"] == payload["metrics"]["hidden_answer_leak_rate"]
     assert hidden_ids
     assert "hidden_distractor_ids" not in candidate_cards
     assert not any(hidden_id in candidate_cards for hidden_id in hidden_ids)
@@ -219,4 +232,3 @@ def test_memory_evolution_sim_adversarial_artifacts_include_hidden_pressure_with
 def test_memory_evolution_sim_benchmark_rejects_all_systems() -> None:
     with pytest.raises(SystemExit, match="memorii only"):
         main(["--suite", "memory_evolution_sim_v1", "--systems", "all"])
-

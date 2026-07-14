@@ -186,11 +186,38 @@ class CheckpointVerdictSection(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ChannelOverlapSection(BaseModel):
+    """Role-channel overlap diagnostics for selected/support/rejected/context views."""
+
+    critical: list[str] = Field(default_factory=list)
+    warning: list[str] = Field(default_factory=list)
+    critical_ids: dict[str, list[str]] = Field(default_factory=dict)
+    warning_ids: dict[str, list[str]] = Field(default_factory=dict)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SelectedClaimSupportClosureErrorSection(BaseModel):
+    """Claim-local selected/supporting/citation closure diagnostics."""
+
+    claim_id: str
+    missing_supporting_claim: bool
+    expected_event_ids: list[str] = Field(default_factory=list)
+    present_event_ids: list[str] = Field(default_factory=list)
+    missing_event_ids: list[str] = Field(default_factory=list)
+    is_action_state: bool
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CheckpointDiagnosticsSection(BaseModel):
     """Typed diagnostics emitted by sim/runtime judge diagnostics."""
 
     missing_expected_ids: dict[str, list[str]] = Field(default_factory=dict)
     extra_selected_ids: dict[str, list[str]] = Field(default_factory=dict)
+    allowed_definition_selected_ids: dict[str, list[str]] = Field(default_factory=dict)
+    allowed_context_selected_ids: dict[str, list[str]] = Field(default_factory=dict)
+    forbidden_selected_ids: dict[str, list[str]] = Field(default_factory=dict)
     answer_match_type: str
     failure_classification: list[str] = Field(default_factory=list)
     selected_excluded_ids: dict[str, list[str]] = Field(default_factory=dict)
@@ -199,6 +226,11 @@ class CheckpointDiagnosticsSection(BaseModel):
     missing_rejected_ids: dict[str, list[str]] = Field(default_factory=dict)
     missing_rejected_claim_subject_entity_ids: list[str] = Field(default_factory=list)
     supporting_wrong_entity_claim_ids: list[str] = Field(default_factory=list)
+    supporting_wrong_subject_claim_ids: list[str] = Field(default_factory=list)
+    supporting_wrong_subject_entity_ids: list[str] = Field(default_factory=list)
+    supporting_disambiguation_claim_ids: list[str] = Field(default_factory=list)
+    missing_wrong_entity_rejection_claim_ids: list[str] = Field(default_factory=list)
+    missing_wrong_entity_rejection_subject_ids: list[str] = Field(default_factory=list)
     selected_noncurrent_claim_ids: list[str] = Field(default_factory=list)
     required_definition_claim_ids: list[str] = Field(default_factory=list)
     missing_definition_claim_ids: list[str] = Field(default_factory=list)
@@ -211,7 +243,14 @@ class CheckpointDiagnosticsSection(BaseModel):
     selected_context_only_entity_ids: list[str] = Field(default_factory=list)
     selected_rejected_or_context_entity_ids: list[str] = Field(default_factory=list)
     supporting_noisy_citation_event_ids: list[str] = Field(default_factory=list)
+    selected_claim_support_closure_errors: list[SelectedClaimSupportClosureErrorSection] = Field(default_factory=list)
+    selected_claim_ids_missing_support: list[str] = Field(default_factory=list)
+    selected_claim_evidence_event_ids_missing_support: list[str] = Field(default_factory=list)
+    selected_action_state_event_ids_missing_support: list[str] = Field(default_factory=list)
     context_only_noise_event_ids: list[str] = Field(default_factory=list)
+    supporting_role_violations: dict[str, list[str]] = Field(default_factory=dict)
+    supporting_rejection_provenance_overlap: dict[str, list[str]] = Field(default_factory=dict)
+    channel_overlap: ChannelOverlapSection = Field(default_factory=ChannelOverlapSection)
     role_misclassification: bool
     precision_failure_classification: list[str] = Field(default_factory=list)
     required_judge_ids: list[str] = Field(default_factory=list)

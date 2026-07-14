@@ -45,12 +45,18 @@ def test_memory_evolution_sim_long_horizon_execution_has_action_state_pressure()
     action_claims = [claim for claim in scenario.claims if claim.claim_kind == "action_state"]
 
     assert checkpoint.expected_action_ids
+    assert checkpoint.expected_claim_ids == []
+    assert checkpoint.expected_entity_ids == []
+    assert checkpoint.expected_citation_event_ids == []
+    assert checkpoint.expected_execution_claim_ids == ["claim_09_branch_b_progress"]
+    assert checkpoint.expected_execution_entity_ids == ["ent_09_branch_b"]
+    assert checkpoint.expected_execution_citation_event_ids == ["event_09_branch_b_progress"]
     assert any(claim.claim_id.endswith("branch_b_progress") for claim in action_claims)
     assert any(claim.claim_id.endswith("branch_a_blocked") for claim in action_claims)
     assert any(
         claim.claim_id.endswith("branch_b_progress")
         for claim in scenario.claims
-        if claim.claim_id in checkpoint.expected_claim_ids
+        if claim.claim_id in checkpoint.expected_execution_claim_ids
     )
     assert any(claim_id.endswith("branch_a_blocked") for claim_id in checkpoint.expected_excluded_claim_ids)
     assert any(

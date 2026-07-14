@@ -368,6 +368,37 @@ class WorldTransition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SimCheckpointContract(BaseModel):
+    allowed_operations: list[Literal["answer", "next_action", "graph_reconstruction", "abstain"]] = Field(
+        default_factory=lambda: ["answer"]
+    )
+    answer_required: bool = True
+    answer_projection_policy: Literal[
+        "claim_object",
+        "claim_subject",
+        "none",
+        "next_action",
+        "graph_channels_only",
+    ] = "claim_object"
+    selected_entity_role_policy: Literal[
+        "subject",
+        "object",
+        "subject_and_object",
+        "active_graph_subjects",
+        "audit_graph_entities",
+    ] = "subject"
+    allow_stale_selected_claims: bool = False
+    excluded_ids_must_be_rejected_or_contextualized: bool = True
+    definition_claims_required_in_selected: bool = False
+    supporting_citations_must_be_direct_current_evidence: bool = True
+    conflict_relation_ids_belong_in: list[str] = Field(default_factory=lambda: ["context_relation_ids"])
+    wrong_entity_claims_belong_in: list[str] = Field(default_factory=list)
+    requires_belief_ranking_ids: bool = False
+    requires_next_action: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class OracleCheckpoint(BaseModel):
     checkpoint_id: str
     timestamp: datetime
@@ -387,11 +418,25 @@ class OracleCheckpoint(BaseModel):
         "abstention",
     ]
     query_or_task: str
+    checkpoint_contract: SimCheckpointContract
+    query_language: str = "en"
+    evidence_languages: list[str] = Field(default_factory=lambda: ["en"])
+    answer_language_policy: Literal[
+        "match_query",
+        "match_evidence",
+        "english_ok",
+        "structured_only",
+    ] = "match_query"
+    cross_lingual: bool = False
+    transliteration_policy: Literal["allowed", "required", "forbidden"] = "allowed"
     expected_entity_ids: list[str] = Field(default_factory=list)
     expected_claim_ids: list[str] = Field(default_factory=list)
     expected_relation_ids: list[str] = Field(default_factory=list)
     expected_action_ids: list[str] = Field(default_factory=list)
     expected_citation_event_ids: list[str] = Field(default_factory=list)
+    expected_execution_entity_ids: list[str] = Field(default_factory=list)
+    expected_execution_claim_ids: list[str] = Field(default_factory=list)
+    expected_execution_citation_event_ids: list[str] = Field(default_factory=list)
     expected_excluded_entity_ids: list[str] = Field(default_factory=list)
     expected_excluded_claim_ids: list[str] = Field(default_factory=list)
     expected_uncertain_ids: list[str] = Field(default_factory=list)
@@ -417,6 +462,10 @@ class OracleCheckpoint(BaseModel):
     )
 
     model_config = ConfigDict(extra="forbid")
+
+    @property
+    def answer_projection_policy(self) -> str:
+        return self.checkpoint_contract.answer_projection_policy
 
 
 class SimOutputNormalization(BaseModel):
@@ -554,9 +603,11 @@ class VisibleClaimCandidate(BaseModel):
     claim_id: str
     subject_entity_id: str
     subject_name: str
+    subject_entity_type: str
     predicate_id: str
     object_value: str
     object_entity_id: str | None = None
+    object_entity_type: str | None = None
     scope_key: str
     lifecycle_state: str
     valid_from: datetime | None = None
@@ -566,6 +617,24 @@ class VisibleClaimCandidate(BaseModel):
     evidence_event_ids: list[str] = Field(default_factory=list)
     evidence_quote: str
     contradicts_claim_ids: list[str] = Field(default_factory=list)
+    is_definition_claim: bool = False
+    is_action_state_claim: bool = False
+    is_current_active: bool = False
+    is_stale_or_invalidated: bool = False
+    is_low_trust_or_ambiguous: bool = False
+    support_channel_hint: Literal[
+        "direct_answer_candidate",
+        "definition_candidate",
+        "rejection_or_context_candidate",
+        "context_only_candidate",
+    ] = "context_only_candidate"
+    action_state_status: str | None = None
+    continuation_eligibility: Literal[
+        "active_candidate",
+        "suppressed_candidate",
+        "audit_context",
+        "not_applicable",
+    ] = "not_applicable"
 
     model_config = ConfigDict(extra="forbid")
 
@@ -592,6 +661,12 @@ class VisibleCheckpointCandidate(BaseModel):
     timestamp: datetime
     checkpoint_type: str
     query_or_task: str
+    answer_projection_policy: str = "claim_object"
+    query_language: str = "en"
+    evidence_languages: list[str] = Field(default_factory=lambda: ["en"])
+    answer_language_policy: str = "match_query"
+    cross_lingual: bool = False
+    transliteration_policy: str = "allowed"
     difficulty_tags: list[str] = Field(default_factory=list)
     severity: str
     horizon_distance: int = 0
@@ -706,10 +781,18 @@ class LatentGraphScenario(BaseModel):
                 raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown relations")
             if set(checkpoint.expected_citation_event_ids) - event_ids:
                 raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown observations")
+            if set(checkpoint.expected_execution_entity_ids) - entity_ids:
+                raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown execution entities")
+            if set(checkpoint.expected_execution_claim_ids) - claim_ids:
+                raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown execution claims")
+            if set(checkpoint.expected_execution_citation_event_ids) - event_ids:
+                raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown execution observations")
             required_ids = [
                 *checkpoint.expected_entity_ids,
                 *checkpoint.expected_claim_ids,
                 *checkpoint.expected_relation_ids,
+                *checkpoint.expected_execution_entity_ids,
+                *checkpoint.expected_execution_claim_ids,
             ]
             hidden_required = [
                 item_id

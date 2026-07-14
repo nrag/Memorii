@@ -6,6 +6,9 @@ from memorii.core.benchmark.memory_evolution_runtime import (
 from memorii.core.benchmark.memory_evolution_runtime import (
     align_runtime_graph_to_oracle,
 )
+from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import (
+    _runtime_answer_for_checkpoint as runtime_answer_for_checkpoint,
+)
 from tests.unit.core.benchmark.memory_evolution_runtime_test_helpers import (
     alignment_for,
     long_horizon_execution_scenario,
@@ -166,3 +169,25 @@ def test_runtime_claim_alignment_does_not_merge_service_into_project() -> None:
     assert ambiguous_project_owner.verdict.value != "aligned"
 
 
+def test_runtime_answer_projection_uses_checkpoint_policy_not_english_query_text() -> None:
+    scenario = generate_scenario_by_family(profile="adversarial", family="entity_split", seed=7)
+    checkpoint = next(
+        item
+        for item in scenario.checkpoints
+        if item.checkpoint_id.endswith("_service_owner")
+    )
+    runtime_claim_id = "rt:claim:service-owner"
+    answer = runtime_answer_for_checkpoint(
+        checkpoint=checkpoint,
+        selected_claim_ids=list(checkpoint.expected_claim_ids),
+        runtime_claim_by_oracle={checkpoint.expected_claim_ids[0]: runtime_claim_id},
+        item_by_id={
+            runtime_claim_id: {
+                "subject": "atlas platform service",
+                "object_value": "Iris",
+            },
+        },
+    )
+
+    assert checkpoint.answer_projection_policy == "claim_subject"
+    assert answer == "Atlas Platform Service"
