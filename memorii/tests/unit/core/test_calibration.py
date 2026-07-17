@@ -12,7 +12,9 @@ from memorii.core.calibration.metrics import (
     brier_score,
     build_calibration_slices,
     expected_calibration_error,
+    risk_coverage_curve,
     rolling_window_metrics,
+    scenario_cluster_accuracy_interval,
     wilson_interval,
 )
 from memorii.core.calibration.models import (
@@ -61,11 +63,46 @@ def test_calibration_metrics_exclude_runtime_unknown() -> None:
     assert brier_score(events) == ((0.9 - 1.0) ** 2 + (0.8 - 0.0) ** 2) / 2
 
 
+def test_risk_coverage_is_confidence_ordered_and_deterministic() -> None:
+    events = [
+        _event(confidence=0.9, label=CalibrationLabel.INCORRECT),
+        _event(confidence=0.6, label=CalibrationLabel.CORRECT),
+        _event(confidence=0.2, label=CalibrationLabel.CORRECT),
+    ]
+    curve = risk_coverage_curve(events)
+    assert [point.accepted_count for point in curve] == [1, 2, 3]
+    assert [point.threshold for point in curve] == [0.9, 0.6, 0.2]
+    assert curve[0].selective_risk == 1.0
+    assert curve[-1].coverage == 1.0
+
+
+def test_scenario_cluster_interval_is_deterministic_and_not_event_weighted() -> None:
+    events = [
+        _event(confidence=0.9, label=CalibrationLabel.CORRECT),
+        _event(confidence=0.9, label=CalibrationLabel.CORRECT),
+        _event(confidence=0.9, label=CalibrationLabel.INCORRECT),
+    ]
+    events[0].scenario_id = "large"
+    events[1].scenario_id = "large"
+    events[2].scenario_id = "small"
+    first = scenario_cluster_accuracy_interval(events, seed=11, resamples=100)
+    second = scenario_cluster_accuracy_interval(events, seed=11, resamples=100)
+    assert first is not None and second is not None
+    assert first == second
+    assert first.estimate == 0.5
+    assert first.scenario_count == 2
+    assert first.observation_count == 3
+    assert 0.0 <= first.lower <= first.estimate <= first.upper <= 1.0
+
+
 def test_wilson_interval_and_slice_support_policy() -> None:
     low, high = wilson_interval(positives=8, n=10)
     assert low is not None and high is not None
     assert 0.0 <= low <= high <= 1.0
-    supported = build_calibration_slices([_event(confidence=0.9, label=CalibrationLabel.INCORRECT) for _ in range(10)])
+    supported_events = [_event(confidence=0.9, label=CalibrationLabel.INCORRECT) for _ in range(10)]
+    for index, event in enumerate(supported_events):
+        event.scenario_id = f"scenario-{index}"
+    supported = build_calibration_slices(supported_events)
     info = build_calibration_slices([_event(confidence=0.9, label=CalibrationLabel.INCORRECT) for _ in range(4)])
     assert any(item.eligible_for_failure for item in supported)
     assert all(not item.eligible_for_failure for item in info)
@@ -130,13 +167,13 @@ def test_calibration_artifacts_emit_hierarchy_and_label_provenance() -> None:
         checkpoint_rows=rows,
     )
     layers = {event.hierarchy_layer for event in events}
-    assert CalibrationHierarchyLayer.OBSERVATION in layers
-    assert CalibrationHierarchyLayer.EXTRACTION in layers
-    assert CalibrationHierarchyLayer.VALIDATION in layers
-    assert CalibrationHierarchyLayer.GRAPH in layers
     assert CalibrationHierarchyLayer.RETRIEVAL_DECISION in layers
+    assert CalibrationHierarchyLayer.OBSERVATION not in layers
+    assert report.input_telemetry_count == 2
+    assert report.input_telemetry_by_type == {"visible_claims": 1, "visible_events": 1}
     assert report.label_source_counts[CalibrationLabelSource.LATENT_ORACLE.value] >= 1
-    assert report.hierarchy_layer_counts[CalibrationHierarchyLayer.GRAPH.value] >= 1
+    assert CalibrationHierarchyLayer.GRAPH.value not in report.hierarchy_layer_counts
+    assert report.scenario_cluster_intervals["accuracy"].scenario_count == 1
     citation_event = next(event for event in events if event.item_id == "event_current" and event.decision_channel == CalibrationDecisionChannel.SUPPORTING)
     assert citation_event.item_type == CalibrationItemType.SOURCE_OBSERVATION
     selected_event = next(event for event in events if event.item_id == "claim_current" and event.decision_channel == CalibrationDecisionChannel.SELECTED)
@@ -232,8 +269,8 @@ def test_calibration_context_events_in_passing_rows_are_correct_audit_evidence()
     context_event = next(event for event in events if event.item_id == "claim_context")
     assert context_event.label == CalibrationLabel.CORRECT
     assert context_event.confidence == 0.95
-    assert report.overconfident_wrong_count == 0
-    assert report.overall_accuracy == 1.0
+    assert report.overconfident_wrong_count == 2
+    assert report.overall_accuracy == 1 / 3
 
 
 

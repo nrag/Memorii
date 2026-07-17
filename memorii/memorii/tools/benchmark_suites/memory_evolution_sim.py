@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from datetime import (
@@ -22,18 +23,23 @@ from memorii.core.benchmark.artifact_rows import (
     CheckpointVerdictSection,
     DecisionMode,
     FinalOutputSource,
-    FlatArtifactModel,
     JudgeVoteRow,
     NormalizationDiagnosticsSection,
     SimCheckpointResultRow,
     WarningExampleRow,
     artifact_rows_to_json,
-    artifact_section_legacy_fields,
     checkpoint_warning_buckets,
+)
+from memorii.core.benchmark.artifact_validation import (
+    validate_memory_evolution_run,
+    write_json_atomic,
+    write_text_atomic,
+    write_typed_jsonl,
 )
 from memorii.core.benchmark.memory_evolution_sim import (
     JudgeAggregate,
     LatentGraphScenario,
+    MemoryEvolutionSimReconstructionContext,
     OracleCheckpoint,
     SimOutputNormalization,
     SimSystemOutput,
@@ -48,7 +54,9 @@ from memorii.core.benchmark.memory_evolution_sim import (
     sim_reconstruction_context_for_checkpoint,
 )
 from memorii.core.benchmark.models import BenchmarkRunConfig
-from memorii.core.benchmark.reproducibility import build_run_id
+from memorii.core.benchmark.reproducibility import build_run_config_fingerprint, build_run_id
+from memorii.core.calibration.gates import DEFAULT_CRITICAL_FAILURE_BUCKETS
+from memorii.core.calibration.models import CalibrationEvent
 from memorii.core.calibration.reports import build_calibration_artifacts
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import (
@@ -69,6 +77,7 @@ from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntime
 from memorii.tools.run_live_llm_eval import _validate_live_safety
 
 SUITE_NAME = "memory_evolution_sim_v1"
+_INVALID_REFERENCE_ID_BUCKET = "invalid_reference_id"
 
 
 def _decision_modes_from_args(mode: str) -> list[DecisionModeName]:
@@ -83,13 +92,35 @@ def _json_sequence(value: object) -> Sequence[object]:
     return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
 
 
+def _ordered_unique(values: Sequence[object]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        text = str(value)
+        if text in seen:
+            continue
+        seen.add(text)
+        unique.append(text)
+    return unique
+
+
 def _mapping_has_values(value: object) -> bool:
     if not isinstance(value, Mapping):
         return False
     return any(bool(item) for item in value.values())
 
 
-def _load_memory_evolution_sim_suite(args: argparse.Namespace) -> tuple[list[LatentGraphScenario], str]:
+def _row_value(row: dict[str, object], key: str, default: object = None) -> object:
+    if key in row:
+        return row[key]
+    diagnostics = row.get("diagnostics")
+    if isinstance(diagnostics, Mapping):
+        return diagnostics.get(key, default)
+    return default
+
+
+def load_memory_evolution_scenarios(args: argparse.Namespace) -> tuple[list[LatentGraphScenario], str]:
+    """Load the shared latent scenario surface for sim and runtime suites."""
     if args.sim_fixture_path:
         payload = json.loads(Path(args.sim_fixture_path).read_text(encoding="utf-8"))
         return (
@@ -187,13 +218,14 @@ def _run_memory_evolution_sim_transitions(
                     scenario=scenario,
                     rule_output=rule_output_json,
                 )
+                invalid_reference_failure = fallback_reason == "llm_output_referenced_invalid_ids"
                 if dry_run and dependencies.is_default_fake_client() and llm_success:
                     final_output_source = "fake_oracle"
-                elif llm_success:
+                elif llm_success or invalid_reference_failure:
                     final_output_source = "live_llm"
                 else:
                     final_output_source = "rule"
-                fallback_used = not llm_success
+                fallback_used = not llm_success and not invalid_reference_failure
                 llm_rows.append(
                     {
                         "scenario_id": scenario.scenario_id,
@@ -212,28 +244,43 @@ def _run_memory_evolution_sim_transitions(
 
             raw_output = SimSystemOutput.model_validate(output_json)
             raw_output_json = raw_output.model_dump(mode="json")
-            output, normalization = normalize_sim_system_output_for_checkpoint(
+            _diagnostic_output, normalization = normalize_sim_system_output_for_checkpoint(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 output=raw_output,
             )
+            # The raw system output is authoritative for scoring. The
+            # normalizer is retained only as an audit diagnostic; promoting a
+            # context item or completing a missing channel would otherwise
+            # turn a semantic system failure into a passing benchmark row.
+            output = raw_output
             output_json = output.model_dump(mode="json")
             aggregate = judge_sim_checkpoint(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 output=output,
             )
+            invalid_reference_failure = fallback_reason == "llm_output_referenced_invalid_ids"
             diagnostics = sim_checkpoint_diagnostics(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 output=output,
                 aggregate=aggregate,
             )
-            success = aggregate.verdict.value == "pass" and (effective_mode != "llm" or llm_success or not llm_call_made)
+            engine_failure_buckets = [_INVALID_REFERENCE_ID_BUCKET] if invalid_reference_failure else []
+            success = (
+                aggregate.verdict.value == "pass"
+                and (effective_mode != "llm" or llm_success or not llm_call_made)
+                and not invalid_reference_failure
+            )
             warning_buckets = checkpoint_warning_buckets(
                 answer_match_type=diagnostics["answer_match_type"],
                 output=output_json,
             )
+            if normalization.repaired_definition_claim_conflict_ids:
+                warning_buckets.append("definition_claim_conflict_repaired")
+            if normalization.auto_demoted_execution_context_claim_ids:
+                warning_buckets.append("execution_context_support_demoted")
             checkpoint_row = _build_sim_checkpoint_result_row(
                 scenario=scenario,
                 checkpoint=checkpoint,
@@ -248,6 +295,7 @@ def _run_memory_evolution_sim_transitions(
                 success=success,
                 aggregate=aggregate,
                 diagnostics=diagnostics,
+                engine_failure_buckets=engine_failure_buckets,
                 normalization=normalization,
                 warning_buckets=warning_buckets,
                 raw_output_json=raw_output_json,
@@ -290,6 +338,7 @@ def _build_sim_checkpoint_result_row(
     success: bool,
     aggregate: JudgeAggregate,
     diagnostics: dict[str, object],
+    engine_failure_buckets: list[str],
     normalization: SimOutputNormalization,
     warning_buckets: list[str],
     raw_output_json: dict[str, object],
@@ -323,8 +372,8 @@ def _build_sim_checkpoint_result_row(
         verdict=aggregate.verdict.value,
         score=aggregate.score,
         confidence=aggregate.confidence,
-        review_required=aggregate.review_required,
-        failure_buckets=list(aggregate.critical_failure_buckets),
+        review_required=aggregate.review_required or bool(engine_failure_buckets),
+        failure_buckets=_ordered_unique([*aggregate.critical_failure_buckets, *engine_failure_buckets]),
         warning_buckets=warning_buckets,
     )
     diagnostic_section = CheckpointDiagnosticsSection.model_validate(diagnostics)
@@ -333,44 +382,70 @@ def _build_sim_checkpoint_result_row(
         **diagnostic_section.to_flat_fields(),
         **normalization_section.to_flat_fields(),
     }
-    legacy_fields = {
-        **artifact_section_legacy_fields(SimCheckpointResultRow, horizon, decision_trace),
+    if engine_failure_buckets:
+        diagnostics_payload["failure_classification"] = _ordered_unique(
+            [
+                *_json_sequence(diagnostics_payload.get("failure_classification")),
+                *engine_failure_buckets,
+            ]
+        )
+        diagnostics_payload["precision_failure_classification"] = _ordered_unique(
+            [
+                *_json_sequence(diagnostics_payload.get("precision_failure_classification")),
+                *engine_failure_buckets,
+            ]
+        )
+    typed_output = SimSystemOutput.model_validate(output_json)
+    typed_raw_output = SimSystemOutput.model_validate(raw_output_json)
+    typed_candidate_cards = MemoryEvolutionSimReconstructionContext.model_validate(context_json)
+    row_data: dict[str, object] = {
+        "scenario_id": scenario.scenario_id,
+        "checkpoint_id": checkpoint.checkpoint_id,
+        "checkpoint_type": checkpoint.checkpoint_type,
+        "success": verdict.success,
+        "passed": verdict.passed,
+        "verdict": verdict.verdict,
+        "score": verdict.score,
         "confidence": verdict.confidence,
-        **diagnostic_section.to_flat_fields(),
-        **normalization_section.to_flat_fields(),
-        "expected": checkpoint.model_dump(mode="json"),
-        "candidate_cards": context_json,
-        "raw_output": raw_output_json,
-        "normalized_output": output_json,
-        "judge_aggregate": aggregate.model_dump(mode="json"),
+        "review_required": verdict.review_required,
+        "failure_buckets": verdict.failure_buckets,
+        "warning_buckets": verdict.warning_buckets,
+        "diagnostics": diagnostics_payload,
+        "output": typed_output,
+        "profile": horizon.profile,
+        "family": horizon.family,
+        "decision_mode": decision_trace.decision_mode,
+        "effective_decision_mode": decision_trace.effective_decision_mode,
+        "final_output_source": decision_trace.final_output_source,
+        "phase": horizon.phase,
+        "horizon_distance": horizon.horizon_distance,
+        "horizon_distance_bucket": horizon.horizon_distance_bucket,
+        "interference_count": horizon.interference_count,
+        "interference_count_bucket": horizon.interference_count_bucket,
+        "source_event_age_days": horizon.source_event_age_days,
+        "source_event_age_days_bucket": horizon.source_event_age_days_bucket,
+        "required_retrieval_view": horizon.required_retrieval_view,
+        "expected_stage_path": horizon.expected_stage_path,
+        "query_or_task": horizon.query_or_task,
+        "llm_call_made": decision_trace.llm_call_made,
+        "fallback_used": decision_trace.fallback_used,
+        "fallback_reason": decision_trace.fallback_reason,
+        "request_id": decision_trace.request_id,
+        "expected": checkpoint,
+        "candidate_cards": typed_candidate_cards,
+        "raw_output": typed_raw_output,
+        "normalized_output": typed_output,
+        "judge_aggregate": aggregate,
     }
-    return SimCheckpointResultRow(
-        scenario_id=scenario.scenario_id,
-        checkpoint_id=checkpoint.checkpoint_id,
-        checkpoint_type=checkpoint.checkpoint_type,
-        success=verdict.success,
-        passed=verdict.passed,
-        verdict=verdict.verdict,
-        score=verdict.score,
-        review_required=verdict.review_required,
-        failure_buckets=verdict.failure_buckets,
-        warning_buckets=verdict.warning_buckets,
-        diagnostics=diagnostics_payload,
-        output=output_json,
-        profile=horizon.profile,
-        family=horizon.family,
-        decision_mode=decision_trace.decision_mode,
-        effective_decision_mode=decision_trace.effective_decision_mode,
-        final_output_source=decision_trace.final_output_source,
-        legacy_fields=legacy_fields,
-    )
+    row_data.update(diagnostic_section.to_flat_fields())
+    return SimCheckpointResultRow.model_validate(row_data)
 
 
-def _write_memory_evolution_sim_artifacts(
+def write_memory_evolution_artifacts(
     *,
     scenarios: list[LatentGraphScenario],
     scenario_rows: list[dict[str, object]],
-    checkpoint_rows: Sequence[FlatArtifactModel],
+    checkpoint_rows: Sequence[SimCheckpointResultRow],
     judge_rows: list[dict[str, object]],
     llm_rows: list[dict[str, object]],
     suite: str,
@@ -378,7 +453,9 @@ def _write_memory_evolution_sim_artifacts(
     storage_root: str,
     fixture_source: str,
     args: argparse.Namespace,
+    report_overrides: Mapping[str, object] | None = None,
 ) -> Path:
+    """Persist the common memory-evolution artifact contract for both suites."""
     checkpoint_rows_json = artifact_rows_to_json(checkpoint_rows)
     benchmark_key = build_run_id(
         config=BenchmarkRunConfig(seed=args.seed, run_label=f"{suite}_{mode}_{args.sim_profile}"),
@@ -402,7 +479,7 @@ def _write_memory_evolution_sim_artifacts(
         for bucket in _json_sequence(vote.get("failure_buckets"))
     )
     graph_answer_optional_missing_count = sum(
-        1 for row in checkpoint_rows_json if row.get("answer_match_type") == "optional_missing"
+        1 for row in checkpoint_rows_json if _row_value(row, "answer_match_type") == "optional_missing"
     )
     extra_context_provenance_count = sum(1 for row in checkpoint_rows_json if _sim_row_has_extra_context_provenance(row))
     if extra_context_provenance_count:
@@ -410,14 +487,14 @@ def _write_memory_evolution_sim_artifacts(
     supporting_pollution_count = sum(
         1
         for row in checkpoint_rows_json
-        if row.get("supporting_excluded_ids") or row.get("supporting_noisy_citation_event_ids")
+        if _row_value(row, "supporting_excluded_ids") or _row_value(row, "supporting_noisy_citation_event_ids")
     )
     selected_pollution_count = sum(
         1
         for row in checkpoint_rows_json
-        if row.get("selected_excluded_ids")
-        or row.get("selected_noncurrent_claim_ids")
-        or row.get("selected_entity_role_mismatches")
+        if _row_value(row, "selected_excluded_ids")
+        or _row_value(row, "selected_noncurrent_claim_ids")
+        or _row_value(row, "selected_entity_role_mismatches")
     )
     warning_examples = _sim_warning_examples(checkpoint_rows_json)
     review_bucket_counts = Counter(
@@ -426,7 +503,7 @@ def _write_memory_evolution_sim_artifacts(
         if _sim_row_needs_review(row)
         for bucket in [
             *_json_sequence(row.get("failure_buckets")),
-            *_json_sequence(row.get("precision_failure_classification")),
+            *_json_sequence(_row_value(row, "precision_failure_classification")),
         ]
     )
     required_judge_failures = sum(
@@ -487,9 +564,76 @@ def _write_memory_evolution_sim_artifacts(
     surface_jsonl = "\n".join(json.dumps(row, sort_keys=True) for row in surface_rows)
     checkpoint_jsonl = "\n".join(json.dumps(row, sort_keys=True) for row in checkpoint_payload)
     candidate_card_jsonl = "\n".join(json.dumps(row, sort_keys=True) for row in candidate_card_payload)
+    fixture_hashes = {
+        "latent_graphs": hashlib.sha256(latent_graph_json.encode("utf-8")).hexdigest(),
+        "surface_observations": hashlib.sha256(surface_jsonl.encode("utf-8")).hexdigest(),
+        "oracle_checkpoints": hashlib.sha256(checkpoint_jsonl.encode("utf-8")).hexdigest(),
+        "candidate_cards": hashlib.sha256(candidate_card_jsonl.encode("utf-8")).hexdigest(),
+    }
+    fingerprint_config: dict[str, object] = {
+        "suite": suite,
+        "mode": mode,
+        "profile": args.sim_profile,
+        "scenario_count": args.sim_scenario_count,
+        "min_events": args.sim_min_events,
+        "max_events": args.sim_max_events,
+        "noise_rate": args.sim_noise_rate,
+        "fixture_source": fixture_source.split(":seed=", 1)[0],
+        # Fixture hashes are retained in the report as per-seed evidence. The
+        # generated fixture contents intentionally vary by seed, so they must
+        # not participate in the seed-invariant gate configuration fingerprint.
+        "fixture_contract": "memory_evolution_surface_contract_v1",
+        "dry_run": args.dry_run,
+        "allow_live": args.allow_live,
+        "source_revision": os.environ.get("MEMORII_SOURCE_REVISION", "working-tree"),
+        # Rendered prompt hashes depend on seed-specific candidate content.
+        # The prompt contract ref and source revision provide the stable gate
+        # identity; per-call rendered hashes remain in llm_traces.jsonl.
+        "prompt_contract_refs": sorted(
+            {
+                str(trace.get("prompt_ref"))
+                for row in llm_rows
+                for trace in [row.get("trace")]
+                if isinstance(trace, Mapping) and trace.get("prompt_ref")
+            }
+        ),
+        "provider_models": sorted(
+            {
+                str(trace.get("model"))
+                for row in llm_rows
+                for trace in [row.get("trace")]
+                if isinstance(trace, Mapping) and trace.get("model")
+            }
+        ),
+        "providers": sorted(
+            {
+                str(trace.get("provider"))
+                for row in llm_rows
+                for trace in [row.get("trace")]
+                if isinstance(trace, Mapping) and trace.get("provider")
+            }
+        ),
+    }
+    if report_overrides:
+        health = report_overrides.get("runtime_provider_health")
+        if isinstance(health, Mapping):
+            metadata = health.get("provider_metadata")
+            if isinstance(metadata, Mapping):
+                fingerprint_config["provider_metadata"] = {
+                    key: str(metadata[key])
+                    for key in ("provider", "model")
+                    if metadata.get(key) is not None
+                }
     final_output_source_counts = Counter(str(row.get("final_output_source", "unknown")) for row in checkpoint_rows_json)
     llm_successes = sum(1 for row in llm_rows if row.get("success") is True)
-    fallbacks = sum(1 for row in checkpoint_rows_json if row.get("fallback_used") is True)
+    provider_successes = 0 if args.dry_run else llm_successes
+    provider_failures = 0 if args.dry_run else len(llm_rows) - llm_successes
+    fake_calls = len(llm_rows) if args.dry_run else 0
+    fallbacks = (
+        0
+        if args.dry_run
+        else sum(1 for row in checkpoint_rows_json if row.get("fallback_used") is True)
+    )
     hidden_item_count = sum(
         1
         for scenario in scenarios
@@ -523,21 +667,17 @@ def _write_memory_evolution_sim_artifacts(
         profile=args.sim_profile,
         checkpoint_rows=checkpoint_rows_json,
     )
-    report = BenchmarkReportSummary.from_flat_row({
+    report_payload: dict[str, object] = {
         "suite": suite,
         "mode": mode,
         "profile": args.sim_profile,
         "seed": args.seed,
         "benchmark_key": benchmark_key,
+        "run_config_fingerprint": build_run_config_fingerprint(fingerprint_config),
         "run_id": run_id,
         "generated_at": datetime.now(UTC).isoformat(),
         "fixture_source": fixture_source,
-        "fixture_hashes": {
-            "latent_graphs": hashlib.sha256(latent_graph_json.encode("utf-8")).hexdigest(),
-            "surface_observations": hashlib.sha256(surface_jsonl.encode("utf-8")).hexdigest(),
-            "oracle_checkpoints": hashlib.sha256(checkpoint_jsonl.encode("utf-8")).hexdigest(),
-            "candidate_cards": hashlib.sha256(candidate_card_jsonl.encode("utf-8")).hexdigest(),
-        },
+        "fixture_hashes": fixture_hashes,
         "scenario_count": len(scenario_rows),
         "validation_scenario_catalog": validation_scenario_catalog,
         "event_count": sum(len(scenario.observations) for scenario in scenarios),
@@ -545,9 +685,18 @@ def _write_memory_evolution_sim_artifacts(
         "passed": passed,
         "failed": failed,
         "llm_calls": len(llm_rows),
-        "provider_successes": llm_successes,
-        "provider_failures": len(llm_rows) - llm_successes,
+        "provider_successes": provider_successes,
+        "provider_failures": provider_failures,
         "fallbacks": fallbacks,
+        "fake_calls": fake_calls,
+        "dry_run": args.dry_run,
+        "execution_source": (
+            "fake_oracle"
+            if args.dry_run
+            else next(iter(final_output_source_counts), "mixed")
+            if len(final_output_source_counts) == 1
+            else "mixed"
+        ),
         "final_output_source_counts": dict(sorted(final_output_source_counts.items())),
         "hidden_item_count": base_metrics["hidden_item_count"],
         "hidden_hallucination_rate": base_metrics["hidden_hallucination_rate"],
@@ -557,7 +706,13 @@ def _write_memory_evolution_sim_artifacts(
         "calibration": calibration_report.model_dump(mode="json"),
         "decision_quality": decision_cost_report.model_dump(mode="json"),
         "failure_bucket_counts": dict(sorted(failure_bucket_counts.items())),
-        "critical_failure_bucket_counts": dict(sorted(failure_bucket_counts.items())),
+        "critical_failure_bucket_counts": dict(
+            sorted(
+                (bucket, count)
+                for bucket, count in failure_bucket_counts.items()
+                if bucket in DEFAULT_CRITICAL_FAILURE_BUCKETS
+            )
+        ),
         "warning_bucket_counts": dict(sorted(warning_bucket_counts.items())),
         "review_bucket_counts": dict(sorted(review_bucket_counts.items())),
         "judge_metrics": judge_coverage,
@@ -565,18 +720,27 @@ def _write_memory_evolution_sim_artifacts(
         "artifact_version": 1,
         "scenario_results": scenario_rows,
         "checkpoint_results": checkpoint_rows_json,
-    }).to_json_row()
-    report_json = json.dumps(report, indent=2, sort_keys=True)
+    }
+    if report_overrides:
+        report_payload.update(report_overrides)
+        metrics_override = report_overrides.get("metrics")
+        if isinstance(metrics_override, Mapping):
+            report_payload["metrics"] = {
+                **base_metrics,
+                **metrics_override,
+            }
+    report = BenchmarkReportSummary.from_flat_row(report_payload).to_json_row()
     report_md = (
         f"# {suite}\n\n"
         f"mode={mode} profile={args.sim_profile} scenarios={len(scenario_rows)} "
         f"events={report['event_count']} checkpoints={len(checkpoint_rows_json)} "
         f"passed={passed} failed={failed} llm_calls={len(llm_rows)}\n"
     )
-    (run_dir / "report.json").write_text(report_json, encoding="utf-8")
-    (run_dir / "report.md").write_text(report_md, encoding="utf-8")
-    (run_dir / "fixtures.json").write_text(latent_graph_json, encoding="utf-8")
-    (run_dir / "latent_graphs.json").write_text(latent_graph_json, encoding="utf-8")
+    write_json_atomic(run_dir / "report.json", report)
+    write_text_atomic(run_dir / "report.md", report_md)
+    latent_graph_payload = json.loads(latent_graph_json)
+    write_json_atomic(run_dir / "fixtures.json", latent_graph_payload)
+    write_json_atomic(run_dir / "latent_graphs.json", latent_graph_payload)
     _write_jsonl(
         run_dir / "world_transitions.jsonl",
         [transition.model_dump(mode="json") for scenario in scenarios for transition in scenario.transitions],
@@ -590,57 +754,38 @@ def _write_memory_evolution_sim_artifacts(
         checkpoint_payload,
     )
     _write_jsonl(run_dir / "candidate_cards.jsonl", candidate_card_payload)
-    (run_dir / "validation_scenario_catalog.json").write_text(
-        json.dumps(validation_scenario_catalog, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    _write_jsonl(run_dir / "sim_checkpoint_results.jsonl", checkpoint_rows_json)
-    _write_jsonl(run_dir / "calibration_events.jsonl", [event.model_dump(mode="json") for event in calibration_events])
-    (run_dir / "calibration_report.json").write_text(
-        json.dumps(calibration_report.model_dump(mode="json"), indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    (run_dir / "slice_calibration_report.json").write_text(
-        json.dumps(calibration_slices, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    (run_dir / "decision_quality_report.json").write_text(
-        json.dumps(decision_cost_report.model_dump(mode="json"), indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    _write_jsonl(
-        run_dir / "judge_votes.jsonl",
-        [
-            JudgeVoteRow.from_flat_row(vote).to_json_row()
-            for row in judge_rows
-            for vote in _json_sequence(row.get("votes"))
-            if isinstance(vote, dict)
-        ],
-    )
-    (run_dir / "judge_aggregate.json").write_text(
-        json.dumps(judge_rows, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    write_json_atomic(run_dir / "validation_scenario_catalog.json", validation_scenario_catalog)
+    write_typed_jsonl(run_dir / "sim_checkpoint_results.jsonl", checkpoint_rows, model_type=SimCheckpointResultRow)
+    write_typed_jsonl(run_dir / "calibration_events.jsonl", calibration_events, model_type=CalibrationEvent)
+    write_json_atomic(run_dir / "calibration_report.json", calibration_report)
+    write_json_atomic(run_dir / "slice_calibration_report.json", calibration_slices)
+    write_json_atomic(run_dir / "decision_quality_report.json", decision_cost_report)
+    judge_vote_rows = [
+        JudgeVoteRow.from_flat_row(vote)
+        for row in judge_rows
+        for vote in _json_sequence(row.get("votes"))
+        if isinstance(vote, dict)
+    ]
+    write_typed_jsonl(run_dir / "judge_votes.jsonl", judge_vote_rows, model_type=JudgeVoteRow)
+    write_json_atomic(run_dir / "judge_aggregate.json", judge_rows)
     _write_jsonl(
         run_dir / "judge_conflicts.jsonl",
         [row for row in judge_rows if _judge_row_has_conflict(row)],
     )
-    (run_dir / "judge_coverage.json").write_text(
-        json.dumps(judge_coverage, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    (run_dir / "sim_failure_buckets.json").write_text(
-        json.dumps(dict(sorted(failure_bucket_counts.items())), indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    write_json_atomic(run_dir / "judge_coverage.json", judge_coverage)
+    write_json_atomic(run_dir / "sim_failure_buckets.json", dict(sorted(failure_bucket_counts.items())))
     _write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
-    _write_jsonl(run_dir / "failures.jsonl", [row for row in checkpoint_rows_json if row["success"] is False])
-    _write_jsonl(run_dir / "sim_warning_examples.jsonl", warning_examples)
+    write_typed_jsonl(
+        run_dir / "failures.jsonl",
+        [row for row in checkpoint_rows if row.success is False],
+        model_type=SimCheckpointResultRow,
+    )
+    write_typed_jsonl(run_dir / "sim_warning_examples.jsonl", warning_examples, model_type=WarningExampleRow)
     _write_jsonl(run_dir / "review_candidates.jsonl", [row for row in checkpoint_rows_json if _sim_row_needs_review(row)])
     if args.sim_freeze_output:
-        (run_dir / "frozen_fixture.json").write_text(
-            json.dumps([scenario.model_dump(mode="json") for scenario in scenarios], indent=2, sort_keys=True),
-            encoding="utf-8",
+        write_json_atomic(
+            run_dir / "frozen_fixture.json",
+            [scenario.model_dump(mode="json") for scenario in scenarios],
         )
     if args.sim_export_review_set:
         _write_jsonl(Path(args.sim_export_review_set), [row for row in checkpoint_rows_json if _sim_row_needs_review(row)])
@@ -676,7 +821,7 @@ def _sim_warning_examples(checkpoint_rows: list[dict[str, object]]) -> list[dict
         output = row.get("output") if isinstance(row.get("output"), dict) else {}
         if not isinstance(output, dict):
             output = {}
-        if row.get("answer_match_type") == "optional_missing":
+        if _row_value(row, "answer_match_type") == "optional_missing":
             examples.append(
                 WarningExampleRow.from_flat_row({
                     "scenario_id": row.get("scenario_id"),
@@ -736,15 +881,15 @@ def _sim_warning_examples(checkpoint_rows: list[dict[str, object]]) -> list[dict
 def _sim_row_needs_review(row: dict[str, object]) -> bool:
     if row.get("success") is False:
         return True
-    if _mapping_has_values(row.get("selected_excluded_ids")) or _mapping_has_values(row.get("supporting_excluded_ids")):
+    if _mapping_has_values(_row_value(row, "selected_excluded_ids")) or _mapping_has_values(_row_value(row, "supporting_excluded_ids")):
         return True
-    if row.get("supporting_noisy_citation_event_ids"):
+    if _row_value(row, "supporting_noisy_citation_event_ids"):
         return True
-    if _mapping_has_values(row.get("supporting_role_violations")):
+    if _mapping_has_values(_row_value(row, "supporting_role_violations")):
         return True
-    if _mapping_has_values(row.get("supporting_rejection_provenance_overlap")):
+    if _mapping_has_values(_row_value(row, "supporting_rejection_provenance_overlap")):
         return True
-    precision_failures = {str(item) for item in _json_sequence(row.get("precision_failure_classification"))}
+    precision_failures = {str(item) for item in _json_sequence(_row_value(row, "precision_failure_classification"))}
     actionable_precision_failures = {
         "selected_excluded_id",
         "supporting_excluded_id",
@@ -766,7 +911,7 @@ def _sim_row_needs_review(row: dict[str, object]) -> bool:
     buckets = {str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))}
     return bool(buckets & {"hidden_fact_hallucinated", "overconfident_wrong_answer", "ambiguous_fact_overcommitted"})
 
-def _print_memory_evolution_sim_summary(
+def print_memory_evolution_summary(
     *,
     suite: str,
     mode: str,
@@ -774,9 +919,10 @@ def _print_memory_evolution_sim_summary(
     run_dir: Path,
     scenarios: list[LatentGraphScenario],
     scenario_rows: list[dict[str, object]],
-    checkpoint_rows: Sequence[FlatArtifactModel],
+    checkpoint_rows: Sequence[SimCheckpointResultRow],
     llm_rows: list[dict[str, object]],
 ) -> None:
+    """Print the common benchmark summary for a completed suite run."""
     checkpoint_rows_json = artifact_rows_to_json(checkpoint_rows)
     passed = sum(1 for row in scenario_rows if row["success"] is True)
     failed = len(scenario_rows) - passed
@@ -838,8 +984,9 @@ def _run_memory_evolution_sim_suite(
     prompt_root: Path,
     dependencies: BenchmarkRuntimeDependencies,
 ) -> int:
-    scenarios, fixture_source = _load_memory_evolution_sim_suite(args)
+    scenarios, fixture_source = load_memory_evolution_scenarios(args)
     modes = _decision_modes_from_args(args.mode)
+    benchmark_failed = False
     for mode in modes:
         scenario_rows, checkpoint_rows, judge_rows, llm_rows = _run_memory_evolution_sim_transitions(
             scenarios=scenarios,
@@ -849,7 +996,7 @@ def _run_memory_evolution_sim_suite(
             prompt_root=prompt_root,
             dependencies=dependencies,
         )
-        run_dir = _write_memory_evolution_sim_artifacts(
+        run_dir = write_memory_evolution_artifacts(
             scenarios=scenarios,
             scenario_rows=scenario_rows,
             checkpoint_rows=checkpoint_rows,
@@ -861,7 +1008,8 @@ def _run_memory_evolution_sim_suite(
             fixture_source=fixture_source,
             args=args,
         )
-        _print_memory_evolution_sim_summary(
+        validate_memory_evolution_run(run_dir, suite=SUITE_NAME)
+        print_memory_evolution_summary(
             suite=SUITE_NAME,
             mode=mode,
             profile=args.sim_profile,
@@ -871,6 +1019,9 @@ def _run_memory_evolution_sim_suite(
             checkpoint_rows=checkpoint_rows,
             llm_rows=llm_rows,
         )
+        benchmark_failed = benchmark_failed or any(not row.success for row in checkpoint_rows)
+    if getattr(args, "fail_on_benchmark_failure", False) and benchmark_failed:
+        return 1
     return 0
 
 

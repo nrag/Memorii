@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Literal, cast
 
 from memorii.core.benchmark.artifact_rows import RuntimeCheckpointResultRow
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    JudgeAggregate,
+    JudgeVerdict,
+    MemoryEvolutionSimReconstructionContext,
+    OracleCheckpoint,
+    SimCheckpointContract,
+    SimSystemOutput,
+)
 from memorii.core.calibration.alignment import RuntimeGraphAlignment
 from pydantic import BaseModel, ConfigDict, Field
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
@@ -59,32 +68,95 @@ class RuntimeActionFixture(RuntimeGraphItemFixture):
     confidence: float = Field(default=0.8, ge=0.0, le=1.0)
 
 
-def runtime_checkpoint_row(**legacy_fields: object) -> RuntimeCheckpointResultRow:
+def runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
+    expected_payload = dict(row_fields.pop("expected", {}))
+    output_payload = dict(row_fields.pop("output", {}))
+    candidate_payload = dict(row_fields.pop("candidate_cards", {}))
+    raw_output_payload = dict(row_fields.pop("raw_output", output_payload))
+    normalized_output_payload = dict(row_fields.pop("normalized_output", output_payload))
+    judge_payload = dict(row_fields.pop("judge_aggregate", {}))
     return RuntimeCheckpointResultRow(
-        scenario_id=str(legacy_fields.pop("scenario_id", "scenario_1")),
-        checkpoint_id=str(legacy_fields.pop("checkpoint_id", "checkpoint_1")),
-        checkpoint_type=str(legacy_fields.pop("checkpoint_type", "current_truth")),
-        success=bool(legacy_fields.pop("success", True)),
-        passed=bool(legacy_fields.pop("passed", True)),
-        verdict=str(legacy_fields.pop("verdict", "pass")),
-        score=float(legacy_fields.pop("score", 1.0)),
-        review_required=bool(legacy_fields.pop("review_required", False)),
-        failure_buckets=list(legacy_fields.pop("failure_buckets", [])),
-        warning_buckets=list(legacy_fields.pop("warning_buckets", [])),
-        diagnostics=dict(legacy_fields.pop("diagnostics", {})),
-        output=dict(legacy_fields.pop("output", {})),
-        profile=str(legacy_fields.pop("profile", "long_horizon")),
-        family=str(legacy_fields.pop("family", "current_truth")),
-        decision_mode=str(legacy_fields.pop("decision_mode", "llm")),
-        effective_decision_mode=str(legacy_fields.pop("effective_decision_mode", "llm")),
-        final_output_source=str(legacy_fields.pop("final_output_source", "fake_oracle")),
-        runtime_failure_buckets=list(legacy_fields.pop("runtime_failure_buckets", [])),
-        runtime_failure_classification=list(legacy_fields.pop("runtime_failure_classification", [])),
-        scenario_provider_successes=int(legacy_fields.pop("scenario_provider_successes", 0)),
-        scenario_provider_failures=int(legacy_fields.pop("scenario_provider_failures", 0)),
-        scenario_fallbacks=int(legacy_fields.pop("scenario_fallbacks", 0)),
-        provider_count_scope=str(legacy_fields.pop("provider_count_scope", "scenario_extractor_calls")),
-        legacy_fields=legacy_fields,
+        scenario_id=str(row_fields.pop("scenario_id", "scenario_1")),
+        checkpoint_id=str(row_fields.pop("checkpoint_id", "checkpoint_1")),
+        checkpoint_type=str(row_fields.pop("checkpoint_type", "current_truth")),
+        success=bool(row_fields.pop("success", True)),
+        passed=bool(row_fields.pop("passed", True)),
+        verdict=str(row_fields.pop("verdict", "pass")),
+        score=float(row_fields.pop("score", 1.0)),
+        review_required=bool(row_fields.pop("review_required", False)),
+        failure_buckets=list(row_fields.pop("failure_buckets", [])),
+        warning_buckets=list(row_fields.pop("warning_buckets", [])),
+        output=SimSystemOutput.model_validate(output_payload or {"operation": "abstain", "rationale": "test"}),
+        profile=str(row_fields.pop("profile", "long_horizon")),
+        family=str(row_fields.pop("family", "current_truth")),
+        decision_mode=str(row_fields.pop("decision_mode", "llm")),
+        effective_decision_mode=str(row_fields.pop("effective_decision_mode", "llm")),
+        final_output_source=str(row_fields.pop("final_output_source", "fake_oracle")),
+        runtime_failure_buckets=list(row_fields.pop("runtime_failure_buckets", [])),
+        runtime_failure_classification=list(row_fields.pop("runtime_failure_classification", [])),
+        scenario_provider_successes=int(row_fields.pop("scenario_provider_successes", 0)),
+        scenario_provider_failures=int(row_fields.pop("scenario_provider_failures", 0)),
+        scenario_fallbacks=int(row_fields.pop("scenario_fallbacks", 0)),
+        provider_count_scope=str(row_fields.pop("provider_count_scope", "scenario_extractor_calls")),
+        confidence=float(row_fields.pop("confidence", 1.0)),
+        provider_successes=int(row_fields.pop("provider_successes", 0)),
+        provider_failures=int(row_fields.pop("provider_failures", 0)),
+        fallbacks=int(row_fields.pop("fallbacks", 0)),
+        phase=str(row_fields.pop("phase", "checkpoint")),
+        horizon_distance=int(row_fields.pop("horizon_distance", 0)),
+        horizon_distance_bucket=str(row_fields.pop("horizon_distance_bucket", "short")),
+        interference_count=int(row_fields.pop("interference_count", 0)),
+        interference_count_bucket=str(row_fields.pop("interference_count_bucket", "none")),
+        source_event_age_days=float(row_fields.pop("source_event_age_days", 0.0)),
+        source_event_age_days_bucket=str(row_fields.pop("source_event_age_days_bucket", "fresh")),
+        required_retrieval_view=str(row_fields.pop("required_retrieval_view", "current")),
+        query_or_task=str(row_fields.pop("query_or_task", "")),
+        expected=OracleCheckpoint.model_validate(
+            {
+                "checkpoint_id": "checkpoint_1",
+                "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+                "checkpoint_type": "current_truth",
+                "query_or_task": "",
+                "checkpoint_contract": SimCheckpointContract().model_dump(mode="json"),
+                **expected_payload,
+            }
+        ),
+        candidate_cards=MemoryEvolutionSimReconstructionContext.model_validate(
+            {
+                "scenario_id": "scenario_1",
+                "family": "current_truth",
+                "profile": "long_horizon",
+                "surface_observations": [],
+                "checkpoint": {
+                    "checkpoint_id": "checkpoint_1",
+                    "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+                    "checkpoint_type": "current_truth",
+                    "query_or_task": "",
+                    "severity": "medium",
+                },
+                **candidate_payload,
+            }
+        ),
+        raw_output=SimSystemOutput.model_validate(raw_output_payload or {"operation": "abstain", "rationale": "test"}),
+        normalized_output=SimSystemOutput.model_validate(normalized_output_payload or {"operation": "abstain", "rationale": "test"}),
+        judge_aggregate=JudgeAggregate.model_validate(
+            {
+                "checkpoint_id": "checkpoint_1",
+                "verdict": JudgeVerdict.PASS,
+                "score": 1.0,
+                "confidence": 1.0,
+                "votes": [],
+                "required_judge_ids": [],
+                "critical_failure_buckets": [],
+                "review_required": False,
+                "rationale": "test",
+                **judge_payload,
+            }
+        ),
+        diagnostics={
+            **dict(row_fields.pop("diagnostics", {})),
+            **row_fields,
+        },
     )
 
 
@@ -199,12 +271,14 @@ def runtime_action(
     target: str,
     status: str,
     events: list[str],
+    action_type: str = "status_update",
     scenario_id: str = "sim_09_abandoned_then_resumed_work",
 ) -> RuntimeGraphItem:
     return RuntimeActionFixture(
         scenario_id=scenario_id,
         runtime_item_id=f"graph:node:action:uuid-{target}-{status}",
         action_id=f"action:uuid-{target}-{status}",
+        action_type=action_type,
         status=status,
         target_entity_ids=[target],
         evidence_event_ids=events,

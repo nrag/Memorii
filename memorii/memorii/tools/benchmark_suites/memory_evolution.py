@@ -142,10 +142,7 @@ def _run_memory_evolution_transitions(
                     mode=LLMDecisionMode(effective_mode),
                     rule_output=rule_output,
                 )
-                if effective_mode == "llm" and not llm_success:
-                    final_output_source = "llm"
-                else:
-                    final_output_source = "llm" if llm_success else "rule"
+                final_output_source = "llm" if llm_success else "rule"
                 llm_rows.append(
                     {
                         "scenario_id": scenario.scenario_id,
@@ -179,9 +176,7 @@ def _run_memory_evolution_transitions(
                 "decision_mode": mode,
                 "effective_decision_mode": effective_mode,
                 "llm_call_made": llm_used,
-                "fallback_used": (effective_mode in {"auto", "hybrid"} and not llm_success)
-                if llm_used
-                else fallback_used,
+                "fallback_used": llm_trace.fallback_used if llm_used else fallback_used,
                 "fallback_reason": fallback_reason,
                 "final_output_source": final_output_source,
                 "request_id": request_id if llm_used else llm_trace.trace_id,
@@ -283,6 +278,23 @@ def _write_memory_evolution_artifacts(
     run_dir.mkdir(parents=True, exist_ok=True)
     passed = sum(1 for row in scenario_rows if row["success"] is True)
     failed = len(scenario_rows) - passed
+    report_bucket_counts = _memory_evolution_report_bucket_counts(checkpoint_rows)
+    discriminative_scenario_ids = {
+        scenario.scenario_id for scenario in scenarios if scenario.discriminative
+    }
+    discriminative_scenario_rows = [
+        row for row in scenario_rows if row["scenario_id"] in discriminative_scenario_ids
+    ]
+    non_discriminative_scenario_rows = [
+        row for row in scenario_rows if row["scenario_id"] not in discriminative_scenario_ids
+    ]
+    discriminative_checkpoint_rows = [
+        row for row in checkpoint_rows if row["scenario_id"] in discriminative_scenario_ids
+    ]
+    non_discriminative_checkpoint_rows = [
+        row for row in checkpoint_rows if row["scenario_id"] not in discriminative_scenario_ids
+    ]
+    lifecycle_scope_counts = _lifecycle_expectation_scope_counts(checkpoint_rows)
     report = {
         "suite": suite,
         "mode": mode,
@@ -296,6 +308,20 @@ def _write_memory_evolution_artifacts(
         "passed": passed,
         "failed": failed,
         "llm_calls": len(llm_rows),
+        "discriminative_scenarios": len(discriminative_scenario_rows),
+        "non_discriminative_scenarios": len(non_discriminative_scenario_rows),
+        "discriminative_passed": sum(1 for row in discriminative_scenario_rows if row["success"] is True),
+        "discriminative_failed": sum(1 for row in discriminative_scenario_rows if row["success"] is False),
+        "non_discriminative_passed": sum(1 for row in non_discriminative_scenario_rows if row["success"] is True),
+        "non_discriminative_failed": sum(1 for row in non_discriminative_scenario_rows if row["success"] is False),
+        "discriminative_checkpoints": len(discriminative_checkpoint_rows),
+        "non_discriminative_checkpoints": len(non_discriminative_checkpoint_rows),
+        "discriminative_checkpoints_passed": sum(1 for row in discriminative_checkpoint_rows if row["success"] is True),
+        "discriminative_checkpoints_failed": sum(1 for row in discriminative_checkpoint_rows if row["success"] is False),
+        "non_discriminative_checkpoints_passed": sum(1 for row in non_discriminative_checkpoint_rows if row["success"] is True),
+        "non_discriminative_checkpoints_failed": sum(1 for row in non_discriminative_checkpoint_rows if row["success"] is False),
+        "lifecycle_expectation_scope_counts": lifecycle_scope_counts,
+        **report_bucket_counts,
         "scenario_results": scenario_rows,
         "checkpoint_results": checkpoint_rows,
     }
@@ -318,6 +344,97 @@ def _write_memory_evolution_artifacts(
     _write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
     _write_jsonl(run_dir / "failures.jsonl", [row for row in checkpoint_rows if row["success"] is False])
     return run_dir
+
+
+def _memory_evolution_report_bucket_counts(checkpoint_rows: list[dict[str, object]]) -> dict[str, dict[str, int]]:
+    failure_buckets = _bucket_counts(checkpoint_rows, field="failure_buckets")
+    warning_buckets = _bucket_counts(checkpoint_rows, field="warning_buckets")
+    return {
+        "failure_bucket_counts": failure_buckets,
+        "warning_bucket_counts": warning_buckets,
+        "answer_failure_counts": _filtered_bucket_counts(
+            failure_buckets,
+            {
+                "answer_mismatch",
+                "next_action_mismatch",
+                "selected_memory_mismatch",
+                "expected_retrieval_missing",
+            },
+        ),
+        "temporal_frame_failure_counts": _filtered_bucket_counts(
+            failure_buckets,
+            {bucket for bucket in failure_buckets if bucket.startswith("temporal_")},
+        ),
+        "temporal_frame_warning_counts": _filtered_bucket_counts(
+            warning_buckets,
+            {bucket for bucket in warning_buckets if bucket.startswith("temporal_")},
+        ),
+        "scope_canonicalization_failure_counts": _filtered_bucket_counts(
+            failure_buckets,
+            {"temporal_scope_mismatch", "temporal_scope_key_mismatch"},
+        ),
+        "belief_lifecycle_failure_counts": _filtered_bucket_counts(
+            failure_buckets,
+            {bucket for bucket in failure_buckets if bucket.startswith("belief_")},
+        ),
+        "lifecycle_snapshot_failure_counts": _filtered_bucket_counts(
+            failure_buckets,
+            {
+                bucket
+                for bucket in failure_buckets
+                if "checkpoint_" in bucket
+                or "lifecycle" in bucket
+                or bucket in {
+                    "superseded_record_marked_checkpoint_active",
+                    "historical_answer_record_marked_checkpoint_active",
+                }
+            },
+        ),
+        "channel_hygiene_failure_counts": _filtered_bucket_counts(
+            failure_buckets,
+            {
+                "citation_channel_pollution",
+                "belief_id_used_as_citation",
+                "excluded_memory_selected",
+                "selected_memory_rejected",
+                "command_event_selected_as_active_state",
+                "expected_excluded_memory_channel_missing",
+            },
+        ),
+    }
+
+
+def _lifecycle_expectation_scope_counts(checkpoint_rows: list[dict[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in checkpoint_rows:
+        diagnostics = row.get("diagnostics", {})
+        if not isinstance(diagnostics, dict):
+            continue
+        scope = diagnostics.get("lifecycle_expectation_scope")
+        if isinstance(scope, str):
+            counts[scope] = counts.get(scope, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _bucket_counts(checkpoint_rows: list[dict[str, object]], *, field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in checkpoint_rows:
+        buckets = row.get(field, [])
+        if not isinstance(buckets, list):
+            continue
+        for bucket in buckets:
+            if isinstance(bucket, str):
+                counts[bucket] = counts.get(bucket, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _filtered_bucket_counts(bucket_counts: dict[str, int], allowed_buckets: set[str]) -> dict[str, int]:
+    return {
+        bucket: count
+        for bucket, count in bucket_counts.items()
+        if bucket in allowed_buckets
+    }
+
 
 def _print_memory_evolution_summary(
     *,

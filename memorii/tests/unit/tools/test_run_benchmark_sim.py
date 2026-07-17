@@ -97,7 +97,8 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     assert int(fields["llm_calls"]) == payload["checkpoint_count"]
     assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
     assert payload["llm_calls"] == payload["checkpoint_count"]
-    assert payload["provider_successes"] == payload["checkpoint_count"]
+    assert payload["provider_successes"] == 0
+    assert payload["fake_calls"] == payload["checkpoint_count"]
     assert payload["final_output_source_counts"] == {"fake_oracle": payload["checkpoint_count"]}
     assert "critical_failure_bucket_counts" in payload
     assert "warning_bucket_counts" in payload

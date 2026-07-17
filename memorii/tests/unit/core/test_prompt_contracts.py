@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from inspect import signature
 from pathlib import Path
@@ -10,6 +11,10 @@ import yaml
 from jsonschema import Draft7Validator
 from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
 from memorii.core.benchmark.memory_evolution_decision import memory_evolution_context_for_checkpoint
+from memorii.core.benchmark.memory_evolution_sim import (
+    generate_memory_evolution_sim_scenarios,
+    sim_reconstruction_context_for_checkpoint,
+)
 from memorii.core.llm_decision.adapters import (
     LLMAnswerVerificationAdapter,
     LLMBeliefUpdateAdapter,
@@ -332,6 +337,20 @@ def test_prompt_manifest_ownership_matches_adapter_defaults() -> None:
     assert LLMMemoryExtractor.prompt_ref == "memory_extraction:v1"
 
 
+def test_production_prompt_registry_enforces_manifest_ownership() -> None:
+    registry = PromptRegistry(prompt_root=PROMPT_ROOT, require_manifest=True)
+
+    registry.load(
+        "promotion_decision:v1",
+        owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+    )
+    with pytest.raises(ValueError, match="owned by"):
+        registry.load(
+            "promotion_decision:v1",
+            owner=PromptOwner.LLM_BELIEF_UPDATE_ADAPTER,
+        )
+
+
 def test_prompt_manifest_rejects_unknown_owner_and_schema_owner_drift() -> None:
     base_payload = prompt_contract_manifest_by_ref()["promotion_decision:v1"].model_dump(mode="json")
 
@@ -353,6 +372,70 @@ def test_prompt_manifest_render_variables_are_clean_and_renderable(ref: str, ent
         assert f'"{key}"' not in rendered_text, f"{ref} rendered prompt leaked forbidden JSON key {key}"
     for fragment in entry.forbidden_live_prompt_fragments:
         assert fragment not in rendered_text
+
+
+@pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))
+def test_prompt_renderer_redacts_adversarial_nested_oracle_fields(
+    ref: str,
+    entry: PromptContractManifestEntry,
+) -> None:
+    contract = _load(ref)
+    variables = entry.render_variables()
+    structured_key = next(
+        (key for key, value in variables.items() if isinstance(value, (dict, list))),
+        None,
+    )
+    if structured_key is None:
+        pytest.skip(f"{ref} has no structured prompt input")
+    nested_payload = {
+        "expected_answer": "ORACLE_EXPECTED_SHOULD_NOT_RENDER",
+        "hidden_graph_items": [{"id": "HIDDEN_ID_SHOULD_NOT_RENDER"}],
+        "judge_votes": [{"score": "JUDGE_OUTPUT_SHOULD_NOT_RENDER"}],
+        "safe_context": "visible context",
+    }
+    variables[structured_key] = nested_payload
+
+    rendered = PromptRenderer().render(contract=contract, variables=variables)
+    rendered_text = f"{rendered.system}\n{rendered.user}"
+
+    for key in entry.forbidden_live_prompt_keys:
+        assert f'"{key}"' not in rendered_text
+    for fragment in entry.forbidden_live_prompt_fragments:
+        assert fragment not in rendered_text
+
+
+def test_prompt_renderer_does_not_render_hidden_values_from_real_candidate_cards() -> None:
+    scenario = next(
+        item
+        for item in generate_memory_evolution_sim_scenarios(
+            profile="adversarial",
+            scenario_count=10,
+            seed=7,
+            noise_rate=0.35,
+        )
+        if item.family == "belief_dependency_and_reranking"
+    )
+    checkpoint = scenario.checkpoints[0]
+    context = sim_reconstruction_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
+    hidden_values = {
+        value
+        for collection, identifier in (
+            (scenario.entities, "entity_id"),
+            (scenario.claims, "claim_id"),
+            (scenario.relations, "relation_id"),
+        )
+        for item in collection
+        if getattr(item, "observability", None) == "hidden"
+        for value in [str(getattr(item, identifier))]
+        if value
+    }
+    assert hidden_values
+    rendered = PromptRenderer().render(
+        contract=_load("memory_evolution_decision:v1"),
+        variables={"context_json": context.model_dump(mode="json"), "query": checkpoint.query_or_task},
+    )
+    rendered_text = f"{rendered.system}\n{rendered.user}"
+    assert hidden_values.isdisjoint(set(re.findall(r"[A-Za-z0-9_:-]+", rendered_text)))
 
 
 def test_memory_evolution_decision_real_context_render_excludes_oracle_fields() -> None:

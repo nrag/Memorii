@@ -129,6 +129,8 @@ class CalibrationSlice(BaseModel):
     slice_key: str
     slice_values: dict[str, str]
     n: int = Field(ge=0)
+    scenario_count: int = Field(default=0, ge=0)
+    probability_event_count: int = Field(default=0, ge=0)
     accuracy: float | None = None
     mean_confidence: float | None = None
     ece: float | None = None
@@ -141,9 +143,41 @@ class CalibrationSlice(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ScenarioClusterInterval(BaseModel):
+    """Cluster-bootstrap uncertainty for scenario-weighted calibration."""
+
+    estimate: float = Field(ge=0.0, le=1.0)
+    lower: float = Field(ge=0.0, le=1.0)
+    upper: float = Field(ge=0.0, le=1.0)
+    scenario_count: int = Field(ge=1)
+    observation_count: int = Field(ge=1)
+    confidence_level: float = Field(default=0.95, gt=0.0, lt=1.0)
+    resamples: int = Field(ge=1)
+    seed: int = Field(ge=0)
+    method: str = "scenario_cluster_bootstrap_percentile"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RiskCoveragePoint(BaseModel):
+    """Selective-prediction operating point for a confidence threshold."""
+
+    accepted_count: int = Field(ge=1)
+    labeled_count: int = Field(ge=1)
+    coverage: float = Field(ge=0.0, le=1.0)
+    selective_risk: float = Field(ge=0.0, le=1.0)
+    mean_confidence: float = Field(ge=0.0, le=1.0)
+    threshold: float = Field(ge=0.0, le=1.0)
+    abstention_rate: float = Field(ge=0.0, le=1.0)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CalibrationReport(BaseModel):
     event_count: int = Field(ge=0)
     labeled_event_count: int = Field(ge=0)
+    probability_event_count: int = Field(default=0, ge=0)
+    partial_event_count: int = Field(default=0, ge=0)
     overall_accuracy: float | None = None
     ece: float | None = None
     brier_score: float | None = None
@@ -156,6 +190,15 @@ class CalibrationReport(BaseModel):
     response_recommendations: dict[str, int] = Field(default_factory=dict)
     label_source_counts: dict[str, int] = Field(default_factory=dict)
     hierarchy_layer_counts: dict[str, int] = Field(default_factory=dict)
+    scenario_cluster_intervals: dict[str, ScenarioClusterInterval] = Field(default_factory=dict)
+    risk_coverage: list[RiskCoveragePoint] = Field(default_factory=list)
+    abstention_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    selective_risk_at_full_coverage: float | None = Field(default=None, ge=0.0, le=1.0)
+    input_telemetry_count: int = Field(default=0, ge=0)
+    input_telemetry_by_type: dict[str, int] = Field(default_factory=dict)
+    scenario_count: int = Field(default=0, ge=0)
+    minimum_scenario_count: int = Field(default=30, ge=1)
+    stability_status: str = "insufficient_coverage"
 
     model_config = ConfigDict(extra="forbid")
 

@@ -322,6 +322,47 @@ def test_memory_evolution_sim_definition_support_overlap_is_warning_not_failure(
     assert diagnostics["precision_failure_classification"] == []
 
 
+def test_memory_evolution_sim_required_definition_claim_in_rejected_channel_fails() -> None:
+    scenario = generate_scenario_by_family(
+        profile="long_horizon",
+        family="current_vs_historical_truth",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "historical_truth")
+    required_definition_claim = claim_by_role(scenario, "entity_type_missing")
+    required_definition_claim_id = required_definition_claim.claim_id
+    required_definition_event_id = required_definition_claim.evidence.source_event_ids[0]
+    oracle_output = expected_sim_output_for_checkpoint(checkpoint)
+    output = oracle_output.model_copy(
+        update={
+            "selected_claim_ids": [*oracle_output.selected_claim_ids, required_definition_claim_id],
+            "supporting_claim_ids": [*oracle_output.supporting_claim_ids, required_definition_claim_id],
+            "supporting_citation_event_ids": [
+                *oracle_output.supporting_citation_event_ids,
+                required_definition_event_id,
+            ],
+            "rejected_claim_ids": [
+                *oracle_output.rejected_claim_ids,
+                required_definition_claim_id,
+            ],
+        }
+    )
+
+    aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
+    diagnostics = sim_checkpoint_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        output=output,
+        aggregate=aggregate,
+    )
+
+    assert aggregate.verdict == JudgeVerdict.FAIL
+    assert "definition_claim_rejected" in aggregate.critical_failure_buckets
+    assert diagnostics["rejected_required_definition_claim_ids"] == [required_definition_claim_id]
+    assert "definition_claim_rejected" in diagnostics["precision_failure_classification"]
+
+
 def test_memory_evolution_sim_historical_truth_allows_superseded_selected_claim() -> None:
     scenario = generate_scenario_by_family(
         profile="smoke",

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
+from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 
 from memorii.core.calibration.metrics import (
     brier_score,
@@ -13,7 +14,9 @@ from memorii.core.calibration.metrics import (
     labeled_events,
     low_confidence_correct_count,
     overconfident_wrong_count,
+    risk_coverage_curve,
     rolling_window_metrics,
+    scenario_cluster_accuracy_interval,
 )
 from memorii.core.calibration.models import (
     CalibrationDecisionChannel,
@@ -37,7 +40,7 @@ def build_calibration_artifacts(
     checkpoint_rows: list[dict[str, object]],
 ) -> tuple[list[CalibrationEvent], CalibrationReport, list[dict[str, object]], DecisionCostReport]:
     events = calibration_events_from_checkpoint_rows(suite=suite, profile=profile, checkpoint_rows=checkpoint_rows)
-    report = build_calibration_report(events)
+    report = build_calibration_report(events, input_telemetry=_input_telemetry_from_checkpoint_rows(checkpoint_rows))
     slices = [item.model_dump(mode="json") for item in build_calibration_slices(events)]
     decision_report = build_decision_cost_report(checkpoint_rows)
     return events, report, slices, decision_report
@@ -51,7 +54,6 @@ def calibration_events_from_checkpoint_rows(
 ) -> list[CalibrationEvent]:
     events: list[CalibrationEvent] = []
     for index, row in enumerate(checkpoint_rows):
-        events.extend(_hierarchy_events_from_candidate_cards(suite=suite, profile=profile, row=row, row_index=index))
         output = _json_mapping(row.get("output"))
         expected = _json_mapping(row.get("expected"))
         aggregate = _json_mapping(row.get("judge_aggregate"))
@@ -113,6 +115,33 @@ def calibration_events_from_checkpoint_rows(
                         output_key=output_key,
                     )
                 )
+            if channel in {CalibrationDecisionChannel.SELECTED, CalibrationDecisionChannel.SUPPORTING}:
+                emitted_ids = {str(item_id) for item_id in ids}
+                for missing_id in sorted(expected_ids - emitted_ids):
+                    row_event_count += 1
+                    missing_buckets = [*base_failure_buckets, f"missing_required_{channel.value}"]
+                    rejected_ids = {str(item_id) for item_id in _json_sequence(output.get("rejected_claim_ids"))}
+                    if missing_id in rejected_ids:
+                        missing_buckets.append("expected_item_rejected")
+                    events.append(
+                        _calibration_event(
+                            suite=suite,
+                            profile=profile,
+                            row=row,
+                            row_index=index,
+                            item_id=missing_id,
+                            item_type=item_type,
+                            hierarchy_layer=CalibrationHierarchyLayer.RETRIEVAL_DECISION,
+                            decision_channel=channel,
+                            confidence=row_confidence,
+                            label=CalibrationLabel.INCORRECT,
+                            label_source=CalibrationLabelSource.LATENT_ORACLE,
+                            label_rationale="required item was absent from the answer-bearing channel",
+                            failure_buckets=missing_buckets,
+                            judge_ids=judge_ids,
+                            output_key=f"{output_key}:missing",
+                        )
+                    )
         if base_failure_buckets and any(bucket in {"hidden_fact_hallucinated", "hidden_fact_answer_leak", "overconfident_wrong_answer"} for bucket in base_failure_buckets):
             events.append(
                 _calibration_event(
@@ -138,9 +167,14 @@ def calibration_events_from_checkpoint_rows(
     return events
 
 
-def build_calibration_report(events: list[CalibrationEvent]) -> CalibrationReport:
+def build_calibration_report(
+    events: list[CalibrationEvent],
+    *,
+    input_telemetry: dict[str, int] | None = None,
+) -> CalibrationReport:
     labeled = labeled_events(events)
-    positives = sum(1 for event in labeled if event.label == CalibrationLabel.CORRECT)
+    probability_labeled = [event for event in labeled if event.label in {CalibrationLabel.CORRECT, CalibrationLabel.INCORRECT}]
+    positives = sum(1 for event in probability_labeled if event.label == CalibrationLabel.CORRECT)
     hidden_events = [event for event in events if "hidden_fact_hallucinated" in event.failure_buckets or "hidden_fact_answer_leak" in event.failure_buckets]
     ambiguous_events = [event for event in events if "ambiguous_fact_overcommitted" in event.failure_buckets]
     response_counts = Counter(response_for_failure_buckets(event.failure_buckets).value for event in events)
@@ -149,10 +183,15 @@ def build_calibration_report(events: list[CalibrationEvent]) -> CalibrationRepor
     slices = build_calibration_slices(events)
     worst_slices = [item for item in slices if item.eligible_for_failure and item.response_level != CalibrationResponseLevel.REPORT_ONLY][:10]
     response_counts.update(item.response_level.value for item in worst_slices)
+    cluster_accuracy = scenario_cluster_accuracy_interval(events)
+    risk_coverage = risk_coverage_curve(events)
+    scenario_count = len({event.scenario_id for event in events})
     return CalibrationReport(
         event_count=len(events),
         labeled_event_count=len(labeled),
-        overall_accuracy=(positives / len(labeled)) if labeled else None,
+        probability_event_count=len(probability_labeled),
+        partial_event_count=sum(1 for event in labeled if event.label == CalibrationLabel.PARTIAL),
+        overall_accuracy=(positives / len(probability_labeled)) if probability_labeled else None,
         ece=expected_calibration_error(events),
         brier_score=brier_score(events),
         overconfident_wrong_count=overconfident_wrong_count(events),
@@ -164,7 +203,39 @@ def build_calibration_report(events: list[CalibrationEvent]) -> CalibrationRepor
         response_recommendations=dict(sorted(response_counts.items())),
         label_source_counts=dict(sorted(label_source_counts.items())),
         hierarchy_layer_counts=dict(sorted(hierarchy_layer_counts.items())),
+        scenario_cluster_intervals={"accuracy": cluster_accuracy} if cluster_accuracy is not None else {},
+        risk_coverage=risk_coverage,
+        abstention_rate=(
+            sum(1 for event in labeled if event.decision_channel.value == "abstained") / len(labeled)
+            if labeled
+            else None
+        ),
+        selective_risk_at_full_coverage=risk_coverage[-1].selective_risk if risk_coverage else None,
+        input_telemetry_count=sum(input_telemetry.values()) if input_telemetry else 0,
+        input_telemetry_by_type=dict(sorted((input_telemetry or {}).items())),
+        scenario_count=scenario_count,
+        stability_status="eligible" if scenario_count >= 30 else "insufficient_coverage",
     )
+
+
+def _input_telemetry_from_checkpoint_rows(checkpoint_rows: list[dict[str, object]]) -> dict[str, int]:
+    """Count observable inputs without treating them as model predictions.
+
+    Candidate cards are context supplied to an extractor or decision stage.
+    They are useful for coverage audits, but labeling them correct would
+    contaminate calibration metrics with oracle-visible inputs.
+    """
+
+    counts: Counter[str] = Counter()
+    for row in checkpoint_rows:
+        cards = row.get("candidate_cards")
+        if not isinstance(cards, Mapping):
+            continue
+        for key in ("visible_events", "visible_entities", "visible_claims", "visible_relations"):
+            values = cards.get(key)
+            if isinstance(values, Sequence) and not isinstance(values, (str, bytes)):
+                counts[key] += len(values)
+    return dict(counts)
 
 
 def build_decision_cost_report(checkpoint_rows: list[dict[str, object]]) -> DecisionCostReport:
@@ -195,109 +266,6 @@ def build_decision_cost_report(checkpoint_rows: list[dict[str, object]]) -> Deci
         regret_total=total,
         regret_mean=total / max(1, len(checkpoint_rows)),
     )
-
-
-def _hierarchy_events_from_candidate_cards(*, suite: str, profile: str, row: dict[str, object], row_index: int) -> list[CalibrationEvent]:
-    cards = row.get("candidate_cards") if isinstance(row.get("candidate_cards"), dict) else {}
-    events: list[CalibrationEvent] = []
-    if not isinstance(cards, dict):
-        return events
-    for visible_event in cards.get("visible_events", []) or []:
-        if not isinstance(visible_event, dict):
-            continue
-        trust = _int(visible_event.get("trust_level"))
-        events.append(
-            _calibration_event(
-                suite=suite,
-                profile=profile,
-                row=row,
-                row_index=row_index,
-                item_id=str(visible_event.get("event_id", "unknown")),
-                item_type=CalibrationItemType.SOURCE_OBSERVATION,
-                hierarchy_layer=CalibrationHierarchyLayer.OBSERVATION,
-                decision_channel=CalibrationDecisionChannel.CONTEXT,
-                confidence=max(0.0, min(1.0, (trust or 0) / 5)),
-                label=CalibrationLabel.CORRECT,
-                label_source=CalibrationLabelSource.LATENT_ORACLE,
-                label_rationale="surface observation is oracle-visible evidence",
-                source_modality=str(visible_event.get("modality", "unknown")),
-                source_trust=trust,
-                phase=str(visible_event.get("phase", "unknown")),
-                output_key="visible_events",
-            )
-        )
-    for entity in cards.get("visible_entities", []) or []:
-        if not isinstance(entity, dict):
-            continue
-        events.append(
-            _calibration_event(
-                suite=suite,
-                profile=profile,
-                row=row,
-                row_index=row_index,
-                item_id=str(entity.get("entity_id", "unknown")),
-                item_type=CalibrationItemType.ENTITY,
-                hierarchy_layer=CalibrationHierarchyLayer.EXTRACTION,
-                decision_channel=CalibrationDecisionChannel.CONTEXT,
-                confidence=0.8,
-                label=CalibrationLabel.CORRECT,
-                label_source=CalibrationLabelSource.LATENT_ORACLE,
-                label_rationale="visible entity candidate is generated from observable latent graph item",
-                lifecycle_state=str(entity.get("lifecycle_state", "unknown")),
-                evidence_event_ids=[str(item) for item in entity.get("evidence_event_ids", []) or []],
-                output_key="visible_entities",
-            )
-        )
-    for claim in cards.get("visible_claims", []) or []:
-        if not isinstance(claim, dict):
-            continue
-        for layer in (CalibrationHierarchyLayer.EXTRACTION, CalibrationHierarchyLayer.VALIDATION, CalibrationHierarchyLayer.GRAPH):
-            events.append(
-                _calibration_event(
-                    suite=suite,
-                    profile=profile,
-                    row=row,
-                    row_index=row_index,
-                    item_id=str(claim.get("claim_id", "unknown")),
-                    item_type=CalibrationItemType.CLAIM,
-                    hierarchy_layer=layer,
-                    decision_channel=CalibrationDecisionChannel.CONTEXT,
-                    confidence=max(0.0, min(1.0, (_int(claim.get("source_trust")) or 0) / 5)),
-                    label=CalibrationLabel.CORRECT,
-                    label_source=CalibrationLabelSource.LATENT_ORACLE,
-                    label_rationale=f"visible claim candidate contributes to {layer.value} calibration",
-                    source_modality=str(claim.get("source_modality", "unknown")),
-                    source_trust=_int(claim.get("source_trust")),
-                    predicate_id=str(claim.get("predicate_id", "unknown")),
-                    scope_key=str(claim.get("scope_key", "unknown")),
-                    lifecycle_state=str(claim.get("lifecycle_state", "unknown")),
-                    evidence_event_ids=[str(item) for item in claim.get("evidence_event_ids", []) or []],
-                    output_key=f"visible_claims:{layer.value}",
-                )
-            )
-    for relation in cards.get("visible_relations", []) or []:
-        if not isinstance(relation, dict):
-            continue
-        events.append(
-            _calibration_event(
-                suite=suite,
-                profile=profile,
-                row=row,
-                row_index=row_index,
-                item_id=str(relation.get("relation_id", "unknown")),
-                item_type=CalibrationItemType.RELATION,
-                hierarchy_layer=CalibrationHierarchyLayer.GRAPH,
-                decision_channel=CalibrationDecisionChannel.CONTEXT,
-                confidence=0.8,
-                label=CalibrationLabel.CORRECT,
-                label_source=CalibrationLabelSource.LATENT_ORACLE,
-                label_rationale="visible relation candidate contributes to graph calibration",
-                lifecycle_state=str(relation.get("lifecycle_state", "unknown")),
-                evidence_event_ids=[str(item) for item in relation.get("evidence_event_ids", []) or []],
-                output_key="visible_relations",
-            )
-        )
-    return events
 
 
 def _calibration_event(
@@ -338,7 +306,7 @@ def _calibration_event(
     )
     return CalibrationEvent(
         event_id=f"cal:{row.get('scenario_id')}:{row.get('checkpoint_id')}:{row_index}:{hierarchy_layer.value}:{decision_channel.value}:{output_key}:{item_id}",
-        timestamp=datetime.now(UTC),
+        timestamp=_calibration_event_timestamp(row, row_index),
         suite=suite,
         scenario_id=str(row.get("scenario_id", "unknown")),
         checkpoint_id=str(row.get("checkpoint_id", "unknown")),
@@ -375,6 +343,22 @@ def _calibration_event(
             "output_key": output_key,
         },
     )
+
+
+def _calibration_event_timestamp(row: Mapping[str, object], row_index: int) -> datetime:
+    """Use checkpoint time for calibration ordering, with a deterministic fallback."""
+
+    candidates: list[object] = [row.get("checkpoint_timestamp"), row.get("timestamp")]
+    expected = _json_mapping(row.get("expected"))
+    candidates.append(expected.get("timestamp"))
+    for candidate in candidates:
+        if isinstance(candidate, datetime):
+            return candidate if candidate.tzinfo is not None else candidate.replace(tzinfo=UTC)
+        if isinstance(candidate, str) and candidate.strip():
+            with suppress(ValueError):
+                parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+                return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(seconds=row_index)
 
 
 def _label_for_item(

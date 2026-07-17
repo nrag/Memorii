@@ -135,6 +135,105 @@ def test_runtime_action_alignment_classifies_target_status_and_evidence_failures
     assert missing_evidence["failure_reason"] == "runtime_action_evidence_missing"
 
 
+def test_runtime_action_alignment_derives_progress_status_from_action_type() -> None:
+    scenario, checkpoint = long_horizon_execution_scenario()
+
+    rows = expected_action_alignment_rows(
+        scenario=scenario,
+        expected_action_ids=checkpoint.expected_action_ids,
+        graph_items=[
+            runtime_action(
+                target="ent:atlas-cleanup-branch-b",
+                status="started",
+                action_type="in_progress",
+                events=["event_09_branch_b_progress"],
+            )
+        ],
+        runtime_claim_by_oracle={},
+    )
+
+    assert rows[0]["verdict"] == "aligned"
+    assert rows[0]["status"] == "in_progress"
+    assert rows[0]["status_derived_from"] == "action_type"
+
+
+def test_runtime_action_alignment_prefers_explicit_progress_over_resume_verb() -> None:
+    scenario, checkpoint = long_horizon_execution_scenario()
+
+    rows = expected_action_alignment_rows(
+        scenario=scenario,
+        expected_action_ids=checkpoint.expected_action_ids,
+        graph_items=[
+            runtime_action(
+                target="ent:atlas-cleanup-branch-b",
+                status="in_progress",
+                action_type="resume",
+                events=["event_09_branch_b_progress"],
+            )
+        ],
+        runtime_claim_by_oracle={},
+    )
+
+    assert rows[0]["verdict"] == "aligned"
+    assert rows[0]["status"] == "in_progress"
+    assert rows[0]["status_derived_from"] == "status"
+
+
+def test_runtime_claim_alignment_requires_provenance_even_when_claim_id_matches() -> None:
+    scenario = generate_scenario_by_family(
+        profile="smoke",
+        family="current_vs_historical_truth",
+        seed=7,
+    )
+    graph_item = runtime_claim(
+        scenario_id=scenario.scenario_id,
+        runtime_id="claim_01_previous_owner_old",
+        subject_id="ent:atlas",
+        subject="atlas",
+        predicate="owner",
+        obj="Alice",
+        event="event_01_002",
+    )
+    graph_item["evidence_event_ids"] = []
+
+    alignment = alignment_for(
+        align_runtime_graph_to_oracle(scenario=scenario, graph_items=[graph_item]),
+        "claim_01_previous_owner_old",
+    )
+
+    assert alignment.verdict.value == "partial"
+    assert alignment.rationale == "claim id matches but provenance is missing"
+
+
+def test_runtime_alignment_enforces_one_to_one_oracle_claim_mapping() -> None:
+    scenario = generate_scenario_by_family(
+        profile="smoke",
+        family="current_vs_historical_truth",
+        seed=7,
+    )
+    first = runtime_claim(
+        scenario_id=scenario.scenario_id,
+        runtime_id="claim_01_previous_owner_old",
+        subject_id="ent:atlas",
+        subject="atlas",
+        predicate="owner",
+        obj="Alice",
+        event="event_01_002",
+    )
+    duplicate = dict(first)
+    duplicate["runtime_item_id"] = "rt:duplicate-previous-owner"
+    alignments = align_runtime_graph_to_oracle(scenario=scenario, graph_items=[first, duplicate])
+    claim_rows = [
+        row
+        for row in alignments
+        if row.item_type == "claim"
+        and row.runtime_item_id in {"claim_01_previous_owner_old", "rt:duplicate-previous-owner"}
+    ]
+
+    assert sum(row.verdict.value == "aligned" for row in claim_rows) == 1
+    assert sum(row.verdict.value == "unmatched_runtime" for row in claim_rows) == 1
+
+
 
 def test_runtime_claim_alignment_does_not_merge_service_into_project() -> None:
     scenario = generate_scenario_by_family(

@@ -21,6 +21,8 @@ from memorii.core.calibration.models import (
     CalibrationSlice,
     DecisionAction,
     DecisionCostReport,
+    RiskCoveragePoint,
+    ScenarioClusterInterval,
 )
 from memorii.core.calibration.reports import build_calibration_artifacts
 
@@ -35,8 +37,10 @@ __all__ = [
     "CalibrationReport",
     "CalibrationResponseLevel",
     "CalibrationSlice",
+    "ScenarioClusterInterval",
     "DecisionAction",
     "DecisionCostReport",
+    "RiskCoveragePoint",
     "RuntimeGraphAlignment",
     "RuntimeGraphAlignmentVerdict",
     "align_claim_by_fields",

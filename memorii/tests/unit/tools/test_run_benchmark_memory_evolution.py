@@ -79,6 +79,28 @@ def test_memory_evolution_benchmark_dry_run_llm_passes_all_cases(
     assert payload["dry_run"] is True
     assert payload["live_run"] is False
     assert payload["artifact_version"] == "memory_evolution_v1_artifacts:2"
+    for report_field in [
+        "failure_bucket_counts",
+        "warning_bucket_counts",
+        "answer_failure_counts",
+        "temporal_frame_failure_counts",
+        "temporal_frame_warning_counts",
+        "scope_canonicalization_failure_counts",
+        "belief_lifecycle_failure_counts",
+        "lifecycle_snapshot_failure_counts",
+        "channel_hygiene_failure_counts",
+        "discriminative_scenarios",
+        "non_discriminative_scenarios",
+        "discriminative_passed",
+        "discriminative_failed",
+        "non_discriminative_passed",
+        "non_discriminative_failed",
+        "lifecycle_expectation_scope_counts",
+    ]:
+        assert report_field in payload
+    assert payload["discriminative_scenarios"] + payload["non_discriminative_scenarios"] == payload["scenarios"]
+    assert payload["discriminative_passed"] + payload["discriminative_failed"] == payload["discriminative_scenarios"]
+    assert payload["non_discriminative_passed"] + payload["non_discriminative_failed"] == payload["non_discriminative_scenarios"]
     checkpoint_rows = [
         json.loads(line)
         for line in (run_dir / "memory_evolution_checkpoint_traces.jsonl").read_text(encoding="utf-8").splitlines()
@@ -168,7 +190,49 @@ def test_memory_evolution_hybrid_falls_back_to_rule_on_invalid_llm_output(
     assert len([row for row in rows if row["success"] is False]) >= 5
 
 
+def test_memory_evolution_llm_provider_error_is_not_reported_as_llm_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class ProviderErrorFakeClient:
+        provider_name = "fake-provider-error"
+
+        def complete_structured(
+            self,
+            request: LLMStructuredRequest,
+            *,
+            config: LLMRuntimeConfig,
+        ) -> LLMStructuredResponse:
+            del request, config
+            raise RuntimeError("synthetic provider failure")
+
+    monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", ProviderErrorFakeClient)
+    monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    assert main(
+        [
+            "--suite",
+            "memory_evolution_v1",
+            "--mode",
+            "llm",
+            "--dry-run",
+            "--storage-root",
+            str(tmp_path),
+        ]
+    ) == 0
+
+    run_dir = _latest_run_dir(tmp_path, "memory_evolution_v1", "llm")
+    rows = [
+        json.loads(line)
+        for line in (run_dir / "memory_evolution_checkpoint_traces.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert rows
+    assert all(row["fallback_used"] is True for row in rows)
+    assert all(row["fallback_reason"] == "provider_error" for row in rows)
+    assert all(row["final_output_source"] == "rule" for row in rows)
+
+
 def test_memory_evolution_benchmark_rejects_all_systems() -> None:
     with pytest.raises(SystemExit, match="memorii only"):
         main(["--suite", "memory_evolution_v1", "--systems", "all"])
-

@@ -21,6 +21,7 @@ from memorii.core.memory_evolution.models import (
     ExtractionRun,
     SourceObservation,
 )
+from memorii.core.prompts.manifest import PromptOwner
 from memorii.core.prompts.registry import PromptRegistry
 
 
@@ -148,6 +149,10 @@ class RuleMemoryExtractor:
                     target_entity_ids=[_entity_id(target)],
                     status=status,
                     timestamp=observation.timestamp,
+                    task_id=observation.task_id,
+                    session_id=observation.session_id,
+                    user_id=observation.user_id,
+                    scope_key=observation.task_id or "global",
                     evidence_spans=[span],
                     extraction_run_id=run_id,
                 )
@@ -168,13 +173,13 @@ class LLMMemoryExtractor:
     ) -> None:
         root = prompt_root or Path(__file__).resolve().parents[2] / "prompts"
         self._runner = runner
-        self._registry = PromptRegistry(prompt_root=root)
+        self._registry = PromptRegistry(prompt_root=root, require_manifest=True)
         self.model: str | None = None
         self.prompt_hash: str | None = None
 
     def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
-        contract = self._registry.load(self.prompt_ref)
+        contract = self._registry.load(self.prompt_ref, owner=PromptOwner.LLM_MEMORY_EXTRACTOR)
         result = self._runner.run(
             contract=contract,
             variables={
@@ -306,7 +311,7 @@ def _models_from_llm_output(
                     confidence=_float_output(item.get("confidence"), default=0.5),
                 )
             )
-        except Exception as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             errors.append(f"entity[{idx}]: {type(exc).__name__}:{exc}")
 
     for idx, item in enumerate(_list_output(output, "claims")):
@@ -371,7 +376,7 @@ def _models_from_llm_output(
                     extraction_run_id=run_id,
                 )
             )
-        except Exception as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             errors.append(f"claim[{idx}]: {type(exc).__name__}:{exc}")
 
     for idx, item in enumerate(_list_output(output, "actions")):
@@ -397,11 +402,15 @@ def _models_from_llm_output(
                     dependency_ids=[str(value) for value in _sequence_output(item.get("dependency_ids"))],
                     blocking_ids=[str(value) for value in _sequence_output(item.get("blocking_ids"))],
                     timestamp=_parse_dt(item.get("timestamp")) or observation.timestamp,
+                    task_id=str(item["task_id"]) if item.get("task_id") else observation.task_id,
+                    session_id=str(item["session_id"]) if item.get("session_id") else observation.session_id,
+                    user_id=str(item["user_id"]) if item.get("user_id") else observation.user_id,
+                    scope_key=str(item.get("scope_key") or observation.task_id or "global"),
                     evidence_spans=[span],
                     extraction_run_id=run_id,
                 )
             )
-        except Exception as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             errors.append(f"action[{idx}]: {type(exc).__name__}:{exc}")
 
     claims = _canonicalize_claim_arguments(claims, entities)

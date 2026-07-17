@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
-from memorii.core.benchmark.artifact_rows import BenchmarkReportSummary
+from memorii.core.benchmark.artifact_validation import validate_memory_evolution_run
 from memorii.core.benchmark.memory_evolution_runtime import (
     run_runtime_scenarios,
     runtime_summary_metrics,
@@ -16,9 +15,9 @@ from memorii.core.benchmark.memory_evolution_runtime import (
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
 from memorii.tools.benchmark_suites.memory_evolution_sim import (
-    _load_memory_evolution_sim_suite,
-    _print_memory_evolution_sim_summary,
-    _write_memory_evolution_sim_artifacts,
+    load_memory_evolution_scenarios,
+    print_memory_evolution_summary,
+    write_memory_evolution_artifacts,
 )
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
 
@@ -31,8 +30,9 @@ def _run_memory_evolution_runtime_suite(
     prompt_root: Path,
     dependencies: BenchmarkRuntimeDependencies,
 ) -> int:
-    scenarios, fixture_source = _load_memory_evolution_sim_suite(args)
+    scenarios, fixture_source = load_memory_evolution_scenarios(args)
     modes = ["rule", "llm", "hybrid"] if args.mode == "all" else [args.mode]
+    exit_code = 0
     for mode in modes:
         runtime_rows = run_runtime_scenarios(
             scenarios=scenarios,
@@ -42,7 +42,29 @@ def _run_memory_evolution_runtime_suite(
             prompt_root=prompt_root,
             llm_client_factory=dependencies.llm_client_factory,
         )
-        run_dir = _write_memory_evolution_sim_artifacts(
+        summary = runtime_summary_metrics(runtime_rows)
+        provider_health = summary["runtime_provider_health"]
+        runtime_metric_scalars = {
+            key: value for key, value in summary.items() if not isinstance(value, dict)
+        }
+        report_overrides = {
+            "dry_run": runtime_rows.dry_run,
+            "execution_source": provider_health.get("execution_source", "mixed")
+            if isinstance(provider_health, dict)
+            else "mixed",
+            "provider_successes": summary.get("provider_successes", 0),
+            "provider_failures": summary.get("provider_failures", 0),
+            "fallbacks": summary.get("fallbacks", 0),
+            "fake_calls": len(runtime_rows.llm_rows) if runtime_rows.dry_run else 0,
+            "runtime": summary,
+            "metrics": runtime_metric_scalars,
+            "runtime_graph_summary": summary["runtime_graph_summary"],
+            "runtime_graph_alignments_summary": summary["runtime_graph_alignments_summary"],
+            "runtime_failure_bucket_counts": summary["runtime_failure_bucket_counts"],
+            "runtime_provider_health": summary["runtime_provider_health"],
+            "warning_policy": runtime_warning_policy(),
+        }
+        run_dir = write_memory_evolution_artifacts(
             scenarios=scenarios,
             scenario_rows=runtime_rows.scenario_rows,
             checkpoint_rows=runtime_rows.checkpoint_rows,
@@ -53,28 +75,11 @@ def _run_memory_evolution_runtime_suite(
             storage_root=args.storage_root,
             fixture_source=fixture_source,
             args=args,
+            report_overrides=report_overrides,
         )
         write_runtime_artifacts(run_dir=run_dir, rows=runtime_rows)
-        summary = runtime_summary_metrics(runtime_rows)
-        report_path = run_dir / "report.json"
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-        report.setdefault("runtime", {}).update(summary)
-        if isinstance(summary.get("runtime_graph_summary"), dict):
-            report["runtime_graph_summary"] = summary["runtime_graph_summary"]
-        if isinstance(summary.get("runtime_graph_alignments_summary"), dict):
-            report["runtime_graph_alignments_summary"] = summary["runtime_graph_alignments_summary"]
-        if isinstance(summary.get("runtime_failure_bucket_counts"), dict):
-            report["runtime_failure_bucket_counts"] = summary["runtime_failure_bucket_counts"]
-        report["warning_policy"] = runtime_warning_policy()
-        metrics = report.get("metrics", {}) if isinstance(report.get("metrics"), dict) else {}
-        for key in ("hidden_item_count", "hidden_hallucination_rate", "hidden_answer_leak_rate"):
-            if key in metrics:
-                report[key] = metrics[key]
-        scalar_summary = {key: value for key, value in summary.items() if not isinstance(value, dict)}
-        report["metrics"] = {**report.get("metrics", {}), **scalar_summary}
-        report = BenchmarkReportSummary.from_flat_row(report).to_json_row()
-        report_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-        _print_memory_evolution_sim_summary(
+        validate_memory_evolution_run(run_dir, suite=SUITE_NAME)
+        print_memory_evolution_summary(
             suite=SUITE_NAME,
             mode=mode,
             profile=args.sim_profile,
@@ -84,7 +89,14 @@ def _run_memory_evolution_runtime_suite(
             checkpoint_rows=runtime_rows.checkpoint_rows,
             llm_rows=runtime_rows.llm_rows,
         )
-    return 0
+        provider_health = summary.get("runtime_provider_health", {})
+        if isinstance(provider_health, dict) and provider_health.get("clean_runtime_gate") is False:
+            exit_code = 1
+        if getattr(args, "fail_on_benchmark_failure", False) and any(
+            not row.success for row in runtime_rows.checkpoint_rows
+        ):
+            exit_code = 1
+    return exit_code
 
 
 

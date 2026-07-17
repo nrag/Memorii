@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     LatentClaim,
     LatentGraphScenario,
@@ -210,7 +212,10 @@ def checkpoint_channel_policy_payload(checkpoint: OracleCheckpoint) -> dict[str,
         "answer_required": contract.answer_required,
         "definition_claims_required_in_selected": contract.definition_claims_required_in_selected,
         "supporting_claim_policy": "direct_support_for_selected_claims_and_required_definitions",
-        "rejected_claim_policy": "stale_superseded_lower_trust_wrong_entity_or_ambiguous_evidence",
+        "rejected_claim_policy": (
+            "stale_superseded_lower_trust_wrong_entity_or_ambiguous_evidence; "
+            "do_not_reject_true_definition_claims_for_the_selected_subject"
+        ),
         "context_claim_policy": "audit_context_not_direct_answer_support",
         "query_focus_policy": _query_focus_policy_payload(checkpoint),
         "citation_policy": (
@@ -266,7 +271,12 @@ def _support_channel_hint(
     claim: LatentClaim,
     *,
     checkpoint: OracleCheckpoint,
-) -> str:
+) -> Literal[
+    "direct_answer_candidate",
+    "definition_candidate",
+    "rejection_or_context_candidate",
+    "context_only_candidate",
+]:
     if _is_definition_claim(claim):
         return "definition_candidate"
     if _is_stale_or_invalidated_claim(claim) or _is_low_trust_or_ambiguous_claim(claim):
@@ -302,7 +312,12 @@ def _action_state_status(claim: LatentClaim) -> str | None:
     return normalized
 
 
-def _continuation_eligibility(claim: LatentClaim) -> str:
+def _continuation_eligibility(claim: LatentClaim) -> Literal[
+    "active_candidate",
+    "suppressed_candidate",
+    "audit_context",
+    "not_applicable",
+]:
     status = _action_state_status(claim)
     if status is None:
         return "not_applicable"

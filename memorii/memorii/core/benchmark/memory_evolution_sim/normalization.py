@@ -110,7 +110,9 @@ def normalize_sim_system_output_for_checkpoint(
 
     The normalizer repairs deterministic channel omissions, but intentionally does
     not remove selected/supporting pollution. Wrong-entity or stale evidence in
-    supporting_* must still fail precision judges.
+    supporting_* must still fail precision judges. A definition claim that this
+    normalizer promotes is the one exception: it cannot remain rejected because
+    that would create an internally contradictory role assignment.
     """
 
     selected_entity_ids = list(output.selected_entity_ids)
@@ -119,6 +121,7 @@ def normalize_sim_system_output_for_checkpoint(
     supporting_citation_event_ids = list(output.supporting_citation_event_ids)
     rejected_entity_ids = list(output.rejected_entity_ids)
     rejected_claim_ids = list(output.rejected_claim_ids)
+    rejection_citation_event_ids = list(output.rejection_citation_event_ids)
     context_entity_ids = list(output.context_entity_ids)
     context_relation_ids = list(output.context_relation_ids)
 
@@ -128,6 +131,8 @@ def normalize_sim_system_output_for_checkpoint(
     auto_selected_claims: list[str] = []
     auto_supporting_claims: list[str] = []
     auto_supporting_events: list[str] = []
+    auto_demoted_execution_context_claims: list[str] = []
+    repaired_definition_claim_conflicts: list[str] = []
     auto_rejected_claims: list[str] = []
     auto_context_relations: list[str] = []
     reason_codes: list[str] = []
@@ -182,12 +187,63 @@ def normalize_sim_system_output_for_checkpoint(
         claim = _claim_by_id(scenario, claim_id)
         if claim is None or claim_id not in visible_claims:
             continue
+        if claim_id in rejected_claim_ids:
+            rejected_claim_ids.remove(claim_id)
+            repaired_definition_claim_conflicts.append(claim_id)
+            reason_codes.append("definition_claim_conflict_repaired")
         if claim_id not in selected_claim_ids:
             add_once(selected_claim_ids, claim_id, auto_selected_claims, "definition_claim_completed")
         if claim_id not in supporting_claim_ids:
             add_once(supporting_claim_ids, claim_id, auto_supporting_claims, "definition_claim_completed")
         for event_id in claim.evidence.source_event_ids:
             add_once(supporting_citation_event_ids, event_id, auto_supporting_events, "definition_claim_completed")
+
+    # Execution support is intentionally narrower than general factual support.
+    # A model may repeat an owner/project fact in both context and supporting
+    # channels; demote that redundant overlap, but keep uncontextualized support
+    # pollution visible to the precision judge.
+    if checkpoint.checkpoint_type == "execution_continuation":
+        context_claim_ids = set(output.context_claim_ids)
+        demoted_claim_ids = {
+            claim_id
+            for claim_id in supporting_claim_ids
+            if claim_id in context_claim_ids
+            and (claim := _claim_by_id(scenario, claim_id)) is not None
+            and claim.claim_kind != "action_state"
+        }
+        if demoted_claim_ids:
+            demoted_claim_ids_ordered = [
+                claim_id for claim_id in supporting_claim_ids if claim_id in demoted_claim_ids
+            ]
+            supporting_claim_ids = [
+                claim_id for claim_id in supporting_claim_ids if claim_id not in demoted_claim_ids
+            ]
+            auto_demoted_execution_context_claims.extend(demoted_claim_ids_ordered)
+            retained_support_evidence_ids = {
+                event_id
+                for claim_id in [*selected_claim_ids, *supporting_claim_ids]
+                if (claim := _claim_by_id(scenario, claim_id)) is not None
+                for event_id in claim.evidence.source_event_ids
+            }
+            supporting_citation_event_ids = [
+                event_id
+                for event_id in supporting_citation_event_ids
+                if event_id in retained_support_evidence_ids
+            ]
+            reason_codes.append("execution_context_support_demoted")
+
+    if repaired_definition_claim_conflicts:
+        remaining_rejected_evidence_ids = {
+            event_id
+            for claim_id in rejected_claim_ids
+            if (claim := _claim_by_id(scenario, claim_id)) is not None
+            for event_id in claim.evidence.source_event_ids
+        }
+        rejection_citation_event_ids = [
+            event_id
+            for event_id in rejection_citation_event_ids
+            if event_id in remaining_rejected_evidence_ids
+        ]
 
     # Explicit wrong-role traps should be rejected/contextualized when visible,
     # unless the model used them as selected/supporting truth. In that case the
@@ -262,6 +318,7 @@ def normalize_sim_system_output_for_checkpoint(
             "supporting_citation_event_ids": _ordered_unique(supporting_citation_event_ids),
             "rejected_entity_ids": _ordered_unique(rejected_entity_ids),
             "rejected_claim_ids": _ordered_unique(rejected_claim_ids),
+            "rejection_citation_event_ids": _ordered_unique(rejection_citation_event_ids),
             "context_entity_ids": _ordered_unique(context_entity_ids),
             "context_relation_ids": _ordered_unique(context_relation_ids),
         }
@@ -275,6 +332,8 @@ def normalize_sim_system_output_for_checkpoint(
             or auto_selected_claims
             or auto_supporting_claims
             or auto_supporting_events
+            or auto_demoted_execution_context_claims
+            or repaired_definition_claim_conflicts
             or auto_rejected_claims
             or auto_context_relations
         ),
@@ -285,6 +344,8 @@ def normalize_sim_system_output_for_checkpoint(
         auto_promoted_selected_claim_ids=_ordered_unique(auto_selected_claims),
         auto_promoted_supporting_claim_ids=_ordered_unique(auto_supporting_claims),
         auto_promoted_supporting_citation_event_ids=_ordered_unique(auto_supporting_events),
+        auto_demoted_execution_context_claim_ids=_ordered_unique(auto_demoted_execution_context_claims),
+        repaired_definition_claim_conflict_ids=_ordered_unique(repaired_definition_claim_conflicts),
         auto_rejected_claim_ids=_ordered_unique(auto_rejected_claims),
         normalization_reason_codes=_ordered_unique(reason_codes),
     )
@@ -360,16 +421,17 @@ def memory_evolution_sim_engine_result_from_llm(
         return rule_output, trace, False, "llm_decision_validation_failed"
     id_errors = sim_output_allowed_id_errors(scenario=scenario, output=decision)
     if id_errors:
+        output = decision.model_dump(mode="json")
         trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
             mode=mode,
             result=result,
-            final_output=rule_output,
-            fallback_used=True,
+            final_output=output,
+            fallback_used=False,
             status=LLMDecisionStatus.VALIDATION_FAILED,
         )
         trace.validation_errors.extend(id_errors)
-        return rule_output, trace, False, "llm_output_referenced_invalid_ids"
+        return output, trace, False, "llm_output_referenced_invalid_ids"
     output = decision.model_dump(mode="json")
     trace = build_llm_decision_trace_from_result(
         decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,

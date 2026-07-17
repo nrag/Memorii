@@ -1,11 +1,14 @@
 import pytest
 from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
 from memorii.core.benchmark.memory_evolution_decision import (
+    MemoryEvolutionBeliefLifecyclePolicy,
     MemoryEvolutionDecision,
     MemoryEvolutionEvent,
     MemoryEvolutionEventRole,
     MemoryEvolutionFailureBucket,
+    MemoryEvolutionScopeKind,
     MemoryEvolutionSourceType,
+    MemoryEvolutionTemporalKind,
     MemoryEvolutionWarningBucket,
     expected_memory_evolution_decision_for_checkpoint,
     memory_evolution_assertion_passed,
@@ -40,6 +43,7 @@ def test_memory_evolution_v1_checkpoint_references_are_event_derived() -> None:
                 *checkpoint.expected_checkpoint_retained_record_ids,
                 *checkpoint.expected_belief_ranking,
                 *checkpoint.expected_belief_scores.keys(),
+                *(expectation.memory_id for expectation in checkpoint.expected_belief_states),
             }
             assert referenced.issubset(event_ids)
 
@@ -55,6 +59,88 @@ def test_expected_memory_evolution_decisions_pass_all_checkpoints() -> None:
                     checkpoint=checkpoint,
                 ).model_dump(mode="json"),
             )
+
+
+def test_memory_evolution_requires_excluded_memories_in_rejected_or_context_channels() -> None:
+    scenario = _scenario_by_id("evolution_wrong_entity_high_similarity")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["retrieval_context"]["rejected_memory_ids"] = []
+    output["retrieval_context"]["query_context_memory_ids"] = []
+    output["retrieval_context"]["query_historical_memory_ids"] = []
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert diagnostics.excluded_memory_missing_channel_ids == checkpoint.expected_excluded_memory_ids
+    assert MemoryEvolutionFailureBucket.EXPECTED_EXCLUDED_MEMORY_CHANNEL_MISSING in diagnostics.failure_buckets
+
+
+def test_memory_evolution_source_trust_allows_global_scope_enrichment() -> None:
+    scenario = _scenario_by_id("evolution_source_trust_conflict")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["query_temporal_frame"]["scope_kind"] = "global"
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionFailureBucket.TEMPORAL_SCOPE_MISMATCH not in diagnostics.failure_buckets
+
+
+def test_answer_matching_allows_unrelated_negative_explanation() -> None:
+    scenario = _scenario_by_id("evolution_partial_merge_then_split")
+    checkpoint = scenario.checkpoints[0]
+    actual = (
+        "Atlas has Alice as owner, is on Azure, and requires FedRAMP. "
+        "The API ownership was split to Nikhil and is not included in the active account facts."
+    )
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["answer"] = actual
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+
+
+def test_answer_matching_rejects_local_negative_contradiction() -> None:
+    scenario = _scenario_by_id("evolution_partial_merge_then_split")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["answer"] = "Alice is not the owner"
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.ANSWER_MISMATCH in diagnostics.failure_buckets
 
 
 def test_memory_evolution_decision_rejects_removed_top_level_channels() -> None:
@@ -213,7 +299,7 @@ def test_memory_evolution_assertion_does_not_require_answer_text_for_graph_chann
     assert MemoryEvolutionFailureBucket.ANSWER_MISMATCH not in diagnostics.failure_buckets
 
 
-def test_memory_evolution_assertion_allows_noncurrent_lifecycle_equivalence_when_authored() -> None:
+def test_memory_evolution_assertion_allows_non_checkpoint_active_lifecycle_equivalence_when_authored() -> None:
     scenario = _scenario_by_id("evolution_expired_fact_historical_query")
     checkpoint = next(
         item
@@ -237,6 +323,108 @@ def test_memory_evolution_assertion_allows_noncurrent_lifecycle_equivalence_when
 
     assert diagnostics.assertion_passed is True
     assert MemoryEvolutionFailureBucket.EXPECTED_CHECKPOINT_RETAINED_RECORD_MISSING not in diagnostics.failure_buckets
+
+
+def test_memory_evolution_split_query_accepts_canonical_entity_scope_enrichment() -> None:
+    scenario = _scenario_by_id("evolution_partial_merge_then_split")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["query_temporal_frame"]["scope_kind"] = "entity"
+    output["query_temporal_frame"]["scope_key"] = "Atlas"
+    output["answer_selection"]["supporting_memory_ids"] = [
+        "mem:atlas-owner-azure",
+        "mem:atlas-owner-fedramp",
+    ]
+    output["lifecycle_snapshot"]["checkpoint_active_record_ids"] = [
+        "mem:atlas-owner-azure",
+        "mem:atlas-owner-fedramp",
+        "mem:atlas-identity-split",
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionFailureBucket.TEMPORAL_SCOPE_KEY_MISMATCH not in diagnostics.failure_buckets
+    assert MemoryEvolutionWarningBucket.EXTRA_CHECKPOINT_ACTIVE_RECORD_IDS in diagnostics.warning_buckets
+
+
+def test_memory_evolution_split_query_rejects_wrong_entity_scope_key() -> None:
+    scenario = _scenario_by_id("evolution_partial_merge_then_split")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["query_temporal_frame"]["scope_kind"] = "entity"
+    output["query_temporal_frame"]["scope_key"] = "Orion"
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.TEMPORAL_SCOPE_KEY_MISMATCH in diagnostics.failure_buckets
+
+
+def test_memory_evolution_execution_suppressed_branch_satisfies_retained_lifecycle() -> None:
+    scenario = _scenario_by_id("evolution_abandoned_then_resumed_work")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["lifecycle_snapshot"]["checkpoint_retained_record_ids"] = []
+    output["lifecycle_snapshot"]["checkpoint_active_record_ids"] = [
+        "exec:approach-a-blocked",
+        "exec:approach-b-progressed",
+    ]
+    output["execution_selection"]["suppressed_branch_memory_ids"] = [
+        "exec:approach-a-blocked",
+        "exec:approach-a-started",
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionFailureBucket.EXPECTED_CHECKPOINT_RETAINED_RECORD_MISSING not in diagnostics.failure_buckets
+    assert MemoryEvolutionWarningBucket.EXTRA_CHECKPOINT_ACTIVE_RECORD_IDS in diagnostics.warning_buckets
+
+
+def test_memory_evolution_execution_retained_branch_requires_suppression_signal() -> None:
+    scenario = _scenario_by_id("evolution_abandoned_then_resumed_work")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["lifecycle_snapshot"]["checkpoint_retained_record_ids"] = []
+    output["lifecycle_snapshot"]["checkpoint_active_record_ids"] = [
+        "exec:approach-a-blocked",
+        "exec:approach-b-progressed",
+    ]
+    output["execution_selection"]["suppressed_branch_memory_ids"] = ["exec:approach-a-started"]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.EXPECTED_CHECKPOINT_RETAINED_RECORD_MISSING in diagnostics.failure_buckets
 
 
 def test_memory_evolution_assertion_treats_non_excluded_source_trust_corroboration_as_warning() -> None:
@@ -268,6 +456,32 @@ def test_memory_evolution_assertion_treats_non_excluded_source_trust_corroborati
     assert diagnostics.assertion_passed is True
     assert MemoryEvolutionFailureBucket.CITATION_CHANNEL_POLLUTION not in diagnostics.failure_buckets
     assert MemoryEvolutionWarningBucket.CONTEXT_CITATION_IN_DIRECT_CHANNEL in diagnostics.warning_buckets
+
+
+def test_memory_evolution_source_trust_losers_cannot_remain_active_assertions() -> None:
+    scenario = _scenario_by_id("evolution_source_trust_conflict")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["lifecycle_snapshot"]["checkpoint_active_record_ids"] = [
+        "mem:deploy-tool-failed",
+        "mem:deploy-user-confirmed-failed",
+        "mem:deploy-transcript-succeeded",
+        "mem:deploy-late-transcript-succeeded",
+    ]
+    output["lifecycle_snapshot"]["checkpoint_superseded_record_ids"] = []
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.SOURCE_TRUST_LOSER_MARKED_ACTIVE in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.EXPECTED_CHECKPOINT_SUPERSEDED_RECORD_MISSING in diagnostics.failure_buckets
 
 
 def test_memory_evolution_assertion_fails_unexpected_context_citation() -> None:
@@ -303,6 +517,17 @@ def test_memory_evolution_context_declares_belief_channel_contract() -> None:
     assert "answer_selection.citation_memory_ids" in contract
     assert "Direct evidence" in contract["answer_selection.citation_memory_ids"]
     assert "evaluated_belief_ids" in contract
+
+
+def test_memory_evolution_context_declares_degraded_score_band() -> None:
+    scenario = _scenario_by_id("evolution_belief_dependency_degradation")
+    checkpoint = scenario.checkpoints[0]
+
+    context = memory_evolution_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
+    contract = context.metadata["output_channel_contract"]
+
+    assert "belief_score_calibration" in contract
+    assert "0.35" in contract["belief_score_calibration"]
 
 
 def test_memory_evolution_context_excludes_oracle_checkpoint_fields() -> None:
@@ -484,6 +709,11 @@ def test_memory_evolution_diagnostics_fail_wrong_belief_ranking_order() -> None:
         scenario=scenario,
         checkpoint=checkpoint,
     ).model_dump(mode="json")
+    output["answer_selection"]["selected_memory_ids"] = [
+        "belief:a-network-saturation",
+        "belief:b-worker-exhaustion",
+        "belief:c-database-locks",
+    ]
     output["belief_scores"] = [
         {"memory_id": "belief:a-network-saturation", "belief": 0.7},
         {"memory_id": "belief:b-worker-exhaustion", "belief": 0.2},
@@ -501,6 +731,32 @@ def test_memory_evolution_diagnostics_fail_wrong_belief_ranking_order() -> None:
     assert MemoryEvolutionFailureBucket.BELIEF_SCORE_MISMATCH not in diagnostics.failure_buckets
     assert MemoryEvolutionWarningBucket.BELIEF_SCORE_CALIBRATION_DRIFT in diagnostics.warning_buckets
     assert diagnostics.actual_belief_ranking[0] == "belief:a-network-saturation"
+
+
+def test_memory_evolution_diagnostics_fail_when_belief_scores_invert_selected_order() -> None:
+    scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["belief_scores"] = [
+        {"memory_id": "belief:b-worker-exhaustion", "belief": 0.35},
+        {"memory_id": "belief:c-database-locks", "belief": 0.25},
+        {"memory_id": "belief:a-network-saturation", "belief": 0.4},
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.BELIEF_RANKING_WRONG_ORDER not in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.BELIEF_SCORE_ORDER_CONTRADICTS_SELECTED_ORDER in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.WEAKENED_BELIEF_RANKED_ABOVE_NEUTRAL in diagnostics.failure_buckets
+    assert diagnostics.actual_belief_ranking == checkpoint.expected_belief_ranking
 
 
 def test_memory_evolution_assertion_suppresses_abandoned_branch() -> None:
@@ -577,9 +833,9 @@ def test_memory_evolution_belief_degradation_accepts_low_confidence_scores_witho
         checkpoint=checkpoint,
     ).model_dump(mode="json")
     output["belief_scores"] = [
-        {"memory_id": "belief:a-cache-miss-root", "belief": 0.0},
-        {"memory_id": "belief:b-worker-retry-backed-by-a", "belief": 0.0},
-        {"memory_id": "belief:c-customer-latency-backed-by-b", "belief": 0.0},
+        {"memory_id": "belief:a-cache-miss-root", "belief": 0.0, "belief_state": "falsified"},
+        {"memory_id": "belief:b-worker-retry-backed-by-a", "belief": 0.0, "belief_state": "degraded"},
+        {"memory_id": "belief:c-customer-latency-backed-by-b", "belief": 0.0, "belief_state": "degraded"},
     ]
 
     diagnostics = memory_evolution_decision_diagnostics(
@@ -637,6 +893,248 @@ def test_memory_evolution_historical_answer_requires_checkpoint_current_lifecycl
 
     assert diagnostics.assertion_passed is False
     assert MemoryEvolutionFailureBucket.EXPECTED_CHECKPOINT_ACTIVE_RECORD_MISSING in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.RECORD_LIFECYCLE_CONTENT_STATE_CONFLATION in diagnostics.failure_buckets
+    assert diagnostics.record_lifecycle_content_state_conflation_ids == ["mem:beta-flag-archived-now"]
+
+
+def test_memory_evolution_historical_release_week_requires_temporal_anchor() -> None:
+    scenario = _scenario_by_id("evolution_expired_fact_historical_query")
+    checkpoint = next(
+        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:beta-flag-release-week"
+    )
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["query_temporal_frame"] = {
+        "temporal_kind": "historical",
+        "scope_kind": "none",
+        "scope_key": None,
+        "anchor_id": None,
+        "valid_from": None,
+        "valid_to": "2026-06-09T08:05:00Z",
+        "confidence": 0.7,
+        "rationale": "Unanchored historical frame.",
+    }
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.TEMPORAL_FRAME_MISMATCH in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.TEMPORAL_ANCHOR_MISMATCH in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.TEMPORAL_INTERVAL_MISMATCH in diagnostics.failure_buckets
+
+
+def test_memory_evolution_historical_january_uses_query_interval_not_checkpoint_time() -> None:
+    scenario = _scenario_by_id("evolution_current_vs_historical_truth")
+    checkpoint = next(
+        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january"
+    )
+
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert diagnostics.expected_temporal_frame is not None
+    assert diagnostics.expected_temporal_frame.temporal_kind == MemoryEvolutionTemporalKind.HISTORICAL
+    assert diagnostics.expected_temporal_frame.valid_to.isoformat() == "2026-01-31T23:59:59+00:00"
+    assert output["query_temporal_frame"]["valid_to"] == "2026-01-31T23:59:59Z"
+    assert "mode" not in output["query_temporal_frame"]
+
+
+def test_memory_evolution_historical_january_requires_start_bound() -> None:
+    scenario = _scenario_by_id("evolution_current_vs_historical_truth")
+    checkpoint = next(
+        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january"
+    )
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["query_temporal_frame"]["valid_from"] = None
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.TEMPORAL_FRAME_MISMATCH in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.TEMPORAL_INTERVAL_MISMATCH in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.TEMPORAL_FRAME_UNDER_SPECIFIED in diagnostics.failure_buckets
+
+
+def test_memory_evolution_execution_checkpoint_bounds_are_warning_only() -> None:
+    scenario = _scenario_by_id("evolution_abandoned_then_resumed_work")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["query_temporal_frame"]["valid_from"] = "2026-06-10T10:00:00Z"
+    output["query_temporal_frame"]["valid_to"] = "2026-06-10T10:35:00Z"
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionWarningBucket.TEMPORAL_FRAME_ENRICHMENT in diagnostics.warning_buckets
+    assert MemoryEvolutionFailureBucket.TEMPORAL_EXTRA_INTERVAL not in diagnostics.failure_buckets
+
+
+def test_memory_evolution_degraded_beliefs_can_be_retained_as_evaluated_state() -> None:
+    scenario = _scenario_by_id("evolution_belief_dependency_degradation")
+    checkpoint = scenario.checkpoints[0]
+    contract = memory_evolution_checkpoint_contract(scenario=scenario, checkpoint=checkpoint)
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["lifecycle_snapshot"]["checkpoint_active_record_ids"] = ["evidence:a-falsified"]
+    output["evaluated_belief_ids"] = [
+        "belief:b-worker-retry-backed-by-a",
+        "belief:c-customer-latency-backed-by-b",
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert contract.belief_lifecycle_policy == MemoryEvolutionBeliefLifecyclePolicy.DEGRADED_RETAINED_EVALUABLE
+    assert diagnostics.assertion_passed is True
+    assert MemoryEvolutionFailureBucket.EXPECTED_CHECKPOINT_ACTIVE_RECORD_MISSING not in diagnostics.failure_buckets
+
+
+def test_memory_evolution_belief_degradation_uses_state_contract_not_exact_scores() -> None:
+    scenario = _scenario_by_id("evolution_belief_dependency_degradation")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["belief_scores"] = [
+        {"memory_id": "belief:a-cache-miss-root", "belief": 0.0, "belief_state": "falsified"},
+        {"memory_id": "belief:b-worker-retry-backed-by-a", "belief": 0.3, "belief_state": "degraded"},
+        {"memory_id": "belief:c-customer-latency-backed-by-b", "belief": 0.3, "belief_state": "degraded"},
+    ]
+    output["answer_selection"]["selected_memory_ids"] = [
+        "belief:b-worker-retry-backed-by-a",
+        "belief:c-customer-latency-backed-by-b",
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert diagnostics.missing_required_belief_score_ids == []
+    assert diagnostics.belief_state_mismatch_ids == []
+    assert MemoryEvolutionFailureBucket.BELIEF_SCORE_MISMATCH not in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.BELIEF_STATE_MISMATCH not in diagnostics.failure_buckets
+
+
+def test_memory_evolution_belief_degradation_fails_overconfident_dependent_belief() -> None:
+    scenario = _scenario_by_id("evolution_belief_dependency_degradation")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["belief_scores"] = [
+        {"memory_id": "belief:a-cache-miss-root", "belief": 0.05, "belief_state": "falsified"},
+        {"memory_id": "belief:b-worker-retry-backed-by-a", "belief": 0.6, "belief_state": "degraded"},
+        {"memory_id": "belief:c-customer-latency-backed-by-b", "belief": 0.25, "belief_state": "degraded"},
+    ]
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is False
+    assert "belief:b-worker-retry-backed-by-a" in diagnostics.belief_state_mismatch_ids
+    assert MemoryEvolutionFailureBucket.BELIEF_STATE_MISMATCH in diagnostics.failure_buckets
+
+
+def test_memory_evolution_current_query_uses_separate_scope_axis() -> None:
+    scenario = _scenario_by_id("evolution_task_preference_does_not_overwrite_global")
+    checkpoint = scenario.checkpoints[0]
+
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+
+    diagnostics = memory_evolution_decision_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        decision=output,
+    )
+
+    assert diagnostics.assertion_passed is True
+    assert diagnostics.expected_temporal_frame is not None
+    assert diagnostics.expected_temporal_frame.temporal_kind == MemoryEvolutionTemporalKind.CURRENT
+    assert diagnostics.expected_temporal_frame.scope_kind == MemoryEvolutionScopeKind.GLOBAL
+    assert diagnostics.expected_temporal_frame.scope_key is None
+    assert output["answer_selection"]["temporal_mode"] == "current"
+
+
+def test_memory_evolution_answer_temporal_mode_rejects_scope_as_time() -> None:
+    scenario = _scenario_by_id("evolution_task_preference_does_not_overwrite_global")
+    checkpoint = scenario.checkpoints[0]
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    output["answer_selection"]["temporal_mode"] = "scoped"
+
+    with pytest.raises(ValidationError):
+        MemoryEvolutionDecision.model_validate(output)
+
+
+def test_memory_evolution_context_exposes_temporal_entity_state_without_expected_ids() -> None:
+    scenario = _scenario_by_id("evolution_expired_fact_historical_query")
+    checkpoint = next(
+        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:beta-flag-release-week"
+    )
+
+    context = memory_evolution_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
+    payload = context.model_dump(mode="json")
+
+    assert payload["temporal_anchor_cards"] == [
+        {
+            "anchor_id": "anchor:release-week-2026-06",
+            "aliases": ["release week"],
+            "valid_from": "2026-06-01T00:00:00Z",
+            "valid_to": "2026-06-08T00:00:00Z",
+            "source_memory_ids": ["mem:beta-flag-active-release-week"],
+        }
+    ]
+    state_by_id = {card["memory_id"]: card for card in payload["entity_state_cards"]}
+    assert state_by_id["mem:beta-flag-active-release-week"]["record_lifecycle"] == "checkpoint_superseded"
+    assert state_by_id["mem:beta-flag-archived-now"]["record_lifecycle"] == "checkpoint_active"
+    assert not _contains_key_prefix(payload, "expected_")
 
 
 def test_memory_evolution_expected_historical_answer_is_not_rejected() -> None:
@@ -752,6 +1250,11 @@ def test_memory_evolution_diagnostics_name_weakened_above_neutral_belief_order()
         scenario=scenario,
         checkpoint=checkpoint,
     ).model_dump(mode="json")
+    output["answer_selection"]["selected_memory_ids"] = [
+        "belief:b-worker-exhaustion",
+        "belief:a-network-saturation",
+        "belief:c-database-locks",
+    ]
     output["belief_scores"] = [
         {"memory_id": "belief:b-worker-exhaustion", "belief": 0.6},
         {"memory_id": "belief:a-network-saturation", "belief": 0.3},

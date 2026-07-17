@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import cast
 
 from pydantic import ValidationError
 
@@ -15,6 +17,12 @@ from memorii.core.memory_evolution import (
     MemoryEvolutionResult,
     MemoryEvolutionService,
     MemoryExtractor,
+    MemoryQueryRequest,
+    ProductionRetrievalDecision,
+    QueryAnalysis,
+    QueryAnalyzer,
+    QueryTemporalKind,
+    RetrievalView,
     build_memory_extractor_from_env,
 )
 from memorii.core.memory_plane import MemoryPlaneService
@@ -77,8 +85,11 @@ class ProviderMemoryService:
         emit_work_state_event_candidates: bool = True,
         memory_evolution_enabled: bool = False,
         memory_evolution_extractor: MemoryExtractor | None = None,
+        memory_evolution_query_analyzer: QueryAnalyzer | None = None,
+        now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
+        self._now_provider = now_provider or (lambda: datetime.now(UTC))
         self._work_state_service = work_state_service
         self._work_state_selector = WorkStateSelector(work_state_service)
         self._solver_frontier_planner = solver_frontier_planner
@@ -87,11 +98,11 @@ class ProviderMemoryService:
         if decision_state_service is self._DEFAULT_DECISION_STATE_SERVICE:
             self._decision_state_service: DecisionStateService | None = DecisionStateService()
         else:
-            self._decision_state_service = decision_state_service
+            self._decision_state_service = cast(DecisionStateService | None, decision_state_service)
         if promotion_decision_provider is self._DEFAULT_PROMOTION_DECISION_PROVIDER:
             self._promotion_decision_provider: PromotionDecisionProvider | None = build_promotion_decision_provider_from_env()
         else:
-            self._promotion_decision_provider = promotion_decision_provider
+            self._promotion_decision_provider = cast(PromotionDecisionProvider | None, promotion_decision_provider)
         self._llm_decision_trace_store = llm_decision_trace_store
         self._next_step_engine = NextStepEngine(
             work_state_service=work_state_service,
@@ -105,6 +116,8 @@ class ProviderMemoryService:
             MemoryEvolutionService(
                 memory_plane=self._memory_plane,
                 extractor=memory_evolution_extractor or build_memory_extractor_from_env(),
+                query_analyzer=memory_evolution_query_analyzer,
+                now_provider=self._now_provider,
             )
             if memory_evolution_enabled
             else None
@@ -136,12 +149,38 @@ class ProviderMemoryService:
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
-            timestamp=datetime.now(UTC),
+            timestamp=self._now_provider(),
         )
         result = self._memory_plane.ingest_provider_event(event)
-        self._evolve_from_source_ids(result.transcript_ids)
+        self._evolve_from_source_ids(
+            result.transcript_ids,
+            defer_assertions=operation in {
+                ProviderOperation.CHAT_USER_TURN,
+                ProviderOperation.CHAT_ASSISTANT_TURN,
+            },
+        )
         self._ingest_work_state(self._agent_event_from_provider_event(event=event))
         return result
+
+    @property
+    def memory_evolution_service(self) -> MemoryEvolutionService | None:
+        """Return the opt-in runtime evolution service, if configured."""
+        return self._memory_evolution_service
+
+    def retrieve_evolution_decision(
+        self,
+        request: MemoryQueryRequest,
+    ) -> ProductionRetrievalDecision | None:
+        """Return the structured evolution decision without rendering it.
+
+        Provider integrations that need machine-readable retrieval context can
+        consume this typed decision directly.  Text rendering remains an
+        adapter concern in :meth:`prefetch`.
+        """
+
+        if self._memory_evolution_service is None:
+            return None
+        return self._memory_evolution_service.retrieve(request)
 
     def apply_memory_write(
         self,
@@ -164,6 +203,7 @@ class ProviderMemoryService:
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
+            timestamp=self._now_provider(),
         )
         decision = self._memory_plane.apply_provider_memory_write(event=event)
         source_ids = [f"tx:{event.event_id}"] if decision.raw_append_domains else []
@@ -179,6 +219,9 @@ class ProviderMemoryService:
         task_id: str | None = None,
         user_id: str | None = None,
         top_k: int = 6,
+        query_language: str = "en",
+        query_analysis: QueryAnalysis | None = None,
+        reference_time: datetime | None = None,
     ) -> str:
         memory_context = self._memory_plane.prefetch_provider_context(
             query,
@@ -187,10 +230,36 @@ class ProviderMemoryService:
             user_id=user_id,
             top_k=top_k,
         )
-        selected_work_states = self._work_state_selector.select_recall_work_states(
+        evolution_context, evolution_decision = self._format_evolution_retrieval(
+            query=query,
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
+            top_k=top_k,
+            query_language=query_language,
+            query_analysis=query_analysis,
+            reference_time=reference_time or self._now_provider(),
+        )
+        if self._memory_evolution_service is not None:
+            # Opt-in evolution owns the answer context.  Mixing the generic
+            # provider reranker into this path can reintroduce superseded or
+            # rejected records without lifecycle channels or provenance.
+            memory_context = evolution_context or (
+                "Evolution memory (production retrieval):\n"
+                "- No lifecycle-valid memory selected; treat the result as an abstention."
+            )
+        is_evolution_execution = (
+            evolution_decision is not None
+            and evolution_decision.temporal_frame.temporal_kind == QueryTemporalKind.EXECUTION
+        )
+        selected_work_states = (
+            []
+            if self._memory_evolution_service is not None or is_evolution_execution
+            else self._work_state_selector.select_recall_work_states(
+                session_id=session_id,
+                task_id=task_id,
+                user_id=user_id,
+            )
         )
         work_state_summaries = summarize_work_states(
             selected_work_states,
@@ -205,12 +274,89 @@ class ProviderMemoryService:
                 "work_state_count": len(work_state_summaries),
                 "work_state_ids": [state.work_state_id for state in work_state_summaries],
                 "included_statuses": sorted({state.status.value for state in work_state_summaries}),
+                "evolution_retrieval": (
+                    evolution_decision.model_dump(mode="json") if evolution_decision is not None else None
+                ),
             },
         )
         self._last_recall_bundle = bundle
         if not work_state_summaries:
             return memory_context
         return f"{memory_context}\n\n{self._format_work_state_section(work_state_summaries[:3])}"
+
+    def _format_evolution_retrieval(
+        self,
+        *,
+        query: str,
+        session_id: str | None,
+        task_id: str | None,
+        user_id: str | None,
+        top_k: int,
+        query_language: str,
+        query_analysis: QueryAnalysis | None,
+        reference_time: datetime,
+    ) -> tuple[str, ProductionRetrievalDecision | None]:
+        """Render only the production evolution decision into provider context."""
+
+        decision = self.retrieve_evolution_decision(
+            MemoryQueryRequest(
+                query=query,
+                query_language=query_language,
+                query_analysis=query_analysis,
+                reference_time=reference_time,
+                scope_key=task_id,
+                task_id=task_id,
+                session_id=session_id,
+                user_id=user_id,
+                top_k=top_k,
+                include_context=False,
+            )
+        )
+        if decision is None:
+            return "", None
+        if decision.abstained or not decision.selected_record_ids:
+            if decision.temporal_frame.temporal_kind == QueryTemporalKind.EXECUTION:
+                return (
+                    "Evolution execution (production retrieval):\n"
+                    f"- No active continuation branch selected ({decision.abstention_reason or 'abstained'}).",
+                    decision,
+                )
+            return "", decision
+        if decision.temporal_frame.temporal_kind == QueryTemporalKind.EXECUTION:
+            return self._format_evolution_execution_decision(decision), decision
+        states = {
+            state.claim_id: state
+            for state in self._memory_evolution_service.retrieve_claim_states(
+                view=RetrievalView.ALL_VERSIONS,
+            )
+        }
+        lines = ["Evolution memory (production retrieval):"]
+        items = decision.context_items[:top_k]
+        for item in items:
+            claim_id = item.claim_id
+            state = states.get(claim_id)
+            if state is None:
+                continue
+            evidence_ids = [evidence.source_id for evidence in decision.evidence if evidence.claim_id == claim_id]
+            citations = f"; citations={','.join(evidence_ids)}" if evidence_ids else ""
+            lines.append(
+                f"- [{item.channel}] {state.claim_key.subject_entity_id} "
+                f"{state.claim_key.predicate_id} = {state.object_value}{citations}"
+            )
+        return ("\n".join(lines) if len(lines) > 1 else ""), decision
+
+    @staticmethod
+    def _format_evolution_execution_decision(decision: ProductionRetrievalDecision) -> str:
+        lines = ["Evolution execution (production retrieval):"]
+        active_states = [state for state in decision.execution_state.work_state.states if state.active] if decision.execution_state else []
+        for state in active_states:
+            branch_id = state.branch_id
+            status = state.status.value
+            last_event_id = state.last_event_id
+            lines.append(f"- Active branch {branch_id}: {status} (last event {last_event_id})")
+        if decision.selected_record_ids:
+            lines.append(f"- Selected continuation events: {', '.join(decision.selected_record_ids)}")
+        return "\n".join(lines)
 
     def get_tool_schemas(self) -> list[dict[str, object]]:
         return [
@@ -738,10 +884,13 @@ class ProviderMemoryService:
             statuses=statuses,
         )
 
-    def _evolve_from_source_ids(self, source_ids: list[str]) -> None:
+    def _evolve_from_source_ids(self, source_ids: list[str], *, defer_assertions: bool = False) -> None:
         if self._memory_evolution_service is None or not source_ids:
             return
-        self._last_memory_evolution_result = self._memory_evolution_service.evolve_source_ids(source_ids)
+        self._last_memory_evolution_result = self._memory_evolution_service.evolve_source_ids(
+            source_ids,
+            defer_assertions=defer_assertions,
+        )
 
     def _build_state_summary_result(
         self,
@@ -1146,7 +1295,8 @@ class ProviderMemoryService:
         candidate_record: CanonicalMemoryRecord,
         source_metadata: dict[str, object],
     ) -> PromotionContext:
-        repeated_across_episodes = int(source_metadata.get("repeated_across_episodes", 0) or 0)
+        repeated_value = source_metadata.get("repeated_across_episodes", 0)
+        repeated_across_episodes = int(repeated_value) if isinstance(repeated_value, (int, float, str)) else 0
         explicit_user_memory_request = bool(source_metadata.get("explicit_user_memory_request", False))
         candidate_type = self._promotion_candidate_type_for_work_state_event(
             event=event,

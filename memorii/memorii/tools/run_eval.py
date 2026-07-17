@@ -117,6 +117,7 @@ def _run_benchmark_suite(args: argparse.Namespace) -> int:
             _add_bool_flag(argv, enabled=args.sim_freeze_output, flag="--sim-freeze-output")
         _add_bool_flag(argv, enabled=args.dry_run, flag="--dry-run")
         _add_bool_flag(argv, enabled=args.allow_live, flag="--allow-live")
+        _add_bool_flag(argv, enabled=args.fail_on_benchmark_failure, flag="--fail-on-benchmark-failure")
         return run_benchmark.main(argv)
 
 
@@ -160,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prompt-root", default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
+    parser.add_argument("--fail-on-benchmark-failure", action="store_true")
     parser.add_argument("--trace-successes", action="store_true")
     parser.add_argument("--no-trace-failures", action="store_true")
     parser.add_argument("--no-trace-fallbacks", action="store_true")

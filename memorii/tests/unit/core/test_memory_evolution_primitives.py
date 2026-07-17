@@ -4,6 +4,7 @@ import pytest
 from memorii.core.memory_evolution import (
     ClaimKey,
     EntityLinkState,
+    EntityMention,
     EntityResolutionService,
     EvidenceSpan,
     ExtractedClaim,
@@ -63,6 +64,20 @@ def test_claim_key_is_stable_and_excludes_object_value() -> None:
 
     assert first.stable_id() == second.stable_id()
     assert first.stable_id() == "ent:atlas|owner|task:1|default"
+
+
+def test_entity_resolution_keeps_same_name_entities_distinct_and_uses_injected_clock() -> None:
+    now = datetime(2026, 2, 1, tzinfo=UTC)
+    resolver = EntityResolutionService(now_provider=lambda: now)
+    mentions = [
+        EntityMention(entity_id="ent:project", mention_text="Atlas", normalized_name="atlas", confidence=0.9),
+        EntityMention(entity_id="ent:service", mention_text="Atlas", normalized_name="atlas", confidence=0.8),
+    ]
+
+    links = resolver.resolve_mentions(mentions, [])
+
+    assert {link.canonical_entity_id for link in links} == {"ent:project", "ent:service"}
+    assert links[1].created_at == now
 
 
 def test_predicate_registry_rejects_missing_policies() -> None:
@@ -351,6 +366,47 @@ def test_llm_extraction_rekeys_model_local_claim_and_action_ids() -> None:
     assert all(action.action_id != "action1" for action in actions)
 
 
+def test_llm_action_extraction_preserves_observation_execution_context() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "tx:incident-progress",
+            "text": "Atlas cleanup is in progress.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+            "task_id": "task:incident",
+            "session_id": "session:incident",
+            "user_id": "user:one",
+        }
+    )
+    run, _, _, actions = _models_from_llm_output(
+        run_id="run:execution-context",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation],
+        output={
+            "entities": [],
+            "claims": [],
+            "actions": [
+                {
+                    "action_type": "progress",
+                    "target_entity_ids": ["ent:atlas-cleanup"],
+                    "status": "in_progress",
+                    "source_id": observation.source_id,
+                    "quote": "Atlas cleanup is in progress",
+                }
+            ],
+        },
+    )
+
+    assert run.errors == []
+    assert len(actions) == 1
+    assert actions[0].task_id == "task:incident"
+    assert actions[0].session_id == "session:incident"
+    assert actions[0].user_id == "user:one"
+    assert actions[0].scope_key == "task:incident"
+
+
 def test_llm_extraction_canonicalizes_inverse_owner_claim_arguments() -> None:
     observations = [
         validator_source_from_dict(
@@ -562,7 +618,8 @@ def test_pasted_and_question_text_are_not_evolved_into_active_claims() -> None:
 
     result = service.evolve_records([pasted, question])
 
-    assert result.claims == []
+    assert result.claims
+    assert all(state.lifecycle_state.value == "invalidated" for state in result.claim_states)
     assert result.deferred_observation_ids == ["tx:pasted"]
     assert result.skipped_observation_ids == ["tx:question"]
     assert service.retrieve_claim_states(view=RetrievalView.CURRENT) == []
@@ -714,7 +771,8 @@ def test_provider_chat_ingestion_is_deferred_when_evolution_is_opted_in() -> Non
 
     result = service.last_memory_evolution_result()
     assert result is not None
-    assert result.claims == []
+    assert result.claims
+    assert all(state.lifecycle_state.value == "invalidated" for state in result.claim_states)
     assert result.deferred_observation_ids
 
 

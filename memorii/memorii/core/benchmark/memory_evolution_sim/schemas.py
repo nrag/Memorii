@@ -420,6 +420,13 @@ class OracleCheckpoint(BaseModel):
     query_or_task: str
     checkpoint_contract: SimCheckpointContract
     query_language: str = "en"
+    # Caller context is separate from oracle expectations.  It is allowed to
+    # reach the runtime request, but never the rendered model prompt.
+    request_scope_key: str | None = None
+    request_task_id: str | None = None
+    request_session_id: str | None = None
+    request_user_id: str | None = None
+    request_subject_entity_id: str | None = None
     evidence_languages: list[str] = Field(default_factory=lambda: ["en"])
     answer_language_policy: Literal[
         "match_query",
@@ -477,6 +484,8 @@ class SimOutputNormalization(BaseModel):
     auto_promoted_selected_claim_ids: list[str] = Field(default_factory=list)
     auto_promoted_supporting_claim_ids: list[str] = Field(default_factory=list)
     auto_promoted_supporting_citation_event_ids: list[str] = Field(default_factory=list)
+    auto_demoted_execution_context_claim_ids: list[str] = Field(default_factory=list)
+    repaired_definition_claim_conflict_ids: list[str] = Field(default_factory=list)
     auto_rejected_claim_ids: list[str] = Field(default_factory=list)
     normalization_reason_codes: list[str] = Field(default_factory=list)
 

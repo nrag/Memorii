@@ -35,7 +35,7 @@ class PromptBackedLLMDecisionProvider:
             client=LLMClientFactory.from_config(runtime_config),
             config=runtime_config,
         )
-        registry = PromptRegistry(prompt_root=root)
+        registry = PromptRegistry(prompt_root=root, require_manifest=True)
         self._promotion_adapter = LLMPromotionDecisionAdapter(runner=runner, registry=registry)
         self._belief_adapter = LLMBeliefUpdateAdapter(runner=runner, registry=registry)
 

@@ -65,3 +65,18 @@ python -m memorii.tools.run_eval --suite memory_evolution_runtime_v1 --mode all 
 ```
 
 Live gates remain explicit and should only be run when intentionally validating provider behavior.
+
+## CI Gate Boundaries
+
+Pull requests run the deterministic benchmark-contract job. It exercises the
+typed artifact validator, temporal/retrieval contracts, prompt no-leakage
+checks, and fake-oracle simulator/runtime artifacts. It does not spend
+provider credits or treat fake-oracle output as live success.
+
+The scheduled workflow runs the same deterministic checks and has a separate
+manual live gate. The live gate is opt-in through the repository variable
+`MEMORII_RUN_LIVE_GATES=true`; it runs ten independent seeds with 25 scenarios
+per seed, requires `execution_source=live_llm`, requires provider calls, checks
+one seed-invariant run configuration fingerprint, and applies the hierarchical
+seed/scenario statistical gate. Provider failures, fallbacks, critical failure
+buckets, mixed configurations, and underpowered seed sets fail the gate.

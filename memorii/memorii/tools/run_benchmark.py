@@ -49,6 +49,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prompt-root", default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
+    parser.add_argument(
+        "--fail-on-benchmark-failure",
+        action="store_true",
+        help="Exit non-zero when checkpoint judges report failures.",
+    )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--run-label", default=None)
     parser.add_argument("--hotpotqa-dataset", default=None)

@@ -89,6 +89,41 @@ def test_memory_evolution_sim_execution_continuation_allows_different_next_actio
     assert diagnostics["answer_match_type"] == "diagnostic_only"
 
 
+def test_memory_evolution_sim_execution_continuation_keeps_owner_facts_context_only() -> None:
+    scenario = generate_scenario_by_family(
+        profile="long_horizon",
+        family="abandoned_then_resumed_work",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "execution_continuation")
+    output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
+        update={
+            "supporting_claim_ids": [
+                *checkpoint.expected_execution_claim_ids,
+                "claim_09_current_owner",
+                "claim_09_project_type",
+            ],
+        }
+    )
+
+    aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
+    diagnostics = sim_checkpoint_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        output=output,
+        aggregate=aggregate,
+    )
+
+    assert aggregate.verdict == JudgeVerdict.FAIL
+    assert "execution_context_claim_used_as_support" in aggregate.critical_failure_buckets
+    assert "execution_context_claim_used_as_support" in diagnostics["precision_failure_classification"]
+    assert diagnostics["supporting_role_violations"]["execution_context_support"] == [
+        "claim_09_current_owner",
+        "claim_09_project_type",
+    ]
+
+
 def test_memory_evolution_sim_execution_continuation_rejects_truth_fact_without_active_branch() -> None:
     scenario = generate_scenario_by_family(
         profile="long_horizon",

@@ -2,26 +2,32 @@
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from memorii.core.benchmark.artifact_rows import AlignmentSummary, RuntimeGraphSummary, artifact_rows_to_json
-from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeSuiteRows
+from pydantic import BaseModel
+
+from memorii.core.benchmark.artifact_rows import (
+    AlignmentSummary,
+    RuntimeCheckpointResultRow,
+    RuntimeGraphAlignmentRow,
+    RuntimeGraphSummary,
+    RuntimeProviderHealth,
+    artifact_rows_to_json,
+)
+from memorii.core.benchmark.artifact_validation import write_json_atomic, write_typed_jsonl
+from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow, RuntimeSuiteRows
 
 
 def write_runtime_artifacts(*, run_dir: Path, rows: RuntimeSuiteRows) -> None:
-    _write_jsonl(run_dir / "runtime_graph_items.jsonl", rows.graph_items)
-    _write_jsonl(run_dir / "runtime_graph_alignments.jsonl", artifact_rows_to_json(rows.alignments))
-    _write_jsonl(run_dir / "runtime_checkpoint_results.jsonl", artifact_rows_to_json(rows.checkpoint_rows))
-    _write_jsonl(run_dir / "runtime_failures.jsonl", artifact_rows_to_json(rows.runtime_failures))
-    (run_dir / "runtime_graph_alignments_summary.json").write_text(
-        json.dumps(runtime_alignment_summary(rows), indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    snapshots = rows.graph_snapshots
-    (run_dir / "runtime_graph_snapshot.json").write_text(json.dumps(snapshots, indent=2, sort_keys=True), encoding="utf-8")
+    write_typed_jsonl(run_dir / "runtime_graph_items.jsonl", rows.graph_items, model_type=RuntimeGraphItemRow)
+    write_typed_jsonl(run_dir / "runtime_graph_alignments.jsonl", rows.alignments, model_type=RuntimeGraphAlignmentRow)
+    write_typed_jsonl(run_dir / "runtime_checkpoint_results.jsonl", rows.checkpoint_rows, model_type=RuntimeCheckpointResultRow)
+    write_typed_jsonl(run_dir / "runtime_failures.jsonl", rows.runtime_failures, model_type=RuntimeCheckpointResultRow)
+    write_json_atomic(run_dir / "runtime_graph_alignments_summary.json", runtime_alignment_summary(rows))
+    snapshots = [snapshot.model_dump(mode="json") for snapshot in rows.graph_snapshots]
+    write_json_atomic(run_dir / "runtime_graph_snapshot.json", snapshots)
 
 def _horizon_distance_bucket(distance: int | float | object) -> str:
     value = int(distance) if isinstance(distance, (int, float)) else 0
@@ -55,6 +61,9 @@ def _source_event_age_days_bucket(days: int | float | object) -> str:
 
 
 def _json_mapping(value: object) -> Mapping[str, object]:
+    if isinstance(value, BaseModel):
+        dumped = value.model_dump(mode="json")
+        return dumped if isinstance(dumped, Mapping) else {}
     return value if isinstance(value, Mapping) else {}
 
 
@@ -89,7 +98,25 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
     active_action_count = 0
     action_observed_in_count = 0
     graph_edge_count = 0
-    for snapshot in rows.graph_snapshots:
+    cumulative_graph_edge_count = 0
+    cumulative_validation_error_count = 0
+    final_snapshots: dict[str, Mapping[str, object]] = {}
+    terminal_snapshot_counts: Counter[str] = Counter()
+    has_explicit_terminal = any(_json_mapping(snapshot).get("is_terminal") is True for snapshot in rows.graph_snapshots)
+    for raw_snapshot in rows.graph_snapshots:
+        snapshot_map = _json_mapping(raw_snapshot)
+        scenario_id = str(snapshot_map.get("scenario_id", len(final_snapshots)))
+        if snapshot_map.get("is_terminal") is True:
+            terminal_snapshot_counts[scenario_id] += 1
+            final_snapshots[scenario_id] = snapshot_map
+        elif not has_explicit_terminal:
+            # Test fixtures and imported artifacts must migrate to explicit
+            # terminal markers, but keep deterministic last-row behavior while
+            # reporting that the artifact is incomplete.
+            final_snapshots[scenario_id] = snapshot_map
+        cumulative_graph_edge_count += len(_json_sequence(snapshot_map.get("edges")))
+        cumulative_validation_error_count += len(_json_sequence(snapshot_map.get("validation_errors")))
+    for snapshot in final_snapshots.values():
         snapshot_map = _json_mapping(snapshot)
         nodes = _json_sequence(snapshot_map.get("nodes"))
         edges = _json_sequence(snapshot_map.get("edges"))
@@ -147,10 +174,20 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
         claim_scope_count += len(claim_has_scope)
         claim_observed_in_count += len(claim_has_observed_in)
         action_observed_in_count += len(action_has_observed_in)
-    item_counts = Counter(str(item.get("item_type", "unknown")) for item in rows.graph_items)
+    unique_items: dict[tuple[str, str, str], Mapping[str, object]] = {}
+    for index, item in enumerate(rows.graph_items):
+        item_map = _json_mapping(item)
+        scenario_id = str(item_map.get("scenario_id", ""))
+        runtime_item_id = str(item_map.get("runtime_item_id", ""))
+        # Malformed/fixture rows without identity must remain visible as
+        # separate diagnostics; only identified rows can be safely deduped.
+        key = (scenario_id, str(item_map.get("item_type", "unknown")), runtime_item_id or str(index))
+        unique_items.setdefault(key, item_map)
+    item_counts = Counter(str(item.get("item_type", "unknown")) for item in unique_items.values())
     relation_support_modes = Counter()
     for row in checkpoint_rows:
-        for item in _json_sequence(row.get("runtime_relation_support")):
+        diagnostics = _json_mapping(row.get("diagnostics"))
+        for item in _json_sequence(row.get("runtime_relation_support") or diagnostics.get("runtime_relation_support")):
             if isinstance(item, Mapping):
                 relation_support_modes[str(item.get("support_mode", "unknown"))] += 1
     return RuntimeGraphSummary.from_flat_row({
@@ -179,6 +216,16 @@ def runtime_graph_completeness_metrics(rows: RuntimeSuiteRows) -> dict[str, obje
         "active_claim_with_observed_in_rate": claim_observed_in_count / max(1, active_claim_count),
         "active_action_with_observed_in_rate": action_observed_in_count / max(1, active_action_count),
         "runtime_graph_validation_error_count": validation_error_count,
+        "snapshot_count": len(final_snapshots),
+        "aggregation_scope": "final_snapshot_per_scenario",
+        "cumulative_graph_edge_count": cumulative_graph_edge_count,
+        "cumulative_validation_error_count": cumulative_validation_error_count,
+        "terminal_snapshot_count": sum(terminal_snapshot_counts.values()),
+        "terminal_snapshot_anomaly_count": (
+            sum(1 for count in terminal_snapshot_counts.values() if count != 1)
+            if has_explicit_terminal
+            else len(final_snapshots)
+        ),
     }).to_json_row()
 
 def runtime_summary_metrics(rows: RuntimeSuiteRows) -> dict[str, object]:
@@ -186,9 +233,9 @@ def runtime_summary_metrics(rows: RuntimeSuiteRows) -> dict[str, object]:
     checkpoint_count = len(checkpoint_rows)
     bucket_counts = Counter(bucket for row in checkpoint_rows for bucket in _json_sequence(row.get("runtime_failure_buckets")))
     final_output_source_counts = Counter(str(row.get("final_output_source", "unknown")) for row in checkpoint_rows)
-    provider_successes = sum(1 for row in rows.llm_rows if row.get("success") is True)
-    provider_failures = sum(1 for row in rows.llm_rows if row.get("success") is not True)
-    fallbacks = sum(1 for row in rows.llm_rows if row.get("fallback_used") is True)
+    provider_successes = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.get("success") is True)
+    provider_failures = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.get("success") is not True)
+    fallbacks = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.get("fallback_used") is True)
     graph_summary = runtime_graph_completeness_metrics(rows)
     alignment_summary = runtime_alignment_summary(rows)
     summary: dict[str, object] = {
@@ -199,13 +246,103 @@ def runtime_summary_metrics(rows: RuntimeSuiteRows) -> dict[str, object]:
         "fallbacks": fallbacks,
         "final_output_source_counts": dict(sorted(final_output_source_counts.items())),
         "runtime_alignment_count": len(rows.alignments),
-        "runtime_graph_item_count": len(rows.graph_items),
+        "runtime_graph_item_count": sum(
+            value
+            for value in _json_mapping(graph_summary.get("runtime_graph_item_counts_by_type")).values()
+            if isinstance(value, int)
+        ),
+        "runtime_graph_item_observation_count": len(rows.graph_items),
         "runtime_graph_summary": graph_summary,
         "runtime_graph_alignments_summary": alignment_summary,
         "long_horizon_slice_counts": _long_horizon_slice_counts(checkpoint_rows),
+        "runtime_provider_health": runtime_provider_health(rows),
     }
     summary.update(graph_summary)
     return summary
+
+
+def runtime_provider_health(rows: RuntimeSuiteRows) -> dict[str, object]:
+    """Return the explicit provider gate for a runtime benchmark run.
+
+    The configured LLM client already applies bounded retries. This report
+    distinguishes a clean provider-backed run from a terminal provider,
+    schema, or fallback failure without adding another retry layer.
+    """
+
+    effective_mode = rows.effective_mode
+    if effective_mode is None:
+        effective_modes = {
+            str(row.effective_decision_mode)
+            for row in rows.checkpoint_rows
+            if row.effective_decision_mode in {"rule", "llm", "hybrid"}
+        }
+        effective_mode = next(iter(effective_modes), None) if len(effective_modes) == 1 else None
+    provider_backed = effective_mode in {"llm", "hybrid"} and not rows.dry_run
+    provider_successes = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.get("success") is True)
+    provider_failures = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.get("success") is not True)
+    fallbacks = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.get("fallback_used") is True)
+    attempted_calls = provider_successes + provider_failures
+    failure_classifications = Counter(
+        str(row.get("failure_classification"))
+        for row in rows.llm_rows
+        if row.get("success") is not True and row.get("failure_classification")
+    )
+    failure_buckets: list[str] = []
+    if provider_failures:
+        failure_buckets.append("runtime_provider_failure")
+    if fallbacks:
+        failure_buckets.append("runtime_provider_fallback")
+    if not provider_backed:
+        status = "not_applicable"
+        clean_runtime_gate = True
+        success_rate = None
+    else:
+        status = "pass" if attempted_calls > 0 and not provider_failures and not fallbacks else "fail"
+        clean_runtime_gate = status == "pass"
+        success_rate = provider_successes / attempted_calls if attempted_calls else 0.0
+    output_sources = {
+        str(row.final_output_source)
+        for row in rows.checkpoint_rows
+        if row.final_output_source
+    }
+    execution_source = next(iter(output_sources)) if len(output_sources) == 1 else "mixed"
+    metadata: dict[str, str] = {}
+    for trace_row in rows.llm_rows:
+        trace = _json_mapping(trace_row.get("trace"))
+        for key in ("provider", "model", "prompt_hash"):
+            value = trace.get(key)
+            if value is not None:
+                metadata[key] = str(value)
+        if metadata:
+            break
+    return RuntimeProviderHealth.from_flat_row(
+        {
+            "effective_decision_mode": effective_mode,
+            "attempted_calls": attempted_calls,
+            "provider_successes": provider_successes,
+            "provider_failures": provider_failures,
+            "fallbacks": fallbacks,
+            "provider_success_rate": success_rate,
+            "status": status,
+            "clean_runtime_gate": clean_runtime_gate,
+            "failure_buckets": failure_buckets,
+            "failure_classification_counts": dict(sorted(failure_classifications.items())),
+            "execution_source": execution_source,
+            "dry_run": rows.dry_run,
+            "fake_extractor_calls": sum(
+                1 for row in rows.checkpoint_rows if row.final_output_source == "fake_oracle"
+            ),
+            "provider_metadata": metadata,
+            "policy": {
+                "provider_failures": "fail_runtime_gate",
+                "fallbacks": "fail_runtime_gate",
+                "retry_policy": "use_configured_bounded_client_retries",
+                "rule_mode": "not_applicable",
+                "dry_run": "not_provider_health",
+                "fake_oracle": "never_provider_success",
+            },
+        }
+    ).to_json_row()
 
 def runtime_alignment_summary(rows: RuntimeSuiteRows) -> dict[str, object]:
     checkpoint_rows = artifact_rows_to_json(rows.checkpoint_rows)
@@ -282,6 +419,3 @@ def runtime_warning_policy() -> dict[str, dict[str, str]]:
             "rationale": "For graph reconstruction checkpoints, structured graph channels are authoritative and natural-language answer text is optional.",
         },
     }
-
-def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
-    path.write_text("\n".join(json.dumps(row, sort_keys=True) for row in rows), encoding="utf-8")

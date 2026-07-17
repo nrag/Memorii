@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
 import pytest
@@ -26,79 +25,24 @@ def test_runtime_benchmark_report_write_failure_is_not_swallowed(
         storage_root=str(tmp_path),
         sim_profile="smoke",
     )
-    run_dir = tmp_path / "runtime-artifacts"
-
     def _fake_load(_args: argparse.Namespace):
         return [], "unit"
 
     def _fake_rows(**_kwargs: object) -> RuntimeSuiteRows:
         return RuntimeSuiteRows(scenario_rows=[], checkpoint_rows=[], judge_rows=[], llm_rows=[])
 
-    def _fake_artifacts(**_kwargs: object) -> Path:
-        run_dir.mkdir(parents=True)
-        with (run_dir / "report.json").open("w", encoding="utf-8") as handle:
-            json.dump(
-                {
-                    "suite": "memory_evolution_runtime_v1",
-                    "mode": "hybrid",
-                    "profile": "smoke",
-                    "seed": 0,
-                    "scenario_count": 0,
-                    "event_count": 0,
-                    "checkpoint_count": 0,
-                    "passed": 0,
-                    "failed": 0,
-                    "llm_calls": 0,
-                    "provider_successes": 0,
-                    "provider_failures": 0,
-                    "fallbacks": 0,
-                    "final_output_source_counts": {},
-                    "metrics": {},
-                    "calibration": {
-                        "event_count": 0,
-                        "labeled_event_count": 0,
-                        "overall_accuracy": None,
-                        "ece": None,
-                        "brier_score": None,
-                        "overconfident_wrong_count": 0,
-                        "low_confidence_correct_count": 0,
-                        "hidden_hallucination_rate": 0.0,
-                        "ambiguous_overcommit_rate": 0.0,
-                        "worst_slices": [],
-                        "rolling_windows": {},
-                        "response_recommendations": {},
-                        "label_source_counts": {},
-                        "hierarchy_layer_counts": {},
-                    },
-                    "decision_quality": {
-                        "decision_cost_total": 0.0,
-                        "decision_cost_mean": 0.0,
-                        "cost_by_failure_bucket": {},
-                        "cost_by_checkpoint_type": {},
-                        "cost_by_source_modality": {},
-                        "cost_by_decision_action": {},
-                        "regret_total": 0.0,
-                        "regret_mean": 0.0,
-                    },
-                },
-                handle,
-            )
-        return run_dir
+    def _raise_on_required_artifact_write(**_kwargs: object) -> Path:
+        raise OSError("report write failed")
 
-    def _raise_on_report_write(self: Path, *_args: object, **_kwargs: object) -> int:
-        if self == run_dir / "report.json":
-            raise OSError("report write failed")
-        return original_write_text(self, *_args, **_kwargs)
-
-    original_write_text = Path.write_text
-    monkeypatch.setattr(runtime_suite, "_load_memory_evolution_sim_suite", _fake_load)
+    monkeypatch.setattr(runtime_suite, "load_memory_evolution_scenarios", _fake_load)
     monkeypatch.setattr(runtime_suite, "run_runtime_scenarios", _fake_rows)
-    monkeypatch.setattr(runtime_suite, "_write_memory_evolution_sim_artifacts", _fake_artifacts)
-    monkeypatch.setattr(runtime_suite, "write_runtime_artifacts", lambda **_kwargs: None)
-    monkeypatch.setattr(runtime_suite, "runtime_summary_metrics", lambda _rows: {})
+    monkeypatch.setattr(
+        runtime_suite,
+        "write_memory_evolution_artifacts",
+        _raise_on_required_artifact_write,
+    )
     monkeypatch.setattr(runtime_suite, "runtime_warning_policy", lambda: {})
-    monkeypatch.setattr(runtime_suite, "_print_memory_evolution_sim_summary", lambda **_kwargs: None)
-    monkeypatch.setattr(Path, "write_text", _raise_on_report_write)
+    monkeypatch.setattr(runtime_suite, "print_memory_evolution_summary", lambda **_kwargs: None)
 
     with pytest.raises(OSError, match="report write failed"):
         runtime_suite._run_memory_evolution_runtime_suite(

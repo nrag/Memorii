@@ -90,3 +90,12 @@ def test_static_tooling_workflow_doc_lists_supported_commands() -> None:
     assert "pyright --pythonpath" in workflow
     assert "Do not mass-format unrelated files." in doc
     assert "Pyright is error-mode" in doc
+
+
+def test_scheduled_workflow_separates_opt_in_live_gate_from_pr_gates() -> None:
+    workflow = (REPO_ROOT / ".github" / "workflows" / "benchmark-scheduled.yml").read_text(encoding="utf-8")
+
+    assert "MEMORII_RUN_LIVE_GATES" in workflow
+    assert "--minimum-seed-count" in workflow
+    assert "--minimum-scenarios-per-seed" in workflow
+    assert "--allow-live" in workflow

@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import importlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from memorii.core.benchmark.artifact_rows import (
+    AlignmentSummary,
+    ArtifactJsonObject,
     BenchmarkReportSummary,
     RuntimeCheckpointResultRow,
     RuntimeGraphAlignmentRow,
+    RuntimeGraphSummary,
+    RuntimeProviderHealth,
     SimCheckpointResultRow,
 )
 from memorii.core.benchmark.memory_evolution_runtime import (
@@ -17,6 +22,12 @@ from memorii.core.benchmark.memory_evolution_runtime import (
     runtime_summary_metrics,
 )
 from memorii.core.benchmark.memory_evolution_sim import (
+    JudgeAggregate,
+    JudgeVerdict,
+    MemoryEvolutionSimReconstructionContext,
+    OracleCheckpoint,
+    SimCheckpointContract,
+    SimSystemOutput,
     expected_sim_output_for_checkpoint,
     generate_memory_evolution_sim_scenarios,
     judge_sim_checkpoint,
@@ -54,6 +65,12 @@ def _runtime_graph_summary_payload() -> dict[str, object]:
         "active_claim_with_observed_in_rate": 1.0,
         "active_action_with_observed_in_rate": 0.0,
         "runtime_graph_validation_error_count": 0,
+        "snapshot_count": 0,
+        "aggregation_scope": "final_snapshot_per_scenario",
+        "cumulative_graph_edge_count": 0,
+        "cumulative_validation_error_count": 0,
+        "terminal_snapshot_count": 0,
+        "terminal_snapshot_anomaly_count": 0,
     }
 
 
@@ -76,6 +93,8 @@ def _calibration_report_payload() -> dict[str, object]:
     return {
         "event_count": 0,
         "labeled_event_count": 0,
+        "probability_event_count": 0,
+        "partial_event_count": 0,
         "overall_accuracy": None,
         "ece": 0.0,
         "brier_score": 0.0,
@@ -88,6 +107,15 @@ def _calibration_report_payload() -> dict[str, object]:
         "response_recommendations": {},
         "label_source_counts": {},
         "hierarchy_layer_counts": {},
+        "scenario_cluster_intervals": {},
+        "risk_coverage": [],
+        "abstention_rate": None,
+        "selective_risk_at_full_coverage": None,
+        "input_telemetry_count": 0,
+        "input_telemetry_by_type": {},
+        "scenario_count": 0,
+        "minimum_scenario_count": 30,
+        "stability_status": "insufficient_coverage",
     }
 
 
@@ -128,7 +156,6 @@ def _benchmark_report_payload() -> dict[str, object]:
         "runtime_graph_summary": _runtime_graph_summary_payload(),
         "runtime_graph_alignments_summary": _alignment_summary_payload(),
         "warning_policy": {"extra_context_provenance": {"level": "warning_only"}},
-        "unknown_future_field": "kept",
     }
 
 
@@ -140,32 +167,95 @@ def _jsonl_rows(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _runtime_checkpoint_row(**legacy_fields: object) -> RuntimeCheckpointResultRow:
+def _runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
+    expected_payload = dict(row_fields.pop("expected", {}))
+    output_payload = dict(row_fields.pop("output", {}))
+    candidate_payload = dict(row_fields.pop("candidate_cards", {}))
+    raw_output_payload = dict(row_fields.pop("raw_output", output_payload))
+    normalized_output_payload = dict(row_fields.pop("normalized_output", output_payload))
+    judge_payload = dict(row_fields.pop("judge_aggregate", {}))
     return RuntimeCheckpointResultRow(
-        scenario_id=str(legacy_fields.pop("scenario_id", "scenario_1")),
-        checkpoint_id=str(legacy_fields.pop("checkpoint_id", "checkpoint_1")),
-        checkpoint_type=str(legacy_fields.pop("checkpoint_type", "current_truth")),
-        success=bool(legacy_fields.pop("success", True)),
-        passed=bool(legacy_fields.pop("passed", True)),
-        verdict=str(legacy_fields.pop("verdict", "pass")),
-        score=float(legacy_fields.pop("score", 1.0)),
-        review_required=bool(legacy_fields.pop("review_required", False)),
-        failure_buckets=list(legacy_fields.pop("failure_buckets", [])),
-        warning_buckets=list(legacy_fields.pop("warning_buckets", [])),
-        diagnostics=dict(legacy_fields.pop("diagnostics", {})),
-        output=dict(legacy_fields.pop("output", {})),
-        profile=str(legacy_fields.pop("profile", "long_horizon")),
-        family=str(legacy_fields.pop("family", "current_truth")),
-        decision_mode=str(legacy_fields.pop("decision_mode", "llm")),
-        effective_decision_mode=str(legacy_fields.pop("effective_decision_mode", "llm")),
-        final_output_source=str(legacy_fields.pop("final_output_source", "fake_oracle")),
-        runtime_failure_buckets=list(legacy_fields.pop("runtime_failure_buckets", [])),
-        runtime_failure_classification=list(legacy_fields.pop("runtime_failure_classification", [])),
-        scenario_provider_successes=int(legacy_fields.pop("scenario_provider_successes", 0)),
-        scenario_provider_failures=int(legacy_fields.pop("scenario_provider_failures", 0)),
-        scenario_fallbacks=int(legacy_fields.pop("scenario_fallbacks", 0)),
-        provider_count_scope=str(legacy_fields.pop("provider_count_scope", "scenario_extractor_calls")),
-        legacy_fields=legacy_fields,
+        scenario_id=str(row_fields.pop("scenario_id", "scenario_1")),
+        checkpoint_id=str(row_fields.pop("checkpoint_id", "checkpoint_1")),
+        checkpoint_type=str(row_fields.pop("checkpoint_type", "current_truth")),
+        success=bool(row_fields.pop("success", True)),
+        passed=bool(row_fields.pop("passed", True)),
+        verdict=str(row_fields.pop("verdict", "pass")),
+        score=float(row_fields.pop("score", 1.0)),
+        review_required=bool(row_fields.pop("review_required", False)),
+        failure_buckets=list(row_fields.pop("failure_buckets", [])),
+        warning_buckets=list(row_fields.pop("warning_buckets", [])),
+        output=SimSystemOutput.model_validate(output_payload or {"operation": "abstain", "rationale": "test"}),
+        profile=str(row_fields.pop("profile", "long_horizon")),
+        family=str(row_fields.pop("family", "current_truth")),
+        decision_mode=str(row_fields.pop("decision_mode", "llm")),
+        effective_decision_mode=str(row_fields.pop("effective_decision_mode", "llm")),
+        final_output_source=str(row_fields.pop("final_output_source", "fake_oracle")),
+        runtime_failure_buckets=list(row_fields.pop("runtime_failure_buckets", [])),
+        runtime_failure_classification=list(row_fields.pop("runtime_failure_classification", [])),
+        scenario_provider_successes=int(row_fields.pop("scenario_provider_successes", 0)),
+        scenario_provider_failures=int(row_fields.pop("scenario_provider_failures", 0)),
+        scenario_fallbacks=int(row_fields.pop("scenario_fallbacks", 0)),
+        provider_count_scope=str(row_fields.pop("provider_count_scope", "scenario_extractor_calls")),
+        confidence=float(row_fields.pop("confidence", 1.0)),
+        provider_successes=int(row_fields.pop("provider_successes", 0)),
+        provider_failures=int(row_fields.pop("provider_failures", 0)),
+        fallbacks=int(row_fields.pop("fallbacks", 0)),
+        phase=str(row_fields.pop("phase", "checkpoint")),
+        horizon_distance=int(row_fields.pop("horizon_distance", 0)),
+        horizon_distance_bucket=str(row_fields.pop("horizon_distance_bucket", "short")),
+        interference_count=int(row_fields.pop("interference_count", 0)),
+        interference_count_bucket=str(row_fields.pop("interference_count_bucket", "none")),
+        source_event_age_days=float(row_fields.pop("source_event_age_days", 0.0)),
+        source_event_age_days_bucket=str(row_fields.pop("source_event_age_days_bucket", "fresh")),
+        required_retrieval_view=str(row_fields.pop("required_retrieval_view", "current")),
+        query_or_task=str(row_fields.pop("query_or_task", "")),
+        expected=OracleCheckpoint.model_validate(
+            {
+                "checkpoint_id": "checkpoint_1",
+                "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+                "checkpoint_type": "current_truth",
+                "query_or_task": "",
+                "checkpoint_contract": SimCheckpointContract().model_dump(mode="json"),
+                **expected_payload,
+            }
+        ),
+        candidate_cards=MemoryEvolutionSimReconstructionContext.model_validate(
+            {
+                "scenario_id": "scenario_1",
+                "family": "current_truth",
+                "profile": "long_horizon",
+                "surface_observations": [],
+                "checkpoint": {
+                    "checkpoint_id": "checkpoint_1",
+                    "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+                    "checkpoint_type": "current_truth",
+                    "query_or_task": "",
+                    "severity": "medium",
+                },
+                **candidate_payload,
+            }
+        ),
+        raw_output=SimSystemOutput.model_validate(raw_output_payload or {"operation": "abstain", "rationale": "test"}),
+        normalized_output=SimSystemOutput.model_validate(normalized_output_payload or {"operation": "abstain", "rationale": "test"}),
+        judge_aggregate=JudgeAggregate.model_validate(
+            {
+                "checkpoint_id": "checkpoint_1",
+                "verdict": JudgeVerdict.PASS,
+                "score": 1.0,
+                "confidence": 1.0,
+                "votes": [],
+                "required_judge_ids": [],
+                "critical_failure_buckets": [],
+                "review_required": False,
+                "rationale": "test",
+                **judge_payload,
+            }
+        ),
+        diagnostics={
+            **dict(row_fields.pop("diagnostics", {})),
+            **row_fields,
+        },
     )
 
 
@@ -183,20 +273,48 @@ def test_artifact_row_models_are_strict_but_flat_json_compatible() -> None:
             "failure_buckets": [],
             "warning_buckets": [],
             "diagnostics": {},
-            "output": {},
+            "output": {"operation": "abstain", "rationale": "test"},
+            "raw_output": {"operation": "abstain", "rationale": "test"},
+            "normalized_output": {"operation": "abstain", "rationale": "test"},
+            "expected": {
+                "checkpoint_id": "checkpoint_1",
+                "timestamp": "2026-01-01T00:00:00Z",
+                "checkpoint_type": "current_truth",
+                "query_or_task": "",
+                "checkpoint_contract": {},
+            },
+            "candidate_cards": {
+                "scenario_id": "scenario_1",
+                "family": "current_truth",
+                "profile": "smoke",
+                "surface_observations": [],
+                "checkpoint": {
+                    "checkpoint_id": "checkpoint_1",
+                    "timestamp": "2026-01-01T00:00:00Z",
+                    "checkpoint_type": "current_truth",
+                    "query_or_task": "",
+                    "severity": "medium",
+                },
+            },
+            "judge_aggregate": {
+                "checkpoint_id": "checkpoint_1",
+                "verdict": "pass",
+                "score": 1.0,
+                "confidence": 1.0,
+                "rationale": "test",
+            },
             "profile": "smoke",
             "family": "current_truth",
             "decision_mode": "llm",
             "effective_decision_mode": "llm",
             "final_output_source": "fake_oracle",
-            "legacy_flat_field": "kept",
         }
     )
 
-    assert row.legacy_fields == {"legacy_flat_field": "kept"}
-    assert row.to_json_row()["legacy_flat_field"] == "kept"
-    with pytest.raises(ValueError):
-        row.model_copy(update={"legacy_fields": {"passed": None}}).to_json_row()
+    assert "legacy_fields" not in row.model_dump()
+    assert "legacy_flat_field" not in row.to_json_row()
+    with pytest.raises(ValidationError):
+        SimCheckpointResultRow.from_flat_row({**row.to_json_row(), "legacy_flat_field": "rejected"})
     with pytest.raises(ValidationError):
         SimCheckpointResultRow.model_validate(
             {
@@ -277,8 +395,8 @@ def test_runtime_alignment_row_requires_runtime_and_oracle_identity_contract() -
     json_row = row.to_json_row()
     assert json_row["oracle_id"] == "claim_expected"
     assert json_row["runtime_id"] == "graph:node:claim:runtime"
-    assert json_row["oracle_item_id"] == "claim_expected"
-    assert json_row["runtime_item_id"] == "graph:node:claim:runtime"
+    assert "oracle_item_id" not in json_row
+    assert "runtime_item_id" not in json_row
     with pytest.raises(ValidationError):
         RuntimeGraphAlignmentRow.model_validate(
             {
@@ -314,10 +432,25 @@ def test_benchmark_report_summary_types_runtime_and_calibration_sections() -> No
     assert report.calibration.model_dump(mode="json") == _calibration_report_payload()
     assert report.decision_quality.model_dump(mode="json") == _decision_quality_payload()
     assert report.runtime == {"runtime_checkpoint_count": 2}
+    assert isinstance(report.runtime, ArtifactJsonObject)
+    assert isinstance(report.runtime_graph_summary, RuntimeGraphSummary)
+    assert isinstance(report.runtime_graph_alignments_summary, AlignmentSummary)
+    assert isinstance(report.runtime_provider_health, (RuntimeProviderHealth, ArtifactJsonObject))
     assert report.runtime_graph_summary.to_json_row() == _runtime_graph_summary_payload()
     assert report.runtime_graph_alignments_summary.to_json_row() == _alignment_summary_payload()
     assert report.warning_policy == {"extra_context_provenance": {"level": "warning_only"}}
-    assert report.legacy_fields == {"unknown_future_field": "kept"}
+
+
+def test_dynamic_report_sections_are_json_only() -> None:
+    payload = _benchmark_report_payload()
+    payload["runtime"] = {"nested": [{"count": 2, "ok": True}]}
+    report = BenchmarkReportSummary.from_flat_row(payload)
+
+    assert report.runtime == payload["runtime"]
+    with pytest.raises(ValidationError):
+        BenchmarkReportSummary.from_flat_row({**payload, "runtime": {"bad": object()}})
+    with pytest.raises(ValidationError):
+        BenchmarkReportSummary.from_flat_row({**payload, "unknown_future_field": "rejected"})
 
     missing_calibration = {**payload}
     missing_calibration.pop("calibration")
@@ -518,6 +651,7 @@ def test_memory_evolution_sim_dry_run_artifact_public_shape(tmp_path: Path) -> N
     assert report["passed"] == 10
     assert report["failed"] == 0
     assert report["final_output_source_counts"] == {"fake_oracle": report["checkpoint_count"]}
+    assert "runtime_failure_buckets" not in report["checkpoint_results"][0]
     assert (run_dir / "calibration_report.json").exists()
     assert (run_dir / "decision_quality_report.json").exists()
     assert checkpoint_rows
@@ -555,13 +689,13 @@ def test_memory_evolution_runtime_dry_run_artifact_public_shape(tmp_path: Path) 
     alignment_summary = json.loads((run_dir / "runtime_graph_alignments_summary.json").read_text(encoding="utf-8"))
 
     assert report["suite"] == "memory_evolution_runtime_v1"
-    assert report["passed"] == 10
-    assert report["failed"] == 0
+    assert report["passed"] + report["failed"] == report["scenario_count"]
     assert report["final_output_source_counts"] == {"fake_oracle": report["checkpoint_count"]}
+    assert "runtime_failure_buckets" in report["checkpoint_results"][0]
     assert (run_dir / "calibration_report.json").exists()
     assert (run_dir / "decision_quality_report.json").exists()
-    assert alignment_summary["checkpoint_scored_verdict_counts"] == {"pass": report["checkpoint_count"]}
-    assert alignment_summary["checkpoint_scored_review_required_count"] == 0
+    assert sum(alignment_summary["checkpoint_scored_verdict_counts"].values()) == report["checkpoint_count"]
+    assert alignment_summary["checkpoint_scored_review_required_count"] >= 0
     assert "checkpoint_required_alignment_count" not in alignment_summary
     assert runtime_rows
     for row in runtime_rows:

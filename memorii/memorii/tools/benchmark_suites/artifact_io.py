@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+from memorii.core.benchmark.artifact_validation import write_jsonl_atomic
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
-    path.write_text(
-        "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
-        encoding="utf-8",
-    )
+    write_jsonl_atomic(path, rows)

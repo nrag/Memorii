@@ -77,6 +77,7 @@ def _expected_action_alignment_rows(
     return rows
 
 def _action_alignment_row(*, action_id: str, runtime_action: dict[str, object], verdict: str, support_mode: str, matched_on: list[str], failure_reason: str) -> dict[str, object]:
+    derived_status, status_source = _derived_runtime_action_status(runtime_action)
     return {
         "expected_action_id": action_id,
         "runtime_action_id": str(runtime_action.get("action_id", "")),
@@ -86,7 +87,10 @@ def _action_alignment_row(*, action_id: str, runtime_action: dict[str, object], 
         "matched_on": matched_on,
         "failed_on": [],
         "failure_reason": failure_reason,
-        "status": normalize_action_status(str(runtime_action.get("status", ""))),
+        "status": derived_status,
+        "model_status_raw": str(runtime_action.get("status", "")),
+        "action_type_raw": str(runtime_action.get("action_type", "")),
+        "status_derived_from": status_source,
         "target_entity_ids": [str(item) for item in _object_sequence(runtime_action.get("target_entity_ids"))],
         "evidence_event_ids": [str(item) for item in _object_sequence(runtime_action.get("evidence_event_ids"))],
     }
@@ -107,12 +111,13 @@ def _missing_action_alignment_row(*, action_id: str, failure_reason: str) -> dic
 def _semantic_action_alignment_row(*, action_id: str, claim: LatentClaim, runtime_action: dict[str, object]) -> dict[str, object]:
     matched: list[str] = []
     failed: list[str] = []
+    derived_status, status_source = _derived_runtime_action_status(runtime_action)
     runtime_targets = [str(item) for item in _object_sequence(runtime_action.get("target_entity_ids"))]
     if _action_target_matches(runtime_targets=runtime_targets, claim=claim):
         matched.append("target_entity")
     else:
         failed.append("runtime_action_target_mismatch")
-    if normalize_action_status(str(runtime_action.get("status", ""))) == normalize_action_status(claim.object.value):
+    if derived_status == normalize_action_status(claim.object.value):
         matched.append("status")
     else:
         failed.append("runtime_action_status_mismatch")
@@ -137,7 +142,10 @@ def _semantic_action_alignment_row(*, action_id: str, claim: LatentClaim, runtim
         "matched_on": matched,
         "failed_on": failed,
         "failure_reason": "" if verdict == "aligned" else _primary_action_failure(failed),
-        "status": normalize_action_status(str(runtime_action.get("status", ""))),
+        "status": derived_status,
+        "model_status_raw": str(runtime_action.get("status", "")),
+        "action_type_raw": str(runtime_action.get("action_type", "")),
+        "status_derived_from": status_source,
         "target_entity_ids": runtime_targets,
         "evidence_event_ids": sorted(runtime_events),
     }
@@ -154,7 +162,8 @@ def _work_state_bridged_action_row(
         return None
     if not {"status", "evidence_event", "lifecycle"} <= {str(item) for item in _object_sequence(row.get("matched_on"))}:
         return None
-    if normalize_action_status(str(runtime_action.get("status", ""))) not in {"in_progress", "resumed"}:
+    derived_status, _status_source = _derived_runtime_action_status(runtime_action)
+    if derived_status not in {"in_progress", "resumed"}:
         return None
     if not _claim_has_active_branch_history(claim=claim, graph_items=graph_items):
         return None
@@ -191,6 +200,64 @@ def normalize_action_status(value: str) -> str:
     }
     return mapping.get(normalized, normalized.replace(" ", "_"))
 
+def _derived_runtime_action_status(runtime_action: Mapping[str, object]) -> tuple[str, str]:
+    raw_status = str(runtime_action.get("status", ""))
+    raw_action_type = str(runtime_action.get("action_type", ""))
+    status_signal = _status_signal(raw_status)
+    action_type_signal = _status_signal(raw_action_type)
+    terminal_states = {"blocked", "abandoned", "completed", "failed", "succeeded"}
+    if status_signal in terminal_states:
+        return status_signal, "status"
+    # Action type describes the event that occurred; it is not the durable
+    # work-state status. An explicit in-progress status is authoritative, so
+    # a resume event cannot be reinterpreted as a distinct resumed state.
+    # started remains a weak extractor default and may be refined by an
+    # explicit progress event type.
+    if status_signal == "in_progress":
+        return status_signal, "status"
+    if action_type_signal in terminal_states:
+        return action_type_signal, "action_type"
+    for preferred in ("in_progress", "resumed", "started"):
+        if action_type_signal == preferred:
+            return action_type_signal, "action_type"
+    if status_signal:
+        return status_signal, "status"
+    if action_type_signal:
+        return action_type_signal, "action_type"
+    return "", ""
+
+def _status_signal(value: str) -> str:
+    status = normalize_action_status(value)
+    if status in {
+        "started",
+        "in_progress",
+        "blocked",
+        "resumed",
+        "abandoned",
+        "completed",
+        "failed",
+        "succeeded",
+    }:
+        return status
+    lowered = value.strip().lower().replace("-", "_").replace(" ", "_")
+    if "in_progress" in lowered or "progress" in lowered or "continue" in lowered:
+        return "in_progress"
+    if "resume" in lowered or "reopen" in lowered:
+        return "resumed"
+    if "block" in lowered or "stuck" in lowered:
+        return "blocked"
+    if "abandon" in lowered or "drop" in lowered:
+        return "abandoned"
+    if "complete" in lowered or "done" in lowered:
+        return "completed"
+    if "fail" in lowered:
+        return "failed"
+    if "succeed" in lowered:
+        return "succeeded"
+    if "start" in lowered:
+        return "started"
+    return status
+
 def _action_target_matches(*, runtime_targets: list[str], claim: LatentClaim) -> bool:
     target_names = {_normalize_entity_key(target) for target in runtime_targets}
     oracle_names = {
@@ -202,7 +269,17 @@ def _action_target_matches(*, runtime_targets: list[str], claim: LatentClaim) ->
     oracle_names.discard("")
     if target_names & oracle_names:
         return True
-    return any(target.endswith(oracle) or oracle.endswith(target) for target in target_names for oracle in oracle_names if len(target) >= 4 and len(oracle) >= 4)
+    return any(
+        (
+            target.endswith(oracle)
+            or oracle.endswith(target)
+            or (len(oracle) >= 8 and target.startswith(oracle))
+            or (len(target) >= 8 and oracle.startswith(target))
+        )
+        for target in target_names
+        for oracle in oracle_names
+        if len(target) >= 4 and len(oracle) >= 4
+    )
 
 def _claim_has_active_branch_history(*, claim: LatentClaim, graph_items: list[dict[str, object]]) -> bool:
     has_active_history = False
@@ -211,7 +288,7 @@ def _claim_has_active_branch_history(*, claim: LatentClaim, graph_items: list[di
             continue
         if not _action_target_matches(runtime_targets=[str(value) for value in _object_sequence(item.get("target_entity_ids"))], claim=claim):
             continue
-        status = normalize_action_status(str(item.get("status", "")))
+        status, _status_source = _derived_runtime_action_status(item)
         if status in {"blocked", "abandoned", "completed", "failed"}:
             return False
         if status in {"started", "in_progress", "resumed"}:
@@ -233,78 +310,6 @@ def _runtime_action_support_rows(projection: RuntimeProjection) -> list[dict[str
         {"action_id": action_id, "support_mode": support_mode}
         for action_id, support_mode in sorted(projection.action_support.items())
     ]
-
-def _action_backed_claim_ids(*, expected_action_ids: list[str], action_support: dict[str, str]) -> list[str]:
-    claim_ids: list[str] = []
-    for action_id in expected_action_ids:
-        if action_id not in action_support or not action_id.startswith("action:"):
-            continue
-        claim_ids.append(action_id.removeprefix("action:"))
-    return claim_ids
-
-def _oracle_evidence_events_for_claims(*, scenario: LatentGraphScenario, claim_ids: list[str], expected_event_ids: list[str]) -> list[str]:
-    events: list[str] = []
-    expected = set(expected_event_ids)
-    for claim_id in claim_ids:
-        claim = _claim_by_id(scenario, claim_id)
-        if claim is None:
-            continue
-        evidence = [str(event_id) for event_id in claim.evidence.source_event_ids if event_id]
-        events.extend([event_id for event_id in evidence if event_id in expected] or evidence)
-    return _ordered_unique(events)
-
-def _runtime_execution_state(
-    *,
-    scenario: LatentGraphScenario,
-    graph_items: list[dict[str, object]],
-    checkpoint: OracleCheckpoint,
-    action_alignment_rows: list[dict[str, object]],
-) -> dict[str, object]:
-    action_rows = [item for item in graph_items if item.get("item_type") == "action"]
-    branch_rows: list[dict[str, object]] = []
-    for action in action_rows:
-        status = normalize_action_status(str(action.get("status", "")))
-        targets = [str(item) for item in _object_sequence(action.get("target_entity_ids"))]
-        branch_rows.append(
-            {
-                "runtime_action_id": str(action.get("action_id", "")),
-                "runtime_item_id": str(action.get("runtime_item_id", "")),
-                "target_entity_ids": targets,
-                "status": status,
-                "evidence_event_ids": [str(item) for item in _object_sequence(action.get("evidence_event_ids"))],
-                "continuation_rank": _continuation_rank(status),
-            }
-        )
-    aligned_rows = [row for row in action_alignment_rows if row.get("verdict") == "aligned"]
-    active_row = next((row for row in aligned_rows if str(row.get("expected_action_id", "")) in checkpoint.expected_action_ids), None)
-    active_branch = ""
-    active_events: list[str] = []
-    if active_row is not None:
-        active_branch = _branch_from_action_alignment(scenario=scenario, action_id=str(active_row.get("expected_action_id", "")))
-        active_events = [str(item) for item in _object_sequence(active_row.get("evidence_event_ids"))]
-    suppressed_branch_ids = _suppressed_branch_ids(scenario=scenario, checkpoint=checkpoint, graph_items=graph_items)
-    return {
-        "active_continuation_branch": active_branch,
-        "active_evidence_event_ids": active_events,
-        "suppressed_branch_ids": suppressed_branch_ids,
-        "actions": branch_rows,
-        "aligned_action_count": len(aligned_rows),
-        "ambiguous_action_count": sum(1 for row in action_alignment_rows if row.get("verdict") == "ambiguous_alignment"),
-    }
-
-def _continuation_rank(status: str) -> int:
-    if status in {"in_progress", "resumed"}:
-        return 3
-    if status == "started":
-        return 2
-    if status in {"blocked", "abandoned", "completed", "failed"}:
-        return 0
-    return 1
-
-def _branch_from_action_alignment(*, scenario: LatentGraphScenario, action_id: str) -> str:
-    claim_id = action_id.removeprefix("action:") if action_id.startswith("action:") else ""
-    claim = _claim_by_id(scenario, claim_id) if claim_id else None
-    return claim.subject.entity_id if claim else ""
 
 def _suppressed_branch_ids(*, scenario: LatentGraphScenario, checkpoint: OracleCheckpoint, graph_items: list[dict[str, object]]) -> list[str]:
     suppressed: list[str] = []
@@ -337,7 +342,7 @@ def _suppressed_action_state_claim_ids(
     return _ordered_unique(suppressed)
 
 def _runtime_action_suppresses_claim(*, runtime_action: dict[str, object], claim: LatentClaim, graph_items: list[dict[str, object]]) -> bool:
-    status = normalize_action_status(str(runtime_action.get("status", "")))
+    status, _status_source = _derived_runtime_action_status(runtime_action)
     expected_status = normalize_action_status(claim.object.value)
     if status != expected_status or status not in {"blocked", "abandoned", "completed", "failed"}:
         return False
@@ -350,13 +355,16 @@ def _runtime_action_suppresses_claim(*, runtime_action: dict[str, object], claim
     return _action_target_matches(
         runtime_targets=[str(value) for value in _object_sequence(runtime_action.get("target_entity_ids"))],
         claim=claim,
-    ) or _claim_has_active_branch_history(claim=claim, graph_items=graph_items)
+    ) or _claim_has_active_branch_history(
+        claim=claim,
+        graph_items=graph_items,
+    )
 
 
 def _object_sequence(value: object) -> Sequence[object]:
     return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
 
-def _action_alignment_failure_reason(rows: list[dict[str, object]]) -> str:
+def _action_alignment_failure_reason(rows: Sequence[Mapping[str, object]]) -> str:
     for row in rows:
         if row.get("verdict") == "aligned":
             return ""

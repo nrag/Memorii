@@ -1,0 +1,185 @@
+name: Scheduled Benchmark Reports
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-benchmarks:
+    name: Deterministic Benchmark Reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run deterministic simulator benchmark
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_sim_v1
+          --mode llm
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile long_horizon
+          --sim-scenario-count 10
+          --sim-min-events 25
+          --sim-max-events 60
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Run deterministic runtime benchmark
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_runtime_v1
+          --mode llm
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile long_horizon
+          --sim-scenario-count 10
+          --sim-min-events 25
+          --sim-max-events 60
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Validate deterministic artifacts
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.validate_benchmark_artifacts
+          --root .memorii/benchmark_runs
+          --suite memory_evolution_sim_v1
+          &&
+          python -m memorii.tools.validate_benchmark_artifacts
+          --root .memorii/benchmark_runs
+          --suite memory_evolution_runtime_v1
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deterministic-benchmark-reports
+          path: memorii/.memorii/benchmark_runs
+          if-no-files-found: warn
+
+  live-runtime-smoke:
+    name: Live Runtime Smoke (seed ${{ matrix.seed }})
+    if: ${{ github.event_name == 'workflow_dispatch' && vars.MEMORII_RUN_LIVE_GATES == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [7, 11, 19, 23, 31, 37, 41, 43, 47, 53]
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      MEMORII_SOURCE_REVISION: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run live runtime smoke
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_runtime_v1
+          --mode hybrid
+          --allow-live
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile long_horizon
+          --sim-scenario-count 25
+          --sim-min-events 25
+          --sim-max-events 60
+          --sim-noise-rate 0.35
+          --seed ${{ matrix.seed }}
+
+      - name: Upload live artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-runtime-smoke-reports-${{ matrix.seed }}
+          path: memorii/.memorii/benchmark_runs
+          if-no-files-found: warn
+
+  live-runtime-gate:
+    name: Live Runtime Statistical Gate
+    needs: live-runtime-smoke
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && vars.MEMORII_RUN_LIVE_GATES == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Download live reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: live-runtime-smoke-reports-*
+          path: memorii/.memorii/benchmark_runs
+          merge-multiple: true
+
+      - name: Evaluate live statistical gate
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.validate_live_benchmark_gate
+          --root .memorii/benchmark_runs
+          --suite memory_evolution_runtime_v1
+          --mode hybrid
+          --profile long_horizon
+          --minimum-seed-count 10
+          --minimum-scenarios-per-seed 25
+          --minimum-pass-rate-lower-bound 0.90
+          --maximum-provider-failure-rate 0.05
+          --maximum-fallback-rate 0.05
+          --output .memorii/benchmark_runs/live_runtime_gate_summary.json
+
+      - name: Upload live gate summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-runtime-gate-summary
+          path: memorii/.memorii/benchmark_runs/live_runtime_gate_summary.json
+          if-no-files-found: warn

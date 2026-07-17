@@ -467,7 +467,9 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "next_action": None,
                 "confidence": 0.9,
                 "query_temporal_frame": {
-                    "mode": "belief",
+                    "temporal_kind": "belief",
+                    "scope_kind": "none",
+                    "scope_key": None,
                     "anchor_id": None,
                     "valid_from": None,
                     "valid_to": None,
@@ -502,9 +504,9 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                     "belief:a-network-saturation",
                 ],
                 "belief_scores": [
-                    {"memory_id": "belief:b-worker-exhaustion", "belief": 0.7},
-                    {"memory_id": "belief:c-database-locks", "belief": 0.2},
-                    {"memory_id": "belief:a-network-saturation", "belief": 0.1},
+                    {"memory_id": "belief:b-worker-exhaustion", "belief": 0.7, "belief_state": "unknown"},
+                    {"memory_id": "belief:c-database-locks", "belief": 0.2, "belief_state": "unknown"},
+                    {"memory_id": "belief:a-network-saturation", "belief": 0.1, "belief_state": "unknown"},
                 ],
                 "rationale": "Tool evidence supports worker exhaustion and justifies the reranking.",
                 "failure_mode": None,

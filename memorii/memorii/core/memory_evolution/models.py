@@ -10,6 +10,18 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from memorii.domain.enums import MemoryDomain, SourceType
 
 
+def _validate_optional_half_open_interval(
+    valid_from: datetime | None,
+    valid_to: datetime | None,
+    label: str,
+) -> None:
+    for name, value in (("valid_from", valid_from), ("valid_to", valid_to)):
+        if value is not None and value.tzinfo is None:
+            raise ValueError(f"{label} {name} must be timezone-aware")
+    if valid_from is not None and valid_to is not None and valid_from >= valid_to:
+        raise ValueError(f"{label} valid_from must be before valid_to for a half-open interval")
+
+
 class EntityType(StrEnum):
     PROJECT = "project"
     PERSON = "person"
@@ -221,10 +233,18 @@ class EntityLinkState(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     lifecycle_state: EntityLinkLifecycleState = EntityLinkLifecycleState.ACTIVE
     superseded_by_entity_id: str | None = None
+    lineage_parent_entity_id: str | None = None
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> EntityLinkState:
+        _validate_optional_half_open_interval(self.valid_from, self.valid_to, "entity link")
+        return self
 
 
 class ClaimKey(BaseModel):
@@ -260,6 +280,11 @@ class ExtractedClaim(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @model_validator(mode="after")
+    def validate_interval(self) -> ExtractedClaim:
+        _validate_optional_half_open_interval(self.valid_from, self.valid_to, "claim")
+        return self
+
 
 class ExtractedAction(BaseModel):
     action_id: str
@@ -270,6 +295,10 @@ class ExtractedAction(BaseModel):
     dependency_ids: list[str] = Field(default_factory=list)
     blocking_ids: list[str] = Field(default_factory=list)
     timestamp: datetime
+    task_id: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
+    scope_key: str = "global"
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
     extraction_run_id: str
 
@@ -308,6 +337,11 @@ class ClaimState(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> ClaimState:
+        _validate_optional_half_open_interval(self.valid_from, self.valid_to, "claim state")
+        return self
 
 
 class ConfidenceUpdate(BaseModel):

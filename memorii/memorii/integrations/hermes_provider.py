@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
+from memorii.core.memory_evolution import QueryAnalysis
 from memorii.core.provider.classifier import classify_memory_target
 from memorii.core.provider.models import ProviderOperation, ProviderSyncResult, ProviderWriteDecision
 from memorii.core.provider.service import ProviderMemoryService
@@ -19,8 +22,19 @@ class HermesMemoryProvider(MemoryProviderInterface):
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
+        query_language: str = "en",
+        query_analysis: QueryAnalysis | None = None,
+        reference_time: datetime | None = None,
     ) -> str:
-        return self._service.prefetch(query, session_id=session_id, task_id=task_id, user_id=user_id)
+        return self._service.prefetch(
+            query,
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+            query_language=query_language,
+            query_analysis=query_analysis,
+            reference_time=reference_time,
+        )
 
     def sync_turn(
         self,

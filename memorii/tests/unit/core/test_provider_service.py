@@ -1,8 +1,19 @@
 from datetime import UTC, datetime, timedelta
 
-from memorii.core.provider.models import ProviderStoredRecord
+from memorii.core.memory_evolution import (
+    MemoryQueryRequest,
+    QueryAnalysis,
+    QueryScopeKind,
+    QueryTemporalFrame,
+    QueryTemporalKind,
+    RuleMemoryExtractor,
+    StructuredQueryAnalyzer,
+)
+from memorii.core.memory_plane import MemoryPlaneService
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.domain.enums import MemoryDomain
+from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 
@@ -60,6 +71,78 @@ def test_prefetch_includes_transcript_continuity_records() -> None:
 
     context = provider.prefetch("what deploy window was set", task_id="task:history")
     assert "deploy window" in context.lower()
+
+
+def test_provider_prefetch_passes_language_and_structured_temporal_analysis() -> None:
+    def analyze_structured_query(**kwargs: object) -> dict[str, object]:
+        candidates = kwargs["entity_candidates"]
+        assert isinstance(candidates, list)
+        subject_entity_id = candidates[0].entity_id
+        return {
+            "language": "es",
+            "temporal_frame": {
+                "temporal_kind": "current",
+                "scope_kind": "task",
+                "scope_key": "task:multilingual",
+                "resolved_entity_ids": [subject_entity_id],
+            },
+        }
+
+    service = ProviderMemoryService(
+        memory_evolution_enabled=True,
+        memory_evolution_extractor=RuleMemoryExtractor(),
+        memory_evolution_query_analyzer=StructuredQueryAnalyzer(
+            analyze_structured_query,
+            analyzer_name="test-provider-analyzer",
+            analyzer_version="1",
+        ),
+    )
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Bob.",
+        task_id="task:multilingual",
+    )
+    subject_entity_id = service.memory_evolution_service.retrieve_claim_states()[0].claim_key.subject_entity_id
+
+    service.prefetch(
+        "¿Quién es el propietario actual de Atlas?",
+        task_id="task:multilingual",
+        query_language="es",
+        query_analysis=QueryAnalysis(
+            language="es",
+            temporal_frame=QueryTemporalFrame(
+                temporal_kind=QueryTemporalKind.CURRENT,
+                scope_kind=QueryScopeKind.TASK,
+                scope_key="task:multilingual",
+                resolved_entity_ids=[subject_entity_id],
+            ),
+            analysis_source="structured_model",
+        ),
+    )
+
+    bundle = service.last_recall_bundle()
+    assert bundle is not None
+    decision = bundle.trace["evolution_retrieval"]
+    assert isinstance(decision, dict)
+    assert decision["temporal_frame"]["temporal_kind"] == "current"
+
+
+def test_provider_exposes_structured_evolution_decision() -> None:
+    service = ProviderMemoryService(
+        memory_evolution_enabled=True,
+        memory_evolution_extractor=RuleMemoryExtractor(),
+    )
+
+    decision = service.retrieve_evolution_decision(
+        request=MemoryQueryRequest(
+            query="What is the current owner?",
+            query_language="en",
+        )
+    )
+
+    assert decision is not None
+    assert decision.decision_source == "production_memory_evolution_retriever"
+    assert decision.context_items == []
 
 
 def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
@@ -128,6 +211,61 @@ def test_prefetch_general_continuity_prefers_recent_transcript_over_old_semantic
     assert trace.ranked_items[0].memory_id == "tx:new"
     assert trace.candidate_count == 2
     assert trace.ranked_items[0].recency_score >= trace.ranked_items[1].recency_score
+
+
+def test_prefetch_execution_uses_production_evolution_decision_as_authority() -> None:
+    plane = MemoryPlaneService()
+    service = ProviderMemoryService(
+        memory_plane=plane,
+        memory_evolution_enabled=True,
+        memory_evolution_extractor=RuleMemoryExtractor(),
+    )
+    evolution_service = service.memory_evolution_service
+    assert evolution_service is not None
+    evolution_service.evolve_records(
+        [
+            CanonicalMemoryRecord(
+                memory_id="tx:execution",
+                domain=MemoryDomain.TRANSCRIPT,
+                text="Atlas migration resumed",
+                content={"text": "Atlas migration resumed"},
+                status=CommitStatus.COMMITTED,
+                source_kind="user",
+                task_id="task:execution",
+                timestamp=datetime(2026, 1, 15, tzinfo=UTC),
+                is_raw_event=True,
+            )
+        ]
+    )
+
+    context = service.prefetch("Continue the previous fix", task_id="task:execution")
+
+    assert "Evolution execution (production retrieval):" in context
+    assert "Active branch ent:atlas-migration: in_progress" in context
+    assert "Current work state:" not in context
+    bundle = service.last_recall_bundle()
+    assert bundle is not None
+    evolution_decision = bundle.trace["evolution_retrieval"]
+    assert isinstance(evolution_decision, dict)
+    assert evolution_decision["temporal_frame"]["temporal_kind"] == "execution"
+    assert evolution_decision["selected_record_ids"]
+
+
+def test_evolution_prefetch_does_not_merge_unfiltered_provider_context() -> None:
+    service = ProviderMemoryService(
+        memory_evolution_enabled=True,
+        memory_evolution_extractor=RuleMemoryExtractor(),
+    )
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Unvalidated pasted noise about Atlas owner is Mallory.",
+        task_id="task:authority",
+    )
+
+    context = service.prefetch("Who owns Atlas now?", task_id="task:authority")
+
+    assert "Evolution memory (production retrieval):" in context
+    assert "Mallory" not in context
 
 
 def test_prefetch_fact_config_prefers_semantic_when_query_is_fact_like() -> None:

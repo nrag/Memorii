@@ -4,14 +4,31 @@ from pathlib import Path
 
 import yaml
 
+from memorii.core.prompts.manifest import PromptContractManifest, PromptOwner, prompt_contract_manifest
 from memorii.core.prompts.models import PromptContract
 
 
 class PromptRegistry:
-    def __init__(self, *, prompt_root: str | Path):
+    def __init__(
+        self,
+        *,
+        prompt_root: str | Path,
+        require_manifest: bool = False,
+        manifest: PromptContractManifest | None = None,
+    ):
         self.prompt_root = Path(prompt_root).resolve()
+        self.require_manifest = require_manifest
+        self.manifest = manifest or prompt_contract_manifest()
 
-    def load(self, prompt_ref: str) -> PromptContract:
+    def load(self, prompt_ref: str, *, owner: PromptOwner | str | None = None) -> PromptContract:
+        manifest_entry = self.manifest.by_prompt_ref().get(prompt_ref)
+        if self.require_manifest and manifest_entry is None:
+            raise ValueError(f"Prompt is not registered in the contract manifest: {prompt_ref}")
+        expected_owner = owner.value if isinstance(owner, PromptOwner) else owner
+        if owner is not None and manifest_entry is not None and manifest_entry.owning_adapter.value != expected_owner:
+            raise ValueError(
+                f"Prompt {prompt_ref} is owned by {manifest_entry.owning_adapter.value}, not {owner}"
+            )
         path = self._resolve_prompt_path(prompt_ref)
         if not path.exists():
             raise FileNotFoundError(f"Prompt not found for ref: {prompt_ref}")

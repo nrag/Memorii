@@ -6,8 +6,16 @@ from collections import defaultdict
 from collections.abc import Iterable
 from math import sqrt
 
-from memorii.core.calibration.models import CalibrationEvent, CalibrationLabel, CalibrationLabelSource, CalibrationSlice
+from memorii.core.calibration.models import (
+    CalibrationEvent,
+    CalibrationLabel,
+    CalibrationLabelSource,
+    CalibrationSlice,
+    RiskCoveragePoint,
+    ScenarioClusterInterval,
+)
 from memorii.core.calibration.policy import response_for_slice
+from memorii.core.calibration.statistics import scenario_cluster_bootstrap
 
 
 def labeled_events(events: Iterable[CalibrationEvent]) -> list[CalibrationEvent]:
@@ -22,8 +30,20 @@ def correctness(event: CalibrationEvent) -> float:
     return 0.0
 
 
+def binary_correctness(event: CalibrationEvent) -> float:
+    """Binary correctness used by probabilistic metrics and intervals."""
+
+    return 1.0 if event.label == CalibrationLabel.CORRECT else 0.0
+
+
+def probability_events(events: Iterable[CalibrationEvent]) -> list[CalibrationEvent]:
+    """Return events with binary labels suitable for probability metrics."""
+
+    return [event for event in events if event.label in {CalibrationLabel.CORRECT, CalibrationLabel.INCORRECT}]
+
+
 def expected_calibration_error(events: Iterable[CalibrationEvent], *, bins: int = 10) -> float | None:
-    labeled = labeled_events(events)
+    labeled = probability_events(events)
     if not labeled:
         return None
     total = len(labeled)
@@ -35,16 +55,30 @@ def expected_calibration_error(events: Iterable[CalibrationEvent], *, bins: int 
         if not bucket:
             continue
         mean_conf = sum(event.confidence for event in bucket) / len(bucket)
-        acc = sum(correctness(event) for event in bucket) / len(bucket)
+        acc = sum(binary_correctness(event) for event in bucket) / len(bucket)
         ece += abs(mean_conf - acc) * (len(bucket) / total)
     return ece
 
 
 def brier_score(events: Iterable[CalibrationEvent]) -> float | None:
-    labeled = labeled_events(events)
+    labeled = probability_events(events)
     if not labeled:
         return None
-    return sum((event.confidence - correctness(event)) ** 2 for event in labeled) / len(labeled)
+    return sum((event.confidence - binary_correctness(event)) ** 2 for event in labeled) / len(labeled)
+
+
+def scenario_cluster_accuracy_interval(
+    events: Iterable[CalibrationEvent],
+    *,
+    seed: int = 0,
+    resamples: int = 2000,
+) -> ScenarioClusterInterval | None:
+    """Return a scenario-weighted accuracy interval for labeled events."""
+
+    grouped: dict[str, list[float]] = defaultdict(list)
+    for event in probability_events(events):
+        grouped[event.scenario_id].append(binary_correctness(event))
+    return scenario_cluster_bootstrap(grouped, seed=seed, resamples=resamples)
 
 
 def wilson_interval(*, positives: float, n: int, z: float = 1.96) -> tuple[float | None, float | None]:
@@ -63,6 +97,31 @@ def overconfident_wrong_count(events: Iterable[CalibrationEvent], *, threshold: 
 
 def low_confidence_correct_count(events: Iterable[CalibrationEvent], *, threshold: float = 0.5) -> int:
     return sum(1 for event in labeled_events(events) if event.confidence < threshold and correctness(event) == 1.0)
+
+
+def risk_coverage_curve(events: Iterable[CalibrationEvent]) -> list[RiskCoveragePoint]:
+    """Return a deterministic selective-risk curve over labeled decisions."""
+
+    labeled = sorted(probability_events(events), key=lambda event: (-event.confidence, event.event_id))
+    if not labeled:
+        return []
+    points: list[RiskCoveragePoint] = []
+    accepted_correctness = 0.0
+    for index, event in enumerate(labeled, start=1):
+        accepted_correctness += binary_correctness(event)
+        coverage = index / len(labeled)
+        points.append(
+            RiskCoveragePoint(
+                accepted_count=index,
+                labeled_count=len(labeled),
+                coverage=coverage,
+                selective_risk=max(0.0, min(1.0, 1.0 - accepted_correctness / index)),
+                mean_confidence=sum(item.confidence for item in labeled[:index]) / index,
+                threshold=event.confidence,
+                abstention_rate=1.0 - coverage,
+            )
+        )
+    return points
 
 
 def build_calibration_slices(events: list[CalibrationEvent]) -> list[CalibrationSlice]:
@@ -104,14 +163,14 @@ def build_calibration_slices(events: list[CalibrationEvent]) -> list[Calibration
 
 
 def rolling_window_metrics(events: list[CalibrationEvent], *, windows: tuple[int, ...] = (10, 25, 50)) -> dict[str, object]:
-    labeled = labeled_events(events)
+    labeled = sorted(probability_events(events), key=lambda event: (event.timestamp, event.event_id))
     result: dict[str, object] = {}
     for window in windows:
         rows = []
         for end in range(window, len(labeled) + 1):
             segment = labeled[end - window:end]
             current_ece = expected_calibration_error(segment)
-            ow_rate = overconfident_wrong_count(segment) / window
+            ow_rate = overconfident_wrong_count(segment) / len(segment)
             rows.append({
                 "start_index": end - window,
                 "end_index": end - 1,
@@ -126,26 +185,34 @@ def rolling_window_metrics(events: list[CalibrationEvent], *, windows: tuple[int
 
 def _slice_from_events(*, slice_key: str, slice_value: str, events: list[CalibrationEvent]) -> CalibrationSlice:
     n = len(events)
-    positives = sum(correctness(event) for event in events)
-    accuracy = positives / n if n else None
-    mean_confidence = sum(event.confidence for event in events) / n if n else None
+    probability_labeled = probability_events(events)
+    probability_count = len(probability_labeled)
+    positives = sum(binary_correctness(event) for event in probability_labeled)
+    accuracy = positives / probability_count if probability_count else None
+    mean_confidence = (
+        sum(event.confidence for event in probability_labeled) / probability_count
+        if probability_count
+        else None
+    )
     ece = expected_calibration_error(events)
     brier = brier_score(events)
-    wilson_low, wilson_high = wilson_interval(positives=positives, n=n)
-    ow_rate = overconfident_wrong_count(events) / n if n else 0.0
+    wilson_low, wilson_high = wilson_interval(positives=positives, n=probability_count)
+    ow_rate = overconfident_wrong_count(events) / probability_count if probability_count else 0.0
     return CalibrationSlice(
         slice_key=slice_key,
         slice_values={slice_key: slice_value},
         n=n,
+        scenario_count=len({event.scenario_id for event in events}),
+        probability_event_count=probability_count,
         accuracy=accuracy,
         mean_confidence=mean_confidence,
         ece=ece,
         brier_score=brier,
         wilson_low=wilson_low,
         wilson_high=wilson_high,
-        eligible_for_failure=n >= 10,
+        eligible_for_failure=probability_count >= 10 and len({event.scenario_id for event in events}) >= 5,
         response_level=response_for_slice(
-            n=n,
+            n=probability_count,
             ece=ece,
             overconfident_wrong_rate=ow_rate,
             accuracy=accuracy,

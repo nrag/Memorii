@@ -48,6 +48,12 @@ def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
     assert report["passed"] == 10
     assert report["failed"] == 0
     assert report["final_output_source_counts"] == {"fake_oracle": report["checkpoint_count"]}
+    assert report["runtime_provider_health"]["status"] == "not_applicable"
+    assert report["runtime_provider_health"]["clean_runtime_gate"] is True
+    assert report["runtime_provider_health"]["provider_success_rate"] is None
+    assert report["runtime_provider_health"]["provider_successes"] == 0
+    assert report["runtime_provider_health"]["fake_extractor_calls"] == report["checkpoint_count"]
+    assert report["runtime_provider_health"]["execution_source"] == "fake_oracle"
     assert report["validation_scenario_catalog"]
     assert (run_dir / "validation_scenario_catalog.json").exists()
     runtime = report["runtime"]

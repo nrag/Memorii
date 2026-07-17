@@ -41,7 +41,19 @@ def align_runtime_graph_to_oracle(*, scenario: LatentGraphScenario, graph_items:
     for runtime in runtime_claims:
         direct = next((claim for claim in scenario.claims if claim.claim_id == runtime.get("claim_id") and claim.observability != ObservabilityLabel.HIDDEN), None)
         if direct is not None:
-            alignments.append(RuntimeGraphAlignment(runtime_item_id=str(runtime["runtime_item_id"]), oracle_item_id=direct.claim_id, item_type="claim", verdict=RuntimeGraphAlignmentVerdict.ALIGNED, score=1.0, matched_on=["claim_id"], rationale="runtime claim id matches latent claim id"))
+            runtime_evidence = runtime.get("evidence_event_ids", [])
+            evidence_ids = {str(value) for value in runtime_evidence} if isinstance(runtime_evidence, Sequence) and not isinstance(runtime_evidence, str) else set()
+            oracle_evidence_ids = {span.event_id for span in direct.evidence.spans}
+            has_provenance = bool(evidence_ids & oracle_evidence_ids)
+            alignments.append(RuntimeGraphAlignment(
+                runtime_item_id=str(runtime["runtime_item_id"]),
+                oracle_item_id=direct.claim_id,
+                item_type="claim",
+                verdict=RuntimeGraphAlignmentVerdict.ALIGNED if has_provenance else RuntimeGraphAlignmentVerdict.PARTIAL,
+                score=1.0 if has_provenance else 0.8,
+                matched_on=["claim_id", "evidence_event_ids"] if has_provenance else ["claim_id"],
+                rationale="runtime claim id and provenance match latent claim" if has_provenance else "claim id matches but provenance is missing",
+            ))
             continue
         best = _best_alignment([
             _align_claim_with_entity_context(
@@ -67,6 +79,7 @@ def align_runtime_graph_to_oracle(*, scenario: LatentGraphScenario, graph_items:
         ])
         if best is not None:
             alignments.append(best)
+    alignments = _enforce_one_to_one_alignment(alignments)
     for entity in scenario.entities:
         if entity.observability != ObservabilityLabel.HIDDEN and not any(a.oracle_item_id == entity.entity_id and a.item_type == "entity" for a in alignments):
             alignments.append(RuntimeGraphAlignment(oracle_item_id=entity.entity_id, item_type="entity", verdict=RuntimeGraphAlignmentVerdict.MISSING_EXPECTED, score=0.0, rationale="oracle entity missing from runtime graph"))
@@ -113,11 +126,9 @@ def _align_claim_with_entity_context(
         oracle_item_id=oracle_claim.claim_id,
         item_type="claim",
         matched=matched,
-        required_count=4,
-        rationale="claim alignment uses predicate/object/scope plus entity-aware subject/object identity",
+        required_count=5,
+        rationale="claim alignment requires subject, predicate, object, scope, and provenance",
     )
-    if alignment.verdict == RuntimeGraphAlignmentVerdict.ALIGNED and "evidence_event_ids" in matched:
-        return alignment.model_copy(update={"score": 1.0})
     return alignment
 
 def _runtime_alignment_from_matches(
@@ -129,7 +140,7 @@ def _runtime_alignment_from_matches(
     required_count: int,
     rationale: str,
 ) -> RuntimeGraphAlignment:
-    required_matches = min(len([item for item in matched if item != "evidence_event_ids"]), required_count)
+    required_matches = min(len(matched), required_count)
     if required_matches >= required_count:
         verdict = RuntimeGraphAlignmentVerdict.ALIGNED
     elif required_matches > 0:
@@ -237,6 +248,35 @@ def _best_alignment(alignments: list[RuntimeGraphAlignment]) -> RuntimeGraphAlig
     if len(alignments) > 1 and best.score == alignments[1].score and best.score > 0.0 and best.oracle_item_id != alignments[1].oracle_item_id:
         return best.model_copy(update={"verdict": RuntimeGraphAlignmentVerdict.AMBIGUOUS_ALIGNMENT, "rationale": f"ambiguous alignment between {best.oracle_item_id} and {alignments[1].oracle_item_id}"})
     return best
+
+
+def _enforce_one_to_one_alignment(alignments: list[RuntimeGraphAlignment]) -> list[RuntimeGraphAlignment]:
+    """Prevent duplicate runtime items from inflating oracle recall."""
+
+    winners: dict[tuple[str, str], RuntimeGraphAlignment] = {}
+    for alignment in alignments:
+        if alignment.verdict != RuntimeGraphAlignmentVerdict.ALIGNED or alignment.oracle_item_id is None:
+            continue
+        key = (alignment.item_type, alignment.oracle_item_id)
+        current = winners.get(key)
+        if current is None or (alignment.score, str(alignment.runtime_item_id)) > (current.score, str(current.runtime_item_id)):
+            winners[key] = alignment
+    winner_ids = {id(alignment) for alignment in winners.values()}
+    result: list[RuntimeGraphAlignment] = []
+    for alignment in alignments:
+        if alignment.verdict != RuntimeGraphAlignmentVerdict.ALIGNED or alignment.oracle_item_id is None:
+            result.append(alignment)
+            continue
+        if id(alignment) in winner_ids:
+            result.append(alignment)
+            continue
+        result.append(alignment.model_copy(update={
+            "oracle_item_id": None,
+            "verdict": RuntimeGraphAlignmentVerdict.UNMATCHED_RUNTIME,
+            "score": 0.0,
+            "rationale": "duplicate runtime item competes for an already aligned oracle item",
+        }))
+    return result
 
 def _oracle_entity_fields(entity: LatentEntity) -> dict[str, object]:
     return {

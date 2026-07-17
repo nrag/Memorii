@@ -8,6 +8,7 @@ from typing import Protocol, cast
 
 from memorii.core.benchmark.artifact_rows import (
     CheckpointDecisionTraceSection,
+    CheckpointDiagnosticsPayload,
     CheckpointDiagnosticsSection,
     CheckpointHorizonSection,
     CheckpointVerdictSection,
@@ -15,10 +16,12 @@ from memorii.core.benchmark.artifact_rows import (
     FinalOutputSource,
     NormalizationDiagnosticsSection,
     RuntimeActionAlignmentRow,
+    RuntimeActionSupportRow,
     RuntimeCheckpointResultRow,
     RuntimeDiagnosticsSection,
+    RuntimeExecutionStateSection,
     RuntimeGraphAlignmentRow,
-    artifact_section_legacy_fields,
+    RuntimeRelationSupportRow,
     checkpoint_warning_buckets,
 )
 from memorii.core.benchmark.memory_evolution_runtime.artifacts import (
@@ -42,8 +45,13 @@ from memorii.core.benchmark.memory_evolution_runtime.graph_items import (
     _runtime_span_for_item,
     graph_items_from_snapshot,
 )
-from memorii.core.benchmark.memory_evolution_runtime.ingestion import ingest_scenario_surface_observations
-from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeProjection, RuntimeSuiteRows
+from memorii.core.benchmark.memory_evolution_runtime.ingestion import IngestionContext, ingest_surface_observation
+from memorii.core.benchmark.memory_evolution_runtime.models import (
+    RuntimeGraphItemRow,
+    RuntimeGraphSnapshotRow,
+    RuntimeProjection,
+    RuntimeSuiteRows,
+)
 from memorii.core.benchmark.memory_evolution_runtime.utils import (
     _claim_by_id,
     _entity_by_id,
@@ -57,6 +65,7 @@ from memorii.core.benchmark.memory_evolution_sim import (
     ObservabilityLabel,
     OracleCheckpoint,
     SimOutputNormalization,
+    SimSystemOutput,
     SurfaceObservation,
     judge_sim_checkpoint,
     normalize_sim_system_output_for_checkpoint,
@@ -76,10 +85,13 @@ from memorii.core.memory_evolution import (
     ExtractedAction,
     ExtractedClaim,
     ExtractionRun,
+    GraphAuditRequest,
     HybridMemoryExtractor,
     LLMMemoryExtractor,
     MemoryExtractor,
     MemoryGraphSnapshot,
+    MemoryQueryRequest,
+    RetrievalPurpose,
     RuleMemoryExtractor,
     SourceObservation,
 )
@@ -198,6 +210,12 @@ class OracleVisibleMemoryExtractor:
                             target_entity_ids=[claim.subject.entity_id],
                             status=claim.object.normalized_value or claim.object.value,
                             timestamp=claim.lifecycle.valid_from or surface.timestamp,
+                            task_id=(
+                                claim.scope.scope_key
+                                if claim.scope.scope_key != "global"
+                                else None
+                            ),
+                            scope_key=claim.scope.scope_key,
                             evidence_spans=[span],
                             extraction_run_id=run_id,
                         )
@@ -251,6 +269,7 @@ class RecordingMemoryExtractor:
                 "prompt_hash": run.prompt_hash,
                 "success": not run.errors,
                 "fallback_used": fallback_used,
+                "failure_classification": _classify_extraction_failure(run.errors),
                 "errors": list(run.errors),
                 "entity_count": len(entities),
                 "claim_count": len(claims),
@@ -318,7 +337,7 @@ def run_runtime_scenarios(
     checkpoint_rows: list[RuntimeCheckpointResultRow] = []
     judge_rows: list[dict[str, object]] = []
     llm_rows: list[dict[str, object]] = []
-    graph_snapshots: list[dict[str, object]] = []
+    graph_snapshots: list[RuntimeGraphSnapshotRow] = []
     graph_items: list[dict[str, object]] = []
     alignments: list[RuntimeGraphAlignmentRow] = []
     runtime_failures: list[RuntimeCheckpointResultRow] = []
@@ -338,39 +357,108 @@ def run_runtime_scenarios(
             memory_evolution_enabled=True,
             memory_evolution_extractor=extractor,
         )
-        source_id_to_event_id = ingest_scenario_surface_observations(provider=provider, memory_plane=memory_plane, scenario=scenario)
-        evolution_service = provider._memory_evolution_service  # benchmark bridge over provider-owned runtime service
+        source_id_to_event_id: dict[str, str] = {}
+        ordered_observations = sorted(scenario.observations, key=lambda item: (item.timestamp, item.event_id))
+        observation_index = 0
+        before_record_ids: set[str] = set()
+        evolution_service = provider.memory_evolution_service
         if evolution_service is None:
             raise RuntimeError("runtime memory evolution service was not initialized")
-        graph_snapshot = evolution_service.retrieve_graph_snapshot()
-        graph_snapshot_payload = graph_snapshot.model_dump(mode="json")
-        graph_snapshot_payload["scenario_id"] = scenario.scenario_id
-        graph_snapshots.append(graph_snapshot_payload)
-        runtime_graph_items = graph_items_from_snapshot(
-            scenario_id=scenario.scenario_id,
-            snapshot=graph_snapshot,
-            source_id_to_event_id=source_id_to_event_id,
-        )
-        graph_items.extend(runtime_graph_items)
-
         scenario_checkpoint_rows: list[RuntimeCheckpointResultRow] = []
-        extractor_call_rows = extractor_trace_rows(
-            scenario=scenario,
-            extractor=extractor,
-            effective_mode=effective_mode,
-            dry_run=dry_run,
+        extractor_provider_successes = 0
+        extractor_provider_failures = 0
+        extractor_fallbacks = 0
+        ingestion_context = IngestionContext(
+            session_id=f"sim:{scenario.scenario_id}",
+            user_id="sim-user",
         )
-        extractor_provider_successes = sum(1 for call_row in extractor_call_rows if call_row.get("success") is True)
-        extractor_provider_failures = sum(1 for call_row in extractor_call_rows if call_row.get("success") is not True)
-        extractor_fallbacks = sum(1 for call_row in extractor_call_rows if call_row.get("fallback_used") is True)
-        llm_rows.extend(extractor_call_rows)
-        for checkpoint in scenario.checkpoints:
+        ordered_checkpoints = sorted(scenario.checkpoints, key=lambda item: (item.timestamp, item.checkpoint_id))
+        for checkpoint_index, checkpoint in enumerate(ordered_checkpoints):
+            checkpoint_run_start = len(_recorded_runs(extractor))
+            while observation_index < len(ordered_observations) and ordered_observations[observation_index].timestamp <= checkpoint.timestamp:
+                observation = ordered_observations[observation_index]
+                source_id_to_event_id.update(
+                    ingest_surface_observation(
+                        provider=provider,
+                        memory_plane=memory_plane,
+                        scenario_id=scenario.scenario_id,
+                        observation=observation,
+                        context=ingestion_context,
+                        before_ids=before_record_ids,
+                    )
+                )
+                before_record_ids = {record.memory_id for record in memory_plane.list_records()}
+                observation_index += 1
+            work_state = evolution_service.derive_work_state()
+            # Keep the benchmark on the provider-facing production retrieval
+            # contract. The benchmark may judge the result, but it must not
+            # bypass the provider's decision boundary.
+            is_graph_audit = checkpoint.checkpoint_type in {
+                "entity_reconstruction",
+                "conflict_audit",
+                "claim_rekey",
+            }
+            if is_graph_audit:
+                retrieval_request: MemoryQueryRequest = GraphAuditRequest(
+                    query=checkpoint.query_or_task,
+                    reference_time=checkpoint.timestamp,
+                    top_k=8,
+                    include_context=True,
+                    include_conflicts=True,
+                    purpose=RetrievalPurpose.GRAPH_AUDIT,
+                    scope_mode="full",
+                    query_language=checkpoint.query_language,
+                    scope_key=checkpoint.request_scope_key,
+                    task_id=checkpoint.request_task_id,
+                    session_id=checkpoint.request_session_id,
+                    user_id=checkpoint.request_user_id,
+                    subject_entity_id=checkpoint.request_subject_entity_id,
+                )
+            else:
+                retrieval_request = MemoryQueryRequest(
+                    query=checkpoint.query_or_task,
+                    reference_time=checkpoint.timestamp,
+                    top_k=8,
+                    include_context=True,
+                    include_conflicts=True,
+                    purpose=(
+                        RetrievalPurpose.EXECUTION
+                        if checkpoint.checkpoint_type == "execution_continuation"
+                        else RetrievalPurpose.ANSWER
+                    ),
+                    query_language=checkpoint.query_language,
+                    scope_key=checkpoint.request_scope_key,
+                    task_id=checkpoint.request_task_id,
+                    session_id=checkpoint.request_session_id,
+                    user_id=checkpoint.request_user_id,
+                    subject_entity_id=checkpoint.request_subject_entity_id,
+                )
+            retrieval_decision = provider.retrieve_evolution_decision(retrieval_request)
+            graph_snapshot = evolution_service.retrieve_graph_snapshot()
+            graph_snapshot_payload = graph_snapshot.model_dump(mode="json")
+            graph_snapshot_payload["scenario_id"] = scenario.scenario_id
+            graph_snapshot_payload["checkpoint_id"] = checkpoint.checkpoint_id
+            graph_snapshot_payload["checkpoint_index"] = checkpoint_index
+            graph_snapshot_payload["is_terminal"] = checkpoint_index == len(ordered_checkpoints) - 1
+            graph_snapshots.append(RuntimeGraphSnapshotRow.model_validate(graph_snapshot_payload))
+            runtime_graph_items = graph_items_from_snapshot(
+                scenario_id=scenario.scenario_id,
+                snapshot=graph_snapshot,
+                source_id_to_event_id=source_id_to_event_id,
+            )
+            graph_items.extend(runtime_graph_items)
+            recorded_runs = _recorded_runs(extractor)
+            extractor_provider_successes = sum(1 for run in recorded_runs if run.get("success") is True)
+            extractor_provider_failures = sum(1 for run in recorded_runs if run.get("success") is not True)
+            extractor_fallbacks = sum(1 for run in recorded_runs if run.get("fallback_used") is True)
             projection = project_runtime_checkpoint(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 graph_snapshot=graph_snapshot,
                 graph_items=runtime_graph_items,
                 source_id_to_event_id=source_id_to_event_id,
+                work_state=work_state,
+                retrieval_decision=retrieval_decision,
             )
             alignments.extend(
                 RuntimeGraphAlignmentRow.from_runtime_alignment({
@@ -381,11 +469,15 @@ def run_runtime_scenarios(
                 for alignment in projection.alignments
             )
             raw_output = projection.output
-            output, normalization = normalize_sim_system_output_for_checkpoint(
+            _diagnostic_output, normalization = normalize_sim_system_output_for_checkpoint(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 output=raw_output,
             )
+            # Runtime scoring must observe the decision emitted by the
+            # runtime projection. Normalization is diagnostics-only and may
+            # not add, remove, promote, or demote semantic selections.
+            output = raw_output
             aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
             diagnostics = sim_checkpoint_diagnostics(scenario=scenario, checkpoint=checkpoint, output=output, aggregate=aggregate)
             runtime_buckets = runtime_failure_buckets(
@@ -396,10 +488,16 @@ def run_runtime_scenarios(
                 graph_snapshot=graph_snapshot,
             )
             success = aggregate.verdict.value == "pass" and not runtime_buckets
-            final_output_source = runtime_final_output_source(effective_mode=effective_mode, dry_run=dry_run, extractor=extractor)
+            checkpoint_runs = _recorded_runs(extractor)[checkpoint_run_start:]
+            final_output_source = runtime_final_output_source(
+                effective_mode=effective_mode,
+                dry_run=dry_run,
+                extractor=extractor,
+                recorded_runs=checkpoint_runs,
+            )
             output_json = output.model_dump(mode="json")
             runtime_action_alignments = [
-                RuntimeActionAlignmentRow.from_flat_row(row).to_json_row()
+                RuntimeActionAlignmentRow.from_runtime_alignment(row).to_json_row()
                 for row in projection.action_alignment_rows
             ]
             row = _build_runtime_checkpoint_result_row(
@@ -421,13 +519,20 @@ def run_runtime_scenarios(
                 provider_successes=extractor_provider_successes,
                 provider_failures=extractor_provider_failures,
                 fallbacks=extractor_fallbacks,
-                fallback_used=extractor_fallback_count(extractor) > 0,
+                fallback_used=any(run.get("fallback_used") is True for run in checkpoint_runs),
             )
             checkpoint_rows.append(row)
             scenario_checkpoint_rows.append(row)
             judge_rows.append(aggregate.model_dump(mode="json"))
             if not success:
                 runtime_failures.append(row)
+        extractor_call_rows = extractor_trace_rows(
+            scenario=scenario,
+            extractor=extractor,
+            effective_mode=effective_mode,
+            dry_run=dry_run,
+        )
+        llm_rows.extend(extractor_call_rows)
         scenario_success = all(row.success is True for row in scenario_checkpoint_rows)
         scenario_rows.append(
             {
@@ -449,10 +554,28 @@ def run_runtime_scenarios(
         judge_rows=judge_rows,
         llm_rows=llm_rows,
         graph_snapshots=graph_snapshots,
-        graph_items=graph_items,
+        graph_items=[RuntimeGraphItemRow.model_validate(item) for item in graph_items],
         alignments=alignments,
         runtime_failures=runtime_failures,
+        effective_mode=effective_mode,
+        dry_run=dry_run,
     )
+
+
+def _classify_extraction_failure(errors: list[str]) -> str | None:
+    """Classify extraction failures without exposing provider payloads."""
+
+    if not errors:
+        return None
+    if any(error.startswith("provider_error") or "Provider request failed:" in error for error in errors):
+        return "provider_request_error"
+    if any("invalid_json" in error for error in errors):
+        return "provider_invalid_json"
+    if any("schema_validation" in error for error in errors):
+        return "provider_schema_validation"
+    if any(error.startswith("fallback_used:") for error in errors):
+        return "runtime_extractor_fallback"
+    return "runtime_extractor_failure"
 
 
 def _build_runtime_checkpoint_result_row(
@@ -501,6 +624,12 @@ def _build_runtime_checkpoint_result_row(
         request_id=f"memory_evolution_runtime:{mode}:{scenario.scenario_id}:{checkpoint.checkpoint_id}",
     )
     diagnostic_section = CheckpointDiagnosticsSection.model_validate(diagnostics)
+    typed_output = SimSystemOutput.model_validate(output_json)
+    typed_raw_output = SimSystemOutput.model_validate(raw_output_json)
+    typed_candidate_cards = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
     warning_buckets = checkpoint_warning_buckets(
         answer_match_type=diagnostic_section.answer_match_type,
         output=output_json,
@@ -516,41 +645,33 @@ def _build_runtime_checkpoint_result_row(
         warning_buckets=warning_buckets,
     )
     normalization_section = NormalizationDiagnosticsSection.from_normalization(normalization)
+    active_branch_value = projection.execution_state.get("active_continuation_branch")
     runtime_section = RuntimeDiagnosticsSection(
         runtime_graph_validation_errors=list(graph_snapshot.validation_errors),
-        runtime_relation_support=_runtime_relation_support_rows(projection),
-        runtime_action_support=_runtime_action_support_rows(projection),
-        runtime_action_alignments=runtime_action_alignments,
-        runtime_execution_state=dict(projection.execution_state),
-        active_continuation_branch=projection.execution_state.get("active_continuation_branch"),
+        runtime_relation_support=[
+            RuntimeRelationSupportRow.model_validate(row)
+            for row in _runtime_relation_support_rows(projection)
+        ],
+        runtime_action_support=[
+            RuntimeActionSupportRow.model_validate(row)
+            for row in _runtime_action_support_rows(projection)
+        ],
+        runtime_action_alignments=[
+            RuntimeActionAlignmentRow.from_runtime_alignment(row)
+            for row in runtime_action_alignments
+        ],
+        runtime_execution_state=RuntimeExecutionStateSection.model_validate(
+            projection.execution_state
+        ),
+        runtime_retrieval_decision=projection.retrieval_decision,
+        active_continuation_branch=active_branch_value if isinstance(active_branch_value, str) else None,
         suppressed_branch_ids=[str(item) for item in _json_sequence(projection.execution_state.get("suppressed_branch_ids"))],
         action_alignment_failure_reason=_action_alignment_failure_reason(projection.action_alignment_rows),
     )
     diagnostics_payload = {
         **diagnostic_section.to_flat_fields(),
-        **runtime_section.to_flat_fields(),
-    }
-    legacy_fields = {
-        **artifact_section_legacy_fields(RuntimeCheckpointResultRow, horizon, decision_trace),
-        "llm_call_made": decision_trace.llm_call_made,
-        "fallback_used": decision_trace.fallback_used,
-        "fallback_reason": decision_trace.fallback_reason,
-        "request_id": decision_trace.request_id,
-        "confidence": verdict.confidence,
-        "provider_successes": provider_successes,
-        "provider_failures": provider_failures,
-        "fallbacks": fallbacks,
-        **diagnostic_section.to_flat_fields(),
         **normalization_section.to_flat_fields(),
         **runtime_section.to_flat_fields(),
-        "expected": checkpoint.model_dump(mode="json"),
-        "candidate_cards": sim_reconstruction_context_for_checkpoint(
-            scenario=scenario,
-            checkpoint=checkpoint,
-        ).model_dump(mode="json"),
-        "raw_output": raw_output_json,
-        "normalized_output": output_json,
-        "judge_aggregate": aggregate.model_dump(mode="json"),
     }
     return RuntimeCheckpointResultRow(
         scenario_id=scenario.scenario_id,
@@ -560,30 +681,52 @@ def _build_runtime_checkpoint_result_row(
         passed=verdict.passed,
         verdict=verdict.verdict,
         score=verdict.score,
+        confidence=verdict.confidence,
         review_required=verdict.review_required,
         failure_buckets=verdict.failure_buckets,
         warning_buckets=verdict.warning_buckets,
-        diagnostics=diagnostics_payload,
-        output=output_json,
+        diagnostics=CheckpointDiagnosticsPayload.model_validate(diagnostics_payload),
+        output=typed_output,
         profile=horizon.profile,
         family=horizon.family,
         decision_mode=decision_trace.decision_mode,
         effective_decision_mode=decision_trace.effective_decision_mode,
         final_output_source=decision_trace.final_output_source,
+        phase=horizon.phase,
+        horizon_distance=horizon.horizon_distance,
+        horizon_distance_bucket=horizon.horizon_distance_bucket,
+        interference_count=horizon.interference_count,
+        interference_count_bucket=horizon.interference_count_bucket,
+        source_event_age_days=horizon.source_event_age_days,
+        source_event_age_days_bucket=horizon.source_event_age_days_bucket,
+        required_retrieval_view=horizon.required_retrieval_view,
+        expected_stage_path=horizon.expected_stage_path,
+        query_or_task=horizon.query_or_task,
+        llm_call_made=decision_trace.llm_call_made,
+        fallback_used=decision_trace.fallback_used,
+        fallback_reason=decision_trace.fallback_reason,
+        request_id=decision_trace.request_id,
+        expected=checkpoint,
+        candidate_cards=typed_candidate_cards,
+        raw_output=typed_raw_output,
+        normalized_output=typed_output,
+        judge_aggregate=aggregate,
         runtime_failure_buckets=runtime_buckets,
         runtime_failure_classification=runtime_failure_classification,
         scenario_provider_successes=provider_successes,
         scenario_provider_failures=provider_failures,
         scenario_fallbacks=fallbacks,
+        provider_successes=provider_successes,
+        provider_failures=provider_failures,
+        fallbacks=fallbacks,
         provider_count_scope="scenario_extractor_calls",
-        legacy_fields=legacy_fields,
     )
 
 
 def extractor_trace_rows(*, scenario: LatentGraphScenario, extractor: MemoryExtractor, effective_mode: str, dry_run: bool) -> list[dict[str, object]]:
     if effective_mode not in {"llm", "hybrid"}:
         return []
-    recorded = list(getattr(extractor, "recorded_runs", []))
+    recorded = _recorded_runs(extractor)
     rows: list[dict[str, object]] = []
     for index, run in enumerate(recorded):
         rows.append(
@@ -593,7 +736,11 @@ def extractor_trace_rows(*, scenario: LatentGraphScenario, extractor: MemoryExtr
                 "transition_type": "runtime_memory_extraction",
                 "decision_mode": effective_mode,
                 "effective_decision_mode": effective_mode,
-                "final_output_source": runtime_final_output_source(effective_mode=effective_mode, dry_run=dry_run, extractor=extractor),
+                "final_output_source": _run_output_source(
+                    effective_mode=effective_mode,
+                    dry_run=dry_run,
+                    run=run,
+                ),
                 "trace": {
                     "provider": run.get("provider") or getattr(extractor, "provider", effective_mode),
                     "model": run.get("model"),
@@ -601,6 +748,7 @@ def extractor_trace_rows(*, scenario: LatentGraphScenario, extractor: MemoryExtr
                     "scenario_id": scenario.scenario_id,
                     "call_index": index,
                     "input_source_ids": run.get("input_source_ids", []),
+                    "failure_classification": run.get("failure_classification"),
                     "errors": run.get("errors", []),
                     "entity_count": run.get("entity_count", 0),
                     "claim_count": run.get("claim_count", 0),
@@ -619,20 +767,47 @@ def extractor_trace_rows(*, scenario: LatentGraphScenario, extractor: MemoryExtr
         )
     return rows
 
-def runtime_final_output_source(*, effective_mode: str, dry_run: bool, extractor: MemoryExtractor) -> FinalOutputSource:
+def runtime_final_output_source(
+    *,
+    effective_mode: str,
+    dry_run: bool,
+    extractor: MemoryExtractor,
+    recorded_runs: list[dict[str, object]] | None = None,
+) -> FinalOutputSource:
     if effective_mode == "rule":
         return "rule"
     if dry_run:
         return "fake_oracle"
-    if getattr(extractor, "provider", "") == "hybrid" and extractor_fallback_count(extractor):
+    runs = recorded_runs if recorded_runs is not None else _recorded_runs(extractor)
+    if runs:
+        sources = {_run_output_source(effective_mode=effective_mode, dry_run=dry_run, run=run) for run in runs}
+        if len(sources) == 1:
+            return cast(FinalOutputSource, next(iter(sources)))
+        return "mixed"
+    return "reused_runtime_state"
+
+
+def _run_output_source(*, effective_mode: str, dry_run: bool, run: dict[str, object]) -> FinalOutputSource:
+    if effective_mode == "rule":
+        return "rule"
+    if dry_run:
+        return "fake_oracle"
+    if run.get("fallback_used") is True:
         return "rule"
     return "live_llm"
 
 def extractor_fallback_count(extractor: MemoryExtractor) -> int:
-    recorded = getattr(extractor, "recorded_runs", [])
+    recorded = _recorded_runs(extractor)
     if recorded:
         return sum(1 for run in recorded if run.get("fallback_used"))
     return int(getattr(extractor, "fallbacks", 0))
+
+
+def _recorded_runs(extractor: MemoryExtractor) -> list[dict[str, object]]:
+    recorded = getattr(extractor, "recorded_runs", [])
+    if not isinstance(recorded, list):
+        return []
+    return [run for run in recorded if isinstance(run, dict)]
 
 def _runtime_failure_classification(runtime_buckets: list[str], diagnostics: dict[str, object]) -> list[str]:
     classifications = [str(item) for item in _json_sequence(diagnostics.get("failure_classification"))]

@@ -35,6 +35,7 @@ Current provider entry points:
 - `sync_event(...)`
 - `apply_memory_write(...)`
 - `prefetch(...)`
+- `retrieve_evolution_decision(...)`
 - `handle_tool_call(...)`
 - `last_memory_evolution_result()`
 
@@ -60,7 +61,9 @@ Important current behavior:
 
 1. Convert raw `CanonicalMemoryRecord` transcript records into `SourceObservation`.
 2. Classify modality and trigger mode.
-3. Extract entities, claims, and actions from immediate observations.
+3. Extract entities, claims, and actions from observations eligible for an
+   extraction attempt. Deferred observations are still validated and retained
+   as audit evidence, but their claims cannot become active truth.
 4. Validate extracted claims.
 5. Resolve entity mentions into entity links.
 6. Apply accepted claims into claim lifecycle state.
@@ -196,7 +199,11 @@ Graph records are retained rather than physically deleted. Stale state is repres
 - `retrieve_claim_lineage(claim_id)`
 - `retrieve_conflict_graph()`
 
-These are graph-level APIs. Provider prefetch does not yet automatically use these APIs as its default answer-selection mechanism.
+These are graph-level APIs. Current-truth and entity-subgraph retrieval accept
+an evaluation time or temporal frame and apply validity intervals consistently
+with claim retrieval. A point-in-time current view may return a claim that is
+now superseded if it was valid at the requested time; it does not promote that
+claim to present-day truth.
 
 ## Reference Knowledge
 
@@ -227,6 +234,58 @@ Current limit:
 - The next-step engine can use solver frontier state when configured, but often falls back to work-state summaries.
 - Graph-derived current truth is not yet fully integrated into next-step selection.
 
+## Query-Temporal Retrieval Boundary
+
+Production retrieval keeps two decisions separate:
+
+1. `QueryTemporalFrame` describes what time, scope, entity, and purpose the
+   query asks about.
+2. `ClaimLifecycleState` and validity intervals determine which claim states
+   are eligible for that frame.
+
+`MemoryQueryRequest` can carry a structured `QueryAnalysis` from an upstream
+query analyzer. Its entity and predicate constraints are applied by the
+production retriever, not by benchmark alignment code. English fallback
+parsing is intentionally conservative; non-English or ambiguous queries must
+provide a structured frame or the retriever abstains.
+
+The production query boundary also owns a `ConservativeQueryAnalyzer` and an
+evidence-backed `TemporalAnchorCatalog`. Named periods such as "release week"
+resolve only when a caller has registered an anchor with an interval and source
+evidence. The runtime never assigns dates from the phrase alone. Colliding
+anchors produce an explicit abstention rather than an identifier tie-break.
+
+Provider adapters may pass `query_language` and structured `QueryAnalysis`
+through `prefetch`; the runtime benchmark passes each checkpoint language to
+the same production request path. Simulator oracle labels never populate the
+production frame.
+
+The retriever returns a `ProductionRetrievalDecision` containing native record
+ids, selected/supporting/context/rejected channels, temporal resolution, and
+an explicit abstention status. Benchmarks may map those native ids to oracle
+labels after the decision, but cannot use oracle labels to change selection.
+
+## Execution-State Boundary
+
+Action events are immutable history. `MemoryEvolutionService.derive_work_state`
+reduces them into a `WorkStateSnapshot`, and execution retrieval resolves a
+`ContinuationDecision` using scope, target entities, lifecycle status, and
+progress. Ambiguous peer branches abstain instead of being chosen by a stable
+identifier. Runtime benchmark execution checkpoints consume this production
+decision and require selected/supporting action evidence; the benchmark does
+not reconstruct the active branch independently.
+
+## Artifact And Report Boundary
+
+Runtime graph snapshots and normalized graph items are validated through
+typed benchmark row models before they are written. The report separates
+final-snapshot completeness from cumulative observation diagnostics, and
+separates checkpoint-scored verdicts from broader graph-alignment audits.
+Partial or ambiguous audit rows are therefore visible without being silently
+counted as checkpoint failures. Dry-run extraction is labeled `fake_oracle`
+and its provider-health status is `not_applicable`; it never contributes to
+live provider success counts.
+
 ## What This Implementation Proves
 
 The current runtime implementation proves that Memorii can:
@@ -241,9 +300,7 @@ The current runtime implementation proves that Memorii can:
 
 ## What It Does Not Yet Prove
 
-The current implementation does not yet prove that real provider ingestion can reconstruct the same kind of latent graph that `memory_evolution_sim_v1` tests through its reconstruction adapter.
-
-The missing acceptance suite is `memory_evolution_runtime_v1`:
+The runtime-backed acceptance suite is `memory_evolution_runtime_v1`:
 
 ```text
 latent simulator surface observations
@@ -254,10 +311,23 @@ latent simulator surface observations
   -> programmatic judges and calibration reports
 ```
 
-Until that suite is implemented and green, runtime evolution should remain opt-in for agent integrations.
+The suite validates runtime graph construction and decision projection on
+surface-only observations. Its deterministic dry-run gates are green for the
+adversarial and long-horizon profiles. Live provider runs remain a separate
+system-under-test gate and do not change production defaults.
+
+Checkpoint provenance is scoped to the extraction attempts that produced that
+checkpoint. Scenario-level provider counters remain aggregate diagnostics, and
+mixed live/rule output is reported as `mixed` rather than attributed to one
+provider.
 
 ## Readiness Position
 
-Runtime evolution is ready for controlled integration pilots behind a feature flag.
-
-It is not yet ready to be the default always-on durable agent memory path.
+Runtime evolution is ready for controlled integration pilots behind a feature
+flag after the deterministic gates. It is not yet ready to be the default
+always-on durable agent memory path until live multi-seed validation and an
+agent-harness comparison are green. Pull-request gates validate deterministic
+contracts, schema integrity, and surface-only no-leakage. Scheduled live gates
+must additionally record model/provider/prompt metadata, use scenario-clustered
+confidence intervals, and compare the feature-flagged path with raw retrieval
+in an agent harness before default enablement.

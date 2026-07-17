@@ -4,6 +4,7 @@ from memorii.core.benchmark.memory_evolution_runtime.alignment import align_runt
 from memorii.core.benchmark.memory_evolution_runtime.artifacts import (
     runtime_alignment_summary,
     runtime_graph_completeness_metrics,
+    runtime_provider_health,
     runtime_summary_metrics,
     runtime_warning_policy,
     write_runtime_artifacts,
@@ -17,8 +18,16 @@ from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection 
     normalize_action_status,
 )
 from memorii.core.benchmark.memory_evolution_runtime.graph_items import graph_items_from_snapshot
-from memorii.core.benchmark.memory_evolution_runtime.ingestion import ingest_scenario_surface_observations
-from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeProjection, RuntimeSuiteRows
+from memorii.core.benchmark.memory_evolution_runtime.ingestion import (
+    IngestionContext,
+    ingest_scenario_surface_observations,
+)
+from memorii.core.benchmark.memory_evolution_runtime.models import (
+    RuntimeGraphItemRow,
+    RuntimeGraphSnapshotRow,
+    RuntimeProjection,
+    RuntimeSuiteRows,
+)
 from memorii.core.benchmark.memory_evolution_runtime.runner import (
     OracleVisibleMemoryExtractor,
     RecordingMemoryExtractor,
@@ -34,6 +43,8 @@ __all__ = [
     "OracleVisibleMemoryExtractor",
     "RecordingMemoryExtractor",
     "RuntimeProjection",
+    "RuntimeGraphSnapshotRow",
+    "RuntimeGraphItemRow",
     "RuntimeSuiteRows",
     "_expected_action_alignment_rows",
     "align_runtime_graph_to_oracle",
@@ -42,6 +53,7 @@ __all__ = [
     "extractor_trace_rows",
     "graph_items_from_snapshot",
     "ingest_scenario_surface_observations",
+    "IngestionContext",
     "normalize_action_status",
     "project_runtime_checkpoint",
     "run_runtime_scenarios",
@@ -49,6 +61,7 @@ __all__ = [
     "runtime_failure_buckets",
     "runtime_final_output_source",
     "runtime_graph_completeness_metrics",
+    "runtime_provider_health",
     "runtime_summary_metrics",
     "runtime_warning_policy",
     "validate_runtime_live_safety",

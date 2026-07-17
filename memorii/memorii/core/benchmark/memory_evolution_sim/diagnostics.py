@@ -265,6 +265,9 @@ def sim_checkpoint_diagnostics(
     missing_definition_support_claim_ids = [
         claim_id for claim_id in required_definition_claim_ids if claim_id not in output.supporting_claim_ids
     ]
+    rejected_required_definition_claim_ids = [
+        claim_id for claim_id in required_definition_claim_ids if claim_id in output.rejected_claim_ids
+    ]
     required_selected_entity_ids = judge_features.required_selected_entity_ids_for_policy(
         scenario=scenario,
         checkpoint=checkpoint,
@@ -373,6 +376,7 @@ def sim_checkpoint_diagnostics(
         "required_definition_claim_ids": required_definition_claim_ids,
         "missing_definition_claim_ids": missing_definition_claim_ids,
         "missing_definition_support_claim_ids": missing_definition_support_claim_ids,
+        "rejected_required_definition_claim_ids": rejected_required_definition_claim_ids,
         "selected_entity_role_mismatches": missing_selected_entity_role_ids,
         "missing_selected_subject_entity_ids": missing_selected_subject_entity_ids,
         "selected_object_entity_instead_of_subject_ids": selected_object_entity_instead_of_subject_ids,
@@ -452,6 +456,8 @@ def _precision_failure_classifications(
         classifications.add("active_action_provenance_missing")
     if any(supporting_role_violations.values()):
         classifications.add("supporting_role_violation")
+    if supporting_role_violations.get("execution_context_support"):
+        classifications.add("execution_context_claim_used_as_support")
     if supporting_wrong_subject_claim_ids:
         classifications.add("wrong_entity_support_used")
     if supporting_disambiguation_claim_ids:
@@ -466,6 +472,14 @@ def _channel_overlap_diagnostics(
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> ChannelOverlapDiagnostics:
+    required_definition_claim_ids = judge_features.required_definition_claim_ids_for_checkpoint(
+        scenario,
+        checkpoint,
+        output,
+    )
+    rejected_required_definition_claim_ids = [
+        claim_id for claim_id in required_definition_claim_ids if claim_id in output.rejected_claim_ids
+    ]
     critical_supporting_rejection_events = judge_features.supporting_rejection_provenance_overlap_ids(
         scenario,
         checkpoint,
@@ -483,6 +497,7 @@ def _channel_overlap_diagnostics(
         "supporting_rejected_claim_ids": [
             claim_id for claim_id in output.supporting_claim_ids if claim_id in output.rejected_claim_ids
         ],
+        "rejected_required_definition_claim_ids": rejected_required_definition_claim_ids,
         "supporting_rejection_citation_event_ids": critical_supporting_rejection_events,
     }
     warning = {
@@ -507,6 +522,8 @@ def _channel_overlap_diagnostics(
         critical_buckets.append("selected_rejected_channel_overlap")
     if critical["supporting_rejected_claim_ids"]:
         critical_buckets.append("supporting_rejected_channel_overlap")
+    if critical["rejected_required_definition_claim_ids"]:
+        critical_buckets.append("definition_claim_rejected")
     if critical["supporting_rejection_citation_event_ids"]:
         critical_buckets.append("supporting_rejection_provenance_overlap")
     warning_buckets = []
@@ -650,6 +667,8 @@ def _failure_classifications(
         classifications.add("supporting_rejected_channel_overlap")
     if any("selected_rejected_channel_overlap" in vote.failure_buckets for vote in aggregate.votes):
         classifications.add("selected_rejected_channel_overlap")
+    if any("definition_claim_rejected" in vote.failure_buckets for vote in aggregate.votes):
+        classifications.add("definition_claim_rejected")
     if any("supporting_rejection_provenance_overlap" in vote.failure_buckets for vote in aggregate.votes):
         classifications.add("supporting_rejection_provenance_overlap")
     if any("selected_claim_support_missing" in vote.failure_buckets for vote in aggregate.votes):

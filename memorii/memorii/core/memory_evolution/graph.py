@@ -4,8 +4,13 @@ from __future__ import annotations
 
 from uuid import NAMESPACE_URL, uuid5
 
+from pydantic import ValidationError
+
+from memorii.core.memory_evolution.execution import WorkStateStatus, normalize_work_state_status
 from memorii.core.memory_evolution.models import (
+    ClaimLifecycleTransition,
     ClaimState,
+    ClaimTransitionType,
     ContradictionSet,
     EntityLinkLifecycleState,
     EntityLinkState,
@@ -100,6 +105,8 @@ class MemoryGraphProjector:
             self._add_action(node_by_id, edge_by_id, action, source_by_id)
         for contradiction_set in result.contradiction_sets:
             self._add_contradiction_set(node_by_id, edge_by_id, contradiction_set)
+        for transition in result.transitions:
+            self._add_lifecycle_transition(node_by_id, edge_by_id, transition)
 
         nodes = sorted(node_by_id.values(), key=lambda item: item.node_id)
         edges = sorted(edge_by_id.values(), key=lambda item: item.edge_id)
@@ -113,6 +120,39 @@ class MemoryGraphProjector:
             edges=edges,
             source_run_id=result.extraction_run.extraction_run_id,
         )
+
+    def _add_lifecycle_transition(
+        self,
+        node_by_id: dict[str, MemoryGraphNode],
+        edge_by_id: dict[str, MemoryGraphEdge],
+        transition: ClaimLifecycleTransition,
+    ) -> None:
+        if transition.transition_type == ClaimTransitionType.ENTITY_SPLIT and transition.related_claim_ids:
+            child = _candidate_entity_node(transition.related_claim_ids[0])
+            parent = _candidate_entity_node(transition.claim_id)
+            node_by_id.setdefault(child.node_id, child)
+            node_by_id.setdefault(parent.node_id, parent)
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.SPLIT_FROM,
+                child.node_id,
+                parent.node_id,
+                lifecycle_state="active",
+                confidence=0.8,
+                properties={"transition_id": transition.transition_id},
+            )
+        elif transition.transition_type == ClaimTransitionType.CLAIM_REKEY and transition.related_claim_ids:
+            source = claim_node_id(transition.claim_id)
+            target = claim_node_id(transition.related_claim_ids[0])
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.REKEYED_FROM,
+                source,
+                target,
+                lifecycle_state="active",
+                confidence=0.8,
+                properties={"transition_id": transition.transition_id},
+            )
 
     def project_from_memory_plane(self, *, memory_plane: MemoryPlaneService) -> MemoryGraphSnapshot:
         return MemoryGraphStore(memory_plane=memory_plane).snapshot()
@@ -219,6 +259,17 @@ class MemoryGraphProjector:
                 node.node_id,
                 target_node.node_id,
                 lifecycle_state="active",
+                confidence=link.confidence,
+            )
+        if link.lineage_parent_entity_id:
+            parent_node = _candidate_entity_node(link.lineage_parent_entity_id)
+            node_by_id.setdefault(parent_node.node_id, parent_node)
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.SPLIT_FROM,
+                node.node_id,
+                parent_node.node_id,
+                lifecycle_state=link.lifecycle_state.value,
                 confidence=link.confidence,
             )
         return node
@@ -347,7 +398,11 @@ class MemoryGraphProjector:
             node_type=MemoryGraphNodeType.ACTION,
             label=f"{action.action_type} {action.status}",
             canonical_id=action.action_id,
-            lifecycle_state="active",
+            lifecycle_state=(
+                "active"
+                if normalize_work_state_status(action.status) in {WorkStateStatus.STARTED, WorkStateStatus.IN_PROGRESS}
+                else normalize_work_state_status(action.status).value
+            ),
             confidence=0.8,
             source_record_ids=[span.source_id for span in action.evidence_spans],
             payload_ref=f"mem:evolution:action:{action.action_id}",
@@ -358,6 +413,10 @@ class MemoryGraphProjector:
                 "timestamp": action.timestamp.isoformat(),
                 "actor_entity_id": action.actor_entity_id or "",
                 "target_entity_ids": "|".join(action.target_entity_ids),
+                "task_id": action.task_id or "",
+                "session_id": action.session_id or "",
+                "user_id": action.user_id or "",
+                "scope_key": action.scope_key,
             },
             created_at=action.timestamp,
             updated_at=action.timestamp,
@@ -490,6 +549,11 @@ class MemoryGraphProjector:
 class MemoryGraphStore:
     def __init__(self, *, memory_plane: MemoryPlaneService) -> None:
         self._memory_plane = memory_plane
+        self._read_diagnostics: dict[str, int] = {"skipped_node_count": 0, "skipped_edge_count": 0}
+
+    @property
+    def read_diagnostics(self) -> dict[str, int]:
+        return dict(self._read_diagnostics)
 
     def upsert_snapshot(self, snapshot: MemoryGraphSnapshot) -> list[str]:
         written: list[str] = []
@@ -510,7 +574,8 @@ class MemoryGraphStore:
                 continue
             try:
                 node = MemoryGraphNode.model_validate(record.content["graph_node"])
-            except Exception:
+            except ValidationError:
+                self._read_diagnostics["skipped_node_count"] += 1
                 continue
             if node_type is not None and node.node_type != node_type:
                 continue
@@ -524,7 +589,8 @@ class MemoryGraphStore:
                 continue
             try:
                 edge = MemoryGraphEdge.model_validate(record.content["graph_edge"])
-            except Exception:
+            except ValidationError:
+                self._read_diagnostics["skipped_edge_count"] += 1
                 continue
             if edge_type is not None and edge.edge_type != edge_type:
                 continue
@@ -532,6 +598,7 @@ class MemoryGraphStore:
         return sorted(edges, key=lambda item: item.edge_id)
 
     def snapshot(self) -> MemoryGraphSnapshot:
+        self._read_diagnostics = {"skipped_node_count": 0, "skipped_edge_count": 0}
         nodes = self.list_nodes()
         edges = self.list_edges()
         return MemoryGraphSnapshot(
@@ -541,6 +608,11 @@ class MemoryGraphStore:
             ),
             nodes=nodes,
             edges=edges,
+            validation_errors=[
+                f"{key}={value}"
+                for key, value in sorted(self._read_diagnostics.items())
+                if value
+            ],
         )
 
 
@@ -655,6 +727,8 @@ def _node_from_claim_state(state: ClaimState) -> MemoryGraphNode:
             "claim_id": state.claim_id,
             "predicate_id": state.claim_key.predicate_id,
             "subject_entity_id": state.claim_key.subject_entity_id,
+            "object_entity_id": state.object_link_id or "",
+            "object_link_id": state.object_link_id or "",
             "object_value": state.object_value,
             "scope_key": state.claim_key.scope_key,
             "qualifier_key": state.claim_key.qualifier_key,

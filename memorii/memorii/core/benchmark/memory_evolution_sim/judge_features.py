@@ -159,6 +159,15 @@ def supporting_claim_role_violations(
         if role not in {SupportRole.REJECTION_SUPPORT, SupportRole.FORBIDDEN_SUPPORT}:
             continue
         violations.setdefault(role.value, []).append(claim_id)
+    if checkpoint.checkpoint_type == "execution_continuation":
+        execution_context_support = [
+            claim_id
+            for claim_id in output.supporting_claim_ids
+            if (claim := _claim_by_id(scenario, claim_id)) is not None
+            and claim.claim_kind != "action_state"
+        ]
+        if execution_context_support:
+            violations["execution_context_support"] = execution_context_support
     wrong_subject_claims = supporting_wrong_subject_claim_ids(scenario, checkpoint, output)
     if wrong_subject_claims:
         violations["wrong_subject_support"] = wrong_subject_claims

@@ -5,10 +5,33 @@ import json
 import re
 from copy import deepcopy
 from string import Formatter
+from typing import cast
 
 from memorii.core.prompts.models import PromptContract, PromptRedactionPolicy, RenderedPrompt
 
 _PLACEHOLDER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ORACLE_INPUT_FIELDS = {
+    "expected_answer",
+    "expected_checkpoint_active_record_ids",
+    "expected_checkpoint_retained_record_ids",
+    "expected_belief_ranking",
+    "expected_belief_scores",
+    "expected_citation_ids",
+    "expected_claim_ids",
+    "expected_entity_ids",
+    "expected_excluded_claim_ids",
+    "expected_excluded_entity_ids",
+    "expected_excluded_memory_ids",
+    "expected_excluded_relation_ids",
+    "expected_checkpoint_superseded_record_ids",
+    "expected_next_action",
+    "expected_retrieval_ids",
+    "expected_relation_ids",
+    "hidden_distractor_ids",
+    "hidden_graph_items",
+    "judge_votes",
+    "oracle_checkpoint",
+}
 
 
 def _serialize_value(value: object) -> str:
@@ -33,13 +56,30 @@ def _deep_redact(value: object, redact_fields: set[str]) -> object:
     return value
 
 
+def _deep_remove(value: object, fields: set[str]) -> object:
+    if isinstance(value, dict):
+        return {
+            key: _deep_remove(nested, fields)
+            for key, nested in value.items()
+            if key not in fields
+        }
+    if isinstance(value, list):
+        return [_deep_remove(item, fields) for item in value]
+    return value
+
+
 def redact_variables(*, variables: dict[str, object], policy: PromptRedactionPolicy) -> dict[str, object]:
     redacted = deepcopy(variables)
     input_fields = set(policy.redact_input_fields)
+    redacted = cast(dict[str, object], _deep_remove(redacted, _ORACLE_INPUT_FIELDS))
 
     for key in input_fields:
         if key in redacted:
             redacted[key] = "[REDACTED]"
+
+    for key, value in list(redacted.items()):
+        if isinstance(value, (dict, list)):
+            redacted[key] = _deep_redact(value, input_fields)
 
     for key in ("input_payload", "actual_output", "expected_output", "metadata"):
         if key in redacted:

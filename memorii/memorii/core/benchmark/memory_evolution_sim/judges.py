@@ -352,6 +352,7 @@ def _selected_truth_precision_judge(
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
+    rejected_required_definition_claims = _rejected_required_definition_claim_ids(scenario, output)
     bad_claims = _selected_noncurrent_claim_ids(scenario, checkpoint, output)
     selected_excluded_claims = [item for item in checkpoint.expected_excluded_claim_ids if item in output.selected_claim_ids]
     selected_excluded_entities = [item for item in checkpoint.expected_excluded_entity_ids if item in output.selected_entity_ids]
@@ -361,11 +362,14 @@ def _selected_truth_precision_judge(
         *selected_excluded_claims,
         *selected_excluded_entities,
         *selected_rejected_claims,
+        *rejected_required_definition_claims,
     ])
     if failed:
         buckets = ["selected_truth_precision_error"]
         if selected_rejected_claims:
             buckets.append("selected_rejected_channel_overlap")
+        if rejected_required_definition_claims:
+            buckets.append("definition_claim_rejected")
         return JudgeVote(
             judge_id="selected_truth_precision_judge",
             checkpoint_id=checkpoint.checkpoint_id,
@@ -406,6 +410,7 @@ def _supporting_evidence_precision_judge(
     ]
     bad_events = _bad_supporting_event_ids(scenario, checkpoint, output.supporting_citation_event_ids)
     supporting_rejected_claims = [item for item in output.supporting_claim_ids if item in output.rejected_claim_ids]
+    rejected_required_definition_claims = _rejected_required_definition_claim_ids(scenario, output)
     supporting_rejection_events = supporting_rejection_provenance_overlap_ids(scenario, checkpoint, output)
     failed = _ordered_unique([
         *excluded_support_claims,
@@ -413,6 +418,7 @@ def _supporting_evidence_precision_judge(
         *support_role_violation_ids,
         *bad_events,
         *supporting_rejected_claims,
+        *rejected_required_definition_claims,
         *supporting_rejection_events,
     ])
     if failed:
@@ -426,10 +432,14 @@ def _supporting_evidence_precision_judge(
         if support_role_violations.get("wrong_subject_support"):
             buckets.append("wrong_entity_support_used")
             buckets.append("disambiguation_evidence_used_as_support")
+        if support_role_violations.get("execution_context_support"):
+            buckets.append("execution_context_claim_used_as_support")
         if bad_events:
             buckets.append("supporting_noisy_or_stale_provenance")
         if supporting_rejected_claims:
             buckets.append("supporting_rejected_channel_overlap")
+        if rejected_required_definition_claims:
+            buckets.append("definition_claim_rejected")
         if supporting_rejection_events:
             buckets.append("supporting_rejection_provenance_overlap")
         return JudgeVote(
@@ -450,6 +460,16 @@ def _supporting_evidence_precision_judge(
         confidence=0.85,
         rationale="supporting channel contains clean answer support",
     )
+
+
+def _rejected_required_definition_claim_ids(
+    scenario: LatentGraphScenario,
+    output: SimSystemOutput,
+) -> list[str]:
+    required_definition_claim_ids = _required_definition_claim_ids_for_selected_claims(scenario, output)
+    return [
+        claim_id for claim_id in required_definition_claim_ids if claim_id in output.rejected_claim_ids
+    ]
 
 
 def _selected_support_closure_judge(
