@@ -26,5 +26,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [temporary_scope, expired_context, time_bound_preference, time_bound_project_fact, ambiguous_temporal_scope]
-tags: [judge, wave1, temporal_validity]
+tags: [judge, temporal_validity]

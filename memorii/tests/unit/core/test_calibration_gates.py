@@ -8,6 +8,7 @@ from memorii.core.calibration.simulation_models import (
     simulation_model_moments,
 )
 from memorii.core.calibration.statistics import (
+    DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS,
     GateSimulationModel,
     certify_scenario_interval_coverage,
     estimate_live_gate_power,
@@ -534,6 +535,9 @@ def test_live_gate_certifies_every_predeclared_simulation_model() -> None:
     assert summary.interval_coverage_certificate.configuration.input_report_content_digests == [
         _report(seed=7).report_content_digest
     ]
+    assert summary.interval_coverage_certificate.configuration.simulation_intraseed_correlation_points == list(
+        DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS
+    )
 
 
 def test_live_gate_requires_exact_family_catalog_per_replicate() -> None:

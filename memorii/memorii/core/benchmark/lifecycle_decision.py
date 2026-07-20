@@ -67,12 +67,25 @@ class LifecycleDecision(BaseModel):
     archived_memory_ids: list[str] = Field(default_factory=list)
     belief_scores: list[LifecycleBeliefScore] = Field(default_factory=list)
     merged_summary: str | None = None
-    confidence: float
+    confidence: float = Field(ge=0.0, le=1.0)
     rationale: str
     failure_mode: str | None = None
     requires_judge_review: bool = False
 
     model_config = ConfigDict(extra="forbid")
+
+
+class LifecycleDecisionOutput(LifecycleDecision):
+    """Strict provider response for the lifecycle benchmark adapter."""
+
+    selected_retrieval_ids: list[str]
+    active_memory_ids: list[str]
+    inactive_memory_ids: list[str]
+    archived_memory_ids: list[str]
+    belief_scores: list[LifecycleBeliefScore]
+    merged_summary: str | None
+    failure_mode: str | None
+    requires_judge_review: bool
 
 
 def lifecycle_family_requires_decision(family: MemoryLifecycleFamily | None) -> bool:

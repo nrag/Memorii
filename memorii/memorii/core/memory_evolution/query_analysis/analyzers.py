@@ -136,11 +136,19 @@ class StructuredQueryAnalyzer:
         )
 
 
-class ConservativeQueryAnalyzer:
-    """Default production analyzer with explicit abstention semantics."""
+class LexicalQueryAnalyzer:
+    """Locale-scoped deterministic analyzer with explicit abstention semantics."""
 
-    def __init__(self, lexical_resolver: LexicalQueryResolver | None = None) -> None:
-        self._lexical_resolver = lexical_resolver or EnglishLexicalQueryResolver()
+    def __init__(
+        self,
+        lexical_resolver: LexicalQueryResolver,
+        *,
+        analyzer_name: str,
+        analyzer_version: str,
+    ) -> None:
+        self._lexical_resolver = lexical_resolver
+        self._analyzer_name = analyzer_name
+        self._analyzer_version = analyzer_version
 
     def analyze(
         self,
@@ -167,8 +175,9 @@ class ConservativeQueryAnalyzer:
                 confidence_is_calibrated=False,
                 temporal_intent=QueryTemporalKind.AMBIGUOUS,
                 abstention_reason="unsupported language requires structured query analysis",
-                analyzer_name="conservative_query_analyzer",
-                analyzer_version="1",
+                analyzer_name=self._analyzer_name,
+                analyzer_version=self._analyzer_version,
+                failure_code=QueryAnalysisFailureCode.UNSUPPORTED_LANGUAGE,
             )
         resolution = self._lexical_resolver.resolve_temporal_frame(
             query,
@@ -188,6 +197,17 @@ class ConservativeQueryAnalyzer:
             confidence_is_calibrated=False,
             temporal_intent=resolution.frame.temporal_kind,
             abstention_reason=(resolution.rationale if resolution.status != "resolved" else None),
-            analyzer_name="conservative_query_analyzer",
+            analyzer_name=self._analyzer_name,
+            analyzer_version=self._analyzer_version,
+        )
+
+
+class EnglishLexicalQueryAnalyzer(LexicalQueryAnalyzer):
+    """High-precision English analyzer used when no semantic model is configured."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            EnglishLexicalQueryResolver(),
+            analyzer_name="english_lexical_query_analyzer",
             analyzer_version="1",
         )

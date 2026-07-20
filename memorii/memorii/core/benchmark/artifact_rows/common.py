@@ -90,33 +90,14 @@ class ArtifactJsonObject(RootModel[dict[str, object]], Mapping[str, object]):
         return self.root
 
 
-def _empty_json_object() -> ArtifactJsonObject:
+def empty_json_object() -> ArtifactJsonObject:
     return ArtifactJsonObject(root={})
 
 
-class FlatArtifactModel(BaseModel, Mapping[str, object]):
+class FlatArtifactModel(BaseModel):
     """Strict artifact model with an explicit JSON serialization boundary."""
 
     model_config = ConfigDict(extra="forbid")
-
-    def __getitem__(self, key: str) -> object:
-        values = self.model_dump(mode="python")
-        return _artifact_value_to_json(values[key])
-
-    def __len__(self) -> int:
-        return len(type(self).model_fields)
-
-    def __iter__(self):
-        return iter(self.model_dump(mode="python"))
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, Mapping):
-            return self.to_json_row() == dict(other)
-        return super().__eq__(other)
-
-    @classmethod
-    def from_flat_row(cls, row: dict[str, object]) -> FlatArtifactModel:
-        return cls.model_validate(row)
 
     def to_json_row(self) -> dict[str, object]:
         return cast(dict[str, object], _artifact_value_to_json(self.model_dump(mode="python")))

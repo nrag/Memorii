@@ -3,7 +3,9 @@ from datetime import UTC, datetime
 from memorii.adapters import CLITestHarnessAdapter, GenericJSONHarnessAdapter, HarnessEvent
 from memorii.api import MemoriiRuntimeAPI
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
-from memorii.core.solver import SolverDecisionOutput, StaticSolverModelProvider
+from memorii.core.solver.model_integration import StaticSolverModelProvider
+from memorii.core.solver.models import NextTestAction
+from memorii.core.solver.update_engine import SolverDecisionOutput
 from memorii.domain.enums import ExecutionNodeStatus, ExecutionNodeType
 from memorii.domain.execution_graph.nodes import ExecutionNode
 from memorii.domain.routing import InboundEventClass
@@ -13,7 +15,7 @@ from memorii.stores.overlays import InMemoryOverlayStore
 from memorii.stores.solver_graph import InMemorySolverGraphStore
 
 
-def _build_api(task_id: str = "task-phase6") -> tuple[MemoriiRuntimeAPI, CLITestHarnessAdapter]:
+def _build_api(task_id: str = "task:harness-runtime") -> tuple[MemoriiRuntimeAPI, CLITestHarnessAdapter]:
     execution_store = InMemoryExecutionGraphStore()
     solver_store = InMemorySolverGraphStore()
     overlay_store = InMemoryOverlayStore()
@@ -37,7 +39,10 @@ def _build_api(task_id: str = "task-phase6") -> tuple[MemoriiRuntimeAPI, CLITest
             decision="NEEDS_TEST",
             evidence_ids=[],
             missing_evidence=["traceback"],
-            next_best_test="rerun_targeted_test",
+            next_test_action=NextTestAction(
+                action_type="run_command",
+                description="rerun_targeted_test",
+            ),
             rationale_short="Need a targeted verification test",
             confidence_band="low",
         )
@@ -65,7 +70,8 @@ def test_harness_driven_execution_returns_structured_output() -> None:
     _, adapter = _build_api("task-harness")
 
     start = adapter.start_task("task-harness", "Debug flaky test")
-    assert start.next_action == "rerun_targeted_test"
+    assert start.next_test_action is not None
+    assert start.next_test_action.description == "rerun_targeted_test"
     assert "traceback" in start.unresolved_questions
 
     step = adapter.add_tool_result("task-harness", "evt-tool-1", "failed", "flake")
@@ -87,7 +93,8 @@ def test_real_model_loop_uses_provider_when_model_output_not_passed() -> None:
     ).result
 
     assert result.solver_decision.value == "NEEDS_TEST"
-    assert result.next_action == "rerun_targeted_test"
+    assert result.next_test_action is not None
+    assert result.next_test_action.description == "rerun_targeted_test"
 
 
 def test_resume_via_adapter_restores_solver_state() -> None:
@@ -109,7 +116,8 @@ def test_multi_step_debugging_scenario_tracks_follow_up() -> None:
     first = adapter.add_tool_result("task-debug", "evt-debug-1", "failed", "mismatch")
     second = adapter.add_user_message("task-debug", "evt-debug-2", "collect logs and rerun")
 
-    assert first.next_action == "rerun_targeted_test"
+    assert first.next_test_action is not None
+    assert first.next_test_action.description == "rerun_targeted_test"
     assert second.required_tests == ["rerun_targeted_test"]
 
 

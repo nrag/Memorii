@@ -17,12 +17,12 @@ from memorii.core.llm_decision.adapters import (
     LLMEvidenceSelectionAdapter,
     LLMGroundedAnswerAdapter,
     LLMJudgeDecisionAdapter,
-    LLMPromotionDecisionAdapter,
+    LLMPromotionAssessmentAdapter,
 )
 from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
+from memorii.core.promotion.assessment import PromotionAssessmentContext, PromotionCandidateType
 from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
 from memorii.core.solver.abstention import SolverDecision
 
@@ -40,8 +40,8 @@ def _runner(response_text: str) -> tuple[PromptLLMRunner, FakeLLMStructuredClien
     return PromptLLMRunner(client=client, config=LLMRuntimeConfig(provider="none")), client
 
 
-def _promotion_context() -> PromotionContext:
-    return PromotionContext(
+def _promotion_context() -> PromotionAssessmentContext:
+    return PromotionAssessmentContext(
         candidate_id="cand:1",
         candidate_type=PromotionCandidateType.SEMANTIC,
         content="candidate summary",
@@ -94,7 +94,7 @@ def _rubric(dimension: JudgeDimension) -> JudgeRubric:
 
 def test_promotion_adapter_loads_prompt_and_returns_success() -> None:
     runner, _ = _runner(_PROMOTION_VALID)
-    adapter = LLMPromotionDecisionAdapter(runner=runner, registry=PromptRegistry(prompt_root=PROMPT_ROOT))
+    adapter = LLMPromotionAssessmentAdapter(runner=runner, registry=PromptRegistry(prompt_root=PROMPT_ROOT))
     result = adapter.decide(_promotion_context(), request_id="req:promotion:1")
     assert result.success is True
     assert result.request.prompt_ref == "promotion_decision:v1"
@@ -102,7 +102,7 @@ def test_promotion_adapter_loads_prompt_and_returns_success() -> None:
 
 def test_promotion_adapter_request_includes_prompt_ref_and_prompt_hash() -> None:
     runner, client = _runner(_PROMOTION_VALID)
-    adapter = LLMPromotionDecisionAdapter(runner=runner, registry=PromptRegistry(prompt_root=PROMPT_ROOT))
+    adapter = LLMPromotionAssessmentAdapter(runner=runner, registry=PromptRegistry(prompt_root=PROMPT_ROOT))
     adapter.decide(_promotion_context(), request_id="req:promotion:2")
     assert client.last_request is not None
     assert client.last_request.metadata["prompt_ref"] == "promotion_decision:v1"
@@ -182,7 +182,7 @@ def test_judge_adapter_rejects_unsupported_dimension_mapping() -> None:
 
 def test_adapter_metadata_is_redacted_recursively_and_serialization_has_no_secret_values() -> None:
     runner, client = _runner(_PROMOTION_VALID)
-    adapter = LLMPromotionDecisionAdapter(runner=runner, registry=PromptRegistry(prompt_root=PROMPT_ROOT))
+    adapter = LLMPromotionAssessmentAdapter(runner=runner, registry=PromptRegistry(prompt_root=PROMPT_ROOT))
     metadata = {"outer": {"token": "hide"}, "items": [{"cookie": "c1"}], "api_key": "k"}
     original = {"outer": {"token": "hide"}, "items": [{"cookie": "c1"}], "api_key": "k"}
     result = adapter.decide(_promotion_context(), request_id="req:promotion:3", metadata=metadata)
@@ -201,7 +201,7 @@ def test_no_live_api_key_required() -> None:
     config = LLMRuntimeConfig.from_env({"MEMORII_LLM_PROVIDER": "none"})
     assert config.has_api_key() is False
     runner = PromptLLMRunner(client=FakeLLMStructuredClient(default_response=_PROMOTION_VALID), config=config)
-    adapter = LLMPromotionDecisionAdapter(runner=runner, registry=PromptRegistry(prompt_root=PROMPT_ROOT))
+    adapter = LLMPromotionAssessmentAdapter(runner=runner, registry=PromptRegistry(prompt_root=PROMPT_ROOT))
     assert adapter.decide(_promotion_context(), request_id="req:promotion:4").success is True
 
 

@@ -21,6 +21,7 @@ from memorii.core.memory_evolution.query_graph import GraphConstraintOperator
 from memorii.core.memory_evolution.temporal_contracts import (
     TemporalAnchorCatalog,
     TemporalEntityCandidate,
+    TemporalInterpretationOutput,
     TemporalInterpretationProposal,
 )
 from memorii.core.prompts.registry import PromptRegistry
@@ -31,6 +32,7 @@ class PromptBackedStructuredQueryAnalysisProvider:
     """Model-facing semantic parser whose output remains an untrusted proposal."""
 
     prompt_ref = "structured_query_analysis:v1"
+    output_model = TemporalInterpretationOutput
 
     def __init__(
         self,
@@ -43,6 +45,7 @@ class PromptBackedStructuredQueryAnalysisProvider:
         self._contract = registry.load(
             self.prompt_ref,
             owner=PromptOwner.STRUCTURED_QUERY_ANALYSIS_PROVIDER,
+            output_model=self.output_model,
         )
         self._predicates = predicate_registry or PredicateRegistry()
 
@@ -75,6 +78,7 @@ class PromptBackedStructuredQueryAnalysisProvider:
             variables={"query": query, "context_json": context.model_dump(mode="json")},
             request_id=f"structured-query:{request_digest}",
             metadata={"language": language, "scope_kind": context.scope_kind.value},
+            output_model=self.output_model,
         )
         if not result.success or result.output is None:
             raise StructuredQueryProviderError(

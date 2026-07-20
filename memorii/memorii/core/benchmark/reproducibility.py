@@ -11,9 +11,28 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal, TypeAlias
 
+from pydantic import BaseModel, ConfigDict, model_validator
+
 from memorii.core.benchmark.models import BenchmarkRunConfig, BenchmarkScenarioFixture
 
 SourceState: TypeAlias = Literal["clean", "dirty", "unversioned"]
+
+
+class SourceIdentity(BaseModel):
+    """Source revision and tree state used to decide report certifiability."""
+
+    revision: str
+    state: SourceState
+    certifiable: bool
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_certifiability(self) -> SourceIdentity:
+        expected = self.state == "clean" and self.revision != "local-source-tree"
+        if self.certifiable != expected:
+            raise ValueError("source identity certifiability must match revision and tree state")
+        return self
 
 
 def apply_seed(seed: int) -> None:
@@ -58,6 +77,7 @@ def resolve_source_revision(*, root: Path, dry_run: bool) -> str:
     use the explicit local sentinel.
     """
 
+    git_revision = _git_head_revision(root)
     configured = os.environ.get("MEMORII_SOURCE_REVISION")
     if configured is not None:
         revision = configured.strip()
@@ -65,11 +85,12 @@ def resolve_source_revision(*, root: Path, dry_run: bool) -> str:
             raise ValueError("MEMORII_SOURCE_REVISION must be non-empty and normalized")
         if revision == "local-source-tree" and not dry_run:
             raise ValueError("live benchmark reports require a real source revision")
+        if git_revision is not None and revision != git_revision:
+            raise ValueError("MEMORII_SOURCE_REVISION does not match the checked-out Git HEAD")
         return revision
 
-    revision = _git_head_revision(root)
-    if revision is not None:
-        return revision
+    if git_revision is not None:
+        return git_revision
     if dry_run:
         return "local-source-tree"
     raise ValueError(
@@ -84,6 +105,18 @@ def resolve_source_state(*, root: Path) -> SourceState:
     if status is None:
         return "unversioned"
     return "dirty" if status else "clean"
+
+
+def resolve_source_identity(*, root: Path, dry_run: bool) -> SourceIdentity:
+    """Resolve a single validated source identity for report construction."""
+
+    revision = resolve_source_revision(root=root, dry_run=dry_run)
+    state = resolve_source_state(root=root)
+    return SourceIdentity(
+        revision=revision,
+        state=state,
+        certifiable=state == "clean" and revision != "local-source-tree",
+    )
 
 
 def _git_status_porcelain(root: Path) -> str | None:

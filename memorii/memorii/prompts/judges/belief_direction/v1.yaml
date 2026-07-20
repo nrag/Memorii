@@ -26,5 +26,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [should_increase, should_decrease, should_not_increase, should_remain_uncertain, ambiguous_direction]
-tags: [judge, wave1, belief_direction]
+tags: [judge, belief_direction]

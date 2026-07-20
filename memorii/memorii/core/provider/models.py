@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.domain.enums import MemoryDomain
+
+PrefetchDecisionT = TypeVar("PrefetchDecisionT", bound=BaseModel)
 
 
 class ProviderOperation(StrEnum):
@@ -39,6 +42,7 @@ class ProviderEvent(BaseModel):
     session_id: str | None = None
     task_id: str | None = None
     user_id: str | None = None
+    language: str = "en"
     timestamp: datetime | None = None
 
     model_config = ConfigDict(extra="forbid")
@@ -102,6 +106,7 @@ class ProviderStoredRecord(BaseModel):
     session_id: str | None = None
     task_id: str | None = None
     user_id: str | None = None
+    language: str = "en"
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(extra="forbid")
@@ -126,5 +131,41 @@ class ProviderPrefetchTrace(BaseModel):
     lexical_method: str = "bm25"
     candidate_count: int
     ranked_items: list[ProviderRerankTraceItem] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RetrievalChannelStatus(StrEnum):
+    ANSWER = "answer"
+    NO_MATCH = "no_match"
+    ABSTAIN = "abstain"
+    ERROR = "error"
+
+
+class RetrievalChannelAuthority(StrEnum):
+    AUTHORITATIVE = "authoritative"
+    SUPPLEMENTAL = "supplemental"
+    NONE = "none"
+
+
+class RetrievalChannelResult(BaseModel):
+    channel: Literal["canonical", "evolution"]
+    status: RetrievalChannelStatus
+    authority: RetrievalChannelAuthority
+    context: str
+    selected_record_ids: list[str] = Field(default_factory=list)
+    reason: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProviderPrefetchResult(BaseModel, Generic[PrefetchDecisionT]):
+    """Typed result of production retrieval composition and arbitration."""
+
+    context: str
+    selected_channel: Literal["canonical", "evolution", "none"]
+    canonical: RetrievalChannelResult
+    evolution: RetrievalChannelResult
+    evolution_decision: PrefetchDecisionT | None = None
 
     model_config = ConfigDict(extra="forbid")

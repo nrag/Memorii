@@ -12,7 +12,8 @@ from datetime import datetime
 
 from memorii.core.memory_evolution.execution import (
     ContinuationResolutionStatus,
-    WorkStateSnapshot,
+    action_event_from_extracted,
+    reduce_work_states,
     resolve_continuation,
 )
 from memorii.core.memory_evolution.graph_constraint_resolution import resolve_graph_constraints
@@ -20,6 +21,8 @@ from memorii.core.memory_evolution.models import (
     ClaimState,
     EntityLinkState,
     ExtractedAction,
+    MemoryGraphLifecycleState,
+    MemoryScope,
     RetrievalView,
 )
 from memorii.core.memory_evolution.predicates import PredicateRegistry
@@ -33,11 +36,12 @@ from memorii.core.memory_evolution.query_graph import (
     GraphResolutionMethod,
 )
 from memorii.core.memory_evolution.retrieval import (
-    ExecutionRetrievalState,
     MemoryQueryInput,
     ProductionRetrievalDecision,
     ResolvedMemoryQuery,
     RetrievalPurpose,
+    ScopedExecutionView,
+    SemanticFrameStatus,
     rank_claims,
     reconcile_memory_query,
 )
@@ -59,7 +63,6 @@ class MemoryEvolutionRetrievalRuntime:
         claim_reader: Callable[..., list[ClaimState]],
         entity_link_reader: Callable[[], list[EntityLinkState]],
         action_reader: Callable[[], list[ExtractedAction]],
-        work_state_reader: Callable[[], WorkStateSnapshot],
         query_analyzer: QueryAnalyzer,
         temporal_anchor_catalog: TemporalAnchorCatalog,
         now_provider: Callable[[], datetime],
@@ -68,7 +71,6 @@ class MemoryEvolutionRetrievalRuntime:
         self._claim_reader = claim_reader
         self._entity_link_reader = entity_link_reader
         self._action_reader = action_reader
-        self._work_state_reader = work_state_reader
         self._query_analyzer = query_analyzer
         self._temporal_anchor_catalog = temporal_anchor_catalog
         self._now_provider = now_provider
@@ -102,7 +104,7 @@ class MemoryEvolutionRetrievalRuntime:
                 names=sorted({link.mention_text, link.normalized_name, *link.aliases}),
                 entity_type=link.entity_type.value,
                 scope=link.scope,
-                lifecycle_state=link.lifecycle_state.value,
+                lifecycle_state=MemoryGraphLifecycleState(link.lifecycle_state.value),
                 lineage_parent_entity_id=link.lineage_parent_entity_id,
                 valid_from=link.valid_from,
                 valid_to=link.valid_to,
@@ -150,6 +152,15 @@ class MemoryEvolutionRetrievalRuntime:
             )
             return ProductionRetrievalDecision(
                 query=request.query,
+                semantic_frame_status=(
+                    SemanticFrameStatus.UNSUPPORTED
+                    if analysis is not None
+                    and (
+                        analysis.failure_code is not None
+                        or analysis.analysis_source in {"language_guard", "provider"}
+                    )
+                    else SemanticFrameStatus.AMBIGUOUS
+                ),
                 temporal_frame=frame,
                 query_analysis=analysis,
                 resolution_status="ambiguous",
@@ -293,8 +304,12 @@ class MemoryEvolutionRetrievalRuntime:
         frame: QueryTemporalFrame,
         resolution_status: str,
     ) -> ProductionRetrievalDecision:
-        snapshot = self._work_state_reader()
-        actions = self._action_reader()
+        actions = [
+            action
+            for action in self._action_reader()
+            if request.scope.can_read(_scope_for_action(action))
+        ]
+        snapshot = reduce_work_states(action_event_from_extracted(action) for action in actions)
         continuation = resolve_continuation(
             snapshot,
             actions,
@@ -315,15 +330,22 @@ class MemoryEvolutionRetrievalRuntime:
             None,
         )
         selected_ids = [selected_action.action_id.removeprefix("action:")] if selected_action is not None else []
+        relevant_branch_ids = set(continuation.candidate_branch_ids)
         context_ids = [
             action.action_id.removeprefix("action:")
             for action in actions
             if action.action_id.removeprefix("action:") not in selected_ids
+            and relevant_branch_ids.intersection(action.target_entity_ids)
         ]
-        execution_state = ExecutionRetrievalState(work_state=snapshot, continuation=continuation)
+        execution_state = ScopedExecutionView(
+            work_state=snapshot,
+            continuation=continuation,
+            readable_action_event_ids=[action.action_id for action in actions],
+        )
         abstained = continuation.status != ContinuationResolutionStatus.RESOLVED
         return ProductionRetrievalDecision(
             query=request.query,
+            semantic_frame_status=SemanticFrameStatus.MATCHED,
             temporal_frame=frame,
             query_analysis=request.query_analysis,
             resolution_status=resolution_status,
@@ -340,3 +362,12 @@ class MemoryEvolutionRetrievalRuntime:
             ),
             execution_state=execution_state,
         )
+
+
+def _scope_for_action(action: ExtractedAction) -> MemoryScope:
+    return MemoryScope(
+        scope_key=action.scope_key,
+        task_id=action.task_id,
+        session_id=action.session_id,
+        user_id=action.user_id,
+    )

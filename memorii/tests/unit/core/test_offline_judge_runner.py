@@ -70,19 +70,19 @@ def _belief_payload() -> dict[str, object]:
     }
 
 
-def test_default_runner_validates_wave1_judges() -> None:
+def test_default_runner_validates_registered_judges() -> None:
     runner = OfflineJudgeRunner()
 
-    assert [judge.judge_id for judge in runner._promotion_judges] == [
+    assert runner.registered_judge_ids("promotion") == (
         "promotion_precision:v1",
         "temporal_validity:v1",
         "attribution:v1",
         "memory_plane:v1",
-    ]
-    assert [judge.judge_id for judge in runner._belief_judges] == ["attribution:v1", "belief_direction:v1"]
+    )
+    assert runner.registered_judge_ids("belief_update") == ("attribution:v1", "belief_direction:v1")
 
 
-def test_promotion_case_routes_to_promotion_wave1_judges() -> None:
+def test_promotion_case_routes_to_promotion_judges() -> None:
     runner = OfflineJudgeRunner()
     case = _eval_case(snapshot_id="snap:promo", decision_point="promotion", passed=False, requires_judge_review=False)
     snapshot = _snapshot(snapshot_id="snap:promo", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_payload())

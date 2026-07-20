@@ -37,7 +37,7 @@ def write_runtime_artifacts(*, run_dir: Path, rows: RuntimeSuiteRows) -> None:
     snapshots = [snapshot.model_dump(mode="json") for snapshot in rows.graph_snapshots]
     write_json_atomic(run_dir / "runtime_graph_snapshot.json", snapshots)
 
-def _horizon_distance_bucket(distance: int | float | object) -> str:
+def horizon_distance_bucket(distance: int | float | object) -> str:
     value = int(distance) if isinstance(distance, (int, float)) else 0
     if value < 5:
         return "short"
@@ -47,7 +47,7 @@ def _horizon_distance_bucket(distance: int | float | object) -> str:
         return "long"
     return "very_long"
 
-def _interference_count_bucket(count: int | float | object) -> str:
+def interference_count_bucket(count: int | float | object) -> str:
     value = int(count) if isinstance(count, (int, float)) else 0
     if value == 0:
         return "none"
@@ -57,7 +57,7 @@ def _interference_count_bucket(count: int | float | object) -> str:
         return "medium"
     return "high"
 
-def _source_event_age_days_bucket(days: int | float | object) -> str:
+def source_event_age_days_bucket(days: int | float | object) -> str:
     value = float(days) if isinstance(days, (int, float)) else 0.0
     if value < 7:
         return "fresh"
@@ -322,8 +322,11 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
     )
     metadata: dict[str, str] = {}
     for trace_row in rows.llm_rows:
-        for key in ("provider", "model", "prompt_hash"):
-            value = getattr(trace_row.trace, key)
+        for key, value in {
+            "provider": trace_row.trace.provider,
+            "model": trace_row.trace.model,
+            "prompt_hash": trace_row.trace.prompt_hash,
+        }.items():
             if value is not None:
                 metadata[key] = str(value)
         if metadata:

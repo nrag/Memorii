@@ -483,6 +483,66 @@ class MemoryEvolutionDecision(BaseModel):
             raise ValueError("execution_selection is only allowed when operation is next_action")
         return self
 
+
+class MemoryEvolutionBeliefScoreOutput(MemoryEvolutionBeliefScore):
+    belief_state: MemoryEvolutionBeliefState
+
+
+class MemoryEvolutionAnswerSelectionOutput(MemoryEvolutionAnswerSelection):
+    selected_memory_ids: list[str]
+    supporting_memory_ids: list[str]
+    citation_memory_ids: list[str]
+    rationale: str
+
+
+class MemoryEvolutionTemporalFrameOutput(MemoryEvolutionTemporalFrame):
+    scope_kind: MemoryEvolutionScopeKind
+    scope_key: str | None
+    anchor_id: str | None
+    valid_from: datetime | None
+    valid_to: datetime | None
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: str
+
+
+class MemoryEvolutionLifecycleSnapshotOutput(MemoryEvolutionLifecycleSnapshot):
+    checkpoint_active_record_ids: list[str]
+    checkpoint_superseded_record_ids: list[str]
+    checkpoint_retained_record_ids: list[str]
+    rationale: str
+
+
+class MemoryEvolutionRetrievalContextOutput(MemoryEvolutionRetrievalContext):
+    query_relevant_memory_ids: list[str]
+    query_historical_memory_ids: list[str]
+    query_context_memory_ids: list[str]
+    rejected_memory_ids: list[str]
+    rationale: str
+
+
+class MemoryEvolutionExecutionSelectionOutput(MemoryEvolutionExecutionSelection):
+    selected_action_memory_ids: list[str]
+    active_work_state_memory_ids: list[str]
+    command_context_memory_ids: list[str]
+    suppressed_branch_memory_ids: list[str]
+    rationale: str
+
+
+class MemoryEvolutionDecisionOutput(MemoryEvolutionDecision):
+    """Strict provider response for benchmark memory-evolution decisions."""
+
+    answer: str | None
+    next_action: str | None
+    query_temporal_frame: MemoryEvolutionTemporalFrameOutput
+    answer_selection: MemoryEvolutionAnswerSelectionOutput
+    lifecycle_snapshot: MemoryEvolutionLifecycleSnapshotOutput
+    retrieval_context: MemoryEvolutionRetrievalContextOutput
+    execution_selection: MemoryEvolutionExecutionSelectionOutput | None
+    evaluated_belief_ids: list[str]
+    belief_scores: list[MemoryEvolutionBeliefScoreOutput]
+    failure_mode: str | None
+    requires_judge_review: bool
+
 class MemoryEvolutionFailureBucket(StrEnum):
     SCHEMA_VALIDATION_FAILED = "schema_validation_failed"
     ANSWER_MISMATCH = "answer_mismatch"

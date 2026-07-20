@@ -8,11 +8,13 @@ from memorii.core.benchmark.memory_evolution_runtime.models import (
     GraphItemNormalizationResult,
     RuntimeGraphItemRow,
 )
-from memorii.core.benchmark.memory_evolution_runtime.utils import _ordered_unique
+from memorii.core.benchmark.memory_evolution_runtime.utils import ordered_unique
 from memorii.core.benchmark.memory_evolution_sim import LatentClaim, LatentEntity, SurfaceObservation
 from memorii.core.memory_evolution import (
+    EntityType,
     EvidenceSpan,
     MemoryGraphEdgeType,
+    MemoryGraphNode,
     MemoryGraphNodeType,
     MemoryGraphSnapshot,
     SourceObservation,
@@ -106,14 +108,14 @@ def graph_items_from_snapshot(
                     subject=_entity_name(subject_node) or node.properties.get("subject_entity_id", ""),
                     subject_entity_id=(
                         node.properties.get("subject_entity_id", "")
-                        or getattr(subject_node, "canonical_id", "")
+                        or (subject_node.canonical_id if subject_node else "")
                         or ""
                     ),
                     predicate=node.properties.get("predicate_id", ""),
                     object=_entity_name(object_node)
                     or _literal_value(literal_node)
                     or node.properties.get("object_value", ""),
-                    object_entity_id=getattr(object_node, "canonical_id", "") if object_node else "",
+                    object_entity_id=object_node.canonical_id or "" if object_node else "",
                     object_value=node.properties.get("object_value", ""),
                     scope=node.properties.get("scope_key")
                     or (scope_node.properties.get("scope_key", "") if scope_node else ""),
@@ -121,7 +123,7 @@ def graph_items_from_snapshot(
                     valid_to=node.properties.get("valid_to", ""),
                     lifecycle_state=node.lifecycle_state,
                     confidence=node.confidence,
-                    evidence_event_ids=_ordered_unique(evidence_by_claim.get(node.node_id, [])),
+                    evidence_event_ids=ordered_unique(evidence_by_claim.get(node.node_id, [])),
                 ),
             )
         elif node.node_type == MemoryGraphNodeType.ACTION:
@@ -209,31 +211,35 @@ def _runtime_edge_relation_type(edge_type: MemoryGraphEdgeType) -> str:
     }
     return mapping.get(edge_type, edge_type.value)
 
-def _canonical_payload(node: object | None) -> str:
+
+def _canonical_payload(node: MemoryGraphNode | None) -> str:
     if node is None:
         return ""
-    canonical_id = getattr(node, "canonical_id", None)
-    properties = getattr(node, "properties", {}) or {}
-    return str(canonical_id or properties.get("claim_id") or properties.get("canonical_entity_id") or getattr(node, "node_id", ""))
+    return str(
+        node.canonical_id
+        or node.properties.get("claim_id")
+        or node.properties.get("canonical_entity_id")
+        or node.node_id
+    )
 
-def _entity_name(node: object | None) -> str:
+
+def _entity_name(node: MemoryGraphNode | None) -> str:
     if node is None:
         return ""
-    properties = getattr(node, "properties", {}) or {}
-    return str(properties.get("normalized_name") or getattr(node, "label", ""))
+    return str(node.properties.get("normalized_name") or node.label)
 
-def _literal_value(node: object | None) -> str:
+
+def _literal_value(node: MemoryGraphNode | None) -> str:
     if node is None:
         return ""
-    properties = getattr(node, "properties", {}) or {}
-    return str(properties.get("value") or properties.get("normalized_value") or getattr(node, "label", ""))
+    return str(node.properties.get("value") or node.properties.get("normalized_value") or node.label)
 
-def _title_from_normalized(value: str) -> str:
+
+def title_from_normalized(value: str) -> str:
     return " ".join(part.capitalize() for part in value.split())
 
-def _runtime_entity_type(value: str):
-    from memorii.core.memory_evolution.models import EntityType
 
+def runtime_entity_type(value: str) -> EntityType:
     mapping = {
         "project": EntityType.PROJECT,
         "person": EntityType.PERSON,
@@ -252,7 +258,7 @@ def _source_type_for_surface(observation: SurfaceObservation) -> SourceType:
         return SourceType.USER
     return SourceType.DERIVED
 
-def _runtime_span_for_item(*, surface: SurfaceObservation, runtime_observation: SourceObservation, quote: str, cache: dict[str, EvidenceSpan]) -> EvidenceSpan:
+def runtime_span_for_item(*, surface: SurfaceObservation, runtime_observation: SourceObservation, quote: str, cache: dict[str, EvidenceSpan]) -> EvidenceSpan:
     quote = quote if quote and quote in runtime_observation.text else runtime_observation.text
     cached = cache.get(quote)
     if cached is not None:
@@ -269,13 +275,13 @@ def _runtime_span_for_item(*, surface: SurfaceObservation, runtime_observation: 
     cache[quote] = span
     return span
 
-def _claim_quote(claim: LatentClaim, surface: SurfaceObservation) -> str:
+def claim_quote(claim: LatentClaim, surface: SurfaceObservation) -> str:
     for span in claim.evidence.spans:
         if span.event_id == surface.event_id and span.quote in surface.text:
             return span.quote
     return claim.evidence.spans[0].quote if claim.evidence.spans else surface.text
 
-def _entity_quote(entity: LatentEntity, surface: SurfaceObservation) -> str:
+def entity_quote(entity: LatentEntity, surface: SurfaceObservation) -> str:
     for span in entity.evidence_spans:
         if span.event_id == surface.event_id and span.quote in surface.text:
             return span.quote

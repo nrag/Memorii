@@ -8,8 +8,8 @@ from memorii.core.belief.models import BeliefUpdateContext
 from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
-from memorii.core.promotion.models import PromotionContext
-from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from memorii.core.promotion.assessment import PromotionAssessmentContext
+from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
 
 
 def _extract_context_json(*, label: str, text: str) -> dict[str, object]:
@@ -35,10 +35,10 @@ class EvalFakeClient:
     ) -> LLMStructuredResponse:
         del config
         if request.prompt_ref == "promotion_decision:v1":
-            context = PromotionContext.model_validate(
-                _extract_context_json(label="PromotionContext", text=request.user)
+            context = PromotionAssessmentContext.model_validate(
+                _extract_context_json(label="PromotionAssessmentContext", text=request.user)
             )
-            decision, _ = RuleBasedPromotionDecisionProvider().decide(context=context)
+            decision, _ = RuleBasedPromotionAssessmentProvider().decide(context=context)
             output = {
                 "promote": decision.promote,
                 "target_plane": decision.target_plane,

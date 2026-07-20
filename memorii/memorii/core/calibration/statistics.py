@@ -24,6 +24,14 @@ from memorii.core.calibration.simulation_models import (
     simulation_model_moments,
 )
 
+DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS: tuple[float, ...] = (
+    0.0,
+    0.05,
+    0.10,
+    0.20,
+    0.30,
+)
+
 
 def scenario_cluster_bootstrap(
     values_by_scenario: Mapping[str, Sequence[float]],

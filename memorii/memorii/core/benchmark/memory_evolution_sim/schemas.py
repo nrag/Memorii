@@ -517,6 +517,34 @@ class SimSystemOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SimProviderOutput(BaseModel):
+    """Strict model transport for simulated memory reconstruction."""
+
+    operation: Literal["answer", "next_action", "graph_reconstruction", "abstain"] = Field()
+    belief_ranking_ids: list[str] = Field()
+    selected_entity_ids: list[str] = Field()
+    selected_claim_ids: list[str] = Field()
+    selected_relation_ids: list[str] = Field()
+    supporting_claim_ids: list[str] = Field()
+    supporting_relation_ids: list[str] = Field()
+    supporting_citation_event_ids: list[str] = Field()
+    rejected_entity_ids: list[str] = Field()
+    rejected_claim_ids: list[str] = Field()
+    rejected_relation_ids: list[str] = Field()
+    rejection_citation_event_ids: list[str] = Field()
+    context_entity_ids: list[str] = Field()
+    context_claim_ids: list[str] = Field()
+    context_relation_ids: list[str] = Field()
+    context_citation_event_ids: list[str] = Field()
+    answer: str | None = Field()
+    next_action: str | None = Field()
+    uncertain_ids: list[str] = Field()
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class VisibleEventCandidate(BaseModel):
     event_id: str
     timestamp: datetime

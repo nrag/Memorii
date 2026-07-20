@@ -6,10 +6,13 @@ import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
+from pydantic import BaseModel, ConfigDict, Field
+
 from memorii.core.llm_provider.runner import PromptLLMRunner
+from memorii.core.memory_evolution.language import supports_english_rules
 from memorii.core.memory_evolution.models import (
     ClaimKey,
     ConfidenceComponents,
@@ -41,14 +44,84 @@ class MemoryExtractor(Protocol):
     ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]: ...
 
 
-class RuleMemoryExtractor:
-    """Fallback extractor for simple facts/actions.
+class ExtractedEntityOutput(BaseModel):
+    entity_id: str
+    mention_text: str
+    normalized_name: str
+    aliases: list[str]
+    entity_type: EntityType
+    source_id: str
+    quote: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EmptyQualifiersOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExtractedClaimOutput(BaseModel):
+    claim_id: str
+    subject_entity_id: str
+    predicate_id: Literal[
+        "owner",
+        "approver",
+        "api_owner",
+        "status",
+        "preference",
+        "dependency",
+        "action_state",
+        "belief",
+        "correction",
+        "entity_type",
+        "semantic_fact",
+    ]
+    object_value: str
+    object_entity_id: str | None
+    scope_key: str
+    qualifier_key: str
+    qualifiers: EmptyQualifiersOutput
+    valid_from: str | None
+    valid_to: str | None
+    source_id: str
+    quote: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExtractedActionOutput(BaseModel):
+    action_id: str
+    actor_entity_id: str | None
+    action_type: str
+    target_entity_ids: list[str]
+    status: str
+    dependency_ids: list[str]
+    blocking_ids: list[str]
+    timestamp: str | None
+    source_id: str
+    quote: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MemoryExtractionOutput(BaseModel):
+    entities: list[ExtractedEntityOutput]
+    claims: list[ExtractedClaimOutput]
+    actions: list[ExtractedActionOutput]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EnglishRuleMemoryExtractor:
+    """English-only fallback extractor for simple facts/actions.
 
     The production path can swap in an LLM extractor later; this provider gives
     deterministic coverage for source-linked facts and safe fallback behavior.
     """
 
-    provider: str = "rule"
+    provider: str = "english_rule"
     model: str | None = None
     prompt_hash: str | None = None
 
@@ -62,6 +135,11 @@ class RuleMemoryExtractor:
         errors: list[str] = []
 
         for observation in observations:
+            if not supports_english_rules(observation.language):
+                errors.append(
+                    f"{observation.source_id}: unsupported_language:{observation.language}"
+                )
+                continue
             try:
                 obs_entities, obs_claims, obs_actions = self._extract_observation(
                     run_id=run_id, observation=observation
@@ -179,6 +257,7 @@ class RuleMemoryExtractor:
 class LLMMemoryExtractor:
     provider: str = "llm"
     prompt_ref = "memory_extraction:v1"
+    output_model = MemoryExtractionOutput
 
     def __init__(
         self,
@@ -196,7 +275,11 @@ class LLMMemoryExtractor:
         self, observations: list[SourceObservation]
     ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
-        contract = self._registry.load(self.prompt_ref, owner=PromptOwner.LLM_MEMORY_EXTRACTOR)
+        contract = self._registry.load(
+            self.prompt_ref,
+            owner=PromptOwner.LLM_MEMORY_EXTRACTOR,
+            output_model=self.output_model,
+        )
         result = self._runner.run(
             contract=contract,
             variables={
@@ -207,6 +290,7 @@ class LLMMemoryExtractor:
                 "decision_point": "memory_extraction",
                 "source_ids": [obs.source_id for obs in observations],
             },
+            output_model=self.output_model,
         )
         self.model = result.response.actual_model or result.response.requested_model
         self.prompt_hash = result.request.prompt_hash
@@ -223,7 +307,7 @@ class LLMMemoryExtractor:
                 errors=errors,
             )
             return run, [], [], []
-        return _models_from_llm_output(
+        return models_from_llm_output(
             run_id=run_id,
             provider=self.provider,
             model=result.response.actual_model or result.response.requested_model,
@@ -240,10 +324,10 @@ class HybridMemoryExtractor:
         self,
         *,
         llm_extractor: MemoryExtractor,
-        rule_extractor: RuleMemoryExtractor | None = None,
+        rule_extractor: EnglishRuleMemoryExtractor | None = None,
     ) -> None:
         self._llm_extractor = llm_extractor
-        self._rule_extractor = rule_extractor or RuleMemoryExtractor()
+        self._rule_extractor = rule_extractor or EnglishRuleMemoryExtractor()
         self.model: str | None = None
         self.prompt_hash: str | None = None
 
@@ -260,7 +344,7 @@ class HybridMemoryExtractor:
             fallback_run = fallback_run.model_copy(
                 update={
                     "provider": self.provider,
-                    "errors": [*run.errors, "fallback_used:rule"],
+                    "errors": [*run.errors, "fallback_used:english_rule"],
                 }
             )
             return fallback_run, fallback_entities, fallback_claims, fallback_actions
@@ -320,7 +404,7 @@ def _clean_extracted_value(value: str) -> str:
     return re.sub(r"\s+", " ", cleaned).strip(" .:")
 
 
-def _models_from_llm_output(
+def models_from_llm_output(
     *,
     run_id: str,
     provider: str,

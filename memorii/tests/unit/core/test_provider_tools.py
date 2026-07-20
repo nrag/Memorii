@@ -5,11 +5,11 @@ from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.promotion.models import PromotionContext
-from memorii.core.promotion.provider import PromotionDecisionProviderError
+from memorii.core.promotion.assessment import PromotionAssessmentContext
+from memorii.core.promotion.provider import PromotionAssessmentProviderError
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService, _decision_evidence_ids
-from memorii.core.solver import SolverFrontierPlanner
+from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind, WorkStateStatus
 from memorii.core.work_state.service import WorkStateService
 from memorii.domain.common import SolverNodeMetadata
@@ -22,9 +22,9 @@ from memorii.stores.solver_graph import InMemorySolverGraphStore
 NOW = datetime.now(UTC)
 
 
-class _RaisingPromotionDecisionProvider:
-    def decide(self, *, context: PromotionContext):  # type: ignore[no-untyped-def]
-        raise PromotionDecisionProviderError("promotion provider failure")
+class _RaisingPromotionAssessmentProvider:
+    def decide(self, *, context: PromotionAssessmentContext):  # type: ignore[no-untyped-def]
+        raise PromotionAssessmentProviderError("promotion provider failure")
 
 
 def _make_node(node_id: str, *, content: dict[str, object]) -> SolverNode:
@@ -705,7 +705,7 @@ def test_record_outcome_promotion_provider_failure_does_not_fail_tool_call() -> 
     work_state_service = WorkStateService()
     provider = ProviderMemoryService(
         work_state_service=work_state_service,
-        promotion_decision_provider=_RaisingPromotionDecisionProvider(),
+        promotion_decision_provider=_RaisingPromotionAssessmentProvider(),
     )
     created = work_state_service.open_or_resume_work(title="Promotion failure", task_id="task:promotion:failure")
 
@@ -997,7 +997,7 @@ def test_open_or_resume_binding_used_by_next_step_planner() -> None:
     task_id = "task:open-resume-next-step"
     node_id = "node:open-resume-next-step"
     solver_store.create_solver_run(solver_run_id, "exec-1")
-    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_best_test": "run planner via binding"}))
+    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_test_action": {"action_type": "run_command", "description": "run planner via binding"}}))
     _append_overlay(overlay_store, solver_run_id, [_overlay(node_id)])
 
     open_result = provider.handle_tool_call(
@@ -1296,31 +1296,6 @@ def test_get_next_step_returns_structured_frontier_action() -> None:
     assert result.result["solver_run_resolution_source"] == "explicit"
 
 
-def test_get_next_step_returns_legacy_frontier_action() -> None:
-    solver_store = InMemorySolverGraphStore()
-    overlay_store = InMemoryOverlayStore()
-    solver_frontier_planner = SolverFrontierPlanner()
-    provider = ProviderMemoryService(
-        solver_frontier_planner=solver_frontier_planner,
-        solver_store=solver_store,
-        overlay_store=overlay_store,
-    )
-
-    solver_run_id = "solver:legacy-next-step"
-    node_id = "node:legacy"
-    solver_store.create_solver_run(solver_run_id, "exec-1")
-    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_best_test": "rerun flaky test with seed"}))
-    _append_overlay(overlay_store, solver_run_id, [_overlay(node_id)])
-
-    result = provider.handle_tool_call("memorii_get_next_step", {"solver_run_id": solver_run_id})
-
-    assert result.ok is True
-    assert result.result["planner_used"] is True
-    assert result.result["next_step"]["action_type"] == "run_test"
-    assert result.result["next_step"]["description"] == "rerun flaky test with seed"
-    assert result.result["solver_run_resolution_source"] == "explicit"
-
-
 def test_get_next_step_returns_inspect_frontier_when_node_has_no_action() -> None:
     solver_store = InMemorySolverGraphStore()
     overlay_store = InMemoryOverlayStore()
@@ -1361,7 +1336,7 @@ def test_get_next_step_uses_task_binding() -> None:
     node_id = "node:task-binding"
     task_id = "task:binding:1"
     solver_store.create_solver_run(solver_run_id, "exec-1")
-    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_best_test": "run task-bound test"}))
+    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_test_action": {"action_type": "run_command", "description": "run task-bound test"}}))
     _append_overlay(overlay_store, solver_run_id, [_overlay(node_id)])
     work_state_service.bind_state(task_id=task_id, solver_run_id=solver_run_id)
 
@@ -1389,7 +1364,7 @@ def test_get_next_step_uses_session_binding() -> None:
     node_id = "node:session-binding"
     session_id = "session:binding:1"
     solver_store.create_solver_run(solver_run_id, "exec-1")
-    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_best_test": "run session-bound test"}))
+    solver_store.upsert_node(solver_run_id, _make_node(node_id, content={"next_test_action": {"action_type": "run_command", "description": "run session-bound test"}}))
     _append_overlay(overlay_store, solver_run_id, [_overlay(node_id)])
     work_state_service.bind_state(session_id=session_id, solver_run_id=solver_run_id)
 
@@ -1418,7 +1393,7 @@ def test_get_next_step_explicit_solver_run_id_overrides_bindings() -> None:
     node_id = "node:explicit-win"
     task_id = "task:binding:override"
     solver_store.create_solver_run(explicit_solver_run_id, "exec-1")
-    solver_store.upsert_node(explicit_solver_run_id, _make_node(node_id, content={"next_best_test": "run explicit test"}))
+    solver_store.upsert_node(explicit_solver_run_id, _make_node(node_id, content={"next_test_action": {"action_type": "run_command", "description": "run explicit test"}}))
     _append_overlay(overlay_store, explicit_solver_run_id, [_overlay(node_id)])
     work_state_service.bind_state(task_id=task_id, solver_run_id=bound_solver_run_id)
 

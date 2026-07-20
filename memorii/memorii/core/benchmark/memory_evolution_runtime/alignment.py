@@ -233,7 +233,7 @@ def _runtime_names_are_safe_alias(*, runtime_names: set[str], oracle_names: set[
                 return True
     return False
 
-def _best_alignment_map(alignments: list[RuntimeGraphAlignment], *, item_type: str) -> dict[str, RuntimeGraphAlignment]:
+def best_alignment_map(alignments: list[RuntimeGraphAlignment], *, item_type: str) -> dict[str, RuntimeGraphAlignment]:
     result: dict[str, RuntimeGraphAlignment] = {}
     for alignment in alignments:
         if alignment.item_type != item_type or alignment.oracle_item_id is None:

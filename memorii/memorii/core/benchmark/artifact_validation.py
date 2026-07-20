@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal, TypeAlias, TypeVar
 
 from pydantic import BaseModel, ValidationError
+from pydantic_core import to_jsonable_python
 
 from memorii.core.benchmark.artifact_rows import (
     AlignmentSummary,
@@ -153,11 +154,12 @@ def write_jsonl_atomic(path: Path, rows: Sequence[BaseModel | Mapping[str, objec
 
 
 def write_json_atomic(path: Path, value: object, *, indent: int = 2) -> None:
-    """Write a JSON artifact atomically."""
+    """Write a recursively JSON-safe artifact at the persistence boundary."""
 
-    if isinstance(value, BaseModel):
-        value = value.model_dump(mode="json")
-    _atomic_write_text(path, json.dumps(value, indent=indent, sort_keys=True))
+    _atomic_write_text(
+        path,
+        json.dumps(to_jsonable_python(value), indent=indent, sort_keys=True),
+    )
 
 
 def write_text_atomic(path: Path, contents: str) -> None:

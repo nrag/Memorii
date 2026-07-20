@@ -28,7 +28,7 @@ from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES
-from memorii.tools.benchmark_suites.fake_adapters import _ExpectedRetrievalRelevanceFakeAdapter
+from memorii.tools.benchmark_suites.fake_adapters import ExpectedRetrievalRelevanceFakeAdapter
 from memorii.tools.benchmark_suites.fixture_harness import (
     FixtureBackedBenchmarkSuiteRunner,
     aggregate_by_category,
@@ -36,7 +36,7 @@ from memorii.tools.benchmark_suites.fixture_harness import (
 )
 from memorii.tools.benchmark_suites.fixture_loaders import load_retrieval_corruption_fixture_set
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
-from memorii.tools.run_live_llm_eval import _validate_live_safety
+from memorii.tools.run_live_llm_eval import validate_live_safety
 
 SUITE_NAME = "retrieval_corruption_v1"
 
@@ -94,7 +94,7 @@ def run_retrieval_relevance_decisions(
     effective_mode = decision_config.resolve(runtime_config)
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
-        _validate_live_safety(
+        validate_live_safety(
             modes=[effective_mode],
             dry_run=dry_run,
             allow_live=allow_live,
@@ -109,7 +109,7 @@ def run_retrieval_relevance_decisions(
         llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
         runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
         adapter = (
-            _ExpectedRetrievalRelevanceFakeAdapter(fixtures=fixtures, registry=registry)
+            ExpectedRetrievalRelevanceFakeAdapter(fixtures=fixtures, registry=registry)
             if dependencies.use_oracle_adapters(dry_run=dry_run)
             else LLMRetrievalRelevanceDecisionAdapter(runner=runner, registry=registry)
         )

@@ -3,7 +3,7 @@
 from memorii.core.llm_decision.adapters import (
     LLMBeliefUpdateAdapter,
     LLMJudgeDecisionAdapter,
-    LLMPromotionDecisionAdapter,
+    LLMPromotionAssessmentAdapter,
     default_judge_prompt_refs,
 )
 from memorii.core.llm_decision.evals import (
@@ -51,7 +51,7 @@ __all__ = [
     "JsonlLLMDecisionTraceStore",
     "LLMBeliefUpdateAdapter",
     "LLMJudgeDecisionAdapter",
-    "LLMPromotionDecisionAdapter",
+    "LLMPromotionAssessmentAdapter",
     "JudgeVerdict",
     "JuryVerdict",
     "LLMDecisionMode",

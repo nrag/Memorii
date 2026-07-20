@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from memorii.core.benchmark.execution_graph_decision import (
     ExecutionGraphDecisionContext,
+    ExecutionGraphDecisionOutput,
     ExecutionGraphScenario,
     expected_execution_graph_decision_for_scenario,
     fake_llm_result_for_execution_graph,
@@ -11,12 +12,14 @@ from memorii.core.benchmark.hotpotqa import HotpotQAExample
 from memorii.core.benchmark.hotpotqa_official import expected_hotpotqa_grounding_decisions
 from memorii.core.benchmark.lifecycle_decision import (
     LifecycleDecisionContext,
+    LifecycleDecisionOutput,
     expected_lifecycle_decision_for_fixture,
     fake_llm_result_for_lifecycle,
     lifecycle_family_requires_decision,
 )
 from memorii.core.benchmark.memory_evolution_decision import (
     MemoryEvolutionDecisionContext,
+    MemoryEvolutionDecisionOutput,
     MemoryEvolutionScenario,
     expected_memory_evolution_decision_for_checkpoint,
     fake_llm_result_for_memory_evolution,
@@ -24,19 +27,24 @@ from memorii.core.benchmark.memory_evolution_decision import (
 from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
+    SimProviderOutput,
     expected_sim_output_for_checkpoint,
     fake_llm_result_for_memory_evolution_sim,
 )
 from memorii.core.benchmark.models import BenchmarkScenarioFixture
 from memorii.core.benchmark.retrieval_relevance_decision import (
     RetrievalRelevanceContext,
+    RetrievalRelevanceOutput,
     expected_retrieval_relevance_decision_for_fixture,
     fake_llm_result_for_retrieval_relevance,
 )
 from memorii.core.grounding.models import (
     AnswerVerificationContext,
+    AnswerVerificationOutput,
     EvidenceSelectionContext,
+    EvidenceSelectionOutput,
     GroundedAnswerContext,
+    GroundedAnswerOutput,
 )
 from memorii.core.grounding.pipeline import (
     fake_llm_result_for_answer_verification,
@@ -48,7 +56,7 @@ from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.runtime_manifest import PromptOwner
 
 
-class _ExpectedLifecycleFakeAdapter:
+class ExpectedLifecycleFakeAdapter:
     provider_name = "fake"
 
     def __init__(self, *, fixtures: list[BenchmarkScenarioFixture], registry: PromptRegistry) -> None:
@@ -71,6 +79,7 @@ class _ExpectedLifecycleFakeAdapter:
         contract = self._registry.load(
             "lifecycle_decision:v1",
             owner=PromptOwner.LLM_LIFECYCLE_DECISION_ADAPTER,
+            output_model=LifecycleDecisionOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,
@@ -86,7 +95,7 @@ class _ExpectedLifecycleFakeAdapter:
         return fake_llm_result_for_lifecycle(request=request, decision=decision, provider_name=self.provider_name)
 
 
-class _ExpectedExecutionGraphFakeAdapter:
+class ExpectedExecutionGraphFakeAdapter:
     provider_name = "fake"
 
     def __init__(self, *, scenarios: list[ExecutionGraphScenario], registry: PromptRegistry) -> None:
@@ -107,6 +116,7 @@ class _ExpectedExecutionGraphFakeAdapter:
         contract = self._registry.load(
             "execution_graph_decision:v1",
             owner=PromptOwner.LLM_EXECUTION_GRAPH_DECISION_ADAPTER,
+            output_model=ExecutionGraphDecisionOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,
@@ -126,7 +136,7 @@ class _ExpectedExecutionGraphFakeAdapter:
         )
 
 
-class _ExpectedMemoryEvolutionFakeAdapter:
+class ExpectedMemoryEvolutionFakeAdapter:
     provider_name = "fake"
 
     def __init__(self, *, scenarios: list[MemoryEvolutionScenario], registry: PromptRegistry) -> None:
@@ -151,6 +161,7 @@ class _ExpectedMemoryEvolutionFakeAdapter:
         contract = self._registry.load(
             "memory_evolution_decision:v1",
             owner=PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER,
+            output_model=MemoryEvolutionDecisionOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,
@@ -172,7 +183,7 @@ class _ExpectedMemoryEvolutionFakeAdapter:
         )
 
 
-class _ExpectedMemoryEvolutionSimFakeAdapter:
+class ExpectedMemoryEvolutionSimFakeAdapter:
     provider_name = "fake"
 
     def __init__(self, *, scenarios: list[LatentGraphScenario], registry: PromptRegistry) -> None:
@@ -193,6 +204,7 @@ class _ExpectedMemoryEvolutionSimFakeAdapter:
         contract = self._registry.load(
             "memory_evolution_sim_reconstruction:v1",
             owner=PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER,
+            output_model=SimProviderOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,
@@ -212,7 +224,7 @@ class _ExpectedMemoryEvolutionSimFakeAdapter:
         )
 
 
-class _ExpectedRetrievalRelevanceFakeAdapter:
+class ExpectedRetrievalRelevanceFakeAdapter:
     provider_name = "fake"
 
     def __init__(self, *, fixtures: list[BenchmarkScenarioFixture], registry: PromptRegistry) -> None:
@@ -234,6 +246,7 @@ class _ExpectedRetrievalRelevanceFakeAdapter:
         contract = self._registry.load(
             "retrieval_relevance:v1",
             owner=PromptOwner.LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER,
+            output_model=RetrievalRelevanceOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,
@@ -253,7 +266,7 @@ class _ExpectedRetrievalRelevanceFakeAdapter:
         )
 
 
-class _ExpectedHotpotQAEvidenceSelectionFakeAdapter:
+class ExpectedHotpotQAEvidenceSelectionFakeAdapter:
     provider_name = "fake"
 
     def __init__(self, *, examples: list[HotpotQAExample], registry: PromptRegistry) -> None:
@@ -274,6 +287,7 @@ class _ExpectedHotpotQAEvidenceSelectionFakeAdapter:
         contract = self._registry.load(
             "evidence_selection:v1",
             owner=PromptOwner.LLM_EVIDENCE_SELECTION_ADAPTER,
+            output_model=EvidenceSelectionOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,
@@ -293,7 +307,7 @@ class _ExpectedHotpotQAEvidenceSelectionFakeAdapter:
         )
 
 
-class _ExpectedHotpotQAGroundedAnswerFakeAdapter:
+class ExpectedHotpotQAGroundedAnswerFakeAdapter:
     provider_name = "fake"
 
     def __init__(self, *, examples: list[HotpotQAExample], registry: PromptRegistry) -> None:
@@ -314,6 +328,7 @@ class _ExpectedHotpotQAGroundedAnswerFakeAdapter:
         contract = self._registry.load(
             "grounded_answer:v1",
             owner=PromptOwner.LLM_GROUNDED_ANSWER_ADAPTER,
+            output_model=GroundedAnswerOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,
@@ -333,7 +348,7 @@ class _ExpectedHotpotQAGroundedAnswerFakeAdapter:
         )
 
 
-class _ExpectedHotpotQAAnswerVerificationFakeAdapter:
+class ExpectedHotpotQAAnswerVerificationFakeAdapter:
     provider_name = "fake"
 
     def __init__(self, *, examples: list[HotpotQAExample], registry: PromptRegistry) -> None:
@@ -354,6 +369,7 @@ class _ExpectedHotpotQAAnswerVerificationFakeAdapter:
         contract = self._registry.load(
             "answer_verification:v1",
             owner=PromptOwner.LLM_ANSWER_VERIFICATION_ADAPTER,
+            output_model=AnswerVerificationOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,

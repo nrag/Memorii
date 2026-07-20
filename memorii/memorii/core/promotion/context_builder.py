@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.promotion.legacy_models import LegacyPromotionContext as PromotionContext
+from memorii.core.promotion.execution_contracts import PromotionExecutionContext
 from memorii.domain.enums import CommitStatus
 
 
-class PromotionContextBuilder:
+class PromotionExecutionContextBuilder:
     def __init__(self, *, memory_plane: MemoryPlaneService) -> None:
         self._memory_plane = memory_plane
 
-    def build(self, *, candidate_id: str) -> PromotionContext:
+    def build(self, *, candidate_id: str) -> PromotionExecutionContext:
         candidate = self._memory_plane.get_record(candidate_id)
         if candidate is None:
             raise ValueError(f"candidate not found: {candidate_id}")
@@ -29,7 +29,7 @@ class PromotionContextBuilder:
         duplicates = [item for item in same_domain_committed if self._is_duplicate(item, candidate)]
         conflicts = [item for item in same_domain_committed if self._is_conflict(item, candidate)]
 
-        return PromotionContext(
+        return PromotionExecutionContext(
             candidate=candidate,
             committed_in_scope=committed_in_scope,
             candidates_in_scope=candidates_in_scope,

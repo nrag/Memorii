@@ -65,9 +65,9 @@ class ProofStepCitation(BaseModel):
 class ProofStep(BaseModel):
     step_id: str
     description: str
-    candidate_ids: list[str] = Field(default_factory=list)
-    required_candidate_ids: list[str] = Field(default_factory=list)
-    citations: list[ProofStepCitation] = Field(default_factory=list)
+    candidate_ids: list[str]
+    required_candidate_ids: list[str]
+    citations: list[ProofStepCitation]
     rationale: str
 
     model_config = ConfigDict(extra="forbid")
@@ -81,18 +81,8 @@ class ProofStep(BaseModel):
         missing_citations = [candidate_id for candidate_id in citation_ids if candidate_id not in self.candidate_ids]
         if missing_citations:
             raise ValueError(f"citations candidate_id must be a subset of candidate_ids: {missing_citations}")
-        if not self.citations and self.candidate_ids:
-            required = set(self.required_candidate_ids)
-            self.citations = [
-                ProofStepCitation(
-                    candidate_id=candidate_id,
-                    role="constraint_support" if candidate_id in required else "background_context",
-                    required_for_final_support=candidate_id in required,
-                    claim_supported=self.description,
-                    rationale="Backfilled citation role for compatibility with legacy proof-step output.",
-                )
-                for candidate_id in self.candidate_ids
-            ]
+        if self.candidate_ids and not self.citations:
+            raise ValueError("citations must role-label every candidate_id")
         required_without_citation = [
             candidate_id
             for candidate_id in self.required_candidate_ids
@@ -114,6 +104,27 @@ class EvidenceSelectionDecision(BaseModel):
     requires_judge_review: bool = False
 
     model_config = ConfigDict(extra="forbid")
+
+
+class ProofStepCitationOutput(ProofStepCitation):
+    """Provider transport requiring every schema-declared citation field."""
+
+    required_for_final_support: bool
+
+
+class ProofStepOutput(ProofStep):
+    citations: list[ProofStepCitationOutput]
+
+
+class EvidenceSelectionOutput(EvidenceSelectionDecision):
+    """Strict provider output before conversion to a domain decision."""
+
+    selected_candidate_ids: list[str]
+    excluded_candidate_ids: list[str]
+    ranking: list[str]
+    proof_steps: list[ProofStepOutput]
+    failure_mode: str | None
+    requires_judge_review: bool
 
 
 class GroundedAnswerContext(BaseModel):
@@ -159,12 +170,12 @@ class CandidateAnswerConsidered(BaseModel):
 
 class GroundedAnswerDecision(BaseModel):
     answer: str
-    citation_candidate_ids: list[str] = Field(default_factory=list)
-    answer_requirements: list[AnswerRequirement] = Field(default_factory=list)
-    candidate_answers_considered: list[CandidateAnswerConsidered] = Field(default_factory=list)
-    answer_type: str = "short_span"
-    answer_span_candidate_id: str | None = None
-    answer_span_text: str | None = None
+    citation_candidate_ids: list[str]
+    answer_requirements: list[AnswerRequirement]
+    candidate_answers_considered: list[CandidateAnswerConsidered]
+    answer_type: str
+    answer_span_candidate_id: str | None
+    answer_span_text: str | None
     confidence: float = Field(ge=0.0, le=1.0)
     rationale: str
     failure_mode: str | None = None
@@ -174,38 +185,8 @@ class GroundedAnswerDecision(BaseModel):
 
     @model_validator(mode="after")
     def selected_candidate_must_match_answer(self) -> GroundedAnswerDecision:
-        if self.answer != "noanswer" and not self.answer_requirements and self.citation_candidate_ids:
-            self.answer_requirements = [
-                AnswerRequirement(
-                    requirement_id="requirement:direct_answer",
-                    description="The answer must be directly supported by cited evidence.",
-                    requirement_type="direct_answer",
-                    candidate_ids=list(self.citation_candidate_ids),
-                    rationale="Backfilled requirement for compatibility with legacy grounded-answer output.",
-                )
-            ]
-        if self.answer != "noanswer" and not self.candidate_answers_considered:
-            requirement_ids = [requirement.requirement_id for requirement in self.answer_requirements]
-            self.candidate_answers_considered = [
-                CandidateAnswerConsidered(
-                    answer=self.answer,
-                    candidate_ids=list(self.citation_candidate_ids),
-                    selected=True,
-                    answer_type=self.answer_type,
-                    requirement_coverage=[
-                        CandidateRequirementCoverage(
-                            requirement_id=requirement.requirement_id,
-                            satisfied=True,
-                            candidate_ids=list(requirement.candidate_ids or self.citation_candidate_ids),
-                            rationale="Backfilled coverage for compatibility with legacy grounded-answer output.",
-                        )
-                        for requirement in self.answer_requirements
-                    ],
-                    satisfied_requirement_ids=requirement_ids,
-                    missing_requirement_ids=[],
-                    rationale="Backfilled selected candidate for compatibility with legacy grounded-answer output.",
-                )
-            ]
+        if self.answer != "noanswer" and not self.answer_requirements:
+            raise ValueError("answer_requirements must describe every non-noanswer answer")
         selected = [candidate for candidate in self.candidate_answers_considered if candidate.selected]
         if self.answer != "noanswer" and len(selected) != 1:
             raise ValueError("candidate_answers_considered must include exactly one selected candidate for non-noanswer answers")
@@ -222,6 +203,51 @@ class GroundedAnswerDecision(BaseModel):
                     f"{unknown_satisfied + unknown_missing + unknown_coverage}"
                 )
         return self
+
+
+class AnswerRequirementOutput(AnswerRequirement):
+    candidate_ids: list[str]
+
+
+class CandidateRequirementCoverageOutput(CandidateRequirementCoverage):
+    candidate_ids: list[str]
+
+
+class CandidateAnswerConsideredOutput(CandidateAnswerConsidered):
+    candidate_ids: list[str]
+    selected: bool
+    answer_type: Literal[
+        "short_span",
+        "yes_no",
+        "number",
+        "date",
+        "entity",
+        "location",
+        "description",
+        "noanswer",
+    ]
+    requirement_coverage: list[CandidateRequirementCoverageOutput]
+    satisfied_requirement_ids: list[str]
+    missing_requirement_ids: list[str]
+
+
+class GroundedAnswerOutput(GroundedAnswerDecision):
+    """Strict provider output before conversion to a domain decision."""
+
+    answer_requirements: list[AnswerRequirementOutput]
+    candidate_answers_considered: list[CandidateAnswerConsideredOutput]
+    answer_type: Literal[
+        "short_span",
+        "yes_no",
+        "number",
+        "date",
+        "entity",
+        "location",
+        "description",
+        "noanswer",
+    ]
+    failure_mode: str | None
+    requires_judge_review: bool
 
 
 class AnswerVerificationContext(BaseModel):
@@ -271,6 +297,28 @@ class AnswerVerificationDecision(BaseModel):
     requires_judge_review: bool = False
 
     model_config = ConfigDict(extra="forbid")
+
+
+class QuestionConstraintCoverageOutput(QuestionConstraintCoverage):
+    candidate_ids: list[str]
+
+
+class AlternativeAnswerCheckOutput(AlternativeAnswerCheck):
+    candidate_ids: list[str]
+    satisfied_requirement_ids: list[str]
+    missing_requirement_ids: list[str]
+
+
+class AnswerVerificationOutput(AnswerVerificationDecision):
+    """Strict provider output before conversion to a domain decision."""
+
+    corrected_answer: str | None
+    required_candidate_ids: list[str]
+    missing_candidate_ids: list[str]
+    question_constraints: list[QuestionConstraintCoverageOutput]
+    alternative_answers: list[AlternativeAnswerCheckOutput]
+    failure_mode: str | None
+    requires_judge_review: bool
 
 
 class ProvenanceReconciliationDecision(BaseModel):

@@ -3,21 +3,26 @@
 from __future__ import annotations
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.promotion.legacy_models import (
+from memorii.core.promotion.execution_contracts import (
     PromotionAction,
-    PromotionContext,
-    PromotionDecision,
+    PromotionExecutionContext,
+    PromotionExecutionPlan,
     PromotionReasonCode,
 )
 from memorii.domain.enums import MemoryDomain
 
 
-class RuleBasedPromotionDecider:
+class RuleBasedPromotionExecutionPolicy:
     """Conservative deterministic promotion policy."""
 
-    def evaluate(self, *, candidate: CanonicalMemoryRecord, context: PromotionContext) -> PromotionDecision:
+    def evaluate(
+        self,
+        *,
+        candidate: CanonicalMemoryRecord,
+        context: PromotionExecutionContext,
+    ) -> PromotionExecutionPlan:
         if context.duplicates:
-            return PromotionDecision(
+            return PromotionExecutionPlan(
                 action=PromotionAction.KEEP_STAGED,
                 target_domain=candidate.domain,
                 reason_codes=[PromotionReasonCode.DUPLICATE_COMMITTED_MEMORY_EXISTS],
@@ -62,8 +67,12 @@ class RuleBasedPromotionDecider:
     def _is_explicit_user_write(self, candidate: CanonicalMemoryRecord) -> bool:
         return "memory_write_user" in candidate.source_kind
 
-    def _conflict_decision(self, candidate: CanonicalMemoryRecord, context: PromotionContext) -> PromotionDecision:
-        return PromotionDecision(
+    def _conflict_decision(
+        self,
+        candidate: CanonicalMemoryRecord,
+        context: PromotionExecutionContext,
+    ) -> PromotionExecutionPlan:
+        return PromotionExecutionPlan(
             action=PromotionAction.KEEP_STAGED,
             target_domain=candidate.domain,
             reason_codes=[PromotionReasonCode.POSSIBLE_CONFLICT_WITH_COMMITTED_MEMORY],
@@ -72,8 +81,8 @@ class RuleBasedPromotionDecider:
             confidence=0.6,
         )
 
-    def _commit(self, candidate: CanonicalMemoryRecord, reason_codes: list[PromotionReasonCode]) -> PromotionDecision:
-        return PromotionDecision(
+    def _commit(self, candidate: CanonicalMemoryRecord, reason_codes: list[PromotionReasonCode]) -> PromotionExecutionPlan:
+        return PromotionExecutionPlan(
             action=PromotionAction.COMMIT,
             target_domain=candidate.domain,
             reason_codes=reason_codes,
@@ -81,8 +90,8 @@ class RuleBasedPromotionDecider:
             confidence=0.9,
         )
 
-    def _reject(self, candidate: CanonicalMemoryRecord, reason_codes: list[PromotionReasonCode]) -> PromotionDecision:
-        return PromotionDecision(
+    def _reject(self, candidate: CanonicalMemoryRecord, reason_codes: list[PromotionReasonCode]) -> PromotionExecutionPlan:
+        return PromotionExecutionPlan(
             action=PromotionAction.REJECT,
             target_domain=candidate.domain,
             reason_codes=reason_codes,
@@ -90,8 +99,8 @@ class RuleBasedPromotionDecider:
             confidence=0.9,
         )
 
-    def _keep(self, candidate: CanonicalMemoryRecord, reason_codes: list[PromotionReasonCode]) -> PromotionDecision:
-        return PromotionDecision(
+    def _keep(self, candidate: CanonicalMemoryRecord, reason_codes: list[PromotionReasonCode]) -> PromotionExecutionPlan:
+        return PromotionExecutionPlan(
             action=PromotionAction.KEEP_STAGED,
             target_domain=candidate.domain,
             reason_codes=reason_codes,

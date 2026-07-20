@@ -26,5 +26,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [should_be_episodic, should_be_semantic, should_be_user_memory, should_be_project_fact, ambiguous_plane]
-tags: [judge, wave1, memory_plane]
+tags: [judge, memory_plane]

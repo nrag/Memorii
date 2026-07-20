@@ -38,8 +38,13 @@ Build an installable wheel and verify package-owned prompt contracts:
 python -m pip wheel . --no-deps --wheel-dir /tmp/memorii-wheel
 python -m pip install --no-deps --target /tmp/memorii-wheel-site /tmp/memorii-wheel/*.whl
 cd /tmp
-PYTHONPATH=/tmp/memorii-wheel-site python -c "from memorii.core.prompts.runtime_manifest import PromptOwner; from memorii.core.prompts.registry import PromptRegistry; PromptRegistry().load('memory_extraction:v1', owner=PromptOwner.LLM_MEMORY_EXTRACTOR)"
+PYTHONPATH=/tmp/memorii-wheel-site python -c "from memorii.core.memory_evolution.extraction import MemoryExtractionOutput; from memorii.core.prompts.runtime_manifest import PromptOwner; from memorii.core.prompts.registry import PromptRegistry; PromptRegistry().load('memory_extraction:v1', owner=PromptOwner.LLM_MEMORY_EXTRACTOR, output_model=MemoryExtractionOutput)"
+PYTHONPATH=/tmp/memorii-wheel-site python -c "from importlib.util import find_spec; removed=('memorii.core.promotion.models', 'memorii.core.promotion.legacy_models', 'memorii.core.promotion.lifecycle_models', 'memorii.core.prompts.manifest', 'memorii.core.prompts.schema_compatibility'); assert all(find_spec(module) is None for module in removed)"
 ```
+
+Move or remove any ignored in-tree `build/` directory before a local wheel
+build. Setuptools can otherwise retain Python modules that were deleted from
+the source tree; the final assertion above detects that contamination.
 
 The Pyright scope is intentionally limited to:
 

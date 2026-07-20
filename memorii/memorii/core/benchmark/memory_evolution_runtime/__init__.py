@@ -1,4 +1,4 @@
-"""Public facade for runtime-backed memory evolution benchmark helpers."""
+"""Public API for runtime-backed memory evolution benchmark helpers."""
 
 from memorii.core.benchmark.memory_evolution_runtime.alignment import align_runtime_graph_to_oracle
 from memorii.core.benchmark.memory_evolution_runtime.artifacts import (
@@ -9,13 +9,17 @@ from memorii.core.benchmark.memory_evolution_runtime.artifacts import (
     runtime_warning_policy,
     write_runtime_artifacts,
 )
-from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import (
-    project_runtime_checkpoint,
-    runtime_failure_buckets,
-)
+from memorii.core.benchmark.memory_evolution_runtime.checkpoint_evaluation import runtime_failure_buckets
+from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import project_runtime_checkpoint
 from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection import (
-    _expected_action_alignment_rows,
+    expected_action_alignment_rows,
     normalize_action_status,
+)
+from memorii.core.benchmark.memory_evolution_runtime.extractors import (
+    OracleVisibleMemoryExtractor,
+    RecordingMemoryExtractor,
+    build_runtime_extractor,
+    extractor_fallback_count,
 )
 from memorii.core.benchmark.memory_evolution_runtime.graph_items import graph_items_from_snapshot
 from memorii.core.benchmark.memory_evolution_runtime.ingestion import (
@@ -28,14 +32,12 @@ from memorii.core.benchmark.memory_evolution_runtime.models import (
     RuntimeProjection,
     RuntimeSuiteRows,
 )
-from memorii.core.benchmark.memory_evolution_runtime.runner import (
-    OracleVisibleMemoryExtractor,
-    RecordingMemoryExtractor,
-    build_runtime_extractor,
-    extractor_fallback_count,
+from memorii.core.benchmark.memory_evolution_runtime.result_rows import (
     extractor_trace_rows,
-    run_runtime_scenarios,
     runtime_final_output_source,
+)
+from memorii.core.benchmark.memory_evolution_runtime.runner import (
+    run_runtime_scenarios,
     validate_runtime_live_safety,
 )
 
@@ -46,7 +48,7 @@ __all__ = [
     "RuntimeGraphSnapshotRow",
     "RuntimeGraphItemRow",
     "RuntimeSuiteRows",
-    "_expected_action_alignment_rows",
+    "expected_action_alignment_rows",
     "align_runtime_graph_to_oracle",
     "build_runtime_extractor",
     "extractor_fallback_count",

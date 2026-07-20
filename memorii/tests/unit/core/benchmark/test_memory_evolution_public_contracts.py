@@ -19,8 +19,13 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeGraphSummary,
     RuntimeProviderHealth,
     SimCheckpointResultRow,
+    WarningPolicyEntry,
 )
-from memorii.core.benchmark.artifact_validation import ArtifactValidationError, write_typed_jsonl
+from memorii.core.benchmark.artifact_validation import (
+    ArtifactValidationError,
+    write_json_atomic,
+    write_typed_jsonl,
+)
 from memorii.core.benchmark.memory_evolution_runtime import (
     RuntimeSuiteRows,
     runtime_alignment_summary,
@@ -39,8 +44,34 @@ from memorii.core.benchmark.memory_evolution_sim import (
     sim_reconstruction_context_for_checkpoint,
 )
 from memorii.core.calibration.alignment import RuntimeGraphAlignment, RuntimeGraphAlignmentVerdict
+from memorii.core.calibration.models import CalibrationSlice
 from memorii.tools.run_benchmark import main
 from pydantic import ValidationError
+
+
+def test_json_writer_serializes_nested_typed_models_at_boundary(tmp_path: Path) -> None:
+    path = tmp_path / "typed.json"
+    rows = [CalibrationSlice(slice_key="profile", slice_values={"profile": "adversarial"}, n=1)]
+
+    write_json_atomic(path, rows)
+
+    assert json.loads(path.read_text(encoding="utf-8")) == [
+        {
+            "accuracy": None,
+            "brier_score": None,
+            "ece": None,
+            "eligible_for_failure": False,
+            "mean_confidence": None,
+            "n": 1,
+            "probability_event_count": 0,
+            "response_level": "report_only",
+            "scenario_count": 0,
+            "slice_key": "profile",
+            "slice_values": {"profile": "adversarial"},
+            "wilson_high": None,
+            "wilson_low": None,
+        }
+    ]
 
 
 def _runtime_graph_summary_payload() -> dict[str, object]:
@@ -308,8 +339,8 @@ def _runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
     )
 
 
-def test_artifact_row_models_are_strict_but_flat_json_compatible() -> None:
-    row = SimCheckpointResultRow.from_flat_row(
+def test_artifact_row_models_are_strict_and_serialize_flat_json() -> None:
+    row = SimCheckpointResultRow.model_validate(
         {
             "scenario_id": "scenario_1",
             "checkpoint_id": "checkpoint_1",
@@ -358,7 +389,7 @@ def test_artifact_row_models_are_strict_but_flat_json_compatible() -> None:
     assert "legacy_fields" not in row.model_dump()
     assert "legacy_flat_field" not in row.to_json_row()
     with pytest.raises(ValidationError):
-        SimCheckpointResultRow.from_flat_row({**row.to_json_row(), "legacy_flat_field": "rejected"})
+        SimCheckpointResultRow.model_validate({**row.to_json_row(), "unknown_field": "rejected"})
     with pytest.raises(ValidationError):
         SimCheckpointResultRow.model_validate(
             {
@@ -380,7 +411,7 @@ def test_artifact_row_models_are_strict_but_flat_json_compatible() -> None:
             }
         )
     with pytest.raises(ValidationError):
-        SimCheckpointResultRow.from_flat_row(
+        SimCheckpointResultRow.model_validate(
             {
                 "scenario_id": "scenario_1",
                 "checkpoint_id": "checkpoint_1",
@@ -399,7 +430,7 @@ def test_artifact_row_models_are_strict_but_flat_json_compatible() -> None:
             }
         )
     with pytest.raises(ValidationError):
-        SimCheckpointResultRow.from_flat_row(
+        SimCheckpointResultRow.model_validate(
             {
                 "scenario_id": "scenario_1",
                 "checkpoint_id": "checkpoint_1",
@@ -470,7 +501,7 @@ def test_runtime_alignment_row_requires_runtime_and_oracle_identity_contract() -
 
 def test_benchmark_report_summary_types_runtime_and_calibration_sections() -> None:
     payload = _benchmark_report_payload()
-    report = BenchmarkReportSummary.from_flat_row(payload)
+    report = BenchmarkReportSummary.model_validate(payload)
 
     assert report.fixture_hashes == {"surface_observations": "abc"}
     assert report.calibration.model_dump(mode="json") == _calibration_report_payload()
@@ -482,33 +513,35 @@ def test_benchmark_report_summary_types_runtime_and_calibration_sections() -> No
     assert isinstance(report.runtime_provider_health, (RuntimeProviderHealth, ArtifactJsonObject))
     assert report.runtime_graph_summary.to_json_row() == _runtime_graph_summary_payload()
     assert report.runtime_graph_alignments_summary.to_json_row() == _alignment_summary_payload()
-    assert report.warning_policy == {"extra_context_provenance": {"level": "warning_only"}}
+    warning_policy = report.warning_policy["extra_context_provenance"]
+    assert isinstance(warning_policy, WarningPolicyEntry)
+    assert warning_policy.model_dump(mode="json") == {"level": "warning_only", "rationale": ""}
 
 
 def test_dynamic_report_sections_are_json_only() -> None:
     payload = _benchmark_report_payload()
     payload["metrics"] = {"nested": [{"count": 2, "ok": True}]}
-    report = BenchmarkReportSummary.from_flat_row(payload)
+    report = BenchmarkReportSummary.model_validate(payload)
 
     assert report.metrics == payload["metrics"]
     with pytest.raises(ValidationError):
-        BenchmarkReportSummary.from_flat_row({**payload, "metrics": {"bad": object()}})
+        BenchmarkReportSummary.model_validate({**payload, "metrics": {"bad": object()}})
     with pytest.raises(ValidationError):
-        BenchmarkReportSummary.from_flat_row({**payload, "unknown_future_field": "rejected"})
+        BenchmarkReportSummary.model_validate({**payload, "unknown_future_field": "rejected"})
 
     missing_calibration = {**payload}
     missing_calibration.pop("calibration")
     with pytest.raises(ValidationError, match="requires calibration"):
-        BenchmarkReportSummary.from_flat_row(missing_calibration)
+        BenchmarkReportSummary.model_validate(missing_calibration)
 
     missing_decision_quality = {**payload}
     missing_decision_quality.pop("decision_quality")
     with pytest.raises(ValidationError, match="requires decision_quality"):
-        BenchmarkReportSummary.from_flat_row(missing_decision_quality)
+        BenchmarkReportSummary.model_validate(missing_decision_quality)
 
     malformed_runtime_summary = {**payload, "runtime_graph_summary": {"claim_count": 3}}
     with pytest.raises(ValidationError):
-        BenchmarkReportSummary.from_flat_row(malformed_runtime_summary)
+        BenchmarkReportSummary.model_validate(malformed_runtime_summary)
 
 
 @pytest.mark.parametrize(
@@ -542,7 +575,7 @@ def test_runtime_report_rejects_cross_section_drift(mutate, error: str) -> None:
     mutate(payload)
 
     with pytest.raises(ValidationError, match=error):
-        BenchmarkReportSummary.from_flat_row(payload)
+        BenchmarkReportSummary.model_validate(payload)
 
 
 def test_report_count_maps_reject_negative_counts() -> None:
@@ -550,7 +583,7 @@ def test_report_count_maps_reject_negative_counts() -> None:
     payload["critical_failure_bucket_counts"] = {"impossible_negative_count": -1}
 
     with pytest.raises(ValidationError):
-        BenchmarkReportSummary.from_flat_row(payload)
+        BenchmarkReportSummary.model_validate(payload)
 
 
 def test_report_rejects_empty_layer_fingerprints() -> None:
@@ -558,7 +591,7 @@ def test_report_rejects_empty_layer_fingerprints() -> None:
     payload["evaluation_fingerprint"] = ""
 
     with pytest.raises(ValidationError):
-        BenchmarkReportSummary.from_flat_row(payload)
+        BenchmarkReportSummary.model_validate(payload)
 
 
 def test_typed_jsonl_writer_rejects_unvalidated_mapping(tmp_path: Path) -> None:
@@ -570,7 +603,7 @@ def test_typed_jsonl_writer_rejects_unvalidated_mapping(tmp_path: Path) -> None:
         )
 
 
-def test_memory_evolution_public_imports_remain_compatible() -> None:
+def test_memory_evolution_public_imports_resolve() -> None:
     modules = [
         "memorii.core.benchmark.memory_evolution_sim",
         "memorii.core.benchmark.memory_evolution_runtime",
@@ -581,7 +614,7 @@ def test_memory_evolution_public_imports_remain_compatible() -> None:
         assert importlib.import_module(module_name)
 
 
-def test_memory_evolution_split_submodule_imports_remain_compatible() -> None:
+def test_memory_evolution_owned_submodule_imports_resolve() -> None:
     expected_symbols = {
         "memorii.core.benchmark.memory_evolution_sim.schemas": "SimSystemOutput",
         "memorii.core.benchmark.memory_evolution_sim.generation": "generate_memory_evolution_sim_scenarios",
@@ -694,13 +727,13 @@ def test_memory_evolution_runtime_public_summary_contract() -> None:
     metrics = runtime_summary_metrics(rows)
     alignment_summary = runtime_alignment_summary(rows)
 
-    assert metrics["provider_successes"] == 0
-    assert metrics["provider_failures"] == 0
-    assert metrics["fallbacks"] == 0
-    assert metrics["final_output_source_counts"] == {"fake_oracle": 1}
-    assert alignment_summary["checkpoint_expected_alignment_audit_count"] == 0
-    assert alignment_summary["checkpoint_scored_verdict_counts"] == {"pass": 1}
-    assert "checkpoint_required_alignment_count" not in alignment_summary
+    assert metrics.provider_successes == 0
+    assert metrics.provider_failures == 0
+    assert metrics.fallbacks == 0
+    assert metrics.final_output_source_counts == {"fake_oracle": 1}
+    assert alignment_summary.checkpoint_expected_alignment_audit_count == 0
+    assert alignment_summary.checkpoint_scored_verdict_counts == {"pass": 1}
+    assert "checkpoint_required_alignment_count" not in type(alignment_summary).model_fields
 
     canonical_alignment_rows = RuntimeSuiteRows(
         scenario_rows=[],
@@ -727,8 +760,8 @@ def test_memory_evolution_runtime_public_summary_contract() -> None:
     )
 
     canonical_summary = runtime_alignment_summary(canonical_alignment_rows)
-    assert canonical_summary["checkpoint_expected_alignment_audit_count"] == 1
-    assert canonical_summary["checkpoint_expected_alignment_audit_counts"] == {"aligned": 1}
+    assert canonical_summary.checkpoint_expected_alignment_audit_count == 1
+    assert canonical_summary.checkpoint_expected_alignment_audit_counts == {"aligned": 1}
 
 
 @pytest.mark.parametrize(

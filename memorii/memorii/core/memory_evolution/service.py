@@ -18,7 +18,7 @@ from memorii.core.memory_evolution.execution import (
     reduce_work_states,
     status_for_action_event,
 )
-from memorii.core.memory_evolution.extraction import MemoryExtractor, RuleMemoryExtractor
+from memorii.core.memory_evolution.extraction import EnglishRuleMemoryExtractor, MemoryExtractor
 from memorii.core.memory_evolution.graph import (
     MemoryGraphProjector,
     MemoryGraphStore,
@@ -52,8 +52,12 @@ from memorii.core.memory_evolution.models import (
     ValidationResult,
     ValidationVerdict,
 )
+from memorii.core.memory_evolution.mutations import (
+    EvolutionMutationPlan,
+    MemoryEvolutionMutationValidationError,
+)
 from memorii.core.memory_evolution.predicates import PredicateRegistry, source_trust_rank
-from memorii.core.memory_evolution.query_analysis import ConservativeQueryAnalyzer, QueryAnalyzer
+from memorii.core.memory_evolution.query_analysis import EnglishLexicalQueryAnalyzer, QueryAnalyzer
 from memorii.core.memory_evolution.retrieval import (
     MemoryQueryInput,
     ProductionRetrievalDecision,
@@ -95,7 +99,7 @@ class MemoryEvolutionService:
     ) -> None:
         self._memory_plane = memory_plane
         self._predicates = predicate_registry or PredicateRegistry()
-        self._extractor = extractor or RuleMemoryExtractor()
+        self._extractor = extractor or EnglishRuleMemoryExtractor()
         self._validator = validator or MemoryEvolutionValidator(predicate_registry=self._predicates)
         self._modality_classifier = modality_classifier or SourceModalityClassifier()
         self._trigger_policy = trigger_policy or ExtractionTriggerPolicy()
@@ -106,14 +110,13 @@ class MemoryEvolutionService:
         self._graph_projector = graph_projector or MemoryGraphProjector()
         self._graph_store = graph_store or MemoryGraphStore(memory_plane=memory_plane)
         self._graph_validator = graph_validator or MemoryGraphValidator()
-        self._query_analyzer = query_analyzer or ConservativeQueryAnalyzer()
+        self._query_analyzer = query_analyzer or EnglishLexicalQueryAnalyzer()
         self._temporal_anchor_catalog = temporal_anchor_catalog or TemporalAnchorCatalog()
         self._hydrate_temporal_anchors()
         self._retrieval_runtime = MemoryEvolutionRetrievalRuntime(
             claim_reader=self.retrieve_claim_states,
             entity_link_reader=self._list_entity_links,
             action_reader=self._list_actions,
-            work_state_reader=self.derive_work_state,
             query_analyzer=self._query_analyzer,
             temporal_anchor_catalog=self._temporal_anchor_catalog,
             now_provider=self._now_provider,
@@ -124,6 +127,32 @@ class MemoryEvolutionService:
         records: list[CanonicalMemoryRecord],
         *,
         defer_assertions: bool = False,
+    ) -> MemoryEvolutionResult:
+        with self._memory_plane.unit_of_work() as unit_of_work:
+            result = self._build_evolution_mutation(
+                records,
+                defer_assertions=defer_assertions,
+            )
+            plan = EvolutionMutationPlan(
+                expected_revision=unit_of_work.base_revision,
+                records=unit_of_work.pending_records,
+                graph_snapshot=MemoryGraphSnapshot(
+                    snapshot_id=result.graph_snapshot_id or "",
+                    nodes=result.graph_nodes,
+                    edges=result.graph_edges,
+                ),
+            )
+            unit_of_work.commit(
+                records=plan.records,
+                expected_revision=plan.expected_revision,
+            )
+            return result
+
+    def _build_evolution_mutation(
+        self,
+        records: list[CanonicalMemoryRecord],
+        *,
+        defer_assertions: bool,
     ) -> MemoryEvolutionResult:
         observations = [
             classify_and_mark_observation(
@@ -268,6 +297,8 @@ class MemoryEvolutionService:
         )
         graph_snapshot = self._graph_projector.project_evolution_result(result=graph_input)
         graph_errors = self._graph_validator.validate_snapshot(graph_snapshot)
+        if graph_errors:
+            raise MemoryEvolutionMutationValidationError(graph_errors)
         written_graph_ids = self._graph_store.upsert_snapshot(graph_snapshot)
         return partial_result.model_copy(
             update={
@@ -296,8 +327,19 @@ class MemoryEvolutionService:
         """
         now = self._now_provider()
         modality = _modality_for_claim(claim, source_observations)
+        existing_claim_ids = {state.claim_id for state in self._list_claim_states()}
+        rejected_claim_id = claim.claim_id
+        if rejected_claim_id in existing_claim_ids:
+            evidence_identity = "|".join(sorted(span.source_id for span in claim.evidence_spans))
+            rejected_claim_id = _stable_id(
+                "claim-rejection",
+                f"{claim.claim_id}:{evidence_identity}",
+            )
         normalized_claim = claim.model_copy(
-            update={"confidence": self._confidence_aggregator.initial_for_claim(claim, modality=modality)}
+            update={
+                "claim_id": rejected_claim_id,
+                "confidence": self._confidence_aggregator.initial_for_claim(claim, modality=modality),
+            }
         )
         subject_link = self._entity_resolver.link_for_entity(
             claim.claim_key.subject_entity_id,
@@ -328,7 +370,7 @@ class MemoryEvolutionService:
             claim_key=normalized_claim.claim_key,
             object_value=normalized_claim.object_value,
             lifecycle_state=ClaimLifecycleState.INVALIDATED,
-            source_claim_id=normalized_claim.claim_id,
+            source_claim_id=claim.claim_id,
             confidence=normalized_claim.confidence,
             validation_results=validation_results,
             evidence_spans=normalized_claim.evidence_spans,
@@ -414,7 +456,7 @@ class MemoryEvolutionService:
                         state
                         for state in states
                         if evaluate_temporal_eligibility(
-                            lifecycle_state=state.lifecycle_state.value,
+                            lifecycle_state=state.lifecycle_state,
                             valid_from=state.valid_from,
                             valid_to=state.valid_to,
                             temporal_kind=temporal_frame.temporal_kind,
@@ -426,7 +468,7 @@ class MemoryEvolutionService:
                     state
                     for state in states
                     if evaluate_temporal_eligibility(
-                        lifecycle_state=state.lifecycle_state.value,
+                        lifecycle_state=state.lifecycle_state,
                         valid_from=state.valid_from,
                         valid_to=state.valid_to,
                         temporal_kind=temporal_frame.temporal_kind,
@@ -443,7 +485,7 @@ class MemoryEvolutionService:
                 state
                 for state in states
                 if evaluate_temporal_eligibility(
-                    lifecycle_state=state.lifecycle_state.value,
+                    lifecycle_state=state.lifecycle_state,
                     valid_from=state.valid_from,
                     valid_to=state.valid_to,
                     temporal_kind=QueryTemporalKind.CURRENT,
@@ -457,7 +499,7 @@ class MemoryEvolutionService:
                 state
                 for state in states
                 if evaluate_temporal_eligibility(
-                    lifecycle_state=state.lifecycle_state.value,
+                    lifecycle_state=state.lifecycle_state,
                     valid_from=state.valid_from,
                     valid_to=state.valid_to,
                     temporal_kind=QueryTemporalKind.CURRENT,
@@ -897,6 +939,7 @@ def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObser
         session_id=record.session_id,
         task_id=record.task_id,
         user_id=record.user_id,
+        language=record.language,
     )
 
 

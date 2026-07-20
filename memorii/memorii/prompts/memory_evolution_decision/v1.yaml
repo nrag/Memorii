@@ -47,8 +47,10 @@ output_schema:
           enum: [none, global, task, entity, custom]
         scope_key: {type: [string, 'null']}
         anchor_id: {type: [string, 'null']}
-        valid_from: {type: [string, 'null']}
-        valid_to: {type: [string, 'null']}
+        valid_from:
+          anyOf: [{type: string, format: date-time}, {type: 'null'}]
+        valid_to:
+          anyOf: [{type: string, format: date-time}, {type: 'null'}]
         confidence: {type: number, minimum: 0.0, maximum: 1.0}
         rationale: {type: string}
     answer_selection:
@@ -83,7 +85,7 @@ output_schema:
         checkpoint_retained_record_ids:
           type: array
           items: {type: string}
-        evaluation_time: {type: string}
+        evaluation_time: {type: string, format: date-time}
         rationale: {type: string}
     retrieval_context:
       type: object
@@ -275,5 +277,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [temporal_confusion, source_trust_error, scope_leakage, role_confusion, belief_dependency_error, stale_branch_error, rule_limit]
 tags: [memory_evolution, benchmark]

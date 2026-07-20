@@ -104,7 +104,7 @@ def test_benchmark_suite_runner_modules_import() -> None:
         assert importlib.import_module(module_name)
 
 
-def test_benchmark_suite_modules_do_not_use_compatibility_scaffolding() -> None:
+def test_benchmark_suite_modules_use_direct_ownership() -> None:
     suite_root = Path(__file__).resolve().parents[3] / "memorii" / "tools" / "benchmark_suites"
 
     assert not (suite_root / "_implementation.py").exists()

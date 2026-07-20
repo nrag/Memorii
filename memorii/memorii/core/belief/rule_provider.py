@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from memorii.core.belief.models import BeliefUpdateContext, BeliefUpdateDecision
+from memorii.core.belief.models import BeliefFailureMode, BeliefUpdateContext, BeliefUpdateDecision
 from memorii.core.llm_decision.models import (
     LLMDecisionMode,
     LLMDecisionPoint,
@@ -30,6 +30,12 @@ class RuleBasedBeliefUpdateProvider:
             belief=max(0.0, min(1.0, belief)),
             confidence=0.8,
             rationale="rule_based_belief_update",
+            failure_mode=self._failure_mode(context),
+            requires_judge_review=(
+                context.missing_evidence_count > 0
+                or context.verifier_downgraded
+                or context.conflict_count > 0
+            ),
         )
 
         trace = LLMDecisionTrace(
@@ -43,3 +49,13 @@ class RuleBasedBeliefUpdateProvider:
             created_at=datetime.now(UTC),
         )
         return decision.model_copy(update={"trace_id": trace.trace_id}), trace
+
+    @staticmethod
+    def _failure_mode(context: BeliefUpdateContext) -> BeliefFailureMode | None:
+        if context.conflict_count > 0:
+            return BeliefFailureMode.CONFLICT_PRESENT
+        if context.verifier_downgraded:
+            return BeliefFailureMode.VERIFIER_DOWNGRADE
+        if context.missing_evidence_count > 0:
+            return BeliefFailureMode.MISSING_EVIDENCE
+        return None

@@ -1,7 +1,8 @@
 """Semantic query-analysis contracts and implementations."""
 
 from memorii.core.memory_evolution.query_analysis.analyzers import (
-    ConservativeQueryAnalyzer,
+    EnglishLexicalQueryAnalyzer,
+    LexicalQueryAnalyzer,
     StructuredQueryAnalyzer,
 )
 from memorii.core.memory_evolution.query_analysis.contracts import (
@@ -30,8 +31,9 @@ from memorii.core.memory_evolution.query_analysis.validation import (
 )
 
 __all__ = [
-    "ConservativeQueryAnalyzer",
+    "EnglishLexicalQueryAnalyzer",
     "EnglishLexicalQueryResolver",
+    "LexicalQueryAnalyzer",
     "LexicalQueryResolver",
     "PromptBackedStructuredQueryAnalysisProvider",
     "QueryAnalyzer",

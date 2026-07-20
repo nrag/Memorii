@@ -1,55 +1,49 @@
 """Promotion lifecycle orchestration and explicit decision providers."""
 
-from memorii.core.promotion.context_builder import PromotionContextBuilder
-from memorii.core.promotion.executor import PromotionExecutor
-from memorii.core.promotion.factory import SUPPORTED_PROMOTION_DECIDERS, build_promotion_decider
-from memorii.core.promotion.hybrid import HybridPromotionDecider
-from memorii.core.promotion.hybrid_provider import HybridPromotionDecisionProvider
-from memorii.core.promotion.interfaces import PromotionDecider
-from memorii.core.promotion.legacy_models import (
-    BatchPromotionResult,
-    PromotionAction,
-    PromotionContext,
-    PromotionDecision,
-    PromotionReasonCode,
-    PromotionResult,
-)
-from memorii.core.promotion.llm_provider import LLMPromotionDecisionProvider
-from memorii.core.promotion.models import (
+from memorii.core.promotion.assessment import (
+    PromotionAssessment,
+    PromotionAssessmentContext,
     PromotionCandidateType,
 )
-from memorii.core.promotion.models import (
-    PromotionContext as ProviderPromotionContext,
+from memorii.core.promotion.context_builder import PromotionExecutionContextBuilder
+from memorii.core.promotion.execution_contracts import (
+    BatchPromotionExecutionResult,
+    PromotionAction,
+    PromotionExecutionContext,
+    PromotionExecutionPlan,
+    PromotionExecutionResult,
+    PromotionReasonCode,
 )
-from memorii.core.promotion.models import (
-    PromotionDecision as ProviderPromotionDecision,
-)
-from memorii.core.promotion.provider import PromotionDecisionProvider, PromotionDecisionProviderError
-from memorii.core.promotion.rule_based import RuleBasedPromotionDecider
-from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from memorii.core.promotion.executor import PromotionExecutor
+from memorii.core.promotion.factory import SUPPORTED_PROMOTION_EXECUTION_POLICIES, build_promotion_execution_policy
+from memorii.core.promotion.hybrid_provider import HybridPromotionAssessmentProvider
+from memorii.core.promotion.interfaces import PromotionExecutionPolicy
+from memorii.core.promotion.llm_provider import LLMPromotionAssessmentProvider
+from memorii.core.promotion.provider import PromotionAssessmentProvider, PromotionAssessmentProviderError
+from memorii.core.promotion.rule_based import RuleBasedPromotionExecutionPolicy
+from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
 from memorii.core.promotion.service import PromotionService
 
 __all__ = [
-    "BatchPromotionResult",
-    "HybridPromotionDecider",
-    "HybridPromotionDecisionProvider",
-    "LLMPromotionDecisionProvider",
+    "BatchPromotionExecutionResult",
+    "HybridPromotionAssessmentProvider",
+    "LLMPromotionAssessmentProvider",
     "PromotionAction",
     "PromotionCandidateType",
-    "PromotionContext",
-    "ProviderPromotionContext",
-    "PromotionDecision",
-    "ProviderPromotionDecision",
-    "PromotionDecisionProvider",
-    "PromotionDecisionProviderError",
-    "PromotionContextBuilder",
-    "PromotionDecider",
+    "PromotionAssessmentContext",
+    "PromotionAssessment",
+    "PromotionExecutionContext",
+    "PromotionExecutionPlan",
+    "PromotionAssessmentProvider",
+    "PromotionAssessmentProviderError",
+    "PromotionExecutionContextBuilder",
+    "PromotionExecutionPolicy",
     "PromotionExecutor",
     "PromotionReasonCode",
-    "PromotionResult",
+    "PromotionExecutionResult",
     "PromotionService",
-    "RuleBasedPromotionDecider",
-    "RuleBasedPromotionDecisionProvider",
-    "SUPPORTED_PROMOTION_DECIDERS",
-    "build_promotion_decider",
+    "RuleBasedPromotionExecutionPolicy",
+    "RuleBasedPromotionAssessmentProvider",
+    "SUPPORTED_PROMOTION_EXECUTION_POLICIES",
+    "build_promotion_execution_policy",
 ]

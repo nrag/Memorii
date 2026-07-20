@@ -704,9 +704,11 @@ Implemented state layers include:
 
 ### Current runtime evolution behavior
 
-`ProviderMemoryService` supports runtime memory evolution through `memory_evolution_enabled=True`.
-
-This path is currently opt-in. When enabled, provider transcript/source IDs are passed into `MemoryEvolutionService`, which can extract entities, claims, and actions, validate claims, update claim lifecycle state, resolve contradictions, and project graph records.
+`ProviderMemoryService` includes runtime memory evolution in its normal
+composition. Provider transcript/source IDs are passed into
+`MemoryEvolutionService`, which can extract entities, claims, and actions,
+validate claims, update claim lifecycle state, resolve contradictions, and
+project graph records.
 
 Provider prefetch currently returns memory context plus work-state summaries. It does not yet fully use the runtime graph as the default current-truth retrieval mechanism.
 

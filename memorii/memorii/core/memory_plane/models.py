@@ -30,6 +30,7 @@ class CanonicalMemoryRecord(BaseModel):
     solver_run_id: str | None = None
     user_id: str | None = None
     agent_id: str | None = None
+    language: str = "en"
     is_raw_event: bool = False
     source_candidate_id: str | None = None
     promotion_state: str | None = None
@@ -62,6 +63,7 @@ def from_memory_object(memory_object: MemoryObject, *, source_kind: str = "runti
         solver_run_id=namespace.get("solver_run_id"),
         user_id=namespace.get("user_id"),
         agent_id=namespace.get("agent_id"),
+        language=namespace.get("language", "en"),
         is_raw_event=memory_object.memory_type == MemoryDomain.TRANSCRIPT,
     )
 
@@ -80,6 +82,7 @@ def from_provider_stored_record(record: ProviderStoredRecord, *, source_kind: st
         session_id=record.session_id,
         task_id=record.task_id,
         user_id=record.user_id,
+        language=record.language,
         is_raw_event=record.domain == MemoryDomain.TRANSCRIPT,
     )
 
@@ -93,6 +96,7 @@ def to_provider_stored_record(record: CanonicalMemoryRecord) -> ProviderStoredRe
         session_id=record.session_id,
         task_id=record.task_id,
         user_id=record.user_id,
+        language=record.language,
         timestamp=record.timestamp,
     )
 
@@ -109,6 +113,7 @@ def to_memory_object(record: CanonicalMemoryRecord) -> MemoryObject:
         namespace["agent_id"] = record.agent_id
     if record.user_id is not None:
         namespace["user_id"] = record.user_id
+    namespace["language"] = record.language
     if record.session_id is not None:
         namespace["session_id"] = record.session_id
 

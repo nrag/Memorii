@@ -10,10 +10,10 @@ from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMRuntimeConfig
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.memory_evolution.extraction import (
+    EnglishRuleMemoryExtractor,
     HybridMemoryExtractor,
     LLMMemoryExtractor,
     MemoryExtractor,
-    RuleMemoryExtractor,
 )
 
 
@@ -27,9 +27,9 @@ def build_memory_extractor_from_env(
     decision_config = LLMDecisionRuntimeConfig.from_env(snapshot.env)
     mode = decision_config.resolve(runtime_config)
     if mode == "rule":
-        return RuleMemoryExtractor()
+        return EnglishRuleMemoryExtractor()
     if not runtime_config.has_live_provider():
-        return RuleMemoryExtractor()
+        return EnglishRuleMemoryExtractor()
 
     runner = PromptLLMRunner(
         client=LLMClientFactory.from_config(runtime_config),

@@ -54,8 +54,8 @@ def test_pyright_config_is_scoped_to_hardening_surfaces() -> None:
     pyright = _tool_config("pyright")
 
     assert pyright["pythonVersion"] == "3.11"
-    assert "venvPath" not in pyright
-    assert "venv" not in pyright
+    assert pyright["venvPath"] == ".."
+    assert pyright["venv"] == ".venv"
     assert pyright["typeCheckingMode"] == "basic"
     assert pyright["reportMissingTypeStubs"] is False
     assert pyright["reportArgumentType"] == "error"
@@ -90,7 +90,12 @@ def test_static_tooling_workflow_doc_lists_supported_commands() -> None:
     assert "python -m ruff check memorii tests" in doc
     assert "--select F" not in doc
     assert "pyright --pythonpath" in doc
-    assert "PromptRegistry().load('memory_extraction:v1', owner=PromptOwner.LLM_MEMORY_EXTRACTOR)" in doc
+    load_command = (
+        "PromptRegistry().load('memory_extraction:v1', "
+        "owner=PromptOwner.LLM_MEMORY_EXTRACTOR, output_model=MemoryExtractionOutput)"
+    )
+    assert load_command in doc
+    assert "from memorii.core.memory_evolution.extraction import MemoryExtractionOutput" in doc
     assert "from memorii.core.prompts.runtime_manifest import PromptOwner" in doc
     assert "Run Ruff" in workflow
     assert "ruff check memorii tests" in workflow
@@ -99,9 +104,15 @@ def test_static_tooling_workflow_doc_lists_supported_commands() -> None:
     assert "pytest -W error tests/unit" in workflow
     assert "pytest -W error" in workflow
     assert "pip wheel . --no-deps" in workflow
-    assert "PromptRegistry().load('memory_extraction:v1', owner=PromptOwner.LLM_MEMORY_EXTRACTOR)" in workflow
+    assert load_command in workflow
+    assert "from memorii.core.memory_evolution.extraction import MemoryExtractionOutput" in workflow
     assert "from memorii.core.prompts.runtime_manifest import PromptOwner" in workflow
     assert "is_relative_to(root)" in workflow
+    assert "memorii.core.promotion.legacy_models" in doc
+    assert "memorii.core.promotion.legacy_models" in workflow
+    assert "assert all(find_spec(module) is None for module in removed)" in doc
+    assert "assert all(find_spec(module) is None for module in removed)" in workflow
+    assert "ignored in-tree `build/` directory" in doc
     assert "Do not mass-format unrelated files." in doc
     assert "Pyright is error-mode" in doc
 
@@ -127,3 +138,23 @@ def test_scheduled_workflow_separates_opt_in_live_gate_from_pr_gates() -> None:
     assert "--minimum-scenarios-per-replicate" in workflow
     assert "--minimum-replicates-per-seed" in workflow
     assert "--allow-live" in workflow
+    assert "source_revision:" in workflow
+    assert "ref: ${{ env.MEMORII_SOURCE_REVISION }}" in workflow
+    assert 'test "$(git rev-parse HEAD)" = "$MEMORII_SOURCE_REVISION"' in workflow
+    assert "Verify source-bound gate certificate" in workflow
+    assert "summary.interval_coverage_certificate.configuration.source_revision" in workflow
+
+
+def test_pr_and_live_workflows_bind_reports_to_checked_out_revision() -> None:
+    pr_workflow = (REPO_ROOT / ".github" / "workflows" / "pr-gates.yml").read_text(encoding="utf-8")
+    live_workflow = (REPO_ROOT / ".github" / "workflows" / "benchmark-scheduled.yml").read_text(
+        encoding="utf-8"
+    )
+    certification_doc = (
+        REPO_ROOT / "docs" / "development" / "benchmark_certification.md"
+    ).read_text(encoding="utf-8")
+
+    assert "MEMORII_SOURCE_REVISION: ${{ github.sha }}" in pr_workflow
+    assert "MEMORII_SOURCE_REVISION: ${{ github.event.inputs.source_revision || github.sha }}" in live_workflow
+    assert "full commit SHA" in certification_doc
+    assert "dirty working tree" in certification_doc

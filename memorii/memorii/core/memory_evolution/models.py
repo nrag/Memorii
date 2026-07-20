@@ -115,6 +115,28 @@ class EntityLinkLifecycleState(StrEnum):
     INVALIDATED = "invalidated"
 
 
+class MemoryGraphLifecycleState(StrEnum):
+    """Lifecycle states accepted by persisted graph nodes and edges."""
+
+    CANDIDATE = "candidate"
+    ACTIVE = "active"
+    SUPERSEDED = "superseded"
+    INVALIDATED = "invalidated"
+    EXPIRED = "expired"
+    ARCHIVED = "archived"
+    MERGED = "merged"
+    SPLIT = "split"
+    RELINKED = "relinked"
+    STARTED = "started"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SUCCEEDED = "succeeded"
+    ABANDONED = "abandoned"
+    UNKNOWN = "unknown"
+
+
 class EntityIdentityDecisionType(StrEnum):
     REUSE_EXISTING = "reuse_existing"
     CREATE_DISTINCT = "create_distinct"
@@ -183,6 +205,7 @@ class SourceObservation(BaseModel):
     session_id: str | None = None
     task_id: str | None = None
     user_id: str | None = None
+    language: str = "en"
     modality: SourceModality = SourceModality.ASSERTION
     trigger_mode: ExtractionTriggerMode = ExtractionTriggerMode.IMMEDIATE
 
@@ -488,7 +511,7 @@ class MemoryGraphNode(BaseModel):
     node_type: MemoryGraphNodeType
     label: str
     canonical_id: str | None = None
-    lifecycle_state: str
+    lifecycle_state: MemoryGraphLifecycleState
     confidence: float = Field(ge=0.0, le=1.0)
     source_record_ids: list[str] = Field(default_factory=list)
     payload_ref: str
@@ -505,7 +528,7 @@ class MemoryGraphEdge(BaseModel):
     source_node_id: str
     target_node_id: str
     directed: bool = True
-    lifecycle_state: str
+    lifecycle_state: MemoryGraphLifecycleState
     confidence: float = Field(ge=0.0, le=1.0)
     evidence_span_ids: list[str] = Field(default_factory=list)
     source_record_ids: list[str] = Field(default_factory=list)

@@ -1,10 +1,10 @@
 # Memory Evolution Runtime Benchmark
 
-`memory_evolution_runtime_v1` validates Memorii's real opt-in memory evolution path against the latent-graph simulator.
+`memory_evolution_runtime_v1` validates Memorii's production memory evolution path against the latent-graph simulator.
 
 ```text
 latent simulator surface observations
-  -> ProviderMemoryService(memory_evolution_enabled=True)
+  -> ProviderMemoryService standard composition
   -> MemoryEvolutionService extraction, validation, lifecycle, graph projection
   -> runtime graph snapshot
   -> graph-to-oracle alignment

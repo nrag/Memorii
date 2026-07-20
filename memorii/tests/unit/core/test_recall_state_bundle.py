@@ -37,7 +37,7 @@ def _state(
     )
 
 
-def test_prefetch_without_work_state_service_remains_backward_compatible() -> None:
+def test_prefetch_without_work_state_service_uses_empty_work_state() -> None:
     provider = ProviderMemoryService()
     context = provider.prefetch("what changed", task_id="task:none")
 

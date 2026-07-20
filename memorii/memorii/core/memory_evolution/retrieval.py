@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_evolution.execution import ContinuationDecision, WorkStateSnapshot
 from memorii.core.memory_evolution.models import ClaimLifecycleState, ClaimState, MemoryScope
-from memorii.core.memory_evolution.query_graph import GraphPatternResolution
+from memorii.core.memory_evolution.query_graph import GraphPatternResolution, GraphPatternResolutionStatus
 from memorii.core.memory_evolution.temporal_contracts import (
     QueryAnalysis,
     QueryTemporalFrame,
@@ -31,6 +31,13 @@ class RetrievalPurpose(StrEnum):
     ANSWER = "answer"
     GRAPH_AUDIT = "graph_audit"
     EXECUTION = "execution"
+
+
+class SemanticFrameStatus(StrEnum):
+    MATCHED = "matched"
+    NO_MATCH = "no_match"
+    AMBIGUOUS = "ambiguous"
+    UNSUPPORTED = "unsupported"
 
 
 class QueryRequestOptions(BaseModel):
@@ -118,28 +125,62 @@ class RetrievalCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ExecutionRetrievalState(BaseModel):
+class ScopedExecutionView(BaseModel):
+    """Execution state derived exclusively from records readable by the request."""
+
     work_state: WorkStateSnapshot
     continuation: ContinuationDecision
+    readable_action_event_ids: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_continuation_visibility(self) -> ScopedExecutionView:
+        selected_event_id = self.continuation.action_event_id
+        if selected_event_id is not None and selected_event_id not in self.readable_action_event_ids:
+            raise ValueError("continuation action event is outside the scoped execution view")
+        visible_branch_ids = {state.branch_id for state in self.work_state.states}
+        hidden_candidates = set(self.continuation.candidate_branch_ids) - visible_branch_ids
+        if hidden_candidates:
+            raise ValueError("continuation candidates are outside the scoped execution view")
+        return self
 
 
 class ProductionRetrievalDecision(RetrievalDecision):
     """Query-conditioned retrieval result exposed to provider and agents."""
 
     query: str
+    semantic_frame_status: SemanticFrameStatus
     query_analysis: QueryAnalysis | None = None
     graph_pattern_resolution: GraphPatternResolution | None = None
     resolution_status: str = "resolved"
     candidates: list[RetrievalCandidate] = Field(default_factory=list)
     decision_source: str = "production_memory_evolution_retriever"
     confidence_status: Literal["uncalibrated", "calibrated", "abstained"] = "uncalibrated"
-    execution_state: ExecutionRetrievalState | None = None
+    execution_state: ScopedExecutionView | None = None
     evidence: list[RetrievalEvidence] = Field(default_factory=list)
     context_items: list[RetrievalContextItem] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_execution_record_visibility(self) -> ProductionRetrievalDecision:
+        if self.execution_state is None:
+            return self
+        readable_record_ids = {
+            event_id.removeprefix("action:")
+            for event_id in self.execution_state.readable_action_event_ids
+        }
+        disclosed_record_ids = {
+            *self.selected_record_ids,
+            *self.supporting_record_ids,
+            *self.context_record_ids,
+            *self.rejected_record_ids,
+        }
+        hidden_record_ids = disclosed_record_ids - readable_record_ids
+        if hidden_record_ids:
+            raise ValueError("execution decision discloses records outside its scoped view")
+        return self
 
 
 class RetrievalEvidence(BaseModel):
@@ -247,9 +288,19 @@ def rank_claims(
             if request.graph_pattern_resolution is not None
             else None
         )
+        semantic_frame_status = (
+            SemanticFrameStatus.MATCHED
+            if graph_status == GraphPatternResolutionStatus.NO_MATCH
+            and request.predicate_id is not None
+            else SemanticFrameStatus.UNSUPPORTED
+            if request.query_analysis.failure_code is not None
+            or request.query_analysis.analysis_source in {"language_guard", "provider"}
+            else SemanticFrameStatus.AMBIGUOUS
+        )
         entity_ambiguity = any("entity" in reason for reason in frame.ambiguity_reasons)
         return ProductionRetrievalDecision(
             query=request.query,
+            semantic_frame_status=semantic_frame_status,
             temporal_frame=frame,
             query_analysis=request.query_analysis,
             graph_pattern_resolution=request.graph_pattern_resolution,
@@ -310,6 +361,7 @@ def rank_claims(
         if len(eligible_predicates) > 1 and effective_predicate_id not in eligible_predicates:
             return ProductionRetrievalDecision(
                 query=request.query,
+                semantic_frame_status=SemanticFrameStatus.AMBIGUOUS,
                 temporal_frame=frame,
                 query_analysis=request.query_analysis,
                 graph_pattern_resolution=request.graph_pattern_resolution,
@@ -446,6 +498,7 @@ def rank_claims(
         )
     result = ProductionRetrievalDecision(
         query=request.query,
+        semantic_frame_status=SemanticFrameStatus.MATCHED,
         temporal_frame=frame,
         query_analysis=request.query_analysis,
         graph_pattern_resolution=request.graph_pattern_resolution,
@@ -510,7 +563,7 @@ def _frame_matches(
         return False
     if frame.temporal_kind in {QueryTemporalKind.CURRENT, QueryTemporalKind.EXECUTION, QueryTemporalKind.BELIEF}:
         return evaluate_temporal_eligibility(
-            lifecycle_state=state.lifecycle_state.value,
+            lifecycle_state=state.lifecycle_state,
             valid_from=state.valid_from,
             valid_to=state.valid_to,
             temporal_kind=frame.temporal_kind,
@@ -518,7 +571,7 @@ def _frame_matches(
         ).eligible
     if frame.temporal_kind in {QueryTemporalKind.HISTORICAL, QueryTemporalKind.INTERVAL}:
         return evaluate_temporal_eligibility(
-            lifecycle_state=state.lifecycle_state.value,
+            lifecycle_state=state.lifecycle_state,
             valid_from=state.valid_from,
             valid_to=state.valid_to,
             temporal_kind=frame.temporal_kind,

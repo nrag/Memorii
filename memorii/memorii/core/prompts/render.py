@@ -4,13 +4,16 @@ import hashlib
 import json
 import re
 from string import Formatter
-from typing import cast
+from typing import TypeAlias, cast
+
+from jsonschema import Draft202012Validator, FormatChecker
 
 from memorii.core.prompts.models import PromptContract, PromptRedactionPolicy, RenderedPrompt
 from memorii.core.prompts.registry import RegisteredPromptContract, prompt_registration_digest
 from memorii.core.prompts.sensitivity import normalize_sensitive_key, sanitize_json_value
 
 _PLACEHOLDER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+JsonValue: TypeAlias = None | bool | int | float | str | list["JsonValue"] | dict[str, "JsonValue"]
 
 
 def _serialize_value(value: object) -> str:
@@ -89,6 +92,18 @@ class PromptRenderer:
             policy=contract.redaction,
             forbidden_input_fields=set(registration.visibility_policy.forbidden_input_fields),
         )
+        json_variables = cast(dict[str, JsonValue], safe_variables)
+        validation_errors = sorted(
+            Draft202012Validator(
+                contract.input_schema,
+                format_checker=FormatChecker(),
+            ).iter_errors(json_variables),
+            key=lambda error: tuple(str(part) for part in error.absolute_path),
+        )
+        if validation_errors:
+            error = validation_errors[0]
+            location = ".".join(str(part) for part in error.absolute_path) or "<root>"
+            raise ValueError(f"Prompt input validation failed at {location}: {error.message}")
         formatted_variables = {k: _serialize_value(v) for k, v in safe_variables.items()}
         _validate_templates(contract, formatted_variables)
 

@@ -8,8 +8,13 @@ from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.core.memory_evolution.models import MemoryScope
-from memorii.core.memory_evolution.query_graph import GraphPatternConstraint
+from memorii.core.memory_evolution.models import (
+    ClaimLifecycleState,
+    EntityLinkLifecycleState,
+    MemoryGraphLifecycleState,
+    MemoryScope,
+)
+from memorii.core.memory_evolution.query_graph import GraphPatternConstraint, GraphPatternConstraintOutput
 from memorii.core.memory_evolution.query_text import contains_query_phrase, normalize_query_text
 
 
@@ -26,6 +31,7 @@ class QueryAnalysisFailureCode(StrEnum):
     PROVIDER_ERROR = "provider_error"
     SCHEMA_ERROR = "schema_error"
     CONSTRAINT_ERROR = "constraint_error"
+    UNSUPPORTED_LANGUAGE = "unsupported_language"
 
 
 class QueryResolutionConfidenceSource(StrEnum):
@@ -112,6 +118,52 @@ TemporalExpression = Annotated[
 ]
 
 
+class CurrentTemporalExpressionOutput(BaseModel):
+    expression_kind: Literal["current"] = Field()
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class CatalogAnchorTemporalExpressionOutput(BaseModel):
+    expression_kind: Literal["catalog_anchor"] = Field()
+    anchor_id: str = Field(min_length=1)
+    source_span: QueryTextSpan
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class AbsoluteDateTemporalExpressionOutput(BaseModel):
+    expression_kind: Literal["absolute_date"] = Field()
+    source_span: QueryTextSpan
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class IntervalTemporalExpressionOutput(BaseModel):
+    expression_kind: Literal["interval"] = Field()
+    start_span: QueryTextSpan
+    end_span: QueryTextSpan
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RelativeDateTemporalExpressionOutput(BaseModel):
+    expression_kind: Literal["relative_date"] = Field()
+    source_span: QueryTextSpan
+
+    model_config = ConfigDict(extra="forbid")
+
+
+TemporalExpressionOutput = Annotated[
+    CurrentTemporalExpressionOutput
+    | CatalogAnchorTemporalExpressionOutput
+    | AbsoluteDateTemporalExpressionOutput
+    | IntervalTemporalExpressionOutput
+    | RelativeDateTemporalExpressionOutput,
+    Field(discriminator="expression_kind"),
+]
+
+
 class TemporalInterpretationProposal(BaseModel):
     """Untrusted semantic proposal emitted by a structured model.
 
@@ -134,6 +186,34 @@ class TemporalInterpretationProposal(BaseModel):
 
     @model_validator(mode="after")
     def validate_resolution_claim(self) -> TemporalInterpretationProposal:
+        if self.temporal_intent == QueryTemporalKind.AMBIGUOUS:
+            if self.temporal_expression is not None:
+                raise ValueError("ambiguous proposals cannot carry a resolved temporal expression")
+            if self.abstention_reason is None:
+                raise ValueError("ambiguous proposals require an abstention reason")
+        elif self.temporal_expression is None:
+            raise ValueError("resolved temporal proposals require an expression")
+        return self
+
+
+class TemporalInterpretationOutput(BaseModel):
+    """Strict provider transport consumed by the trusted temporal compiler."""
+
+    language: str = Field()
+    temporal_intent: QueryTemporalKind
+    temporal_expression: TemporalExpressionOutput | None = Field()
+    candidate_entity_ids: list[str] = Field()
+    predicate_id: str | None = Field()
+    subject_entity_id: str | None = Field()
+    graph_patterns: list[GraphPatternConstraintOutput] = Field(max_length=3)
+    entity_mentions: list[str] = Field()
+    model_confidence: float | None = Field(ge=0.0, le=1.0)
+    abstention_reason: str | None = Field()
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_resolution_claim(self) -> TemporalInterpretationOutput:
         if self.temporal_intent == QueryTemporalKind.AMBIGUOUS:
             if self.temporal_expression is not None:
                 raise ValueError("ambiguous proposals cannot carry a resolved temporal expression")
@@ -241,7 +321,7 @@ class TemporalCandidate(BaseModel):
     record_id: str
     entity_id: str | None = None
     scope_key: str = "global"
-    lifecycle_state: str
+    lifecycle_state: MemoryGraphLifecycleState
     valid_from: datetime | None = None
     valid_to: datetime | None = None
 
@@ -268,13 +348,28 @@ class TemporalEligibilityDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-_CURRENT_EXCLUDED_LIFECYCLE_STATES = frozenset({"candidate", "invalidated", "archived"})
-_HISTORICAL_EXCLUDED_LIFECYCLE_STATES = frozenset({"candidate", "invalidated", "archived"})
+_NEVER_ELIGIBLE_LIFECYCLE_STATES = frozenset(
+    {
+        MemoryGraphLifecycleState.CANDIDATE,
+        MemoryGraphLifecycleState.INVALIDATED,
+        MemoryGraphLifecycleState.ARCHIVED,
+        MemoryGraphLifecycleState.UNKNOWN,
+    }
+)
+_CLOSED_LIFECYCLE_STATES = frozenset(
+    {
+        MemoryGraphLifecycleState.SUPERSEDED,
+        MemoryGraphLifecycleState.EXPIRED,
+        MemoryGraphLifecycleState.MERGED,
+        MemoryGraphLifecycleState.SPLIT,
+        MemoryGraphLifecycleState.RELINKED,
+    }
+)
 
 
 def evaluate_temporal_eligibility(
     *,
-    lifecycle_state: str,
+    lifecycle_state: MemoryGraphLifecycleState | ClaimLifecycleState | EntityLinkLifecycleState | str,
     valid_from: datetime | None,
     valid_to: datetime | None,
     temporal_kind: QueryTemporalKind,
@@ -289,23 +384,28 @@ def evaluate_temporal_eligibility(
     validity interval was not closed by an upstream writer.
     """
 
-    if lifecycle_state in {"invalidated"}:
+    lifecycle_value = lifecycle_state.value if isinstance(lifecycle_state, StrEnum) else lifecycle_state
+    graph_lifecycle_state = MemoryGraphLifecycleState(lifecycle_value)
+    if graph_lifecycle_state == MemoryGraphLifecycleState.INVALIDATED:
         return TemporalEligibilityDecision(eligible=False, reason=TemporalEligibilityReason.INVALIDATED)
-    if lifecycle_state in {"archived"}:
+    if graph_lifecycle_state == MemoryGraphLifecycleState.ARCHIVED:
         return TemporalEligibilityDecision(eligible=False, reason=TemporalEligibilityReason.ARCHIVED)
     if temporal_kind in {QueryTemporalKind.CURRENT, QueryTemporalKind.EXECUTION, QueryTemporalKind.BELIEF}:
         # A checkpoint can ask for current truth *at a historical evaluation
         # time*. In that case a superseded/expired record remains eligible
         # only while its persisted half-open interval contains that time.
         # An unbounded superseded record is never safe to treat as current.
-        if lifecycle_state in {"superseded", "expired"} and (evaluation_time is None or valid_to is None):
+        if graph_lifecycle_state in _CLOSED_LIFECYCLE_STATES and (evaluation_time is None or valid_to is None):
             reason = (
                 TemporalEligibilityReason.SUPERSEDED_FOR_CURRENT
-                if lifecycle_state == "superseded"
+                if graph_lifecycle_state != MemoryGraphLifecycleState.EXPIRED
                 else TemporalEligibilityReason.EXPIRED_FOR_CURRENT
             )
             return TemporalEligibilityDecision(eligible=False, reason=reason)
-        if lifecycle_state in _CURRENT_EXCLUDED_LIFECYCLE_STATES:
+        if (
+            graph_lifecycle_state != MemoryGraphLifecycleState.ACTIVE
+            and graph_lifecycle_state not in _CLOSED_LIFECYCLE_STATES
+        ):
             return TemporalEligibilityDecision(eligible=False, reason=TemporalEligibilityReason.OUTSIDE_INTERVAL)
         if evaluation_time is not None:
             if valid_from is not None and valid_from > evaluation_time:
@@ -314,7 +414,7 @@ def evaluate_temporal_eligibility(
                 return TemporalEligibilityDecision(eligible=False, reason=TemporalEligibilityReason.OUTSIDE_INTERVAL)
         return TemporalEligibilityDecision(eligible=True, reason=TemporalEligibilityReason.CURRENT_ACTIVE)
     if temporal_kind in {QueryTemporalKind.HISTORICAL, QueryTemporalKind.INTERVAL}:
-        if lifecycle_state in _HISTORICAL_EXCLUDED_LIFECYCLE_STATES:
+        if graph_lifecycle_state in _NEVER_ELIGIBLE_LIFECYCLE_STATES:
             return TemporalEligibilityDecision(eligible=False, reason=TemporalEligibilityReason.OUTSIDE_INTERVAL)
         candidate_from = valid_from or datetime.min.replace(tzinfo=UTC)
         candidate_to = valid_to or datetime.max.replace(tzinfo=UTC)
@@ -371,7 +471,7 @@ class TemporalEntityCandidate(BaseModel):
     names: list[str] = Field(min_length=1)
     entity_type: str | None = None
     scope: MemoryScope = Field(default_factory=MemoryScope)
-    lifecycle_state: str = "active"
+    lifecycle_state: MemoryGraphLifecycleState = MemoryGraphLifecycleState.ACTIVE
     lineage_parent_entity_id: str | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None

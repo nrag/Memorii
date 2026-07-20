@@ -34,6 +34,7 @@ def make_event(
     session_id: str | None = None,
     task_id: str | None = None,
     user_id: str | None = None,
+    language: str = "en",
     timestamp: datetime | None = None,
 ) -> ProviderEvent:
     return ProviderEvent(
@@ -46,5 +47,6 @@ def make_event(
         session_id=session_id,
         task_id=task_id,
         user_id=user_id,
+        language=language,
         timestamp=timestamp or datetime.now(UTC),
     )

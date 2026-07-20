@@ -34,11 +34,11 @@ from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
-from memorii.tools.benchmark_suites.artifact_io import _write_jsonl
+from memorii.tools.benchmark_suites.artifact_io import write_jsonl
 from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
-from memorii.tools.benchmark_suites.fake_adapters import _ExpectedExecutionGraphFakeAdapter
+from memorii.tools.benchmark_suites.fake_adapters import ExpectedExecutionGraphFakeAdapter
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
-from memorii.tools.run_live_llm_eval import _validate_live_safety
+from memorii.tools.run_live_llm_eval import validate_live_safety
 
 SUITE_NAME = "execution_graph_v1"
 
@@ -76,7 +76,7 @@ def _run_execution_graph_transitions(
     effective_mode = decision_config.resolve(runtime_config)
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
-        _validate_live_safety(
+        validate_live_safety(
             modes=[effective_mode],
             dry_run=dry_run,
             allow_live=allow_live,
@@ -91,7 +91,7 @@ def _run_execution_graph_transitions(
         llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
         runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
         adapter = (
-            _ExpectedExecutionGraphFakeAdapter(scenarios=scenarios, registry=registry)
+            ExpectedExecutionGraphFakeAdapter(scenarios=scenarios, registry=registry)
             if dependencies.use_oracle_adapters(dry_run=dry_run)
             else LLMExecutionGraphDecisionAdapter(runner=runner, registry=registry)
         )
@@ -221,9 +221,9 @@ def _write_execution_graph_artifacts(
         json.dumps({"suite": suite, "mode": mode, "baseline": "memorii"}, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    _write_jsonl(run_dir / "execution_graph_traces.jsonl", rows)
-    _write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
-    _write_jsonl(run_dir / "failures.jsonl", [row for row in rows if row["success"] is False])
+    write_jsonl(run_dir / "execution_graph_traces.jsonl", rows)
+    write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
+    write_jsonl(run_dir / "failures.jsonl", [row for row in rows if row["success"] is False])
     return run_dir
 
 def _print_execution_graph_summary(

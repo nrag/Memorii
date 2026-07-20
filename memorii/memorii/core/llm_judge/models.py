@@ -49,6 +49,18 @@ class JudgeVerdict(BaseModel):
         return value
 
 
+class JudgeDecisionOutput(BaseModel):
+    """Provider-facing judge result shared by all single-dimension prompts."""
+
+    passed: bool
+    score: float = Field(ge=0.0, le=1.0)
+    rationale: str
+    failure_mode: str | None
+    needs_human_review: bool
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class JuryVerdict(BaseModel):
     jury_id: str
     snapshot_id: str | None = None

@@ -9,12 +9,19 @@ from memorii.core.benchmark.memory_evolution_runtime import (
 from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow
 from memorii.core.benchmark.memory_evolution_sim import LatentGraphScenario
 from memorii.core.memory_evolution.execution import (
+    ActionEventType,
     ContinuationDecision,
     ContinuationResolutionStatus,
+    WorkState,
     WorkStateSnapshot,
+    WorkStateStatus,
 )
 from memorii.core.memory_evolution.models import MemoryGraphSnapshot
-from memorii.core.memory_evolution.retrieval import ExecutionRetrievalState, ProductionRetrievalDecision
+from memorii.core.memory_evolution.retrieval import (
+    ProductionRetrievalDecision,
+    ScopedExecutionView,
+    SemanticFrameStatus,
+)
 from memorii.core.memory_evolution.temporal_contracts import QueryTemporalFrame, QueryTemporalKind
 from tests.unit.core.benchmark.memory_evolution_runtime_test_helpers import (
     action_claim_by_state,
@@ -73,11 +80,22 @@ def _decision_for_action(
     )
     return ProductionRetrievalDecision(
         query="continue the previous fix",
+        semantic_frame_status=SemanticFrameStatus.MATCHED,
         temporal_frame=QueryTemporalFrame(temporal_kind=QueryTemporalKind.EXECUTION),
         selected_record_ids=[action_id.removeprefix("action:")],
         supporting_record_ids=[action_id.removeprefix("action:")],
-        execution_state=ExecutionRetrievalState(
+        execution_state=ScopedExecutionView(
             work_state=WorkStateSnapshot(
+                states=[
+                    WorkState(
+                        branch_id=target,
+                        scope_key="global",
+                        status=WorkStateStatus.IN_PROGRESS,
+                        active=True,
+                        last_event_id=action_id,
+                        last_event_type=ActionEventType.PROGRESS,
+                    )
+                ],
                 active_branch_ids=[target],
                 suppressed_branch_ids=suppressed,
             ),
@@ -87,6 +105,7 @@ def _decision_for_action(
                 candidate_branch_ids=[target],
                 rationale="test",
             ),
+            readable_action_event_ids=[action_id],
         ),
     )
 
@@ -107,7 +126,11 @@ def test_runtime_execution_projection_selects_action_backed_continuation_state()
         *runtime_execution_base_items(scenario=scenario),
         runtime_action(target="ent:atlas-cleanup-branch-b", status="in_progress", events=[oracle.progress_event_id]),
         runtime_action(target="ent:atlas-cleanup-branch-a", status="started", events=[oracle.branch_a_started_event_id]),
-        runtime_action(target="ent:atlas-cleanup", status="blocked", events=[oracle.blocked_event_id]),
+        runtime_action(
+            target="ent:atlas-cleanup",
+            status="blocked",
+            events=[oracle.blocked_event_id],
+        ).model_copy(update={"lifecycle_state": "blocked"}),
     ]
 
     projection = project_runtime_checkpoint(
@@ -124,8 +147,8 @@ def test_runtime_execution_projection_selects_action_backed_continuation_state()
     assert oracle.progress_event_id in projection.output.supporting_citation_event_ids
     assert oracle.blocked_claim_id in projection.output.rejected_claim_ids
     assert oracle.blocked_entity_id in projection.output.rejected_entity_ids
-    assert projection.execution_state["active_continuation_branch"] == "ent:atlas-cleanup-branch-b"
-    assert "ent:atlas-cleanup-branch-a" in projection.execution_state["suppressed_branch_ids"]
+    assert projection.execution_state.active_continuation_branch == "ent:atlas-cleanup-branch-b"
+    assert "ent:atlas-cleanup-branch-a" in projection.execution_state.suppressed_branch_ids
 
 
 def test_runtime_projection_never_selects_an_action_without_production_decision() -> None:
@@ -146,8 +169,8 @@ def test_runtime_projection_never_selects_an_action_without_production_decision(
 
     assert projection.output.selected_claim_ids == []
     assert projection.output.supporting_claim_ids == []
-    assert projection.execution_state["status"] == "unavailable"
-    assert projection.execution_state["reason"] == "production_retrieval_decision_required"
+    assert projection.execution_state.status == "unavailable"
+    assert projection.execution_state.reason == "production_retrieval_decision_required"
 
 
 def test_runtime_projection_does_not_count_unselected_aligned_action_as_support() -> None:
@@ -166,6 +189,7 @@ def test_runtime_projection_does_not_count_unselected_aligned_action_as_support(
         source_id_to_event_id={},
         retrieval_decision=ProductionRetrievalDecision(
             query="continue the previous fix",
+            semantic_frame_status=SemanticFrameStatus.MATCHED,
             temporal_frame=QueryTemporalFrame(temporal_kind=QueryTemporalKind.EXECUTION),
             selected_record_ids=["action:unrelated"],
             supporting_record_ids=["action:unrelated"],
@@ -202,8 +226,9 @@ def test_runtime_execution_projection_derives_active_progress_from_action_type()
     assert projection.action_support[f"action:{oracle.progress_claim_id}"] == "runtime_action_semantic"
     assert oracle.progress_claim_id in projection.output.selected_claim_ids
     assert oracle.progress_event_id in projection.output.supporting_citation_event_ids
-    assert projection.execution_state["active_continuation_branch"] == "ent:atlas-cleanup-branch-b"
-    assert projection.execution_state["continuation_decision"]["status"] == "resolved"
+    assert projection.execution_state.active_continuation_branch == "ent:atlas-cleanup-branch-b"
+    assert projection.execution_state.continuation_decision is not None
+    assert projection.execution_state.continuation_decision.status == "resolved"
 
 
 def test_runtime_execution_projection_rejects_semantic_short_branch_id() -> None:
@@ -228,8 +253,8 @@ def test_runtime_execution_projection_rejects_semantic_short_branch_id() -> None
     assert oracle.progress_claim_id in projection.output.selected_claim_ids
     assert oracle.blocked_claim_id in projection.output.rejected_claim_ids
     assert oracle.blocked_entity_id in projection.output.rejected_entity_ids
-    assert projection.execution_state["active_continuation_branch"] == "ent:branch-b"
-    assert projection.execution_state["suppressed_branch_ids"] == ["ent:branch-a"]
+    assert projection.execution_state.active_continuation_branch == "ent:branch-b"
+    assert projection.execution_state.suppressed_branch_ids == ["ent:branch-a"]
 
 
 def test_runtime_execution_projection_bridges_subtask_progress_to_active_branch() -> None:
@@ -256,9 +281,12 @@ def test_runtime_execution_projection_bridges_subtask_progress_to_active_branch(
     assert oracle.progress_event_id in projection.output.supporting_citation_event_ids
     assert oracle.blocked_claim_id in projection.output.rejected_claim_ids
     assert oracle.blocked_entity_id in projection.output.rejected_entity_ids
-    assert projection.execution_state["active_continuation_branch"] == "ent:org-directory-owner-cleanup"
-    assert projection.execution_state["suppressed_branch_ids"] == ["ent:atlas-cleanup-branch-a", "ent:atlas-cleanup-branch-b"]
-    assert projection.action_alignment_rows[0]["bridged_target_entity_id"] == checkpoint.expected_execution_entity_ids[0]
+    assert projection.execution_state.active_continuation_branch == "ent:org-directory-owner-cleanup"
+    assert projection.execution_state.suppressed_branch_ids == [
+        "ent:atlas-cleanup-branch-a",
+        "ent:atlas-cleanup-branch-b",
+    ]
+    assert projection.action_alignment_rows[0].bridged_target_entity_id == checkpoint.expected_execution_entity_ids[0]
 
 
 def test_runtime_execution_projection_does_not_bridge_subtask_without_branch_history() -> None:

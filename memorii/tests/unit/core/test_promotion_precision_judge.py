@@ -8,7 +8,7 @@ from memorii.core.llm_judge.judges.promotion_precision import (
     promotion_precision_rubric,
 )
 from memorii.core.llm_judge.models import JudgeDimension
-from memorii.core.promotion.models import PromotionCandidateType
+from memorii.core.promotion.assessment import PromotionCandidateType
 
 
 def _payload(

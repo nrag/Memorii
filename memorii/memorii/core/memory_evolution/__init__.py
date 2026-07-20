@@ -17,10 +17,10 @@ from memorii.core.memory_evolution.execution import (
     status_for_action_event,
 )
 from memorii.core.memory_evolution.extraction import (
+    EnglishRuleMemoryExtractor,
     HybridMemoryExtractor,
     LLMMemoryExtractor,
     MemoryExtractor,
-    RuleMemoryExtractor,
 )
 from memorii.core.memory_evolution.factory import build_memory_extractor_from_env
 from memorii.core.memory_evolution.graph import MemoryGraphProjector, MemoryGraphStore, MemoryGraphValidator
@@ -50,6 +50,7 @@ from memorii.core.memory_evolution.models import (
     MemoryEvolutionResult,
     MemoryGraphEdge,
     MemoryGraphEdgeType,
+    MemoryGraphLifecycleState,
     MemoryGraphNode,
     MemoryGraphNodeType,
     MemoryGraphSnapshot,
@@ -59,10 +60,15 @@ from memorii.core.memory_evolution.models import (
     SourceObservation,
     ValidationResult,
 )
+from memorii.core.memory_evolution.mutations import (
+    EvolutionMutationPlan,
+    MemoryEvolutionMutationValidationError,
+)
 from memorii.core.memory_evolution.predicates import PredicatePolicy, PredicateRegistry
 from memorii.core.memory_evolution.query_analysis import (
-    ConservativeQueryAnalyzer,
+    EnglishLexicalQueryAnalyzer,
     EnglishLexicalQueryResolver,
+    LexicalQueryAnalyzer,
     LexicalQueryResolver,
     PromptBackedStructuredQueryAnalysisProvider,
     QueryAnalyzer,
@@ -90,7 +96,6 @@ from memorii.core.memory_evolution.query_graph import (
 )
 from memorii.core.memory_evolution.reference import BuiltInReferenceKnowledgeProvider, ReferenceClaim, ReferenceEntity
 from memorii.core.memory_evolution.retrieval import (
-    ExecutionRetrievalState,
     GraphAuditRequest,
     MemoryQueryInput,
     MemoryQueryRequest,
@@ -99,6 +104,8 @@ from memorii.core.memory_evolution.retrieval import (
     RetrievalContextItem,
     RetrievalEvidence,
     RetrievalPurpose,
+    ScopedExecutionView,
+    SemanticFrameStatus,
     rank_claims,
     reconcile_memory_query,
 )
@@ -154,6 +161,7 @@ __all__ = [
     "ExtractionRun",
     "MemoryGraphEdge",
     "MemoryGraphEdgeType",
+    "MemoryGraphLifecycleState",
     "MemoryGraphNode",
     "MemoryGraphNodeType",
     "MemoryGraphProjector",
@@ -162,13 +170,16 @@ __all__ = [
     "MemoryGraphValidator",
     "MemoryScope",
     "MemoryEvolutionResult",
+    "EvolutionMutationPlan",
     "MemoryEvolutionService",
+    "MemoryEvolutionMutationValidationError",
     "MemoryEvolutionValidator",
     "MemoryExtractor",
     "LifecycleSnapshot",
     "QueryAnalyzer",
-    "ConservativeQueryAnalyzer",
+    "EnglishLexicalQueryAnalyzer",
     "EnglishLexicalQueryResolver",
+    "LexicalQueryAnalyzer",
     "LexicalQueryResolver",
     "PromptBackedStructuredQueryAnalysisProvider",
     "StructuredQueryAnalyzer",
@@ -193,7 +204,7 @@ __all__ = [
     "TemporalEntityCandidate",
     "TemporalInterpretationProposal",
     "TemporalResolution",
-    "RuleMemoryExtractor",
+    "EnglishRuleMemoryExtractor",
     "SourceModality",
     "SourceObservation",
     "SourceModalityClassifier",
@@ -220,7 +231,8 @@ __all__ = [
     "MemoryQueryRequest",
     "MemoryQueryInput",
     "GraphAuditRequest",
-    "ExecutionRetrievalState",
+    "ScopedExecutionView",
+    "SemanticFrameStatus",
     "ProductionRetrievalDecision",
     "RetrievalPurpose",
     "RetrievalCandidate",

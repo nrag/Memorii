@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from memorii.core.memory_evolution import (
     ClaimKey,
+    EnglishRuleMemoryExtractor,
     EntityIdentityDecisionType,
     EntityLinkState,
     EntityMention,
@@ -18,12 +19,11 @@ from memorii.core.memory_evolution import (
     MemoryScope,
     PredicateRegistry,
     RetrievalView,
-    RuleMemoryExtractor,
     SourceModality,
     SourceModalityClassifier,
     build_memory_extractor_from_env,
 )
-from memorii.core.memory_evolution.extraction import _models_from_llm_output
+from memorii.core.memory_evolution.extraction import models_from_llm_output
 from memorii.core.memory_evolution.models import ConfidenceComponents
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -89,6 +89,50 @@ class _EntitySequenceExtractor:
             ),
             [mention],
             [],
+            [],
+        )
+
+
+class _StableClaimIdExtractor:
+    provider = "test"
+    model = None
+    prompt_hash = None
+
+    def extract(self, observations):
+        observation = observations[0]
+        span = EvidenceSpan(
+            source_id=observation.source_id,
+            quote="Atlas owner is Bob.",
+            source_type=observation.source_type,
+            timestamp=observation.timestamp,
+        )
+        claim = ExtractedClaim(
+            claim_id="claim:atlas-owner-bob",
+            claim_key=ClaimKey(
+                subject_entity_id="ent:atlas",
+                predicate_id="owner",
+                scope_key="task:evolution",
+            ),
+            object_value="Bob",
+            valid_from=observation.timestamp,
+            evidence_spans=[span],
+            confidence=ConfidenceComponents(
+                extraction=0.9,
+                evidence=0.9,
+                source_trust=0.9,
+                calibrated=0.9,
+            ),
+            extraction_run_id=f"run:{observation.source_id}",
+        )
+        return (
+            ExtractionRun(
+                extraction_run_id=f"run:{observation.source_id}",
+                provider=self.provider,
+                input_source_ids=[observation.source_id],
+                claim_ids=[claim.claim_id],
+            ),
+            [],
+            [claim],
             [],
         )
 
@@ -286,7 +330,7 @@ def test_rule_extraction_preserves_same_entity_mentions_across_scopes() -> None:
         ),
     ]
 
-    run, entities, claims, _ = RuleMemoryExtractor().extract(observations)
+    run, entities, claims, _ = EnglishRuleMemoryExtractor().extract(observations)
 
     atlas_mentions = [entity for entity in entities if entity.entity_id == "ent:atlas"]
     assert len(atlas_mentions) == 2
@@ -452,7 +496,7 @@ def test_source_modality_classifier_identifies_non_assertions() -> None:
 
 
 def test_rule_extractor_handles_runtime_fact_phrasings() -> None:
-    extractor = RuleMemoryExtractor()
+    extractor = EnglishRuleMemoryExtractor()
     observations = [
         validator_source_from_dict(
             {
@@ -582,7 +626,7 @@ def test_llm_extraction_rekeys_model_local_claim_and_action_ids() -> None:
         ],
     }
 
-    run, _, claims, actions = _models_from_llm_output(
+    run, _, claims, actions = models_from_llm_output(
         run_id="run:llm-local-ids",
         provider="llm",
         model="test-model",
@@ -611,7 +655,7 @@ def test_llm_action_extraction_preserves_observation_execution_context() -> None
             "user_id": "user:one",
         }
     )
-    run, _, _, actions = _models_from_llm_output(
+    run, _, _, actions = models_from_llm_output(
         run_id="run:execution-context",
         provider="llm",
         model="test-model",
@@ -652,7 +696,7 @@ def test_rule_extraction_inherits_session_scope_from_source_observation() -> Non
         }
     )
 
-    run, entities, claims, actions = RuleMemoryExtractor().extract([observation])
+    run, entities, claims, actions = EnglishRuleMemoryExtractor().extract([observation])
 
     assert run.errors == []
     assert claims
@@ -713,7 +757,7 @@ def test_llm_extraction_rejects_model_scope_escalation(
         field_name: outside_value,
     }
 
-    run, _, claims, actions = _models_from_llm_output(
+    run, _, claims, actions = models_from_llm_output(
         run_id="run:scope-escalation",
         provider="llm",
         model="test-model",
@@ -739,7 +783,7 @@ def test_llm_extraction_rejects_string_none_as_missing_source_scope() -> None:
         }
     )
 
-    run, _, claims, _ = _models_from_llm_output(
+    run, _, claims, _ = models_from_llm_output(
         run_id="run:none-scope-injection",
         provider="llm",
         model="test-model",
@@ -818,7 +862,7 @@ def test_llm_extraction_canonicalizes_inverse_owner_claim_arguments() -> None:
         "actions": [],
     }
 
-    run, _, claims, _ = _models_from_llm_output(
+    run, _, claims, _ = models_from_llm_output(
         run_id="run:inverse-owner",
         provider="llm",
         model="test-model",
@@ -869,7 +913,7 @@ def test_llm_extraction_normalizes_quarter_valid_from() -> None:
         "actions": [],
     }
 
-    run, _, claims, _ = _models_from_llm_output(
+    run, _, claims, _ = models_from_llm_output(
         run_id="run:quarter-date",
         provider="llm",
         model="test-model",
@@ -918,7 +962,7 @@ def test_llm_extraction_invalid_date_still_fails_claim() -> None:
         "actions": [],
     }
 
-    run, _, claims, _ = _models_from_llm_output(
+    run, _, claims, _ = models_from_llm_output(
         run_id="run:bad-date",
         provider="llm",
         model="test-model",
@@ -980,6 +1024,36 @@ def test_pasted_and_question_text_are_not_evolved_into_active_claims() -> None:
     assert result.deferred_observation_ids == ["tx:pasted"]
     assert result.skipped_observation_ids == ["tx:question"]
     assert service.retrieve_claim_states(view=RetrievalView.CURRENT) == []
+
+
+def test_rejected_reobservation_cannot_overwrite_existing_claim_history() -> None:
+    plane = MemoryPlaneService()
+    service = MemoryEvolutionService(
+        memory_plane=plane,
+        extractor=_StableClaimIdExtractor(),
+    )
+    asserted = _record(
+        "tx:asserted",
+        "Atlas owner is Bob.",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    quoted = _record(
+        "tx:quoted",
+        "Here is a doc: Atlas owner is Bob.",
+        timestamp=datetime(2026, 2, 1, tzinfo=UTC),
+    )
+
+    service.evolve_records([asserted])
+    original = service.retrieve_claim_states(view=RetrievalView.CURRENT)[0]
+    service.evolve_records([quoted])
+
+    states = service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS)
+    by_id = {state.claim_id: state for state in states}
+    assert by_id[original.claim_id].lifecycle_state.value == "active"
+    rejected = [state for state in states if state.claim_id != original.claim_id]
+    assert len(rejected) == 1
+    assert rejected[0].lifecycle_state.value == "invalidated"
+    assert rejected[0].source_claim_id == original.claim_id
 
 
 def test_higher_trust_correction_blocks_later_transcript_chatter() -> None:
@@ -1144,8 +1218,7 @@ def test_entity_resolution_exposes_merge_split_and_claim_rekey_transitions() -> 
 
 def test_provider_chat_ingestion_is_deferred_when_evolution_is_opted_in() -> None:
     service = ProviderMemoryService(
-        memory_evolution_enabled=True,
-        memory_evolution_extractor=RuleMemoryExtractor(),
+        memory_evolution_extractor=EnglishRuleMemoryExtractor(),
     )
 
     service.sync_event(
@@ -1164,8 +1237,7 @@ def test_provider_chat_ingestion_is_deferred_when_evolution_is_opted_in() -> Non
 
 def test_explicit_provider_memory_write_triggers_runtime_memory_evolution() -> None:
     service = ProviderMemoryService(
-        memory_evolution_enabled=True,
-        memory_evolution_extractor=RuleMemoryExtractor(),
+        memory_evolution_extractor=EnglishRuleMemoryExtractor(),
     )
 
     service.apply_memory_write(
@@ -1198,7 +1270,7 @@ def test_memory_extractor_factory_defaults_to_rule_without_live_provider() -> No
         }
     )
 
-    assert isinstance(extractor, RuleMemoryExtractor)
+    assert isinstance(extractor, EnglishRuleMemoryExtractor)
 
 
 def validator_source_from_dict(payload: dict[str, object]):

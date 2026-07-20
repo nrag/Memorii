@@ -146,5 +146,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [ambiguous_evidence, unsupported_claim, extraction_error]
 tags: [memory_evolution, extraction]

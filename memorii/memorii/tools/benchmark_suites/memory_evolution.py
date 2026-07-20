@@ -34,11 +34,11 @@ from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
-from memorii.tools.benchmark_suites.artifact_io import _write_jsonl
+from memorii.tools.benchmark_suites.artifact_io import write_jsonl
 from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
-from memorii.tools.benchmark_suites.fake_adapters import _ExpectedMemoryEvolutionFakeAdapter
+from memorii.tools.benchmark_suites.fake_adapters import ExpectedMemoryEvolutionFakeAdapter
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
-from memorii.tools.run_live_llm_eval import _validate_live_safety
+from memorii.tools.run_live_llm_eval import validate_live_safety
 
 SUITE_NAME = "memory_evolution_v1"
 
@@ -76,7 +76,7 @@ def _run_memory_evolution_transitions(
     effective_mode = decision_config.resolve(runtime_config)
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
-        _validate_live_safety(
+        validate_live_safety(
             modes=[effective_mode],
             dry_run=dry_run,
             allow_live=allow_live,
@@ -93,7 +93,7 @@ def _run_memory_evolution_transitions(
         llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
         runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
         adapter = (
-            _ExpectedMemoryEvolutionFakeAdapter(scenarios=scenarios, registry=registry)
+            ExpectedMemoryEvolutionFakeAdapter(scenarios=scenarios, registry=registry)
             if dependencies.use_oracle_adapters(dry_run=dry_run)
             else LLMMemoryEvolutionDecisionAdapter(runner=runner, registry=registry)
         )
@@ -347,10 +347,10 @@ def _write_memory_evolution_artifacts(
         json.dumps([scenario.model_dump(mode="json") for scenario in scenarios], indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    _write_jsonl(run_dir / "memory_evolution_traces.jsonl", scenario_rows)
-    _write_jsonl(run_dir / "memory_evolution_checkpoint_traces.jsonl", checkpoint_rows)
-    _write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
-    _write_jsonl(run_dir / "failures.jsonl", [row for row in checkpoint_rows if row["success"] is False])
+    write_jsonl(run_dir / "memory_evolution_traces.jsonl", scenario_rows)
+    write_jsonl(run_dir / "memory_evolution_checkpoint_traces.jsonl", checkpoint_rows)
+    write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
+    write_jsonl(run_dir / "failures.jsonl", [row for row in checkpoint_rows if row["success"] is False])
     return run_dir
 
 

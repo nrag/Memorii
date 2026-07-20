@@ -28,7 +28,7 @@ Raw observations remain the source of truth. Derived graph state is a projection
 
 ## Current Entry Points
 
-Runtime evolution is reached through `ProviderMemoryService` when constructed with `memory_evolution_enabled=True`.
+Runtime evolution is part of the standard `ProviderMemoryService` composition.
 
 Current provider entry points:
 
@@ -94,7 +94,7 @@ Runtime extraction is provider-backed through `MemoryExtractor`.
 
 Implemented extractors:
 
-- `RuleMemoryExtractor`
+- `EnglishRuleMemoryExtractor`
 - `LLMMemoryExtractor`
 - `HybridMemoryExtractor`
 
@@ -102,7 +102,8 @@ Implemented extractors:
 
 Current limits:
 
-- The rule extractor is intentionally simple and pattern based.
+- The English rule extractor is intentionally simple, pattern based, and
+  fail-closed for unsupported languages.
 - The LLM extractor can produce entities, claims, and actions from
   `memory_extraction:v1`; the runtime-backed benchmark is the memory-component
   acceptance gate, not an agent-system acceptance gate.
@@ -259,11 +260,12 @@ production retriever, not by benchmark alignment code. English fallback
 parsing is intentionally conservative; non-English or ambiguous queries must
 provide a structured frame or the retriever abstains.
 
-The production query boundary also owns a `ConservativeQueryAnalyzer` and an
-evidence-backed `TemporalAnchorCatalog`. Named periods such as "release week"
-resolve only when a caller has registered an anchor with an interval and source
-evidence. The runtime never assigns dates from the phrase alone. Colliding
-anchors produce an explicit abstention rather than an identifier tie-break.
+The production query boundary also owns a configurable `LexicalQueryAnalyzer`,
+an explicit `EnglishLexicalQueryAnalyzer` fallback, and an evidence-backed
+`TemporalAnchorCatalog`. Named periods such as "release week" resolve only when
+a caller has registered an anchor with an interval and source evidence. The
+runtime never assigns dates from the phrase alone. Colliding anchors produce an
+explicit abstention rather than an identifier tie-break.
 
 Provider adapters may pass `query_language` and structured `QueryAnalysis`
 through `prefetch`; the runtime benchmark passes each checkpoint language to

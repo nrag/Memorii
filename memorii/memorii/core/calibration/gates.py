@@ -9,11 +9,12 @@ from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from memorii.core.benchmark.artifact_rows import BenchmarkReportSummary
+from memorii.core.benchmark.artifact_rows import BenchmarkReportSummary, SimScenarioResultRow
 from memorii.core.benchmark.artifact_validation import validate_memory_evolution_run
 from memorii.core.calibration.models import GateCoverageCertificate, GatePowerEstimate, ScenarioPassInterval
 from memorii.core.calibration.simulation_models import GateSimulationModel
 from memorii.core.calibration.statistics import (
+    DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS,
     certify_scenario_interval_coverage,
     estimate_live_gate_power,
     seed_cluster_scenario_pass_interval,
@@ -161,7 +162,7 @@ def evaluate_live_gate(
         raise ValueError("maximum_fallback_rate must be between 0 and 1")
     if minimum_seed_count < 1 or minimum_scenarios_per_replicate < 1 or minimum_replicates_per_seed < 1:
         raise ValueError("minimum seed, replicate, and scenario counts must be positive")
-    by_run: dict[str, list[dict[str, object]]] = {}
+    by_run: dict[str, list[SimScenarioResultRow]] = {}
     runs_by_seed: dict[int, set[int]] = {}
     failure_counts: dict[str, int] = {}
     provider_failures = 0
@@ -190,14 +191,14 @@ def evaluate_live_gate(
         report_source_revisions.add(report.source_revision)
         report_source_tree_digests.add(report.source_tree_digest)
         report_source_states.add(report.source_state)
-        rows = [row.model_dump(mode="python") for row in report.scenario_results]
+        rows = report.scenario_results
         run_key = f"{report.seed}:{report.inference_replicate}"
         if run_key in by_run:
             failure_reasons.append(f"duplicate_seed_replicate:{run_key}")
         by_run.setdefault(run_key, []).extend(rows)
         run_family_counts = families_by_run.setdefault(run_key, {})
         for row in rows:
-            family = str(row.get("family", ""))
+            family = row.family
             if family:
                 run_family_counts[family] = run_family_counts.get(family, 0) + 1
         runs_by_seed.setdefault(report.seed, set()).add(report.inference_replicate)
@@ -238,22 +239,22 @@ def evaluate_live_gate(
         seed_scenarios = values_by_seed_scenario.setdefault(int(seed_text), {})
         seen_scenarios: set[str] = set()
         for row in rows:
-            scenario_id = str(row.get("scenario_id", ""))
+            scenario_id = row.scenario_id
             if not scenario_id:
                 raise ValueError(f"live report run {run_key} contains a scenario without an ID")
             if scenario_id in seen_scenarios:
                 duplicate_scenario_keys.add(f"{run_key}:{scenario_id}")
                 continue
             seen_scenarios.add(scenario_id)
-            semantic_world_fingerprint = str(row.get("semantic_world_fingerprint", ""))
+            semantic_world_fingerprint = row.semantic_world_fingerprint
             if not semantic_world_fingerprint:
                 raise ValueError(f"live report run {run_key} contains a scenario without a semantic-world fingerprint")
             semantic_world_units.setdefault(semantic_world_fingerprint, set()).add((int(seed_text), scenario_id))
-            seed_scenarios.setdefault(scenario_id, []).append(1.0 if row.get("success") is True else 0.0)
-            family = str(row.get("family", ""))
+            seed_scenarios.setdefault(scenario_id, []).append(1.0 if row.success else 0.0)
+            family = row.family
             if family:
                 family_values.setdefault(family, {}).setdefault(int(seed_text), {}).setdefault(scenario_id, []).append(
-                    1.0 if row.get("success") is True else 0.0
+                    1.0 if row.success else 0.0
                 )
     family_count = len(required_family_set or family_values)
     endpoint_count = max(1, family_count + 1)
@@ -450,7 +451,9 @@ def evaluate_live_gate(
             scenarios_per_seed=scenarios_per_seed,
             replicates_per_scenario=replicates_per_scenario,
             interval_intraseed_correlation=intraseed_correlation,
-            simulation_intraseed_correlation_points=[intraseed_correlation],
+            simulation_intraseed_correlation_points=sorted(
+                {*DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS, intraseed_correlation}
+            ),
             trials=design_trials,
             interval_confidence_level=confidence_level,
             certificate_confidence_level=confidence_level,

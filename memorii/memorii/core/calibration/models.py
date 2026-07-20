@@ -67,6 +67,11 @@ class CalibrationResponseLevel(StrEnum):
     BENCHMARK_FAIL = "benchmark_fail"
 
 
+class CalibrationStabilityStatus(StrEnum):
+    ELIGIBLE = "eligible"
+    INSUFFICIENT_COVERAGE = "insufficient_coverage"
+
+
 class GateCoverageAlgorithmVersion(StrEnum):
     SCENARIO_COVERAGE_GRID_2 = "scenario-coverage-grid-2"
 
@@ -435,6 +440,19 @@ class RiskCoveragePoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CalibrationRollingWindow(BaseModel):
+    """One typed calibration-drift observation over a fixed event window."""
+
+    start_index: int = Field(ge=0)
+    end_index: int = Field(ge=0)
+    ece: float | None = Field(default=None, ge=0.0, le=1.0)
+    brier_score: float | None = Field(default=None, ge=0.0, le=1.0)
+    overconfident_wrong_rate: float = Field(ge=0.0, le=1.0)
+    drift_alerts: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CalibrationReport(BaseModel):
     event_count: int = Field(ge=0)
     labeled_event_count: int = Field(ge=0)
@@ -448,7 +466,7 @@ class CalibrationReport(BaseModel):
     hidden_hallucination_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     ambiguous_overcommit_rate: float = Field(default=0.0, ge=0.0, le=1.0)
     worst_slices: list[CalibrationSlice] = Field(default_factory=list)
-    rolling_windows: dict[str, object] = Field(default_factory=dict)
+    rolling_windows: dict[str, list[CalibrationRollingWindow]] = Field(default_factory=dict)
     response_recommendations: dict[str, int] = Field(default_factory=dict)
     label_source_counts: dict[str, int] = Field(default_factory=dict)
     hierarchy_layer_counts: dict[str, int] = Field(default_factory=dict)
@@ -460,7 +478,7 @@ class CalibrationReport(BaseModel):
     input_telemetry_by_type: dict[str, int] = Field(default_factory=dict)
     scenario_count: int = Field(default=0, ge=0)
     minimum_scenario_count: int = Field(default=30, ge=1)
-    stability_status: str = "insufficient_coverage"
+    stability_status: CalibrationStabilityStatus = CalibrationStabilityStatus.INSUFFICIENT_COVERAGE
 
     model_config = ConfigDict(extra="forbid")
 

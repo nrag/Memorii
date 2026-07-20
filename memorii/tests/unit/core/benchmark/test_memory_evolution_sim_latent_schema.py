@@ -126,7 +126,7 @@ def test_memory_evolution_sim_uses_opaque_semantics_free_ids() -> None:
     assert not any(term in item_id for item_id in all_ids for term in forbidden_semantics)
 
 
-def test_memory_evolution_sim_flat_legacy_channels_are_rejected() -> None:
+def test_memory_evolution_sim_removed_flat_channels_are_rejected() -> None:
     with pytest.raises(ValueError):
         SimSystemOutput.model_validate(
             {

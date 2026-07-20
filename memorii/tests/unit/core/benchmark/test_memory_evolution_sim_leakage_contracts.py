@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from memorii.core.benchmark.llm_adapters import LLMMemoryEvolutionSimReconstructionAdapter
 from memorii.core.benchmark.memory_evolution_sim import (
     MEMORY_EVOLUTION_SCENARIO_FAMILIES,
     JudgeVerdict,
@@ -332,6 +333,7 @@ def test_memory_evolution_sim_rendered_reconstruction_prompt_rejects_adversarial
     contract = PromptRegistry(prompt_root=PROMPT_ROOT).load(
         "memory_evolution_sim_reconstruction:v1",
         owner=PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER,
+        output_model=LLMMemoryEvolutionSimReconstructionAdapter.output_model,
     )
     rendered = PromptRenderer().render(
         contract=contract,

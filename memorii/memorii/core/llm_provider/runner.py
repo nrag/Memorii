@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 from jsonschema import Draft7Validator
+from pydantic import BaseModel, ValidationError
 
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.base import LLMProviderError, LLMStructuredClient
@@ -39,6 +40,7 @@ class PromptLLMRunner:
         variables: dict[str, object],
         request_id: str,
         metadata: dict[str, object] | None = None,
+        output_model: type[BaseModel] | None = None,
     ) -> LLMDecisionResult:
         input_errors = sorted(
             Draft7Validator(contract.input_schema).iter_errors(cast(Any, variables)),
@@ -102,11 +104,23 @@ class PromptLLMRunner:
 
         parsed_response = parse_structured_response(response=raw_response, output_schema=rendered.expected_output_schema)
         success = parsed_response.valid_json and parsed_response.schema_valid and parsed_response.parsed_json is not None
+        parsed_output = parsed_response.parsed_json
+        if success and output_model is not None:
+            try:
+                parsed_output = output_model.model_validate(parsed_output).model_dump(mode="json")
+            except ValidationError as exc:
+                parsed_response = parsed_response.model_copy(
+                    update={
+                        "schema_valid": False,
+                        "error": f"Domain output validation failed: {type(exc).__name__}",
+                    }
+                )
+                success = False
         failure_mode = None if success else ("invalid_json" if not parsed_response.valid_json else "schema_validation")
         return LLMDecisionResult(
             request=request,
             response=parsed_response,
-            output=parsed_response.parsed_json if success else None,
+            output=parsed_output if success else None,
             success=success,
             failure_mode=failure_mode,
         )

@@ -1,8 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
 from memorii.core.memory_evolution import (
+    EnglishRuleMemoryExtractor,
     MemoryQueryRequest,
-    RuleMemoryExtractor,
     StructuredQueryAnalyzer,
 )
 from memorii.core.memory_plane import MemoryPlaneService
@@ -11,6 +11,21 @@ from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import HermesMemoryProvider
+
+
+def test_default_provider_composition_enables_memory_evolution() -> None:
+    service = ProviderMemoryService()
+
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Bob.",
+        task_id="task:default-evolution",
+    )
+
+    assert service.memory_evolution_service is not None
+    result = service.last_memory_evolution_result()
+    assert result is not None
+    assert [observation.source_id for observation in result.observations]
 
 
 def test_prefetch_excludes_candidate_only_records_and_formats_context() -> None:
@@ -82,8 +97,7 @@ def test_provider_prefetch_passes_language_and_structured_temporal_analysis() ->
         }
 
     service = ProviderMemoryService(
-        memory_evolution_enabled=True,
-        memory_evolution_extractor=RuleMemoryExtractor(),
+        memory_evolution_extractor=EnglishRuleMemoryExtractor(),
         memory_evolution_query_analyzer=StructuredQueryAnalyzer(
             analyze_structured_query,
             analyzer_name="test-provider-analyzer",
@@ -110,8 +124,7 @@ def test_provider_prefetch_passes_language_and_structured_temporal_analysis() ->
 
 def test_provider_exposes_structured_evolution_decision() -> None:
     service = ProviderMemoryService(
-        memory_evolution_enabled=True,
-        memory_evolution_extractor=RuleMemoryExtractor(),
+        memory_evolution_extractor=EnglishRuleMemoryExtractor(),
     )
 
     decision = service.retrieve_evolution_decision(
@@ -198,8 +211,7 @@ def test_prefetch_execution_uses_production_evolution_decision_as_authority() ->
     plane = MemoryPlaneService()
     service = ProviderMemoryService(
         memory_plane=plane,
-        memory_evolution_enabled=True,
-        memory_evolution_extractor=RuleMemoryExtractor(),
+        memory_evolution_extractor=EnglishRuleMemoryExtractor(),
     )
     evolution_service = service.memory_evolution_service
     assert evolution_service is not None
@@ -234,8 +246,7 @@ def test_prefetch_execution_uses_production_evolution_decision_as_authority() ->
 
 def test_evolution_prefetch_does_not_merge_unfiltered_provider_context() -> None:
     service = ProviderMemoryService(
-        memory_evolution_enabled=True,
-        memory_evolution_extractor=RuleMemoryExtractor(),
+        memory_evolution_extractor=EnglishRuleMemoryExtractor(),
     )
     service.sync_event(
         operation=ProviderOperation.MEMORY_WRITE_LONGTERM,

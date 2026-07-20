@@ -6,13 +6,6 @@ from memorii.core.memory_evolution import (
     MemoryEvolutionService,
     MemoryQueryRequest,
 )
-from memorii.core.memory_evolution.execution import (
-    ActionEvent,
-    ActionEventType,
-    WorkState,
-    WorkStateSnapshot,
-    WorkStateStatus,
-)
 from memorii.core.memory_evolution.graph import MemoryGraphStore
 from memorii.core.memory_evolution.models import (
     ClaimKey,
@@ -25,7 +18,7 @@ from memorii.core.memory_evolution.models import (
     RetrievalView,
 )
 from memorii.core.memory_evolution.query_analysis import (
-    ConservativeQueryAnalyzer,
+    EnglishLexicalQueryAnalyzer,
     StructuredQueryAnalyzer,
 )
 from memorii.core.memory_evolution.retrieval_runtime import MemoryEvolutionRetrievalRuntime
@@ -182,8 +175,7 @@ def test_relation_condition_resolves_shared_alias_from_object_evidence() -> None
         claim_reader=lambda **_kwargs: states,
         entity_link_reader=lambda: [project, service, carol, owen],
         action_reader=lambda: [],
-        work_state_reader=WorkStateSnapshot,
-        query_analyzer=ConservativeQueryAnalyzer(),
+        query_analyzer=EnglishLexicalQueryAnalyzer(),
         temporal_anchor_catalog=TemporalAnchorCatalog(),
         now_provider=lambda: timestamp,
     )
@@ -303,6 +295,37 @@ def test_graph_store_reports_malformed_persisted_rows() -> None:
 
     snapshot = MemoryGraphStore(memory_plane=plane).snapshot()
 
+    assert "skipped_node_count=1" in snapshot.validation_errors
+
+
+def test_graph_store_skips_unknown_persisted_lifecycle_state() -> None:
+    plane = MemoryPlaneService()
+    plane.upsert_record(
+        CanonicalMemoryRecord(
+            memory_id="mem:evolution:graph-node:unknown-lifecycle",
+            domain=MemoryDomain.SEMANTIC,
+            text="invalid lifecycle graph node",
+            content={
+                "memory_evolution_kind": "graph_node",
+                "graph_node": {
+                    "node_id": "graph:node:claim:invalid-lifecycle",
+                    "node_type": "claim",
+                    "label": "invalid lifecycle",
+                    "lifecycle_state": "corrupt-or-future-state",
+                    "confidence": 0.8,
+                    "payload_ref": "claim:invalid-lifecycle",
+                },
+            },
+            status=CommitStatus.COMMITTED,
+            source_kind="test",
+            is_raw_event=False,
+        )
+    )
+    service = MemoryEvolutionService(memory_plane=plane)
+
+    snapshot = service.retrieve_graph_snapshot()
+
+    assert all(node.node_id != "graph:node:claim:invalid-lifecycle" for node in snapshot.nodes)
     assert "skipped_node_count=1" in snapshot.validation_errors
 
 
@@ -486,7 +509,6 @@ def test_scope_shadowing_does_not_hide_distinct_same_name_entity() -> None:
         claim_reader=lambda **_kwargs: [],
         entity_link_reader=lambda: links,
         action_reader=lambda: [],
-        work_state_reader=WorkStateSnapshot,
         query_analyzer=_CapturingAnalyzer(),
         temporal_anchor_catalog=TemporalAnchorCatalog(),
         now_provider=lambda: datetime(2026, 1, 3, tzinfo=UTC),
@@ -513,45 +535,19 @@ def test_heuristic_entity_match_is_context_not_execution_branch_authority() -> N
         entity_type="project",
         confidence=1.0,
     )
-    action_event = ActionEvent(
-        event_id="action:branch-b-progress",
-        event_type=ActionEventType.PROGRESS,
-        target_entity_ids=["entity:branch-b"],
-        event_time=timestamp,
-        explicit_status=WorkStateStatus.IN_PROGRESS,
-        evidence_event_ids=["event:branch-b-progress"],
-    )
     action = ExtractedAction(
-        action_id=action_event.event_id,
+        action_id="action:branch-b-progress",
         action_type="progress",
-        target_entity_ids=list(action_event.target_entity_ids),
+        target_entity_ids=["entity:branch-b"],
         status="in_progress",
         timestamp=timestamp,
         extraction_run_id="run:branch-b-progress",
-    )
-    work_state = WorkStateSnapshot(
-        states=[
-            WorkState(
-                branch_id="entity:branch-b",
-                scope_key="global",
-                status=WorkStateStatus.IN_PROGRESS,
-                active=True,
-                last_event_id=action_event.event_id,
-                last_event_type=action_event.event_type,
-                last_progress_event_id=action_event.event_id,
-                last_progress_time=timestamp,
-                evidence_event_ids=list(action_event.evidence_event_ids),
-                state_confidence=1.0,
-            )
-        ],
-        active_branch_ids=["entity:branch-b"],
     )
     runtime = MemoryEvolutionRetrievalRuntime(
         claim_reader=lambda **_kwargs: [],
         entity_link_reader=lambda: [project],
         action_reader=lambda: [action],
-        work_state_reader=lambda: work_state,
-        query_analyzer=ConservativeQueryAnalyzer(),
+        query_analyzer=EnglishLexicalQueryAnalyzer(),
         temporal_anchor_catalog=TemporalAnchorCatalog(),
         now_provider=lambda: timestamp,
     )
@@ -624,7 +620,6 @@ def test_scope_shadowing_keeps_readable_global_object_link_referential_integrity
         claim_reader=lambda **_kwargs: [state],
         entity_link_reader=lambda: [global_owner, session_owner],
         action_reader=lambda: [],
-        work_state_reader=WorkStateSnapshot,
         query_analyzer=_OwnerAnalyzer(),
         temporal_anchor_catalog=TemporalAnchorCatalog(),
         now_provider=lambda: datetime(2026, 1, 3, tzinfo=UTC),

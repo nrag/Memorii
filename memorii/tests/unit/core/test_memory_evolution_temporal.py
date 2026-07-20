@@ -1,9 +1,9 @@
 from datetime import UTC, datetime
 
 import pytest
-from memorii.core.memory_evolution.models import MemoryScope
+from memorii.core.memory_evolution.models import MemoryGraphLifecycleState, MemoryScope
 from memorii.core.memory_evolution.query_analysis import (
-    ConservativeQueryAnalyzer,
+    LexicalQueryAnalyzer,
     StructuredQueryAnalyzer,
     StructuredQueryConstraintError,
     infer_query_predicate_id,
@@ -21,7 +21,9 @@ from memorii.core.memory_evolution.temporal_contracts import (
     TemporalEntityCandidate,
     TemporalResolution,
     candidate_matches_frame,
+    evaluate_temporal_eligibility,
 )
+from pydantic import ValidationError
 
 
 def test_current_and_historical_frames_are_separate() -> None:
@@ -70,6 +72,25 @@ def test_point_in_time_current_allows_claim_until_supersession_but_now_does_not(
         )
         is False
     )
+
+
+@pytest.mark.parametrize("lifecycle_state", list(MemoryGraphLifecycleState))
+def test_current_temporal_eligibility_is_exhaustive_and_fail_closed(
+    lifecycle_state: MemoryGraphLifecycleState,
+) -> None:
+    decision = evaluate_temporal_eligibility(
+        lifecycle_state=lifecycle_state,
+        valid_from=None,
+        valid_to=None,
+        temporal_kind=QueryTemporalKind.CURRENT,
+    )
+
+    assert decision.eligible is (lifecycle_state == MemoryGraphLifecycleState.ACTIVE)
+
+
+def test_temporal_candidate_rejects_unknown_lifecycle_state() -> None:
+    with pytest.raises(ValidationError):
+        TemporalCandidate(record_id="claim-corrupt", lifecycle_state="corrupt-or-future-state")
 
 
 def test_scoped_frame_requires_scope_key() -> None:
@@ -881,7 +902,7 @@ def test_non_english_query_requires_structured_temporal_frame() -> None:
     assert result.frame.resolution_confidence_source == "language_guard"
 
 
-def test_conservative_analyzer_accepts_an_explicit_locale_resolver() -> None:
+def test_locale_aware_lexical_analyzer_accepts_an_explicit_locale_resolver() -> None:
     class SpanishResolver:
         def supports(self, language: str) -> bool:
             return language == "es"
@@ -902,7 +923,11 @@ def test_conservative_analyzer_accepts_an_explicit_locale_resolver() -> None:
                 analysis_source="locale_resolver",
             )
 
-    analysis = ConservativeQueryAnalyzer(lexical_resolver=SpanishResolver()).analyze(
+    analysis = LexicalQueryAnalyzer(
+        SpanishResolver(),
+        analyzer_name="spanish_test_resolver",
+        analyzer_version="1",
+    ).analyze(
         query="¿Quién es el propietario actual de Atlas?",
         language="es",
         reference_time=None,

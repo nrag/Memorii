@@ -50,19 +50,19 @@ from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
-from memorii.tools.benchmark_suites.fake_adapters import _ExpectedMemoryEvolutionSimFakeAdapter
+from memorii.tools.benchmark_suites.fake_adapters import ExpectedMemoryEvolutionSimFakeAdapter
 from memorii.tools.benchmark_suites.memory_evolution_artifacts import (
-    _horizon_distance_bucket,
-    _interference_count_bucket,
-    _source_event_age_days_bucket,
+    horizon_distance_bucket,
+    interference_count_bucket,
     print_memory_evolution_summary,
+    source_event_age_days_bucket,
     write_memory_evolution_artifacts,
 )
 from memorii.tools.benchmark_suites.memory_evolution_scenarios import (
     load_memory_evolution_scenarios,
 )
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
-from memorii.tools.run_live_llm_eval import _validate_live_safety
+from memorii.tools.run_live_llm_eval import validate_live_safety
 
 SUITE_NAME = "memory_evolution_sim_v1"
 _INVALID_REFERENCE_ID_BUCKET = "invalid_reference_id"
@@ -110,7 +110,7 @@ def _run_memory_evolution_sim_transitions(
     effective_mode = decision_config.resolve(runtime_config)
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
-        _validate_live_safety(
+        validate_live_safety(
             modes=[effective_mode],
             dry_run=dry_run,
             allow_live=allow_live,
@@ -127,7 +127,7 @@ def _run_memory_evolution_sim_transitions(
         llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
         runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
         adapter = (
-            _ExpectedMemoryEvolutionSimFakeAdapter(scenarios=scenarios, registry=registry)
+            ExpectedMemoryEvolutionSimFakeAdapter(scenarios=scenarios, registry=registry)
             if dependencies.use_oracle_adapters(dry_run=dry_run)
             else LLMMemoryEvolutionSimReconstructionAdapter(runner=runner, registry=registry)
         )
@@ -289,11 +289,11 @@ def _build_sim_checkpoint_result_row(
         family=scenario.family,
         profile=scenario.profile,
         horizon_distance=checkpoint.horizon_distance,
-        horizon_distance_bucket=_horizon_distance_bucket(checkpoint.horizon_distance),
+        horizon_distance_bucket=horizon_distance_bucket(checkpoint.horizon_distance),
         interference_count=checkpoint.interference_count,
-        interference_count_bucket=_interference_count_bucket(checkpoint.interference_count),
+        interference_count_bucket=interference_count_bucket(checkpoint.interference_count),
         source_event_age_days=checkpoint.source_event_age_days,
-        source_event_age_days_bucket=_source_event_age_days_bucket(checkpoint.source_event_age_days),
+        source_event_age_days_bucket=source_event_age_days_bucket(checkpoint.source_event_age_days),
         required_retrieval_view=checkpoint.required_retrieval_view,
         expected_stage_path=list(checkpoint.expected_stage_path),
         query_or_task=checkpoint.query_or_task,

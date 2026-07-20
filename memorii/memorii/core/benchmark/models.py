@@ -8,7 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.core.promotion.models import PromotionAction, PromotionReasonCode
+from memorii.core.promotion.execution_contracts import PromotionAction, PromotionReasonCode
+from memorii.core.solver.models import NextTestAction
 from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
 from memorii.domain.routing import InboundEvent
@@ -169,7 +170,7 @@ class SolverValidationFixture(BaseModel):
     decision: str
     evidence_ids: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
-    next_best_test: str | None = None
+    next_test_action: NextTestAction | None = None
     available_evidence_ids: set[str] = Field(default_factory=set)
     expect_downgrade: bool = False
     expect_invalid_rejection: bool = False

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 from memorii.core.benchmark.memory_evolution_runtime import (
-    _expected_action_alignment_rows as expected_action_alignment_rows,
-)
-from memorii.core.benchmark.memory_evolution_runtime import (
     align_runtime_graph_to_oracle,
+    expected_action_alignment_rows,
 )
 from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import (
-    _runtime_answer_for_checkpoint as runtime_answer_for_checkpoint,
+    runtime_answer_for_checkpoint,
 )
 from tests.unit.core.benchmark.memory_evolution_runtime_test_helpers import (
     action_claim_by_state,
@@ -113,9 +111,9 @@ def test_runtime_action_semantically_aligns_to_oracle_action_with_native_id() ->
         runtime_claim_by_oracle={},
     )
 
-    assert rows[0]["verdict"] == "aligned"
-    assert rows[0]["support_mode"] == "runtime_action_semantic"
-    assert rows[0]["matched_on"] == ["target_entity", "status", "evidence_event", "lifecycle"]
+    assert rows[0].verdict == "aligned"
+    assert rows[0].support_mode == "runtime_action_semantic"
+    assert rows[0].matched_on == ["target_entity", "status", "evidence_event", "lifecycle"]
 
 
 def test_runtime_action_alignment_classifies_target_status_and_evidence_failures() -> None:
@@ -144,10 +142,10 @@ def test_runtime_action_alignment_classifies_target_status_and_evidence_failures
         runtime_claim_by_oracle={},
     )[0]
 
-    assert wrong_target["verdict"] == "partial"
-    assert wrong_target["failure_reason"] == "runtime_action_target_mismatch"
-    assert wrong_status["failure_reason"] == "runtime_action_status_mismatch"
-    assert missing_evidence["failure_reason"] == "runtime_action_evidence_missing"
+    assert wrong_target.verdict == "partial"
+    assert wrong_target.failure_reason == "runtime_action_target_mismatch"
+    assert wrong_status.failure_reason == "runtime_action_status_mismatch"
+    assert missing_evidence.failure_reason == "runtime_action_evidence_missing"
 
 
 def test_runtime_action_alignment_derives_progress_status_from_action_type() -> None:
@@ -168,9 +166,9 @@ def test_runtime_action_alignment_derives_progress_status_from_action_type() -> 
         runtime_claim_by_oracle={},
     )
 
-    assert rows[0]["verdict"] == "aligned"
-    assert rows[0]["status"] == "in_progress"
-    assert rows[0]["status_derived_from"] == "action_type"
+    assert rows[0].verdict == "aligned"
+    assert rows[0].status == "in_progress"
+    assert rows[0].status_derived_from == "action_type"
 
 
 def test_runtime_action_alignment_prefers_explicit_progress_over_resume_verb() -> None:
@@ -191,9 +189,9 @@ def test_runtime_action_alignment_prefers_explicit_progress_over_resume_verb() -
         runtime_claim_by_oracle={},
     )
 
-    assert rows[0]["verdict"] == "aligned"
-    assert rows[0]["status"] == "in_progress"
-    assert rows[0]["status_derived_from"] == "status"
+    assert rows[0].verdict == "aligned"
+    assert rows[0].status == "in_progress"
+    assert rows[0].status_derived_from == "status"
 
 
 def test_runtime_claim_alignment_requires_provenance_even_when_claim_id_matches() -> None:

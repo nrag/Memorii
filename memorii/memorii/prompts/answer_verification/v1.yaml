@@ -107,5 +107,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [not_entailed, missing_evidence, wrong_entity, answer_too_broad, answer_too_narrow, question_constraints_missing, question_constraints_uncovered, better_alternative_answer, provider_error, validation_error]
 tags: [grounding, verification]

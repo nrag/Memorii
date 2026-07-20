@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping, Sequence
-from contextlib import suppress
-from datetime import UTC, datetime, timedelta
+from collections.abc import Sequence
+from datetime import datetime
 
+from memorii.core.benchmark.artifact_rows import CheckpointResultRow
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    OracleCheckpoint,
+    VisibleClaimCandidate,
+    VisibleRelationCandidate,
+)
 from memorii.core.calibration.metrics import (
     brier_score,
     build_calibration_slices,
@@ -27,6 +32,8 @@ from memorii.core.calibration.models import (
     CalibrationLabelSource,
     CalibrationReport,
     CalibrationResponseLevel,
+    CalibrationSlice,
+    CalibrationStabilityStatus,
     DecisionAction,
     DecisionCostReport,
 )
@@ -37,11 +44,11 @@ def build_calibration_artifacts(
     *,
     suite: str,
     profile: str,
-    checkpoint_rows: Sequence[Mapping[str, object]],
-) -> tuple[list[CalibrationEvent], CalibrationReport, list[dict[str, object]], DecisionCostReport]:
+    checkpoint_rows: Sequence[CheckpointResultRow],
+) -> tuple[list[CalibrationEvent], CalibrationReport, list[CalibrationSlice], DecisionCostReport]:
     events = calibration_events_from_checkpoint_rows(suite=suite, profile=profile, checkpoint_rows=checkpoint_rows)
     report = build_calibration_report(events, input_telemetry=_input_telemetry_from_checkpoint_rows(checkpoint_rows))
-    slices = [item.model_dump(mode="json") for item in build_calibration_slices(events)]
+    slices = build_calibration_slices(events)
     decision_report = build_decision_cost_report(checkpoint_rows)
     return events, report, slices, decision_report
 
@@ -50,18 +57,15 @@ def calibration_events_from_checkpoint_rows(
     *,
     suite: str,
     profile: str,
-    checkpoint_rows: Sequence[Mapping[str, object]],
+    checkpoint_rows: Sequence[CheckpointResultRow],
 ) -> list[CalibrationEvent]:
     events: list[CalibrationEvent] = []
     for index, row in enumerate(checkpoint_rows):
-        output = _json_mapping(row.get("output"))
-        expected = _json_mapping(row.get("expected"))
-        aggregate = _json_mapping(row.get("judge_aggregate"))
-        judge_ids = [
-            str(vote.get("judge_id")) for vote in _json_sequence(aggregate.get("votes")) if isinstance(vote, Mapping)
-        ]
-        base_failure_buckets = [str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))]
-        row_confidence = _float(output.get("confidence"), default=0.5) if isinstance(output, dict) else 0.5
+        output = row.output
+        expected = row.expected
+        judge_ids = [vote.judge_id for vote in row.judge_aggregate.votes]
+        base_failure_buckets = list(row.failure_buckets)
+        row_confidence = output.confidence
         row_event_count = 0
         channel_specs = [
             (
@@ -133,8 +137,8 @@ def calibration_events_from_checkpoint_rows(
             ),
         ]
         for channel, output_key, item_type, expected_key in channel_specs:
-            ids = _json_sequence(output.get(output_key))
-            expected_ids = {str(item) for item in _json_sequence(expected.get(expected_key))}
+            ids = getattr(output, output_key)
+            expected_ids = set(getattr(expected, expected_key))
             excluded_ids = set(_excluded_ids_for_item_type(expected, item_type))
             for item_id in ids:
                 item = str(item_id)
@@ -145,7 +149,7 @@ def calibration_events_from_checkpoint_rows(
                     channel=channel,
                     expected_ids=expected_ids,
                     excluded_ids=excluded_ids,
-                    row_success=row.get("success") is True,
+                    row_success=row.success,
                     base_failure_buckets=base_failure_buckets,
                 )
                 row_event_count += 1
@@ -177,7 +181,7 @@ def calibration_events_from_checkpoint_rows(
                 for missing_id in sorted(expected_ids - emitted_ids):
                     row_event_count += 1
                     missing_buckets = [*base_failure_buckets, f"missing_required_{channel.value}"]
-                    rejected_ids = {str(item_id) for item_id in _json_sequence(output.get("rejected_claim_ids"))}
+                    rejected_ids = set(output.rejected_claim_ids)
                     if missing_id in rejected_ids:
                         missing_buckets.append("expected_item_rejected")
                     events.append(
@@ -209,7 +213,7 @@ def calibration_events_from_checkpoint_rows(
                     profile=profile,
                     row=row,
                     row_index=index,
-                    item_id=str(row.get("checkpoint_id", "unknown")),
+                    item_id=row.checkpoint_id,
                     item_type=CalibrationItemType.ANSWER,
                     hierarchy_layer=CalibrationHierarchyLayer.RETRIEVAL_DECISION,
                     decision_channel=CalibrationDecisionChannel.SELECTED,
@@ -288,12 +292,16 @@ def build_calibration_report(
         input_telemetry_count=sum(input_telemetry.values()) if input_telemetry else 0,
         input_telemetry_by_type=dict(sorted((input_telemetry or {}).items())),
         scenario_count=scenario_count,
-        stability_status="eligible" if scenario_count >= 30 else "insufficient_coverage",
+        stability_status=(
+            CalibrationStabilityStatus.ELIGIBLE
+            if scenario_count >= 30
+            else CalibrationStabilityStatus.INSUFFICIENT_COVERAGE
+        ),
     )
 
 
 def _input_telemetry_from_checkpoint_rows(
-    checkpoint_rows: Sequence[Mapping[str, object]],
+    checkpoint_rows: Sequence[CheckpointResultRow],
 ) -> dict[str, int]:
     """Count observable inputs without treating them as model predictions.
 
@@ -304,28 +312,26 @@ def _input_telemetry_from_checkpoint_rows(
 
     counts: Counter[str] = Counter()
     for row in checkpoint_rows:
-        cards = row.get("candidate_cards")
-        if not isinstance(cards, Mapping):
-            continue
+        cards = row.candidate_cards
         for key in ("visible_events", "visible_entities", "visible_claims", "visible_relations"):
-            values = cards.get(key)
-            if isinstance(values, Sequence) and not isinstance(values, (str, bytes)):
+            values = getattr(cards, key)
+            if values:
                 counts[key] += len(values)
     return dict(counts)
 
 
 def build_decision_cost_report(
-    checkpoint_rows: Sequence[Mapping[str, object]],
+    checkpoint_rows: Sequence[CheckpointResultRow],
 ) -> DecisionCostReport:
     by_bucket: Counter[str] = Counter()
     by_checkpoint: Counter[str] = Counter()
     by_modality: Counter[str] = Counter()
     by_action: Counter[str] = Counter()
     for row in checkpoint_rows:
-        checkpoint_type = str(row.get("checkpoint_type", "unknown"))
+        checkpoint_type = row.checkpoint_type
         action = _decision_action_for_checkpoint(checkpoint_type).value
-        buckets = [str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))]
-        if not buckets and row.get("success") is False:
+        buckets = list(row.failure_buckets)
+        if not buckets and not row.success:
             buckets = ["unclassified_failure"]
         for bucket in buckets:
             cost = DEFAULT_DECISION_COSTS.get(bucket, 5)
@@ -350,7 +356,7 @@ def _calibration_event(
     *,
     suite: str,
     profile: str,
-    row: Mapping[str, object],
+    row: CheckpointResultRow,
     row_index: int,
     item_id: str,
     item_type: CalibrationItemType,
@@ -389,11 +395,11 @@ def _calibration_event(
         )
     )
     return CalibrationEvent(
-        event_id=f"cal:{row.get('scenario_id')}:{row.get('checkpoint_id')}:{row_index}:{hierarchy_layer.value}:{decision_channel.value}:{output_key}:{item_id}",
+        event_id=f"cal:{row.scenario_id}:{row.checkpoint_id}:{row_index}:{hierarchy_layer.value}:{decision_channel.value}:{output_key}:{item_id}",
         timestamp=_calibration_event_timestamp(row, row_index),
         suite=suite,
-        scenario_id=str(row.get("scenario_id", "unknown")),
-        checkpoint_id=str(row.get("checkpoint_id", "unknown")),
+        scenario_id=row.scenario_id,
+        checkpoint_id=row.checkpoint_id,
         item_id=item_id,
         item_type=item_type,
         hierarchy_layer=hierarchy_layer,
@@ -410,39 +416,30 @@ def _calibration_event(
         predicate_id=predicate_id or _row_predicate_id(row, item_id),
         scope_key=scope_key or _row_scope_key(row, item_id),
         lifecycle_state=lifecycle_state or _row_lifecycle_state(row, item_id),
-        retrieval_view=_retrieval_view_for_checkpoint(str(row.get("checkpoint_type", "unknown"))),
+        retrieval_view=_retrieval_view_for_checkpoint(row.checkpoint_type),
         entity_ambiguity="ambiguous" if "ambiguous" in item_id else "none",
         evidence_event_ids=resolved_evidence_event_ids,
         judge_ids=judge_ids or [],
-        decision_action=_decision_action_for_checkpoint(str(row.get("checkpoint_type", "unknown"))),
+        decision_action=_decision_action_for_checkpoint(row.checkpoint_type),
         metadata={
-            "checkpoint_type": str(row.get("checkpoint_type", "unknown")),
+            "checkpoint_type": row.checkpoint_type,
             "profile": profile,
-            "phase": phase or _phase_from_evidence(resolved_evidence_phases) or str(row.get("phase", "checkpoint")),
+            "phase": phase or _phase_from_evidence(resolved_evidence_phases) or row.phase,
             "evidence_phases": "|".join(resolved_evidence_phases),
-            "horizon_distance_bucket": str(row.get("horizon_distance_bucket", "unknown")),
-            "interference_count_bucket": str(row.get("interference_count_bucket", "unknown")),
-            "source_event_age_days_bucket": str(row.get("source_event_age_days_bucket", "unknown")),
-            "required_retrieval_view": str(row.get("required_retrieval_view", "unknown")),
+            "horizon_distance_bucket": row.horizon_distance_bucket,
+            "interference_count_bucket": row.interference_count_bucket,
+            "source_event_age_days_bucket": row.source_event_age_days_bucket,
+            "required_retrieval_view": row.required_retrieval_view,
             "output_key": output_key,
         },
     )
 
 
-def _calibration_event_timestamp(row: Mapping[str, object], row_index: int) -> datetime:
-    """Use checkpoint time for calibration ordering, with a deterministic fallback."""
+def _calibration_event_timestamp(row: CheckpointResultRow, row_index: int) -> datetime:
+    """Use the required typed oracle checkpoint timestamp for ordering."""
 
-    candidates: list[object] = [row.get("checkpoint_timestamp"), row.get("timestamp")]
-    expected = _json_mapping(row.get("expected"))
-    candidates.append(expected.get("timestamp"))
-    for candidate in candidates:
-        if isinstance(candidate, datetime):
-            return candidate if candidate.tzinfo is not None else candidate.replace(tzinfo=UTC)
-        if isinstance(candidate, str) and candidate.strip():
-            with suppress(ValueError):
-                parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
-                return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-    return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(seconds=row_index)
+    del row_index
+    return row.expected.timestamp
 
 
 def _label_for_item(
@@ -547,15 +544,15 @@ def _label_for_item(
 
 
 def _abstained_event(
-    *, suite: str, profile: str, row: Mapping[str, object], index: int, confidence: float, judge_ids: list[str]
+    *, suite: str, profile: str, row: CheckpointResultRow, index: int, confidence: float, judge_ids: list[str]
 ) -> CalibrationEvent:
-    label = CalibrationLabel.CORRECT if row.get("success") is True else CalibrationLabel.INCORRECT
+    label = CalibrationLabel.CORRECT if row.success else CalibrationLabel.INCORRECT
     return _calibration_event(
         suite=suite,
         profile=profile,
         row=row,
         row_index=index,
-        item_id=str(row.get("checkpoint_id", "unknown")),
+        item_id=row.checkpoint_id,
         item_type=CalibrationItemType.ANSWER,
         hierarchy_layer=CalibrationHierarchyLayer.RETRIEVAL_DECISION,
         decision_channel=CalibrationDecisionChannel.ABSTAINED,
@@ -563,69 +560,69 @@ def _abstained_event(
         label=label,
         label_source=CalibrationLabelSource.PROGRAMMATIC_JUDGE,
         label_rationale="checkpoint emitted no structured ids; calibrated as abstention",
-        failure_buckets=[str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))],
+        failure_buckets=list(row.failure_buckets),
         judge_ids=judge_ids,
         output_key="abstained",
     )
 
 
-def _excluded_ids_for_item_type(expected: Mapping[str, object], item_type: CalibrationItemType) -> list[str]:
+def _excluded_ids_for_item_type(expected: OracleCheckpoint, item_type: CalibrationItemType) -> list[str]:
     if item_type == CalibrationItemType.ENTITY:
-        return [str(item) for item in _json_sequence(expected.get("expected_excluded_entity_ids"))]
+        return list(expected.expected_excluded_entity_ids)
     if item_type == CalibrationItemType.CLAIM:
-        return [str(item) for item in _json_sequence(expected.get("expected_excluded_claim_ids"))]
+        return list(expected.expected_excluded_claim_ids)
     return []
 
 
-def _row_predicate_id(row: Mapping[str, object], item_id: str) -> str | None:
+def _row_predicate_id(row: CheckpointResultRow, item_id: str) -> str | None:
     for claim in _visible_claims(row):
-        if claim.get("claim_id") == item_id:
-            return str(claim.get("predicate_id", "unknown"))
+        if claim.claim_id == item_id:
+            return claim.predicate_id
     return None
 
 
-def _row_source_modality(row: Mapping[str, object], item_id: str) -> str | None:
+def _row_source_modality(row: CheckpointResultRow, item_id: str) -> str | None:
     for claim in _visible_claims(row):
-        if claim.get("claim_id") == item_id:
-            return str(claim.get("source_modality", "unknown"))
+        if claim.claim_id == item_id:
+            return claim.source_modality
     return _first_modality(row)
 
 
-def _row_source_trust(row: Mapping[str, object], item_id: str) -> int | None:
+def _row_source_trust(row: CheckpointResultRow, item_id: str) -> int | None:
     for claim in _visible_claims(row):
-        if claim.get("claim_id") == item_id:
-            return _int(claim.get("source_trust"))
+        if claim.claim_id == item_id:
+            return claim.source_trust
     return None
 
 
-def _row_scope_key(row: Mapping[str, object], item_id: str) -> str | None:
+def _row_scope_key(row: CheckpointResultRow, item_id: str) -> str | None:
     for claim in _visible_claims(row):
-        if claim.get("claim_id") == item_id:
-            return str(claim.get("scope_key", "unknown"))
+        if claim.claim_id == item_id:
+            return claim.scope_key
     return None
 
 
-def _row_lifecycle_state(row: Mapping[str, object], item_id: str) -> str | None:
+def _row_lifecycle_state(row: CheckpointResultRow, item_id: str) -> str | None:
     for claim in _visible_claims(row):
-        if claim.get("claim_id") == item_id:
-            return str(claim.get("lifecycle_state", "unknown"))
+        if claim.claim_id == item_id:
+            return claim.lifecycle_state
     return None
 
 
-def _evidence_event_ids(row: Mapping[str, object], item_id: str) -> list[str]:
+def _evidence_event_ids(row: CheckpointResultRow, item_id: str) -> list[str]:
     if item_id in _visible_event_phase_map(row):
         return [item_id]
     for claim in _visible_claims(row):
-        if claim.get("claim_id") == item_id and isinstance(claim.get("evidence_event_ids"), list):
-            return [str(item) for item in _json_sequence(claim.get("evidence_event_ids"))]
+        if claim.claim_id == item_id:
+            return list(claim.evidence_event_ids)
     for relation in _visible_relations(row):
-        if relation.get("relation_id") == item_id and isinstance(relation.get("evidence_event_ids"), list):
-            return [str(item) for item in _json_sequence(relation.get("evidence_event_ids"))]
+        if relation.relation_id == item_id:
+            return list(relation.evidence_event_ids)
     return []
 
 
 def _evidence_phases(
-    row: Mapping[str, object], item_id: str, *, evidence_event_ids: list[str] | None = None
+    row: CheckpointResultRow, item_id: str, *, evidence_event_ids: list[str] | None = None
 ) -> list[str]:
     phase_by_event = _visible_event_phase_map(row)
     event_ids = evidence_event_ids if evidence_event_ids is not None else _evidence_event_ids(row, item_id)
@@ -641,32 +638,22 @@ def _phase_from_evidence(phases: list[str]) -> str | None:
     return "mixed"
 
 
-def _visible_event_phase_map(row: Mapping[str, object]) -> dict[str, str]:
-    candidate_cards = _json_mapping(row.get("candidate_cards"))
-    visible_events = _json_sequence(candidate_cards.get("visible_events"))
-    phase_by_event: dict[str, str] = {}
-    for event in visible_events:
-        if isinstance(event, Mapping):
-            phase_by_event[str(event.get("event_id", ""))] = str(event.get("phase", "unknown"))
-    return {event_id: phase for event_id, phase in phase_by_event.items() if event_id}
+def _visible_event_phase_map(row: CheckpointResultRow) -> dict[str, str]:
+    return {event.event_id: event.phase for event in row.candidate_cards.visible_events}
 
 
-def _visible_claims(row: Mapping[str, object]) -> list[dict[str, object]]:
-    candidate_cards = _json_mapping(row.get("candidate_cards"))
-    return [dict(item) for item in _json_sequence(candidate_cards.get("visible_claims")) if isinstance(item, Mapping)]
+def _visible_claims(row: CheckpointResultRow) -> list[VisibleClaimCandidate]:
+    return row.candidate_cards.visible_claims
 
 
-def _visible_relations(row: Mapping[str, object]) -> list[dict[str, object]]:
-    candidate_cards = _json_mapping(row.get("candidate_cards"))
-    return [
-        dict(item) for item in _json_sequence(candidate_cards.get("visible_relations")) if isinstance(item, Mapping)
-    ]
+def _visible_relations(row: CheckpointResultRow) -> list[VisibleRelationCandidate]:
+    return row.candidate_cards.visible_relations
 
 
-def _first_modality(row: Mapping[str, object]) -> str:
+def _first_modality(row: CheckpointResultRow) -> str:
     claims = _visible_claims(row)
     if claims:
-        return str(claims[0].get("source_modality", "unknown"))
+        return claims[0].source_modality
     return "unknown"
 
 
@@ -690,29 +677,3 @@ def _decision_action_for_checkpoint(checkpoint_type: str) -> DecisionAction:
     if checkpoint_type == "source_trust_conflict":
         return DecisionAction.EXPOSE_CONFLICT
     return DecisionAction.ANSWER_CURRENT_TRUTH
-
-
-def _float(value: object, *, default: float) -> float:
-    if not isinstance(value, (int, float, str)):
-        return default
-    try:
-        return max(0.0, min(1.0, float(value)))
-    except (TypeError, ValueError):
-        return default
-
-
-def _int(value: object) -> int | None:
-    if not isinstance(value, (int, float, str)):
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _json_mapping(value: object) -> Mapping[str, object]:
-    return value if isinstance(value, Mapping) else {}
-
-
-def _json_sequence(value: object) -> Sequence[object]:
-    return value if isinstance(value, Sequence) and not isinstance(value, str) else ()

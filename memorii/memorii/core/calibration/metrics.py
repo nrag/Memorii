@@ -10,6 +10,7 @@ from memorii.core.calibration.models import (
     CalibrationEvent,
     CalibrationLabel,
     CalibrationLabelSource,
+    CalibrationRollingWindow,
     CalibrationSlice,
     RiskCoveragePoint,
     ScenarioClusterInterval,
@@ -162,23 +163,29 @@ def build_calibration_slices(events: list[CalibrationEvent]) -> list[Calibration
     return sorted(slices, key=lambda item: (item.response_level.value, -(item.ece or 0.0), -item.n, item.slice_key, str(item.slice_values)))
 
 
-def rolling_window_metrics(events: list[CalibrationEvent], *, windows: tuple[int, ...] = (10, 25, 50)) -> dict[str, object]:
+def rolling_window_metrics(
+    events: list[CalibrationEvent],
+    *,
+    windows: tuple[int, ...] = (10, 25, 50),
+) -> dict[str, list[CalibrationRollingWindow]]:
     labeled = sorted(probability_events(events), key=lambda event: (event.timestamp, event.event_id))
-    result: dict[str, object] = {}
+    result: dict[str, list[CalibrationRollingWindow]] = {}
     for window in windows:
-        rows = []
+        rows: list[CalibrationRollingWindow] = []
         for end in range(window, len(labeled) + 1):
             segment = labeled[end - window:end]
             current_ece = expected_calibration_error(segment)
             ow_rate = overconfident_wrong_count(segment) / len(segment)
-            rows.append({
-                "start_index": end - window,
-                "end_index": end - 1,
-                "ece": current_ece,
-                "brier_score": brier_score(segment),
-                "overconfident_wrong_rate": ow_rate,
-                "drift_alerts": _drift_alerts(rows[-1] if rows else None, current_ece, ow_rate),
-            })
+            rows.append(
+                CalibrationRollingWindow(
+                    start_index=end - window,
+                    end_index=end - 1,
+                    ece=current_ece,
+                    brier_score=brier_score(segment),
+                    overconfident_wrong_rate=ow_rate,
+                    drift_alerts=_drift_alerts(rows[-1] if rows else None, current_ece, ow_rate),
+                )
+            )
         result[str(window)] = rows
     return result
 
@@ -242,14 +249,18 @@ def _scope_type(scope_key: str | None) -> str:
     return "custom"
 
 
-def _drift_alerts(previous: dict[str, object] | None, ece: float | None, overconfident_wrong_rate: float) -> list[str]:
+def _drift_alerts(
+    previous: CalibrationRollingWindow | None,
+    ece: float | None,
+    overconfident_wrong_rate: float,
+) -> list[str]:
     alerts: list[str] = []
     if previous is None:
         return alerts
-    prev_ece = previous.get("ece")
-    if isinstance(prev_ece, float) and ece is not None and ece - prev_ece >= 0.20:
+    prev_ece = previous.ece
+    if prev_ece is not None and ece is not None and ece - prev_ece >= 0.20:
         alerts.append("rolling_ece_increase")
-    prev_owr = previous.get("overconfident_wrong_rate")
-    if isinstance(prev_owr, float) and overconfident_wrong_rate > 0.10 and overconfident_wrong_rate >= 2 * max(prev_owr, 0.0001):
+    prev_owr = previous.overconfident_wrong_rate
+    if overconfident_wrong_rate > 0.10 and overconfident_wrong_rate >= 2 * max(prev_owr, 0.0001):
         alerts.append("overconfident_wrong_rate_drift")
     return alerts

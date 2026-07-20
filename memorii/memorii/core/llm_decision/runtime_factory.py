@@ -9,17 +9,17 @@ from memorii.core.belief.provider import BeliefUpdateProvider
 from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMRuntimeConfig
-from memorii.core.llm_decision.adapters import LLMBeliefUpdateAdapter, LLMPromotionDecisionAdapter
+from memorii.core.llm_decision.adapters import LLMBeliefUpdateAdapter, LLMPromotionAssessmentAdapter
 from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionTrace
 from memorii.core.llm_decision.provider import LLMDecisionProvider
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
-from memorii.core.promotion.hybrid_provider import HybridPromotionDecisionProvider
-from memorii.core.promotion.llm_provider import LLMPromotionDecisionProvider
-from memorii.core.promotion.models import PromotionContext
-from memorii.core.promotion.provider import PromotionDecisionProvider
-from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from memorii.core.promotion.assessment import PromotionAssessmentContext
+from memorii.core.promotion.hybrid_provider import HybridPromotionAssessmentProvider
+from memorii.core.promotion.llm_provider import LLMPromotionAssessmentProvider
+from memorii.core.promotion.provider import PromotionAssessmentProvider
+from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
 from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
 
 
@@ -36,7 +36,7 @@ class PromptBackedLLMDecisionProvider:
             config=runtime_config,
         )
         registry = PromptRegistry(prompt_root=root)
-        self._promotion_adapter = LLMPromotionDecisionAdapter(runner=runner, registry=registry)
+        self._promotion_adapter = LLMPromotionAssessmentAdapter(runner=runner, registry=registry)
         self._belief_adapter = LLMBeliefUpdateAdapter(runner=runner, registry=registry)
 
     def decide(
@@ -50,7 +50,7 @@ class PromptBackedLLMDecisionProvider:
         request_id = f"runtime:{decision_point.value}:{input_payload.get('candidate_id') or input_payload.get('node_id') or 'decision'}"
         if decision_point == LLMDecisionPoint.PROMOTION:
             result = self._promotion_adapter.decide(
-                PromotionContext.model_validate(input_payload),
+                PromotionAssessmentContext.model_validate(input_payload),
                 request_id=request_id,
             )
         elif decision_point == LLMDecisionPoint.BELIEF_UPDATE:
@@ -82,13 +82,13 @@ def _build_prompt_llm_provider(runtime_config: LLMRuntimeConfig) -> LLMDecisionP
     return PromptBackedLLMDecisionProvider(runtime_config=runtime_config)
 
 
-def build_promotion_decision_provider_from_env() -> PromotionDecisionProvider:
+def build_promotion_decision_provider_from_env() -> PromotionAssessmentProvider:
     runtime_config, mode = _resolve_runtime_config()
     if mode == "rule":
-        return RuleBasedPromotionDecisionProvider()
-    llm_provider = LLMPromotionDecisionProvider(llm_provider=_build_prompt_llm_provider(runtime_config))
+        return RuleBasedPromotionAssessmentProvider()
+    llm_provider = LLMPromotionAssessmentProvider(llm_provider=_build_prompt_llm_provider(runtime_config))
     if mode == "hybrid":
-        return HybridPromotionDecisionProvider(llm_provider=llm_provider)
+        return HybridPromotionAssessmentProvider(llm_provider=llm_provider)
     if mode == "llm":
         return llm_provider
     raise ValueError(f"Unsupported decision mode: {mode}")

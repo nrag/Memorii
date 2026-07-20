@@ -46,7 +46,6 @@ class PromptContract(BaseModel):
     user_template: str
     model_defaults: PromptModelDefaults
     redaction: PromptRedactionPolicy
-    allowed_failure_modes: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")

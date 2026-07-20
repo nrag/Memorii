@@ -54,7 +54,7 @@ from memorii.core.benchmark.reproducibility import (
 )
 from memorii.core.calibration.models import CalibrationEvent
 from memorii.core.calibration.reports import build_calibration_artifacts
-from memorii.tools.benchmark_suites.artifact_io import _write_jsonl
+from memorii.tools.benchmark_suites.artifact_io import write_jsonl
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 LLMArtifactRow = SimLLMTraceRow | RuntimeExtractorTraceRow
@@ -412,19 +412,19 @@ def write_memory_evolution_artifacts(
     latent_graph_payload = json.loads(latent_graph_json)
     write_json_atomic(run_dir / "fixtures.json", latent_graph_payload)
     write_json_atomic(run_dir / "latent_graphs.json", latent_graph_payload)
-    _write_jsonl(
+    write_jsonl(
         run_dir / "world_transitions.jsonl",
         [transition.model_dump(mode="json") for scenario in scenarios for transition in scenario.transitions],
     )
-    _write_jsonl(
+    write_jsonl(
         run_dir / "surface_observations.jsonl",
         surface_rows,
     )
-    _write_jsonl(
+    write_jsonl(
         run_dir / "oracle_checkpoints.jsonl",
         checkpoint_payload,
     )
-    _write_jsonl(run_dir / "candidate_cards.jsonl", candidate_card_payload)
+    write_jsonl(run_dir / "candidate_cards.jsonl", candidate_card_payload)
     write_json_atomic(
         run_dir / "validation_scenario_catalog.json",
         artifact_rows_to_json(validation_scenario_catalog),
@@ -440,20 +440,20 @@ def write_memory_evolution_artifacts(
     write_typed_jsonl(run_dir / "judge_votes.jsonl", judge_vote_rows, model_type=JudgeVoteRow)
     judge_rows_json = [row.model_dump(mode="json") for row in judge_rows]
     write_json_atomic(run_dir / "judge_aggregate.json", judge_rows_json)
-    _write_jsonl(
+    write_jsonl(
         run_dir / "judge_conflicts.jsonl",
         [row.model_dump(mode="json") for row in judge_rows if _judge_row_has_conflict(row)],
     )
     write_json_atomic(run_dir / "judge_coverage.json", judge_coverage)
     write_json_atomic(run_dir / "sim_failure_buckets.json", dict(sorted(failure_bucket_counts.items())))
-    _write_jsonl(run_dir / "llm_traces.jsonl", artifact_rows_to_json(llm_rows))
+    write_jsonl(run_dir / "llm_traces.jsonl", artifact_rows_to_json(llm_rows))
     write_typed_jsonl(
         run_dir / "failures.jsonl",
         [row for row in checkpoint_rows if row.success is False],
         model_type=SimCheckpointResultRow,
     )
     write_typed_jsonl(run_dir / "sim_warning_examples.jsonl", warning_examples, model_type=WarningExampleRow)
-    _write_jsonl(
+    write_jsonl(
         run_dir / "review_candidates.jsonl",
         artifact_rows_to_json([row for row in checkpoint_rows if _sim_row_needs_review(row)]),
     )
@@ -463,7 +463,7 @@ def write_memory_evolution_artifacts(
             [scenario.model_dump(mode="json") for scenario in scenarios],
         )
     if args.sim_export_review_set:
-        _write_jsonl(
+        write_jsonl(
             Path(args.sim_export_review_set),
             artifact_rows_to_json([row for row in checkpoint_rows if _sim_row_needs_review(row)]),
         )
@@ -623,7 +623,7 @@ def print_memory_evolution_summary(
     )
 
 
-def _horizon_distance_bucket(distance: int | float | object) -> str:
+def horizon_distance_bucket(distance: int | float | object) -> str:
     value = int(distance) if isinstance(distance, (int, float)) else 0
     if value < 5:
         return "short"
@@ -634,7 +634,7 @@ def _horizon_distance_bucket(distance: int | float | object) -> str:
     return "very_long"
 
 
-def _interference_count_bucket(count: int | float | object) -> str:
+def interference_count_bucket(count: int | float | object) -> str:
     value = int(count) if isinstance(count, (int, float)) else 0
     if value == 0:
         return "none"
@@ -645,7 +645,7 @@ def _interference_count_bucket(count: int | float | object) -> str:
     return "high"
 
 
-def _source_event_age_days_bucket(days: int | float | object) -> str:
+def source_event_age_days_bucket(days: int | float | object) -> str:
     value = float(days) if isinstance(days, (int, float)) else 0.0
     if value < 7:
         return "fresh"

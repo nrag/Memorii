@@ -22,7 +22,7 @@ class LLMBeliefUpdateProvider:
         self._fallback_provider = fallback_provider or RuleBasedBeliefUpdateProvider()
 
     def update(self, *, context: BeliefUpdateContext) -> tuple[BeliefUpdateDecision, LLMDecisionTrace]:
-        input_payload = context.model_dump(mode="json")
+        input_payload = context.prompt_payload()
 
         try:
             trace = self._llm_provider.decide(

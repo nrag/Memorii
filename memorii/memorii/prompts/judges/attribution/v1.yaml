@@ -26,5 +26,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [missing_attribution, agent_claim_as_user_claim, verifier_hypothesis_as_fact, external_source_as_user_memory, ambiguous_source]
-tags: [judge, wave1, attribution]
+tags: [judge, attribution]

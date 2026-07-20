@@ -35,13 +35,14 @@ from memorii.core.llm_decision.adapters import (
     LLMBeliefUpdateAdapter,
     LLMEvidenceSelectionAdapter,
     LLMGroundedAnswerAdapter,
-    LLMPromotionDecisionAdapter,
+    LLMJudgeDecisionAdapter,
+    LLMPromotionAssessmentAdapter,
     default_judge_prompt_refs,
 )
 from memorii.core.llm_provider.models import LLMStructuredResponse
 from memorii.core.llm_provider.parser import parse_structured_response
 from memorii.core.memory_evolution.extraction import LLMMemoryExtractor
-from memorii.core.prompts.manifest import PromptContractManifestEntry, prompt_contract_manifest_by_ref
+from memorii.core.memory_evolution.query_analysis.provider import PromptBackedStructuredQueryAnalysisProvider
 from memorii.core.prompts.models import PromptContract
 from memorii.core.prompts.registry import (
     PromptRegistry,
@@ -51,7 +52,12 @@ from memorii.core.prompts.registry import (
 )
 from memorii.core.prompts.render import PromptRenderer, redact_variables
 from memorii.core.prompts.runtime_manifest import PromptOwner, prompt_runtime_registrations
-from pydantic import ValidationError
+from memorii.core.prompts.schema_parity import (
+    assert_output_schema_matches_model,
+    assert_supported_json_schema,
+)
+from pydantic import BaseModel, ValidationError
+from tests.prompt_contract_manifest import PromptContractManifestEntry, prompt_contract_manifest_by_ref
 
 PROMPT_ROOT = default_prompt_root()
 _ADVERSARIAL_SENTINELS = {
@@ -64,7 +70,11 @@ _ADVERSARIAL_SENTINELS = {
 
 def _load(ref: str) -> RegisteredPromptContract:
     entry = prompt_contract_manifest_by_ref()[ref]
-    return PromptRegistry(prompt_root=PROMPT_ROOT).load(ref, owner=entry.owning_adapter)
+    return PromptRegistry(prompt_root=PROMPT_ROOT).load(
+        ref,
+        owner=entry.owning_adapter,
+        output_model=_OUTPUT_MODELS_BY_REF[ref],
+    )
 
 
 def _replace_registered(
@@ -128,9 +138,24 @@ _OWNER_DEFAULT_PROMPT_REFS = {
         LLMMemoryEvolutionSimReconstructionAdapter,
         "memory_evolution_sim_reconstruction:v1",
     ),
-    PromptOwner.LLM_PROMOTION_DECISION_ADAPTER: (LLMPromotionDecisionAdapter, "promotion_decision:v1"),
+    PromptOwner.LLM_PROMOTION_DECISION_ADAPTER: (LLMPromotionAssessmentAdapter, "promotion_decision:v1"),
     PromptOwner.LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER: (LLMRetrievalRelevanceDecisionAdapter, "retrieval_relevance:v1"),
 }
+
+_OUTPUT_MODELS_BY_REF = {
+    prompt_ref: adapter_cls.output_model
+    for adapter_cls, prompt_ref in _OWNER_DEFAULT_PROMPT_REFS.values()
+}
+_OUTPUT_MODELS_BY_REF.update(
+    {
+        ref: LLMJudgeDecisionAdapter.output_model
+        for ref in default_judge_prompt_refs().values()
+    }
+)
+_OUTPUT_MODELS_BY_REF[LLMMemoryExtractor.prompt_ref] = LLMMemoryExtractor.output_model
+_OUTPUT_MODELS_BY_REF[PromptBackedStructuredQueryAnalysisProvider.prompt_ref] = (
+    PromptBackedStructuredQueryAnalysisProvider.output_model
+)
 
 
 def test_prompt_contract_rejects_extra_fields() -> None:
@@ -165,19 +190,42 @@ def test_registry_loads_and_lists_all() -> None:
     }
     assert expected.issubset(set(reg.list_prompt_refs()))
     for ref in expected:
-        assert reg.load(ref, owner=prompt_contract_manifest_by_ref()[ref].owning_adapter).version == "v1"
+        assert (
+            reg.load(
+                ref,
+                owner=prompt_contract_manifest_by_ref()[ref].owning_adapter,
+                output_model=_OUTPUT_MODELS_BY_REF[ref],
+            ).version
+            == "v1"
+        )
 
 
 def test_registry_rejects_malformed_missing_and_traversal() -> None:
     reg = PromptRegistry(prompt_root=PROMPT_ROOT)
     with pytest.raises(ValueError):
-        reg.load("badref", owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER)
+        reg.load(
+            "badref",
+            owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+            output_model=LLMPromotionAssessmentAdapter.output_model,
+        )
     with pytest.raises(ValueError, match="not registered"):
-        reg.load("unknown:v1", owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER)
+        reg.load(
+            "unknown:v1",
+            owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+            output_model=LLMPromotionAssessmentAdapter.output_model,
+        )
     with pytest.raises(ValueError):
-        reg.load("../x:v1", owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER)
+        reg.load(
+            "../x:v1",
+            owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+            output_model=LLMPromotionAssessmentAdapter.output_model,
+        )
     with pytest.raises(ValueError):
-        reg.load("judges/../../x:v1", owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER)
+        reg.load(
+            "judges/../../x:v1",
+            owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+            output_model=LLMPromotionAssessmentAdapter.output_model,
+        )
 
 
 def test_registry_rejects_malformed_yaml(tmp_path: Path) -> None:
@@ -188,19 +236,22 @@ def test_registry_rejects_malformed_yaml(tmp_path: Path) -> None:
         PromptRegistry(prompt_root=root).load(
             "a:v1",
             owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+            output_model=LLMPromotionAssessmentAdapter.output_model,
         )
 
 
 def test_renderer_renders_and_hash_changes() -> None:
     contract = _load("promotion_decision:v1")
     renderer = PromptRenderer()
-    vars1 = {"context_json": {"b": 1, "a": [2, 3]}, "candidate_summary": "x"}
+    vars1 = prompt_contract_manifest_by_ref()["promotion_decision:v1"].render_variables()
     out1 = renderer.render(contract=contract, variables=vars1)
     out2 = renderer.render(contract=contract, variables=vars1)
-    out3 = renderer.render(contract=contract, variables={"context_json": {"a": [2, 4], "b": 1}, "candidate_summary": "x"})
+    changed = deepcopy(vars1)
+    changed["candidate_summary"] = "A different candidate summary."
+    out3 = renderer.render(contract=contract, variables=changed)
     assert out1.prompt_hash == out2.prompt_hash
     assert out1.prompt_hash != out3.prompt_hash
-    assert "{\"a\":[2,3],\"b\":1}" in out1.user
+    assert "Implemented the benchmark runner" in out1.user
 
 
 def test_renderer_rejects_unsafe_placeholders_and_missing() -> None:
@@ -210,7 +261,7 @@ def test_renderer_rejects_unsafe_placeholders_and_missing() -> None:
         with pytest.raises(ValueError):
             PromptRenderer().render(contract=contract, variables={"x": "ok", "context_json": {}, "candidate_summary": "c"})
 
-    with pytest.raises(KeyError):
+    with pytest.raises(ValueError, match="Prompt input validation failed"):
         PromptRenderer().render(contract=_load("promotion_decision:v1"), variables={"context_json": {}})
 
 
@@ -316,38 +367,10 @@ def test_prompt_yaml_security_and_schema_strength() -> None:
 
 def test_all_prompts_render_with_expected_variables() -> None:
     renderer = PromptRenderer()
-    samples = {
-        "promotion_decision:v1": {"context_json": {}, "candidate_summary": "candidate"},
-            "belief_update:v1": {
-                "context_json": {
-                    "prior_belief": None,
-                    "decision": "SUPPORTED",
-                    "evidence_count": 1,
-                    "missing_evidence_count": 0,
-                    "verifier_downgraded": False,
-                    "conflict_count": 0,
-                    "evidence_ids": ["evidence:1"],
-                    "missing_evidence": [],
-                    "node_id": None,
-                    "solver_run_id": None,
-                    "metadata": {},
-                }
-            },
-            "lifecycle_decision:v1": {"context_json": {}, "query": "query"},
-            "execution_graph_decision:v1": {"context_json": {}, "task": "task"},
-            "memory_evolution_decision:v1": {"context_json": {}, "query": "query"},
-            "memory_evolution_sim_reconstruction:v1": {"context_json": {}, "query": "query"},
-            "memory_extraction:v1": {"source_observations": []},
-            "retrieval_relevance:v1": {"context_json": {}, "query": "query"},
-            "evidence_selection:v1": {"context_json": {}, "query": "query"},
-            "grounded_answer:v1": {"context_json": {}, "query": "query"},
-            "answer_verification:v1": {"context_json": {}, "query": "query"},
-            "hotpotqa_answer:v1": {"context_json": {}, "question": "question"},
-            "structured_query_analysis:v1": {"context_json": {}, "query": "query"},
-        }
+    manifest = prompt_contract_manifest_by_ref()
     for ref in PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs():
         contract = _load(ref)
-        variables = {"rubric_json": {}, "input_payload": {}} if ref.startswith("judges/") else samples[ref]
+        variables = manifest[ref].render_variables()
         rendered = renderer.render(contract=contract, variables=variables)
         assert rendered.prompt_ref == ref
 
@@ -368,7 +391,8 @@ def test_runtime_prompt_registrations_match_conformance_manifest_and_yaml() -> N
     for ref, registration in registrations.items():
         entry = manifest[ref]
         assert registration.owning_adapter == entry.owning_adapter
-        assert registration.expected_input_variables == entry.expected_input_variables
+
+    assert "expected_input_variables" not in type(next(iter(registrations.values()))).model_fields
 
 
 @pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))
@@ -409,11 +433,13 @@ def test_production_prompt_registry_enforces_manifest_ownership() -> None:
     registry.load(
         "promotion_decision:v1",
         owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+        output_model=LLMPromotionAssessmentAdapter.output_model,
     )
     with pytest.raises(ValueError, match="owned by"):
         registry.load(
             "promotion_decision:v1",
             owner=PromptOwner.LLM_BELIEF_UPDATE_ADAPTER,
+            output_model=LLMPromotionAssessmentAdapter.output_model,
         )
 
 
@@ -453,16 +479,22 @@ def test_prompt_renderer_redacts_adversarial_nested_oracle_fields(
     )
     if structured_key is None:
         pytest.skip(f"{ref} has no structured prompt input")
-    nested_payload = {
+    adversarial_fields = {
         "expected_answer": "ORACLE_EXPECTED_SHOULD_NOT_RENDER",
         "ExpectedExecutionClaimIds": ["HIDDEN_ID_SHOULD_NOT_RENDER"],
         "hidden_graph_items": [{"id": "HIDDEN_ID_SHOULD_NOT_RENDER"}],
         "Required-Judge-Ids": ["JUDGE_OUTPUT_SHOULD_NOT_RENDER"],
         "judge_votes": [{"score": "JUDGE_OUTPUT_SHOULD_NOT_RENDER"}],
         "ApiKey": "SECRET_SHOULD_NOT_RENDER",
-        "safe_context": "visible context",
     }
-    variables[structured_key] = nested_payload
+    structured_value = variables[structured_key]
+    if isinstance(structured_value, dict):
+        variables[structured_key] = {**structured_value, **adversarial_fields}
+    else:
+        assert isinstance(structured_value, list) and structured_value
+        first_item = structured_value[0]
+        assert isinstance(first_item, dict)
+        variables[structured_key] = [{**first_item, **adversarial_fields}, *structured_value[1:]]
 
     rendered = PromptRenderer().render(contract=contract, variables=variables)
     rendered_text = f"{rendered.system}\n{rendered.user}"
@@ -477,9 +509,12 @@ def test_prompt_renderer_uses_manifest_owned_visibility_policy() -> None:
     contract = _load("promotion_decision:v1")
     entry = prompt_contract_manifest_by_ref()["promotion_decision:v1"]
     variables = entry.render_variables()
+    context_json = variables["context_json"]
+    assert isinstance(context_json, dict)
     variables["context_json"] = {
+        **context_json,
         "Expected-Answer": "ORACLE_EXPECTED_SHOULD_NOT_RENDER",
-        "safe_context": "visible context",
+        "content": "visible context",
     }
 
     rendered = PromptRenderer().render(contract=contract, variables=variables)
@@ -617,8 +652,46 @@ def test_prompt_manifest_fake_outputs_parse_against_yaml_schema(ref: str, entry:
     assert valid_response.valid_json is True
     assert valid_response.schema_valid is True
     assert valid_response.parsed_json == entry.fake_valid_output
+    assert _OUTPUT_MODELS_BY_REF[ref].model_validate(entry.fake_valid_output)
     assert invalid_response.valid_json is True
     assert invalid_response.schema_valid is False
+
+
+def test_schema_parity_rejects_stricter_string_pattern() -> None:
+    class UnconstrainedStringOutput(BaseModel):
+        value: str
+
+    prompt_schema = UnconstrainedStringOutput.model_json_schema()
+    value_schema = prompt_schema["properties"]["value"]
+    assert isinstance(value_schema, dict)
+    value_schema["pattern"] = "^ONLY_THIS$"
+
+    with pytest.raises(ValueError, match="does not match"):
+        assert_output_schema_matches_model(
+            prompt_ref="test_pattern:v1",
+            output_schema=prompt_schema,
+            output_model=UnconstrainedStringOutput,
+        )
+
+
+def test_schema_dialect_rejects_unproved_validation_keywords() -> None:
+    with pytest.raises(ValueError, match="unsupported JSON Schema keywords"):
+        assert_supported_json_schema(
+            schema_name="unsupported",
+            schema={"allOf": [{"type": "string"}]},
+        )
+
+
+def test_prompt_renderer_rejects_unexpected_and_wrongly_typed_inputs() -> None:
+    contract = _load("promotion_decision:v1")
+    variables = prompt_contract_manifest_by_ref()["promotion_decision:v1"].render_variables()
+    unexpected = {**variables, "unregistered_context": "not allowed"}
+    wrong_type = {**variables, "candidate_summary": 42}
+
+    with pytest.raises(ValueError, match="Additional properties are not allowed"):
+        PromptRenderer().render(contract=contract, variables=unexpected)
+    with pytest.raises(ValueError, match="is not of type 'string'"):
+        PromptRenderer().render(contract=contract, variables=wrong_type)
 
 
 @pytest.mark.parametrize("ref", PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs())
@@ -631,6 +704,6 @@ def test_prompt_output_schemas_are_recursively_strict(ref: str) -> None:
 
 
 def test_prompt_manifest_does_not_import_prompt_optimization_frameworks() -> None:
-    import memorii.core.prompts.manifest as manifest
+    import tests.prompt_contract_manifest as manifest
 
     assert "dspy" not in manifest.__dict__

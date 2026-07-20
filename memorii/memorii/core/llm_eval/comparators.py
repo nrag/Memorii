@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from memorii.core.belief.models import BeliefUpdateContext, BeliefUpdateDecision
-from memorii.core.promotion.models import PromotionDecision
+from memorii.core.promotion.assessment import PromotionAssessment
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ _SUPPORTED_BELIEF_FIELDS = {
 
 def compare_promotion(
     *,
-    actual: PromotionDecision,
+    actual: PromotionAssessment,
     expected_output: dict[str, object] | None,
 ) -> ComparatorResult:
     if expected_output is None:

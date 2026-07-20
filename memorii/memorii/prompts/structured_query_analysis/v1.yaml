@@ -191,5 +191,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [provider_error, schema_error, constraint_error, ambiguous_query]
 tags: [retrieval, temporal, semantic-parsing]

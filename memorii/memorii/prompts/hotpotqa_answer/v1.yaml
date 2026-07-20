@@ -52,5 +52,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [insufficient_evidence, invalid_supporting_fact, noanswer, provider_error, validation_error]
 tags: [hotpotqa, benchmark, official]

@@ -6,12 +6,24 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-from memorii.core.benchmark.execution_graph_decision import ExecutionGraphDecisionContext
-from memorii.core.benchmark.hotpotqa_official import HotpotQAAnswerContext
-from memorii.core.benchmark.lifecycle_decision import LifecycleDecisionContext
-from memorii.core.benchmark.memory_evolution_decision.contracts import MemoryEvolutionDecisionContext
-from memorii.core.benchmark.memory_evolution_sim.schemas import MemoryEvolutionSimReconstructionContext
-from memorii.core.benchmark.retrieval_relevance_decision import RetrievalRelevanceContext
+from memorii.core.benchmark.execution_graph_decision import (
+    ExecutionGraphDecisionContext,
+    ExecutionGraphDecisionOutput,
+)
+from memorii.core.benchmark.hotpotqa_official import HotpotQAAnswerContext, HotpotQAAnswerOutput
+from memorii.core.benchmark.lifecycle_decision import LifecycleDecisionContext, LifecycleDecisionOutput
+from memorii.core.benchmark.memory_evolution_decision.contracts import (
+    MemoryEvolutionDecisionContext,
+    MemoryEvolutionDecisionOutput,
+)
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    MemoryEvolutionSimReconstructionContext,
+    SimProviderOutput,
+)
+from memorii.core.benchmark.retrieval_relevance_decision import (
+    RetrievalRelevanceContext,
+    RetrievalRelevanceOutput,
+)
 from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
@@ -21,6 +33,7 @@ from memorii.core.prompts.runtime_manifest import PromptOwner
 class _BenchmarkPromptAdapter:
     prompt_ref: ClassVar[str]
     owner: ClassVar[PromptOwner]
+    output_model: ClassVar[type[BaseModel]]
 
     def __init__(
         self,
@@ -40,7 +53,11 @@ class _BenchmarkPromptAdapter:
         request_id: str,
         metadata: dict[str, object] | None,
     ) -> LLMDecisionResult:
-        contract = self._registry.load(self.prompt_ref, owner=self.owner)
+        contract = self._registry.load(
+            self.prompt_ref,
+            owner=self.owner,
+            output_model=self.output_model,
+        )
         return self._runner.run(
             contract=contract,
             variables={
@@ -49,12 +66,14 @@ class _BenchmarkPromptAdapter:
             },
             request_id=request_id,
             metadata=metadata,
+            output_model=self.output_model,
         )
 
 
 class LLMLifecycleDecisionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "lifecycle_decision:v1"
     owner = PromptOwner.LLM_LIFECYCLE_DECISION_ADAPTER
+    output_model = LifecycleDecisionOutput
 
     def decide(
         self,
@@ -76,6 +95,7 @@ class LLMLifecycleDecisionAdapter(_BenchmarkPromptAdapter):
 class LLMExecutionGraphDecisionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "execution_graph_decision:v1"
     owner = PromptOwner.LLM_EXECUTION_GRAPH_DECISION_ADAPTER
+    output_model = ExecutionGraphDecisionOutput
 
     def decide(
         self,
@@ -97,6 +117,7 @@ class LLMExecutionGraphDecisionAdapter(_BenchmarkPromptAdapter):
 class LLMMemoryEvolutionDecisionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "memory_evolution_decision:v1"
     owner = PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER
+    output_model = MemoryEvolutionDecisionOutput
 
     def decide(
         self,
@@ -118,6 +139,7 @@ class LLMMemoryEvolutionDecisionAdapter(_BenchmarkPromptAdapter):
 class LLMMemoryEvolutionSimReconstructionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "memory_evolution_sim_reconstruction:v1"
     owner = PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER
+    output_model = SimProviderOutput
 
     def decide(
         self,
@@ -139,6 +161,7 @@ class LLMMemoryEvolutionSimReconstructionAdapter(_BenchmarkPromptAdapter):
 class LLMRetrievalRelevanceDecisionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "retrieval_relevance:v1"
     owner = PromptOwner.LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER
+    output_model = RetrievalRelevanceOutput
 
     def decide(
         self,
@@ -160,6 +183,7 @@ class LLMRetrievalRelevanceDecisionAdapter(_BenchmarkPromptAdapter):
 class LLMHotpotQAAnswerAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "hotpotqa_answer:v1"
     owner = PromptOwner.LLM_HOTPOTQA_ANSWER_ADAPTER
+    output_model = HotpotQAAnswerOutput
 
     def decide(
         self,

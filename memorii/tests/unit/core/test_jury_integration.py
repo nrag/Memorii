@@ -8,9 +8,9 @@ from memorii.core.llm_judge.judges import (
 from memorii.core.llm_judge.jury import JuryAggregator
 
 
-def test_wave1_judges_aggregate_and_disagreement_behavior() -> None:
+def test_judges_aggregate_and_report_disagreement() -> None:
     promotion_context = {
-        "candidate_id": "cand:wave1",
+        "candidate_id": "candidate:jury",
         "candidate_type": "project_fact",
         "content": "Current workaround for now this sprint",
         "source_ids": ["src:1"],
@@ -43,7 +43,7 @@ def test_wave1_judges_aggregate_and_disagreement_behavior() -> None:
         BeliefDirectionJudge().judge(input_payload=belief_payload),
     ]
 
-    jury = JuryAggregator().aggregate(verdicts=verdicts, snapshot_id="snap:wave1")
+    jury = JuryAggregator().aggregate(verdicts=verdicts, snapshot_id="snapshot:jury")
     assert len(jury.dimensions) == 5
     assert jury.disagreement is True
     assert jury.needs_human_review is True

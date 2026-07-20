@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
-from memorii.core.memory_evolution.models import EntityType, MemoryScope
+from memorii.core.memory_evolution.language import supports_english_rules
+from memorii.core.memory_evolution.models import EntityType, MemoryGraphLifecycleState, MemoryScope
 from memorii.core.memory_evolution.query_text import contains_query_phrase, normalize_query_text
 from memorii.core.memory_evolution.temporal_contracts import (
     QueryResolutionConfidenceSource,
@@ -211,8 +212,7 @@ def resolve_query_temporal_frame(
 
 
 def is_english(language: str) -> bool:
-    normalized = language.strip().casefold()
-    return normalized in {"", "en", "eng", "auto"} or normalized.startswith("en-")
+    return supports_english_rules(language)
 
 
 def _temporal_anchor(
@@ -347,7 +347,7 @@ def _entity_candidate_matches_query(
     valid_to: datetime | None,
 ) -> bool:
     if temporal_kind in {QueryTemporalKind.CURRENT, QueryTemporalKind.EXECUTION, QueryTemporalKind.BELIEF}:
-        if candidate.lifecycle_state != "active":
+        if candidate.lifecycle_state != MemoryGraphLifecycleState.ACTIVE:
             return False
         return evaluate_temporal_eligibility(
             lifecycle_state=candidate.lifecycle_state,

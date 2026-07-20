@@ -84,5 +84,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [temporal_confusion, source_trust_error, scope_leakage, role_confusion, belief_dependency_error, stale_branch_error, invalid_visible_id, rule_limit]
 tags: [memory_evolution_sim, benchmark, latent_graph]

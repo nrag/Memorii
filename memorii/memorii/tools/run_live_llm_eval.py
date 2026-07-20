@@ -9,7 +9,7 @@ from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_decision.adapters import (
     LLMBeliefUpdateAdapter,
-    LLMPromotionDecisionAdapter,
+    LLMPromotionAssessmentAdapter,
 )
 from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionMode
 from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
@@ -37,7 +37,7 @@ def _requested_modes(mode_arg: str) -> list[str]:
     return [mode_arg]
 
 
-def _validate_live_safety(
+def validate_live_safety(
     *,
     modes: list[str],
     dry_run: bool,
@@ -69,7 +69,7 @@ def _validate_live_safety(
         )
 
 
-def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
+def write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
     path.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
         encoding="utf-8",
@@ -108,21 +108,21 @@ def _write_artifacts(
         json.dumps(report.model_dump(mode="json"), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    _write_jsonl(run_dir / "results.jsonl", [result.model_dump(mode="json") for result in report.results])
-    _write_jsonl(
+    write_jsonl(run_dir / "results.jsonl", [result.model_dump(mode="json") for result in report.results])
+    write_jsonl(
         run_dir / "failures.jsonl",
         [result.model_dump(mode="json") for result in report.results if not result.passed],
     )
-    _write_jsonl(
+    write_jsonl(
         run_dir / "fallbacks.jsonl",
         [result.model_dump(mode="json") for result in report.results if result.fallback_used],
     )
-    _write_jsonl(
+    write_jsonl(
         run_dir / "disagreements.jsonl",
         [result.model_dump(mode="json") for result in report.results if result.disagreement],
     )
-    _write_jsonl(run_dir / "inputs" / "snapshots.jsonl", [snapshot.model_dump(mode="json") for snapshot in snapshots])
-    _write_jsonl(run_dir / "traces.jsonl", trace_rows)
+    write_jsonl(run_dir / "inputs" / "snapshots.jsonl", [snapshot.model_dump(mode="json") for snapshot in snapshots])
+    write_jsonl(run_dir / "traces.jsonl", trace_rows)
 
     fallback_cases = sum(1 for result in report.results if result.fallback_used)
     disagreement_cases = sum(1 for result in report.results if result.disagreement)
@@ -167,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"runtime_config={runtime_config.redacted_dict()}")
 
     modes = _requested_modes(args.mode)
-    _validate_live_safety(
+    validate_live_safety(
         modes=modes,
         dry_run=args.dry_run,
         allow_live=args.allow_live,
@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     client = EvalFakeClient() if args.dry_run else LLMClientFactory.from_config(runtime_config)
     runner = PromptLLMRunner(client=client, config=runtime_config)
     registry = PromptRegistry(prompt_root=prompt_root)
-    promotion_adapter = LLMPromotionDecisionAdapter(runner=runner, registry=registry)
+    promotion_adapter = LLMPromotionAssessmentAdapter(runner=runner, registry=registry)
     belief_adapter = LLMBeliefUpdateAdapter(runner=runner, registry=registry)
 
     snapshots = _load_snapshots(args.golden_set)

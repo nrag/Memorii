@@ -57,5 +57,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [role_confusion, temporal_confusion, source_priority_error, scope_confusion, entity_linking_error, no_reliable_answer, rule_limit]
 tags: [retrieval, benchmark]

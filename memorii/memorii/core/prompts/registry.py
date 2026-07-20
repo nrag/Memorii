@@ -5,12 +5,17 @@ import json
 from pathlib import Path
 
 import yaml
+from pydantic import BaseModel
 
 from memorii.core.prompts.models import PromptContract
 from memorii.core.prompts.runtime_manifest import (
     PromptOwner,
     PromptRuntimeRegistration,
     prompt_runtime_registrations,
+)
+from memorii.core.prompts.schema_parity import (
+    assert_output_schema_matches_model,
+    assert_supported_json_schema,
 )
 
 
@@ -49,7 +54,13 @@ class PromptRegistry:
         self.prompt_root = Path(prompt_root or default_prompt_root()).resolve()
         self.registrations = registrations or prompt_runtime_registrations()
 
-    def load(self, prompt_ref: str, *, owner: PromptOwner | str) -> RegisteredPromptContract:
+    def load(
+        self,
+        prompt_ref: str,
+        *,
+        owner: PromptOwner | str,
+        output_model: type[BaseModel],
+    ) -> RegisteredPromptContract:
         runtime_registration = self.registrations.get(prompt_ref)
         if runtime_registration is None:
             raise ValueError(f"Prompt is not registered in the contract manifest: {prompt_ref}")
@@ -68,6 +79,15 @@ class PromptRegistry:
         actual_ref = f"{contract.prompt_id}:{contract.version}"
         if actual_ref != prompt_ref:
             raise ValueError(f"Prompt YAML identity {actual_ref} does not match requested ref {prompt_ref}")
+        assert_supported_json_schema(
+            schema_name=f"{prompt_ref}.input_schema",
+            schema=contract.input_schema,
+        )
+        assert_output_schema_matches_model(
+            prompt_ref=prompt_ref,
+            output_schema=contract.output_schema,
+            output_model=output_model,
+        )
         return RegisteredPromptContract.model_validate(
             {
                 **contract.model_dump(mode="python"),

@@ -5,13 +5,14 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.adapters.events import HarnessEvent
+from memorii.core.solver.models import NextTestAction
 
 
 class HarnessOutput(BaseModel):
     """Minimal structured output returned to host harnesses."""
 
     task_id: str
-    next_action: str | None = None
+    next_test_action: NextTestAction | None = None
     solver_state_summary: str = ""
     unresolved_questions: list[str] = Field(default_factory=list)
     required_tests: list[str] = Field(default_factory=list)

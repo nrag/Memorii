@@ -11,11 +11,11 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeActionSupportRow,
 )
 from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow, RuntimeProjection
-from memorii.core.benchmark.memory_evolution_runtime.utils import _claim_by_id, _ordered_unique
+from memorii.core.benchmark.memory_evolution_runtime.utils import claim_by_id, ordered_unique
 from memorii.core.benchmark.memory_evolution_sim import LatentClaim, LatentGraphScenario, OracleCheckpoint
 
 
-def _expected_action_alignment_rows(
+def expected_action_alignment_rows(
     *,
     scenario: LatentGraphScenario,
     expected_action_ids: list[str],
@@ -37,7 +37,7 @@ def _expected_action_alignment_rows(
             rows.append(_action_alignment_row(action_id=action_id, runtime_action=exact, verdict="aligned", support_mode="runtime_action_item_exact", matched_on=["action_id"], failure_reason=""))
             continue
         claim_id = action_id.removeprefix("action:") if action_id.startswith("action:") else ""
-        claim = _claim_by_id(scenario, claim_id) if claim_id else None
+        claim = claim_by_id(scenario, claim_id) if claim_id else None
         if claim is None:
             rows.append(_missing_action_alignment_row(action_id=action_id, failure_reason="runtime_missing_expected_action"))
             continue
@@ -338,7 +338,7 @@ def _primary_action_failure(failed: list[str]) -> str:
             return bucket
     return failed[0] if failed else "runtime_missing_expected_action"
 
-def _runtime_action_support_rows(projection: RuntimeProjection) -> list[RuntimeActionSupportRow]:
+def runtime_action_support_rows(projection: RuntimeProjection) -> list[RuntimeActionSupportRow]:
     return [
         RuntimeActionSupportRow(action_id=action_id, support_mode=support_mode)
         for action_id, support_mode in sorted(projection.action_support.items())
@@ -352,7 +352,7 @@ def _suppressed_branch_ids(
 ) -> list[str]:
     suppressed: list[str] = []
     for claim_id in checkpoint.expected_excluded_claim_ids:
-        claim = _claim_by_id(scenario, claim_id)
+        claim = claim_by_id(scenario, claim_id)
         if claim is None or claim.claim_kind != "action_state":
             continue
         for item in graph_items:
@@ -361,9 +361,9 @@ def _suppressed_branch_ids(
             if _runtime_action_suppresses_claim(runtime_action=item, claim=claim, graph_items=graph_items):
                 suppressed.append(claim.subject.entity_id)
                 break
-    return _ordered_unique(suppressed)
+    return ordered_unique(suppressed)
 
-def _suppressed_action_state_claim_ids(
+def suppressed_action_state_claim_ids(
     *,
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
@@ -372,12 +372,12 @@ def _suppressed_action_state_claim_ids(
     suppressed: list[str] = []
     runtime_actions = [item for item in graph_items if item.item_type == "action"]
     for claim_id in checkpoint.expected_excluded_claim_ids:
-        claim = _claim_by_id(scenario, claim_id)
+        claim = claim_by_id(scenario, claim_id)
         if claim is None or claim.claim_kind != "action_state":
             continue
         if any(_runtime_action_suppresses_claim(runtime_action=action, claim=claim, graph_items=graph_items) for action in runtime_actions):
             suppressed.append(claim_id)
-    return _ordered_unique(suppressed)
+    return ordered_unique(suppressed)
 
 def _runtime_action_suppresses_claim(
     *,
@@ -388,8 +388,6 @@ def _runtime_action_suppresses_claim(
     status, _status_source = _derived_runtime_action_status(runtime_action)
     expected_status = normalize_action_status(claim.object.value)
     if status != expected_status or status not in {"blocked", "abandoned", "completed", "failed"}:
-        return False
-    if runtime_action.lifecycle_state != "active":
         return False
     runtime_events = set(runtime_action.evidence_event_ids)
     oracle_events = {str(item) for item in claim.evidence.source_event_ids}
@@ -407,7 +405,7 @@ def _runtime_action_suppresses_claim(
 def _object_sequence(value: object) -> Sequence[object]:
     return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
 
-def _action_alignment_failure_reason(rows: Sequence[RuntimeActionAlignmentRow]) -> str:
+def action_alignment_failure_reason(rows: Sequence[RuntimeActionAlignmentRow]) -> str:
     for row in rows:
         if row.verdict == "aligned":
             return ""

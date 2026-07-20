@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from memorii.core.belief.errors import BeliefUpdateProviderError
+from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
 from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
 from memorii.core.solver.belief import update_solver_belief
@@ -33,7 +34,6 @@ class SolverDecisionOutput(BaseModel):
     decision: SolverDecision
     evidence_ids: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
-    next_best_test: str | None = None
     next_test_action: NextTestAction | None = None
     rationale_short: str
     confidence_band: ConfidenceBand
@@ -51,8 +51,7 @@ class SolverDecisionOutput(BaseModel):
         if self.decision == SolverDecision.NEEDS_TEST:
             if not self.missing_evidence:
                 raise ValueError("needs_test_requires_missing_evidence")
-            has_next_best_test = self.next_best_test is not None and bool(self.next_best_test.strip())
-            if not has_next_best_test and self.next_test_action is None:
+            if self.next_test_action is None:
                 raise ValueError("needs_test_requires_next_test")
         return self
 
@@ -93,12 +92,7 @@ class SolverUpdateEngine:
         llm_decision_trace_store: LLMDecisionTraceStore | None = None,
     ) -> None:
         self._verifier = verifier or SolverDecisionVerifier()
-        if belief_update_provider is None:
-            from memorii.core.llm_decision.runtime_factory import build_belief_update_provider_from_env
-
-            self._belief_update_provider = build_belief_update_provider_from_env()
-        else:
-            self._belief_update_provider = belief_update_provider
+        self._belief_update_provider = belief_update_provider or RuleBasedBeliefUpdateProvider()
         self._llm_decision_trace_store = llm_decision_trace_store
 
     def apply_update(
@@ -118,7 +112,6 @@ class SolverUpdateEngine:
                 decision=SolverDecision.INSUFFICIENT_EVIDENCE,
                 evidence_ids=[],
                 missing_evidence=["invalid_model_output"],
-                next_best_test="emit_valid_structured_output",
                 rationale_short="Model output failed schema validation",
                 confidence_band=ConfidenceBand.LOW,
             )
@@ -134,7 +127,6 @@ class SolverUpdateEngine:
             decision=parsed.decision,
             evidence_ids=parsed.evidence_ids,
             missing_evidence=parsed.missing_evidence,
-            next_best_test=parsed.next_best_test,
             next_test_action=parsed.next_test_action,
             available_evidence_ids=set(update_input.available_evidence_ids),
         )
@@ -198,8 +190,7 @@ class SolverUpdateEngine:
             decision_node_type = SolverNodeType.ACTION
             decision_node_content = {
                 "decision": final_decision.value,
-                "next_best_test": parsed.next_best_test,
-                "next_test_action": parsed.next_test_action.model_dump(mode="json") if parsed.next_test_action else None,
+                "next_test_action": parsed.next_test_action.model_dump(mode="json"),
                 "missing_evidence": parsed.missing_evidence,
             }
             overlay_status = SolverNodeStatus.NEEDS_TEST
@@ -256,6 +247,7 @@ class SolverUpdateEngine:
             committed_edge_ids.append(link_edge.id)
 
         from memorii.core.belief.models import BeliefUpdateContext
+        from memorii.core.evidence_quality import EvidenceObservability, EvidenceQualitySignals
 
         belief_context = BeliefUpdateContext(
             prior_belief=prior_belief,
@@ -266,6 +258,14 @@ class SolverUpdateEngine:
             conflict_count=0,
             evidence_ids=list(parsed.evidence_ids),
             missing_evidence=list(parsed.missing_evidence),
+            evidence_quality=EvidenceQualitySignals(
+                observability=(
+                    EvidenceObservability.PARTIAL
+                    if parsed.missing_evidence or verifier_downgraded
+                    else EvidenceObservability.COMPLETE
+                ),
+                source_count=len(set(parsed.evidence_ids)),
+            ),
             node_id=decision_node.id,
             solver_run_id=update_input.solver_run_id,
             metadata={
@@ -346,7 +346,6 @@ class SolverUpdateEngine:
                 decision=SolverDecision.INSUFFICIENT_EVIDENCE,
                 evidence_ids=[],
                 missing_evidence=["model_output_missing"],
-                next_best_test="collect_additional_observation",
                 rationale_short="No model output provided",
                 confidence_band=ConfidenceBand.LOW,
             ), []
@@ -358,7 +357,6 @@ class SolverUpdateEngine:
                     decision=SolverDecision.INSUFFICIENT_EVIDENCE,
                     evidence_ids=[],
                     missing_evidence=["invalid_model_output"],
-                    next_best_test="emit_valid_structured_output",
                     rationale_short="Model output failed schema validation",
                     confidence_band=ConfidenceBand.LOW,
                 ),

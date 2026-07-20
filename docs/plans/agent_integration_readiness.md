@@ -43,14 +43,16 @@ agent events -> provider hooks -> MemoryEvolutionService
 The runtime-backed benchmark now validates the memory portion of this path on
 generated observations. It does not include an agent as the system under test.
 
-Runtime memory evolution is also disabled by default in `ProviderMemoryService`, which is the right default until runtime-backed validation is green.
+Runtime memory evolution is part of the normal `ProviderMemoryService` composition.
+Agent integration remains deferred until the runtime-backed evaluation criteria in
+this document are satisfied.
 
 ## Future Integration Design Inputs
 
 The following are design inputs for a future evaluation, not approved pilot
 instructions:
 
-- `ProviderMemoryService(memory_evolution_enabled=True)`
+- `ProviderMemoryService(...)` with its standard memory-evolution composition
 - persistent memory plane storage
 - work-state service enabled
 - decision-state service enabled

@@ -3,10 +3,9 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
 from memorii.core.prompts.runtime_manifest import PromptOwner
 from memorii.core.prompts.sensitivity import ORACLE_INPUT_FIELDS, SECRET_KEYS
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _SECRET_KEYS = sorted(SECRET_KEYS)
 _ORACLE_KEYS = sorted(ORACLE_INPUT_FIELDS)
@@ -160,9 +159,14 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                     "conflict_count": 0,
                     "evidence_ids": ["evidence:1", "evidence:2"],
                     "missing_evidence": [],
-                    "node_id": None,
-                    "solver_run_id": None,
-                    "metadata": {},
+                    "evidence_quality": {
+                        "entity_attribution": "aligned",
+                        "independence": "independent",
+                        "freshness": "current",
+                        "observability": "complete",
+                        "source_count": 2,
+                        "oscillation_detected": False,
+                    },
                 }
             },
             output_schema_owner="belief_update:v1.output_schema",
@@ -528,7 +532,27 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             prompt_ref="promotion_decision:v1",
             owning_adapter=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
             expected_input_variables=["context_json", "candidate_summary"],
-            representative_variables={"context_json": {"candidate_type": "episodic"}, "candidate_summary": "Implemented the benchmark runner."},
+            representative_variables={
+                "context_json": {
+                    "candidate_id": "candidate_1",
+                    "candidate_type": "episodic",
+                    "content": "Implemented the benchmark runner.",
+                    "source_ids": ["event_1"],
+                    "related_memory_ids": [],
+                    "repeated_across_episodes": 1,
+                    "explicit_user_memory_request": False,
+                    "created_from": "task_outcome",
+                    "evidence_quality": {
+                        "entity_attribution": "aligned",
+                        "independence": "independent",
+                        "freshness": "current",
+                        "observability": "complete",
+                        "source_count": 1,
+                        "oscillation_detected": False,
+                    },
+                },
+                "candidate_summary": "Implemented the benchmark runner.",
+            },
             output_schema_owner="promotion_decision:v1.output_schema",
             fake_valid_output={
                 "promote": True,

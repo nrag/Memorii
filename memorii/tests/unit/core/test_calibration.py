@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+from memorii.core.benchmark.artifact_rows import SimCheckpointResultRow
+from memorii.core.benchmark.memory_evolution_sim.schemas import SimCheckpointContract
 from memorii.core.calibration.alignment import (
     RuntimeGraphAlignmentVerdict,
     align_by_normalized_fields,
@@ -29,6 +33,105 @@ from memorii.core.calibration.models import (
 )
 from memorii.core.calibration.policy import response_for_failure_buckets, response_for_slice
 from memorii.core.calibration.reports import build_calibration_artifacts, build_decision_cost_report
+
+
+def _checkpoint_row(partial: dict[str, object]) -> SimCheckpointResultRow:
+    """Build a complete typed row from the fields relevant to a calibration test."""
+
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    checkpoint_type = str(partial.get("checkpoint_type", "current_truth"))
+    success = bool(partial.get("success", True))
+    output = dict(partial.get("output", {}))
+    output.setdefault("rationale", "calibration test output")
+    expected = dict(partial.get("expected", {}))
+    expected.update(
+        {
+            "checkpoint_id": str(partial.get("checkpoint_id", "checkpoint")),
+            "timestamp": timestamp,
+            "checkpoint_type": checkpoint_type,
+            "query_or_task": "calibration test",
+            "checkpoint_contract": SimCheckpointContract().model_dump(mode="json"),
+        }
+    )
+    cards = dict(partial.get("candidate_cards", {}))
+    visible_events = []
+    for event_value in cards.get("visible_events", []):
+        event = dict(event_value)
+        event.setdefault("timestamp", timestamp)
+        event.setdefault("source_type", "tool")
+        event.setdefault("text", "calibration test event")
+        visible_events.append(event)
+    visible_claims = []
+    for claim_value in cards.get("visible_claims", []):
+        claim = dict(claim_value)
+        claim.setdefault("subject_entity_id", "entity:subject")
+        claim.setdefault("subject_name", "subject")
+        claim.setdefault("subject_entity_type", "entity")
+        claim.setdefault("object_value", "value")
+        claim.setdefault("evidence_quote", "calibration test evidence")
+        visible_claims.append(claim)
+    cards.update(
+        {
+            "scenario_id": str(partial.get("scenario_id", "scenario")),
+            "surface_observations": [],
+            "checkpoint": {
+                "checkpoint_id": str(partial.get("checkpoint_id", "checkpoint")),
+                "timestamp": timestamp,
+                "query_or_task": "calibration test",
+            },
+            "visible_events": visible_events,
+            "visible_claims": visible_claims,
+        }
+    )
+    aggregate = dict(partial.get("judge_aggregate", {}))
+    votes = [
+        {
+            "judge_id": str(dict(vote).get("judge_id", "judge")),
+            "checkpoint_id": str(partial.get("checkpoint_id", "checkpoint")),
+            "verdict": "pass" if success else "fail",
+            "score": 1.0 if success else 0.0,
+            "confidence": 1.0,
+            "rationale": "calibration test vote",
+        }
+        for vote in aggregate.get("votes", [])
+    ]
+    aggregate.update(
+        {
+            "checkpoint_id": str(partial.get("checkpoint_id", "checkpoint")),
+            "verdict": "pass" if success else "fail",
+            "score": 1.0 if success else 0.0,
+            "confidence": 1.0,
+            "votes": votes,
+            "rationale": "calibration test aggregate",
+        }
+    )
+    payload: dict[str, object] = {
+        "scenario_id": "scenario",
+        "checkpoint_id": "checkpoint",
+        "checkpoint_type": checkpoint_type,
+        "success": success,
+        "passed": success,
+        "verdict": "pass" if success else "fail",
+        "score": 1.0 if success else 0.0,
+        "review_required": not success,
+        "failure_buckets": [],
+        "warning_buckets": [],
+        "diagnostics": {},
+        "profile": "adversarial",
+        "family": "calibration",
+        "decision_mode": "rule",
+        "effective_decision_mode": "rule",
+        "final_output_source": "rule",
+    }
+    payload.update(partial)
+    payload.update(
+        output=output,
+        raw_output=output,
+        expected=expected,
+        candidate_cards=cards,
+        judge_aggregate=aggregate,
+    )
+    return SimCheckpointResultRow.model_validate(payload)
 
 
 def _event(*, confidence: float, label: CalibrationLabel, source: CalibrationLabelSource = CalibrationLabelSource.PROGRAMMATIC_JUDGE, modality: str = "assertion") -> CalibrationEvent:
@@ -121,7 +224,7 @@ def test_slice_policy_uses_wilson_uncertainty_before_hard_failure() -> None:
 
 
 def test_calibration_artifacts_emit_hierarchy_and_label_provenance() -> None:
-    rows = [
+    rows = [_checkpoint_row(row) for row in [
         {
             "scenario_id": "scenario",
             "checkpoint_id": "checkpoint",
@@ -160,7 +263,7 @@ def test_calibration_artifacts_emit_hierarchy_and_label_provenance() -> None:
             },
             "judge_aggregate": {"votes": [{"judge_id": "claim_spo_judge"}]},
         }
-    ]
+    ]]
     events, report, slices, decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
         profile="adversarial",
@@ -185,7 +288,7 @@ def test_calibration_artifacts_emit_hierarchy_and_label_provenance() -> None:
 
 
 def test_calibration_retrieval_decision_phase_comes_from_evidence_event() -> None:
-    rows = [
+    rows = [_checkpoint_row(row) for row in [
         {
             "scenario_id": "scenario",
             "checkpoint_id": "checkpoint",
@@ -223,7 +326,7 @@ def test_calibration_retrieval_decision_phase_comes_from_evidence_event() -> Non
             },
             "judge_aggregate": {"votes": [{"judge_id": "execution_branch_judge"}]},
         }
-    ]
+    ]]
 
     events, _report, slices, _decision_report = build_calibration_artifacts(
         suite="memory_evolution_runtime_v1",
@@ -239,12 +342,12 @@ def test_calibration_retrieval_decision_phase_comes_from_evidence_event() -> Non
     )
     assert selected.metadata["phase"] == "evolution"
     assert selected.metadata["evidence_phases"] == "evolution"
-    phase_slices = [item for item in slices if item["slice_key"] == "phase"]
-    assert any(item["slice_values"] == {"phase": "evolution"} for item in phase_slices)
+    phase_slices = [item for item in slices if item.slice_key == "phase"]
+    assert any(item.slice_values == {"phase": "evolution"} for item in phase_slices)
 
 
 def test_calibration_context_events_in_passing_rows_are_correct_audit_evidence() -> None:
-    rows = [
+    rows = [_checkpoint_row(row) for row in [
         {
             "scenario_id": "scenario",
             "checkpoint_id": "checkpoint",
@@ -258,7 +361,7 @@ def test_calibration_context_events_in_passing_rows_are_correct_audit_evidence()
             "expected": {"expected_claim_ids": ["claim_current"]},
             "judge_aggregate": {"votes": [{"judge_id": "graph_context_judge"}]},
         }
-    ]
+    ]]
 
     events, report, _slices, _decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
@@ -275,7 +378,7 @@ def test_calibration_context_events_in_passing_rows_are_correct_audit_evidence()
 
 
 def test_calibration_rejected_expected_item_is_incorrect_but_rejected_excluded_is_correct() -> None:
-    rows = [
+    rows = [_checkpoint_row(row) for row in [
         {
             "scenario_id": "scenario",
             "checkpoint_id": "checkpoint",
@@ -292,7 +395,7 @@ def test_calibration_rejected_expected_item_is_incorrect_but_rejected_excluded_i
             },
             "judge_aggregate": {"votes": [{"judge_id": "rejection_classification_judge"}]},
         }
-    ]
+    ]]
 
     events, _report, _slices, _decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
@@ -307,7 +410,7 @@ def test_calibration_rejected_expected_item_is_incorrect_but_rejected_excluded_i
     assert old.label == CalibrationLabel.CORRECT
 
 def test_calibration_artifacts_mark_excluded_support_as_oracle_failure() -> None:
-    rows = [
+    rows = [_checkpoint_row(row) for row in [
         {
             "scenario_id": "scenario",
             "checkpoint_id": "checkpoint",
@@ -324,7 +427,7 @@ def test_calibration_artifacts_mark_excluded_support_as_oracle_failure() -> None
             },
             "judge_aggregate": {"votes": [{"judge_id": "selected_truth_precision_judge"}]},
         }
-    ]
+    ]]
     events, report, _slices, decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
         profile="adversarial",
@@ -355,8 +458,8 @@ def test_rolling_metrics_emit_drift_windows() -> None:
 
 def test_decision_cost_report_uses_failure_bucket_costs() -> None:
     report = build_decision_cost_report([
-        {"checkpoint_type": "current_truth", "failure_buckets": ["hidden_fact_hallucinated"]},
-        {"checkpoint_type": "current_truth", "failure_buckets": ["extra_provenance_noise"]},
+        _checkpoint_row({"checkpoint_type": "current_truth", "failure_buckets": ["hidden_fact_hallucinated"]}),
+        _checkpoint_row({"checkpoint_type": "current_truth", "failure_buckets": ["extra_provenance_noise"]}),
     ])
     assert report.decision_cost_total == 102.0
     assert report.cost_by_failure_bucket["hidden_fact_hallucinated"] == 100.0
@@ -416,7 +519,7 @@ def test_runtime_graph_alignment_protocol_helpers() -> None:
 
 
 def test_build_calibration_artifacts_from_checkpoint_rows() -> None:
-    rows = [
+    rows = [_checkpoint_row(row) for row in [
         {
             "scenario_id": "scenario",
             "checkpoint_id": "checkpoint",
@@ -435,7 +538,7 @@ def test_build_calibration_artifacts_from_checkpoint_rows() -> None:
             },
             "judge_aggregate": {"votes": [{"judge_id": "claim_spo_judge"}]},
         }
-    ]
+    ]]
     events, report, slices, decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
         profile="adversarial",

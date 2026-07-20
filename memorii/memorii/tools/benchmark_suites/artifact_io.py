@@ -5,5 +5,5 @@ from pathlib import Path
 from memorii.core.benchmark.artifact_validation import write_jsonl_atomic
 
 
-def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
+def write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
     write_jsonl_atomic(path, rows)

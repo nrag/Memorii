@@ -1,4 +1,4 @@
-"""Legacy promotion lifecycle models shared across deciders and executors."""
+"""Mutation contracts for executing promotion in the canonical memory plane."""
 
 from __future__ import annotations
 
@@ -26,11 +26,11 @@ class PromotionReasonCode(StrEnum):
     USER_MEMORY_REQUIRES_EXPLICIT_MEMORY_WRITE_USER = "user_memory_requires_explicit_memory_write_user"
     USER_EXPLICIT_WRITE_SAFE = "user_explicit_write_safe"
     DOMAIN_NOT_AUTO_PROMOTED = "domain_not_auto_promoted"
-    FAKE_DECIDER = "fake_decider"
+    FAKE_EXECUTION_POLICY = "fake_execution_policy"
     UNKNOWN = "unknown"
 
 
-class LegacyPromotionDecision(BaseModel):
+class PromotionExecutionPlan(BaseModel):
     action: PromotionAction
     target_domain: MemoryDomain
     reason_codes: list[PromotionReasonCode] = Field(default_factory=list)
@@ -44,7 +44,7 @@ class LegacyPromotionDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class LegacyPromotionContext(BaseModel):
+class PromotionExecutionContext(BaseModel):
     candidate: CanonicalMemoryRecord
     committed_in_scope: list[CanonicalMemoryRecord] = Field(default_factory=list)
     candidates_in_scope: list[CanonicalMemoryRecord] = Field(default_factory=list)
@@ -61,7 +61,7 @@ class LegacyPromotionContext(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class PromotionResult(BaseModel):
+class PromotionExecutionResult(BaseModel):
     candidate_id: str
     action: PromotionAction
     target_domain: MemoryDomain
@@ -76,16 +76,11 @@ class PromotionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class BatchPromotionResult(BaseModel):
-    results: list[PromotionResult] = Field(default_factory=list)
+class BatchPromotionExecutionResult(BaseModel):
+    results: list[PromotionExecutionResult] = Field(default_factory=list)
     count_by_action: dict[PromotionAction, int] = Field(default_factory=dict)
     count_by_target_domain: dict[MemoryDomain, int] = Field(default_factory=dict)
     count_by_reason_code: dict[PromotionReasonCode, int] = Field(default_factory=dict)
     count_by_decider: dict[str, int] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
-
-# Backward-compatible aliases
-PromotionDecision = LegacyPromotionDecision
-PromotionContext = LegacyPromotionContext
-

@@ -2,11 +2,23 @@ name: Scheduled Benchmark Reports
 
 on:
   workflow_dispatch:
+    inputs:
+      source_revision:
+        description: Full commit SHA to certify; defaults to the triggering revision
+        required: false
+        type: string
   schedule:
     - cron: "17 4 * * 1"
 
 permissions:
   contents: read
+
+concurrency:
+  group: benchmark-certification-${{ github.event.inputs.source_revision || github.sha }}
+  cancel-in-progress: false
+
+env:
+  MEMORII_SOURCE_REVISION: ${{ github.event.inputs.source_revision || github.sha }}
 
 jobs:
   fake-oracle-plumbing:
@@ -17,6 +29,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MEMORII_SOURCE_REVISION }}
+
+      - name: Verify exact clean source revision
+        run: |
+          test "$(git rev-parse HEAD)" = "$MEMORII_SOURCE_REVISION"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -93,12 +112,18 @@ jobs:
         replicate: [0, 1]
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      MEMORII_SOURCE_REVISION: ${{ github.sha }}
       MEMORII_LLM_MAX_RETRIES: '0'
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MEMORII_SOURCE_REVISION }}
+
+      - name: Verify exact clean source revision
+        run: |
+          test "$(git rev-parse HEAD)" = "$MEMORII_SOURCE_REVISION"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -146,6 +171,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MEMORII_SOURCE_REVISION }}
+
+      - name: Verify exact clean source revision
+        run: |
+          test "$(git rev-parse HEAD)" = "$MEMORII_SOURCE_REVISION"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -187,10 +219,16 @@ jobs:
           --minimum-interval-coverage 0.90
           --design-trials 500
           --intraseed-correlation 0.05
-          --source-revision "${{ github.sha }}"
+          --source-revision "$MEMORII_SOURCE_REVISION"
           --maximum-provider-failure-rate 0.05
           --maximum-fallback-rate 0.05
           --output .memorii/benchmark_runs/live_runtime_gate_summary.json
+
+      - name: Verify source-bound gate certificate
+        working-directory: memorii
+        run: >-
+          python -c
+          "import json, os; from pathlib import Path; from memorii.core.calibration.gates import LiveGateSummary; summary=LiveGateSummary.model_validate(json.loads(Path('.memorii/benchmark_runs/live_runtime_gate_summary.json').read_text())); assert summary.passed; assert summary.source_revision == os.environ['MEMORII_SOURCE_REVISION']; assert summary.interval_coverage_certificate is not None; assert summary.interval_coverage_certificate.configuration.source_revision == os.environ['MEMORII_SOURCE_REVISION']"
 
       - name: Upload live gate summary
         uses: actions/upload-artifact@v4

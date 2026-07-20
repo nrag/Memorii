@@ -51,7 +51,7 @@ def test_rule_baseline_is_invariant_to_oracle_annotations() -> None:
     assert rule_sim_output_for_checkpoint(scenario=scenario, checkpoint=changed_oracle) == decision
 
 
-def test_sim_output_rejects_removed_flat_compatibility_channels() -> None:
+def test_sim_output_rejects_removed_flat_channels() -> None:
     with pytest.raises(ValidationError):
         SimSystemOutput.model_validate(
             {

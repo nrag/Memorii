@@ -16,7 +16,12 @@ from memorii.core.benchmark.memory_evolution_runtime import (
     runtime_provider_health,
     runtime_summary_metrics,
 )
-from memorii.core.benchmark.memory_evolution_runtime.runner import runtime_final_output_source
+from memorii.core.benchmark.memory_evolution_runtime.extractors import (
+    RecordedExtractionRun,
+    RecordingMemoryExtractor,
+)
+from memorii.core.benchmark.memory_evolution_runtime.result_rows import runtime_final_output_source
+from memorii.core.memory_evolution import EnglishRuleMemoryExtractor
 from memorii.core.memory_evolution.execution import (
     ContinuationDecision,
     ContinuationResolutionStatus,
@@ -134,8 +139,8 @@ def test_runtime_execution_artifact_nested_state_is_typed_and_json_readable() ->
     )
 
     assert isinstance(section.production_work_state, WorkStateSnapshot)
-    assert section["continuation_decision"]["status"] == "resolved"
-    assert section["production_work_state"]["active_branch_ids"] == ["branch:b"]
+    assert section.continuation_decision.status == "resolved"
+    assert section.production_work_state.active_branch_ids == ["branch:b"]
 
 
 def test_runtime_summary_reports_long_horizon_slice_counts() -> None:
@@ -158,9 +163,9 @@ def test_runtime_summary_reports_long_horizon_slice_counts() -> None:
 
     summary = runtime_summary_metrics(rows)
 
-    assert summary["long_horizon_slice_counts"]["horizon_distance_bucket"] == {"long": 1}
-    assert summary["long_horizon_slice_counts"]["interference_count_bucket"] == {"medium": 1}
-    assert summary["runtime_graph_alignments_summary"]["checkpoint_scored_verdict_counts"] == {"pass": 1}
+    assert summary.long_horizon_slice_counts["horizon_distance_bucket"] == {"long": 1}
+    assert summary.long_horizon_slice_counts["interference_count_bucket"] == {"medium": 1}
+    assert summary.runtime_graph_alignments_summary.checkpoint_scored_verdict_counts == {"pass": 1}
 
 
 def test_runtime_graph_completeness_metrics_report_claim_provenance_and_edge_counts() -> None:
@@ -317,20 +322,20 @@ def test_runtime_graph_completeness_metrics_report_claim_provenance_and_edge_cou
 
     metrics = runtime_graph_completeness_metrics(rows)
 
-    assert metrics["source_observation_count"] == 1
-    assert metrics["entity_count"] == 1
-    assert metrics["claim_count"] == 1
-    assert metrics["relation_item_count"] == 1
-    assert metrics["action_item_count"] == 1
-    assert metrics["evidence_edge_count"] == 2
-    assert metrics["active_claim_with_subject_rate"] == 1.0
-    assert metrics["active_claim_with_object_or_literal_rate"] == 1.0
-    assert metrics["active_claim_with_scope_rate"] == 1.0
-    assert metrics["active_claim_with_observed_in_rate"] == 1.0
-    assert metrics["action_count"] == 1
-    assert metrics["active_action_count"] == 1
-    assert metrics["active_action_with_observed_in_rate"] == 1.0
-    assert metrics["runtime_relation_support_modes"] == {
+    assert metrics.source_observation_count == 1
+    assert metrics.entity_count == 1
+    assert metrics.claim_count == 1
+    assert metrics.relation_item_count == 1
+    assert metrics.action_item_count == 1
+    assert metrics.evidence_edge_count == 2
+    assert metrics.active_claim_with_subject_rate == 1.0
+    assert metrics.active_claim_with_object_or_literal_rate == 1.0
+    assert metrics.active_claim_with_scope_rate == 1.0
+    assert metrics.active_claim_with_observed_in_rate == 1.0
+    assert metrics.action_count == 1
+    assert metrics.active_action_count == 1
+    assert metrics.active_action_with_observed_in_rate == 1.0
+    assert metrics.runtime_relation_support_modes == {
         "claim_derived": 1,
         "runtime_relation_item": 1,
     }
@@ -360,7 +365,7 @@ def test_runtime_graph_item_metrics_dedupe_repeated_checkpoint_items() -> None:
 
     metrics = runtime_graph_completeness_metrics(rows)
 
-    assert metrics["runtime_graph_item_counts_by_type"] == {"claim": 1, "entity": 1}
+    assert metrics.runtime_graph_item_counts_by_type == {"claim": 1, "entity": 1}
 
 
 def test_runtime_provider_health_fails_for_terminal_provider_errors_and_fallbacks() -> None:
@@ -387,14 +392,14 @@ def test_runtime_provider_health_fails_for_terminal_provider_errors_and_fallback
 
     health = runtime_provider_health(rows)
 
-    assert health["status"] == "fail"
-    assert health["clean_runtime_gate"] is False
-    assert health["provider_successes"] == 1
-    assert health["provider_failures"] == 1
-    assert health["fallbacks"] == 1
-    assert health["provider_success_rate"] == 0.5
-    assert health["failure_buckets"] == ["runtime_provider_failure", "runtime_provider_fallback"]
-    assert health["failure_classification_counts"] == {"provider_request_error": 1}
+    assert health.status == "fail"
+    assert health.clean_runtime_gate is False
+    assert health.provider_successes == 1
+    assert health.provider_failures == 1
+    assert health.fallbacks == 1
+    assert health.provider_success_rate == 0.5
+    assert health.failure_buckets == ["runtime_provider_failure", "runtime_provider_fallback"]
+    assert health.failure_classification_counts == {"provider_request_error": 1}
 
 
 def test_runtime_provider_health_is_not_applicable_to_rule_mode() -> None:
@@ -408,9 +413,9 @@ def test_runtime_provider_health_is_not_applicable_to_rule_mode() -> None:
 
     health = runtime_provider_health(rows)
 
-    assert health["status"] == "not_applicable"
-    assert health["clean_runtime_gate"] is True
-    assert health["provider_success_rate"] is None
+    assert health.status == "not_applicable"
+    assert health.clean_runtime_gate is True
+    assert health.provider_success_rate is None
 
 
 def test_runtime_provider_health_does_not_count_fake_extraction_as_provider_success() -> None:
@@ -425,22 +430,38 @@ def test_runtime_provider_health_does_not_count_fake_extraction_as_provider_succ
 
     health = runtime_provider_health(rows)
 
-    assert health["status"] == "not_applicable"
-    assert health["dry_run"] is True
-    assert health["provider_successes"] == 0
-    assert health["fake_extractor_calls"] == 1
-    assert health["execution_source"] == "fake_oracle"
+    assert health.status == "not_applicable"
+    assert health.dry_run is True
+    assert health.provider_successes == 0
+    assert health.fake_extractor_calls == 1
+    assert health.execution_source == "fake_oracle"
 
 
 def test_runtime_output_source_is_scoped_to_the_current_checkpoint_runs() -> None:
-    class TraceExtractor:
-        provider = "hybrid"
-        recorded_runs = [
-            {"success": False, "fallback_used": True},
-            {"success": True, "fallback_used": False},
-        ]
+    def recorded_run(*, success: bool, fallback_used: bool) -> RecordedExtractionRun:
+        return RecordedExtractionRun(
+            input_source_ids=["source:1"],
+            provider="hybrid",
+            model="test-model",
+            prompt_hash="prompt-hash",
+            success=success,
+            fallback_used=fallback_used,
+            failure_classification=None if success else "runtime_extractor_fallback",
+            errors=[] if success else ["fallback_used:provider_failure"],
+            entity_count=0,
+            claim_count=0,
+            action_count=0,
+            entity_ids=[],
+            claim_ids=[],
+            action_ids=[],
+            validation_summary={},
+        )
 
-    extractor = TraceExtractor()
+    extractor = RecordingMemoryExtractor(delegate=EnglishRuleMemoryExtractor())
+    extractor.recorded_runs = [
+        recorded_run(success=False, fallback_used=True),
+        recorded_run(success=True, fallback_used=False),
+    ]
     assert (
         runtime_final_output_source(
             effective_mode="hybrid",

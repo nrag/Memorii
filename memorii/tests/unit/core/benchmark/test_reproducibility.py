@@ -7,6 +7,7 @@ from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import (
     build_source_tree_fingerprint,
+    resolve_source_identity,
     resolve_source_revision,
     resolve_source_state,
 )
@@ -45,6 +46,29 @@ def test_source_revision_environment_value_must_be_normalized(
 
     with pytest.raises(ValueError, match="non-empty and normalized"):
         resolve_source_revision(root=tmp_path, dry_run=False)
+
+
+def test_source_revision_environment_cannot_spoof_checked_out_head(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(reproducibility, "_git_head_revision", lambda _root: "a" * 40)
+    monkeypatch.setenv("MEMORII_SOURCE_REVISION", "b" * 40)
+
+    with pytest.raises(ValueError, match="does not match"):
+        resolve_source_revision(root=tmp_path, dry_run=False)
+
+
+def test_source_identity_certifies_only_clean_versioned_trees(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(reproducibility, "_git_head_revision", lambda _root: "a" * 40)
+    monkeypatch.setattr(reproducibility, "_git_status_porcelain", lambda _root: "")
+    identity = resolve_source_identity(root=tmp_path, dry_run=False)
+    assert identity.revision == "a" * 40
+    assert identity.state == "clean"
+    assert identity.certifiable is True
 
 
 def test_source_state_distinguishes_clean_dirty_and_unversioned(

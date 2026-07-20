@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
 from memorii.core.consolidation.consolidator import Consolidator
 from memorii.core.directory.directory import MemoryDirectory
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
@@ -15,12 +16,14 @@ from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.provider.models import ProviderOperation, ProviderWriteDecision
 from memorii.core.retrieval.planner import RetrievalPlanner
 from memorii.core.router.router import MemoryRouter
-from memorii.core.solver import (
-    NextTestAction,
+from memorii.core.solver.abstention import SolverDecision
+from memorii.core.solver.model_integration import (
     SolverContextItem,
-    SolverDecision,
     SolverModelInput,
     SolverModelProvider,
+)
+from memorii.core.solver.models import NextTestAction
+from memorii.core.solver.update_engine import (
     SolverUpdateEngine,
     SolverUpdateInput,
 )
@@ -63,7 +66,6 @@ class RuntimeStepResult(BaseModel):
     solver_decision: SolverDecision
     follow_up_required: bool
     downgraded: bool
-    next_action: str | None = None
     next_test_action: NextTestAction | None = None
     solver_state_summary: str = ""
     unresolved_questions: list[str] = Field(default_factory=list)
@@ -75,22 +77,6 @@ class RuntimeStepResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-
-class InMemoryMemoryPlane:
-    """Compatibility wrapper around the canonical MemoryPlaneService."""
-
-    def __init__(self, service: MemoryPlaneService | None = None) -> None:
-        self._service = service or MemoryPlaneService()
-
-    @property
-    def service(self) -> MemoryPlaneService:
-        return self._service
-
-    def put(self, memory_object: MemoryObject) -> None:
-        self._service.seed_runtime_memory_object(memory_object)
-
-    def query(self, query):
-        return self._service.query_runtime_memory(query)
 
 class RuntimeStepService:
     def __init__(
@@ -107,7 +93,7 @@ class RuntimeStepService:
         solver_update_engine: SolverUpdateEngine | None = None,
         belief_update_provider: "BeliefUpdateProvider | None" = None,
         llm_decision_trace_store: LLMDecisionTraceStore | None = None,
-        memory_plane: InMemoryMemoryPlane | None = None,
+        memory_plane: MemoryPlaneService | None = None,
         model_provider: SolverModelProvider | None = None,
     ) -> None:
         self._execution_store = execution_store
@@ -118,18 +104,12 @@ class RuntimeStepService:
         self._retrieval_planner = retrieval_planner or RetrievalPlanner()
         self._consolidator = consolidator or Consolidator()
         self._directory = directory or MemoryDirectory()
-        if belief_update_provider is None:
-            from memorii.core.llm_decision.runtime_factory import build_belief_update_provider_from_env
-
-            default_belief_provider = build_belief_update_provider_from_env()
-        else:
-            default_belief_provider = belief_update_provider
+        default_belief_provider = belief_update_provider or RuleBasedBeliefUpdateProvider()
         self._solver_update_engine = solver_update_engine or SolverUpdateEngine(
             belief_update_provider=default_belief_provider,
             llm_decision_trace_store=llm_decision_trace_store,
         )
-        self._memory_plane = memory_plane or InMemoryMemoryPlane()
-        self._memory_plane_service = self._memory_plane.service
+        self._memory_plane_service = memory_plane or MemoryPlaneService()
         self._resume_service = ResumeService(execution_store, solver_store, overlay_store)
         self._model_provider = model_provider
 
@@ -137,7 +117,7 @@ class RuntimeStepService:
         self._memory_plane_service.seed_runtime_memory_object(memory_object)
 
 
-    def apply_provider_compat_write(
+    def apply_provider_write(
         self,
         *,
         operation: ProviderOperation,
@@ -148,9 +128,9 @@ class RuntimeStepService:
         action: str = "upsert",
         target: str = "memory",
     ) -> ProviderWriteDecision:
-        """Compatibility shim: runtime path delegates provider-style writes to the canonical memory plane."""
+        """Apply a provider-style write through the canonical memory plane."""
         event = make_event(
-            event_id=build_event_id("runtime-compat-write", session_id=session_id, task_id=task_id, sequence=1),
+            event_id=build_event_id("runtime-write", session_id=session_id, task_id=task_id, sequence=1),
             operation=operation,
             content=content,
             action=action,
@@ -286,13 +266,10 @@ class RuntimeStepService:
             solver_decision=update_result.final_decision,
             follow_up_required=update_result.follow_up_required,
             downgraded=update_result.downgraded,
-            next_action=update_result.parsed_output.next_best_test,
             solver_state_summary=update_result.parsed_output.rationale_short,
             next_test_action=update_result.parsed_output.next_test_action,
             unresolved_questions=update_result.parsed_output.missing_evidence,
-            required_tests=[update_result.parsed_output.next_best_test]
-            if update_result.parsed_output.next_best_test
-            else [update_result.parsed_output.next_test_action.description]
+            required_tests=[update_result.parsed_output.next_test_action.description]
             if update_result.parsed_output.next_test_action
             else [],
             candidate_decisions=[update_result.parsed_output.decision.value],

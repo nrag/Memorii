@@ -490,7 +490,7 @@ def _state_matches_temporal_frame(state: ClaimState, frame: QueryTemporalFrame) 
         QueryTemporalKind.BELIEF,
     }:
         return evaluate_temporal_eligibility(
-            lifecycle_state=state.lifecycle_state.value,
+            lifecycle_state=state.lifecycle_state,
             valid_from=state.valid_from,
             valid_to=state.valid_to,
             temporal_kind=frame.temporal_kind,
@@ -498,7 +498,7 @@ def _state_matches_temporal_frame(state: ClaimState, frame: QueryTemporalFrame) 
         ).eligible
     if frame.temporal_kind in {QueryTemporalKind.HISTORICAL, QueryTemporalKind.INTERVAL}:
         return evaluate_temporal_eligibility(
-            lifecycle_state=state.lifecycle_state.value,
+            lifecycle_state=state.lifecycle_state,
             valid_from=state.valid_from,
             valid_to=state.valid_to,
             temporal_kind=frame.temporal_kind,

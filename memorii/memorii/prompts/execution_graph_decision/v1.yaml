@@ -69,5 +69,4 @@ redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-allowed_failure_modes: [dependency_direction_error, stale_branch_error, abandoned_branch_error, handoff_error, rule_limit]
 tags: [execution_graph, benchmark]

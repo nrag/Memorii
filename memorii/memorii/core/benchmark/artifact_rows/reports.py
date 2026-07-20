@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -20,7 +19,7 @@ from memorii.core.benchmark.artifact_rows.common import (
     FinalOutputSource,
     FlatArtifactModel,
     ProviderHealthStatus,
-    _empty_json_object,
+    empty_json_object,
     execution_source_from_counts,
 )
 from memorii.core.benchmark.memory_evolution_sim.schemas import SimSystemOutput
@@ -196,7 +195,7 @@ class RuntimeReportSummary(FlatArtifactModel):
     runtime_graph_item_observation_count: int = Field(ge=0)
     runtime_graph_summary: RuntimeGraphSummary
     runtime_graph_alignments_summary: AlignmentSummary
-    long_horizon_slice_counts: ArtifactJsonObject = Field(default_factory=_empty_json_object)
+    long_horizon_slice_counts: ArtifactJsonObject = Field(default_factory=empty_json_object)
     runtime_provider_health: RuntimeProviderHealth
 
     @model_validator(mode="after")
@@ -212,9 +211,12 @@ class RuntimeReportSummary(FlatArtifactModel):
         if self.runtime_graph_item_count != sum(self.runtime_graph_summary.runtime_graph_item_counts_by_type.values()):
             raise ValueError("runtime graph item count must match graph summary item counts")
         health = self.runtime_provider_health
-        for field_name in ("provider_successes", "provider_failures", "fallbacks"):
-            if getattr(self, field_name) != getattr(health, field_name):
-                raise ValueError(f"runtime {field_name} must match provider health")
+        if self.provider_successes != health.provider_successes:
+            raise ValueError("runtime provider_successes must match provider health")
+        if self.provider_failures != health.provider_failures:
+            raise ValueError("runtime provider_failures must match provider health")
+        if self.fallbacks != health.fallbacks:
+            raise ValueError("runtime fallbacks must match provider health")
         return self
 
 
@@ -240,13 +242,6 @@ class WarningExampleRow(FlatArtifactModel):
 class WarningPolicyEntry(FlatArtifactModel):
     level: Literal["warning_only", "failure", "informational"]
     rationale: str = ""
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, Mapping):
-            expected = dict(other)
-            actual = {key: value for key, value in self.to_json_row().items() if value not in (None, "")}
-            return actual == expected
-        return super().__eq__(other)
 
 
 class ValidationScenarioCatalogRow(FlatArtifactModel):
@@ -434,16 +429,16 @@ class BenchmarkReportSummary(FlatArtifactModel):
     dry_run: bool = False
     execution_source: FinalOutputSource = "mixed"
     final_output_source_counts: CountMap = Field(default_factory=dict)
-    metrics: ArtifactJsonObject = Field(default_factory=_empty_json_object)
-    long_horizon_slice_counts: ArtifactJsonObject = Field(default_factory=_empty_json_object)
-    calibration: CalibrationReport | ArtifactJsonObject = Field(default_factory=_empty_json_object)
-    decision_quality: DecisionCostReport | ArtifactJsonObject = Field(default_factory=_empty_json_object)
+    metrics: ArtifactJsonObject = Field(default_factory=empty_json_object)
+    long_horizon_slice_counts: ArtifactJsonObject = Field(default_factory=empty_json_object)
+    calibration: CalibrationReport | ArtifactJsonObject = Field(default_factory=empty_json_object)
+    decision_quality: DecisionCostReport | ArtifactJsonObject = Field(default_factory=empty_json_object)
     failure_bucket_counts: CountMap = Field(default_factory=dict)
     critical_failure_bucket_counts: CountMap = Field(default_factory=dict)
     warning_bucket_counts: CountMap = Field(default_factory=dict)
     review_bucket_counts: CountMap = Field(default_factory=dict)
-    judge_metrics: ArtifactJsonObject = Field(default_factory=_empty_json_object)
-    baseline_scores: ArtifactJsonObject = Field(default_factory=_empty_json_object)
+    judge_metrics: ArtifactJsonObject = Field(default_factory=empty_json_object)
+    baseline_scores: ArtifactJsonObject = Field(default_factory=empty_json_object)
     artifact_version: int = Field(default=1, ge=1)
     scenario_results: list[SimScenarioResultRow] = Field(default_factory=list)
     # The simulator row is the strict base shape; runtime-only fields are
@@ -466,12 +461,7 @@ class BenchmarkReportSummary(FlatArtifactModel):
         return canonical_json_digest(payload)
 
     def with_content_digest(self) -> BenchmarkReportSummary:
-        return type(self).model_validate(
-            {
-                **self.model_dump(mode="json"),
-                "report_content_digest": self.computed_content_digest(),
-            }
-        )
+        return self.model_copy(update={"report_content_digest": self.computed_content_digest()})
 
     def has_valid_content_digest(self) -> bool:
         return self.report_content_digest == self.computed_content_digest()
@@ -564,4 +554,3 @@ class BenchmarkReportSummary(FlatArtifactModel):
             if self.runtime.long_horizon_slice_counts != self.long_horizon_slice_counts:
                 raise ValueError("nested and top-level long-horizon slice counts disagree")
         return self
-
