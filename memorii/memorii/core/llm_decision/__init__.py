@@ -26,7 +26,11 @@ from memorii.core.llm_decision.models import (
     LLMDecisionStatus,
     LLMDecisionTrace,
 )
-from memorii.core.llm_decision.provider import DisabledLLMDecisionProvider, LLMDecisionProvider
+from memorii.core.llm_decision.provider import (
+    DisabledLLMDecisionProvider,
+    LLMDecisionProvider,
+    LLMDecisionProviderError,
+)
 from memorii.core.llm_decision.trace import (
     InMemoryLLMDecisionTraceStore,
     JsonlLLMDecisionTraceStore,
@@ -53,6 +57,7 @@ __all__ = [
     "LLMDecisionMode",
     "LLMDecisionPoint",
     "LLMDecisionProvider",
+    "LLMDecisionProviderError",
     "LLMDecisionStatus",
     "LLMDecisionTrace",
     "LLMDecisionTraceStore",

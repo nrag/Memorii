@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
+from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow
 from memorii.core.benchmark.memory_evolution_sim import (
     LatentClaim,
     LatentEntity,
@@ -20,33 +19,36 @@ from memorii.core.calibration.alignment import (
 )
 
 
-def align_runtime_graph_to_oracle(*, scenario: LatentGraphScenario, graph_items: list[dict[str, object]]) -> list[RuntimeGraphAlignment]:
+def align_runtime_graph_to_oracle(
+    *, scenario: LatentGraphScenario, graph_items: list[RuntimeGraphItemRow]
+) -> list[RuntimeGraphAlignment]:
     alignments: list[RuntimeGraphAlignment] = []
-    runtime_entities = [item for item in graph_items if item.get("item_type") == "entity"]
-    runtime_claims = [item for item in graph_items if item.get("item_type") == "claim"]
-    runtime_relations = [item for item in graph_items if item.get("item_type") == "relation"]
-    runtime_entity_by_canonical_id = {str(item.get("canonical_id")): item for item in runtime_entities if item.get("canonical_id")}
+    runtime_entities = [item for item in graph_items if item.item_type == "entity"]
+    runtime_claims = [item for item in graph_items if item.item_type == "claim"]
+    runtime_relations = [item for item in graph_items if item.item_type == "relation"]
+    runtime_entity_by_canonical_id = {
+        item.canonical_id: item for item in runtime_entities if item.canonical_id
+    }
     oracle_entity_by_id = {entity.entity_id: entity for entity in scenario.entities if entity.observability != ObservabilityLabel.HIDDEN}
     for runtime in runtime_entities:
         best = _best_alignment([
             align_entity_by_fields(
-                runtime_item_id=str(runtime["runtime_item_id"]),
+                runtime_item_id=runtime.runtime_item_id,
                 oracle_item_id=entity.entity_id,
-                runtime_fields=runtime,
+                runtime_fields=_runtime_entity_fields(runtime),
                 oracle_fields=_oracle_entity_fields(entity),
             )
             for entity in oracle_entity_by_id.values()
         ])
-        alignments.append(best or RuntimeGraphAlignment(runtime_item_id=str(runtime["runtime_item_id"]), item_type="entity", verdict=RuntimeGraphAlignmentVerdict.UNMATCHED_RUNTIME, score=0.0, rationale="no oracle entity candidates"))
+        alignments.append(best or RuntimeGraphAlignment(runtime_item_id=runtime.runtime_item_id, item_type="entity", verdict=RuntimeGraphAlignmentVerdict.UNMATCHED_RUNTIME, score=0.0, rationale="no oracle entity candidates"))
     for runtime in runtime_claims:
-        direct = next((claim for claim in scenario.claims if claim.claim_id == runtime.get("claim_id") and claim.observability != ObservabilityLabel.HIDDEN), None)
+        direct = next((claim for claim in scenario.claims if claim.claim_id == runtime.claim_id and claim.observability != ObservabilityLabel.HIDDEN), None)
         if direct is not None:
-            runtime_evidence = runtime.get("evidence_event_ids", [])
-            evidence_ids = {str(value) for value in runtime_evidence} if isinstance(runtime_evidence, Sequence) and not isinstance(runtime_evidence, str) else set()
+            evidence_ids = set(runtime.evidence_event_ids)
             oracle_evidence_ids = {span.event_id for span in direct.evidence.spans}
             has_provenance = bool(evidence_ids & oracle_evidence_ids)
             alignments.append(RuntimeGraphAlignment(
-                runtime_item_id=str(runtime["runtime_item_id"]),
+                runtime_item_id=runtime.runtime_item_id,
                 oracle_item_id=direct.claim_id,
                 item_type="claim",
                 verdict=RuntimeGraphAlignmentVerdict.ALIGNED if has_provenance else RuntimeGraphAlignmentVerdict.PARTIAL,
@@ -65,13 +67,13 @@ def align_runtime_graph_to_oracle(*, scenario: LatentGraphScenario, graph_items:
             for claim in scenario.claims
             if claim.observability != ObservabilityLabel.HIDDEN
         ])
-        alignments.append(best or RuntimeGraphAlignment(runtime_item_id=str(runtime["runtime_item_id"]), item_type="claim", verdict=RuntimeGraphAlignmentVerdict.UNMATCHED_RUNTIME, score=0.0, rationale="no oracle claim candidates"))
+        alignments.append(best or RuntimeGraphAlignment(runtime_item_id=runtime.runtime_item_id, item_type="claim", verdict=RuntimeGraphAlignmentVerdict.UNMATCHED_RUNTIME, score=0.0, rationale="no oracle claim candidates"))
     for runtime in runtime_relations:
         best = _best_alignment([
             align_relation_by_fields(
-                runtime_item_id=str(runtime["runtime_item_id"]),
+                runtime_item_id=runtime.runtime_item_id,
                 oracle_item_id=relation.relation_id,
-                runtime_fields=runtime,
+                runtime_fields=_runtime_relation_fields(runtime),
                 oracle_fields=_oracle_relation_fields(relation),
             )
             for relation in scenario.relations
@@ -90,23 +92,23 @@ def align_runtime_graph_to_oracle(*, scenario: LatentGraphScenario, graph_items:
 
 def _align_claim_with_entity_context(
     *,
-    runtime: dict[str, object],
+    runtime: RuntimeGraphItemRow,
     oracle_claim: LatentClaim,
-    runtime_entity_by_canonical_id: dict[str, dict[str, object]],
+    runtime_entity_by_canonical_id: dict[str, RuntimeGraphItemRow],
     oracle_entity_by_id: dict[str, LatentEntity],
 ) -> RuntimeGraphAlignment:
     matched: list[str] = []
-    runtime_item_id = str(runtime["runtime_item_id"])
+    runtime_item_id = runtime.runtime_item_id
     subject_entity = oracle_entity_by_id.get(oracle_claim.subject.entity_id)
     object_entity = oracle_entity_by_id.get(oracle_claim.object.entity_id) if oracle_claim.object.entity_id else None
     if subject_entity is not None and _runtime_claim_entity_matches(
-        runtime_entity_id=str(runtime.get("subject_entity_id") or ""),
-        runtime_name=str(runtime.get("subject") or ""),
+        runtime_entity_id=runtime.subject_entity_id,
+        runtime_name=runtime.subject,
         runtime_entities_by_canonical_id=runtime_entity_by_canonical_id,
         oracle_entity=subject_entity,
     ):
         matched.append("subject_entity")
-    if normalize_alignment_value(str(runtime.get("predicate") or "")) == normalize_alignment_value(oracle_claim.predicate.predicate_id):
+    if normalize_alignment_value(runtime.predicate) == normalize_alignment_value(oracle_claim.predicate.predicate_id):
         matched.append("predicate")
     if _runtime_claim_object_matches(
         runtime=runtime,
@@ -115,11 +117,9 @@ def _align_claim_with_entity_context(
         runtime_entity_by_canonical_id=runtime_entity_by_canonical_id,
     ):
         matched.append("object")
-    if normalize_alignment_value(str(runtime.get("scope") or "")) == normalize_alignment_value(oracle_claim.scope.scope_key):
+    if normalize_alignment_value(runtime.scope) == normalize_alignment_value(oracle_claim.scope.scope_key):
         matched.append("scope")
-    evidence_value = runtime.get("evidence_event_ids", [])
-    evidence_items: Sequence[object] = evidence_value if isinstance(evidence_value, Sequence) and not isinstance(evidence_value, str) else ()
-    if {str(event_id) for event_id in evidence_items} & {span.event_id for span in oracle_claim.evidence.spans}:
+    if set(runtime.evidence_event_ids) & {span.event_id for span in oracle_claim.evidence.spans}:
         matched.append("evidence_event_ids")
     alignment = _runtime_alignment_from_matches(
         runtime_item_id=runtime_item_id,
@@ -159,19 +159,19 @@ def _runtime_alignment_from_matches(
 
 def _runtime_claim_object_matches(
     *,
-    runtime: dict[str, object],
+    runtime: RuntimeGraphItemRow,
     oracle_claim: LatentClaim,
     object_entity: LatentEntity | None,
-    runtime_entity_by_canonical_id: dict[str, dict[str, object]],
+    runtime_entity_by_canonical_id: dict[str, RuntimeGraphItemRow],
 ) -> bool:
-    runtime_value = str(runtime.get("object_value") or runtime.get("object") or "")
+    runtime_value = runtime.object_value or runtime.object
     if normalize_alignment_value(runtime_value) == normalize_alignment_value(oracle_claim.object.value):
         return True
     if object_entity is None:
         return False
     return _runtime_claim_entity_matches(
-        runtime_entity_id=str(runtime.get("object_entity_id") or ""),
-        runtime_name=str(runtime.get("object") or runtime_value),
+        runtime_entity_id=runtime.object_entity_id,
+        runtime_name=runtime.object or runtime_value,
         runtime_entities_by_canonical_id=runtime_entity_by_canonical_id,
         oracle_entity=object_entity,
     )
@@ -180,15 +180,15 @@ def _runtime_claim_entity_matches(
     *,
     runtime_entity_id: str,
     runtime_name: str,
-    runtime_entities_by_canonical_id: dict[str, dict[str, object]],
+    runtime_entities_by_canonical_id: dict[str, RuntimeGraphItemRow],
     oracle_entity: LatentEntity,
 ) -> bool:
-    runtime_entity = runtime_entities_by_canonical_id.get(runtime_entity_id, {})
+    runtime_entity = runtime_entities_by_canonical_id.get(runtime_entity_id)
     runtime_names = _runtime_entity_names(runtime_entity=runtime_entity, fallback_name=runtime_name, fallback_entity_id=runtime_entity_id)
     oracle_names = _oracle_entity_names(oracle_entity)
     if runtime_names & oracle_names:
         return True
-    runtime_type = normalize_alignment_value(str(runtime_entity.get("entity_type") or "unknown"))
+    runtime_type = normalize_alignment_value(runtime_entity.entity_type if runtime_entity else "unknown")
     oracle_type = normalize_alignment_value(oracle_entity.entity_type)
     if runtime_type not in {"", "unknown", oracle_type}:
         return False
@@ -196,15 +196,20 @@ def _runtime_claim_entity_matches(
         return False
     return _runtime_names_are_safe_alias(runtime_names=runtime_names, oracle_names=oracle_names, oracle_type=oracle_type)
 
-def _runtime_entity_names(*, runtime_entity: dict[str, object], fallback_name: str, fallback_entity_id: str) -> set[str]:
+def _runtime_entity_names(
+    *, runtime_entity: RuntimeGraphItemRow | None, fallback_name: str, fallback_entity_id: str
+) -> set[str]:
     names = {
         normalize_alignment_value(fallback_name),
-        normalize_alignment_value(str(runtime_entity.get("canonical_name") or "")),
-        normalize_alignment_value(str(runtime_entity.get("canonical_id") or fallback_entity_id).replace("ent:", "").replace("-", " ")),
+        normalize_alignment_value(runtime_entity.canonical_name if runtime_entity else ""),
+        normalize_alignment_value(
+            (runtime_entity.canonical_id if runtime_entity else fallback_entity_id)
+            .replace("ent:", "")
+            .replace("-", " ")
+        ),
     }
-    aliases = runtime_entity.get("aliases", [])
-    if isinstance(aliases, list):
-        names.update(normalize_alignment_value(str(alias)) for alias in aliases)
+    if runtime_entity is not None:
+        names.update(normalize_alignment_value(alias) for alias in runtime_entity.aliases)
     names.discard("")
     return names
 
@@ -286,6 +291,15 @@ def _oracle_entity_fields(entity: LatentEntity) -> dict[str, object]:
         "evidence_event_ids": [span.event_id for span in entity.evidence_spans],
     }
 
+
+def _runtime_entity_fields(item: RuntimeGraphItemRow) -> dict[str, object]:
+    return {
+        "canonical_name": item.canonical_name,
+        "aliases": item.aliases,
+        "entity_type": item.entity_type,
+        "evidence_event_ids": item.evidence_event_ids,
+    }
+
 def _oracle_claim_fields(claim: LatentClaim) -> dict[str, object]:
     return {
         "subject": claim.subject.canonical_name,
@@ -301,4 +315,13 @@ def _oracle_relation_fields(relation: LatentRelation) -> dict[str, object]:
         "target": relation.target.endpoint_id,
         "relation_type": relation.relation_type,
         "directionality": relation.directionality,
+    }
+
+
+def _runtime_relation_fields(item: RuntimeGraphItemRow) -> dict[str, object]:
+    return {
+        "source": item.source,
+        "target": item.target,
+        "relation_type": item.relation_type,
+        "directionality": item.directionality,
     }

@@ -21,11 +21,10 @@ def test_memory_evolution_sim_noisy_support_citation_fails_precision() -> None:
         noise_rate=0.35,
     )
     checkpoint = checkpoint_by_type(scenario, "entity_disambiguation")
-    noise_event = next(observation.event_id for observation in scenario.observations if "_noise_" in observation.event_id)
+    noise_event = next(observation.event_id for observation in scenario.observations if observation.modality == "noise")
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
             "supporting_citation_event_ids": [*checkpoint.expected_citation_event_ids, noise_event],
-            "citation_event_ids": [*checkpoint.expected_citation_event_ids, noise_event],
         }
     )
 
@@ -50,11 +49,11 @@ def test_memory_evolution_sim_noisy_context_citation_does_not_fail_answer_suppor
         noise_rate=0.35,
     )
     checkpoint = checkpoint_by_type(scenario, "entity_disambiguation")
-    noise_event = next(observation.event_id for observation in scenario.observations if "_noise_" in observation.event_id)
+    noise_event = next(observation.event_id for observation in scenario.observations if observation.modality == "noise")
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
             "context_citation_event_ids": [noise_event],
-            "citation_event_ids": [*checkpoint.expected_citation_event_ids, noise_event],
+            "supporting_citation_event_ids": list(checkpoint.expected_citation_event_ids),
         }
     )
 

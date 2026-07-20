@@ -14,10 +14,10 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     SimSystemOutput,
 )
 from memorii.core.benchmark.memory_evolution_sim.utils import (
-    _claim_by_id,
-    _is_visible_entity,
-    _ordered_unique,
-    _required_definition_claim_ids_for_selected_claims,
+    claim_by_id,
+    is_visible_entity,
+    ordered_unique,
+    required_definition_claim_ids_for_selected_claims,
 )
 
 
@@ -65,14 +65,14 @@ def required_selected_entity_ids_for_policy(
         return []
     required: list[str] = []
     for claim_id in output.selected_claim_ids:
-        claim = _claim_by_id(scenario, claim_id)
+        claim = claim_by_id(scenario, claim_id)
         if claim is None:
             continue
         if selected_policy in {"subject", "subject_and_object", "active_graph_subjects"}:
             required.append(claim.subject.entity_id)
         if selected_policy in {"object", "subject_and_object"} and claim.object.entity_id:
             required.append(claim.object.entity_id)
-    return _ordered_unique(required)
+    return ordered_unique(required)
 
 
 def expected_rejected_claim_subject_entity_ids(
@@ -82,15 +82,15 @@ def expected_rejected_claim_subject_entity_ids(
     expected_entities = set(checkpoint.expected_entity_ids)
     required: list[str] = []
     for claim_id in checkpoint.expected_excluded_claim_ids:
-        claim = _claim_by_id(scenario, claim_id)
+        claim = claim_by_id(scenario, claim_id)
         if claim is None:
             continue
         subject_entity_id = claim.subject.entity_id
         if subject_entity_id in expected_entities:
             continue
-        if _is_visible_entity(scenario, subject_entity_id):
+        if is_visible_entity(scenario, subject_entity_id):
             required.append(subject_entity_id)
-    return _ordered_unique(required)
+    return ordered_unique(required)
 
 
 def required_definition_claim_ids_for_checkpoint(
@@ -106,14 +106,13 @@ def required_definition_claim_ids_for_checkpoint(
     """
 
     if checkpoint.checkpoint_contract.definition_claims_required_in_selected:
-        return _required_definition_claim_ids_for_selected_claims(scenario, output)
+        return required_definition_claim_ids_for_selected_claims(scenario, output)
     if checkpoint.checkpoint_type in {"entity_reconstruction", "claim_rekey"}:
-        return _required_definition_claim_ids_for_selected_claims(scenario, output)
+        return required_definition_claim_ids_for_selected_claims(scenario, output)
     return [
         claim_id
         for claim_id in output.selected_claim_ids
-        if (claim := _claim_by_id(scenario, claim_id)) is not None
-        and claim.predicate.predicate_id == "entity_type"
+        if (claim := claim_by_id(scenario, claim_id)) is not None and claim.predicate.predicate_id == "entity_type"
     ]
 
 
@@ -132,13 +131,13 @@ def claim_support_role_for_checkpoint(
     else:
         expected_claim_ids = set(checkpoint.expected_claim_ids)
     if claim_id in expected_claim_ids:
-        claim = _claim_by_id(scenario, claim_id)
+        claim = claim_by_id(scenario, claim_id)
         if claim is not None and claim.predicate.predicate_id == "entity_type":
             return SupportRole.DEFINITION_SUPPORT
         return SupportRole.ANSWER_SUPPORT
     if claim_id in checkpoint.expected_excluded_claim_ids:
         return SupportRole.REJECTION_SUPPORT
-    claim = _claim_by_id(scenario, claim_id)
+    claim = claim_by_id(scenario, claim_id)
     if claim is None:
         return SupportRole.CONTEXT_ONLY
     if _claim_is_forbidden_support(checkpoint, claim):
@@ -163,15 +162,14 @@ def supporting_claim_role_violations(
         execution_context_support = [
             claim_id
             for claim_id in output.supporting_claim_ids
-            if (claim := _claim_by_id(scenario, claim_id)) is not None
-            and claim.claim_kind != "action_state"
+            if (claim := claim_by_id(scenario, claim_id)) is not None and claim.claim_kind != "action_state"
         ]
         if execution_context_support:
             violations["execution_context_support"] = execution_context_support
     wrong_subject_claims = supporting_wrong_subject_claim_ids(scenario, checkpoint, output)
     if wrong_subject_claims:
         violations["wrong_subject_support"] = wrong_subject_claims
-    return {key: _ordered_unique(value) for key, value in violations.items()}
+    return {key: sorted(set(value)) for key, value in violations.items()}
 
 
 def supporting_wrong_subject_claim_ids(
@@ -194,12 +192,12 @@ def supporting_wrong_subject_claim_ids(
         return []
     wrong: list[str] = []
     for claim_id in output.supporting_claim_ids:
-        claim = _claim_by_id(scenario, claim_id)
+        claim = claim_by_id(scenario, claim_id)
         if claim is None:
             continue
         if claim.subject.entity_id not in selected_subject_ids:
             wrong.append(claim_id)
-    return _ordered_unique(wrong)
+    return ordered_unique(wrong)
 
 
 def supporting_wrong_subject_entity_ids(
@@ -209,10 +207,10 @@ def supporting_wrong_subject_entity_ids(
 ) -> list[str]:
     wrong_entities: list[str] = []
     for claim_id in supporting_wrong_subject_claim_ids(scenario, checkpoint, output):
-        claim = _claim_by_id(scenario, claim_id)
+        claim = claim_by_id(scenario, claim_id)
         if claim is not None:
             wrong_entities.append(claim.subject.entity_id)
-    return _ordered_unique(wrong_entities)
+    return ordered_unique(wrong_entities)
 
 
 def supporting_disambiguation_claim_ids(
@@ -264,9 +262,7 @@ def supporting_rejection_provenance_overlap_ids(
     """Return support/rejection citation overlaps that are semantically fatal."""
 
     overlapped = [
-        event_id
-        for event_id in output.supporting_citation_event_ids
-        if event_id in output.rejection_citation_event_ids
+        event_id for event_id in output.supporting_citation_event_ids if event_id in output.rejection_citation_event_ids
     ]
     bad_roles = {SupportRole.REJECTION_SUPPORT, SupportRole.FORBIDDEN_SUPPORT}
     safe_roles = {SupportRole.ANSWER_SUPPORT, SupportRole.DEFINITION_SUPPORT}
@@ -275,7 +271,7 @@ def supporting_rejection_provenance_overlap_ids(
         roles = set(event_support_roles_for_checkpoint(scenario, checkpoint, output, event_id))
         if roles & bad_roles and not roles & safe_roles:
             bad.append(event_id)
-    return _ordered_unique(bad)
+    return ordered_unique(bad)
 
 
 def supporting_rejection_provenance_warning_ids(
@@ -284,9 +280,7 @@ def supporting_rejection_provenance_warning_ids(
     output: SimSystemOutput,
 ) -> list[str]:
     overlapped = [
-        event_id
-        for event_id in output.supporting_citation_event_ids
-        if event_id in output.rejection_citation_event_ids
+        event_id for event_id in output.supporting_citation_event_ids if event_id in output.rejection_citation_event_ids
     ]
     critical = set(supporting_rejection_provenance_overlap_ids(scenario, checkpoint, output))
     return [event_id for event_id in overlapped if event_id not in critical]
@@ -302,10 +296,7 @@ def _claim_is_forbidden_support(checkpoint: OracleCheckpoint, claim: LatentClaim
         SimLifecycleState.EVIDENCE_ONLY,
         SimLifecycleState.ARCHIVED,
     }
-    return (
-        claim.lifecycle.state in bad_states
-        or claim.observability == ObservabilityLabel.AMBIGUOUS
-    )
+    return claim.lifecycle.state in bad_states or claim.observability == ObservabilityLabel.AMBIGUOUS
 
 
 def selected_claim_support_closure_errors(
@@ -316,14 +307,10 @@ def selected_claim_support_closure_errors(
     supporting_events = set(output.supporting_citation_event_ids)
     errors: list[SelectedClaimSupportClosureError] = []
     for claim_id in output.selected_claim_ids:
-        claim = _claim_by_id(scenario, claim_id)
+        claim = claim_by_id(scenario, claim_id)
         if claim is None:
             continue
-        expected_event_ids = _ordered_unique([
-            event_id
-            for event_id in claim.evidence.source_event_ids
-            if event_id
-        ])
+        expected_event_ids = ordered_unique([event_id for event_id in claim.evidence.source_event_ids if event_id])
         present_event_ids = [event_id for event_id in expected_event_ids if event_id in supporting_events]
         missing_event_ids = [event_id for event_id in expected_event_ids if event_id not in supporting_events]
         missing_supporting_claim = claim_id not in supporting_claims
@@ -345,29 +332,18 @@ def selected_claim_support_closure_errors(
 def selected_claim_ids_missing_support(
     errors: list[SelectedClaimSupportClosureError],
 ) -> list[str]:
-    return _ordered_unique([
-        error.claim_id
-        for error in errors
-        if error.missing_supporting_claim
-    ])
+    return ordered_unique([error.claim_id for error in errors if error.missing_supporting_claim])
 
 
 def selected_claim_evidence_event_ids_missing_support(
     errors: list[SelectedClaimSupportClosureError],
 ) -> list[str]:
-    return _ordered_unique([
-        event_id
-        for error in errors
-        for event_id in error.missing_event_ids
-    ])
+    return ordered_unique([event_id for error in errors for event_id in error.missing_event_ids])
 
 
 def selected_action_state_event_ids_missing_support(
     errors: list[SelectedClaimSupportClosureError],
 ) -> list[str]:
-    return _ordered_unique([
-        event_id
-        for error in errors
-        if error.is_action_state
-        for event_id in error.missing_event_ids
-    ])
+    return ordered_unique(
+        [event_id for error in errors if error.is_action_state for event_id in error.missing_event_ids]
+    )

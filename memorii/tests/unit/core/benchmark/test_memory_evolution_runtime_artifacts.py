@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import pytest
-from memorii.core.benchmark.artifact_rows import RuntimeExecutionStateSection
+from memorii.core.benchmark.artifact_rows import (
+    FinalOutputSource,
+    RuntimeExecutionStateSection,
+    RuntimeExtractorOutput,
+    RuntimeExtractorTracePayload,
+    RuntimeExtractorTraceRow,
+)
 from memorii.core.benchmark.memory_evolution_runtime import (
     RuntimeGraphItemRow,
     RuntimeGraphSnapshotRow,
@@ -19,29 +25,76 @@ from memorii.core.memory_evolution.execution import (
 from tests.unit.core.benchmark.memory_evolution_runtime_test_helpers import runtime_checkpoint_row
 
 
+def runtime_graph_item(**overrides: object) -> RuntimeGraphItemRow:
+    payload: dict[str, object] = {
+        "item_type": "claim",
+        "scenario_id": "scenario_1",
+        "runtime_item_id": "claim:1",
+        "claim_id": "claim:1",
+        "subject_entity_id": "entity:1",
+        "predicate": "status",
+        "object_value": "active",
+        "lifecycle_state": "active",
+    }
+    payload.update(overrides)
+    return RuntimeGraphItemRow.model_validate(payload)
+
+
+def runtime_extractor_trace(
+    *,
+    success: bool,
+    fallback_used: bool = False,
+    failure_classification: str | None = None,
+    final_output_source: FinalOutputSource = "live_llm",
+) -> RuntimeExtractorTraceRow:
+    return RuntimeExtractorTraceRow.model_validate(
+        {
+            "scenario_id": "scenario_1",
+            "transition_type": "runtime_memory_extraction",
+            "decision_mode": "llm",
+            "effective_decision_mode": "llm",
+            "final_output_source": final_output_source,
+            "trace": RuntimeExtractorTracePayload(
+                provider="test",
+                scenario_id="scenario_1",
+                call_index=0,
+                failure_classification=failure_classification,
+                entity_count=0,
+                claim_count=0,
+                action_count=0,
+            ),
+            "success": success,
+            "fallback_used": fallback_used,
+            "failure_mode": None if success else "runtime_extractor_failure",
+            "output": RuntimeExtractorOutput(),
+        }
+    )
+
+
 def test_runtime_graph_items_are_typed_at_the_artifact_boundary() -> None:
+    graph_item = runtime_graph_item(
+        runtime_item_id="runtime:claim:1",
+        confidence=0.8,
+    )
     rows = RuntimeSuiteRows(
         scenario_rows=[],
         checkpoint_rows=[],
         judge_rows=[],
         llm_rows=[],
-        graph_items=[
-            {
-                "scenario_id": "scenario_1",
-                "runtime_item_id": "runtime:claim:1",
-                "item_type": "claim",
-                "claim_id": "claim:1",
-                "subject_entity_id": "entity:1",
-                "predicate": "status",
-                "object_value": "active",
-                "lifecycle_state": "active",
-                "confidence": 0.8,
-            }
-        ],
+        graph_items=[graph_item],
     )
 
     assert isinstance(rows.graph_items[0], RuntimeGraphItemRow)
     assert rows.graph_items[0].claim_id == "claim:1"
+
+    with pytest.raises(TypeError, match="RuntimeGraphItemRow"):
+        RuntimeSuiteRows(
+            scenario_rows=[],
+            checkpoint_rows=[],
+            judge_rows=[],
+            llm_rows=[],
+            graph_items=[graph_item.model_dump(mode="json")],  # type: ignore[list-item]
+        )
 
     with pytest.raises(ValueError, match="extra_field"):
         RuntimeGraphItemRow.model_validate(
@@ -65,9 +118,7 @@ def test_runtime_graph_items_are_typed_at_the_artifact_boundary() -> None:
 
 def test_runtime_graph_snapshot_requires_identity() -> None:
     with pytest.raises(ValueError, match="snapshot_id must be non-empty"):
-        RuntimeGraphSnapshotRow.model_validate(
-            {"scenario_id": "scenario_1", "checkpoint_id": "checkpoint_1"}
-        )
+        RuntimeGraphSnapshotRow.model_validate({"scenario_id": "scenario_1", "checkpoint_id": "checkpoint_1"})
 
 
 def test_runtime_execution_artifact_nested_state_is_typed_and_json_readable() -> None:
@@ -102,6 +153,7 @@ def test_runtime_summary_reports_long_horizon_slice_counts() -> None:
         ],
         judge_rows=[],
         llm_rows=[],
+        dry_run=True,
     )
 
     summary = runtime_summary_metrics(rows)
@@ -109,7 +161,6 @@ def test_runtime_summary_reports_long_horizon_slice_counts() -> None:
     assert summary["long_horizon_slice_counts"]["horizon_distance_bucket"] == {"long": 1}
     assert summary["long_horizon_slice_counts"]["interference_count_bucket"] == {"medium": 1}
     assert summary["runtime_graph_alignments_summary"]["checkpoint_scored_verdict_counts"] == {"pass": 1}
-
 
 
 def test_runtime_graph_completeness_metrics_report_claim_provenance_and_edge_counts() -> None:
@@ -126,33 +177,141 @@ def test_runtime_graph_completeness_metrics_report_claim_provenance_and_edge_cou
         judge_rows=[],
         llm_rows=[],
         graph_items=[
-                {"item_type": "claim", "scenario_id": "scenario_1", "runtime_item_id": "claim:1", "claim_id": "claim:1", "subject_entity_id": "entity:1", "predicate": "status", "object_value": "active", "lifecycle_state": "active"},
-                {"item_type": "entity", "scenario_id": "scenario_1", "runtime_item_id": "entity:1", "canonical_id": "entity:1", "canonical_name": "Entity", "lifecycle_state": "active"},
-                {"item_type": "relation", "scenario_id": "scenario_1", "runtime_item_id": "relation:1", "relation_type": "supports", "source": "claim:1", "target": "entity:1", "lifecycle_state": "active"},
-                {"item_type": "action", "scenario_id": "scenario_1", "runtime_item_id": "action:1", "action_id": "action:1", "action_type": "work", "status": "in_progress", "lifecycle_state": "active"},
+            runtime_graph_item(),
+            runtime_graph_item(
+                item_type="entity",
+                runtime_item_id="entity:1",
+                canonical_id="entity:1",
+                canonical_name="Entity",
+                claim_id="",
+                subject_entity_id="",
+                predicate="",
+                object_value="",
+            ),
+            runtime_graph_item(
+                item_type="relation",
+                runtime_item_id="relation:1",
+                relation_type="supports",
+                source="claim:1",
+                target="entity:1",
+                claim_id="",
+                subject_entity_id="",
+                predicate="",
+                object_value="",
+            ),
+            runtime_graph_item(
+                item_type="action",
+                runtime_item_id="action:1",
+                action_id="action:1",
+                action_type="work",
+                status="in_progress",
+                claim_id="",
+                subject_entity_id="",
+                predicate="",
+                object_value="",
+            ),
         ],
         graph_snapshots=[
-            {
-                "snapshot_id": "snapshot:1",
-                "scenario_id": "scenario_1",
-                "checkpoint_id": "checkpoint_1",
-                "validation_errors": [],
-                "nodes": [
-                    {"node_id": "source:1", "node_type": "source_observation", "label": "source", "lifecycle_state": "active", "payload_ref": "source:1", "confidence": 1.0},
-                    {"node_id": "claim:1", "node_type": "claim", "label": "claim", "lifecycle_state": "active", "payload_ref": "claim:1", "confidence": 1.0},
-                    {"node_id": "action:1", "node_type": "action", "label": "action", "lifecycle_state": "active", "payload_ref": "action:1", "confidence": 1.0},
-                    {"node_id": "entity:1", "node_type": "entity", "label": "entity", "lifecycle_state": "active", "payload_ref": "entity:1", "confidence": 1.0},
-                    {"node_id": "literal:1", "node_type": "literal", "label": "literal", "lifecycle_state": "active", "payload_ref": "literal:1", "confidence": 1.0},
-                    {"node_id": "scope:global", "node_type": "scope", "label": "scope", "lifecycle_state": "active", "payload_ref": "scope:global", "confidence": 1.0},
-                ],
-                "edges": [
-                    {"edge_id": "edge:1", "edge_type": "has_subject", "source_node_id": "claim:1", "target_node_id": "entity:1", "lifecycle_state": "active", "confidence": 1.0},
-                    {"edge_id": "edge:2", "edge_type": "has_literal_object", "source_node_id": "claim:1", "target_node_id": "literal:1", "lifecycle_state": "active", "confidence": 1.0},
-                    {"edge_id": "edge:3", "edge_type": "has_scope", "source_node_id": "claim:1", "target_node_id": "scope:global", "lifecycle_state": "active", "confidence": 1.0},
-                    {"edge_id": "edge:4", "edge_type": "observed_in", "source_node_id": "claim:1", "target_node_id": "source:1", "lifecycle_state": "active", "confidence": 1.0},
-                    {"edge_id": "edge:5", "edge_type": "observed_in", "source_node_id": "action:1", "target_node_id": "source:1", "lifecycle_state": "active", "confidence": 1.0},
-                ],
-            }
+            RuntimeGraphSnapshotRow.model_validate(
+                {
+                    "snapshot_id": "snapshot:1",
+                    "scenario_id": "scenario_1",
+                    "checkpoint_id": "checkpoint_1",
+                    "validation_errors": [],
+                    "nodes": [
+                        {
+                            "node_id": "source:1",
+                            "node_type": "source_observation",
+                            "label": "source",
+                            "lifecycle_state": "active",
+                            "payload_ref": "source:1",
+                            "confidence": 1.0,
+                        },
+                        {
+                            "node_id": "claim:1",
+                            "node_type": "claim",
+                            "label": "claim",
+                            "lifecycle_state": "active",
+                            "payload_ref": "claim:1",
+                            "confidence": 1.0,
+                        },
+                        {
+                            "node_id": "action:1",
+                            "node_type": "action",
+                            "label": "action",
+                            "lifecycle_state": "active",
+                            "payload_ref": "action:1",
+                            "confidence": 1.0,
+                        },
+                        {
+                            "node_id": "entity:1",
+                            "node_type": "entity",
+                            "label": "entity",
+                            "lifecycle_state": "active",
+                            "payload_ref": "entity:1",
+                            "confidence": 1.0,
+                        },
+                        {
+                            "node_id": "literal:1",
+                            "node_type": "literal",
+                            "label": "literal",
+                            "lifecycle_state": "active",
+                            "payload_ref": "literal:1",
+                            "confidence": 1.0,
+                        },
+                        {
+                            "node_id": "scope:global",
+                            "node_type": "scope",
+                            "label": "scope",
+                            "lifecycle_state": "active",
+                            "payload_ref": "scope:global",
+                            "confidence": 1.0,
+                        },
+                    ],
+                    "edges": [
+                        {
+                            "edge_id": "edge:1",
+                            "edge_type": "has_subject",
+                            "source_node_id": "claim:1",
+                            "target_node_id": "entity:1",
+                            "lifecycle_state": "active",
+                            "confidence": 1.0,
+                        },
+                        {
+                            "edge_id": "edge:2",
+                            "edge_type": "has_literal_object",
+                            "source_node_id": "claim:1",
+                            "target_node_id": "literal:1",
+                            "lifecycle_state": "active",
+                            "confidence": 1.0,
+                        },
+                        {
+                            "edge_id": "edge:3",
+                            "edge_type": "has_scope",
+                            "source_node_id": "claim:1",
+                            "target_node_id": "scope:global",
+                            "lifecycle_state": "active",
+                            "confidence": 1.0,
+                        },
+                        {
+                            "edge_id": "edge:4",
+                            "edge_type": "observed_in",
+                            "source_node_id": "claim:1",
+                            "target_node_id": "source:1",
+                            "lifecycle_state": "active",
+                            "confidence": 1.0,
+                        },
+                        {
+                            "edge_id": "edge:5",
+                            "edge_type": "observed_in",
+                            "source_node_id": "action:1",
+                            "target_node_id": "source:1",
+                            "lifecycle_state": "active",
+                            "confidence": 1.0,
+                        },
+                    ],
+                }
+            )
         ],
     )
 
@@ -184,9 +343,18 @@ def test_runtime_graph_item_metrics_dedupe_repeated_checkpoint_items() -> None:
         judge_rows=[],
         llm_rows=[],
         graph_items=[
-                {"item_type": "claim", "scenario_id": "scenario_1", "runtime_item_id": "claim:1", "claim_id": "claim:1", "subject_entity_id": "entity:1", "predicate": "status", "object_value": "active", "lifecycle_state": "active"},
-                {"item_type": "claim", "scenario_id": "scenario_1", "runtime_item_id": "claim:1", "claim_id": "claim:1", "subject_entity_id": "entity:1", "predicate": "status", "object_value": "active", "lifecycle_state": "active"},
-                {"item_type": "entity", "scenario_id": "scenario_1", "runtime_item_id": "entity:1", "canonical_id": "entity:1", "canonical_name": "Entity", "lifecycle_state": "active"},
+            runtime_graph_item(),
+            runtime_graph_item(),
+            runtime_graph_item(
+                item_type="entity",
+                runtime_item_id="entity:1",
+                canonical_id="entity:1",
+                canonical_name="Entity",
+                claim_id="",
+                subject_entity_id="",
+                predicate="",
+                object_value="",
+            ),
         ],
     )
 
@@ -198,15 +366,21 @@ def test_runtime_graph_item_metrics_dedupe_repeated_checkpoint_items() -> None:
 def test_runtime_provider_health_fails_for_terminal_provider_errors_and_fallbacks() -> None:
     rows = RuntimeSuiteRows(
         scenario_rows=[],
-        checkpoint_rows=[runtime_checkpoint_row(effective_decision_mode="hybrid")],
+        checkpoint_rows=[
+            runtime_checkpoint_row(
+                effective_decision_mode="hybrid",
+                final_output_source="live_llm",
+            )
+        ],
         judge_rows=[],
         llm_rows=[
-            {"success": True, "fallback_used": False},
-            {
-                "success": False,
-                "fallback_used": True,
-                "failure_classification": "provider_request_error",
-            },
+            runtime_extractor_trace(success=True),
+            runtime_extractor_trace(
+                success=False,
+                fallback_used=True,
+                failure_classification="provider_request_error",
+                final_output_source="mixed",
+            ),
         ],
         effective_mode="hybrid",
     )
@@ -244,7 +418,7 @@ def test_runtime_provider_health_does_not_count_fake_extraction_as_provider_succ
         scenario_rows=[],
         checkpoint_rows=[runtime_checkpoint_row(effective_decision_mode="llm", final_output_source="fake_oracle")],
         judge_rows=[],
-        llm_rows=[{"success": True, "fallback_used": False}],
+        llm_rows=[runtime_extractor_trace(success=True, final_output_source="fake_oracle")],
         effective_mode="llm",
         dry_run=True,
     )
@@ -267,21 +441,30 @@ def test_runtime_output_source_is_scoped_to_the_current_checkpoint_runs() -> Non
         ]
 
     extractor = TraceExtractor()
-    assert runtime_final_output_source(
-        effective_mode="hybrid",
-        dry_run=False,
-        extractor=extractor,
-        recorded_runs=[extractor.recorded_runs[1]],
-    ) == "live_llm"
-    assert runtime_final_output_source(
-        effective_mode="hybrid",
-        dry_run=False,
-        extractor=extractor,
-        recorded_runs=extractor.recorded_runs,
-    ) == "mixed"
-    assert runtime_final_output_source(
-        effective_mode="hybrid",
-        dry_run=False,
-        extractor=extractor,
-        recorded_runs=[],
-    ) == "reused_runtime_state"
+    assert (
+        runtime_final_output_source(
+            effective_mode="hybrid",
+            dry_run=False,
+            extractor=extractor,
+            recorded_runs=[extractor.recorded_runs[1]],
+        )
+        == "live_llm"
+    )
+    assert (
+        runtime_final_output_source(
+            effective_mode="hybrid",
+            dry_run=False,
+            extractor=extractor,
+            recorded_runs=extractor.recorded_runs,
+        )
+        == "mixed"
+    )
+    assert (
+        runtime_final_output_source(
+            effective_mode="hybrid",
+            dry_run=False,
+            extractor=extractor,
+            recorded_runs=[],
+        )
+        == "reused_runtime_state"
+    )

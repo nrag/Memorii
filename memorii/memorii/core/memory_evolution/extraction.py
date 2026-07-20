@@ -20,9 +20,10 @@ from memorii.core.memory_evolution.models import (
     ExtractedClaim,
     ExtractionRun,
     SourceObservation,
+    memory_scope_from_observation,
 )
-from memorii.core.prompts.manifest import PromptOwner
-from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
+from memorii.core.prompts.runtime_manifest import PromptOwner
 
 
 class MemoryExtractor(Protocol):
@@ -35,7 +36,9 @@ class MemoryExtractor(Protocol):
     @property
     def prompt_hash(self) -> str | None: ...
 
-    def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]: ...
+    def extract(
+        self, observations: list[SourceObservation]
+    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]: ...
 
 
 class RuleMemoryExtractor:
@@ -49,21 +52,26 @@ class RuleMemoryExtractor:
     model: str | None = None
     prompt_hash: str | None = None
 
-    def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    def extract(
+        self, observations: list[SourceObservation]
+    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
-        entities: dict[str, EntityMention] = {}
+        entities: dict[tuple[str, str, str], EntityMention] = {}
         claims: list[ExtractedClaim] = []
         actions: list[ExtractedAction] = []
         errors: list[str] = []
 
         for observation in observations:
             try:
-                obs_entities, obs_claims, obs_actions = self._extract_observation(run_id=run_id, observation=observation)
+                obs_entities, obs_claims, obs_actions = self._extract_observation(
+                    run_id=run_id, observation=observation
+                )
             except ValueError as exc:
                 errors.append(f"{observation.source_id}: {exc}")
                 continue
             for entity in obs_entities:
-                entities.setdefault(entity.entity_id, entity)
+                key = (entity.entity_id, entity.normalized_name, entity.scope.scope_key)
+                entities.setdefault(key, entity)
             claims.extend(obs_claims)
             actions.extend(obs_actions)
 
@@ -75,7 +83,7 @@ class RuleMemoryExtractor:
             model=self.model,
             prompt_hash=self.prompt_hash,
             input_source_ids=[obs.source_id for obs in observations],
-            entity_ids=sorted(entities),
+            entity_ids=sorted({entity.entity_id for entity in entity_list}),
             claim_ids=[claim.claim_id for claim in claims],
             action_ids=[action.action_id for action in actions],
             validation_summary={},
@@ -93,6 +101,7 @@ class RuleMemoryExtractor:
         entities: list[EntityMention] = []
         claims: list[ExtractedClaim] = []
         actions: list[ExtractedAction] = []
+        observation_scope = memory_scope_from_observation(observation)
 
         for predicate, subject, value, quote in _extract_fact_matches(text):
             subject_entity_id = _entity_id(subject)
@@ -106,6 +115,7 @@ class RuleMemoryExtractor:
                     entity_type=EntityType.UNKNOWN,
                     evidence_spans=[span],
                     confidence=0.7,
+                    scope=observation_scope,
                 )
             )
             if value_entity_id is not None:
@@ -117,6 +127,7 @@ class RuleMemoryExtractor:
                         entity_type=EntityType.PERSON,
                         evidence_spans=[span],
                         confidence=0.7,
+                        scope=observation_scope,
                     )
                 )
             claims.append(
@@ -125,7 +136,7 @@ class RuleMemoryExtractor:
                     claim_key=ClaimKey(
                         subject_entity_id=subject_entity_id,
                         predicate_id=predicate,
-                        scope_key=observation.task_id or "global",
+                        scope_key=observation_scope.scope_key,
                         qualifier_key="default",
                     ),
                     object_value=value,
@@ -137,7 +148,11 @@ class RuleMemoryExtractor:
                 )
             )
 
-        action_match = re.search(r"\b(?P<target>[A-Z][A-Za-z0-9 _:-]+?)\s+(?P<status>started|blocked|resumed|abandoned|completed|failed|succeeded)\b", text, re.IGNORECASE)
+        action_match = re.search(
+            r"\b(?P<target>[A-Z][A-Za-z0-9 _:-]+?)\s+(?P<status>started|blocked|resumed|abandoned|completed|failed|succeeded)\b",
+            text,
+            re.IGNORECASE,
+        )
         if action_match:
             target = action_match.group("target").strip()
             status = action_match.group("status").lower()
@@ -152,7 +167,7 @@ class RuleMemoryExtractor:
                     task_id=observation.task_id,
                     session_id=observation.session_id,
                     user_id=observation.user_id,
-                    scope_key=observation.task_id or "global",
+                    scope_key=observation_scope.scope_key,
                     evidence_spans=[span],
                     extraction_run_id=run_id,
                 )
@@ -171,13 +186,15 @@ class LLMMemoryExtractor:
         runner: PromptLLMRunner,
         prompt_root: Path | None = None,
     ) -> None:
-        root = prompt_root or Path(__file__).resolve().parents[2] / "prompts"
+        root = prompt_root or default_prompt_root()
         self._runner = runner
-        self._registry = PromptRegistry(prompt_root=root, require_manifest=True)
+        self._registry = PromptRegistry(prompt_root=root)
         self.model: str | None = None
         self.prompt_hash: str | None = None
 
-    def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    def extract(
+        self, observations: list[SourceObservation]
+    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
         contract = self._registry.load(self.prompt_ref, owner=PromptOwner.LLM_MEMORY_EXTRACTOR)
         result = self._runner.run(
@@ -191,7 +208,7 @@ class LLMMemoryExtractor:
                 "source_ids": [obs.source_id for obs in observations],
             },
         )
-        self.model = result.response.model
+        self.model = result.response.actual_model or result.response.requested_model
         self.prompt_hash = result.request.prompt_hash
         if not result.success or result.output is None:
             errors = [result.failure_mode or "llm_extraction_failed"]
@@ -200,7 +217,7 @@ class LLMMemoryExtractor:
             run = ExtractionRun(
                 extraction_run_id=run_id,
                 provider=self.provider,
-                model=result.response.model,
+                model=result.response.actual_model or result.response.requested_model,
                 prompt_hash=result.request.prompt_hash,
                 input_source_ids=[obs.source_id for obs in observations],
                 errors=errors,
@@ -209,7 +226,7 @@ class LLMMemoryExtractor:
         return _models_from_llm_output(
             run_id=run_id,
             provider=self.provider,
-            model=result.response.model,
+            model=result.response.actual_model or result.response.requested_model,
             prompt_hash=result.request.prompt_hash,
             observations=observations,
             output=result.output,
@@ -230,12 +247,16 @@ class HybridMemoryExtractor:
         self.model: str | None = None
         self.prompt_hash: str | None = None
 
-    def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    def extract(
+        self, observations: list[SourceObservation]
+    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run, entities, claims, actions = self._llm_extractor.extract(observations)
         self.model = run.model
         self.prompt_hash = run.prompt_hash
         if run.errors:
-            fallback_run, fallback_entities, fallback_claims, fallback_actions = self._rule_extractor.extract(observations)
+            fallback_run, fallback_entities, fallback_claims, fallback_actions = self._rule_extractor.extract(
+                observations
+            )
             fallback_run = fallback_run.model_copy(
                 update={
                     "provider": self.provider,
@@ -248,14 +269,32 @@ class HybridMemoryExtractor:
 
 def _extract_fact_matches(text: str) -> list[tuple[str, str, str, str]]:
     patterns: list[tuple[str, str]] = [
-        ("api_owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:API\s+owner|api\s+owner)\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
+        (
+            "api_owner",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:API\s+owner|api\s+owner)\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)",
+        ),
         ("approver", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+approver\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
         ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+owner\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+ownership\s+(?:in\s+\w+\s+)?(?:belonged to|belongs to)\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("owner", r"(?P<value>[A-Z][A-Za-z0-9 _:-]+?)\s+owns\s+(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)(?=\s+for now|\s+currently|[.,;]|$)"),
-        ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?:project|service|task|workstream)\b\s+owned\s+by\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("entity_type", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?P<value>project|service|task|incident|document|preference)\b"),
-        ("status", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:state|status)\s*(?:is|:|=)\s*(?P<value>failed|succeeded|blocked|running|done|active|inactive)"),
+        (
+            "owner",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+ownership\s+(?:in\s+\w+\s+)?(?:belonged to|belongs to)\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)",
+        ),
+        (
+            "owner",
+            r"(?P<value>[A-Z][A-Za-z0-9 _:-]+?)\s+owns\s+(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)(?=\s+for now|\s+currently|[.,;]|$)",
+        ),
+        (
+            "owner",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?:project|service|task|workstream)\b\s+owned\s+by\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)",
+        ),
+        (
+            "entity_type",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?P<value>project|service|task|incident|document|preference)\b",
+        ),
+        (
+            "status",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:state|status)\s*(?:is|:|=)\s*(?P<value>failed|succeeded|blocked|running|done|active|inactive)",
+        ),
         ("status", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:deploy|deployment)\s+(?P<value>failed|succeeded)"),
         ("preference", r"(?:prefers|preference is|style is)\s+(?P<value>[a-z][A-Za-z0-9 _:-]+)"),
     ]
@@ -301,14 +340,18 @@ def _models_from_llm_output(
             source_id = str(item.get("source_id") or "")
             observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
             span = _span(observation=observation, quote=str(item.get("quote") or item.get("mention_text") or ""))
+            observation_scope = memory_scope_from_observation(observation)
+            _validate_model_scope(item, observation=observation, scope_key=observation_scope.scope_key)
             entities.append(
                 EntityMention(
                     entity_id=str(item["entity_id"]),
                     mention_text=str(item["mention_text"]),
                     normalized_name=str(item.get("normalized_name") or item["mention_text"]).strip().lower(),
+                    aliases=[str(alias) for alias in _sequence_output(item.get("aliases"))],
                     entity_type=_entity_type(str(item.get("entity_type") or "unknown")),
                     evidence_spans=[span],
                     confidence=_float_output(item.get("confidence"), default=0.5),
+                    scope=observation_scope,
                 )
             )
         except (KeyError, TypeError, ValueError) as exc:
@@ -322,10 +365,12 @@ def _models_from_llm_output(
             subject_entity_id = str(item["subject_entity_id"])
             object_value = str(item["object_value"]).strip()
             span = _span(observation=observation, quote=str(item.get("quote") or object_value))
+            observation_scope = memory_scope_from_observation(observation)
+            _validate_model_scope(item, observation=observation, scope_key=observation_scope.scope_key)
             claim_key = ClaimKey(
                 subject_entity_id=subject_entity_id,
                 predicate_id=predicate_id,
-                scope_key=str(item.get("scope_key") or observation.task_id or "global"),
+                scope_key=observation_scope.scope_key,
                 qualifier_key=str(item.get("qualifier_key") or "default"),
             )
             confidence = _float_output(item.get("confidence"), default=0.6)
@@ -371,7 +416,10 @@ def _models_from_llm_output(
                         extraction=confidence,
                         evidence=0.8 if span.char_start is not None else 0.4,
                         source_trust=_confidence_for_source(observation).source_trust,
-                        calibrated=min(1.0, max(0.0, confidence * 0.5 + _confidence_for_source(observation).source_trust * 0.3 + 0.16)),
+                        calibrated=min(
+                            1.0,
+                            max(0.0, confidence * 0.5 + _confidence_for_source(observation).source_trust * 0.3 + 0.16),
+                        ),
                     ),
                     extraction_run_id=run_id,
                 )
@@ -388,6 +436,8 @@ def _models_from_llm_output(
             action_type = str(item["action_type"])
             target_entity_ids = [str(value) for value in _sequence_output(item.get("target_entity_ids"))]
             status = str(item["status"])
+            observation_scope = memory_scope_from_observation(observation)
+            _validate_model_scope(item, observation=observation, scope_key=observation_scope.scope_key)
             action_id = _stable_id(
                 "action",
                 "|".join([run_id, observation.source_id, action_type, "|".join(target_entity_ids), status]),
@@ -402,10 +452,10 @@ def _models_from_llm_output(
                     dependency_ids=[str(value) for value in _sequence_output(item.get("dependency_ids"))],
                     blocking_ids=[str(value) for value in _sequence_output(item.get("blocking_ids"))],
                     timestamp=_parse_dt(item.get("timestamp")) or observation.timestamp,
-                    task_id=str(item["task_id"]) if item.get("task_id") else observation.task_id,
-                    session_id=str(item["session_id"]) if item.get("session_id") else observation.session_id,
-                    user_id=str(item["user_id"]) if item.get("user_id") else observation.user_id,
-                    scope_key=str(item.get("scope_key") or observation.task_id or "global"),
+                    task_id=observation.task_id,
+                    session_id=observation.session_id,
+                    user_id=observation.user_id,
+                    scope_key=observation_scope.scope_key,
                     evidence_spans=[span],
                     extraction_run_id=run_id,
                 )
@@ -502,6 +552,24 @@ def _resolve_observation(*, source_id: str, observation_by_id: dict[str, SourceO
     if len(observation_by_id) == 1:
         return next(iter(observation_by_id.values()))
     raise KeyError(source_id)
+
+
+def _validate_model_scope(
+    item: Mapping[str, object],
+    *,
+    observation: SourceObservation,
+    scope_key: str,
+) -> None:
+    expected = {
+        "scope_key": scope_key,
+        "task_id": observation.task_id,
+        "session_id": observation.session_id,
+        "user_id": observation.user_id,
+    }
+    for field_name, expected_value in expected.items():
+        supplied = item.get(field_name)
+        if supplied not in {None, ""} and (expected_value is None or str(supplied) != expected_value):
+            raise ValueError(f"model supplied {field_name} outside the source observation scope")
 
 
 def _list_output(output: dict[str, object], key: str) -> list[dict[str, object]]:

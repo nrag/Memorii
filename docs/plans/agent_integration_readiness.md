@@ -2,11 +2,10 @@
 
 ## Current Answer
 
-Memorii is ready for a controlled agent-system pilot behind a feature flag.
+Memorii is not yet ready for agent-system integration, including a controlled
+pilot. Current work validates memory components and benchmark integrity only.
 
-Memorii is not yet ready to be the default always-on durable memory system for agents.
-
-## Why A Pilot Is Reasonable
+## Validated Component Surface
 
 The codebase now has the main integration primitives:
 
@@ -20,9 +19,12 @@ The codebase now has the main integration primitives:
 - runtime graph projection and graph retrieval APIs
 - benchmark suites for lifecycle, retrieval corruption, execution graph, hand-authored memory evolution, latent graph simulation, HotpotQA, and calibration reporting
 
-The latest latent graph simulator work gives confidence that the benchmark contract is meaningful: live runs use live LLM output, hidden facts are present, role-aware channels are enforced, and programmatic judges are deterministic.
+The latent graph simulator and runtime suite provide evidence about memory
+reconstruction, extraction, lifecycle, graph projection, retrieval, and
+reporting. They do not provide evidence about an agent's policy, tool-use
+strategy, recovery behavior, or end-to-end task outcomes.
 
-## Why Default Always-On Memory Is Premature
+## Why Integration Is Deferred
 
 The strongest benchmark currently validates:
 
@@ -30,7 +32,7 @@ The strongest benchmark currently validates:
 surface observations -> benchmark reconstruction adapter -> judges
 ```
 
-Agent integration needs to validate:
+Any future agent integration needs a separately approved evaluation of:
 
 ```text
 agent events -> provider hooks -> MemoryEvolutionService
@@ -38,13 +40,15 @@ agent events -> provider hooks -> MemoryEvolutionService
   -> agent behavior
 ```
 
-That full runtime-backed loop is not yet the primary acceptance suite.
+The runtime-backed benchmark now validates the memory portion of this path on
+generated observations. It does not include an agent as the system under test.
 
 Runtime memory evolution is also disabled by default in `ProviderMemoryService`, which is the right default until runtime-backed validation is green.
 
-## Integration Pilot Configuration
+## Future Integration Design Inputs
 
-For a controlled pilot, use:
+The following are design inputs for a future evaluation, not approved pilot
+instructions:
 
 - `ProviderMemoryService(memory_evolution_enabled=True)`
 - persistent memory plane storage
@@ -53,7 +57,7 @@ For a controlled pilot, use:
 - LLM/hybrid extractor only when live credentials and tracing are configured
 - full trace capture for provider events, extraction runs, graph snapshots, and recall bundles
 
-Pilot rules:
+Future evaluation safety requirements:
 
 - keep raw transcript append-only
 - keep semantic/user writes conservative
@@ -62,9 +66,9 @@ Pilot rules:
 - keep calibration report-only
 - allow rollback by disabling runtime evolution
 
-## Pilot Agent Capabilities
+## Candidate Agent Capabilities
 
-Expose these capabilities to the agent harness:
+A future harness may expose these capabilities after its protocol is reviewed:
 
 - `prefetch(query, session_id, task_id, user_id)`
 - `sync_turn(user_content, assistant_content, ...)`
@@ -82,9 +86,12 @@ Expose provider tools:
 - `memorii_record_outcome`
 - decision-state tools for options, criteria, evidence, recommendations, and finalization
 
-## Required Gate Before Broad Integration
+## Required Memory-Component Gate
 
-Implement `memory_evolution_runtime_v1` before making Memorii the default memory substrate.
+`memory_evolution_runtime_v1` is the memory-component acceptance suite. It
+must remain green across declared live seeds, replicates, and scenario
+families, but passing it is necessary rather than sufficient for agent
+integration.
 
 The suite should:
 
@@ -96,7 +103,7 @@ The suite should:
 6. Score entity, claim, relation, provenance, lifecycle, conflict, scope, source trust, and hidden hallucination behavior.
 7. Emit calibration and decision quality reports.
 
-Acceptance target for pilot-to-default promotion:
+Memory-component acceptance targets:
 
 - no hidden hallucinations
 - no high-confidence wrong current truth
@@ -111,15 +118,15 @@ Acceptance target for pilot-to-default promotion:
 ## Near-Term Work Order
 
 1. Document current design and readiness state.
-2. Implement `memory_evolution_runtime_v1`.
-3. Run dry-run/runtime fixtures and live LLM extraction fixtures separately.
-4. Add a small real agent harness pilot.
-5. Inspect traces and calibration before changing defaults.
-6. Only then consider enabling runtime evolution by default.
+2. Keep benchmark-only oracle data isolated from production retrieval.
+3. Run fake-oracle plumbing and live LLM gates as distinct evidence classes.
+4. Stabilize multi-seed, multi-replicate, family-level statistical gates.
+5. Inspect traces, calibration, provider health, and generator coverage.
+6. Design an agent-system evaluation separately; do not integrate in this phase.
 
-## Non-Goals For The First Pilot
+## Current Non-Goals
 
-Do not attempt to solve these in the first integration pass:
+Do not attempt these during benchmark hardening:
 
 - full production scaling
 - automatic confidence caps in runtime
@@ -132,14 +139,14 @@ Do not attempt to solve these in the first integration pass:
 
 Ready now:
 
-- controlled pilot
-- opt-in runtime evolution
+- isolated opt-in runtime component validation
 - benchmark-backed trace inspection
 - provider tools for explicit state management
 
 Not ready yet:
 
+- controlled agent integration
 - default always-on memory evolution
 - unguarded durable fact writes from ordinary chat
 - broad production deployment
-- claiming the runtime graph passes latent graph reconstruction until `memory_evolution_runtime_v1` exists
+- claims about agent-level quality or task improvement

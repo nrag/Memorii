@@ -9,8 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  deterministic-benchmarks:
-    name: Deterministic Benchmark Reports
+  fake-oracle-plumbing:
+    name: Fake-Oracle Plumbing Reports
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -29,7 +29,7 @@ jobs:
         working-directory: memorii
         run: pip install -e '.[local,dev]'
 
-      - name: Run deterministic simulator benchmark
+      - name: Build fake-oracle simulator plumbing artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
@@ -45,7 +45,7 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Run deterministic runtime benchmark
+      - name: Build fake-oracle runtime plumbing artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
@@ -61,7 +61,7 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Validate deterministic artifacts
+      - name: Validate fake-oracle plumbing artifacts
         working-directory: memorii
         run: >-
           python -m memorii.tools.validate_benchmark_artifacts
@@ -76,22 +76,25 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: deterministic-benchmark-reports
+          name: fake-oracle-plumbing-reports
           path: memorii/.memorii/benchmark_runs
           if-no-files-found: warn
 
   live-runtime-smoke:
-    name: Live Runtime Smoke (seed ${{ matrix.seed }})
-    if: ${{ github.event_name == 'workflow_dispatch' && vars.MEMORII_RUN_LIVE_GATES == 'true' }}
+    name: Live Runtime Smoke (seed ${{ matrix.seed }}, replicate ${{ matrix.replicate }})
+    if: ${{ vars.MEMORII_RUN_LIVE_GATES == 'true' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         seed: [7, 11, 19, 23, 31, 37, 41, 43, 47, 53]
+        replicate: [0, 1]
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       MEMORII_SOURCE_REVISION: ${{ github.sha }}
+      MEMORII_LLM_MAX_RETRIES: '0'
 
     steps:
       - name: Checkout
@@ -115,7 +118,7 @@ jobs:
           --suite memory_evolution_runtime_v1
           --mode hybrid
           --allow-live
-          --fail-on-benchmark-failure
+          --defer-live-gate
           --storage-root .memorii
           --sim-profile long_horizon
           --sim-scenario-count 25
@@ -123,19 +126,20 @@ jobs:
           --sim-max-events 60
           --sim-noise-rate 0.35
           --seed ${{ matrix.seed }}
+          --inference-replicate ${{ matrix.replicate }}
 
       - name: Upload live artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: live-runtime-smoke-reports-${{ matrix.seed }}
+          name: live-runtime-smoke-reports-${{ matrix.seed }}-${{ matrix.replicate }}
           path: memorii/.memorii/benchmark_runs
           if-no-files-found: warn
 
   live-runtime-gate:
     name: Live Runtime Statistical Gate
     needs: live-runtime-smoke
-    if: ${{ always() && github.event_name == 'workflow_dispatch' && vars.MEMORII_RUN_LIVE_GATES == 'true' }}
+    if: ${{ always() && vars.MEMORII_RUN_LIVE_GATES == 'true' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -170,8 +174,20 @@ jobs:
           --mode hybrid
           --profile long_horizon
           --minimum-seed-count 10
-          --minimum-scenarios-per-seed 25
+          --minimum-scenarios-per-replicate 25
+          --minimum-replicates-per-seed 2
           --minimum-pass-rate-lower-bound 0.90
+          --minimum-family-pass-rate-lower-bound 0.75
+          --minimum-family-scenarios-per-seed 2
+          --minimum-seed-pass-rate 0.80
+          --confidence-level 0.95
+          --design-target-scenario-reliability 0.98
+          --minimum-design-power 0.80
+          --maximum-null-acceptance-probability 0.05
+          --minimum-interval-coverage 0.90
+          --design-trials 500
+          --intraseed-correlation 0.05
+          --source-revision "${{ github.sha }}"
           --maximum-provider-failure-rate 0.05
           --maximum-fallback-rate 0.05
           --output .memorii/benchmark_runs/live_runtime_gate_summary.json

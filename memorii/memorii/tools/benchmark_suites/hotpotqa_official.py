@@ -141,10 +141,11 @@ def _run_hotpotqa_answer_decisions(
     evidence_selector = None
     answer_generator = None
     verifier = None
+    llm_binding = None
     if effective_mode in {"llm", "hybrid"}:
-        client = dependencies.eval_fake_client_cls() if dry_run else dependencies.llm_client_factory.from_config(runtime_config)
-        runner = PromptLLMRunner(client=client, config=runtime_config)
-        if dry_run and dependencies.is_default_fake_client():
+        llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
+        runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
+        if dependencies.use_oracle_adapters(dry_run=dry_run):
             evidence_selector = _ExpectedHotpotQAEvidenceSelectionFakeAdapter(examples=examples, registry=registry)
             answer_generator = _ExpectedHotpotQAGroundedAnswerFakeAdapter(examples=examples, registry=registry)
             verifier = _ExpectedHotpotQAAnswerVerificationFakeAdapter(examples=examples, registry=registry)
@@ -244,6 +245,12 @@ def _run_hotpotqa_answer_decisions(
         )
         prediction.answer[example.example_id] = exported_answer
         prediction.sp[example.example_id] = predicted_supporting_facts
+        if result.fallback_used or effective_mode == "rule":
+            final_output_source = "rule"
+        elif llm_binding is None:
+            raise RuntimeError("LLM execution completed without an execution binding")
+        else:
+            final_output_source = llm_binding.final_output_source
         answer_rows.append(
             {
                 "example_id": example.example_id,
@@ -252,7 +259,7 @@ def _run_hotpotqa_answer_decisions(
                 "llm_call_made": llm_used,
                 "fallback_used": result.fallback_used,
                 "fallback_reason": result.failure_mode if result.fallback_used else None,
-                "final_output_source": "rule" if result.fallback_used or effective_mode == "rule" else "llm",
+                "final_output_source": final_output_source,
                 "request_id": request_id,
                 "question": example.question,
                 "question_type": example.question_type,

@@ -3,35 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from copy import deepcopy
 from string import Formatter
 from typing import cast
 
 from memorii.core.prompts.models import PromptContract, PromptRedactionPolicy, RenderedPrompt
+from memorii.core.prompts.registry import RegisteredPromptContract, prompt_registration_digest
+from memorii.core.prompts.sensitivity import normalize_sensitive_key, sanitize_json_value
 
 _PLACEHOLDER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_ORACLE_INPUT_FIELDS = {
-    "expected_answer",
-    "expected_checkpoint_active_record_ids",
-    "expected_checkpoint_retained_record_ids",
-    "expected_belief_ranking",
-    "expected_belief_scores",
-    "expected_citation_ids",
-    "expected_claim_ids",
-    "expected_entity_ids",
-    "expected_excluded_claim_ids",
-    "expected_excluded_entity_ids",
-    "expected_excluded_memory_ids",
-    "expected_excluded_relation_ids",
-    "expected_checkpoint_superseded_record_ids",
-    "expected_next_action",
-    "expected_retrieval_ids",
-    "expected_relation_ids",
-    "hidden_distractor_ids",
-    "hidden_graph_items",
-    "judge_votes",
-    "oracle_checkpoint",
-}
 
 
 def _serialize_value(value: object) -> str:
@@ -42,53 +21,43 @@ def _serialize_value(value: object) -> str:
     return str(value)
 
 
-def _deep_redact(value: object, redact_fields: set[str]) -> object:
-    if isinstance(value, dict):
-        redacted: dict[str, object] = {}
-        for key, nested in value.items():
-            if key in redact_fields:
-                redacted[key] = "[REDACTED]"
-            else:
-                redacted[key] = _deep_redact(nested, redact_fields)
-        return redacted
-    if isinstance(value, list):
-        return [_deep_redact(item, redact_fields) for item in value]
-    return value
-
-
-def _deep_remove(value: object, fields: set[str]) -> object:
-    if isinstance(value, dict):
-        return {
-            key: _deep_remove(nested, fields)
-            for key, nested in value.items()
-            if key not in fields
-        }
-    if isinstance(value, list):
-        return [_deep_remove(item, fields) for item in value]
-    return value
-
-
-def redact_variables(*, variables: dict[str, object], policy: PromptRedactionPolicy) -> dict[str, object]:
-    redacted = deepcopy(variables)
-    input_fields = set(policy.redact_input_fields)
-    redacted = cast(dict[str, object], _deep_remove(redacted, _ORACLE_INPUT_FIELDS))
-
-    for key in input_fields:
-        if key in redacted:
-            redacted[key] = "[REDACTED]"
-
-    for key, value in list(redacted.items()):
-        if isinstance(value, (dict, list)):
-            redacted[key] = _deep_redact(value, input_fields)
+def redact_variables(
+    *,
+    variables: dict[str, object],
+    policy: PromptRedactionPolicy,
+    forbidden_input_fields: set[str] | None = None,
+) -> dict[str, object]:
+    input_fields = frozenset(normalize_sensitive_key(key) for key in policy.redact_input_fields)
+    forbidden_fields = frozenset(
+        normalize_sensitive_key(key) for key in (forbidden_input_fields or set())
+    )
+    redacted = cast(
+        dict[str, object],
+        sanitize_json_value(
+            variables,
+            remove_fields=forbidden_fields,
+            redact_fields=input_fields,
+        ),
+    )
 
     for key in ("input_payload", "actual_output", "expected_output", "metadata"):
         if key in redacted:
             if key == "metadata":
-                redacted[key] = _deep_redact(redacted[key], set(policy.redact_metadata_fields))
+                redacted[key] = sanitize_json_value(
+                    redacted[key],
+                    redact_fields=frozenset(
+                        normalize_sensitive_key(item) for item in policy.redact_metadata_fields
+                    ),
+                )
             elif key in ("actual_output", "expected_output"):
-                redacted[key] = _deep_redact(redacted[key], set(policy.redact_output_fields))
+                redacted[key] = sanitize_json_value(
+                    redacted[key],
+                    redact_fields=frozenset(
+                        normalize_sensitive_key(item) for item in policy.redact_output_fields
+                    ),
+                )
             else:
-                redacted[key] = _deep_redact(redacted[key], input_fields)
+                redacted[key] = sanitize_json_value(redacted[key], redact_fields=input_fields)
 
     return redacted
 
@@ -107,8 +76,19 @@ def _validate_templates(contract: PromptContract, variables: dict[str, str]) -> 
 
 
 class PromptRenderer:
-    def render(self, *, contract: PromptContract, variables: dict[str, object]) -> RenderedPrompt:
-        safe_variables = redact_variables(variables=variables, policy=contract.redaction)
+    def render(self, *, contract: RegisteredPromptContract, variables: dict[str, object]) -> RenderedPrompt:
+        prompt_ref = f"{contract.prompt_id}:{contract.version}"
+        registration = contract.runtime_registration
+        if registration.prompt_ref != prompt_ref:
+            raise ValueError("registered prompt policy does not match prompt identity")
+        expected_digest = prompt_registration_digest(contract, registration)
+        if contract.registration_digest != expected_digest:
+            raise ValueError("registered prompt contract was modified after registration")
+        safe_variables = redact_variables(
+            variables=variables,
+            policy=contract.redaction,
+            forbidden_input_fields=set(registration.visibility_policy.forbidden_input_fields),
+        )
         formatted_variables = {k: _serialize_value(v) for k, v in safe_variables.items()}
         _validate_templates(contract, formatted_variables)
 
@@ -120,7 +100,7 @@ class PromptRenderer:
         prompt_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
         return RenderedPrompt(
-            prompt_ref=f"{contract.prompt_id}:{contract.version}",
+            prompt_ref=prompt_ref,
             prompt_id=contract.prompt_id,
             version=contract.version,
             prompt_hash=prompt_hash,

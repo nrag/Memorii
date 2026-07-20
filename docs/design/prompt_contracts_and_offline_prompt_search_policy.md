@@ -2,14 +2,17 @@
 
 ## Summary
 
-Memorii prompts are governed by checked-in YAML prompt contracts plus an
-executable manifest in `memorii.core.prompts.manifest`. The manifest records
-prompt ownership, representative render variables, fake valid outputs,
-intentionally invalid outputs, and no-leakage rules for every prompt YAML file.
+Memorii prompts are governed by checked-in YAML prompt contracts plus two
+deliberately separate registries. `memorii.core.prompts.runtime_manifest`
+contains the minimal ownership, input-variable, and visibility policy required
+by production. `memorii.core.prompts.manifest` is the conformance registry and
+adds representative render variables, fake valid outputs, intentionally invalid
+outputs, and no-leakage rules for every prompt YAML file.
 
 The YAML contract remains the source of truth for runtime rendering and
-structured-output schemas. The manifest is a test and audit layer; it must not
-replace `PromptRegistry` or `PromptRenderer`.
+structured-output schemas. The conformance manifest is a test and audit layer;
+production adapters must not import it, and it must not replace
+`PromptRegistry` or `PromptRenderer`.
 
 ## Required Prompt Change Gate
 
@@ -57,7 +60,7 @@ runners, prompt registry, prompt renderer, or prompt manifest.
 
 When adding a new prompt:
 
-1. Add the YAML contract under `memorii/prompts/<prompt_id>/<version>.yaml`.
+1. Add the YAML contract under `memorii/memorii/prompts/<prompt_id>/<version>.yaml`.
 2. Add a `PromptContractManifestEntry` for the prompt.
 3. Include a minimal representative input that reflects the live adapter payload.
 4. Include a fake valid output that satisfies the prompt output schema.
@@ -65,4 +68,3 @@ When adding a new prompt:
 6. Add prompt-specific leakage rules when the prompt handles benchmark or oracle
    derived context.
 7. Run `python -m pytest memorii/tests/unit/core/test_prompt_contracts.py -p no:cacheprovider`.
-

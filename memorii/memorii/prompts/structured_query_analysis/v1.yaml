@@ -1,0 +1,195 @@
+prompt_id: structured_query_analysis
+version: v1
+task: Propose a structured temporal and graph interpretation for a retrieval query.
+description: Produces an untrusted semantic proposal that is compiled and validated against server-owned catalogs.
+input_schema:
+  type: object
+  required: [query, context_json]
+  additionalProperties: false
+  properties:
+    query: {type: string}
+    context_json: {type: object}
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - language
+    - temporal_intent
+    - temporal_expression
+    - candidate_entity_ids
+    - predicate_id
+    - subject_entity_id
+    - graph_patterns
+    - entity_mentions
+    - model_confidence
+    - abstention_reason
+  properties:
+    language: {type: string}
+    temporal_intent:
+      enum: [current, historical, interval, execution, belief, ambiguous]
+    temporal_expression:
+      anyOf:
+        - {$ref: '#/$defs/current_expression'}
+        - {$ref: '#/$defs/catalog_anchor_expression'}
+        - {$ref: '#/$defs/absolute_date_expression'}
+        - {$ref: '#/$defs/interval_expression'}
+        - {$ref: '#/$defs/relative_date_expression'}
+        - {type: 'null'}
+    candidate_entity_ids:
+      type: array
+      items: {type: string}
+    predicate_id: {type: [string, 'null']}
+    subject_entity_id: {type: [string, 'null']}
+    graph_patterns:
+      type: array
+      maxItems: 3
+      items: {$ref: '#/$defs/graph_pattern'}
+    entity_mentions:
+      type: array
+      items: {type: string}
+    model_confidence: {type: [number, 'null'], minimum: 0.0, maximum: 1.0}
+    abstention_reason: {type: [string, 'null']}
+  $defs:
+    text_span:
+      type: object
+      additionalProperties: false
+      required: [start, end, text]
+      properties:
+        start: {type: integer, minimum: 0}
+        end: {type: integer, minimum: 1}
+        text: {type: string, minLength: 1}
+    current_expression:
+      type: object
+      additionalProperties: false
+      required: [expression_kind]
+      properties:
+        expression_kind: {const: current}
+    catalog_anchor_expression:
+      type: object
+      additionalProperties: false
+      required: [expression_kind, anchor_id, source_span]
+      properties:
+        expression_kind: {const: catalog_anchor}
+        anchor_id: {type: string, minLength: 1}
+        source_span: {$ref: '#/$defs/text_span'}
+    absolute_date_expression:
+      type: object
+      additionalProperties: false
+      required: [expression_kind, source_span]
+      properties:
+        expression_kind: {const: absolute_date}
+        source_span: {$ref: '#/$defs/text_span'}
+    interval_expression:
+      type: object
+      additionalProperties: false
+      required: [expression_kind, start_span, end_span]
+      properties:
+        expression_kind: {const: interval}
+        start_span: {$ref: '#/$defs/text_span'}
+        end_span: {$ref: '#/$defs/text_span'}
+    relative_date_expression:
+      type: object
+      additionalProperties: false
+      required: [expression_kind, source_span]
+      properties:
+        expression_kind: {const: relative_date}
+        source_span: {$ref: '#/$defs/text_span'}
+    resolved_entity:
+      type: object
+      additionalProperties: false
+      required: [reference_kind, entity_id, mention, expected_entity_types]
+      properties:
+        reference_kind: {const: resolved}
+        entity_id: {type: string, minLength: 1}
+        mention: {type: [string, 'null']}
+        expected_entity_types: {type: array, items: {type: string}}
+    ambiguous_entity:
+      type: object
+      additionalProperties: false
+      required: [reference_kind, candidate_entity_ids, mention, expected_entity_types]
+      properties:
+        reference_kind: {const: ambiguous}
+        candidate_entity_ids: {type: array, minItems: 2, items: {type: string}}
+        mention: {type: [string, 'null']}
+        expected_entity_types: {type: array, items: {type: string}}
+    unresolved_entity:
+      type: object
+      additionalProperties: false
+      required: [reference_kind, mention, expected_entity_types]
+      properties:
+        reference_kind: {const: unresolved}
+        mention: {type: [string, 'null']}
+        expected_entity_types: {type: array, items: {type: string}}
+    entity_set:
+      type: object
+      additionalProperties: false
+      required: [reference_kind, entity_ids, mention, expected_entity_types]
+      properties:
+        reference_kind: {const: entity_set}
+        entity_ids: {type: array, minItems: 1, items: {type: string}}
+        mention: {type: [string, 'null']}
+        expected_entity_types: {type: array, items: {type: string}}
+    entity_reference:
+      oneOf:
+        - {$ref: '#/$defs/resolved_entity'}
+        - {$ref: '#/$defs/ambiguous_entity'}
+        - {$ref: '#/$defs/unresolved_entity'}
+        - {$ref: '#/$defs/entity_set'}
+    object_constraint:
+      type: object
+      additionalProperties: false
+      required: [entity, literal_value, normalized_literal, value_type, operator]
+      properties:
+        entity:
+          anyOf:
+            - {$ref: '#/$defs/entity_reference'}
+            - {type: 'null'}
+        literal_value: {type: [string, 'null']}
+        normalized_literal: {type: [string, 'null']}
+        value_type:
+          enum: [entity, text, boolean, number, date, unknown]
+        operator:
+          enum: [equals, not_equals, in, not_in]
+    graph_pattern:
+      type: object
+      additionalProperties: false
+      required: [subject, predicate_id, object]
+      properties:
+        subject: {$ref: '#/$defs/entity_reference'}
+        predicate_id: {type: [string, 'null']}
+        object:
+          anyOf:
+            - {$ref: '#/$defs/object_constraint'}
+            - {type: 'null'}
+system_template: |-
+  You convert a retrieval query into a constrained semantic proposal.
+
+  The catalog in context_json is authoritative. Use only listed entity IDs,
+  temporal anchor IDs, predicate IDs, entity types, and graph operators.
+  Never invent IDs, dates, intervals, scope keys, or facts.
+
+  Temporal rules:
+  - current uses expression_kind=current.
+  - historical or interval intent must use an exact source span from the query.
+  - catalog_anchor may reference only a listed anchor and must quote its exact query span.
+  - absolute_date and interval quote exact date spans; trusted code parses them.
+  - relative_date quotes the exact relative expression; trusted code may resolve it.
+  - execution and belief use current unless the query explicitly supplies another temporal expression.
+  - ambiguous intent must set temporal_expression=null and provide abstention_reason.
+
+  Entity and graph rules:
+  - candidate_entity_ids and subject_entity_id may contain only listed IDs.
+  - preserve ambiguity instead of choosing arbitrarily.
+  - graph_patterns represent at most three explicit single-hop constraints.
+  - use unresolved references when a mention has no safe catalog binding.
+  - model_confidence is telemetry only and never authorizes retrieval.
+
+  Return strict JSON only.
+user_template: "StructuredQueryContext: {context_json}\nQuery: {query}\nReturn strict JSON matching schema."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1400, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+allowed_failure_modes: [provider_error, schema_error, constraint_error, ambiguous_query]
+tags: [retrieval, temporal, semantic-parsing]

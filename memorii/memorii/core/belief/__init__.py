@@ -5,6 +5,7 @@ A follow-up PR will inject `BeliefUpdateProvider` into `SolverUpdateEngine` and
 `RuntimeStepService` without changing solver update plumbing in this change.
 """
 
+from memorii.core.belief.errors import BeliefUpdateProviderError
 from memorii.core.belief.hybrid_provider import HybridBeliefUpdateProvider
 from memorii.core.belief.llm_provider import LLMBeliefUpdateProvider
 from memorii.core.belief.models import BeliefUpdateContext, BeliefUpdateDecision
@@ -15,6 +16,7 @@ __all__ = [
     "BeliefUpdateContext",
     "BeliefUpdateDecision",
     "BeliefUpdateProvider",
+    "BeliefUpdateProviderError",
     "HybridBeliefUpdateProvider",
     "LLMBeliefUpdateProvider",
     "RuleBasedBeliefUpdateProvider",

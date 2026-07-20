@@ -45,6 +45,7 @@ from memorii.core.memory_evolution.models import (
     MemoryGraphNode,
     MemoryGraphNodeType,
     MemoryGraphSnapshot,
+    MemoryScope,
     RetrievalView,
     SourceModality,
     SourceObservation,
@@ -52,14 +53,13 @@ from memorii.core.memory_evolution.models import (
     ValidationVerdict,
 )
 from memorii.core.memory_evolution.predicates import PredicateRegistry, source_trust_rank
+from memorii.core.memory_evolution.query_analysis import ConservativeQueryAnalyzer, QueryAnalyzer
 from memorii.core.memory_evolution.retrieval import (
-    MemoryQueryRequest,
+    MemoryQueryInput,
     ProductionRetrievalDecision,
 )
 from memorii.core.memory_evolution.retrieval_runtime import MemoryEvolutionRetrievalRuntime
-from memorii.core.memory_evolution.temporal import (
-    ConservativeQueryAnalyzer,
-    QueryAnalyzer,
+from memorii.core.memory_evolution.temporal_contracts import (
     QueryTemporalFrame,
     QueryTemporalKind,
     RetrievalDecision,
@@ -161,24 +161,13 @@ class MemoryEvolutionService:
         run = run.model_copy(update={"validation_summary": self._validator.summary(validation_results)})
 
         existing_entity_links = self._list_entity_links()
-        entity_links = self._entity_resolver.resolve_mentions(entities, existing_entity_links)
+        entity_resolution = self._entity_resolver.resolve_mentions(entities, existing_entity_links)
+        entity_links = entity_resolution.links
         for link in entity_links:
             self._memory_plane.upsert_record(_record_from_entity_link(link))
 
         claim_states: list[ClaimState] = []
-        transitions: list[ClaimLifecycleTransition] = []
-        for link in entity_links:
-            if link.lineage_parent_entity_id is not None:
-                transitions.append(
-                    ClaimLifecycleTransition(
-                        transition_id=_stable_id("transition", f"{link.link_id}:entity_split"),
-                        transition_type=ClaimTransitionType.ENTITY_SPLIT,
-                        claim_id=link.lineage_parent_entity_id,
-                        related_claim_ids=[link.canonical_entity_id],
-                        rationale="same-name entity was retained as a distinct lineage child",
-                        timestamp=link.updated_at,
-                    )
-                )
+        transitions: list[ClaimLifecycleTransition] = list(entity_resolution.transitions)
         contradiction_sets: list[ContradictionSet] = []
         written_record_ids: list[str] = []
         deferred_ids = set(deferred_observation_ids)
@@ -259,6 +248,7 @@ class MemoryEvolutionService:
             actions=actions,
             observations=observations,
             entity_links=entity_links,
+            entity_identity_decisions=entity_resolution.decisions,
             contradiction_sets=contradiction_sets,
             deferred_observation_ids=deferred_observation_ids,
             skipped_observation_ids=skipped_observation_ids,
@@ -309,8 +299,16 @@ class MemoryEvolutionService:
         normalized_claim = claim.model_copy(
             update={"confidence": self._confidence_aggregator.initial_for_claim(claim, modality=modality)}
         )
-        subject_link = self._entity_resolver.link_for_entity(claim.claim_key.subject_entity_id, entity_links)
-        object_link = self._entity_resolver.link_for_entity(claim.object_entity_id, entity_links)
+        subject_link = self._entity_resolver.link_for_entity(
+            claim.claim_key.subject_entity_id,
+            entity_links,
+            scope_key=claim.claim_key.scope_key,
+        )
+        object_link = self._entity_resolver.link_for_entity(
+            claim.object_entity_id,
+            entity_links,
+            scope_key=claim.claim_key.scope_key,
+        )
         existing_active = [
             state
             for state in self._list_claim_states()
@@ -372,6 +370,7 @@ class MemoryEvolutionService:
         predicate_id: str | None = None,
         subject_entity_id: str | None = None,
         temporal_frame: QueryTemporalFrame | None = None,
+        readable_scope_keys: frozenset[str] | None = None,
     ) -> list[ClaimState]:
         if temporal_frame is None and view == RetrievalView.CURRENT:
             temporal_frame = QueryTemporalFrame(
@@ -389,7 +388,9 @@ class MemoryEvolutionService:
             states = [state for state in states if state.claim_key.predicate_id == predicate_id]
         if subject_entity_id is not None:
             states = [state for state in states if state.claim_key.subject_entity_id == subject_entity_id]
-        if temporal_frame is not None and temporal_frame.scope_key is not None:
+        if readable_scope_keys is not None:
+            states = [state for state in states if state.claim_key.scope_key in readable_scope_keys]
+        elif temporal_frame is not None and temporal_frame.scope_key is not None:
             states = [state for state in states if state.claim_key.scope_key in {temporal_frame.scope_key, "global"}]
         if temporal_frame is not None and temporal_frame.resolved_entity_ids:
             resolved_entity_ids = set(temporal_frame.resolved_entity_ids)
@@ -485,7 +486,7 @@ class MemoryEvolutionService:
             supporting_record_ids=record_ids,
         )
 
-    def retrieve(self, request: MemoryQueryRequest) -> ProductionRetrievalDecision:
+    def retrieve(self, request: MemoryQueryInput) -> ProductionRetrievalDecision:
         """Return the production query-conditioned memory decision."""
 
         return self._retrieval_runtime.retrieve(request)
@@ -493,7 +494,7 @@ class MemoryEvolutionService:
     def retrieve_graph_snapshot(self) -> MemoryGraphSnapshot:
         return self._graph_store.snapshot()
 
-    def register_temporal_anchor(self, anchor: TemporalAnchor, *, scope_key: str | None = None) -> None:
+    def register_temporal_anchor(self, anchor: TemporalAnchor) -> None:
         """Register an evidence-backed interval after validating source provenance."""
 
         if not anchor.evidence:
@@ -503,12 +504,18 @@ class MemoryEvolutionService:
         if missing:
             raise ValueError(f"temporal anchor references unknown sources: {sorted(missing)}")
         source_by_id = {record.memory_id: record for record in records if record is not None}
-        expected_scope = scope_key or anchor.scope_key
+        expected_scope = anchor.scope
         for source_id in anchor.source_ids:
             record = source_by_id[source_id]
             if not (record.is_raw_event or record.domain == MemoryDomain.TRANSCRIPT):
                 raise ValueError(f"temporal anchor source is not a source observation: {source_id}")
-            if expected_scope is not None and record.task_id not in {None, expected_scope}:
+            record_scope = MemoryScope(
+                scope_key=record.task_id or record.session_id or record.user_id or "global",
+                task_id=record.task_id,
+                session_id=record.session_id,
+                user_id=record.user_id,
+            )
+            if record_scope != expected_scope:
                 raise ValueError(f"temporal anchor source is outside scope: {source_id}")
         for evidence in anchor.evidence:
             record = source_by_id.get(evidence.source_id)
@@ -518,9 +525,8 @@ class MemoryEvolutionService:
         missing_evidence = sorted(set(anchor.source_ids) - evidence_source_ids)
         if missing_evidence:
             raise ValueError(f"temporal anchor sources without evidence: {missing_evidence}")
-        registered_anchor = anchor.model_copy(update={"scope_key": expected_scope}) if scope_key is not None else anchor
-        self._temporal_anchor_catalog.register(registered_anchor)
-        self._memory_plane.upsert_record(_record_from_temporal_anchor(registered_anchor))
+        self._temporal_anchor_catalog.register(anchor)
+        self._memory_plane.upsert_record(_record_from_temporal_anchor(anchor))
 
     def derive_work_state(self, *, actions: list[ExtractedAction] | None = None) -> WorkStateSnapshot:
         """Derive continuation state from immutable action history.
@@ -694,8 +700,16 @@ class MemoryEvolutionService:
         policy = self._predicates.require(claim.claim_key.predicate_id)
         modality = _modality_for_claim(claim, source_observations)
         claim = claim.model_copy(update={"confidence": self._confidence_aggregator.initial_for_claim(claim, modality=modality)})
-        subject_link = self._entity_resolver.link_for_entity(claim.claim_key.subject_entity_id, entity_links)
-        object_link = self._entity_resolver.link_for_entity(claim.object_entity_id, entity_links)
+        subject_link = self._entity_resolver.link_for_entity(
+            claim.claim_key.subject_entity_id,
+            entity_links,
+            scope_key=claim.claim_key.scope_key,
+        )
+        object_link = self._entity_resolver.link_for_entity(
+            claim.object_entity_id,
+            entity_links,
+            scope_key=claim.claim_key.scope_key,
+        )
         existing_active = [
             state
             for state in self._list_claim_states()
@@ -705,6 +719,7 @@ class MemoryEvolutionService:
         same_value = [state for state in existing_active if _norm(state.object_value) == _norm(claim.object_value)]
         different_value = [state for state in existing_active if _norm(state.object_value) != _norm(claim.object_value)]
         transitions: list[ClaimLifecycleTransition] = []
+        strongest_conflicting_claim_id: str | None = None
 
         if same_value:
             existing = same_value[0]
@@ -737,6 +752,7 @@ class MemoryEvolutionService:
                 different_value,
                 key=lambda state: _state_strength(state, predicate_registry=self._predicates),
             )
+            strongest_conflicting_claim_id = strongest.claim_id
             if _claim_strength(claim, predicate_registry=self._predicates) >= _state_strength(
                 strongest,
                 predicate_registry=self._predicates,
@@ -797,7 +813,11 @@ class MemoryEvolutionService:
             policy=policy,
             claim=claim,
             existing_active=different_value,
-            active_claim_id=state.claim_id if state.lifecycle_state == ClaimLifecycleState.ACTIVE else (strongest.claim_id if policy.is_single_value and different_value else None),
+            active_claim_id=(
+                state.claim_id
+                if state.lifecycle_state == ClaimLifecycleState.ACTIVE
+                else strongest_conflicting_claim_id
+            ),
         )
         return state, transitions, record.memory_id, contradiction_set
 
@@ -948,6 +968,9 @@ def _record_from_entity_link(link: EntityLinkState) -> CanonicalMemoryRecord:
         validity_status=TemporalValidityStatus.ACTIVE,
         source_kind="memory_evolution",
         timestamp=link.updated_at,
+        task_id=link.scope.task_id,
+        session_id=link.scope.session_id,
+        user_id=link.scope.user_id,
     )
 
 
@@ -964,6 +987,9 @@ def _record_from_temporal_anchor(anchor: TemporalAnchor) -> CanonicalMemoryRecor
         validity_status=TemporalValidityStatus.ACTIVE,
         source_kind="memory_evolution",
         timestamp=anchor.valid_to,
+        task_id=anchor.scope.task_id,
+        session_id=anchor.scope.session_id,
+        user_id=anchor.scope.user_id,
     )
 
 

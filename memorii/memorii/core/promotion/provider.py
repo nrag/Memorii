@@ -8,6 +8,10 @@ from memorii.core.llm_decision.models import LLMDecisionTrace
 from memorii.core.promotion.models import PromotionContext, PromotionDecision
 
 
+class PromotionDecisionProviderError(RuntimeError):
+    """Expected operational failure from a promotion provider."""
+
+
 class PromotionDecisionProvider(Protocol):
     def decide(
         self,

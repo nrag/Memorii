@@ -21,10 +21,23 @@ from memorii.core.calibration.models import (
     CalibrationSlice,
     DecisionAction,
     DecisionCostReport,
+    GateCoverageAlgorithmVersion,
+    GateCoverageCertificate,
+    GateCoverageCertificateVersion,
+    GateCoverageConfiguration,
+    GateCoverageEstimate,
     RiskCoveragePoint,
     ScenarioClusterInterval,
+    ScenarioPassInterval,
 )
 from memorii.core.calibration.reports import build_calibration_artifacts
+from memorii.core.calibration.simulation_models import (
+    GateDependenceParameterization,
+    GateSimulationModel,
+    SimulationModelMoments,
+    calibrated_logistic_normal_parameters,
+    simulation_model_moments,
+)
 
 __all__ = [
     "CalibrationDecisionChannel",
@@ -38,8 +51,17 @@ __all__ = [
     "CalibrationResponseLevel",
     "CalibrationSlice",
     "ScenarioClusterInterval",
+    "ScenarioPassInterval",
     "DecisionAction",
     "DecisionCostReport",
+    "GateCoverageEstimate",
+    "GateCoverageAlgorithmVersion",
+    "GateCoverageCertificate",
+    "GateCoverageCertificateVersion",
+    "GateCoverageConfiguration",
+    "GateDependenceParameterization",
+    "GateSimulationModel",
+    "SimulationModelMoments",
     "RiskCoveragePoint",
     "RuntimeGraphAlignment",
     "RuntimeGraphAlignmentVerdict",
@@ -48,4 +70,6 @@ __all__ = [
     "align_evidence_by_fields",
     "align_relation_by_fields",
     "build_calibration_artifacts",
+    "calibrated_logistic_normal_parameters",
+    "simulation_model_moments",
 ]

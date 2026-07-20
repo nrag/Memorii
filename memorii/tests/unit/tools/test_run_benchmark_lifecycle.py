@@ -8,6 +8,7 @@ from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.tools.run_benchmark import main
 from tests.unit.tools.run_benchmark_test_helpers import (
+    _application_with_fake_client,
     _clear_llm_env,
     _jsonl_count,
     _latest_run_dir,
@@ -118,11 +119,11 @@ def test_memory_lifecycle_hybrid_falls_back_to_rule_on_invalid_llm_output(
                 schema_valid=False,
             )
 
-    monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", InvalidFakeClient)
+    app = _application_with_fake_client(InvalidFakeClient)
     monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    assert main(
+    assert app.run(
         [
             "--suite",
             "memory_lifecycle_v1",
@@ -170,9 +171,9 @@ def test_memory_lifecycle_llm_fails_on_invalid_llm_output(
                 schema_valid=False,
             )
 
-    monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", InvalidFakeClient)
+    app = _application_with_fake_client(InvalidFakeClient)
 
-    main(
+    app.run(
         [
             "--suite",
             "memory_lifecycle_v1",
@@ -210,11 +211,9 @@ def test_memory_lifecycle_benchmark_auto_uses_hybrid_when_llm_configured(
     assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
     row = json.loads((run_dir / "lifecycle_traces.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert row["effective_decision_mode"] == "hybrid"
-    assert row["final_output_source"] == "llm"
+    assert row["final_output_source"] == "fake_oracle"
 
 
 def test_memory_lifecycle_benchmark_llm_requires_live_gate() -> None:
     with pytest.raises(SystemExit, match="Refusing"):
         main(["--suite", "memory_lifecycle_v1", "--mode", "llm"])
-
-

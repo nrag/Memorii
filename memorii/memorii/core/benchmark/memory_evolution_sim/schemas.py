@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -32,22 +32,25 @@ class JudgeVerdict(StrEnum):
     ABSTAIN = "abstain"
 
 
+EvidenceSupportType: TypeAlias = Literal[
+    "direct_mention",
+    "subject_support",
+    "predicate_support",
+    "object_support",
+    "relation_support",
+    "temporal_support",
+    "scope_support",
+    "contradiction_support",
+    "inference_support",
+]
+
+
 class LatentEvidenceSpan(BaseModel):
     event_id: str
     quote: str
     char_start: int | None = None
     char_end: int | None = None
-    support_type: Literal[
-        "direct_mention",
-        "subject_support",
-        "predicate_support",
-        "object_support",
-        "relation_support",
-        "temporal_support",
-        "scope_support",
-        "contradiction_support",
-        "inference_support",
-    ]
+    support_type: EvidenceSupportType
 
     model_config = ConfigDict(extra="forbid")
 
@@ -180,6 +183,13 @@ class ClaimScope(BaseModel):
     organization_unit: str | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_scope_identity(self) -> ClaimScope:
+        expected_scope_key = self.task_id or self.session_id or "global"
+        if self.scope_key != expected_scope_key:
+            raise ValueError("claim scope_key must identify its task, session, or global scope")
+        return self
 
 
 class ClaimLifecycle(BaseModel):
@@ -332,6 +342,9 @@ class SurfaceObservation(BaseModel):
     phase: Literal["setup", "interference", "evolution", "dormancy", "checkpoint"] = "setup"
     trust_level: int = Field(ge=0, le=5)
     text: str
+    task_id: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
     exposed_entity_ids: list[str] = Field(default_factory=list)
     exposed_claim_ids: list[str] = Field(default_factory=list)
     exposed_relation_ids: list[str] = Field(default_factory=list)
@@ -349,6 +362,9 @@ class VisibleSurfaceObservation(BaseModel):
     phase: Literal["setup", "interference", "evolution", "dormancy", "checkpoint"] = "setup"
     trust_level: int = Field(ge=0, le=5)
     text: str
+    task_id: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
     exposed_entity_ids: list[str] = Field(default_factory=list)
     exposed_claim_ids: list[str] = Field(default_factory=list)
     exposed_relation_ids: list[str] = Field(default_factory=list)
@@ -475,40 +491,8 @@ class OracleCheckpoint(BaseModel):
         return self.checkpoint_contract.answer_projection_policy
 
 
-class SimOutputNormalization(BaseModel):
-    normalization_applied: bool = False
-    auto_closed_selected_entity_ids: list[str] = Field(default_factory=list)
-    auto_closed_rejected_entity_ids: list[str] = Field(default_factory=list)
-    auto_closed_context_entity_ids: list[str] = Field(default_factory=list)
-    auto_closed_context_relation_ids: list[str] = Field(default_factory=list)
-    auto_promoted_selected_claim_ids: list[str] = Field(default_factory=list)
-    auto_promoted_supporting_claim_ids: list[str] = Field(default_factory=list)
-    auto_promoted_supporting_citation_event_ids: list[str] = Field(default_factory=list)
-    auto_demoted_execution_context_claim_ids: list[str] = Field(default_factory=list)
-    repaired_definition_claim_conflict_ids: list[str] = Field(default_factory=list)
-    auto_rejected_claim_ids: list[str] = Field(default_factory=list)
-    normalization_reason_codes: list[str] = Field(default_factory=list)
-
-    model_config = ConfigDict(extra="forbid")
-
-
-def _ordered_unique(items: list[str]) -> list[str]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for item in items:
-        if item in seen:
-            continue
-        seen.add(item)
-        ordered.append(item)
-    return ordered
-
-
 class SimSystemOutput(BaseModel):
     operation: Literal["answer", "next_action", "graph_reconstruction", "abstain"] = "answer"
-    entity_ids: list[str] = Field(default_factory=list)
-    claim_ids: list[str] = Field(default_factory=list)
-    relation_ids: list[str] = Field(default_factory=list)
-    citation_event_ids: list[str] = Field(default_factory=list)
     belief_ranking_ids: list[str] = Field(default_factory=list)
     selected_entity_ids: list[str] = Field(default_factory=list)
     selected_claim_ids: list[str] = Field(default_factory=list)
@@ -532,58 +516,6 @@ class SimSystemOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="after")
-    def populate_legacy_and_role_views(self) -> SimSystemOutput:
-        role_channels_empty = not any(
-            [
-                self.selected_entity_ids,
-                self.selected_claim_ids,
-                self.selected_relation_ids,
-                self.supporting_claim_ids,
-                self.supporting_relation_ids,
-                self.supporting_citation_event_ids,
-                self.rejected_entity_ids,
-                self.rejected_claim_ids,
-                self.rejected_relation_ids,
-                self.rejection_citation_event_ids,
-                self.context_entity_ids,
-                self.context_claim_ids,
-                self.context_relation_ids,
-                self.context_citation_event_ids,
-            ]
-        )
-        if role_channels_empty and not self.selected_entity_ids and self.entity_ids:
-            self.selected_entity_ids = list(self.entity_ids)
-        if role_channels_empty and not self.selected_claim_ids and self.claim_ids:
-            self.selected_claim_ids = list(self.claim_ids)
-        if role_channels_empty and not self.selected_relation_ids and self.relation_ids:
-            self.selected_relation_ids = list(self.relation_ids)
-        if role_channels_empty and not self.supporting_citation_event_ids and self.citation_event_ids:
-            self.supporting_citation_event_ids = list(self.citation_event_ids)
-        self.entity_ids = _ordered_unique([
-            *self.selected_entity_ids,
-            *self.context_entity_ids,
-            *self.rejected_entity_ids,
-        ])
-        self.claim_ids = _ordered_unique([
-            *self.selected_claim_ids,
-            *self.supporting_claim_ids,
-            *self.context_claim_ids,
-            *self.rejected_claim_ids,
-        ])
-        self.relation_ids = _ordered_unique([
-            *self.selected_relation_ids,
-            *self.supporting_relation_ids,
-            *self.context_relation_ids,
-            *self.rejected_relation_ids,
-        ])
-        self.citation_event_ids = _ordered_unique([
-            *self.supporting_citation_event_ids,
-            *self.context_citation_event_ids,
-            *self.rejection_citation_event_ids,
-        ])
-        return self
-
 
 class VisibleEventCandidate(BaseModel):
     event_id: str
@@ -593,6 +525,9 @@ class VisibleEventCandidate(BaseModel):
     phase: str = "setup"
     trust_level: int
     text: str
+    task_id: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -626,25 +561,6 @@ class VisibleClaimCandidate(BaseModel):
     evidence_event_ids: list[str] = Field(default_factory=list)
     evidence_quote: str
     contradicts_claim_ids: list[str] = Field(default_factory=list)
-    is_definition_claim: bool = False
-    is_action_state_claim: bool = False
-    is_current_active: bool = False
-    is_stale_or_invalidated: bool = False
-    is_low_trust_or_ambiguous: bool = False
-    support_channel_hint: Literal[
-        "direct_answer_candidate",
-        "definition_candidate",
-        "rejection_or_context_candidate",
-        "context_only_candidate",
-    ] = "context_only_candidate"
-    action_state_status: str | None = None
-    continuation_eligibility: Literal[
-        "active_candidate",
-        "suppressed_candidate",
-        "audit_context",
-        "not_applicable",
-    ] = "not_applicable"
-
     model_config = ConfigDict(extra="forbid")
 
 
@@ -668,7 +584,6 @@ class VisibleRelationCandidate(BaseModel):
 class VisibleCheckpointCandidate(BaseModel):
     checkpoint_id: str
     timestamp: datetime
-    checkpoint_type: str
     query_or_task: str
     answer_projection_policy: str = "claim_object"
     query_language: str = "en"
@@ -676,24 +591,14 @@ class VisibleCheckpointCandidate(BaseModel):
     answer_language_policy: str = "match_query"
     cross_lingual: bool = False
     transliteration_policy: str = "allowed"
-    difficulty_tags: list[str] = Field(default_factory=list)
-    severity: str
-    horizon_distance: int = 0
-    interference_count: int = 0
-    source_event_age_days: float = 0.0
-    required_retrieval_view: str = "current"
-    stage_path: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
 
 class MemoryEvolutionSimReconstructionContext(BaseModel):
     scenario_id: str
-    family: str
-    profile: str
     surface_observations: list[VisibleSurfaceObservation]
     checkpoint: VisibleCheckpointCandidate
-    difficulty_tags: list[str] = Field(default_factory=list)
     visible_entity_ids: list[str] = Field(default_factory=list)
     visible_claim_ids: list[str] = Field(default_factory=list)
     visible_relation_ids: list[str] = Field(default_factory=list)
@@ -701,8 +606,6 @@ class MemoryEvolutionSimReconstructionContext(BaseModel):
     visible_entities: list[VisibleEntityCandidate] = Field(default_factory=list)
     visible_claims: list[VisibleClaimCandidate] = Field(default_factory=list)
     visible_relations: list[VisibleRelationCandidate] = Field(default_factory=list)
-    metadata: dict[str, object] = Field(default_factory=dict)
-
     model_config = ConfigDict(extra="forbid")
 
 
@@ -737,6 +640,8 @@ class JudgeAggregate(BaseModel):
 
 class LatentGraphScenario(BaseModel):
     scenario_id: str
+    semantic_world_fingerprint: str = Field(min_length=16)
+    world_parameters: dict[str, str | int]
     family: str
     profile: str
     seed: int

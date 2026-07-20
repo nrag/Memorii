@@ -1,20 +1,24 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
+from memorii.core.prompts.runtime_manifest import PromptOwner
+from memorii.core.prompts.sensitivity import redact_sensitive_value
 
-PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
+PROMPT_ROOT = default_prompt_root()
 _VALID = '{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "reason_code": "observation_not_promoted", "failure_mode": null, "requires_judge_review": false}'
 
 
 def _contract():
-    return PromptRegistry(prompt_root=PROMPT_ROOT).load("promotion_decision:v1")
+    return PromptRegistry(prompt_root=PROMPT_ROOT).load(
+        "promotion_decision:v1",
+        owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+    )
 
 
 def _runner(response_text: str, raise_on_request: bool = False) -> tuple[PromptLLMRunner, FakeLLMStructuredClient]:
@@ -27,6 +31,19 @@ def test_fake_provider_returns_default_structured_json() -> None:
     runner, _ = _runner(_VALID)
     result = runner.run(contract=_contract(), variables={"context_json": {}, "candidate_summary": "s"}, request_id="r1")
     assert result.success is True
+
+
+def test_prompt_input_schema_is_enforced_before_provider_call() -> None:
+    runner, client = _runner(_VALID)
+
+    with pytest.raises(ValueError, match="prompt input failed schema validation"):
+        runner.run(
+            contract=_contract(),
+            variables={"context_json": {}, "candidate_summary": "s", "unexpected": True},
+            request_id="r-invalid-input",
+        )
+
+    assert client.last_request is None
 
 
 def test_invalid_json_returns_failure() -> None:
@@ -88,7 +105,7 @@ def test_request_metadata_redacts_secrets_and_result_is_serializable() -> None:
     runner, client = _runner(_VALID)
     result = runner.run(
         contract=_contract(),
-        variables={"context_json": {}, "candidate_summary": "s", "api_key": "secret-123"},
+        variables={"context_json": {}, "candidate_summary": "s"},
         request_id="r1",
         metadata={"k": "v", "api_key": "should-not-store", "token": "hide-me"},
     )
@@ -97,8 +114,6 @@ def test_request_metadata_redacts_secrets_and_result_is_serializable() -> None:
     assert client.last_request.prompt_hash
     assert client.last_request.metadata["api_key"] == "[REDACTED]"
     assert client.last_request.metadata["token"] == "[REDACTED]"
-    assert "secret-123" not in client.last_request.system
-    assert "secret-123" not in client.last_request.user
     dumped = result.model_dump(mode="json")
     assert isinstance(dumped, dict)
     json.dumps(dumped)
@@ -106,8 +121,8 @@ def test_request_metadata_redacts_secrets_and_result_is_serializable() -> None:
 
 def test_request_metadata_redaction_is_recursive_and_non_mutating() -> None:
     runner, client = _runner(_VALID)
-    metadata = {"token": "top", "nested": {"password": "pw"}, "items": [{"authorization": "a1"}]}
-    original = {"token": "top", "nested": {"password": "pw"}, "items": [{"authorization": "a1"}]}
+    metadata = {"Token": "top", "nested": {"Pass-Word": "pw"}, "items": [{"authorization": "a1"}]}
+    original = {"Token": "top", "nested": {"Pass-Word": "pw"}, "items": [{"authorization": "a1"}]}
     result = runner.run(
         contract=_contract(),
         variables={"context_json": {}, "candidate_summary": "s"},
@@ -115,8 +130,8 @@ def test_request_metadata_redaction_is_recursive_and_non_mutating() -> None:
         metadata=metadata,
     )
     assert client.last_request is not None
-    assert client.last_request.metadata["token"] == "[REDACTED]"
-    assert client.last_request.metadata["nested"]["password"] == "[REDACTED]"
+    assert client.last_request.metadata["Token"] == "[REDACTED]"
+    assert client.last_request.metadata["nested"]["Pass-Word"] == "[REDACTED]"
     assert client.last_request.metadata["items"][0]["authorization"] == "[REDACTED]"
     assert metadata == original
     dumped = json.dumps(result.model_dump(mode="json"))
@@ -150,3 +165,21 @@ def test_optional_live_llm_tests_are_gated() -> None:
     if not live_config.should_run_live_llm_tests(runtime_config):
         pytest.skip("live LLM tests are disabled unless key + flag are present")
     pytest.fail("live network test intentionally not implemented in unit tests")
+def test_sensitive_value_redaction_normalizes_aliases_and_nested_sequences() -> None:
+    payload = {
+        "Pass-Word": "one",
+        "ＡＰＩ＿ＫＥＹ": "two",
+        "safe": [
+            {"auth-orization": "three"},
+            ("visible", {"Coo kie": "four"}),
+        ],
+    }
+
+    assert redact_sensitive_value(payload) == {
+        "Pass-Word": "[REDACTED]",
+        "ＡＰＩ＿ＫＥＹ": "[REDACTED]",
+        "safe": [
+            {"auth-orization": "[REDACTED]"},
+            ["visible", {"Coo kie": "[REDACTED]"}],
+        ],
+    }

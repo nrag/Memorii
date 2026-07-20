@@ -20,7 +20,7 @@ from memorii.core.promotion.llm_provider import LLMPromotionDecisionProvider
 from memorii.core.promotion.models import PromotionContext
 from memorii.core.promotion.provider import PromotionDecisionProvider
 from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
-from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
 
 
 class PromptBackedLLMDecisionProvider:
@@ -30,12 +30,12 @@ class PromptBackedLLMDecisionProvider:
         runtime_config: LLMRuntimeConfig,
         prompt_root: Path | None = None,
     ) -> None:
-        root = prompt_root or Path(__file__).resolve().parents[2] / "prompts"
+        root = prompt_root or default_prompt_root()
         runner = PromptLLMRunner(
             client=LLMClientFactory.from_config(runtime_config),
             config=runtime_config,
         )
-        registry = PromptRegistry(prompt_root=root, require_manifest=True)
+        registry = PromptRegistry(prompt_root=root)
         self._promotion_adapter = LLMPromotionDecisionAdapter(runner=runner, registry=registry)
         self._belief_adapter = LLMBeliefUpdateAdapter(runner=runner, registry=registry)
 

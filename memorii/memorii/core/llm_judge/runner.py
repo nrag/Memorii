@@ -13,7 +13,7 @@ from memorii.core.llm_judge.calibration import (
     build_golden_candidate_reason_from_jury,
     should_promote_to_golden_candidate_from_jury,
 )
-from memorii.core.llm_judge.judge import SingleDimensionJudge, validate_single_dimension_judge
+from memorii.core.llm_judge.judge import JudgeExecutionError, SingleDimensionJudge, validate_single_dimension_judge
 from memorii.core.llm_judge.judges import (
     AttributionJudge,
     BeliefDirectionJudge,
@@ -202,7 +202,7 @@ class OfflineJudgeRunner:
                 jury_verdict=jury,
                 golden_candidate_reason=reason,
             )
-        except Exception:
+        except JudgeExecutionError:
             return self._build_human_review_case_result(case=case, reason="judge_execution_error")
 
     def _judges_for_case(

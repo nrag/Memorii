@@ -8,7 +8,7 @@ from memorii.core.solver.abstention import SolverDecision
 
 
 class BeliefUpdateContext(BaseModel):
-    prior_belief: float | None = None
+    prior_belief: float | None = Field(default=None, ge=0.0, le=1.0)
     decision: SolverDecision
     evidence_count: int = 0
     missing_evidence_count: int = 0
@@ -24,8 +24,8 @@ class BeliefUpdateContext(BaseModel):
 
 
 class BeliefUpdateDecision(BaseModel):
-    belief: float
-    confidence: float
+    belief: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(ge=0.0, le=1.0)
     rationale: str
     trace_id: str | None = None
     fallback_used: bool = False

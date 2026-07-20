@@ -21,11 +21,14 @@ output_schema:
       items:
         type: object
         additionalProperties: false
-        required: [entity_id, mention_text, normalized_name, entity_type, source_id, quote, confidence]
+        required: [entity_id, mention_text, normalized_name, aliases, entity_type, source_id, quote, confidence]
         properties:
           entity_id: {type: string}
           mention_text: {type: string}
           normalized_name: {type: string}
+          aliases:
+            type: array
+            items: {type: string}
           entity_type: {type: string, enum: [project, person, service, task, preference, unknown]}
           source_id: {type: string}
           quote: {type: string}
@@ -116,6 +119,11 @@ system_template: |-
   - "Branch A started: re-open old owner notes" -> task entity Branch A, action_state claim with object started, and an action with status started.
   - "Branch A blocked on stale notes" -> task entity Branch A, action_state claim with object blocked, and an action with status blocked.
   - "Branch B in_progress: continue the owner cleanup" -> task entity Branch B, action_state claim with object in_progress, and an action with status in_progress.
+
+  For each entity, emit aliases that are explicitly supported by the source text. Preserve a
+  shared ambiguous name (for example, "Atlas") for each distinct typed entity when the text
+  uses that name, so deterministic entity resolution can preserve split lineage. Do not invent
+  translations, abbreviations, or aliases that do not occur in the observation.
 
   For explicit task, branch, workflow, or execution-state observations, emit both:
   - an action_state claim so lifecycle/conflict policy can evolve the branch state

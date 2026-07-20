@@ -18,10 +18,9 @@ class IngestionContext(BaseModel):
     labels embedded in a simulator object.
     """
 
-    session_id: str
+    session_id: str | None = None
     task_id: str | None = None
     user_id: str | None = None
-    scope_key: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -35,13 +34,12 @@ def ingest_scenario_surface_observations(
 ) -> dict[str, str]:
     before_ids: set[str] = set()
     source_id_to_event_id: dict[str, str] = {}
-    context = context or IngestionContext(session_id=f"sim:{scenario.scenario_id}", user_id="sim-user")
+    context = context or IngestionContext()
     for observation in sorted(scenario.observations, key=lambda item: (item.timestamp, item.event_id)):
         source_id_to_event_id.update(
             ingest_surface_observation(
                 provider=provider,
                 memory_plane=memory_plane,
-                scenario_id=scenario.scenario_id,
                 observation=observation,
                 context=context,
                 before_ids=before_ids,
@@ -55,14 +53,13 @@ def ingest_surface_observation(
     *,
     provider: ProviderMemoryService,
     memory_plane: MemoryPlaneService,
-    scenario_id: str,
     observation: SurfaceObservation,
     context: IngestionContext | None = None,
     before_ids: set[str] | None = None,
 ) -> dict[str, str]:
     """Ingest exactly one surface observation and return new evidence links."""
     before = set(before_ids or {record.memory_id for record in memory_plane.list_records()})
-    context = context or IngestionContext(session_id=f"sim:{scenario_id}", user_id="sim-user")
+    context = _context_for_observation(observation, fallback=context or IngestionContext())
     operation = _provider_operation_for_surface(observation)
     if operation in {ProviderOperation.MEMORY_WRITE_LONGTERM, ProviderOperation.MEMORY_WRITE_USER}:
         provider.apply_memory_write(
@@ -88,6 +85,22 @@ def ingest_surface_observation(
         for record in memory_plane.list_records()
         if record.memory_id not in before and record.is_raw_event and record.text == observation.text
     }
+
+
+def _context_for_observation(
+    observation: SurfaceObservation,
+    *,
+    fallback: IngestionContext,
+) -> IngestionContext:
+    return IngestionContext(
+        task_id=observation.task_id if observation.task_id is not None else fallback.task_id,
+        session_id=(
+            observation.session_id
+            if observation.session_id is not None
+            else fallback.session_id
+        ),
+        user_id=observation.user_id if observation.user_id is not None else fallback.user_id,
+    )
 
 def _provider_operation_for_surface(observation: SurfaceObservation) -> ProviderOperation:
     if observation.source_type == "tool" or observation.modality == "tool_result":

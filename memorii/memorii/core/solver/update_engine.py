@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from memorii.core.belief.errors import BeliefUpdateProviderError
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
 from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
 from memorii.core.solver.belief import update_solver_belief
@@ -278,7 +279,7 @@ class SolverUpdateEngine:
             decision_belief = belief_decision.belief
             if self._llm_decision_trace_store is not None:
                 self._llm_decision_trace_store.append_trace(belief_trace)
-        except Exception:
+        except BeliefUpdateProviderError:
             decision_belief = update_solver_belief(
                 prior_belief=prior_belief,
                 decision=final_decision,

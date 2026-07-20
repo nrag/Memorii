@@ -55,6 +55,22 @@ The benchmark simulator and oracle are not imported by production retrieval.
 The runtime benchmark may align native runtime IDs to oracle labels after the
 runtime decision has been produced, but it cannot alter that decision.
 
+### Structured Graph Constraints
+
+Natural-language analyzers propose typed graph constraints; production graph
+resolution validates them against server-owned entity links and lifecycle-valid
+claims. Object operators and traversal direction are schema values, not English
+keyword heuristics. Up to three constraints may form a bounded conjunction, and
+all constraints must resolve to one common subject.
+
+Resolution is fail-closed and records one of `resolved`, `ambiguous`,
+`no_match`, or `unsupported`. An explicit object or subject miss never falls
+back to unconstrained eligible claims. Only evidence claim IDs returned by a
+resolved graph constraint may enter the selected channel; other readable claims
+remain available as context or rejection evidence. Non-English queries follow
+the same path when a structured analyzer is configured because graph execution
+does not inspect the query language.
+
 Provider integrations accept an explicit `reference_time`; a clock can also be
 injected for deterministic runs. Retrieval therefore does not depend on an
 uncontrolled wall-clock read.
@@ -84,5 +100,8 @@ reporting, checkpoint source scoping, and graph aggregation scope.
 
 Live model evaluation is scheduled or manually approved. Pull requests run
 deterministic unit, lint, type, schema, no-leakage, simulator, and runtime
-plumbing gates. Live evaluation records provider, model, prompt hash, and
-configuration metadata and does not use retries to hide failures.
+plumbing gates. Live evaluation records the requested and provider-reported
+model, provider request/status metadata, prompt hash, effective generation
+settings, SDK version, attempt count, and configured SDK retry budget. The
+benchmark live gate sets that retry budget to zero so one reported call is one
+provider attempt; production retries remain explicit and configurable.

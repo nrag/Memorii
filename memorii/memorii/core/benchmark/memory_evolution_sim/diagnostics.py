@@ -15,14 +15,21 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     SimSystemOutput,
 )
 from memorii.core.benchmark.memory_evolution_sim.utils import (
-    _bad_supporting_event_ids,
-    _claim_by_id,
-    _context_only_noise_event_ids,
-    _hidden_answer_leaks,
-    _is_visible_entity,
-    _norm,
-    _ordered_unique,
-    _selected_noncurrent_claim_ids,
+    bad_supporting_event_ids,
+    claim_by_id,
+    hidden_answer_leaks,
+    is_visible_entity,
+    normalize_sim_text,
+    ordered_unique,
+    role_claim_ids,
+    role_entity_ids,
+    role_relation_ids,
+)
+from memorii.core.benchmark.memory_evolution_sim.utils import (
+    context_only_noise_event_ids as find_context_only_noise_event_ids,
+)
+from memorii.core.benchmark.memory_evolution_sim.utils import (
+    selected_noncurrent_claim_ids as find_selected_noncurrent_claim_ids,
 )
 
 
@@ -48,16 +55,13 @@ def sim_output_allowed_id_errors(*, scenario: LatentGraphScenario, output: SimSy
     visible_relations = {item for obs in scenario.observations for item in obs.exposed_relation_ids}
     errors: list[str] = []
     for field_name, actual, allowed in [
-        ("entity_ids", output.entity_ids, visible_entities),
         ("selected_entity_ids", output.selected_entity_ids, visible_entities),
         ("rejected_entity_ids", output.rejected_entity_ids, visible_entities),
         ("context_entity_ids", output.context_entity_ids, visible_entities),
-        ("claim_ids", output.claim_ids, visible_claims),
         ("selected_claim_ids", output.selected_claim_ids, visible_claims),
         ("supporting_claim_ids", output.supporting_claim_ids, visible_claims),
         ("rejected_claim_ids", output.rejected_claim_ids, visible_claims),
         ("context_claim_ids", output.context_claim_ids, visible_claims),
-        ("relation_ids", output.relation_ids, visible_relations),
         ("selected_relation_ids", output.selected_relation_ids, visible_relations),
         ("supporting_relation_ids", output.supporting_relation_ids, visible_relations),
         ("rejected_relation_ids", output.rejected_relation_ids, visible_relations),
@@ -69,7 +73,6 @@ def sim_output_allowed_id_errors(*, scenario: LatentGraphScenario, output: SimSy
             errors.append(f"invalid_{field_name}:{','.join(unknown)}")
     event_ids = {obs.event_id for obs in scenario.observations}
     for field_name, actual in [
-        ("citation_event_ids", output.citation_event_ids),
         ("supporting_citation_event_ids", output.supporting_citation_event_ids),
         ("rejection_citation_event_ids", output.rejection_citation_event_ids),
         ("context_citation_event_ids", output.context_citation_event_ids),
@@ -84,26 +87,11 @@ def sim_output_allowed_id_errors(*, scenario: LatentGraphScenario, output: SimSy
     } | {
         item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN
     }
-    asserted = (
-        set(output.entity_ids)
-        | set(output.selected_entity_ids)
-        | set(output.rejected_entity_ids)
-        | set(output.context_entity_ids)
-        | set(output.claim_ids)
-        | set(output.selected_claim_ids)
-        | set(output.supporting_claim_ids)
-        | set(output.rejected_claim_ids)
-        | set(output.context_claim_ids)
-        | set(output.relation_ids)
-        | set(output.selected_relation_ids)
-        | set(output.supporting_relation_ids)
-        | set(output.rejected_relation_ids)
-        | set(output.context_relation_ids)
-    )
+    asserted = set(role_entity_ids(output)) | set(role_claim_ids(output)) | set(role_relation_ids(output))
     hallucinated = sorted(asserted & hidden_ids)
     if hallucinated:
         errors.append(f"hidden_ids_asserted:{','.join(hallucinated)}")
-    answer_leaks = _hidden_answer_leaks(scenario, output)
+    answer_leaks = hidden_answer_leaks(scenario, output)
     if answer_leaks:
         errors.append(f"hidden_answer_leak:{','.join(answer_leaks)}")
     return errors
@@ -139,10 +127,10 @@ def sim_checkpoint_diagnostics(
         checkpoint,
         output,
     )
-    allowed_definition_citation_event_ids = _ordered_unique([
+    allowed_definition_citation_event_ids = ordered_unique([
         event_id
         for claim_id in required_definition_claim_ids
-        if (claim := _claim_by_id(scenario, claim_id)) is not None
+        if (claim := claim_by_id(scenario, claim_id)) is not None
         for event_id in claim.evidence.source_event_ids
     ])
     expected_by_type = {
@@ -154,7 +142,7 @@ def sim_checkpoint_diagnostics(
     actual_coverage_by_type = {
         "entity_ids": output.selected_entity_ids,
         "claim_ids": output.selected_claim_ids,
-        "relation_ids": _ordered_unique([
+        "relation_ids": ordered_unique([
             *output.selected_relation_ids,
             *output.supporting_relation_ids,
             *output.context_relation_ids,
@@ -213,7 +201,7 @@ def sim_checkpoint_diagnostics(
         "claim_ids": [item for item in checkpoint.expected_excluded_claim_ids if item in output.rejected_claim_ids or item in output.context_claim_ids],
         "entity_ids": [
             item
-            for item in _ordered_unique([
+            for item in ordered_unique([
                 *checkpoint.expected_excluded_entity_ids,
                 *judge_features.expected_rejected_claim_subject_entity_ids(scenario, checkpoint),
             ])
@@ -228,13 +216,15 @@ def sim_checkpoint_diagnostics(
         ],
         "entity_ids": [
             item
-            for item in _ordered_unique([
+            for item in ordered_unique([
                 *checkpoint.expected_excluded_entity_ids,
                 *judge_features.expected_rejected_claim_subject_entity_ids(scenario, checkpoint),
             ])
             if item not in output.rejected_entity_ids and item not in output.context_entity_ids
         ],
     }
+    if not checkpoint.checkpoint_contract.excluded_ids_must_be_rejected_or_contextualized:
+        missing_rejected_ids = {"claim_ids": [], "entity_ids": []}
     missing_rejected_claim_subject_entity_ids = [
         item
         for item in judge_features.expected_rejected_claim_subject_entity_ids(scenario, checkpoint)
@@ -258,7 +248,7 @@ def sim_checkpoint_diagnostics(
         checkpoint,
         output,
     )
-    selected_noncurrent_claim_ids = _selected_noncurrent_claim_ids(scenario, checkpoint, output)
+    selected_noncurrent_claim_ids = find_selected_noncurrent_claim_ids(scenario, checkpoint, output)
     missing_definition_claim_ids = [
         claim_id for claim_id in required_definition_claim_ids if claim_id not in output.selected_claim_ids
     ]
@@ -290,7 +280,7 @@ def sim_checkpoint_diagnostics(
     selected_context_only_entity_ids = [
         entity_id for entity_id in output.selected_entity_ids if entity_id in output.context_entity_ids
     ]
-    selected_rejected_or_context_entity_ids = _ordered_unique([
+    selected_rejected_or_context_entity_ids = ordered_unique([
         *[entity_id for entity_id in output.selected_entity_ids if entity_id in output.rejected_entity_ids],
         *selected_context_only_entity_ids,
     ])
@@ -301,7 +291,7 @@ def sim_checkpoint_diagnostics(
         "active_graph_subjects",
     }:
         missing_selected_subject_entity_ids = missing_selected_entity_role_ids
-    supporting_noisy_citation_event_ids = _bad_supporting_event_ids(
+    supporting_noisy_citation_event_ids = bad_supporting_event_ids(
         scenario,
         checkpoint,
         output.supporting_citation_event_ids,
@@ -325,7 +315,7 @@ def sim_checkpoint_diagnostics(
     selected_action_state_event_ids_missing_support = judge_features.selected_action_state_event_ids_missing_support(
         support_closure_errors,
     )
-    context_only_noise_event_ids = _context_only_noise_event_ids(scenario, output)
+    context_only_noise_event_ids = find_context_only_noise_event_ids(scenario, output)
     supporting_role_violations = judge_features.supporting_claim_role_violations(scenario, checkpoint, output)
     channel_overlap = _channel_overlap_diagnostics(scenario, checkpoint, output)
     precision_failure_classification = _precision_failure_classifications(
@@ -546,12 +536,12 @@ def _selected_object_entity_instead_of_subject_ids(
         return []
     object_ids: list[str] = []
     for claim_id in output.selected_claim_ids:
-        claim = _claim_by_id(scenario, claim_id)
+        claim = claim_by_id(scenario, claim_id)
         if claim is None or claim.object.entity_id is None:
             continue
         if claim.subject.entity_id in missing_subject_entity_ids and claim.object.entity_id in output.selected_entity_ids:
             object_ids.append(claim.object.entity_id)
-    return _ordered_unique(object_ids)
+    return ordered_unique(object_ids)
 
 def _selected_nonrequired_graph_entity_ids(
     *,
@@ -567,7 +557,7 @@ def _selected_nonrequired_graph_entity_ids(
     return [
         entity_id
         for entity_id in output.selected_entity_ids
-        if entity_id not in required and _is_visible_entity(scenario, entity_id)
+        if entity_id not in required and is_visible_entity(scenario, entity_id)
     ]
 
 def _answer_match_type(
@@ -587,8 +577,8 @@ def _answer_match_type(
     actual = output.next_action if checkpoint.expected_next_action is not None else output.answer
     if not actual:
         return "missing"
-    actual_norm = _norm(actual)
-    expected_norm = _norm(expected)
+    actual_norm = normalize_sim_text(actual)
+    expected_norm = normalize_sim_text(expected)
     if actual_norm == expected_norm:
         return "exact"
     if expected_norm in actual_norm or actual_norm in expected_norm:
@@ -598,7 +588,7 @@ def _answer_match_type(
         if entity.entity_id not in expected_entity_ids:
             continue
         names = {entity.canonical_name, *[alias.alias_text for alias in entity.aliases]}
-        if any(_norm(name) and _norm(name) in actual_norm for name in names):
+        if any(normalize_sim_text(name) and normalize_sim_text(name) in actual_norm for name in names):
             return "semantic_entity"
     return "mismatch"
 
@@ -690,7 +680,7 @@ def _failure_classifications(
         for vote in aggregate.votes
     ):
         classifications.add("missing_definition_claim")
-    for item in [*output.entity_ids, *output.claim_ids, *output.relation_ids]:
+    for item in [*role_entity_ids(output), *role_claim_ids(output), *role_relation_ids(output)]:
         if re.search(r"_(alice|bob|carol)(_|$)", item):
             classifications.add("fixture_name_id_mismatch")
     if not classifications:

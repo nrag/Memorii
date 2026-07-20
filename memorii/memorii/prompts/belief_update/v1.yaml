@@ -4,11 +4,25 @@ task: Update a belief score from new evidence.
 description: Produces updated belief and confidence from BeliefUpdateContext.
 input_schema:
   type: object
-  required: [context_json, prior_belief]
+  required: [context_json]
   additionalProperties: false
   properties:
-    context_json: {type: object}
-    prior_belief: {type: number, minimum: 0.0, maximum: 1.0}
+    context_json:
+      type: object
+      required: [prior_belief, decision, evidence_count, missing_evidence_count, verifier_downgraded, conflict_count, evidence_ids, missing_evidence, metadata]
+      additionalProperties: false
+      properties:
+        prior_belief: {type: [number, 'null'], minimum: 0.0, maximum: 1.0}
+        decision: {type: string}
+        evidence_count: {type: integer, minimum: 0}
+        missing_evidence_count: {type: integer, minimum: 0}
+        verifier_downgraded: {type: boolean}
+        conflict_count: {type: integer, minimum: 0}
+        evidence_ids: {type: array, items: {type: string}}
+        missing_evidence: {type: array, items: {type: string}}
+        node_id: {type: [string, 'null']}
+        solver_run_id: {type: [string, 'null']}
+        metadata: {type: object}
 output_schema:
   type: object
   additionalProperties: false
@@ -21,6 +35,11 @@ output_schema:
     requires_judge_review: {type: boolean}
 system_template: |-
   You update belief values only from the supplied evidence.
+
+  Prior-state policy:
+  - prior_belief=null means this is the first scored observation, not a belief of zero.
+  - For a first observation, derive a cautious initial belief from decision and evidence quality.
+  - Never invent a numeric prior when prior_belief is null.
 
   Direction policy:
   - Use decision as the primary direction signal.
@@ -88,7 +107,7 @@ system_template: |-
   Output: {{"belief":0.62,"confidence":0.35,"rationale":"The apparent absence comes from a failed partial search, so it is not clean refutation; belief stays near prior and requires review.","failure_mode":"missing_evidence","requires_judge_review":true}}
 
   Return strict JSON only.
-user_template: "BeliefUpdateContext: {context_json}\nPrior belief: {prior_belief}\nReturn strict JSON matching schema. Preserve supported/refuted direction for clean evidence only; apply reliability caps for non-independent, stale, wrong-entity, partially observed, superseded, failed-tool, or oscillating evidence."
+user_template: "BeliefUpdateContext: {context_json}\nReturn strict JSON matching schema. A null prior_belief means first observation. Preserve supported/refuted direction for clean evidence only; apply reliability caps for non-independent, stale, wrong-entity, partially observed, superseded, failed-tool, or oscillating evidence."
 model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
 redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]

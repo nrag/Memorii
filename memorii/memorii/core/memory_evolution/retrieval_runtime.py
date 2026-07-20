@@ -15,6 +15,7 @@ from memorii.core.memory_evolution.execution import (
     WorkStateSnapshot,
     resolve_continuation,
 )
+from memorii.core.memory_evolution.graph_constraint_resolution import resolve_graph_constraints
 from memorii.core.memory_evolution.models import (
     ClaimState,
     EntityLinkState,
@@ -22,24 +23,30 @@ from memorii.core.memory_evolution.models import (
     RetrievalView,
 )
 from memorii.core.memory_evolution.predicates import PredicateRegistry
+from memorii.core.memory_evolution.query_analysis import (
+    QueryAnalyzer,
+    StructuredQueryConstraintError,
+    validate_query_analysis_constraints,
+)
+from memorii.core.memory_evolution.query_graph import (
+    GraphPatternResolutionStatus,
+    GraphResolutionMethod,
+)
 from memorii.core.memory_evolution.retrieval import (
     ExecutionRetrievalState,
-    MemoryQueryRequest,
+    MemoryQueryInput,
     ProductionRetrievalDecision,
+    ResolvedMemoryQuery,
     RetrievalPurpose,
     rank_claims,
-    resolve_memory_query,
+    reconcile_memory_query,
 )
-from memorii.core.memory_evolution.temporal import (
-    QueryAnalyzer,
+from memorii.core.memory_evolution.temporal_contracts import (
+    QueryResolutionConfidenceSource,
     QueryTemporalFrame,
     QueryTemporalKind,
-    StructuredQueryConstraintError,
     TemporalAnchorCatalog,
     TemporalEntityCandidate,
-    validate_query_analysis_constraints,
-    validate_query_analysis_matches_authoritative_result,
-    validate_temporal_frame_constraints,
 )
 
 
@@ -67,18 +74,34 @@ class MemoryEvolutionRetrievalRuntime:
         self._now_provider = now_provider
         self._predicate_registry = predicate_registry or PredicateRegistry()
 
-    def retrieve(self, request: MemoryQueryRequest) -> ProductionRetrievalDecision:
+    def retrieve(self, request: MemoryQueryInput) -> ProductionRetrievalDecision:
         if request.reference_time is None:
             request = request.model_copy(update={"reference_time": self._now_provider()})
-        links = [
+        request_scope = request.scope
+        readable_links = [
             link
             for link in self._entity_link_reader()
-            if link.lifecycle_state.value != "invalidated"
+            if link.lifecycle_state.value != "invalidated" and request_scope.can_read(link.scope)
+        ]
+        most_specific_scope_by_identity: dict[tuple[str, str], int] = {}
+        for link in readable_links:
+            identity = (link.normalized_name, link.canonical_entity_id)
+            most_specific_scope_by_identity[identity] = max(
+                link.scope.specificity,
+                most_specific_scope_by_identity.get(identity, -1),
+            )
+        links = [
+            link
+            for link in readable_links
+            if link.scope.specificity
+            == most_specific_scope_by_identity[(link.normalized_name, link.canonical_entity_id)]
         ]
         catalog = [
             TemporalEntityCandidate(
                 entity_id=link.canonical_entity_id,
                 names=sorted({link.mention_text, link.normalized_name, *link.aliases}),
+                entity_type=link.entity_type.value,
+                scope=link.scope,
                 lifecycle_state=link.lifecycle_state.value,
                 lineage_parent_entity_id=link.lineage_parent_entity_id,
                 valid_from=link.valid_from,
@@ -87,128 +110,186 @@ class MemoryEvolutionRetrievalRuntime:
             for link in links
             if link.aliases or link.mention_text
         ]
-        authoritative_analysis = None
+        visible_anchor_catalog = TemporalAnchorCatalog(
+            anchors=[anchor for anchor in self._temporal_anchor_catalog.anchors if request_scope.can_read(anchor.scope)]
+        )
+        analysis = None
         try:
-            if request.predicate_id is not None and self._predicate_registry.get(request.predicate_id) is None:
-                raise StructuredQueryConstraintError(
-                    f"unknown predicate requested: {request.predicate_id}"
-                )
-            if request.subject_entity_id is not None and request.subject_entity_id not in {
-                candidate.entity_id for candidate in catalog
-            }:
-                raise StructuredQueryConstraintError("unknown subject entity requested")
-            if request.temporal_frame is not None:
-                validate_temporal_frame_constraints(
-                    request.temporal_frame,
-                    entity_candidates=catalog,
-                    anchor_catalog=self._temporal_anchor_catalog,
-                    scope_key=request.scope_key,
-                )
-            authoritative_analysis = self._query_analyzer.analyze(
+            analysis = self._query_analyzer.analyze(
                 query=request.query,
                 language=request.query_language,
                 reference_time=request.reference_time,
-                scope_key=request.scope_key,
+                request_scope=request_scope,
                 entity_candidates=catalog,
-                anchor_catalog=self._temporal_anchor_catalog,
+                anchor_catalog=visible_anchor_catalog,
             )
-            authoritative_analysis = validate_query_analysis_constraints(
-                authoritative_analysis,
+            analysis = validate_query_analysis_constraints(
+                analysis,
                 entity_candidates=catalog,
-                anchor_catalog=self._temporal_anchor_catalog,
-                scope_key=request.scope_key,
+                anchor_catalog=visible_anchor_catalog,
+                request_scope=request_scope,
                 predicate_registry=self._predicate_registry,
             )
-            validate_query_analysis_matches_authoritative_result(
-                requested_frame=request.temporal_frame,
-                requested_analysis=request.query_analysis,
-                authoritative_analysis=authoritative_analysis,
-                reference_time=request.reference_time,
-                scope_key=request.scope_key,
-            )
-            request = request.model_copy(
-                update={
-                    "temporal_frame": None,
-                    "query_analysis": authoritative_analysis,
-                    "predicate_id": (
-                        request.predicate_id
-                        if request.predicate_id is not None
-                        else None
-                        if request.purpose == RetrievalPurpose.GRAPH_AUDIT
-                        else authoritative_analysis.predicate_id
-                    ),
-                    "subject_entity_id": request.subject_entity_id or authoritative_analysis.subject_entity_id,
-                }
+            if analysis.temporal_frame is None:
+                raise StructuredQueryConstraintError("query analysis omitted a temporal frame")
+            request_payload = request.model_dump(mode="python")
+            resolved_request = ResolvedMemoryQuery(
+                **request_payload,
+                query_analysis=analysis,
+                temporal_frame=analysis.temporal_frame,
+                predicate_id=(None if request.purpose == RetrievalPurpose.GRAPH_AUDIT else analysis.predicate_id),
+                subject_entity_id=analysis.subject_entity_id,
+                readable_scope_keys=request_scope.readable_scope_keys,
             )
         except StructuredQueryConstraintError as exc:
             frame = QueryTemporalFrame(
                 temporal_kind=QueryTemporalKind.AMBIGUOUS,
                 resolution_confidence=0.0,
-                resolution_confidence_source="caller",
+                resolution_confidence_source=QueryResolutionConfidenceSource.CALLER,
                 ambiguity_reasons=[str(exc)],
             )
             return ProductionRetrievalDecision(
                 query=request.query,
                 temporal_frame=frame,
-                query_analysis=authoritative_analysis or request.query_analysis,
+                query_analysis=analysis,
                 resolution_status="ambiguous",
                 abstained=True,
                 abstention_reason=f"structured_query_constraint_error:{exc}",
                 confidence_status="abstained",
             )
-        resolution = resolve_memory_query(request, entity_catalog=catalog)
-        frame = resolution.frame
-        if request.purpose == RetrievalPurpose.EXECUTION or frame.temporal_kind == QueryTemporalKind.EXECUTION:
+        frame = resolved_request.temporal_frame
+        if resolved_request.purpose == RetrievalPurpose.EXECUTION or frame.temporal_kind == QueryTemporalKind.EXECUTION:
+            resolution = reconcile_memory_query(resolved_request)
             return self._retrieve_execution_decision(
-                request=request,
-                frame=frame,
+                request=resolved_request,
+                frame=resolution.frame,
                 resolution_status=resolution.status,
             )
         states = self._claim_reader(
             view=(
                 RetrievalView.ALL_VERSIONS
-                if request.include_conflicts or request.purpose == RetrievalPurpose.GRAPH_AUDIT
+                if resolved_request.include_conflicts or resolved_request.purpose == RetrievalPurpose.GRAPH_AUDIT
                 else RetrievalView.CURRENT
             ),
             temporal_frame=(
                 None
-                if request.include_conflicts or request.purpose == RetrievalPurpose.GRAPH_AUDIT
-                else frame
+                if resolved_request.include_conflicts or resolved_request.purpose == RetrievalPurpose.GRAPH_AUDIT
+                else frame.model_copy(update={"resolved_entity_ids": []})
             ),
-            predicate_id=request.predicate_id,
-            subject_entity_id=request.subject_entity_id,
+            predicate_id=resolved_request.predicate_id,
+            subject_entity_id=None,
+            readable_scope_keys=resolved_request.readable_scope_keys,
         )
         entity_names_by_id = {
-            link.canonical_entity_id: {link.mention_text, link.normalized_name, *link.aliases}
-            for link in links
+            link.canonical_entity_id: {link.mention_text, link.normalized_name, *link.aliases} for link in links
         }
-        object_entity_by_claim: dict[str, str] = {}
+        link_by_id = {link.link_id: link for link in readable_links}
         for state in states:
+            subject_link = link_by_id.get(state.subject_link_id or "")
+            if subject_link is not None:
+                entity_names_by_id.setdefault(state.claim_key.subject_entity_id, set()).update(
+                    {subject_link.mention_text, subject_link.normalized_name, *subject_link.aliases}
+                )
+        object_entity_by_claim: dict[str, str] = {}
+        subject_entity_by_claim: dict[str, str] = {}
+        for state in states:
+            subject_link = link_by_id.get(state.subject_link_id or "")
+            subject_entity_by_claim[state.claim_id] = (
+                subject_link.canonical_entity_id
+                if subject_link is not None
+                else state.claim_key.subject_entity_id
+            )
             if state.object_link_id is None:
                 continue
             object_link = next(
-                (
-                    link
-                    for link in links
-                    if link.link_id == state.object_link_id or link.canonical_entity_id == state.object_link_id
-                ),
+                (link for link in readable_links if link.link_id == state.object_link_id),
                 None,
             )
             if object_link is not None:
                 object_entity_by_claim[state.claim_id] = object_link.canonical_entity_id
+        if (
+            resolved_request.purpose != RetrievalPurpose.GRAPH_AUDIT
+            and frame.temporal_kind != QueryTemporalKind.AMBIGUOUS
+        ):
+            pattern_resolution = resolve_graph_constraints(
+                query=resolved_request.query,
+                analysis=analysis,
+                temporal_frame=frame,
+                states=states,
+                entity_links=readable_links,
+            )
+            if pattern_resolution.status == GraphPatternResolutionStatus.RESOLVED:
+                subject_entity_id = pattern_resolution.subject_entity_id
+                if subject_entity_id is None:
+                    raise RuntimeError("resolved graph pattern omitted subject entity")
+                structured_resolution = (
+                    pattern_resolution.resolution_method
+                    == GraphResolutionMethod.STRUCTURED_CONSTRAINT
+                )
+                resolution_source = (
+                    QueryResolutionConfidenceSource.GRAPH_CONSTRAINT
+                    if structured_resolution
+                    else QueryResolutionConfidenceSource(
+                        pattern_resolution.resolution_method.value
+                    )
+                )
+                frame = frame.model_copy(
+                    update={
+                        "resolved_entity_ids": [subject_entity_id],
+                        "resolution_confidence": 1.0 if structured_resolution else 0.65,
+                        "resolution_confidence_source": resolution_source,
+                        "resolution_confidence_is_calibrated": False,
+                        "ambiguity_reasons": [],
+                    }
+                )
+                analysis = analysis.model_copy(
+                    update={
+                        "temporal_frame": frame,
+                        "subject_entity_id": subject_entity_id,
+                        "graph_patterns": [pattern_resolution.pattern],
+                        "confidence_source": resolution_source,
+                        "confidence_is_calibrated": False,
+                    }
+                )
+            else:
+                frame = frame.model_copy(
+                    update={
+                        "resolution_confidence": 0.0,
+                        "resolution_confidence_source": QueryResolutionConfidenceSource.GRAPH_CONSTRAINT,
+                        "ambiguity_reasons": list(
+                            dict.fromkeys(
+                                [
+                                    *frame.ambiguity_reasons,
+                                    *pattern_resolution.ambiguity_reasons,
+                                ]
+                            )
+                        ),
+                    }
+                )
+            resolved_request = resolved_request.model_copy(
+                update={
+                    "query_analysis": analysis,
+                    "temporal_frame": frame,
+                    "subject_entity_id": pattern_resolution.subject_entity_id,
+                    "graph_pattern_resolution": pattern_resolution,
+                }
+            )
+        resolution = reconcile_memory_query(resolved_request)
+        frame = resolution.frame
         return rank_claims(
-            request=request,
+            request=resolved_request,
             frame=frame,
             resolution_status=resolution.status,
             states=states,
             entity_names_by_id=entity_names_by_id,
+            subject_entity_by_claim=subject_entity_by_claim,
             object_entity_by_claim=object_entity_by_claim,
         ).model_copy(update={"resolution_status": resolution.status})
 
     def _retrieve_execution_decision(
         self,
         *,
-        request: MemoryQueryRequest,
+        request: ResolvedMemoryQuery,
         frame: QueryTemporalFrame,
         resolution_status: str,
     ) -> ProductionRetrievalDecision:
@@ -221,7 +302,13 @@ class MemoryEvolutionRetrievalRuntime:
             requested_task_id=request.task_id,
             requested_session_id=request.session_id,
             requested_user_id=request.user_id,
-            target_entity_ids=frame.resolved_entity_ids,
+            # A lexical fallback match identifies retrieval context, not an
+            # explicit work-branch constraint. Only a structured/caller
+            # analysis may narrow continuation by entity ID; otherwise a
+            # project-name match can incorrectly suppress its active branch.
+            target_entity_ids=(
+                frame.resolved_entity_ids if request.query_analysis.analysis_source != "heuristic" else []
+            ),
         )
         selected_action = next(
             (action for action in actions if action.action_id == continuation.action_event_id),

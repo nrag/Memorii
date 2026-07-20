@@ -9,5 +9,5 @@ def test_oracle_execution_expectation_selects_active_branch() -> None:
 
     active = [state for state in states if state.active]
     assert active
-    assert any(state.branch_id == "ent_09_branch_b" for state in active)
+    assert any(state.branch_id in checkpoint.expected_execution_entity_ids for state in active)
     assert all(state.supporting_claim_ids for state in active)

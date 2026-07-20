@@ -2,14 +2,26 @@ from __future__ import annotations
 
 from memorii.core.benchmark.memory_evolution_sim import (
     JudgeVerdict,
+    LatentGraphScenario,
     expected_sim_output_for_checkpoint,
     judge_sim_checkpoint,
     sim_checkpoint_diagnostics,
 )
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
+    claim_by_role,
     generate_scenario_by_family,
 )
+
+
+def _action_claim(scenario: LatentGraphScenario, state: str, subject: str):
+    return next(
+        claim
+        for claim in scenario.claims
+        if "action_state" in claim.evaluation_roles
+        and claim.object.normalized_value == state
+        and claim.subject.canonical_name == subject
+    )
 
 
 def test_memory_evolution_sim_execution_continuation_requires_selected_state() -> None:
@@ -48,16 +60,18 @@ def test_memory_evolution_sim_execution_continuation_oracle_uses_execution_expec
     )
     checkpoint = checkpoint_by_type(scenario, "execution_continuation")
     output = expected_sim_output_for_checkpoint(checkpoint)
+    progress = _action_claim(scenario, "in_progress", "Atlas Cleanup Branch B")
+    current_owner = claim_by_role(scenario, "current_truth")
 
     assert checkpoint.expected_claim_ids == []
     assert checkpoint.expected_entity_ids == []
     assert checkpoint.expected_citation_event_ids == []
-    assert checkpoint.expected_execution_claim_ids == ["claim_09_branch_b_progress"]
-    assert checkpoint.expected_execution_entity_ids == ["ent_09_branch_b"]
-    assert checkpoint.expected_execution_citation_event_ids == ["event_09_branch_b_progress"]
-    assert "claim_09_current_owner" not in output.selected_claim_ids
-    assert "ent_09_atlas_migration" not in output.selected_entity_ids
-    assert "event_09_005" not in output.supporting_citation_event_ids
+    assert checkpoint.expected_execution_claim_ids == [progress.claim_id]
+    assert checkpoint.expected_execution_entity_ids == [progress.subject.entity_id]
+    assert checkpoint.expected_execution_citation_event_ids == progress.evidence.source_event_ids
+    assert current_owner.claim_id not in output.selected_claim_ids
+    assert current_owner.subject.entity_id not in output.selected_entity_ids
+    assert not set(current_owner.evidence.source_event_ids) & set(output.supporting_citation_event_ids)
 
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
 
@@ -97,12 +111,14 @@ def test_memory_evolution_sim_execution_continuation_keeps_owner_facts_context_o
         noise_rate=0.35,
     )
     checkpoint = checkpoint_by_type(scenario, "execution_continuation")
+    current_owner = claim_by_role(scenario, "current_truth")
+    project_type = claim_by_role(scenario, "entity_type_missing")
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
             "supporting_claim_ids": [
                 *checkpoint.expected_execution_claim_ids,
-                "claim_09_current_owner",
-                "claim_09_project_type",
+                current_owner.claim_id,
+                project_type.claim_id,
             ],
         }
     )
@@ -118,10 +134,9 @@ def test_memory_evolution_sim_execution_continuation_keeps_owner_facts_context_o
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "execution_context_claim_used_as_support" in aggregate.critical_failure_buckets
     assert "execution_context_claim_used_as_support" in diagnostics["precision_failure_classification"]
-    assert diagnostics["supporting_role_violations"]["execution_context_support"] == [
-        "claim_09_current_owner",
-        "claim_09_project_type",
-    ]
+    assert diagnostics["supporting_role_violations"]["execution_context_support"] == sorted(
+        [current_owner.claim_id, project_type.claim_id]
+    )
 
 
 def test_memory_evolution_sim_execution_continuation_rejects_truth_fact_without_active_branch() -> None:
@@ -132,15 +147,17 @@ def test_memory_evolution_sim_execution_continuation_rejects_truth_fact_without_
         noise_rate=0.35,
     )
     checkpoint = checkpoint_by_type(scenario, "execution_continuation")
+    current_owner = claim_by_role(scenario, "current_truth")
+    progress = _action_claim(scenario, "in_progress", "Atlas Cleanup Branch B")
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
-            "selected_entity_ids": ["ent_09_atlas_migration"],
-            "selected_claim_ids": ["claim_09_current_owner"],
-            "supporting_claim_ids": ["claim_09_current_owner"],
-            "supporting_citation_event_ids": ["event_09_005"],
-            "context_entity_ids": ["ent_09_branch_b"],
-            "context_claim_ids": ["claim_09_branch_b_progress"],
-            "context_citation_event_ids": ["event_09_branch_b_progress"],
+            "selected_entity_ids": [current_owner.subject.entity_id],
+            "selected_claim_ids": [current_owner.claim_id],
+            "supporting_claim_ids": [current_owner.claim_id],
+            "supporting_citation_event_ids": current_owner.evidence.source_event_ids,
+            "context_entity_ids": [progress.subject.entity_id],
+            "context_claim_ids": [progress.claim_id],
+            "context_citation_event_ids": progress.evidence.source_event_ids,
         }
     )
 
@@ -160,7 +177,7 @@ def test_memory_evolution_sim_execution_continuation_fails_when_blocked_branch_i
         noise_rate=0.35,
     )
     checkpoint = checkpoint_by_type(scenario, "execution_continuation")
-    blocked_claim_id = "claim_09_branch_a_blocked"
+    blocked_claim_id = _action_claim(scenario, "blocked", "Atlas Cleanup Branch A").claim_id
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
             "selected_claim_ids": [*checkpoint.expected_execution_claim_ids, blocked_claim_id],
@@ -198,10 +215,11 @@ def test_memory_evolution_sim_execution_continuation_requires_active_action_supp
         noise_rate=0.35,
     )
     checkpoint = checkpoint_by_type(scenario, "execution_continuation")
+    current_owner = claim_by_role(scenario, "current_truth")
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
-            "supporting_claim_ids": ["claim_09_current_owner"],
-            "supporting_citation_event_ids": ["event_09_005"],
+            "supporting_claim_ids": [current_owner.claim_id],
+            "supporting_citation_event_ids": current_owner.evidence.source_event_ids,
         }
     )
 
@@ -216,8 +234,8 @@ def test_memory_evolution_sim_execution_continuation_requires_active_action_supp
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "execution_state_support_missing" in aggregate.critical_failure_buckets
     assert "active_action_provenance_missing" in aggregate.critical_failure_buckets
-    assert diagnostics["selected_claim_ids_missing_support"] == ["claim_09_branch_b_progress"]
-    assert diagnostics["selected_action_state_event_ids_missing_support"] == ["event_09_branch_b_progress"]
+    assert diagnostics["selected_claim_ids_missing_support"] == checkpoint.expected_execution_claim_ids
+    assert diagnostics["selected_action_state_event_ids_missing_support"] == checkpoint.expected_execution_citation_event_ids
     assert "execution_state_support_missing" in diagnostics["failure_classification"]
     assert "active_action_provenance_missing" in diagnostics["failure_classification"]
     assert "unclassified_failure" not in diagnostics["failure_classification"]

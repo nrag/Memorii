@@ -2,6 +2,9 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+from memorii.core.belief.errors import BeliefUpdateProviderError
+from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
 from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
 from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
@@ -59,7 +62,12 @@ class _FixedBeliefProvider:
 
 class _FailingBeliefProvider:
     def update(self, *, context: object) -> tuple[object, LLMDecisionTrace]:
-        raise RuntimeError("belief provider failed")
+        raise BeliefUpdateProviderError("belief provider failed")
+
+
+class _UnexpectedFailingBeliefProvider:
+    def update(self, *, context: object) -> tuple[object, LLMDecisionTrace]:
+        raise RuntimeError("belief provider programming error")
 
 
 def _make_execution_node(node_id: str, status: ExecutionNodeStatus) -> ExecutionNode:
@@ -112,6 +120,7 @@ def _build_runtime(task_id: str = "task-1", execution_node_id: str = "exec-1") -
         solver_store=InMemorySolverGraphStore(),
         overlay_store=InMemoryOverlayStore(),
         event_log_store=InMemoryEventLogStore(),
+        belief_update_provider=RuleBasedBeliefUpdateProvider(),
     )
 
 
@@ -184,6 +193,7 @@ def test_resume_after_persisted_step_restores_frontier() -> None:
         solver_store=solver_store,
         overlay_store=overlay_store,
         event_log_store=event_log,
+        belief_update_provider=RuleBasedBeliefUpdateProvider(),
     )
 
     runtime.step(
@@ -344,6 +354,7 @@ def test_malformed_unresolved_output_is_invalid_and_does_not_mutate_solver_state
         solver_store=solver_store,
         overlay_store=overlay_store,
         event_log_store=event_log,
+        belief_update_provider=RuleBasedBeliefUpdateProvider(),
     )
 
     result = runtime.step(
@@ -385,6 +396,7 @@ def test_runtime_routes_observation_once_and_reuses_routing_decision() -> None:
         overlay_store=InMemoryOverlayStore(),
         event_log_store=InMemoryEventLogStore(),
         router=router,
+        belief_update_provider=RuleBasedBeliefUpdateProvider(),
     )
 
     runtime.step(
@@ -424,6 +436,7 @@ def test_runtime_does_not_append_manual_debug_queries_outside_planner() -> None:
         overlay_store=InMemoryOverlayStore(),
         event_log_store=InMemoryEventLogStore(),
         retrieval_planner=MinimalPlanner(),
+        belief_update_provider=RuleBasedBeliefUpdateProvider(),
     )
 
     result = runtime.step(
@@ -787,6 +800,41 @@ def test_provider_failure_falls_back_to_existing_belief_update_safely() -> None:
 
     assert result.solver_decision == SolverDecision.SUPPORTED
     assert _decision_belief(runtime, result.solver_run_id) == 0.8
+
+
+def test_unexpected_belief_provider_error_propagates() -> None:
+    task_id = "task-provider-programming-error"
+    execution_node_id = "exec-provider-programming-error"
+    execution_store = InMemoryExecutionGraphStore()
+    execution_store.upsert_node(
+        task_id,
+        _make_execution_node(execution_node_id, ExecutionNodeStatus.RUNNING),
+    )
+    runtime = RuntimeStepService(
+        execution_store=execution_store,
+        solver_store=InMemorySolverGraphStore(),
+        overlay_store=InMemoryOverlayStore(),
+        event_log_store=InMemoryEventLogStore(),
+        belief_update_provider=_UnexpectedFailingBeliefProvider(),
+    )
+
+    with pytest.raises(RuntimeError, match="programming error"):
+        runtime.step(
+            task_id=task_id,
+            observation=RuntimeObservationInput(
+                event_id="evt-provider-programming-error",
+                event_class=InboundEventClass.SOLVER_OBSERVATION,
+                payload={"status": "passed"},
+            ),
+            model_output={
+                "decision": "SUPPORTED",
+                "evidence_ids": ["evt-provider-programming-error:transcript"],
+                "missing_evidence": [],
+                "next_best_test": None,
+                "rationale_short": "supported",
+                "confidence_band": "high",
+            },
+        )
 
 
 def test_runtime_step_service_passes_provider_into_solver_update_engine() -> None:

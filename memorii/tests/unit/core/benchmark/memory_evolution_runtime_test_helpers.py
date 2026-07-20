@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Literal, cast
+from typing import Literal
 
 from memorii.core.benchmark.artifact_rows import RuntimeCheckpointResultRow
+from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     JudgeAggregate,
     JudgeVerdict,
+    LatentClaim,
+    LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
     OracleCheckpoint,
     SimCheckpointContract,
@@ -16,12 +19,12 @@ from memorii.core.calibration.alignment import RuntimeGraphAlignment
 from pydantic import BaseModel, ConfigDict, Field
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
+    claim_by_role,
     generate_scenario_by_family,
 )
 
 RuntimeGraphItemKind = Literal["entity", "claim", "action"]
-RuntimeGraphValue = str | float | list[str]
-RuntimeGraphItem = dict[str, RuntimeGraphValue]
+RuntimeGraphItem = RuntimeGraphItemRow
 
 
 class RuntimeGraphItemFixture(BaseModel):
@@ -35,7 +38,7 @@ class RuntimeGraphItemFixture(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     def to_graph_item(self) -> RuntimeGraphItem:
-        return cast(RuntimeGraphItem, self.model_dump(mode="json"))
+        return RuntimeGraphItemRow.model_validate(self.model_dump(mode="json"))
 
 
 class RuntimeEntityFixture(RuntimeGraphItemFixture):
@@ -73,7 +76,6 @@ def runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
     output_payload = dict(row_fields.pop("output", {}))
     candidate_payload = dict(row_fields.pop("candidate_cards", {}))
     raw_output_payload = dict(row_fields.pop("raw_output", output_payload))
-    normalized_output_payload = dict(row_fields.pop("normalized_output", output_payload))
     judge_payload = dict(row_fields.pop("judge_aggregate", {}))
     return RuntimeCheckpointResultRow(
         scenario_id=str(row_fields.pop("scenario_id", "scenario_1")),
@@ -124,21 +126,16 @@ def runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
         candidate_cards=MemoryEvolutionSimReconstructionContext.model_validate(
             {
                 "scenario_id": "scenario_1",
-                "family": "current_truth",
-                "profile": "long_horizon",
                 "surface_observations": [],
                 "checkpoint": {
                     "checkpoint_id": "checkpoint_1",
                     "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
-                    "checkpoint_type": "current_truth",
                     "query_or_task": "",
-                    "severity": "medium",
                 },
                 **candidate_payload,
             }
         ),
         raw_output=SimSystemOutput.model_validate(raw_output_payload or {"operation": "abstain", "rationale": "test"}),
-        normalized_output=SimSystemOutput.model_validate(normalized_output_payload or {"operation": "abstain", "rationale": "test"}),
         judge_aggregate=JudgeAggregate.model_validate(
             {
                 "checkpoint_id": "checkpoint_1",
@@ -221,47 +218,81 @@ def long_horizon_execution_scenario():
     return scenario, checkpoint_by_type(scenario, "execution_continuation")
 
 
+def action_claim_by_state(
+    scenario: LatentGraphScenario,
+    state: str,
+    *,
+    subject_name: str | None = None,
+) -> LatentClaim:
+    matches = [
+        claim
+        for claim in scenario.claims
+        if "action_state" in claim.evaluation_roles
+        and claim.object.normalized_value == state
+        and (subject_name is None or claim.subject.canonical_name == subject_name)
+    ]
+    if len(matches) != 1:
+        raise AssertionError(
+            f"Expected one action-state claim for state={state!r}, subject={subject_name!r}; "
+            f"found {[(claim.subject.canonical_name, claim.object.value) for claim in matches]}"
+        )
+    return matches[0]
+
+
+def claim_event_id(claim: LatentClaim) -> str:
+    if len(claim.evidence.source_event_ids) != 1:
+        raise AssertionError(f"Expected one evidence event for claim {claim.claim_id}")
+    return claim.evidence.source_event_ids[0]
+
+
 def runtime_execution_base_items(
     *,
-    scenario_id: str,
+    scenario: LatentGraphScenario,
     branch_b_events: list[str] | None = None,
 ) -> list[RuntimeGraphItem]:
+    project_type = claim_by_role(scenario, "entity_type_missing")
+    current_owner = claim_by_role(scenario, "current_truth")
+    branch_b_progress = action_claim_by_state(
+        scenario,
+        "in_progress",
+        subject_name="Atlas Cleanup Branch B",
+    )
     return [
         runtime_entity(
-            scenario_id=scenario_id,
+            scenario_id=scenario.scenario_id,
             runtime_id="rt:entity:atlas-migration",
             canonical_id="ent:atlas-billing-migration",
             name="Atlas Billing Migration",
             entity_type="project",
             aliases=["Atlas Billing Migration"],
-            events=["event_09_001"],
+            events=[claim_event_id(project_type)],
         ),
         runtime_entity(
-            scenario_id=scenario_id,
+            scenario_id=scenario.scenario_id,
             runtime_id="rt:entity:branch-b",
             canonical_id="ent:atlas-cleanup-branch-b",
             name="Atlas Cleanup Branch B",
             entity_type="task",
             aliases=["Atlas cleanup Branch B"],
-            events=branch_b_events or ["event_09_branch_b_progress"],
+            events=branch_b_events or [claim_event_id(branch_b_progress)],
         ),
         runtime_claim(
-            scenario_id=scenario_id,
+            scenario_id=scenario.scenario_id,
             runtime_id="rt:claim:project-type",
             subject_id="ent:atlas-billing-migration",
             subject="Atlas Billing Migration",
             predicate="entity_type",
             obj="project",
-            event="event_09_001",
+            event=claim_event_id(project_type),
         ),
         runtime_claim(
-            scenario_id=scenario_id,
+            scenario_id=scenario.scenario_id,
             runtime_id="rt:claim:current-owner",
             subject_id="ent:atlas-billing-migration",
             subject="Atlas Billing Migration",
             predicate="owner",
-            obj="Bob",
-            event="event_09_005",
+            obj=current_owner.object.value,
+            event=claim_event_id(current_owner),
         ),
     ]
 

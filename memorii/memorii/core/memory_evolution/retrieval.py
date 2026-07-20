@@ -15,16 +15,15 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_evolution.execution import ContinuationDecision, WorkStateSnapshot
-from memorii.core.memory_evolution.models import ClaimLifecycleState, ClaimState
-from memorii.core.memory_evolution.temporal import (
+from memorii.core.memory_evolution.models import ClaimLifecycleState, ClaimState, MemoryScope
+from memorii.core.memory_evolution.query_graph import GraphPatternResolution
+from memorii.core.memory_evolution.temporal_contracts import (
     QueryAnalysis,
     QueryTemporalFrame,
     QueryTemporalKind,
     RetrievalDecision,
-    TemporalEntityCandidate,
     TemporalResolution,
     evaluate_temporal_eligibility,
-    resolve_query_temporal_frame,
 )
 
 
@@ -34,20 +33,12 @@ class RetrievalPurpose(StrEnum):
     EXECUTION = "execution"
 
 
-class MemoryQueryRequest(BaseModel):
-    """Structured request consumed by the production memory retriever."""
+class QueryRequestOptions(BaseModel):
+    """Non-semantic retrieval options shared by public and resolved queries."""
 
-    query: str
-    temporal_frame: QueryTemporalFrame | None = None
-    query_analysis: QueryAnalysis | None = None
     query_language: str = "en"
     reference_time: datetime | None = None
-    scope_key: str | None = None
-    task_id: str | None = None
-    session_id: str | None = None
-    user_id: str | None = None
-    subject_entity_id: str | None = None
-    predicate_id: str | None = None
+    scope: MemoryScope = Field(default_factory=MemoryScope)
     top_k: int = Field(default=8, ge=1, le=100)
     include_context: bool = True
     include_conflicts: bool = False
@@ -56,10 +47,48 @@ class MemoryQueryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_reference_time(self) -> MemoryQueryRequest:
+    def validate_reference_time(self) -> QueryRequestOptions:
         if self.reference_time is not None and self.reference_time.tzinfo is None:
             raise ValueError("reference_time must be timezone-aware")
         return self
+
+    @property
+    def scope_key(self) -> str:
+        return self.scope.scope_key
+
+    @property
+    def task_id(self) -> str | None:
+        return self.scope.task_id
+
+    @property
+    def session_id(self) -> str | None:
+        return self.scope.session_id
+
+    @property
+    def user_id(self) -> str | None:
+        return self.scope.user_id
+
+
+class MemoryQueryRequest(QueryRequestOptions):
+    """Natural-language request whose semantics are owned by the configured analyzer."""
+
+    query: str
+
+
+class ResolvedMemoryQuery(QueryRequestOptions):
+    """Internal analyzer result consumed by deterministic retrieval policy."""
+
+    query: str
+    query_analysis: QueryAnalysis
+    temporal_frame: QueryTemporalFrame
+    subject_entity_id: str | None = None
+    predicate_id: str | None = None
+    graph_pattern_resolution: GraphPatternResolution | None = None
+    scope_mode: Literal["scoped", "full"] = "scoped"
+    readable_scope_keys: frozenset[str] = Field(min_length=1)
+
+
+MemoryQueryInput = MemoryQueryRequest
 
 
 class GraphAuditRequest(MemoryQueryRequest):
@@ -101,6 +130,7 @@ class ProductionRetrievalDecision(RetrievalDecision):
 
     query: str
     query_analysis: QueryAnalysis | None = None
+    graph_pattern_resolution: GraphPatternResolution | None = None
     resolution_status: str = "resolved"
     candidates: list[RetrievalCandidate] = Field(default_factory=list)
     decision_source: str = "production_memory_evolution_retriever"
@@ -134,61 +164,22 @@ class RetrievalContextItem(BaseModel):
 ProductionRetrievalDecision.model_rebuild()
 
 
-def resolve_memory_query(
-    request: MemoryQueryRequest,
-    *,
-    entity_catalog: list[TemporalEntityCandidate],
-) -> TemporalResolution:
-    """Resolve a query using the production entity catalog, conservatively."""
+def reconcile_memory_query(request: ResolvedMemoryQuery) -> TemporalResolution:
+    """Reconcile validated semantic analysis with caller-owned request context."""
 
-    if request.temporal_frame is not None:
-        frame, status, rationale = _reconcile_request_frame(request, request.temporal_frame)
-        return TemporalResolution(
-            frame=frame,
-            status=status,
-            rationale=rationale,
-            language=request.query_language,
-            analysis_source="caller",
-        )
-    if request.query_analysis is not None:
-        analysis = request.query_analysis
-        frame = analysis.temporal_frame
-        if frame is None:
-            frame = QueryTemporalFrame(
-                temporal_kind=QueryTemporalKind.AMBIGUOUS,
-                resolution_confidence=0.0,
-                ambiguity_reasons=["structured_query_analysis_omitted_temporal_frame"],
-            )
-            return TemporalResolution(
-                frame=frame,
-                status="ambiguous",
-                rationale="structured query analysis omitted a temporal frame",
-                language=request.query_analysis.language,
-                analysis_source="structured_model",
-            )
-        if analysis.subject_entity_id and analysis.subject_entity_id not in frame.resolved_entity_ids:
-            frame = frame.model_copy(
-                update={"resolved_entity_ids": [*frame.resolved_entity_ids, analysis.subject_entity_id]}
-            )
-        frame, status, rationale = _reconcile_request_frame(request, frame)
-        return TemporalResolution(
-            frame=frame,
-            status=("ambiguous" if status != "resolved" or frame.ambiguity_reasons else "resolved"),
-            rationale=rationale,
-            language=request.query_analysis.language,
-            analysis_source="structured_model",
-        )
-    return resolve_query_temporal_frame(
-        request.query,
-        reference_time=request.reference_time,
-        scope_key=request.scope_key,
-        entity_candidates=entity_catalog,
-        language=request.query_language,
+    analysis = request.query_analysis
+    frame, status, rationale = _reconcile_request_frame(request, request.temporal_frame)
+    return TemporalResolution(
+        frame=frame,
+        status=("ambiguous" if status != "resolved" or frame.ambiguity_reasons else "resolved"),
+        rationale=rationale,
+        language=analysis.language,
+        analysis_source=analysis.analysis_source,
     )
 
 
 def _reconcile_request_frame(
-    request: MemoryQueryRequest,
+    request: ResolvedMemoryQuery,
     frame: QueryTemporalFrame,
 ) -> tuple[QueryTemporalFrame, Literal["resolved", "ambiguous"], str]:
     """Prevent caller context from silently broadening a supplied frame."""
@@ -213,10 +204,21 @@ def _reconcile_request_frame(
             frame = frame.model_copy(update={"resolved_entity_ids": [*frame.resolved_entity_ids, request.subject_entity_id]})
     if (
         frame.temporal_kind in {QueryTemporalKind.CURRENT, QueryTemporalKind.EXECUTION, QueryTemporalKind.BELIEF}
-        and frame.evaluation_time is None
-        and request.reference_time is not None
     ):
-        frame = frame.model_copy(update={"evaluation_time": request.reference_time})
+        if frame.evaluation_time is not None and frame.evaluation_time != request.reference_time:
+            return (
+                frame.model_copy(
+                    update={
+                        "temporal_kind": QueryTemporalKind.AMBIGUOUS,
+                        "resolution_confidence": 0.0,
+                        "ambiguity_reasons": ["request_frame_evaluation_time_mismatch"],
+                    }
+                ),
+                "ambiguous",
+                "request reference time does not match the supplied temporal frame",
+            )
+        if frame.evaluation_time is None and request.reference_time is not None:
+            frame = frame.model_copy(update={"evaluation_time": request.reference_time})
     if frame.temporal_kind == QueryTemporalKind.AMBIGUOUS or frame.ambiguity_reasons or frame.resolution_confidence <= 0.0:
         return frame, "ambiguous", "temporal frame is ambiguous or unresolved"
     return frame, "resolved", "request context and temporal frame are consistent"
@@ -224,11 +226,12 @@ def _reconcile_request_frame(
 
 def rank_claims(
     *,
-    request: MemoryQueryRequest,
+    request: ResolvedMemoryQuery,
     frame: QueryTemporalFrame,
     resolution_status: str = "resolved",
     states: list[ClaimState],
     entity_names_by_id: dict[str, set[str]] | None = None,
+    subject_entity_by_claim: dict[str, str] | None = None,
     object_entity_by_claim: dict[str, str] | None = None,
 ) -> ProductionRetrievalDecision:
     """Rank lifecycle-filtered claims without benchmark/oracle knowledge."""
@@ -239,15 +242,25 @@ def rank_claims(
         or frame.ambiguity_reasons
         or frame.resolution_confidence <= 0.0
     ):
+        graph_status = (
+            request.graph_pattern_resolution.status
+            if request.graph_pattern_resolution is not None
+            else None
+        )
         entity_ambiguity = any("entity" in reason for reason in frame.ambiguity_reasons)
         return ProductionRetrievalDecision(
             query=request.query,
             temporal_frame=frame,
             query_analysis=request.query_analysis,
+            graph_pattern_resolution=request.graph_pattern_resolution,
             resolution_status=resolution_status,
             abstained=True,
             abstention_reason=(
-                "entity_resolution_ambiguous"
+                "graph_constraint_no_match"
+                if graph_status is not None and graph_status.value == "no_match"
+                else "graph_constraint_unsupported"
+                if graph_status is not None and graph_status.value == "unsupported"
+                else "entity_resolution_ambiguous"
                 if entity_ambiguity
                 else "temporal_frame_ambiguous"
                 if frame.temporal_kind == QueryTemporalKind.AMBIGUOUS or frame.ambiguity_reasons
@@ -260,8 +273,16 @@ def rank_claims(
     rejected: list[str] = []
     context: list[str] = []
     entity_names_by_id = entity_names_by_id or {}
+    subject_entity_by_claim = subject_entity_by_claim or {}
     object_entity_by_claim = object_entity_by_claim or {}
     excluded_terms = _excluded_terms(request.query)
+    graph_matched_claim_ids = (
+        set(request.graph_pattern_resolution.matched_claim_ids)
+        if request.graph_pattern_resolution is not None
+        and request.graph_pattern_resolution.status.value == "resolved"
+        and request.graph_pattern_resolution.matched_claim_ids
+        else set()
+    )
     # A graph audit asks for the resolved entity neighborhood. Inference of a
     # predicate from the wording would silently turn that audit into an
     # answer query and drop definition/rekey evidence. An explicit predicate
@@ -275,57 +296,89 @@ def rank_claims(
         eligible_predicates = {
             state.claim_key.predicate_id
             for state in states
-            if (not request.subject_entity_id or state.claim_key.subject_entity_id == request.subject_entity_id)
-            and (not frame.resolved_entity_ids or state.claim_key.subject_entity_id in frame.resolved_entity_ids)
-            and (not request.scope_key or state.claim_key.scope_key in {request.scope_key, "global"})
-            and _frame_matches(state, frame, resolved_object=object_entity_by_claim.get(state.claim_id))
+            if (not request.subject_entity_id or subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id) == request.subject_entity_id)
+            and (not frame.resolved_entity_ids or subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id) in frame.resolved_entity_ids)
+            and state.claim_key.scope_key in request.readable_scope_keys
+            and _frame_matches(
+                state,
+                frame,
+                resolved_subject=subject_entity_by_claim.get(state.claim_id),
+                resolved_object=object_entity_by_claim.get(state.claim_id),
+                readable_scope_keys=request.readable_scope_keys,
+            )
         }
         if len(eligible_predicates) > 1 and effective_predicate_id not in eligible_predicates:
             return ProductionRetrievalDecision(
                 query=request.query,
                 temporal_frame=frame,
                 query_analysis=request.query_analysis,
+                graph_pattern_resolution=request.graph_pattern_resolution,
                 resolution_status="ambiguous",
                 abstained=True,
                 abstention_reason="predicate_ambiguous",
                 confidence_status="abstained",
             )
-    exact_scope_match = False
-    if request.scope_key is not None:
-        exact_scope_match = any(
-            state.claim_key.scope_key == request.scope_key
-            and (not effective_predicate_id or state.claim_key.predicate_id == effective_predicate_id)
-            and (not request.subject_entity_id or state.claim_key.subject_entity_id == request.subject_entity_id)
-            and _frame_matches(state, frame, resolved_object=object_entity_by_claim.get(state.claim_id))
-            for state in states
+    selected_scope_specificity_by_claim: dict[tuple[str, str, str], int] = {}
+    for state in states:
+        if graph_matched_claim_ids and state.claim_id not in graph_matched_claim_ids:
+            continue
+        if (
+            state.claim_key.scope_key not in request.readable_scope_keys
+            or (effective_predicate_id and state.claim_key.predicate_id != effective_predicate_id)
+            or not _frame_matches(
+                state,
+                frame,
+                resolved_subject=subject_entity_by_claim.get(state.claim_id),
+                resolved_object=object_entity_by_claim.get(state.claim_id),
+                readable_scope_keys=request.readable_scope_keys,
+            )
+        ):
+            continue
+        identity = _claim_scope_identity(state)
+        selected_scope_specificity_by_claim[identity] = max(
+            _scope_specificity(state.claim_key.scope_key, request),
+            selected_scope_specificity_by_claim.get(identity, 0),
         )
     for state in states:
+        if graph_matched_claim_ids and state.claim_id not in graph_matched_claim_ids:
+            resolved_subject = subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id)
+            entity_terms = _tokens(" ".join(entity_names_by_id.get(resolved_subject, set())))
+            if excluded_terms & entity_terms:
+                rejected.append(state.claim_id)
+            elif request.include_context:
+                context.append(state.claim_id)
+            continue
         if effective_predicate_id and state.claim_key.predicate_id != effective_predicate_id:
             continue
-        if request.subject_entity_id and state.claim_key.subject_entity_id != request.subject_entity_id:
+        if state.claim_key.scope_key not in request.readable_scope_keys:
             continue
-        if request.scope_key and state.claim_key.scope_key not in {request.scope_key, "global"}:
-            continue
-        if exact_scope_match and state.claim_key.scope_key == "global":
+        if _scope_specificity(state.claim_key.scope_key, request) < selected_scope_specificity_by_claim.get(
+            _claim_scope_identity(state),
+            0,
+        ):
             if request.include_context:
                 context.append(state.claim_id)
             continue
-        # Graph reconstruction is an explicit audit view: it must enumerate
-        # the graph neighborhood instead of treating a heuristic name match
-        # as an answer-time entity constraint. Scope and lifecycle constraints
-        # remain enforced.
-        # Graph auditing must be an explicit diagnostic operation; it may not
-        # silently broaden answer retrieval by deleting resolved entities.
+        # A full graph audit enumerates the lifecycle-valid graph slice instead
+        # of treating one heuristic name match as an answer-time constraint.
+        # This broadening is available only through the explicit audit purpose.
         frame_for_match = (
             frame.model_copy(update={"resolved_entity_ids": []})
-            if isinstance(request, GraphAuditRequest) and request.scope_mode == "full"
+            if request.purpose == RetrievalPurpose.GRAPH_AUDIT and request.scope_mode == "full"
             else frame
         )
         resolved_object = object_entity_by_claim.get(state.claim_id)
-        if not _frame_matches(state, frame_for_match, resolved_object=resolved_object):
-            entity_terms = _tokens(" ".join(entity_names_by_id.get(state.claim_key.subject_entity_id, set())))
+        resolved_subject = subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id)
+        if not _frame_matches(
+            state,
+            frame_for_match,
+            resolved_subject=resolved_subject,
+            resolved_object=resolved_object,
+            readable_scope_keys=request.readable_scope_keys,
+        ):
+            entity_terms = _tokens(" ".join(entity_names_by_id.get(resolved_subject, set())))
             if entity_terms & query_tokens and state.lifecycle_state == ClaimLifecycleState.ACTIVE:
-                if frame.resolved_entity_ids and state.claim_key.subject_entity_id not in frame.resolved_entity_ids:
+                if frame.resolved_entity_ids and resolved_subject not in frame.resolved_entity_ids:
                     if excluded_terms & entity_terms:
                         rejected.append(state.claim_id)
                     elif request.include_context:
@@ -337,11 +390,11 @@ def rank_claims(
             continue
         searchable = _tokens(
             f"{state.claim_key.subject_entity_id} {state.claim_key.predicate_id} {state.object_value} {state.claim_key.scope_key}"
-        ) | _tokens(" ".join(entity_names_by_id.get(state.claim_key.subject_entity_id, set())))
+        ) | _tokens(" ".join(entity_names_by_id.get(resolved_subject, set())))
         overlap = len(query_tokens & searchable)
         rationale: list[str] = []
         score = float(overlap)
-        if state.claim_key.subject_entity_id in frame.resolved_entity_ids or resolved_object in frame.resolved_entity_ids:
+        if resolved_subject in frame.resolved_entity_ids or resolved_object in frame.resolved_entity_ids:
             score += 10.0
             rationale.append("resolved_entity_match")
         if effective_predicate_id == state.claim_key.predicate_id:
@@ -395,6 +448,7 @@ def rank_claims(
         query=request.query,
         temporal_frame=frame,
         query_analysis=request.query_analysis,
+        graph_pattern_resolution=request.graph_pattern_resolution,
         resolution_status="resolved",
         selected_record_ids=list(dict.fromkeys(selected_ids)),
         supporting_record_ids=selected_ids,
@@ -420,7 +474,10 @@ def rank_claims(
             claim_id=claim_id,
             channel=channel,
             lifecycle_state=state_by_id[claim_id].lifecycle_state,
-            subject_entity_id=state_by_id[claim_id].claim_key.subject_entity_id,
+            subject_entity_id=subject_entity_by_claim.get(
+                claim_id,
+                state_by_id[claim_id].claim_key.subject_entity_id,
+            ),
             predicate_id=state_by_id[claim_id].claim_key.predicate_id,
             scope_key=state_by_id[claim_id].claim_key.scope_key,
         )
@@ -436,10 +493,20 @@ def rank_claims(
     return result.model_copy(update={"context_items": context_items, "evidence": evidence})
 
 
-def _frame_matches(state: ClaimState, frame: QueryTemporalFrame, *, resolved_object: str | None = None) -> bool:
-    if frame.resolved_entity_ids and state.claim_key.subject_entity_id not in frame.resolved_entity_ids and resolved_object not in frame.resolved_entity_ids:
+def _frame_matches(
+    state: ClaimState,
+    frame: QueryTemporalFrame,
+    *,
+    resolved_subject: str | None = None,
+    resolved_object: str | None = None,
+    readable_scope_keys: frozenset[str] | None = None,
+) -> bool:
+    effective_subject = resolved_subject or state.claim_key.subject_entity_id
+    if frame.resolved_entity_ids and effective_subject not in frame.resolved_entity_ids and resolved_object not in frame.resolved_entity_ids:
         return False
-    if frame.scope_key is not None and state.claim_key.scope_key not in {frame.scope_key, "global"}:
+    if readable_scope_keys is not None and state.claim_key.scope_key not in readable_scope_keys:
+        return False
+    if readable_scope_keys is None and frame.scope_key is not None and state.claim_key.scope_key not in {frame.scope_key, "global"}:
         return False
     if frame.temporal_kind in {QueryTemporalKind.CURRENT, QueryTemporalKind.EXECUTION, QueryTemporalKind.BELIEF}:
         return evaluate_temporal_eligibility(
@@ -459,6 +526,24 @@ def _frame_matches(state: ClaimState, frame: QueryTemporalFrame, *, resolved_obj
             requested_to=frame.valid_to,
         ).eligible
     return False
+
+
+def _scope_specificity(scope_key: str, request: ResolvedMemoryQuery) -> int:
+    if request.task_id is not None and scope_key == request.task_id:
+        return 3
+    if request.session_id is not None and scope_key == request.session_id:
+        return 2
+    if request.user_id is not None and scope_key == request.user_id:
+        return 1
+    return 0
+
+
+def _claim_scope_identity(state: ClaimState) -> tuple[str, str, str]:
+    return (
+        state.claim_key.subject_entity_id,
+        state.claim_key.predicate_id,
+        state.claim_key.qualifier_key,
+    )
 
 
 def _tokens(value: str) -> set[str]:

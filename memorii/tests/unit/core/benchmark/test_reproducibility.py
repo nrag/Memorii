@@ -1,6 +1,68 @@
+from pathlib import Path
+
+import pytest
+from memorii.core.benchmark import reproducibility
 from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkRunConfig
+from memorii.core.benchmark.reproducibility import (
+    build_source_tree_fingerprint,
+    resolve_source_revision,
+    resolve_source_state,
+)
+
+
+def test_source_tree_fingerprint_is_content_addressed(tmp_path: Path) -> None:
+    source = tmp_path / "owned"
+    source.mkdir()
+    module = source / "module.py"
+    module.write_text("VALUE = 1\n", encoding="utf-8")
+
+    before = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    module.write_text("VALUE = 2\n", encoding="utf-8")
+    after = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+
+    assert before != after
+
+
+def test_live_source_revision_fails_closed_without_revision_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MEMORII_SOURCE_REVISION", raising=False)
+
+    with pytest.raises(ValueError, match="live benchmark reports require"):
+        resolve_source_revision(root=tmp_path, dry_run=False)
+
+    assert resolve_source_revision(root=tmp_path, dry_run=True) == "local-source-tree"
+
+
+def test_source_revision_environment_value_must_be_normalized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MEMORII_SOURCE_REVISION", " revision:test ")
+
+    with pytest.raises(ValueError, match="non-empty and normalized"):
+        resolve_source_revision(root=tmp_path, dry_run=False)
+
+
+def test_source_state_distinguishes_clean_dirty_and_unversioned(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(reproducibility, "_git_status_porcelain", lambda _root: "")
+    assert resolve_source_state(root=tmp_path) == "clean"
+
+    monkeypatch.setattr(
+        reproducibility,
+        "_git_status_porcelain",
+        lambda _root: " M memorii/core/runtime.py",
+    )
+    assert resolve_source_state(root=tmp_path) == "dirty"
+
+    monkeypatch.setattr(reproducibility, "_git_status_porcelain", lambda _root: None)
+    assert resolve_source_state(root=tmp_path) == "unversioned"
 
 
 def test_run_id_is_stable_for_same_config_and_fixtures() -> None:

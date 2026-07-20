@@ -7,8 +7,14 @@ import pytest
 from memorii.core.benchmark.memory_evolution_runtime import RuntimeSuiteRows
 from memorii.core.benchmark.memory_evolution_runtime.runner import build_runtime_extractor
 from memorii.core.llm_config import LLMRuntimeConfig
+from memorii.core.llm_eval.fake_client import EvalFakeClient
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.tools.benchmark_suites import memory_evolution_runtime as runtime_suite
+from memorii.tools.benchmark_suites.runtime_dependencies import (
+    BenchmarkRuntimeDependencies,
+    ExecutionBackend,
+    LLMClientBinding,
+)
 from memorii.tools.run_benchmark import main
 from tests.unit.core.benchmark.memory_evolution_test_helpers import generate_scenario_by_family
 from tests.unit.tools.run_benchmark_test_helpers import _clear_llm_env
@@ -64,11 +70,9 @@ def test_runtime_extractor_uses_injected_llm_client_factory(tmp_path: Path) -> N
         ) -> LLMStructuredResponse:
             raise AssertionError("extractor construction should not call the client")
 
-    class StubFactory:
-        @staticmethod
-        def from_config(config: LLMRuntimeConfig) -> StubClient:
-            calls.append(config)
-            return StubClient()
+    def create_client(config: LLMRuntimeConfig) -> StubClient:
+        calls.append(config)
+        return StubClient()
 
     scenario = generate_scenario_by_family(
         profile="smoke",
@@ -83,11 +87,43 @@ def test_runtime_extractor_uses_injected_llm_client_factory(tmp_path: Path) -> N
         dry_run=False,
         runtime_config=LLMRuntimeConfig(provider="fake"),
         prompt_root=tmp_path,
-        llm_client_factory=StubFactory,
+        live_client_factory=create_client,
     )
 
     assert calls == [LLMRuntimeConfig(provider="fake")]
     assert extractor is not None
+
+
+def test_benchmark_runtime_dependencies_reject_backend_provenance_mismatch() -> None:
+    client = EvalFakeClient()
+    live_labeled_fake = LLMClientBinding(
+        client=client,
+        backend=ExecutionBackend.LIVE_PROVIDER,
+        provider_name=client.provider_name,
+    )
+    fake_labeled_live = LLMClientBinding(
+        client=client,
+        backend=ExecutionBackend.FAKE_ORACLE,
+        provider_name=client.provider_name,
+    )
+    dependencies = BenchmarkRuntimeDependencies(
+        fake_client_binding_factory=lambda: live_labeled_fake,
+        live_client_binding_factory=lambda _config: fake_labeled_live,
+    )
+
+    with pytest.raises(ValueError, match="dry execution requires fake_oracle provenance"):
+        dependencies.bind_llm_client(dry_run=True, config=LLMRuntimeConfig(provider="none"))
+    with pytest.raises(ValueError, match="live execution requires live_provider provenance"):
+        dependencies.bind_llm_client(dry_run=False, config=LLMRuntimeConfig(provider="none"))
+
+
+def test_llm_client_binding_rejects_provider_identity_mismatch() -> None:
+    with pytest.raises(ValueError, match="provider_name does not match"):
+        LLMClientBinding(
+            client=EvalFakeClient(),
+            backend=ExecutionBackend.FAKE_ORACLE,
+            provider_name="not-the-client-provider",
+        )
 
 
 def test_non_hotpotqa_suite_does_not_resolve_hotpotqa_default_dataset(

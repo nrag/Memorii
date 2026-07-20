@@ -127,21 +127,13 @@ class MemoryGraphProjector:
         edge_by_id: dict[str, MemoryGraphEdge],
         transition: ClaimLifecycleTransition,
     ) -> None:
-        if transition.transition_type == ClaimTransitionType.ENTITY_SPLIT and transition.related_claim_ids:
-            child = _candidate_entity_node(transition.related_claim_ids[0])
-            parent = _candidate_entity_node(transition.claim_id)
-            node_by_id.setdefault(child.node_id, child)
-            node_by_id.setdefault(parent.node_id, parent)
-            self._add_edge(
-                edge_by_id,
-                MemoryGraphEdgeType.SPLIT_FROM,
-                child.node_id,
-                parent.node_id,
-                lifecycle_state="active",
-                confidence=0.8,
-                properties={"transition_id": transition.transition_id},
-            )
-        elif transition.transition_type == ClaimTransitionType.CLAIM_REKEY and transition.related_claim_ids:
+        # Entity split lineage is projected from the persisted child
+        # EntityLinkState. Emitting a second transition edge would create two
+        # runtime relations for one semantic split and break one-to-one audit
+        # alignment after the transition event has passed.
+        if transition.transition_type == ClaimTransitionType.ENTITY_SPLIT:
+            return
+        if transition.transition_type == ClaimTransitionType.CLAIM_REKEY and transition.related_claim_ids:
             source = claim_node_id(transition.claim_id)
             target = claim_node_id(transition.related_claim_ids[0])
             self._add_edge(
@@ -307,7 +299,9 @@ class MemoryGraphProjector:
                 confidence=state.confidence.calibrated,
             )
         else:
-            literal_node = _literal_node(state.object_value, lifecycle_state=state.lifecycle_state.value, confidence=state.confidence.calibrated)
+            literal_node = _literal_node(
+                state.object_value, lifecycle_state=state.lifecycle_state.value, confidence=state.confidence.calibrated
+            )
             node_by_id.setdefault(literal_node.node_id, literal_node)
             self._add_edge(
                 edge_by_id,
@@ -425,15 +419,36 @@ class MemoryGraphProjector:
         for target_id in action.target_entity_ids:
             target_node = _candidate_entity_node(target_id)
             node_by_id.setdefault(target_node.node_id, target_node)
-            self._add_edge(edge_by_id, MemoryGraphEdgeType.HAS_OBJECT, node.node_id, target_node.node_id, lifecycle_state="active", confidence=0.8)
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.HAS_OBJECT,
+                node.node_id,
+                target_node.node_id,
+                lifecycle_state="active",
+                confidence=0.8,
+            )
         for dep_id in action.dependency_ids:
             dep_node = _task_node(dep_id)
             node_by_id.setdefault(dep_node.node_id, dep_node)
-            self._add_edge(edge_by_id, MemoryGraphEdgeType.DEPENDS_ON, node.node_id, dep_node.node_id, lifecycle_state="active", confidence=0.8)
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.DEPENDS_ON,
+                node.node_id,
+                dep_node.node_id,
+                lifecycle_state="active",
+                confidence=0.8,
+            )
         for blocking_id in action.blocking_ids:
             blocking_node = _task_node(blocking_id)
             node_by_id.setdefault(blocking_node.node_id, blocking_node)
-            self._add_edge(edge_by_id, MemoryGraphEdgeType.BLOCKS, node.node_id, blocking_node.node_id, lifecycle_state="active", confidence=0.8)
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.BLOCKS,
+                node.node_id,
+                blocking_node.node_id,
+                lifecycle_state="active",
+                confidence=0.8,
+            )
         for span in action.evidence_spans:
             source_node = _source_node_from_span(span, source_by_id)
             node_by_id.setdefault(source_node.node_id, source_node)
@@ -569,7 +584,9 @@ class MemoryGraphStore:
 
     def list_nodes(self, *, node_type: MemoryGraphNodeType | None = None) -> list[MemoryGraphNode]:
         nodes: list[MemoryGraphNode] = []
-        for record in self._memory_plane.list_records(domains=[MemoryDomain.SEMANTIC, MemoryDomain.USER, MemoryDomain.EXECUTION]):
+        for record in self._memory_plane.list_records(
+            domains=[MemoryDomain.SEMANTIC, MemoryDomain.USER, MemoryDomain.EXECUTION]
+        ):
             if record.content.get("memory_evolution_kind") != "graph_node":
                 continue
             try:
@@ -584,7 +601,9 @@ class MemoryGraphStore:
 
     def list_edges(self, *, edge_type: MemoryGraphEdgeType | None = None) -> list[MemoryGraphEdge]:
         edges: list[MemoryGraphEdge] = []
-        for record in self._memory_plane.list_records(domains=[MemoryDomain.SEMANTIC, MemoryDomain.USER, MemoryDomain.EXECUTION]):
+        for record in self._memory_plane.list_records(
+            domains=[MemoryDomain.SEMANTIC, MemoryDomain.USER, MemoryDomain.EXECUTION]
+        ):
             if record.content.get("memory_evolution_kind") != "graph_edge":
                 continue
             try:
@@ -608,11 +627,7 @@ class MemoryGraphStore:
             ),
             nodes=nodes,
             edges=edges,
-            validation_errors=[
-                f"{key}={value}"
-                for key, value in sorted(self._read_diagnostics.items())
-                if value
-            ],
+            validation_errors=[f"{key}={value}" for key, value in sorted(self._read_diagnostics.items()) if value],
         )
 
 
@@ -629,7 +644,11 @@ class MemoryGraphValidator:
                 target = node_by_id.get(edge.target_node_id)
                 if target is not None and target.node_type != MemoryGraphNodeType.SOURCE_OBSERVATION:
                     errors.append(f"invalid_observed_in_target:{edge.edge_id}")
-            if edge.edge_type in {MemoryGraphEdgeType.SUPERSEDES, MemoryGraphEdgeType.CONFLICTS_WITH, MemoryGraphEdgeType.CONTRADICTS}:
+            if edge.edge_type in {
+                MemoryGraphEdgeType.SUPERSEDES,
+                MemoryGraphEdgeType.CONFLICTS_WITH,
+                MemoryGraphEdgeType.CONTRADICTS,
+            }:
                 source = node_by_id.get(edge.source_node_id)
                 target = node_by_id.get(edge.target_node_id)
                 if source is not None and source.node_type != MemoryGraphNodeType.CLAIM:

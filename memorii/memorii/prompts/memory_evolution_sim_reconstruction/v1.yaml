@@ -1,0 +1,88 @@
+prompt_id: memory_evolution_sim_reconstruction
+version: v1
+task: Reconstruct a memory evolution checkpoint from visible observations.
+description: Benchmark-only graph reconstruction using surface evidence and visible candidate IDs.
+input_schema:
+  type: object
+  required: [context_json, query]
+  additionalProperties: false
+  properties:
+    context_json: {type: object}
+    query: {type: string}
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - operation
+    - belief_ranking_ids
+    - selected_entity_ids
+    - selected_claim_ids
+    - selected_relation_ids
+    - supporting_claim_ids
+    - supporting_relation_ids
+    - supporting_citation_event_ids
+    - rejected_entity_ids
+    - rejected_claim_ids
+    - rejected_relation_ids
+    - rejection_citation_event_ids
+    - context_entity_ids
+    - context_claim_ids
+    - context_relation_ids
+    - context_citation_event_ids
+    - answer
+    - next_action
+    - uncertain_ids
+    - confidence
+    - rationale
+  properties:
+    operation: {type: string, enum: [answer, next_action, graph_reconstruction, abstain]}
+    belief_ranking_ids: {type: array, items: {type: string}}
+    selected_entity_ids: {type: array, items: {type: string}}
+    selected_claim_ids: {type: array, items: {type: string}}
+    selected_relation_ids: {type: array, items: {type: string}}
+    supporting_claim_ids: {type: array, items: {type: string}}
+    supporting_relation_ids: {type: array, items: {type: string}}
+    supporting_citation_event_ids: {type: array, items: {type: string}}
+    rejected_entity_ids: {type: array, items: {type: string}}
+    rejected_claim_ids: {type: array, items: {type: string}}
+    rejected_relation_ids: {type: array, items: {type: string}}
+    rejection_citation_event_ids: {type: array, items: {type: string}}
+    context_entity_ids: {type: array, items: {type: string}}
+    context_claim_ids: {type: array, items: {type: string}}
+    context_relation_ids: {type: array, items: {type: string}}
+    context_citation_event_ids: {type: array, items: {type: string}}
+    answer: {type: [string, 'null']}
+    next_action: {type: [string, 'null']}
+    uncertain_ids: {type: array, items: {type: string}}
+    confidence: {type: number, minimum: 0.0, maximum: 1.0}
+    rationale: {type: string}
+system_template: |-
+  Reconstruct the memory state needed to answer the query using only the supplied surface observations and visible candidate cards.
+
+  Stable rules:
+  - Return only IDs from visible_entity_ids, visible_claim_ids, visible_relation_ids, or visible event IDs. Never invent IDs.
+  - Treat selected channels as the answer-bearing truth or active action state.
+  - Treat supporting channels as direct evidence for selected state. Every selected claim must also be supporting and must have its own direct evidence event in supporting_citation_event_ids.
+  - Treat rejected channels as evidence considered and ruled out. Treat context channels as useful audit evidence that does not directly support the answer.
+  - Never place stale, superseded, expired, invalidated, lower-trust, wrong-entity, wrong-role, hypothetical, quoted, pasted, or noisy claims in selected or supporting channels.
+  - Use lifecycle intervals, scope, source trust, modality, contradiction links, and observation order together. A later mention does not revive a stale fact merely by repeating it.
+  - For a current query, choose the trusted active fact. For a historical query, choose the fact valid during the requested interval. For a scoped query, do not use claims from another scope.
+  - Keep same-name entities separate using their candidate IDs, types, definitions, relation endpoints, and evidence. Do not infer identity from name similarity alone.
+  - For ownership and other relationship facts, selected_entity_ids contains the subject entity of selected claims. The object entity may be context unless it is independently selected by the query.
+  - When graph reconstruction requires a visible entity definition/type claim for a selected subject, select and support that definition with its direct citation.
+  - For conflict questions, conflict/correction relations may be supporting or context; a losing claim remains rejected or context, never answer support.
+  - For belief ranking, populate belief_ranking_ids best-to-worst, select only the winning belief, and contextualize or reject alternatives.
+  - For continuation questions, set operation=next_action. Select and support only the latest eligible active action-state branch and cite its progress/resume evidence. Blocked, abandoned, completed, failed, and superseded branches are rejected or context. Ownership facts alone are not execution state.
+  - If evidence does not uniquely determine the requested state, abstain or use uncertain_ids and lower confidence instead of guessing.
+  - Keep answer and next_action in the query language when practical. Structured IDs remain unchanged.
+
+  Before returning JSON, verify that selected/supporting do not overlap rejected, every selected claim has direct support, and all IDs are visible.
+  Return strict JSON only.
+user_template: "MemoryEvolutionSimReconstructionContext: {context_json}\nQueryOrTask: {query}\nReturn strict JSON matching schema."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1400, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+allowed_failure_modes: [temporal_confusion, source_trust_error, scope_leakage, role_confusion, belief_dependency_error, stale_branch_error, invalid_visible_id, rule_limit]
+tags: [memory_evolution_sim, benchmark, latent_graph]

@@ -21,7 +21,15 @@ class LLMStructuredRequest(BaseModel):
 class LLMStructuredResponse(BaseModel):
     request_id: str
     provider: str
-    model: str | None = None
+    requested_model: str | None = None
+    actual_model: str | None = None
+    provider_request_id: str | None = None
+    response_status: str | None = None
+    finish_reason: str | None = None
+    sdk_version: str | None = None
+    effective_settings: dict[str, object] = Field(default_factory=dict)
+    attempt_count: int | None = Field(default=None, ge=1)
+    sdk_max_retries: int = Field(default=0, ge=0)
     raw_text: str
     parsed_json: dict[str, object] | None = None
     valid_json: bool

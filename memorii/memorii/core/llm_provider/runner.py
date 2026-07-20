@@ -1,30 +1,23 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
+from jsonschema import Draft7Validator
+
 from memorii.core.llm_config import LLMRuntimeConfig
-from memorii.core.llm_provider.base import LLMStructuredClient
+from memorii.core.llm_provider.base import LLMProviderError, LLMStructuredClient
 from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_provider.parser import parse_structured_response
-from memorii.core.prompts.models import PromptContract
+from memorii.core.prompts.registry import RegisteredPromptContract
 from memorii.core.prompts.render import PromptRenderer
-
-_SECRET_METADATA_KEYS = {"api_key", "apikey", "token", "password", "secret", "authorization", "cookie"}
+from memorii.core.prompts.sensitivity import redact_sensitive_value
 
 
 def _sanitize_metadata(metadata: dict[str, object] | None) -> dict[str, object]:
-    def _redact(value: object) -> object:
-        if isinstance(value, dict):
-            cleaned: dict[str, object] = {}
-            for key, nested in value.items():
-                if key.lower() in _SECRET_METADATA_KEYS:
-                    cleaned[key] = "[REDACTED]"
-                else:
-                    cleaned[key] = _redact(nested)
-            return cleaned
-        if isinstance(value, list):
-            return [_redact(item) for item in value]
-        return value
-
-    return _redact(metadata or {})
+    redacted = redact_sensitive_value(metadata or {})
+    if not isinstance(redacted, dict):
+        raise TypeError("redacted metadata must remain a mapping")
+    return redacted
 
 
 class PromptLLMRunner:
@@ -42,11 +35,18 @@ class PromptLLMRunner:
     def run(
         self,
         *,
-        contract: PromptContract,
+        contract: RegisteredPromptContract,
         variables: dict[str, object],
         request_id: str,
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
+        input_errors = sorted(
+            Draft7Validator(contract.input_schema).iter_errors(cast(Any, variables)),
+            key=lambda error: list(error.absolute_path),
+        )
+        if input_errors:
+            details = "; ".join(error.message for error in input_errors[:3])
+            raise ValueError(f"prompt input failed schema validation: {details}")
         rendered = self._renderer.render(contract=contract, variables=variables)
         request_metadata = _sanitize_metadata(metadata)
         request_metadata.update(
@@ -69,10 +69,18 @@ class PromptLLMRunner:
         )
         try:
             raw_response = self._client.complete_structured(request, config=self._config)
-        except Exception as exc:
+        except LLMProviderError as exc:
             failed_response = LLMStructuredResponse(
                 request_id=request_id,
                 provider=self._client.provider_name,
+                requested_model=rendered.model_defaults.model or self._config.model,
+                effective_settings={
+                    "temperature": rendered.model_defaults.temperature,
+                    "max_output_tokens": rendered.model_defaults.max_tokens,
+                    "timeout_seconds": rendered.model_defaults.timeout_seconds or self._config.timeout_seconds,
+                },
+                attempt_count=1 if self._config.max_retries == 0 else None,
+                sdk_max_retries=self._config.max_retries,
                 raw_text="",
                 valid_json=False,
                 schema_valid=False,

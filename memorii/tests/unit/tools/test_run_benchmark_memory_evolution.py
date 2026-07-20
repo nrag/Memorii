@@ -5,10 +5,12 @@ from pathlib import Path
 
 import pytest
 from memorii.core.llm_config import LLMRuntimeConfig
+from memorii.core.llm_provider.base import LLMProviderError
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.tools.benchmark_suites.memory_evolution import memory_evolution_artifact_run_metadata
 from memorii.tools.run_benchmark import main
 from tests.unit.tools.run_benchmark_test_helpers import (
+    _application_with_fake_client,
     _clear_llm_env,
     _jsonl_count,
     _latest_run_dir,
@@ -165,11 +167,11 @@ def test_memory_evolution_hybrid_falls_back_to_rule_on_invalid_llm_output(
                 schema_valid=False,
             )
 
-    monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", InvalidFakeClient)
+    app = _application_with_fake_client(InvalidFakeClient)
     monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    assert main(
+    assert app.run(
         [
             "--suite",
             "memory_evolution_v1",
@@ -204,13 +206,13 @@ def test_memory_evolution_llm_provider_error_is_not_reported_as_llm_output(
             config: LLMRuntimeConfig,
         ) -> LLMStructuredResponse:
             del request, config
-            raise RuntimeError("synthetic provider failure")
+            raise LLMProviderError("synthetic provider failure")
 
-    monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", ProviderErrorFakeClient)
+    app = _application_with_fake_client(ProviderErrorFakeClient)
     monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    assert main(
+    assert app.run(
         [
             "--suite",
             "memory_evolution_v1",
@@ -231,6 +233,40 @@ def test_memory_evolution_llm_provider_error_is_not_reported_as_llm_output(
     assert all(row["fallback_used"] is True for row in rows)
     assert all(row["fallback_reason"] == "provider_error" for row in rows)
     assert all(row["final_output_source"] == "rule" for row in rows)
+
+
+def test_memory_evolution_llm_programming_error_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class BrokenClient:
+        provider_name = "broken-client"
+
+        def complete_structured(
+            self,
+            request: LLMStructuredRequest,
+            *,
+            config: LLMRuntimeConfig,
+        ) -> LLMStructuredResponse:
+            del request, config
+            raise RuntimeError("programming defect")
+
+    app = _application_with_fake_client(BrokenClient)
+    monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    with pytest.raises(RuntimeError, match="programming defect"):
+        app.run(
+            [
+                "--suite",
+                "memory_evolution_v1",
+                "--mode",
+                "llm",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+            ]
+        )
 
 
 def test_memory_evolution_benchmark_rejects_all_systems() -> None:

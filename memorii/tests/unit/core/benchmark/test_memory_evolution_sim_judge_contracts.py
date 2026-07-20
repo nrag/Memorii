@@ -41,6 +41,40 @@ def test_memory_evolution_sim_judges_pass_oracle_output_and_fail_rule_output() -
     assert rule_aggregate.critical_failure_buckets
 
 
+def test_scope_excluded_claim_must_be_hidden_but_never_selected() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="global_vs_task_scoped_preference",
+        seed=7,
+    )
+    checkpoint = checkpoint_by_type(scenario, "scoped_truth")
+    task_claim_id = checkpoint.expected_excluded_claim_ids[0]
+    output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
+        update={"rejected_claim_ids": [], "context_claim_ids": []}
+    )
+
+    aggregate = judge_sim_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        output=output,
+    )
+    leaked = output.model_copy(
+        update={
+            "selected_claim_ids": [*output.selected_claim_ids, task_claim_id],
+            "supporting_claim_ids": [*output.supporting_claim_ids, task_claim_id],
+        }
+    )
+    leaked_aggregate = judge_sim_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        output=leaked,
+    )
+
+    assert aggregate.verdict == JudgeVerdict.PASS
+    assert leaked_aggregate.verdict == JudgeVerdict.FAIL
+    assert "rejected_id_selected_as_truth" in leaked_aggregate.critical_failure_buckets
+
+
 def test_memory_evolution_sim_alias_answer_passes_when_entity_is_correct() -> None:
     scenario = generate_scenario_by_family(
         profile="smoke",
@@ -95,7 +129,6 @@ def test_memory_evolution_sim_missing_visible_relation_is_classified() -> None:
     checkpoint = checkpoint_by_type(scenario, "source_trust_conflict")
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
-            "relation_ids": [],
             "selected_relation_ids": [],
             "supporting_relation_ids": [],
             "rejected_relation_ids": [],
@@ -141,7 +174,6 @@ def test_memory_evolution_sim_current_truth_fails_when_stale_claim_is_selected()
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
             "selected_claim_ids": [*checkpoint.expected_claim_ids, *checkpoint.expected_excluded_claim_ids],
-            "claim_ids": [*checkpoint.expected_claim_ids, *checkpoint.expected_excluded_claim_ids],
         }
     )
 
@@ -443,9 +475,8 @@ def test_memory_evolution_sim_graph_reconstruction_uses_graph_entity_role_policy
 
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
 
-    assert context.metadata["checkpoint_contract"]["selected_entity_role_policy"] == "active_graph_subjects"
-    assert context.metadata["channel_policy"]["selected_entity_role_policy"] == "active_graph_subjects"
-    assert not any(key.startswith("expected_") for key in context.metadata["channel_policy"])
+    assert checkpoint.checkpoint_contract.selected_entity_role_policy == "active_graph_subjects"
+    assert "selected_entity_role_policy" not in context.model_dump_json()
     assert aggregate.verdict == JudgeVerdict.PASS
 
 
@@ -468,7 +499,8 @@ def test_memory_evolution_sim_graph_reconstruction_answer_is_optional_by_contrac
         aggregate=aggregate,
     )
 
-    assert context.metadata["checkpoint_contract"]["answer_required"] is False
+    assert checkpoint.checkpoint_contract.answer_required is False
+    assert "answer_required" not in context.model_dump_json()
     assert aggregate.verdict == JudgeVerdict.PASS
     assert diagnostics["answer_match_type"] == "optional_missing"
 

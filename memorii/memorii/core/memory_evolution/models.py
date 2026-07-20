@@ -115,6 +115,14 @@ class EntityLinkLifecycleState(StrEnum):
     INVALIDATED = "invalidated"
 
 
+class EntityIdentityDecisionType(StrEnum):
+    REUSE_EXISTING = "reuse_existing"
+    CREATE_DISTINCT = "create_distinct"
+    SPLIT_EXISTING = "split_existing"
+    MERGE_EXISTING = "merge_existing"
+    ABSTAIN = "abstain"
+
+
 class ValidationVerdict(StrEnum):
     PASS = "pass"
     WARN = "warn"
@@ -181,6 +189,69 @@ class SourceObservation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class MemoryScope(BaseModel):
+    """Server-owned visibility boundary for memory records and query catalogs."""
+
+    scope_key: str = "global"
+    task_id: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> MemoryScope:
+        if not self.scope_key.strip():
+            raise ValueError("scope_key must not be empty")
+        expected_scope_key = self.task_id or self.session_id or self.user_id or "global"
+        if self.scope_key != expected_scope_key:
+            raise ValueError("scope_key must identify the most-specific task, session, or user scope")
+        return self
+
+    @property
+    def is_global(self) -> bool:
+        return self.scope_key == "global"
+
+    @property
+    def specificity(self) -> int:
+        """Return the visibility level, from global to task-local."""
+
+        if self.task_id is not None:
+            return 3
+        if self.session_id is not None:
+            return 2
+        if self.user_id is not None:
+            return 1
+        return 0
+
+    def can_read(self, candidate: MemoryScope) -> bool:
+        if candidate.is_global:
+            return True
+        if self.is_global:
+            return False
+        if candidate.user_id is not None and self.user_id != candidate.user_id:
+            return False
+        if candidate.session_id is not None and self.session_id != candidate.session_id:
+            return False
+        return candidate.task_id is None or self.task_id == candidate.task_id
+
+    @property
+    def readable_scope_keys(self) -> frozenset[str]:
+        return frozenset(
+            value for value in ("global", self.user_id, self.session_id, self.task_id) if value is not None
+        )
+
+
+def memory_scope_from_observation(observation: SourceObservation) -> MemoryScope:
+    scope_key = observation.task_id or observation.session_id or observation.user_id or "global"
+    return MemoryScope(
+        scope_key=scope_key,
+        task_id=observation.task_id,
+        session_id=observation.session_id,
+        user_id=observation.user_id,
+    )
+
+
 class EvidenceSpan(BaseModel):
     source_id: str
     quote: str
@@ -215,9 +286,11 @@ class EntityMention(BaseModel):
     entity_id: str
     mention_text: str
     normalized_name: str
+    aliases: list[str] = Field(default_factory=list)
     entity_type: EntityType = EntityType.UNKNOWN
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
+    scope: MemoryScope = Field(default_factory=MemoryScope)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -231,6 +304,7 @@ class EntityLinkState(BaseModel):
     aliases: list[str] = Field(default_factory=list)
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
+    scope: MemoryScope = Field(default_factory=MemoryScope)
     lifecycle_state: EntityLinkLifecycleState = EntityLinkLifecycleState.ACTIVE
     superseded_by_entity_id: str | None = None
     lineage_parent_entity_id: str | None = None
@@ -384,6 +458,31 @@ class ClaimLifecycleTransition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EntityIdentityDecision(BaseModel):
+    decision_id: str
+    decision_type: EntityIdentityDecisionType
+    mention_entity_id: str
+    resolved_entity_id: str | None = None
+    candidate_entity_ids: list[str] = Field(default_factory=list)
+    parent_entity_id: str | None = None
+    evidence_source_ids: list[str] = Field(default_factory=list)
+    semantic_discriminators: list[str] = Field(default_factory=list)
+    scope: MemoryScope = Field(default_factory=MemoryScope)
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: str
+    failure_code: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class EntityResolutionOutcome(BaseModel):
+    decisions: list[EntityIdentityDecision] = Field(default_factory=list)
+    links: list[EntityLinkState] = Field(default_factory=list)
+    transitions: list[ClaimLifecycleTransition] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class MemoryGraphNode(BaseModel):
     node_id: str
     node_type: MemoryGraphNodeType
@@ -451,6 +550,7 @@ class MemoryEvolutionResult(BaseModel):
     actions: list[ExtractedAction] = Field(default_factory=list)
     observations: list[SourceObservation] = Field(default_factory=list)
     entity_links: list[EntityLinkState] = Field(default_factory=list)
+    entity_identity_decisions: list[EntityIdentityDecision] = Field(default_factory=list)
     contradiction_sets: list[ContradictionSet] = Field(default_factory=list)
     deferred_observation_ids: list[str] = Field(default_factory=list)
     skipped_observation_ids: list[str] = Field(default_factory=list)

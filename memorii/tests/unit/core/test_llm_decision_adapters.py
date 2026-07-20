@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 from memorii.core.belief.models import BeliefUpdateContext
@@ -24,10 +23,10 @@ from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
-from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
 from memorii.core.solver.abstention import SolverDecision
 
-PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
+PROMPT_ROOT = default_prompt_root()
 _PROMOTION_VALID = '{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "reason_code": "observation_not_promoted", "failure_mode": null, "requires_judge_review": false}'
 _BELIEF_VALID = '{"belief": 0.42, "confidence": 0.7, "rationale": "evidence", "failure_mode": null, "requires_judge_review": false}'
 _JUDGE_VALID = '{"passed": true, "score": 0.9, "rationale": "ok", "failure_mode": null, "needs_human_review": false}'
@@ -116,6 +115,24 @@ def test_belief_adapter_loads_prompt_and_returns_success() -> None:
     result = adapter.update(_belief_context(), request_id="req:belief:1")
     assert result.success is True
     assert result.request.prompt_ref == "belief_update:v1"
+
+
+def test_belief_adapter_accepts_first_observation_without_numeric_prior() -> None:
+    runner, client = _runner(_BELIEF_VALID)
+    adapter = LLMBeliefUpdateAdapter(runner=runner, registry=PromptRegistry(prompt_root=PROMPT_ROOT))
+
+    result = adapter.update(
+        BeliefUpdateContext(
+            prior_belief=None,
+            decision=SolverDecision.SUPPORTED,
+            evidence_count=1,
+        ),
+        request_id="req:belief:first-observation",
+    )
+
+    assert result.success is True
+    assert client.last_request is not None
+    assert "null" in client.last_request.user
 
 
 def test_belief_adapter_fails_schema_validation_for_invalid_output() -> None:

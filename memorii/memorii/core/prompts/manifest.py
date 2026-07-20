@@ -1,56 +1,15 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-_SECRET_KEYS = ["api_key", "token", "password", "secret", "authorization", "cookie"]
-_ORACLE_KEYS = [
-    "expected_answer",
-    "expected_checkpoint_active_record_ids",
-    "expected_checkpoint_retained_record_ids",
-    "expected_belief_ranking",
-    "expected_belief_scores",
-    "expected_citation_ids",
-    "expected_claim_ids",
-    "expected_entity_ids",
-    "expected_excluded_claim_ids",
-    "expected_excluded_entity_ids",
-    "expected_excluded_memory_ids",
-    "expected_excluded_relation_ids",
-    "expected_checkpoint_superseded_record_ids",
-    "expected_next_action",
-    "expected_retrieval_ids",
-    "expected_relation_ids",
-    "hidden_distractor_ids",
-    "hidden_graph_items",
-    "judge_votes",
-    "oracle_checkpoint",
-]
-_FORBIDDEN_SENTINELS = [
-    "SECRET_SHOULD_NOT_RENDER",
-    "HIDDEN_ID_SHOULD_NOT_RENDER",
-    "ORACLE_EXPECTED_SHOULD_NOT_RENDER",
-    "JUDGE_OUTPUT_SHOULD_NOT_RENDER",
-]
+from memorii.core.prompts.runtime_manifest import PromptOwner
+from memorii.core.prompts.sensitivity import ORACLE_INPUT_FIELDS, SECRET_KEYS
 
-
-class PromptOwner(StrEnum):
-    LLM_ANSWER_VERIFICATION_ADAPTER = "LLMAnswerVerificationAdapter"
-    LLM_BELIEF_UPDATE_ADAPTER = "LLMBeliefUpdateAdapter"
-    LLM_EVIDENCE_SELECTION_ADAPTER = "LLMEvidenceSelectionAdapter"
-    LLM_EXECUTION_GRAPH_DECISION_ADAPTER = "LLMExecutionGraphDecisionAdapter"
-    LLM_GROUNDED_ANSWER_ADAPTER = "LLMGroundedAnswerAdapter"
-    LLM_HOTPOTQA_ANSWER_ADAPTER = "LLMHotpotQAAnswerAdapter"
-    LLM_JUDGE_DECISION_ADAPTER = "LLMJudgeDecisionAdapter"
-    LLM_LIFECYCLE_DECISION_ADAPTER = "LLMLifecycleDecisionAdapter"
-    LLM_MEMORY_EVOLUTION_DECISION_ADAPTER = "LLMMemoryEvolutionDecisionAdapter"
-    LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER = "LLMMemoryEvolutionSimReconstructionAdapter"
-    LLM_MEMORY_EXTRACTOR = "LLMMemoryExtractor"
-    LLM_PROMOTION_DECISION_ADAPTER = "LLMPromotionDecisionAdapter"
-    LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER = "LLMRetrievalRelevanceDecisionAdapter"
+_SECRET_KEYS = sorted(SECRET_KEYS)
+_ORACLE_KEYS = sorted(ORACLE_INPUT_FIELDS)
 
 
 class PromptContractManifestEntry(BaseModel):
@@ -62,7 +21,6 @@ class PromptContractManifestEntry(BaseModel):
     fake_valid_output: dict[str, Any]
     fake_invalid_output: dict[str, Any] = Field(default_factory=lambda: {"unexpected_field": True})
     forbidden_live_prompt_keys: list[str] = Field(default_factory=list)
-    forbidden_live_prompt_fragments: list[str] = Field(default_factory=list)
     no_leakage_rules: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -74,7 +32,7 @@ class PromptContractManifestEntry(BaseModel):
             raise ValueError("field must be non-empty")
         return value
 
-    @field_validator("expected_input_variables", "forbidden_live_prompt_keys", "forbidden_live_prompt_fragments", "no_leakage_rules")
+    @field_validator("expected_input_variables", "forbidden_live_prompt_keys", "no_leakage_rules")
     @classmethod
     def _unique_strings(cls, values: list[str]) -> list[str]:
         if len(values) != len(set(values)):
@@ -115,10 +73,6 @@ def _base_forbidden_keys(*extra: str) -> list[str]:
     return [*_SECRET_KEYS, *_ORACLE_KEYS, *extra]
 
 
-def _base_forbidden_fragments() -> list[str]:
-    return list(_FORBIDDEN_SENTINELS)
-
-
 def _base_rules(*extra: str) -> list[str]:
     return [
         "Rendered prompts must not contain secrets, API keys, tokens, or credentials.",
@@ -150,7 +104,6 @@ def _judge_entry(prompt_ref: str, dimension: str) -> PromptContractManifestEntry
         output_schema_owner=f"{prompt_ref}.output_schema",
         fake_valid_output=_judge_output(),
         forbidden_live_prompt_keys=_base_forbidden_keys(),
-        forbidden_live_prompt_fragments=_base_forbidden_fragments(),
         no_leakage_rules=_base_rules(),
     )
 
@@ -191,14 +144,27 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules(),
         ),
         PromptContractManifestEntry(
             prompt_ref="belief_update:v1",
             owning_adapter=PromptOwner.LLM_BELIEF_UPDATE_ADAPTER,
-            expected_input_variables=["context_json", "prior_belief"],
-            representative_variables={"context_json": {"decision": "SUPPORTED", "evidence_count": 2}, "prior_belief": 0.4},
+            expected_input_variables=["context_json"],
+            representative_variables={
+                "context_json": {
+                    "prior_belief": None,
+                    "decision": "SUPPORTED",
+                    "evidence_count": 2,
+                    "missing_evidence_count": 0,
+                    "verifier_downgraded": False,
+                    "conflict_count": 0,
+                    "evidence_ids": ["evidence:1", "evidence:2"],
+                    "missing_evidence": [],
+                    "node_id": None,
+                    "solver_run_id": None,
+                    "metadata": {},
+                }
+            },
             output_schema_owner="belief_update:v1.output_schema",
             fake_valid_output={
                 "belief": 0.7,
@@ -208,7 +174,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules(),
         ),
         PromptContractManifestEntry(
@@ -248,7 +213,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules(),
         ),
         PromptContractManifestEntry(
@@ -274,7 +238,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules(),
         ),
         PromptContractManifestEntry(
@@ -330,7 +293,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules(),
         ),
         PromptContractManifestEntry(
@@ -349,7 +311,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "rationale": "The context states the capital.",
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules(),
         ),
         _judge_entry("judges/attribution:v1", "attribution"),
@@ -376,7 +337,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules(),
         ),
         PromptContractManifestEntry(
@@ -513,7 +473,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules("Benchmark prompt inputs must be sanitized before rendering."),
         ),
         PromptContractManifestEntry(
@@ -524,17 +483,13 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "context_json": {
                     "scenario_id": "scenario_1",
                     "visible_events": [{"event_id": "event_1", "text": "Atlas owner is Bob."}],
-                    "checkpoint": {"checkpoint_id": "cp_1", "checkpoint_type": "current_truth", "query_or_task": "Who owns Atlas?"},
+                    "checkpoint": {"checkpoint_id": "cp_1", "query_or_task": "Who owns Atlas?"},
                 },
                 "query": "Who owns Atlas?",
             },
             output_schema_owner="memory_evolution_sim_reconstruction:v1.output_schema",
             fake_valid_output={
                 "operation": "answer",
-                "entity_ids": ["ent_atlas"],
-                "claim_ids": ["claim_owner"],
-                "relation_ids": [],
-                "citation_event_ids": ["event_1"],
                 "belief_ranking_ids": [],
                 "selected_entity_ids": ["ent_atlas"],
                 "selected_claim_ids": ["claim_owner"],
@@ -557,7 +512,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "rationale": "Selected the visible current ownership claim.",
             },
             forbidden_live_prompt_keys=_base_forbidden_keys("excluded_ids"),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules("Latent graph oracle fields must never enter live reconstruction prompts."),
         ),
         PromptContractManifestEntry(
@@ -568,7 +522,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             output_schema_owner="memory_extraction:v1.output_schema",
             fake_valid_output={"entities": [], "claims": [], "actions": []},
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules("Extraction prompts must not receive benchmark oracle data."),
         ),
         PromptContractManifestEntry(
@@ -587,7 +540,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules(),
         ),
         PromptContractManifestEntry(
@@ -607,8 +559,49 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
-            forbidden_live_prompt_fragments=_base_forbidden_fragments(),
             no_leakage_rules=_base_rules(),
+        ),
+        PromptContractManifestEntry(
+            prompt_ref="structured_query_analysis:v1",
+            owning_adapter=PromptOwner.STRUCTURED_QUERY_ANALYSIS_PROVIDER,
+            expected_input_variables=["query", "context_json"],
+            representative_variables={
+                "query": "Who owns Atlas now?",
+                "context_json": {
+                    "language": "en",
+                    "reference_time": "2026-07-19T00:00:00Z",
+                    "scope_kind": "task",
+                    "entities": [
+                        {"entity_id": "entity_1", "names": ["Atlas"], "entity_type": "project"}
+                    ],
+                    "temporal_anchors": [],
+                    "predicates": [
+                        {
+                            "predicate_id": "owner",
+                            "description": "The owner of an entity.",
+                            "value_type": "text",
+                        }
+                    ],
+                    "graph_operators": ["equals", "in", "not_equals", "not_in"],
+                },
+            },
+            output_schema_owner="structured_query_analysis:v1.output_schema",
+            fake_valid_output={
+                "language": "en",
+                "temporal_intent": "current",
+                "temporal_expression": {"expression_kind": "current"},
+                "candidate_entity_ids": ["entity_1"],
+                "predicate_id": "owner",
+                "subject_entity_id": "entity_1",
+                "graph_patterns": [],
+                "entity_mentions": ["Atlas"],
+                "model_confidence": 0.9,
+                "abstention_reason": None,
+            },
+            forbidden_live_prompt_keys=_base_forbidden_keys(),
+            no_leakage_rules=_base_rules(
+                "The model receives catalog labels but never authoritative intervals, scope keys, or hidden entities."
+            ),
         ),
     ]
 )

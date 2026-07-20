@@ -37,7 +37,7 @@ def build_calibration_artifacts(
     *,
     suite: str,
     profile: str,
-    checkpoint_rows: list[dict[str, object]],
+    checkpoint_rows: Sequence[Mapping[str, object]],
 ) -> tuple[list[CalibrationEvent], CalibrationReport, list[dict[str, object]], DecisionCostReport]:
     events = calibration_events_from_checkpoint_rows(suite=suite, profile=profile, checkpoint_rows=checkpoint_rows)
     report = build_calibration_report(events, input_telemetry=_input_telemetry_from_checkpoint_rows(checkpoint_rows))
@@ -50,30 +50,87 @@ def calibration_events_from_checkpoint_rows(
     *,
     suite: str,
     profile: str,
-    checkpoint_rows: list[dict[str, object]],
+    checkpoint_rows: Sequence[Mapping[str, object]],
 ) -> list[CalibrationEvent]:
     events: list[CalibrationEvent] = []
     for index, row in enumerate(checkpoint_rows):
         output = _json_mapping(row.get("output"))
         expected = _json_mapping(row.get("expected"))
         aggregate = _json_mapping(row.get("judge_aggregate"))
-        judge_ids = [str(vote.get("judge_id")) for vote in _json_sequence(aggregate.get("votes")) if isinstance(vote, Mapping)]
+        judge_ids = [
+            str(vote.get("judge_id")) for vote in _json_sequence(aggregate.get("votes")) if isinstance(vote, Mapping)
+        ]
         base_failure_buckets = [str(bucket) for bucket in _json_sequence(row.get("failure_buckets"))]
         row_confidence = _float(output.get("confidence"), default=0.5) if isinstance(output, dict) else 0.5
         row_event_count = 0
         channel_specs = [
-            (CalibrationDecisionChannel.SELECTED, "selected_entity_ids", CalibrationItemType.ENTITY, "expected_entity_ids"),
-            (CalibrationDecisionChannel.SELECTED, "selected_claim_ids", CalibrationItemType.CLAIM, "expected_claim_ids"),
-            (CalibrationDecisionChannel.SELECTED, "selected_relation_ids", CalibrationItemType.RELATION, "expected_relation_ids"),
-            (CalibrationDecisionChannel.SUPPORTING, "supporting_claim_ids", CalibrationItemType.CLAIM, "expected_claim_ids"),
-            (CalibrationDecisionChannel.SUPPORTING, "supporting_relation_ids", CalibrationItemType.RELATION, "expected_relation_ids"),
-            (CalibrationDecisionChannel.SUPPORTING, "supporting_citation_event_ids", CalibrationItemType.SOURCE_OBSERVATION, "expected_citation_event_ids"),
-            (CalibrationDecisionChannel.REJECTED, "rejected_entity_ids", CalibrationItemType.ENTITY, "expected_entity_ids"),
-            (CalibrationDecisionChannel.REJECTED, "rejected_claim_ids", CalibrationItemType.CLAIM, "expected_claim_ids"),
-            (CalibrationDecisionChannel.REJECTED, "rejected_relation_ids", CalibrationItemType.RELATION, "expected_relation_ids"),
-            (CalibrationDecisionChannel.CONTEXT, "context_entity_ids", CalibrationItemType.ENTITY, "expected_entity_ids"),
+            (
+                CalibrationDecisionChannel.SELECTED,
+                "selected_entity_ids",
+                CalibrationItemType.ENTITY,
+                "expected_entity_ids",
+            ),
+            (
+                CalibrationDecisionChannel.SELECTED,
+                "selected_claim_ids",
+                CalibrationItemType.CLAIM,
+                "expected_claim_ids",
+            ),
+            (
+                CalibrationDecisionChannel.SELECTED,
+                "selected_relation_ids",
+                CalibrationItemType.RELATION,
+                "expected_relation_ids",
+            ),
+            (
+                CalibrationDecisionChannel.SUPPORTING,
+                "supporting_claim_ids",
+                CalibrationItemType.CLAIM,
+                "expected_claim_ids",
+            ),
+            (
+                CalibrationDecisionChannel.SUPPORTING,
+                "supporting_relation_ids",
+                CalibrationItemType.RELATION,
+                "expected_relation_ids",
+            ),
+            (
+                CalibrationDecisionChannel.SUPPORTING,
+                "supporting_citation_event_ids",
+                CalibrationItemType.SOURCE_OBSERVATION,
+                "expected_citation_event_ids",
+            ),
+            (
+                CalibrationDecisionChannel.REJECTED,
+                "rejected_entity_ids",
+                CalibrationItemType.ENTITY,
+                "expected_entity_ids",
+            ),
+            (
+                CalibrationDecisionChannel.REJECTED,
+                "rejected_claim_ids",
+                CalibrationItemType.CLAIM,
+                "expected_claim_ids",
+            ),
+            (
+                CalibrationDecisionChannel.REJECTED,
+                "rejected_relation_ids",
+                CalibrationItemType.RELATION,
+                "expected_relation_ids",
+            ),
+            (
+                CalibrationDecisionChannel.CONTEXT,
+                "context_entity_ids",
+                CalibrationItemType.ENTITY,
+                "expected_entity_ids",
+            ),
             (CalibrationDecisionChannel.CONTEXT, "context_claim_ids", CalibrationItemType.CLAIM, "expected_claim_ids"),
-            (CalibrationDecisionChannel.CONTEXT, "context_relation_ids", CalibrationItemType.RELATION, "expected_relation_ids"),
+            (
+                CalibrationDecisionChannel.CONTEXT,
+                "context_relation_ids",
+                CalibrationItemType.RELATION,
+                "expected_relation_ids",
+            ),
         ]
         for channel, output_key, item_type, expected_key in channel_specs:
             ids = _json_sequence(output.get(output_key))
@@ -142,7 +199,10 @@ def calibration_events_from_checkpoint_rows(
                             output_key=f"{output_key}:missing",
                         )
                     )
-        if base_failure_buckets and any(bucket in {"hidden_fact_hallucinated", "hidden_fact_answer_leak", "overconfident_wrong_answer"} for bucket in base_failure_buckets):
+        if base_failure_buckets and any(
+            bucket in {"hidden_fact_hallucinated", "hidden_fact_answer_leak", "overconfident_wrong_answer"}
+            for bucket in base_failure_buckets
+        ):
             events.append(
                 _calibration_event(
                     suite=suite,
@@ -163,7 +223,11 @@ def calibration_events_from_checkpoint_rows(
                 )
             )
         if row_event_count == 0:
-            events.append(_abstained_event(suite=suite, profile=profile, row=row, index=index, confidence=row_confidence, judge_ids=judge_ids))
+            events.append(
+                _abstained_event(
+                    suite=suite, profile=profile, row=row, index=index, confidence=row_confidence, judge_ids=judge_ids
+                )
+            )
     return events
 
 
@@ -173,15 +237,25 @@ def build_calibration_report(
     input_telemetry: dict[str, int] | None = None,
 ) -> CalibrationReport:
     labeled = labeled_events(events)
-    probability_labeled = [event for event in labeled if event.label in {CalibrationLabel.CORRECT, CalibrationLabel.INCORRECT}]
+    probability_labeled = [
+        event for event in labeled if event.label in {CalibrationLabel.CORRECT, CalibrationLabel.INCORRECT}
+    ]
     positives = sum(1 for event in probability_labeled if event.label == CalibrationLabel.CORRECT)
-    hidden_events = [event for event in events if "hidden_fact_hallucinated" in event.failure_buckets or "hidden_fact_answer_leak" in event.failure_buckets]
+    hidden_events = [
+        event
+        for event in events
+        if "hidden_fact_hallucinated" in event.failure_buckets or "hidden_fact_answer_leak" in event.failure_buckets
+    ]
     ambiguous_events = [event for event in events if "ambiguous_fact_overcommitted" in event.failure_buckets]
     response_counts = Counter(response_for_failure_buckets(event.failure_buckets).value for event in events)
     label_source_counts = Counter(source.value for event in events for source in event.label_sources)
     hierarchy_layer_counts = Counter(event.hierarchy_layer.value for event in events)
     slices = build_calibration_slices(events)
-    worst_slices = [item for item in slices if item.eligible_for_failure and item.response_level != CalibrationResponseLevel.REPORT_ONLY][:10]
+    worst_slices = [
+        item
+        for item in slices
+        if item.eligible_for_failure and item.response_level != CalibrationResponseLevel.REPORT_ONLY
+    ][:10]
     response_counts.update(item.response_level.value for item in worst_slices)
     cluster_accuracy = scenario_cluster_accuracy_interval(events)
     risk_coverage = risk_coverage_curve(events)
@@ -218,7 +292,9 @@ def build_calibration_report(
     )
 
 
-def _input_telemetry_from_checkpoint_rows(checkpoint_rows: list[dict[str, object]]) -> dict[str, int]:
+def _input_telemetry_from_checkpoint_rows(
+    checkpoint_rows: Sequence[Mapping[str, object]],
+) -> dict[str, int]:
     """Count observable inputs without treating them as model predictions.
 
     Candidate cards are context supplied to an extractor or decision stage.
@@ -238,7 +314,9 @@ def _input_telemetry_from_checkpoint_rows(checkpoint_rows: list[dict[str, object
     return dict(counts)
 
 
-def build_decision_cost_report(checkpoint_rows: list[dict[str, object]]) -> DecisionCostReport:
+def build_decision_cost_report(
+    checkpoint_rows: Sequence[Mapping[str, object]],
+) -> DecisionCostReport:
     by_bucket: Counter[str] = Counter()
     by_checkpoint: Counter[str] = Counter()
     by_modality: Counter[str] = Counter()
@@ -272,7 +350,7 @@ def _calibration_event(
     *,
     suite: str,
     profile: str,
-    row: dict[str, object],
+    row: Mapping[str, object],
     row_index: int,
     item_id: str,
     item_type: CalibrationItemType,
@@ -298,11 +376,17 @@ def _calibration_event(
     label_sources = [label_source]
     if item_failure_buckets and CalibrationLabelSource.PROGRAMMATIC_JUDGE not in label_sources:
         label_sources.append(CalibrationLabelSource.PROGRAMMATIC_JUDGE)
-    resolved_evidence_event_ids = evidence_event_ids if evidence_event_ids is not None else _evidence_event_ids(row, item_id)
-    resolved_evidence_phases = evidence_phases if evidence_phases is not None else _evidence_phases(
-        row,
-        item_id,
-        evidence_event_ids=resolved_evidence_event_ids,
+    resolved_evidence_event_ids = (
+        evidence_event_ids if evidence_event_ids is not None else _evidence_event_ids(row, item_id)
+    )
+    resolved_evidence_phases = (
+        evidence_phases
+        if evidence_phases is not None
+        else _evidence_phases(
+            row,
+            item_id,
+            evidence_event_ids=resolved_evidence_event_ids,
+        )
     )
     return CalibrationEvent(
         event_id=f"cal:{row.get('scenario_id')}:{row.get('checkpoint_id')}:{row_index}:{hierarchy_layer.value}:{decision_channel.value}:{output_key}:{item_id}",
@@ -372,32 +456,99 @@ def _label_for_item(
 ) -> tuple[CalibrationLabel, CalibrationLabelSource, str, list[str]]:
     if channel in {CalibrationDecisionChannel.SELECTED, CalibrationDecisionChannel.SUPPORTING}:
         if item_id in excluded_ids:
-            return CalibrationLabel.INCORRECT, CalibrationLabelSource.LATENT_ORACLE, "excluded item appeared in selected/supporting channel", [*base_failure_buckets, "stale_memory_selected"]
+            return (
+                CalibrationLabel.INCORRECT,
+                CalibrationLabelSource.LATENT_ORACLE,
+                "excluded item appeared in selected/supporting channel",
+                [*base_failure_buckets, "stale_memory_selected"],
+            )
         if expected_ids and item_id in expected_ids:
-            return CalibrationLabel.CORRECT, CalibrationLabelSource.LATENT_ORACLE, "item matched expected oracle id in answer-bearing channel", []
+            return (
+                CalibrationLabel.CORRECT,
+                CalibrationLabelSource.LATENT_ORACLE,
+                "item matched expected oracle id in answer-bearing channel",
+                [],
+            )
         if row_success and not base_failure_buckets:
-            return CalibrationLabel.CORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item was accepted as selected/supporting by programmatic judges", []
-        return CalibrationLabel.INCORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item did not match selected/supporting channel semantics", list(base_failure_buckets)
+            return (
+                CalibrationLabel.CORRECT,
+                CalibrationLabelSource.PROGRAMMATIC_JUDGE,
+                "item was accepted as selected/supporting by programmatic judges",
+                [],
+            )
+        return (
+            CalibrationLabel.INCORRECT,
+            CalibrationLabelSource.PROGRAMMATIC_JUDGE,
+            "item did not match selected/supporting channel semantics",
+            list(base_failure_buckets),
+        )
     if channel == CalibrationDecisionChannel.REJECTED:
         if item_id in excluded_ids:
-            return CalibrationLabel.CORRECT, CalibrationLabelSource.LATENT_ORACLE, "excluded item was correctly rejected", []
+            return (
+                CalibrationLabel.CORRECT,
+                CalibrationLabelSource.LATENT_ORACLE,
+                "excluded item was correctly rejected",
+                [],
+            )
         if expected_ids and item_id in expected_ids:
-            return CalibrationLabel.INCORRECT, CalibrationLabelSource.LATENT_ORACLE, "expected item was incorrectly rejected", [*base_failure_buckets, "expected_item_rejected"]
+            return (
+                CalibrationLabel.INCORRECT,
+                CalibrationLabelSource.LATENT_ORACLE,
+                "expected item was incorrectly rejected",
+                [*base_failure_buckets, "expected_item_rejected"],
+            )
         if row_success and not base_failure_buckets:
-            return CalibrationLabel.CORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item was accepted as rejected audit evidence by programmatic judges", []
-        return CalibrationLabel.INCORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item did not match rejected channel semantics", list(base_failure_buckets)
+            return (
+                CalibrationLabel.CORRECT,
+                CalibrationLabelSource.PROGRAMMATIC_JUDGE,
+                "item was accepted as rejected audit evidence by programmatic judges",
+                [],
+            )
+        return (
+            CalibrationLabel.INCORRECT,
+            CalibrationLabelSource.PROGRAMMATIC_JUDGE,
+            "item did not match rejected channel semantics",
+            list(base_failure_buckets),
+        )
     if channel == CalibrationDecisionChannel.CONTEXT:
         if row_success and not base_failure_buckets:
-            return CalibrationLabel.CORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "context item was accepted as audit evidence without being answer support", []
+            return (
+                CalibrationLabel.CORRECT,
+                CalibrationLabelSource.PROGRAMMATIC_JUDGE,
+                "context item was accepted as audit evidence without being answer support",
+                [],
+            )
         if item_id in excluded_ids:
-            return CalibrationLabel.PARTIAL, CalibrationLabelSource.LATENT_ORACLE, "excluded item appeared only as context during a failed checkpoint", list(base_failure_buckets)
-        return CalibrationLabel.INCORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "context item appeared in a failed checkpoint", list(base_failure_buckets)
+            return (
+                CalibrationLabel.PARTIAL,
+                CalibrationLabelSource.LATENT_ORACLE,
+                "excluded item appeared only as context during a failed checkpoint",
+                list(base_failure_buckets),
+            )
+        return (
+            CalibrationLabel.INCORRECT,
+            CalibrationLabelSource.PROGRAMMATIC_JUDGE,
+            "context item appeared in a failed checkpoint",
+            list(base_failure_buckets),
+        )
     if row_success and not base_failure_buckets:
-        return CalibrationLabel.CORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item was accepted by programmatic judges", []
-    return CalibrationLabel.INCORRECT, CalibrationLabelSource.PROGRAMMATIC_JUDGE, "item did not match channel semantics", list(base_failure_buckets)
+        return (
+            CalibrationLabel.CORRECT,
+            CalibrationLabelSource.PROGRAMMATIC_JUDGE,
+            "item was accepted by programmatic judges",
+            [],
+        )
+    return (
+        CalibrationLabel.INCORRECT,
+        CalibrationLabelSource.PROGRAMMATIC_JUDGE,
+        "item did not match channel semantics",
+        list(base_failure_buckets),
+    )
 
 
-def _abstained_event(*, suite: str, profile: str, row: dict[str, object], index: int, confidence: float, judge_ids: list[str]) -> CalibrationEvent:
+def _abstained_event(
+    *, suite: str, profile: str, row: Mapping[str, object], index: int, confidence: float, judge_ids: list[str]
+) -> CalibrationEvent:
     label = CalibrationLabel.CORRECT if row.get("success") is True else CalibrationLabel.INCORRECT
     return _calibration_event(
         suite=suite,
@@ -426,42 +577,42 @@ def _excluded_ids_for_item_type(expected: Mapping[str, object], item_type: Calib
     return []
 
 
-def _row_predicate_id(row: dict[str, object], item_id: str) -> str | None:
+def _row_predicate_id(row: Mapping[str, object], item_id: str) -> str | None:
     for claim in _visible_claims(row):
         if claim.get("claim_id") == item_id:
             return str(claim.get("predicate_id", "unknown"))
     return None
 
 
-def _row_source_modality(row: dict[str, object], item_id: str) -> str | None:
+def _row_source_modality(row: Mapping[str, object], item_id: str) -> str | None:
     for claim in _visible_claims(row):
         if claim.get("claim_id") == item_id:
             return str(claim.get("source_modality", "unknown"))
     return _first_modality(row)
 
 
-def _row_source_trust(row: dict[str, object], item_id: str) -> int | None:
+def _row_source_trust(row: Mapping[str, object], item_id: str) -> int | None:
     for claim in _visible_claims(row):
         if claim.get("claim_id") == item_id:
             return _int(claim.get("source_trust"))
     return None
 
 
-def _row_scope_key(row: dict[str, object], item_id: str) -> str | None:
+def _row_scope_key(row: Mapping[str, object], item_id: str) -> str | None:
     for claim in _visible_claims(row):
         if claim.get("claim_id") == item_id:
             return str(claim.get("scope_key", "unknown"))
     return None
 
 
-def _row_lifecycle_state(row: dict[str, object], item_id: str) -> str | None:
+def _row_lifecycle_state(row: Mapping[str, object], item_id: str) -> str | None:
     for claim in _visible_claims(row):
         if claim.get("claim_id") == item_id:
             return str(claim.get("lifecycle_state", "unknown"))
     return None
 
 
-def _evidence_event_ids(row: dict[str, object], item_id: str) -> list[str]:
+def _evidence_event_ids(row: Mapping[str, object], item_id: str) -> list[str]:
     if item_id in _visible_event_phase_map(row):
         return [item_id]
     for claim in _visible_claims(row):
@@ -473,7 +624,9 @@ def _evidence_event_ids(row: dict[str, object], item_id: str) -> list[str]:
     return []
 
 
-def _evidence_phases(row: dict[str, object], item_id: str, *, evidence_event_ids: list[str] | None = None) -> list[str]:
+def _evidence_phases(
+    row: Mapping[str, object], item_id: str, *, evidence_event_ids: list[str] | None = None
+) -> list[str]:
     phase_by_event = _visible_event_phase_map(row)
     event_ids = evidence_event_ids if evidence_event_ids is not None else _evidence_event_ids(row, item_id)
     phases = sorted({phase_by_event[event_id] for event_id in event_ids if event_id in phase_by_event})
@@ -488,7 +641,7 @@ def _phase_from_evidence(phases: list[str]) -> str | None:
     return "mixed"
 
 
-def _visible_event_phase_map(row: dict[str, object]) -> dict[str, str]:
+def _visible_event_phase_map(row: Mapping[str, object]) -> dict[str, str]:
     candidate_cards = _json_mapping(row.get("candidate_cards"))
     visible_events = _json_sequence(candidate_cards.get("visible_events"))
     phase_by_event: dict[str, str] = {}
@@ -498,17 +651,19 @@ def _visible_event_phase_map(row: dict[str, object]) -> dict[str, str]:
     return {event_id: phase for event_id, phase in phase_by_event.items() if event_id}
 
 
-def _visible_claims(row: dict[str, object]) -> list[dict[str, object]]:
+def _visible_claims(row: Mapping[str, object]) -> list[dict[str, object]]:
     candidate_cards = _json_mapping(row.get("candidate_cards"))
     return [dict(item) for item in _json_sequence(candidate_cards.get("visible_claims")) if isinstance(item, Mapping)]
 
 
-def _visible_relations(row: dict[str, object]) -> list[dict[str, object]]:
+def _visible_relations(row: Mapping[str, object]) -> list[dict[str, object]]:
     candidate_cards = _json_mapping(row.get("candidate_cards"))
-    return [dict(item) for item in _json_sequence(candidate_cards.get("visible_relations")) if isinstance(item, Mapping)]
+    return [
+        dict(item) for item in _json_sequence(candidate_cards.get("visible_relations")) if isinstance(item, Mapping)
+    ]
 
 
-def _first_modality(row: dict[str, object]) -> str:
+def _first_modality(row: Mapping[str, object]) -> str:
     claims = _visible_claims(row)
     if claims:
         return str(claims[0].get("source_modality", "unknown"))

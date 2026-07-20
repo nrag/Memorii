@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from contextlib import suppress
 from typing import Literal
 
-from memorii.core.benchmark.artifact_rows import RuntimeActionAlignmentRow, RuntimeExecutionStateSection
+from memorii.core.benchmark.artifact_rows import (
+    RuntimeActionAlignmentRow,
+    RuntimeExecutionStateSection,
+    RuntimeRelationSupportRow,
+)
 from memorii.core.benchmark.memory_evolution_runtime.alignment import _best_alignment_map, align_runtime_graph_to_oracle
 from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection import (
     _action_alignment_failure_reason,
@@ -14,7 +17,7 @@ from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection 
     _suppressed_action_state_claim_ids,
 )
 from memorii.core.benchmark.memory_evolution_runtime.graph_items import _title_from_normalized
-from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeProjection
+from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow, RuntimeProjection
 from memorii.core.benchmark.memory_evolution_runtime.utils import _claim_by_id, _ordered_unique, _relation_by_id
 from memorii.core.benchmark.memory_evolution_sim import (
     JudgeAggregate,
@@ -32,15 +35,24 @@ def project_runtime_checkpoint(
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
     graph_snapshot: MemoryGraphSnapshot,
-    graph_items: list[dict[str, object]],
+    graph_items: list[RuntimeGraphItemRow],
     source_id_to_event_id: dict[str, str],
     work_state: WorkStateSnapshot | None = None,
     retrieval_decision: ProductionRetrievalDecision | None = None,
 ) -> RuntimeProjection:
-    alignments = align_runtime_graph_to_oracle(scenario=scenario, graph_items=graph_items)
+    alignments = align_runtime_graph_to_oracle(
+        scenario=scenario,
+        graph_items=graph_items,
+    )
     entity_map = _best_alignment_map(alignments, item_type="entity")
-    runtime_claim_by_oracle = {alignment.oracle_item_id: alignment.runtime_item_id for alignment in alignments if alignment.item_type == "claim" and alignment.verdict == RuntimeGraphAlignmentVerdict.ALIGNED and alignment.oracle_item_id}
-    item_by_id = {str(item["runtime_item_id"]): item for item in graph_items}
+    runtime_claim_by_oracle = {
+        alignment.oracle_item_id: alignment.runtime_item_id
+        for alignment in alignments
+        if alignment.item_type == "claim"
+        and alignment.verdict == RuntimeGraphAlignmentVerdict.ALIGNED
+        and alignment.oracle_item_id
+    }
+    item_by_id = {item.runtime_item_id: item for item in graph_items}
 
     action_alignment_rows = _expected_action_alignment_rows(
         scenario=scenario,
@@ -59,16 +71,16 @@ def project_runtime_checkpoint(
     selected_runtime_decision_ids = {
         value
         for item in [*selected_runtime_claims, *selected_runtime_actions]
-        for value in (str(item.get("action_id", "")), str(item.get("runtime_item_id", "")))
+        for value in (item.action_id, item.runtime_item_id)
         if value
     }
     selected_action_alignment_rows = [
         row
         for row in action_alignment_rows
-        if row.get("verdict") == "aligned"
+        if row.verdict == "aligned"
         and (
-            str(row.get("runtime_action_id", "")) in selected_runtime_decision_ids
-            or str(row.get("runtime_item_id", "")) in selected_runtime_decision_ids
+            row.runtime_action_id in selected_runtime_decision_ids
+            or row.runtime_item_id in selected_runtime_decision_ids
         )
     ]
     selected_claim_ids = _oracle_ids_for_runtime_items(
@@ -98,8 +110,7 @@ def project_runtime_checkpoint(
     )
     relation_support = {relation_id: "runtime_relation_item" for relation_id in selected_relation_ids}
     expected_action_support = {
-        str(row["expected_action_id"]): str(row["support_mode"])
-        for row in selected_action_alignment_rows
+        row.expected_action_id: row.support_mode for row in selected_action_alignment_rows
     }
     execution_state = _production_execution_state(retrieval_decision)
     for claim_id in selected_claim_ids:
@@ -107,7 +118,9 @@ def project_runtime_checkpoint(
         if claim and claim.subject.entity_id not in selected_entity_ids:
             selected_entity_ids.append(claim.subject.entity_id)
     supporting_claim_ids = list(selected_claim_ids)
-    supporting_relation_ids = list(selected_relation_ids) if checkpoint.checkpoint_type != "source_trust_conflict" else []
+    supporting_relation_ids = (
+        list(selected_relation_ids) if checkpoint.checkpoint_type != "source_trust_conflict" else []
+    )
     context_relation_ids = list(selected_relation_ids) if checkpoint.checkpoint_type == "source_trust_conflict" else []
     supporting_citation_event_ids = _supporting_events_for_claims(
         claim_ids=supporting_claim_ids,
@@ -129,9 +142,9 @@ def project_runtime_checkpoint(
     rejected_claim_items = [
         item
         for item in graph_items
-        if item.get("item_type") == "claim"
-        and str(item.get("claim_id", "")) in set(retrieval_decision.rejected_record_ids if retrieval_decision else [])
-        and str(item.get("claim_id", "")) not in set(selected_claim_ids)
+        if item.item_type == "claim"
+        and item.claim_id in set(retrieval_decision.rejected_record_ids if retrieval_decision else [])
+        and item.claim_id not in set(selected_claim_ids)
     ]
     rejected_claim_ids = _oracle_ids_for_runtime_items(
         runtime_items=rejected_claim_items,
@@ -155,9 +168,7 @@ def project_runtime_checkpoint(
             scenario=scenario,
         )
     )
-    rejected_entity_ids = [
-        entity_id for entity_id in rejected_entity_ids if entity_id not in set(selected_entity_ids)
-    ]
+    rejected_entity_ids = [entity_id for entity_id in rejected_entity_ids if entity_id not in set(selected_entity_ids)]
     for claim_id in rejected_claim_ids:
         claim = _claim_by_id(scenario, claim_id)
         if (
@@ -179,12 +190,16 @@ def project_runtime_checkpoint(
     )
     next_action = _next_action_from_runtime_state(execution_state) if operation == "next_action" else None
     belief_ranking_ids = list(selected_claim_ids) if checkpoint.checkpoint_type == "belief_ranking" else []
-    confidence = _mean_runtime_confidence(selected_claim_ids=selected_claim_ids, runtime_claim_by_oracle=runtime_claim_by_oracle, item_by_id=item_by_id)
+    confidence = _mean_runtime_confidence(
+        selected_claim_ids=selected_claim_ids, runtime_claim_by_oracle=runtime_claim_by_oracle, item_by_id=item_by_id
+    )
     output = SimSystemOutput(
         operation=operation,
         selected_entity_ids=_ordered_unique(selected_entity_ids),
         selected_claim_ids=_ordered_unique(selected_claim_ids),
-        selected_relation_ids=_ordered_unique(selected_relation_ids if checkpoint.checkpoint_type != "source_trust_conflict" else []),
+        selected_relation_ids=_ordered_unique(
+            selected_relation_ids if checkpoint.checkpoint_type != "source_trust_conflict" else []
+        ),
         supporting_claim_ids=_ordered_unique(supporting_claim_ids),
         supporting_relation_ids=_ordered_unique(supporting_relation_ids),
         supporting_citation_event_ids=_ordered_unique(supporting_citation_event_ids),
@@ -210,11 +225,8 @@ def project_runtime_checkpoint(
         source_id_to_event_id=source_id_to_event_id,
         relation_support=relation_support,
         action_support=expected_action_support,
-        action_alignment_rows=[
-            RuntimeActionAlignmentRow.from_runtime_alignment(row)
-            for row in action_alignment_rows
-        ],
-        execution_state=RuntimeExecutionStateSection.model_validate(execution_state),
+        action_alignment_rows=action_alignment_rows,
+        execution_state=execution_state,
         work_state=work_state,
         retrieval_decision=retrieval_decision,
     )
@@ -223,122 +235,128 @@ def project_runtime_checkpoint(
 def _runtime_claims_for_decision(
     *,
     decision: ProductionRetrievalDecision | None,
-    graph_items: list[dict[str, object]],
-) -> list[dict[str, object]]:
+    graph_items: list[RuntimeGraphItemRow],
+) -> list[RuntimeGraphItemRow]:
     if decision is None:
         return []
     selected_ids = set(decision.selected_record_ids)
     return [
         item
         for item in graph_items
-        if item.get("item_type") == "claim" and str(item.get("claim_id", "")) in selected_ids
+        if item.item_type == "claim" and item.claim_id in selected_ids
     ]
 
 
 def _runtime_actions_for_decision(
     *,
     decision: ProductionRetrievalDecision | None,
-    graph_items: list[dict[str, object]],
-) -> list[dict[str, object]]:
+    graph_items: list[RuntimeGraphItemRow],
+) -> list[RuntimeGraphItemRow]:
     if decision is None:
         return []
     selected_ids = set(decision.selected_record_ids)
     return [
         item
         for item in graph_items
-        if item.get("item_type") == "action"
+        if item.item_type == "action"
         and (
-            str(item.get("action_id", "")) in selected_ids
-            or str(item.get("action_id", "")).removeprefix("action:") in selected_ids
-            or str(item.get("runtime_item_id", "")) in selected_ids
+            item.action_id in selected_ids
+            or item.action_id.removeprefix("action:") in selected_ids
+            or item.runtime_item_id in selected_ids
         )
     ]
 
 
 def _oracle_claim_ids_for_selected_actions(
     *,
-    selected_runtime_actions: list[dict[str, object]],
-    action_alignment_rows: list[dict[str, object]],
+    selected_runtime_actions: list[RuntimeGraphItemRow],
+    action_alignment_rows: list[RuntimeActionAlignmentRow],
 ) -> list[str]:
     selected_runtime_ids = {
         value
         for item in selected_runtime_actions
-        for value in (str(item.get("action_id", "")), str(item.get("runtime_item_id", "")))
+        for value in (item.action_id, item.runtime_item_id)
         if value
     }
     claim_ids: list[str] = []
     for row in action_alignment_rows:
-        if row.get("verdict") != "aligned":
+        if row.verdict != "aligned":
             continue
-        if str(row.get("runtime_action_id", "")) not in selected_runtime_ids and str(row.get("runtime_item_id", "")) not in selected_runtime_ids:
+        if (
+            row.runtime_action_id not in selected_runtime_ids
+            and row.runtime_item_id not in selected_runtime_ids
+        ):
             continue
-        action_id = str(row.get("expected_action_id", ""))
+        action_id = row.expected_action_id
         if action_id.startswith("action:"):
             claim_ids.append(action_id.removeprefix("action:"))
     return _ordered_unique(claim_ids)
 
 
-def _production_execution_state(decision: ProductionRetrievalDecision | None) -> dict[str, object]:
+def _production_execution_state(
+    decision: ProductionRetrievalDecision | None,
+) -> RuntimeExecutionStateSection:
     if decision is None:
-        return {
-            "status": "unavailable",
-            "reason": "production_retrieval_decision_required",
-            "active_continuation_branch": None,
-            "suppressed_branch_ids": [],
-            "ambiguous_action_count": 0,
-        }
-    if decision.execution_state is None:
-        state: dict[str, object] = {}
-        continuation: Mapping[str, object] = {}
-        work_state: Mapping[str, object] = {}
-    else:
-        continuation = decision.execution_state.continuation.model_dump(mode="json")
-        work_state = decision.execution_state.work_state.model_dump(mode="json")
-        state = {
-            "states": work_state.get("states", []),
-            "active_branch_ids": work_state.get("active_branch_ids", []),
-            "suppressed_branch_ids": work_state.get("suppressed_branch_ids", []),
-            "ambiguous_branch_ids": work_state.get("ambiguous_branch_ids", []),
-            "continuation_decision": continuation,
-            "production_work_state": work_state,
-        }
-        state["active_continuation_branch"] = continuation.get("branch_id")
-        candidate_ids = continuation.get("candidate_branch_ids", [])
-        state["ambiguous_action_count"] = (
-            len(candidate_ids)
-            if continuation.get("status") == "ambiguous" and isinstance(candidate_ids, Sequence)
-            else 0
+        return RuntimeExecutionStateSection(
+            status="unavailable",
+            reason="production_retrieval_decision_required",
         )
-    state.setdefault("active_continuation_branch", None)
-    state.setdefault("suppressed_branch_ids", [])
-    state.setdefault("ambiguous_action_count", 0)
-    state["decision_status"] = decision.resolution_status
-    state["decision_abstained"] = decision.abstained
-    return state
+    if decision.execution_state is None:
+        return RuntimeExecutionStateSection(
+            decision_status=decision.resolution_status,
+            decision_abstained=decision.abstained,
+        )
+    execution_state = decision.execution_state
+    work_state = execution_state.work_state
+    continuation = execution_state.continuation
+    return RuntimeExecutionStateSection(
+        active_continuation_branch=continuation.branch_id,
+        suppressed_branch_ids=list(work_state.suppressed_branch_ids),
+        ambiguous_action_count=(
+            len(continuation.candidate_branch_ids) if continuation.status == "ambiguous" else 0
+        ),
+        decision_status=decision.resolution_status,
+        decision_abstained=decision.abstained,
+        active_branch_ids=list(work_state.active_branch_ids),
+        states=list(work_state.states),
+        ambiguous_branch_ids=list(work_state.ambiguous_branch_ids),
+        continuation_decision=continuation,
+        production_work_state=work_state,
+    )
 
 
 def _runtime_relations_for_claims(
     *,
-    graph_items: list[dict[str, object]],
-    selected_runtime_claims: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    selected_runtime_ids = {str(item.get("runtime_item_id", "")) for item in selected_runtime_claims}
-    selected_claim_ids = {str(item.get("claim_id", "")) for item in selected_runtime_claims}
+    graph_items: list[RuntimeGraphItemRow],
+    selected_runtime_claims: list[RuntimeGraphItemRow],
+) -> list[RuntimeGraphItemRow]:
+    selected_runtime_ids = {item.runtime_item_id for item in selected_runtime_claims}
+    selected_claim_ids = {item.claim_id for item in selected_runtime_claims}
+    selected_entity_ids = {
+        entity_id
+        for item in selected_runtime_claims
+        for entity_id in (item.subject_entity_id, item.object_entity_id)
+        if entity_id
+    }
     return [
         item
         for item in graph_items
-        if item.get("item_type") == "relation"
+        if item.item_type == "relation"
         and (
-            str(item.get("source", "")) in selected_runtime_ids
-            or str(item.get("target", "")) in selected_runtime_ids
-            or str(item.get("source", "")) in selected_claim_ids
-            or str(item.get("target", "")) in selected_claim_ids
+            item.source in selected_runtime_ids
+            or item.target in selected_runtime_ids
+            or item.source in selected_claim_ids
+            or item.target in selected_claim_ids
+            or item.source in selected_entity_ids
+            or item.target in selected_entity_ids
         )
     ]
 
 
-def _oracle_ids_for_runtime_items(*, runtime_items: list[dict[str, object]], alignments: Sequence[object], item_type: str) -> list[str]:
-    runtime_ids = {str(item.get("runtime_item_id", "")) for item in runtime_items}
+def _oracle_ids_for_runtime_items(
+    *, runtime_items: list[RuntimeGraphItemRow], alignments: Sequence[object], item_type: str
+) -> list[str]:
+    runtime_ids = {item.runtime_item_id for item in runtime_items}
     return _ordered_unique(
         [
             str(getattr(alignment, "oracle_item_id", ""))
@@ -353,52 +371,50 @@ def _oracle_ids_for_runtime_items(*, runtime_items: list[dict[str, object]], ali
 
 def _oracle_ids_for_runtime_claim_ids(*, claim_ids: Sequence[str], alignments: Sequence[object]) -> list[str]:
     wanted = set(str(claim_id) for claim_id in claim_ids)
-    return _ordered_unique([
-        str(getattr(alignment, "oracle_item_id", ""))
-        for alignment in alignments
-        if getattr(alignment, "item_type", "") == "claim"
-        and getattr(alignment, "verdict", None) == RuntimeGraphAlignmentVerdict.ALIGNED
-        and str(getattr(alignment, "oracle_item_id", "")) in wanted
-    ])
-
-
-def _oracle_subject_ids_for_oracle_claim_ids(*, claim_ids: Sequence[str], scenario: LatentGraphScenario) -> list[str]:
-    wanted = set(claim_ids)
-    return _ordered_unique([
-        claim.subject.entity_id
-        for claim in scenario.claims
-        if claim.claim_id in wanted
-    ])
-
-
-def _oracle_subject_ids_for_runtime_claims(*, runtime_items: list[dict[str, object]], alignments: Sequence[object], scenario: LatentGraphScenario) -> list[str]:
-    oracle_claim_ids = _oracle_ids_for_runtime_items(runtime_items=runtime_items, alignments=alignments, item_type="claim")
     return _ordered_unique(
         [
-            claim.subject.entity_id
-            for claim in scenario.claims
-            if claim.claim_id in oracle_claim_ids
+            str(getattr(alignment, "oracle_item_id", ""))
+            for alignment in alignments
+            if getattr(alignment, "item_type", "") == "claim"
+            and getattr(alignment, "verdict", None) == RuntimeGraphAlignmentVerdict.ALIGNED
+            and str(getattr(alignment, "oracle_item_id", "")) in wanted
         ]
     )
 
 
+def _oracle_subject_ids_for_oracle_claim_ids(*, claim_ids: Sequence[str], scenario: LatentGraphScenario) -> list[str]:
+    wanted = set(claim_ids)
+    return _ordered_unique([claim.subject.entity_id for claim in scenario.claims if claim.claim_id in wanted])
+
+
+def _oracle_subject_ids_for_runtime_claims(
+    *, runtime_items: list[RuntimeGraphItemRow], alignments: Sequence[object], scenario: LatentGraphScenario
+) -> list[str]:
+    oracle_claim_ids = _oracle_ids_for_runtime_items(
+        runtime_items=runtime_items, alignments=alignments, item_type="claim"
+    )
+    return _ordered_unique([claim.subject.entity_id for claim in scenario.claims if claim.claim_id in oracle_claim_ids])
+
+
 def _runtime_action_evidence_events(
     *,
-    action_alignment_rows: list[dict[str, object]],
-    item_by_id: Mapping[str, dict[str, object]],
+    action_alignment_rows: list[RuntimeActionAlignmentRow],
+    item_by_id: Mapping[str, RuntimeGraphItemRow],
 ) -> list[str]:
     events: list[str] = []
     for row in action_alignment_rows:
-        if row.get("verdict") != "aligned":
+        if row.verdict != "aligned":
             continue
-        item = item_by_id.get(str(row.get("runtime_item_id", "")))
+        item = item_by_id.get(row.runtime_item_id)
         if item is None:
             continue
-        events.extend(str(value) for value in _sequence(item.get("evidence_event_ids")))
+        events.extend(item.evidence_event_ids)
     return _ordered_unique(events)
 
 
-def _operation_for_checkpoint(*, checkpoint: OracleCheckpoint, has_selection: bool) -> Literal["answer", "next_action", "graph_reconstruction", "abstain"]:
+def _operation_for_checkpoint(
+    *, checkpoint: OracleCheckpoint, has_selection: bool
+) -> Literal["answer", "next_action", "graph_reconstruction", "abstain"]:
     if not has_selection:
         return "abstain"
     if checkpoint.checkpoint_type == "execution_continuation":
@@ -408,8 +424,8 @@ def _operation_for_checkpoint(*, checkpoint: OracleCheckpoint, has_selection: bo
     return "answer"
 
 
-def _next_action_from_runtime_state(execution_state: Mapping[str, object]) -> str | None:
-    branch = str(execution_state.get("active_continuation_branch", "")).strip()
+def _next_action_from_runtime_state(execution_state: RuntimeExecutionStateSection) -> str | None:
+    branch = (execution_state.active_continuation_branch or "").strip()
     return f"Continue {branch}" if branch else None
 
 
@@ -417,9 +433,9 @@ def _sequence(value: object) -> Sequence[object]:
     return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
 
 
-def _runtime_relation_support_rows(projection: RuntimeProjection) -> list[dict[str, str]]:
+def _runtime_relation_support_rows(projection: RuntimeProjection) -> list[RuntimeRelationSupportRow]:
     return [
-        {"relation_id": relation_id, "support_mode": support_mode}
+        RuntimeRelationSupportRow(relation_id=relation_id, support_mode=support_mode)
         for relation_id, support_mode in sorted(projection.relation_support.items())
     ]
 
@@ -465,10 +481,18 @@ def runtime_failure_buckets(
     missing_entities = [entity_id for entity_id in expected_entity_ids if entity_id not in output.selected_entity_ids]
     if missing_entities:
         buckets.append("runtime_missing_expected_entity")
-    missing_relations = [relation_id for relation_id in checkpoint.expected_relation_ids if relation_id not in output.selected_relation_ids and relation_id not in output.context_relation_ids and relation_id not in output.supporting_relation_ids]
+    missing_relations = [
+        relation_id
+        for relation_id in checkpoint.expected_relation_ids
+        if relation_id not in output.selected_relation_ids
+        and relation_id not in output.context_relation_ids
+        and relation_id not in output.supporting_relation_ids
+    ]
     if missing_relations:
         buckets.append("runtime_missing_expected_relation")
-    missing_actions = [action_id for action_id in checkpoint.expected_action_ids if action_id not in projection.action_support]
+    missing_actions = [
+        action_id for action_id in checkpoint.expected_action_ids if action_id not in projection.action_support
+    ]
     if missing_actions:
         buckets.append("runtime_missing_expected_action")
         reason = _action_alignment_failure_reason(projection.action_alignment_rows)
@@ -509,6 +533,7 @@ def runtime_failure_buckets(
         buckets.append("calibration_drift")
     return sorted(set(buckets))
 
+
 def _expected_relation_support_modes(
     *,
     scenario: LatentGraphScenario,
@@ -524,12 +549,13 @@ def _expected_relation_support_modes(
             support[relation_id] = "claim_derived"
     return support
 
+
 def _runtime_answer_for_checkpoint(
     *,
     checkpoint: OracleCheckpoint,
     selected_claim_ids: list[str],
     runtime_claim_by_oracle: Mapping[str, str | None],
-    item_by_id: Mapping[str, Mapping[str, object]],
+    item_by_id: Mapping[str, RuntimeGraphItemRow],
 ) -> str | None:
     if checkpoint.expected_abstention:
         return None
@@ -540,36 +566,39 @@ def _runtime_answer_for_checkpoint(
     runtime_id = runtime_claim_by_oracle.get(selected_claim_ids[0])
     if runtime_id is None:
         return None
-    item = item_by_id.get(runtime_id, {})
+    item = item_by_id.get(runtime_id)
+    if item is None:
+        return None
     if checkpoint.answer_projection_policy == "claim_subject":
-        return _title_from_normalized(str(item.get("subject") or "")) or None
-    return str(item.get("object_value") or item.get("object") or "") or None
+        return _title_from_normalized(item.subject) or None
+    return item.object_value or item.object or None
+
 
 def _mean_runtime_confidence(
     *,
     selected_claim_ids: list[str],
     runtime_claim_by_oracle: Mapping[str, str | None],
-    item_by_id: Mapping[str, Mapping[str, object]],
+    item_by_id: Mapping[str, RuntimeGraphItemRow],
 ) -> float:
     values = []
     for claim_id in selected_claim_ids:
         runtime_id = runtime_claim_by_oracle.get(claim_id)
         if runtime_id is None:
             continue
-        raw_confidence = item_by_id.get(runtime_id, {}).get("confidence", 0.5)
-        if not isinstance(raw_confidence, (int, float, str)):
+        item = item_by_id.get(runtime_id)
+        if item is None:
             continue
-        with suppress(TypeError, ValueError):
-            values.append(float(raw_confidence))
+        values.append(item.confidence)
     if not values:
         return 0.35
     return max(0.0, min(1.0, sum(values) / len(values)))
+
 
 def _supporting_events_for_claims(
     *,
     claim_ids: list[str],
     runtime_claim_by_oracle: Mapping[str, str | None],
-    item_by_id: Mapping[str, Mapping[str, object]],
+    item_by_id: Mapping[str, RuntimeGraphItemRow],
     expected_event_ids: list[str],
 ) -> list[str]:
     events: list[str] = []
@@ -577,13 +606,14 @@ def _supporting_events_for_claims(
         runtime_id = runtime_claim_by_oracle.get(claim_id)
         if runtime_id is None:
             continue
-        item = item_by_id.get(runtime_id, {})
-        evidence_value = item.get("evidence_event_ids", [])
-        evidence_items: Sequence[object] = evidence_value if isinstance(evidence_value, Sequence) and not isinstance(evidence_value, str) else ()
-        evidence = [str(event_id) for event_id in evidence_items if event_id]
+        item = item_by_id.get(runtime_id)
+        if item is None:
+            continue
+        evidence = list(item.evidence_event_ids)
         preferred = [event_id for event_id in evidence if event_id in expected_event_ids]
         events.extend(preferred or evidence)
     return _ordered_unique(events)
+
 
 def _claim_exposed_but_runtime_suppressed(scenario: LatentGraphScenario, claim_id: str) -> bool:
     claim = _claim_by_id(scenario, claim_id)
@@ -592,15 +622,26 @@ def _claim_exposed_but_runtime_suppressed(scenario: LatentGraphScenario, claim_i
     for observation in scenario.observations:
         if claim_id not in observation.exposed_claim_ids:
             continue
-        if observation.modality in {"quoted_or_pasted", "hypothetical", "third_party_claim", "noise", "question", "instruction"} or observation.trust_level <= 1:
+        if (
+            observation.modality
+            in {"quoted_or_pasted", "hypothetical", "third_party_claim", "noise", "question", "instruction"}
+            or observation.trust_level <= 1
+        ):
             return True
     return False
 
-def _relation_supported_by_claims(scenario: LatentGraphScenario, relation_id: str, runtime_claim_by_oracle: Mapping[str, str | None]) -> bool:
+
+def _relation_supported_by_claims(
+    scenario: LatentGraphScenario, relation_id: str, runtime_claim_by_oracle: Mapping[str, str | None]
+) -> bool:
     relation = _relation_by_id(scenario, relation_id)
     if relation is None:
         return False
-    claim_endpoints = [endpoint for endpoint in [relation.source.endpoint_id, relation.target.endpoint_id] if endpoint.startswith("claim_")]
+    claim_endpoints = [
+        endpoint
+        for endpoint in [relation.source.endpoint_id, relation.target.endpoint_id]
+        if endpoint.startswith("claim_")
+    ]
     if not claim_endpoints:
         return False
     return all(

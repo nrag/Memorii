@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
-from memorii.core.memory_evolution import QueryAnalysis
 from memorii.core.provider.models import ProviderSyncResult, ProviderWriteDecision
 
 
@@ -18,7 +17,6 @@ class MemoryProviderInterface(Protocol):
         task_id: str | None = None,
         user_id: str | None = None,
         query_language: str = "en",
-        query_analysis: QueryAnalysis | None = None,
         reference_time: datetime | None = None,
     ) -> str: ...
 

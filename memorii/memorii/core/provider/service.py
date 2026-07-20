@@ -18,8 +18,8 @@ from memorii.core.memory_evolution import (
     MemoryEvolutionService,
     MemoryExtractor,
     MemoryQueryRequest,
+    MemoryScope,
     ProductionRetrievalDecision,
-    QueryAnalysis,
     QueryAnalyzer,
     QueryTemporalKind,
     RetrievalView,
@@ -29,7 +29,7 @@ from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.next_step import NextStepEngine, NextStepRequest
 from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
-from memorii.core.promotion.provider import PromotionDecisionProvider
+from memorii.core.promotion.provider import PromotionDecisionProvider, PromotionDecisionProviderError
 from memorii.core.provider.classifier import build_event_id, make_event
 from memorii.core.provider.models import (
     ProviderEvent,
@@ -220,7 +220,6 @@ class ProviderMemoryService:
         user_id: str | None = None,
         top_k: int = 6,
         query_language: str = "en",
-        query_analysis: QueryAnalysis | None = None,
         reference_time: datetime | None = None,
     ) -> str:
         memory_context = self._memory_plane.prefetch_provider_context(
@@ -237,7 +236,6 @@ class ProviderMemoryService:
             user_id=user_id,
             top_k=top_k,
             query_language=query_language,
-            query_analysis=query_analysis,
             reference_time=reference_time or self._now_provider(),
         )
         if self._memory_evolution_service is not None:
@@ -293,25 +291,24 @@ class ProviderMemoryService:
         user_id: str | None,
         top_k: int,
         query_language: str,
-        query_analysis: QueryAnalysis | None,
         reference_time: datetime,
     ) -> tuple[str, ProductionRetrievalDecision | None]:
         """Render only the production evolution decision into provider context."""
 
-        decision = self.retrieve_evolution_decision(
-            MemoryQueryRequest(
-                query=query,
-                query_language=query_language,
-                query_analysis=query_analysis,
-                reference_time=reference_time,
-                scope_key=task_id,
+        request = MemoryQueryRequest(
+            query=query,
+            query_language=query_language,
+            reference_time=reference_time,
+            scope=MemoryScope(
+                scope_key=task_id or session_id or user_id or "global",
                 task_id=task_id,
                 session_id=session_id,
                 user_id=user_id,
-                top_k=top_k,
-                include_context=False,
-            )
+            ),
+            top_k=top_k,
+            include_context=False,
         )
+        decision = self.retrieve_evolution_decision(request)
         if decision is None:
             return "", None
         if decision.abstained or not decision.selected_record_ids:
@@ -1226,7 +1223,7 @@ class ProviderMemoryService:
                 "memory_candidate_id": memory_id,
                 **promotion_result,
             }
-        except Exception as exc:  # pragma: no cover - covered via injected failure tests
+        except OSError as exc:  # pragma: no cover - covered via injected failure tests
             return {
                 "memory_candidate_created": False,
                 "memory_candidate_error": str(exc),
@@ -1278,7 +1275,7 @@ class ProviderMemoryService:
                 "promotion_decision": promotion_decision_payload,
                 "promotion_decision_error": None,
             }
-        except Exception as exc:
+        except PromotionDecisionProviderError as exc:
             candidate_record.content["promotion_decision_error"] = str(exc)
             return {
                 "promotion_decision_applied": False,

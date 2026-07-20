@@ -16,6 +16,7 @@ from memorii.core.benchmark.lifecycle_decision import (
     lifecycle_trace_for_rule,
     rule_lifecycle_decision_for_fixture,
 )
+from memorii.core.benchmark.llm_adapters import LLMLifecycleDecisionAdapter
 from memorii.core.benchmark.metrics import compute_metrics
 from memorii.core.benchmark.models import (
     BenchmarkRunReport,
@@ -25,11 +26,7 @@ from memorii.core.benchmark.models import (
 )
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import DecisionModeName, LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
-from memorii.core.llm_decision.adapters import (
-    LLMBeliefUpdateAdapter,
-    LLMLifecycleDecisionAdapter,
-    LLMPromotionDecisionAdapter,
-)
+from memorii.core.llm_decision.adapters import LLMBeliefUpdateAdapter, LLMPromotionDecisionAdapter
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_eval.engine_result import DecisionEngineResult
 from memorii.core.llm_eval.runner import BeliefUpdateEngine, PromotionDecisionEngine
@@ -311,14 +308,14 @@ def run_lifecycle_transitions(
             live_config=live_config,
         )
 
-    client = dependencies.eval_fake_client_cls() if dry_run else dependencies.llm_client_factory.from_config(runtime_config)
-    runner = PromptLLMRunner(client=client, config=runtime_config)
+    llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
+    runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
     registry = PromptRegistry(prompt_root=prompt_root)
     promotion_adapter = LLMPromotionDecisionAdapter(runner=runner, registry=registry)
     belief_adapter = LLMBeliefUpdateAdapter(runner=runner, registry=registry)
     lifecycle_adapter = (
         _ExpectedLifecycleFakeAdapter(fixtures=fixtures, registry=registry)
-        if dry_run and dependencies.is_default_fake_client()
+        if dependencies.use_oracle_adapters(dry_run=dry_run)
         else LLMLifecycleDecisionAdapter(runner=runner, registry=registry)
     )
     promotion_engine = PromotionDecisionEngine(
@@ -399,7 +396,9 @@ def run_lifecycle_transitions(
                 "llm_call_made": engine_result.llm_used,
                 "fallback_used": engine_result.fallback_used,
                 "fallback_reason": fallback_reason,
-                "final_output_source": "rule" if engine_result.fallback_used else "llm",
+                "final_output_source": (
+                    "rule" if engine_result.fallback_used else llm_binding.final_output_source
+                ),
                 "request_id": request_id,
                 "success": transition_success,
                 "failure_mode": fallback_reason,

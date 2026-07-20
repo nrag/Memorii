@@ -20,6 +20,7 @@ from memorii.core.benchmark.execution_graph_decision import (
     rule_execution_graph_decision_for_scenario,
 )
 from memorii.core.benchmark.fixture_sets.execution_graph_v1 import load_execution_graph_v1_fixture_set
+from memorii.core.benchmark.llm_adapters import LLMExecutionGraphDecisionAdapter
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import build_run_id
 from memorii.core.env_config import load_memorii_environment
@@ -29,7 +30,6 @@ from memorii.core.llm_config import (
     LLMLiveTestConfig,
     LLMRuntimeConfig,
 )
-from memorii.core.llm_decision.adapters import LLMExecutionGraphDecisionAdapter
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
@@ -86,12 +86,13 @@ def _run_execution_graph_transitions(
 
     registry = PromptRegistry(prompt_root=prompt_root)
     adapter = None
+    llm_binding = None
     if effective_mode in {"llm", "hybrid"}:
-        client = dependencies.eval_fake_client_cls() if dry_run else dependencies.llm_client_factory.from_config(runtime_config)
-        runner = PromptLLMRunner(client=client, config=runtime_config)
+        llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
+        runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
         adapter = (
             _ExpectedExecutionGraphFakeAdapter(scenarios=scenarios, registry=registry)
-            if dry_run and dependencies.is_default_fake_client()
+            if dependencies.use_oracle_adapters(dry_run=dry_run)
             else LLMExecutionGraphDecisionAdapter(runner=runner, registry=registry)
         )
 
@@ -132,10 +133,12 @@ def _run_execution_graph_transitions(
                 mode=LLMDecisionMode(effective_mode),
                 rule_output=rule_output,
             )
-            if effective_mode == "llm" and not llm_success:
-                final_output_source = "llm"
+            if llm_success:
+                if llm_binding is None:
+                    raise RuntimeError("LLM result is missing execution provenance")
+                final_output_source = llm_binding.final_output_source
             else:
-                final_output_source = "rule" if not llm_success else "llm"
+                final_output_source = "rule"
             llm_rows.append(
                 {
                     "scenario_id": scenario.scenario_id,

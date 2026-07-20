@@ -101,15 +101,14 @@ def test_memory_evolution_sim_entity_split_context_marks_sibling_claims_as_conte
         claim
         for claim in context.visible_claims
         if claim.subject_entity_id == service_owner_card.subject_entity_id
-        and claim.is_definition_claim
+        and claim.predicate_id == "entity_type"
     )
 
-    assert context.metadata["channel_policy"]["query_focus_policy"]["sibling_entity_rule"]
-    assert not any(key.startswith("expected_") for key in context.metadata["channel_policy"])
+    assert "metadata" not in context.model_dump(mode="json")
     assert service_owner_card.subject_entity_type == "service"
     assert service_owner_card.object_entity_type == "person"
-    assert service_owner_card.support_channel_hint == "direct_answer_candidate"
-    assert service_type_card.support_channel_hint == "definition_candidate"
+    assert service_owner_card.predicate_id == "owner"
+    assert service_type_card.predicate_id == "entity_type"
 
 
 def test_memory_evolution_sim_entity_split_requires_wrong_entity_subject_rejection() -> None:
@@ -228,7 +227,6 @@ def test_memory_evolution_sim_claim_rekey_requires_defining_claim() -> None:
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
             "selected_claim_ids": checkpoint.expected_claim_ids[1:],
-            "claim_ids": checkpoint.expected_claim_ids[1:],
         }
     )
 
@@ -284,8 +282,9 @@ def test_memory_evolution_sim_claim_rekey_passes_with_defining_claim_and_current
 
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
 
-    assert context.metadata["checkpoint_contract"]["allowed_operations"] == ["graph_reconstruction"]
-    assert context.metadata["checkpoint_contract"]["selected_entity_role_policy"] == "active_graph_subjects"
+    assert checkpoint.checkpoint_contract.allowed_operations == ["graph_reconstruction"]
+    assert checkpoint.checkpoint_contract.selected_entity_role_policy == "active_graph_subjects"
+    assert "allowed_operations" not in context.model_dump_json()
     assert output.operation == "graph_reconstruction"
     assert aggregate.verdict == JudgeVerdict.PASS
 

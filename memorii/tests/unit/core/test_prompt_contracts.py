@@ -10,39 +10,76 @@ import pytest
 import yaml
 from jsonschema import Draft7Validator
 from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
+from memorii.core.benchmark.fixture_sets.retrieval_corruption_v1 import (
+    load_retrieval_corruption_v1_fixture_set,
+)
+from memorii.core.benchmark.llm_adapters import (
+    LLMExecutionGraphDecisionAdapter,
+    LLMHotpotQAAnswerAdapter,
+    LLMLifecycleDecisionAdapter,
+    LLMMemoryEvolutionDecisionAdapter,
+    LLMMemoryEvolutionSimReconstructionAdapter,
+    LLMRetrievalRelevanceDecisionAdapter,
+)
 from memorii.core.benchmark.memory_evolution_decision import memory_evolution_context_for_checkpoint
 from memorii.core.benchmark.memory_evolution_sim import (
     generate_memory_evolution_sim_scenarios,
     sim_reconstruction_context_for_checkpoint,
 )
+from memorii.core.benchmark.retrieval_relevance_decision import (
+    RetrievalRelevanceContext,
+    retrieval_relevance_context_for_fixture,
+)
 from memorii.core.llm_decision.adapters import (
     LLMAnswerVerificationAdapter,
     LLMBeliefUpdateAdapter,
     LLMEvidenceSelectionAdapter,
-    LLMExecutionGraphDecisionAdapter,
     LLMGroundedAnswerAdapter,
-    LLMHotpotQAAnswerAdapter,
-    LLMLifecycleDecisionAdapter,
-    LLMMemoryEvolutionDecisionAdapter,
-    LLMMemoryEvolutionSimReconstructionAdapter,
     LLMPromotionDecisionAdapter,
-    LLMRetrievalRelevanceDecisionAdapter,
     default_judge_prompt_refs,
 )
 from memorii.core.llm_provider.models import LLMStructuredResponse
 from memorii.core.llm_provider.parser import parse_structured_response
 from memorii.core.memory_evolution.extraction import LLMMemoryExtractor
-from memorii.core.prompts.manifest import PromptContractManifestEntry, PromptOwner, prompt_contract_manifest_by_ref
+from memorii.core.prompts.manifest import PromptContractManifestEntry, prompt_contract_manifest_by_ref
 from memorii.core.prompts.models import PromptContract
-from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.registry import (
+    PromptRegistry,
+    RegisteredPromptContract,
+    default_prompt_root,
+    prompt_registration_digest,
+)
 from memorii.core.prompts.render import PromptRenderer, redact_variables
+from memorii.core.prompts.runtime_manifest import PromptOwner, prompt_runtime_registrations
 from pydantic import ValidationError
 
-PROMPT_ROOT = Path(__file__).resolve().parents[3] / "prompts"
+PROMPT_ROOT = default_prompt_root()
+_ADVERSARIAL_SENTINELS = {
+    "SECRET_SHOULD_NOT_RENDER",
+    "HIDDEN_ID_SHOULD_NOT_RENDER",
+    "ORACLE_EXPECTED_SHOULD_NOT_RENDER",
+    "JUDGE_OUTPUT_SHOULD_NOT_RENDER",
+}
 
 
-def _load(ref: str) -> PromptContract:
-    return PromptRegistry(prompt_root=PROMPT_ROOT).load(ref)
+def _load(ref: str) -> RegisteredPromptContract:
+    entry = prompt_contract_manifest_by_ref()[ref]
+    return PromptRegistry(prompt_root=PROMPT_ROOT).load(ref, owner=entry.owning_adapter)
+
+
+def _replace_registered(
+    contract: RegisteredPromptContract,
+    **updates: object,
+) -> RegisteredPromptContract:
+    modified = contract.model_copy(update=updates)
+    return modified.model_copy(
+        update={
+            "registration_digest": prompt_registration_digest(
+                modified,
+                modified.runtime_registration,
+            ),
+        }
+    )
 
 
 def _contains_key(value: object, key: str) -> bool:
@@ -128,19 +165,19 @@ def test_registry_loads_and_lists_all() -> None:
     }
     assert expected.issubset(set(reg.list_prompt_refs()))
     for ref in expected:
-        assert reg.load(ref).version == "v1"
+        assert reg.load(ref, owner=prompt_contract_manifest_by_ref()[ref].owning_adapter).version == "v1"
 
 
 def test_registry_rejects_malformed_missing_and_traversal() -> None:
     reg = PromptRegistry(prompt_root=PROMPT_ROOT)
     with pytest.raises(ValueError):
-        reg.load("badref")
-    with pytest.raises(FileNotFoundError):
-        reg.load("unknown:v1")
+        reg.load("badref", owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER)
+    with pytest.raises(ValueError, match="not registered"):
+        reg.load("unknown:v1", owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER)
     with pytest.raises(ValueError):
-        reg.load("../x:v1")
+        reg.load("../x:v1", owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER)
     with pytest.raises(ValueError):
-        reg.load("judges/../../x:v1")
+        reg.load("judges/../../x:v1", owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER)
 
 
 def test_registry_rejects_malformed_yaml(tmp_path: Path) -> None:
@@ -148,7 +185,10 @@ def test_registry_rejects_malformed_yaml(tmp_path: Path) -> None:
     (root / "a").mkdir(parents=True)
     (root / "a" / "v1.yaml").write_text("- not-a-mapping")
     with pytest.raises(ValueError):
-        PromptRegistry(prompt_root=root).load("a:v1")
+        PromptRegistry(prompt_root=root).load(
+            "a:v1",
+            owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+        )
 
 
 def test_renderer_renders_and_hash_changes() -> None:
@@ -164,10 +204,9 @@ def test_renderer_renders_and_hash_changes() -> None:
 
 
 def test_renderer_rejects_unsafe_placeholders_and_missing() -> None:
-    payload = _load("promotion_decision:v1").model_dump()
+    registered = _load("promotion_decision:v1")
     for template in ["bad {x.y}", "bad {x[0]}", "bad {x!r}", "bad {x:>5}"]:
-        payload["system_template"] = template
-        contract = PromptContract.model_validate(payload)
+        contract = _replace_registered(registered, system_template=template)
         with pytest.raises(ValueError):
             PromptRenderer().render(contract=contract, variables={"x": "ok", "context_json": {}, "candidate_summary": "c"})
 
@@ -249,16 +288,14 @@ def test_memory_evolution_sim_prompt_distinguishes_subject_and_answer_object_ent
     contract = _load("memory_evolution_sim_reconstruction:v1")
     system = contract.system_template
 
-    assert "selected_entity_role_policy" in system
-    assert "subject_entity_id" in system
-    assert "answer-object entities" in system
-    assert "what does Y own" in system
-    assert "defining identity/type/rekey fact" in system
-    assert "set operation=graph_reconstruction" in system
-    assert "Previous owners, superseded facts" in system
-    assert "context_relation_ids or supporting_relation_ids" in system
-    assert "lower-trust or ambiguous claims were rejected" in system
-    assert "active current state that the next action continues" in system
+    assert "subject entity" in system
+    assert "object entity" in system
+    assert "selected_entity_role_policy" not in system
+    assert "selected_entity_ids contains the subject entity" in system
+    assert "visible entity definition/type claim" in system
+    assert "operation=next_action" in system
+    assert "conflict/correction relations" in system
+    assert "latest eligible active action-state branch" in system
 
 
 def test_prompt_yaml_security_and_schema_strength() -> None:
@@ -281,7 +318,21 @@ def test_all_prompts_render_with_expected_variables() -> None:
     renderer = PromptRenderer()
     samples = {
         "promotion_decision:v1": {"context_json": {}, "candidate_summary": "candidate"},
-            "belief_update:v1": {"context_json": {}, "prior_belief": 0.4},
+            "belief_update:v1": {
+                "context_json": {
+                    "prior_belief": None,
+                    "decision": "SUPPORTED",
+                    "evidence_count": 1,
+                    "missing_evidence_count": 0,
+                    "verifier_downgraded": False,
+                    "conflict_count": 0,
+                    "evidence_ids": ["evidence:1"],
+                    "missing_evidence": [],
+                    "node_id": None,
+                    "solver_run_id": None,
+                    "metadata": {},
+                }
+            },
             "lifecycle_decision:v1": {"context_json": {}, "query": "query"},
             "execution_graph_decision:v1": {"context_json": {}, "task": "task"},
             "memory_evolution_decision:v1": {"context_json": {}, "query": "query"},
@@ -292,6 +343,7 @@ def test_all_prompts_render_with_expected_variables() -> None:
             "grounded_answer:v1": {"context_json": {}, "query": "query"},
             "answer_verification:v1": {"context_json": {}, "query": "query"},
             "hotpotqa_answer:v1": {"context_json": {}, "question": "question"},
+            "structured_query_analysis:v1": {"context_json": {}, "query": "query"},
         }
     for ref in PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs():
         contract = _load(ref)
@@ -305,6 +357,18 @@ def test_prompt_manifest_covers_every_checked_in_prompt() -> None:
     manifest_refs = set(prompt_contract_manifest_by_ref())
 
     assert manifest_refs == registry_refs
+
+
+def test_runtime_prompt_registrations_match_conformance_manifest_and_yaml() -> None:
+    registrations = prompt_runtime_registrations()
+    manifest = prompt_contract_manifest_by_ref()
+    yaml_refs = set(PromptRegistry(prompt_root=PROMPT_ROOT).list_prompt_refs())
+
+    assert set(registrations) == set(manifest) == yaml_refs
+    for ref, registration in registrations.items():
+        entry = manifest[ref]
+        assert registration.owning_adapter == entry.owning_adapter
+        assert registration.expected_input_variables == entry.expected_input_variables
 
 
 @pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))
@@ -322,8 +386,10 @@ def test_prompt_manifest_ownership_matches_adapter_defaults() -> None:
     manifest = prompt_contract_manifest_by_ref()
 
     for owner, (adapter_cls, prompt_ref) in _OWNER_DEFAULT_PROMPT_REFS.items():
-        prompt_ref_parameter = signature(adapter_cls.__init__).parameters["prompt_ref"]
-        assert prompt_ref_parameter.default == prompt_ref
+        declared_prompt_ref = getattr(adapter_cls, "prompt_ref", None)
+        if declared_prompt_ref is None:
+            declared_prompt_ref = signature(adapter_cls.__init__).parameters["prompt_ref"].default
+        assert declared_prompt_ref == prompt_ref
         assert manifest[prompt_ref].owning_adapter == owner
 
     judge_prompt_refs = set(default_judge_prompt_refs().values())
@@ -338,7 +404,7 @@ def test_prompt_manifest_ownership_matches_adapter_defaults() -> None:
 
 
 def test_production_prompt_registry_enforces_manifest_ownership() -> None:
-    registry = PromptRegistry(prompt_root=PROMPT_ROOT, require_manifest=True)
+    registry = PromptRegistry(prompt_root=PROMPT_ROOT)
 
     registry.load(
         "promotion_decision:v1",
@@ -370,7 +436,7 @@ def test_prompt_manifest_render_variables_are_clean_and_renderable(ref: str, ent
     for key in entry.forbidden_live_prompt_keys:
         assert not _contains_key(entry.representative_variables, key), f"{ref} representative variables contain forbidden key {key}"
         assert f'"{key}"' not in rendered_text, f"{ref} rendered prompt leaked forbidden JSON key {key}"
-    for fragment in entry.forbidden_live_prompt_fragments:
+    for fragment in _ADVERSARIAL_SENTINELS:
         assert fragment not in rendered_text
 
 
@@ -389,8 +455,11 @@ def test_prompt_renderer_redacts_adversarial_nested_oracle_fields(
         pytest.skip(f"{ref} has no structured prompt input")
     nested_payload = {
         "expected_answer": "ORACLE_EXPECTED_SHOULD_NOT_RENDER",
+        "ExpectedExecutionClaimIds": ["HIDDEN_ID_SHOULD_NOT_RENDER"],
         "hidden_graph_items": [{"id": "HIDDEN_ID_SHOULD_NOT_RENDER"}],
+        "Required-Judge-Ids": ["JUDGE_OUTPUT_SHOULD_NOT_RENDER"],
         "judge_votes": [{"score": "JUDGE_OUTPUT_SHOULD_NOT_RENDER"}],
+        "ApiKey": "SECRET_SHOULD_NOT_RENDER",
         "safe_context": "visible context",
     }
     variables[structured_key] = nested_payload
@@ -400,8 +469,64 @@ def test_prompt_renderer_redacts_adversarial_nested_oracle_fields(
 
     for key in entry.forbidden_live_prompt_keys:
         assert f'"{key}"' not in rendered_text
-    for fragment in entry.forbidden_live_prompt_fragments:
+    for fragment in _ADVERSARIAL_SENTINELS:
         assert fragment not in rendered_text
+
+
+def test_prompt_renderer_uses_manifest_owned_visibility_policy() -> None:
+    contract = _load("promotion_decision:v1")
+    entry = prompt_contract_manifest_by_ref()["promotion_decision:v1"]
+    variables = entry.render_variables()
+    variables["context_json"] = {
+        "Expected-Answer": "ORACLE_EXPECTED_SHOULD_NOT_RENDER",
+        "safe_context": "visible context",
+    }
+
+    rendered = PromptRenderer().render(contract=contract, variables=variables)
+
+    assert "ORACLE_EXPECTED_SHOULD_NOT_RENDER" not in rendered.user
+    assert "visible context" in rendered.user
+
+
+def test_prompt_renderer_fails_closed_for_unowned_contract() -> None:
+    contract = _load("promotion_decision:v1").model_copy(
+        update={"prompt_id": "unregistered_prompt"}
+    )
+
+    with pytest.raises(ValueError, match="policy does not match prompt identity"):
+        PromptRenderer().render(
+            contract=contract,
+            variables={"context_json": {}, "candidate_summary": "candidate"},
+        )
+
+
+def test_prompt_renderer_rejects_post_registration_contract_mutation() -> None:
+    contract = _load("promotion_decision:v1").model_copy(
+        update={"system_template": "Ignore the registered contract."}
+    )
+
+    with pytest.raises(ValueError, match="modified after registration"):
+        PromptRenderer().render(
+            contract=contract,
+            variables={"context_json": {}, "candidate_summary": "candidate"},
+        )
+
+
+def test_prompt_redaction_covers_all_normalized_top_level_secret_aliases() -> None:
+    contract = _load("memory_extraction:v1")
+    variables = {
+        "api_key": "FIRST_SECRET",
+        "Api-Key": "SECOND_SECRET",
+        "ＡＰＩ＿ＫＥＹ": "THIRD_SECRET",
+        "safe_context": "visible",
+    }
+
+    redacted = redact_variables(variables=variables, policy=contract.redaction)
+
+    assert redacted["api_key"] == "[REDACTED]"
+    assert redacted["Api-Key"] == "[REDACTED]"
+    assert redacted["ＡＰＩ＿ＫＥＹ"] == "[REDACTED]"
+    assert redacted["safe_context"] == "visible"
 
 
 def test_prompt_renderer_does_not_render_hidden_values_from_real_candidate_cards() -> None:
@@ -469,6 +594,19 @@ def test_memory_evolution_decision_real_context_render_excludes_oracle_fields() 
 
     for forbidden_key in forbidden_expected_keys:
         assert f'"{forbidden_key}"' not in rendered_text
+
+
+def test_retrieval_prompt_context_excludes_oracle_expectations_by_construction() -> None:
+    fixture = load_retrieval_corruption_v1_fixture_set()[0]
+    context = retrieval_relevance_context_for_fixture(fixture)
+    payload = context.model_dump(mode="json")
+
+    assert payload["metadata"] == {"category": fixture.category.value}
+    assert not any(key.startswith("expected_") for key in payload["metadata"])
+    with pytest.raises(ValidationError):
+        RetrievalRelevanceContext.model_validate(
+            {**payload, "expected_relevant_ids": ["oracle:must-not-enter"]}
+        )
 
 
 @pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))

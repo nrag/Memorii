@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,11 +12,15 @@ from memorii.core.benchmark.artifact_rows import (
     ArtifactJsonObject,
     BenchmarkReportSummary,
     RuntimeCheckpointResultRow,
+    RuntimeExtractorOutput,
+    RuntimeExtractorTracePayload,
+    RuntimeExtractorTraceRow,
     RuntimeGraphAlignmentRow,
     RuntimeGraphSummary,
     RuntimeProviderHealth,
     SimCheckpointResultRow,
 )
+from memorii.core.benchmark.artifact_validation import ArtifactValidationError, write_typed_jsonl
 from memorii.core.benchmark.memory_evolution_runtime import (
     RuntimeSuiteRows,
     runtime_alignment_summary,
@@ -31,9 +36,9 @@ from memorii.core.benchmark.memory_evolution_sim import (
     expected_sim_output_for_checkpoint,
     generate_memory_evolution_sim_scenarios,
     judge_sim_checkpoint,
-    normalize_sim_system_output_for_checkpoint,
     sim_reconstruction_context_for_checkpoint,
 )
+from memorii.core.calibration.alignment import RuntimeGraphAlignment, RuntimeGraphAlignmentVerdict
 from memorii.tools.run_benchmark import main
 from pydantic import ValidationError
 
@@ -47,8 +52,13 @@ def _runtime_graph_summary_payload() -> dict[str, object]:
         "relation_item_count": 0,
         "action_item_count": 0,
         "graph_edge_count": 4,
-        "graph_edge_counts_by_type": {"observed_in": 1},
-        "runtime_graph_node_counts_by_type": {"claim": 3},
+        "graph_edge_counts_by_type": {
+            "has_literal_object": 1,
+            "has_scope": 1,
+            "has_subject": 1,
+            "observed_in": 1,
+        },
+        "runtime_graph_node_counts_by_type": {"claim": 3, "entity": 1},
         "runtime_graph_item_counts_by_type": {"claim": 3},
         "runtime_relation_support_modes": {},
         "evidence_edge_count": 1,
@@ -133,11 +143,53 @@ def _decision_quality_payload() -> dict[str, object]:
 
 
 def _benchmark_report_payload() -> dict[str, object]:
+    graph_summary = _runtime_graph_summary_payload()
+    alignment_summary = _alignment_summary_payload()
+    provider_health = {
+        "effective_decision_mode": "hybrid",
+        "attempted_calls": 10,
+        "provider_successes": 10,
+        "provider_failures": 0,
+        "fallbacks": 0,
+        "provider_success_rate": 1.0,
+        "status": "pass",
+        "clean_runtime_gate": True,
+        "failure_buckets": [],
+        "failure_classification_counts": {},
+        "execution_source": "live_llm",
+        "dry_run": False,
+        "fake_extractor_calls": 0,
+        "provider_metadata": {},
+        "policy": {"provider_successes": "authoritative"},
+    }
+    runtime = {
+        "runtime_checkpoint_count": 2,
+        "runtime_failure_bucket_counts": {},
+        "provider_successes": 10,
+        "provider_failures": 0,
+        "fallbacks": 0,
+        "final_output_source_counts": {"live_llm": 2},
+        "runtime_alignment_count": 1,
+        "runtime_graph_item_count": 3,
+        "runtime_graph_item_observation_count": 1,
+        "runtime_graph_summary": graph_summary,
+        "runtime_graph_alignments_summary": alignment_summary,
+        "long_horizon_slice_counts": {},
+        "runtime_provider_health": provider_health,
+    }
     return {
         "suite": "memory_evolution_runtime_v1",
         "mode": "hybrid",
         "profile": "long_horizon",
         "seed": 7,
+        "fixture_fingerprint": "fixture-abc",
+        "evaluation_fingerprint": "evaluation-abc",
+        "system_fingerprint": "system-abc",
+        "source_revision": "revision:test",
+        "source_tree_digest": "1" * 64,
+        "source_state": "clean",
+        "report_content_digest": "2" * 64,
+        "artifact_manifest_digest": "3" * 64,
         "scenario_count": 1,
         "event_count": 10,
         "checkpoint_count": 2,
@@ -147,14 +199,17 @@ def _benchmark_report_payload() -> dict[str, object]:
         "provider_successes": 10,
         "provider_failures": 0,
         "fallbacks": 0,
-        "final_output_source_counts": {"fake_oracle": 2},
+        "dry_run": False,
+        "execution_source": "live_llm",
+        "final_output_source_counts": {"live_llm": 2},
         "metrics": {"hidden_hallucination_rate": 0.0},
         "fixture_hashes": {"surface_observations": "abc"},
         "calibration": _calibration_report_payload(),
         "decision_quality": _decision_quality_payload(),
-        "runtime": {"runtime_checkpoint_count": 2},
-        "runtime_graph_summary": _runtime_graph_summary_payload(),
-        "runtime_graph_alignments_summary": _alignment_summary_payload(),
+        "runtime": runtime,
+        "runtime_graph_summary": graph_summary,
+        "runtime_graph_alignments_summary": alignment_summary,
+        "runtime_provider_health": provider_health,
         "warning_policy": {"extra_context_provenance": {"level": "warning_only"}},
     }
 
@@ -172,7 +227,6 @@ def _runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
     output_payload = dict(row_fields.pop("output", {}))
     candidate_payload = dict(row_fields.pop("candidate_cards", {}))
     raw_output_payload = dict(row_fields.pop("raw_output", output_payload))
-    normalized_output_payload = dict(row_fields.pop("normalized_output", output_payload))
     judge_payload = dict(row_fields.pop("judge_aggregate", {}))
     return RuntimeCheckpointResultRow(
         scenario_id=str(row_fields.pop("scenario_id", "scenario_1")),
@@ -223,21 +277,16 @@ def _runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
         candidate_cards=MemoryEvolutionSimReconstructionContext.model_validate(
             {
                 "scenario_id": "scenario_1",
-                "family": "current_truth",
-                "profile": "long_horizon",
                 "surface_observations": [],
                 "checkpoint": {
                     "checkpoint_id": "checkpoint_1",
                     "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
-                    "checkpoint_type": "current_truth",
                     "query_or_task": "",
-                    "severity": "medium",
                 },
                 **candidate_payload,
             }
         ),
         raw_output=SimSystemOutput.model_validate(raw_output_payload or {"operation": "abstain", "rationale": "test"}),
-        normalized_output=SimSystemOutput.model_validate(normalized_output_payload or {"operation": "abstain", "rationale": "test"}),
         judge_aggregate=JudgeAggregate.model_validate(
             {
                 "checkpoint_id": "checkpoint_1",
@@ -275,7 +324,6 @@ def test_artifact_row_models_are_strict_but_flat_json_compatible() -> None:
             "diagnostics": {},
             "output": {"operation": "abstain", "rationale": "test"},
             "raw_output": {"operation": "abstain", "rationale": "test"},
-            "normalized_output": {"operation": "abstain", "rationale": "test"},
             "expected": {
                 "checkpoint_id": "checkpoint_1",
                 "timestamp": "2026-01-01T00:00:00Z",
@@ -285,15 +333,11 @@ def test_artifact_row_models_are_strict_but_flat_json_compatible() -> None:
             },
             "candidate_cards": {
                 "scenario_id": "scenario_1",
-                "family": "current_truth",
-                "profile": "smoke",
                 "surface_observations": [],
                 "checkpoint": {
                     "checkpoint_id": "checkpoint_1",
                     "timestamp": "2026-01-01T00:00:00Z",
-                    "checkpoint_type": "current_truth",
                     "query_or_task": "",
-                    "severity": "medium",
                 },
             },
             "judge_aggregate": {
@@ -376,18 +420,18 @@ def test_artifact_row_models_are_strict_but_flat_json_compatible() -> None:
 
 
 def test_runtime_alignment_row_requires_runtime_and_oracle_identity_contract() -> None:
-    row = RuntimeGraphAlignmentRow.from_runtime_alignment(
-        {
-            "scenario_id": "scenario_1",
-            "checkpoint_id": "checkpoint_1",
-            "oracle_item_id": "claim_expected",
-            "runtime_item_id": "graph:node:claim:runtime",
-            "item_type": "claim",
-            "verdict": "aligned",
-            "score": 1.0,
-            "matched_on": ["subject", "predicate", "object"],
-            "rationale": "matched",
-        }
+    row = RuntimeGraphAlignmentRow.from_alignment(
+        RuntimeGraphAlignment(
+            oracle_item_id="claim_expected",
+            runtime_item_id="graph:node:claim:runtime",
+            item_type="claim",
+            verdict=RuntimeGraphAlignmentVerdict.ALIGNED,
+            score=1.0,
+            matched_on=["subject", "predicate", "object"],
+            rationale="matched",
+        ),
+        scenario_id="scenario_1",
+        checkpoint_id="checkpoint_1",
     )
 
     assert row.oracle_id == "claim_expected"
@@ -410,17 +454,17 @@ def test_runtime_alignment_row_requires_runtime_and_oracle_identity_contract() -
             }
         )
     with pytest.raises(ValidationError):
-        RuntimeGraphAlignmentRow.from_runtime_alignment(
-            {
-                "scenario_id": "scenario_1",
-                "checkpoint_id": "checkpoint_1",
-                "oracle_item_id": "claim_expected",
-                "item_type": "claim",
-                "verdict": "aligned",
-                "score": 1.0,
-                "matched_on": ["subject"],
-                "rationale": "runtime item was accidentally omitted",
-            }
+        RuntimeGraphAlignmentRow.from_alignment(
+            RuntimeGraphAlignment(
+                oracle_item_id="claim_expected",
+                item_type="claim",
+                verdict=RuntimeGraphAlignmentVerdict.ALIGNED,
+                score=1.0,
+                matched_on=["subject"],
+                rationale="runtime item was accidentally omitted",
+            ),
+            scenario_id="scenario_1",
+            checkpoint_id="checkpoint_1",
         )
 
 
@@ -431,8 +475,8 @@ def test_benchmark_report_summary_types_runtime_and_calibration_sections() -> No
     assert report.fixture_hashes == {"surface_observations": "abc"}
     assert report.calibration.model_dump(mode="json") == _calibration_report_payload()
     assert report.decision_quality.model_dump(mode="json") == _decision_quality_payload()
-    assert report.runtime == {"runtime_checkpoint_count": 2}
-    assert isinstance(report.runtime, ArtifactJsonObject)
+    assert report.runtime is not None
+    assert report.runtime.runtime_checkpoint_count == 2
     assert isinstance(report.runtime_graph_summary, RuntimeGraphSummary)
     assert isinstance(report.runtime_graph_alignments_summary, AlignmentSummary)
     assert isinstance(report.runtime_provider_health, (RuntimeProviderHealth, ArtifactJsonObject))
@@ -443,12 +487,12 @@ def test_benchmark_report_summary_types_runtime_and_calibration_sections() -> No
 
 def test_dynamic_report_sections_are_json_only() -> None:
     payload = _benchmark_report_payload()
-    payload["runtime"] = {"nested": [{"count": 2, "ok": True}]}
+    payload["metrics"] = {"nested": [{"count": 2, "ok": True}]}
     report = BenchmarkReportSummary.from_flat_row(payload)
 
-    assert report.runtime == payload["runtime"]
+    assert report.metrics == payload["metrics"]
     with pytest.raises(ValidationError):
-        BenchmarkReportSummary.from_flat_row({**payload, "runtime": {"bad": object()}})
+        BenchmarkReportSummary.from_flat_row({**payload, "metrics": {"bad": object()}})
     with pytest.raises(ValidationError):
         BenchmarkReportSummary.from_flat_row({**payload, "unknown_future_field": "rejected"})
 
@@ -467,6 +511,65 @@ def test_dynamic_report_sections_are_json_only() -> None:
         BenchmarkReportSummary.from_flat_row(malformed_runtime_summary)
 
 
+@pytest.mark.parametrize(
+    ("mutate", "error"),
+    [
+        (
+            lambda payload: payload["runtime"].__setitem__("provider_successes", 9),
+            "runtime provider_successes must match provider health",
+        ),
+        (
+            lambda payload: payload["runtime"].__setitem__("runtime_alignment_count", 2),
+            "runtime alignment count must match full graph alignment count",
+        ),
+        (
+            lambda payload: payload["runtime"].__setitem__("runtime_graph_item_count", 4),
+            "runtime graph item count must match graph summary item counts",
+        ),
+        (
+            lambda payload: payload.update(
+                {
+                    "final_output_source_counts": {"live_llm": 1, "rule": 1},
+                    "execution_source": "mixed",
+                }
+            ),
+            "nested and top-level output source counts disagree",
+        ),
+    ],
+)
+def test_runtime_report_rejects_cross_section_drift(mutate, error: str) -> None:
+    payload = deepcopy(_benchmark_report_payload())
+    mutate(payload)
+
+    with pytest.raises(ValidationError, match=error):
+        BenchmarkReportSummary.from_flat_row(payload)
+
+
+def test_report_count_maps_reject_negative_counts() -> None:
+    payload = deepcopy(_benchmark_report_payload())
+    payload["critical_failure_bucket_counts"] = {"impossible_negative_count": -1}
+
+    with pytest.raises(ValidationError):
+        BenchmarkReportSummary.from_flat_row(payload)
+
+
+def test_report_rejects_empty_layer_fingerprints() -> None:
+    payload = deepcopy(_benchmark_report_payload())
+    payload["evaluation_fingerprint"] = ""
+
+    with pytest.raises(ValidationError):
+        BenchmarkReportSummary.from_flat_row(payload)
+
+
+def test_typed_jsonl_writer_rejects_unvalidated_mapping(tmp_path: Path) -> None:
+    with pytest.raises(ArtifactValidationError, match="must be a validated SimCheckpointResultRow"):
+        write_typed_jsonl(
+            tmp_path / "sim_checkpoint_results.jsonl",
+            [{}],
+            model_type=SimCheckpointResultRow,
+        )
+
+
 def test_memory_evolution_public_imports_remain_compatible() -> None:
     modules = [
         "memorii.core.benchmark.memory_evolution_sim",
@@ -483,7 +586,7 @@ def test_memory_evolution_split_submodule_imports_remain_compatible() -> None:
         "memorii.core.benchmark.memory_evolution_sim.schemas": "SimSystemOutput",
         "memorii.core.benchmark.memory_evolution_sim.generation": "generate_memory_evolution_sim_scenarios",
         "memorii.core.benchmark.memory_evolution_sim.candidate_cards": "sim_reconstruction_context_for_checkpoint",
-        "memorii.core.benchmark.memory_evolution_sim.normalization": "normalize_sim_system_output_for_checkpoint",
+        "memorii.core.benchmark.memory_evolution_sim.decisions": "expected_sim_output_for_checkpoint",
         "memorii.core.benchmark.memory_evolution_sim.judges": "judge_sim_checkpoint",
         "memorii.core.benchmark.memory_evolution_sim.diagnostics": "sim_checkpoint_diagnostics",
         "memorii.core.benchmark.memory_evolution_sim.metrics": "sim_metrics_from_rows",
@@ -512,20 +615,11 @@ def test_memory_evolution_sim_public_checkpoint_contract() -> None:
 
     context = sim_reconstruction_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
     expected = expected_sim_output_for_checkpoint(checkpoint)
-    normalized, normalization = normalize_sim_system_output_for_checkpoint(
-        scenario=scenario,
-        checkpoint=checkpoint,
-        output=expected,
-    )
-    aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=normalized)
+    aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=expected)
 
     assert context.checkpoint.checkpoint_id == checkpoint.checkpoint_id
-    assert context.metadata["checkpoint_contract"] == checkpoint.checkpoint_contract.model_dump(mode="json")
-    assert (
-        context.checkpoint.answer_projection_policy
-        == context.metadata["checkpoint_contract"]["answer_projection_policy"]
-    )
-    assert isinstance(normalization.normalization_applied, bool)
+    assert context.checkpoint.answer_projection_policy == checkpoint.answer_projection_policy
+    assert "expected_claim_ids" not in context.model_dump(mode="json")
     assert aggregate.verdict.value == "pass"
     assert aggregate.score >= 0.99
 
@@ -554,8 +648,10 @@ def test_memory_evolution_sim_checkpoint_contract_is_single_source_for_all_gener
             )
             contract = checkpoint.checkpoint_contract.model_dump(mode="json")
 
-            assert context.metadata["checkpoint_contract"] == contract
             assert context.checkpoint.answer_projection_policy == contract["answer_projection_policy"]
+            rendered_context = context.model_dump(mode="json")
+            assert "allowed_operations" not in rendered_context
+            assert "required_judge_ids" not in rendered_context
 
 
 def test_memory_evolution_runtime_public_summary_contract() -> None:
@@ -569,23 +665,36 @@ def test_memory_evolution_runtime_public_summary_contract() -> None:
 
     rows = RuntimeSuiteRows(
         scenario_rows=[],
-        checkpoint_rows=[
-            _runtime_checkpoint_row(runtime_action_alignments=[])
-        ],
+        checkpoint_rows=[_runtime_checkpoint_row(runtime_action_alignments=[])],
         judge_rows=[],
         llm_rows=[
-            {
-                "success": True,
-                "fallback_used": False,
-            }
+            RuntimeExtractorTraceRow(
+                scenario_id="scenario:test",
+                transition_type="runtime_memory_extraction",
+                decision_mode="llm",
+                effective_decision_mode="llm",
+                final_output_source="fake_oracle",
+                trace=RuntimeExtractorTracePayload(
+                    provider="fake_oracle",
+                    scenario_id="scenario:test",
+                    call_index=0,
+                    entity_count=0,
+                    claim_count=0,
+                    action_count=0,
+                ),
+                success=True,
+                fallback_used=False,
+                output=RuntimeExtractorOutput(),
+            )
         ],
         alignments=[],
+        dry_run=True,
     )
 
     metrics = runtime_summary_metrics(rows)
     alignment_summary = runtime_alignment_summary(rows)
 
-    assert metrics["provider_successes"] == 1
+    assert metrics["provider_successes"] == 0
     assert metrics["provider_failures"] == 0
     assert metrics["fallbacks"] == 0
     assert metrics["final_output_source_counts"] == {"fake_oracle": 1}
@@ -622,26 +731,80 @@ def test_memory_evolution_runtime_public_summary_contract() -> None:
     assert canonical_summary["checkpoint_expected_alignment_audit_counts"] == {"aligned": 1}
 
 
+@pytest.mark.parametrize(
+    ("field_name", "invalid_row", "expected_type"),
+    [
+        ("scenario_rows", {}, "SimScenarioResultRow"),
+        ("judge_rows", {}, "JudgeAggregate"),
+        ("llm_rows", {}, "RuntimeExtractorTraceRow"),
+        ("graph_snapshots", {}, "RuntimeGraphSnapshotRow"),
+        ("graph_items", {}, "RuntimeGraphItemRow"),
+        ("alignments", {}, "RuntimeGraphAlignmentRow"),
+        ("runtime_failures", {}, "RuntimeCheckpointResultRow"),
+    ],
+)
+def test_runtime_suite_rows_reject_untyped_artifact_rows(
+    field_name: str,
+    invalid_row: dict[str, object],
+    expected_type: str,
+) -> None:
+    kwargs: dict[str, object] = {
+        "scenario_rows": [],
+        "checkpoint_rows": [],
+        "judge_rows": [],
+        "llm_rows": [],
+    }
+    kwargs[field_name] = [invalid_row]
+
+    with pytest.raises(TypeError, match=expected_type):
+        RuntimeSuiteRows(**kwargs)
+
+
+def test_runtime_extractor_trace_cannot_masquerade_fallback_as_success() -> None:
+    with pytest.raises(ValidationError, match="cannot report fallback"):
+        RuntimeExtractorTraceRow(
+            scenario_id="scenario:test",
+            transition_type="runtime_memory_extraction",
+            decision_mode="llm",
+            effective_decision_mode="llm",
+            final_output_source="rule",
+            trace=RuntimeExtractorTracePayload(
+                provider="provider",
+                scenario_id="scenario:test",
+                call_index=0,
+                entity_count=0,
+                claim_count=0,
+                action_count=0,
+            ),
+            success=True,
+            fallback_used=True,
+            output=RuntimeExtractorOutput(),
+        )
+
+
 def test_memory_evolution_sim_dry_run_artifact_public_shape(tmp_path: Path) -> None:
-    assert main(
-        [
-            "--suite",
-            "memory_evolution_sim_v1",
-            "--mode",
-            "llm",
-            "--dry-run",
-            "--storage-root",
-            str(tmp_path),
-            "--sim-profile",
-            "adversarial",
-            "--sim-scenario-count",
-            "10",
-            "--sim-noise-rate",
-            "0.35",
-            "--seed",
-            "7",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_sim_v1",
+                "--mode",
+                "llm",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+                "--sim-profile",
+                "adversarial",
+                "--sim-scenario-count",
+                "10",
+                "--sim-noise-rate",
+                "0.35",
+                "--seed",
+                "7",
+            ]
+        )
+        == 0
+    )
 
     run_dir = _latest_run_dir(tmp_path, "memory_evolution_sim_v1", "llm")
     report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
@@ -663,25 +826,28 @@ def test_memory_evolution_sim_dry_run_artifact_public_shape(tmp_path: Path) -> N
 
 
 def test_memory_evolution_runtime_dry_run_artifact_public_shape(tmp_path: Path) -> None:
-    assert main(
-        [
-            "--suite",
-            "memory_evolution_runtime_v1",
-            "--mode",
-            "llm",
-            "--dry-run",
-            "--storage-root",
-            str(tmp_path),
-            "--sim-profile",
-            "long_horizon",
-            "--sim-scenario-count",
-            "10",
-            "--sim-noise-rate",
-            "0.35",
-            "--seed",
-            "7",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_runtime_v1",
+                "--mode",
+                "llm",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+                "--sim-profile",
+                "long_horizon",
+                "--sim-scenario-count",
+                "10",
+                "--sim-noise-rate",
+                "0.35",
+                "--seed",
+                "7",
+            ]
+        )
+        == 0
+    )
 
     run_dir = _latest_run_dir(tmp_path, "memory_evolution_runtime_v1", "llm")
     report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))

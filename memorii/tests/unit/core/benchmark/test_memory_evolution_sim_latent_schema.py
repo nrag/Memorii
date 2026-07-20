@@ -13,6 +13,7 @@ from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
     claim_by_role,
     generate_scenario_by_family,
+    relation_by_role,
 )
 
 
@@ -94,18 +95,20 @@ def test_memory_evolution_sim_seed_19_conflict_evidence_uses_ambiguity_event_not
         scenario=scenario,
         checkpoint=checkpoint_by_type(scenario, "source_trust_conflict"),
     )
-    ambiguous_claim = next(claim for claim in context.visible_claims if claim.claim_id == "claim_03_ambiguous_service_owner_atlas")
-    conflict_relation = next(relation for relation in context.visible_relations if relation.relation_id == "rel_03_owner_conflict")
+    ambiguous_id = claim_by_role(scenario, "conflict_detection").claim_id
+    relation_id = relation_by_role(scenario, "claim_contradiction").relation_id
+    ambiguous_claim = next(claim for claim in context.visible_claims if claim.claim_id == ambiguous_id)
+    conflict_relation = next(relation for relation in context.visible_relations if relation.relation_id == relation_id)
 
-    assert ambiguous_claim.evidence_event_ids == ["event_03_006"]
-    assert conflict_relation.evidence_event_ids == ["event_03_006"]
+    assert ambiguous_claim.evidence_event_ids == conflict_relation.evidence_event_ids
     assert "standup" in ambiguous_claim.evidence_quote
     assert "standup" in conflict_relation.evidence_quote
-    assert all("_noise_" not in event_id for event_id in ambiguous_claim.evidence_event_ids)
-    assert all("_noise_" not in event_id for event_id in conflict_relation.evidence_event_ids)
+    noise_ids = {observation.event_id for observation in scenario.observations if observation.modality == "noise"}
+    assert not noise_ids.intersection(ambiguous_claim.evidence_event_ids)
+    assert not noise_ids.intersection(conflict_relation.evidence_event_ids)
 
 
-def test_memory_evolution_sim_uses_role_stable_ids_not_seeded_names() -> None:
+def test_memory_evolution_sim_uses_opaque_semantics_free_ids() -> None:
     scenarios = generate_memory_evolution_sim_scenarios(profile="smoke", scenario_count=10, seed=19)
     all_ids = [
         item_id
@@ -117,43 +120,21 @@ def test_memory_evolution_sim_uses_role_stable_ids_not_seeded_names() -> None:
         ]
     ]
 
-    assert not any("_alice" in item_id or "_bob" in item_id or "_carol" in item_id for item_id in all_ids)
-    assert any("_current_owner" in item_id for item_id in all_ids)
-    assert any("_service_owner" in item_id for item_id in all_ids)
+    assert len(all_ids) == len(set(all_ids))
+    assert all(item_id.startswith("oid_") and len(item_id) == 24 for item_id in all_ids)
+    forbidden_semantics = {"owner", "service", "current", "previous", "branch", "blocked", "progress"}
+    assert not any(term in item_id for item_id in all_ids for term in forbidden_semantics)
 
 
-def test_memory_evolution_sim_legacy_fields_are_derived_from_role_channels() -> None:
-    output = SimSystemOutput(
-        operation="answer",
-        entity_ids=["legacy_entity"],
-        claim_ids=["legacy_claim"],
-        relation_ids=["legacy_relation"],
-        citation_event_ids=["legacy_event"],
-        selected_entity_ids=["ent_current"],
-        selected_claim_ids=["claim_current"],
-        selected_relation_ids=["rel_current"],
-        supporting_claim_ids=["claim_support"],
-        supporting_relation_ids=["rel_support"],
-        supporting_citation_event_ids=["event_support"],
-        rejected_entity_ids=["ent_rejected"],
-        rejected_claim_ids=["claim_rejected"],
-        rejected_relation_ids=["rel_rejected"],
-        rejection_citation_event_ids=["event_rejected"],
-        context_entity_ids=["ent_context"],
-        context_claim_ids=["claim_context"],
-        context_relation_ids=["rel_context"],
-        context_citation_event_ids=["event_context"],
-        answer="Nadia",
-        next_action=None,
-        uncertain_ids=[],
-        confidence=0.8,
-        rationale="role-aware fields are canonical",
-    )
-
-    assert output.entity_ids == ["ent_current", "ent_context", "ent_rejected"]
-    assert output.claim_ids == ["claim_current", "claim_support", "claim_context", "claim_rejected"]
-    assert output.relation_ids == ["rel_current", "rel_support", "rel_context", "rel_rejected"]
-    assert output.citation_event_ids == ["event_support", "event_context", "event_rejected"]
+def test_memory_evolution_sim_flat_legacy_channels_are_rejected() -> None:
+    with pytest.raises(ValueError):
+        SimSystemOutput.model_validate(
+            {
+                "operation": "answer",
+                "claim_ids": ["legacy_claim"],
+                "rationale": "flat channels are not accepted",
+            }
+        )
 
 
 def test_memory_evolution_sim_hidden_items_cannot_be_expected() -> None:

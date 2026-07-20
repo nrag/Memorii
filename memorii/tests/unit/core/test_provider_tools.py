@@ -6,6 +6,7 @@ from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.promotion.models import PromotionContext
+from memorii.core.promotion.provider import PromotionDecisionProviderError
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService, _decision_evidence_ids
 from memorii.core.solver import SolverFrontierPlanner
@@ -23,7 +24,7 @@ NOW = datetime.now(UTC)
 
 class _RaisingPromotionDecisionProvider:
     def decide(self, *, context: PromotionContext):  # type: ignore[no-untyped-def]
-        raise RuntimeError("promotion provider failure")
+        raise PromotionDecisionProviderError("promotion provider failure")
 
 
 def _make_node(node_id: str, *, content: dict[str, object]) -> SolverNode:
@@ -653,7 +654,7 @@ def test_record_progress_with_candidate_emission_disabled_returns_recorded_witho
 
 class _FailingStageMemoryPlaneService(MemoryPlaneService):
     def stage_record(self, record: CanonicalMemoryRecord) -> None:
-        raise RuntimeError("stage failure")
+        raise OSError("stage failure")
 
 
 def test_record_progress_candidate_stage_failure_does_not_fail_tool_call() -> None:

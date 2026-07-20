@@ -83,6 +83,8 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
             "--mode",
             "llm",
             "--dry-run",
+            "--inference-replicate",
+            "3",
             "--storage-root",
             str(tmp_path),
         ]
@@ -93,6 +95,8 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
     fields = _summary_fields(output)
 
+    assert payload["inference_replicate"] == 3
+    assert payload["run_id"] == f"{payload['benchmark_key']}-rep3"
     assert int(fields["failed"]) == payload["failed"] == 0
     assert int(fields["llm_calls"]) == payload["checkpoint_count"]
     assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
@@ -102,6 +106,7 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     assert payload["final_output_source_counts"] == {"fake_oracle": payload["checkpoint_count"]}
     assert "critical_failure_bucket_counts" in payload
     assert "warning_bucket_counts" in payload
+    assert payload["warning_policy"]["role_channel_context_overlap"]["level"] == "warning_only"
     assert "review_bucket_counts" in payload
     for metric_name in [
         "graph_answer_optional_missing_count",

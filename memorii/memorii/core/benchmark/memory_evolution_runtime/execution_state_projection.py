@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeProjection
+from memorii.core.benchmark.artifact_rows import (
+    ActionSupportMode,
+    AlignmentVerdict,
+    RuntimeActionAlignmentRow,
+    RuntimeActionSupportRow,
+)
+from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow, RuntimeProjection
 from memorii.core.benchmark.memory_evolution_runtime.utils import _claim_by_id, _ordered_unique
 from memorii.core.benchmark.memory_evolution_sim import LatentClaim, LatentGraphScenario, OracleCheckpoint
 
@@ -13,17 +19,17 @@ def _expected_action_alignment_rows(
     *,
     scenario: LatentGraphScenario,
     expected_action_ids: list[str],
-    graph_items: list[dict[str, object]],
+    graph_items: list[RuntimeGraphItemRow],
     runtime_claim_by_oracle: Mapping[str, str | None],
-) -> list[dict[str, object]]:
-    rows: list[dict[str, object]] = []
-    runtime_actions = [item for item in graph_items if item.get("item_type") == "action"]
+) -> list[RuntimeActionAlignmentRow]:
+    rows: list[RuntimeActionAlignmentRow] = []
+    runtime_actions = [item for item in graph_items if item.item_type == "action"]
     for action_id in expected_action_ids:
         exact = next(
             (
                 item for item in runtime_actions
-                if action_id in {str(item.get("action_id", "")), str(item.get("runtime_item_id", ""))}
-                or str(item.get("runtime_item_id", "")).endswith(action_id)
+                if action_id in {item.action_id, item.runtime_item_id}
+                or item.runtime_item_id.endswith(action_id)
             ),
             None,
         )
@@ -36,13 +42,21 @@ def _expected_action_alignment_rows(
             rows.append(_missing_action_alignment_row(action_id=action_id, failure_reason="runtime_missing_expected_action"))
             continue
         candidates = [_semantic_action_alignment_row(action_id=action_id, claim=claim, runtime_action=action) for action in runtime_actions]
-        aligned = [row for row in candidates if row["verdict"] == "aligned"]
+        aligned = [row for row in candidates if row.verdict == "aligned"]
         if len(aligned) == 1:
             rows.append(aligned[0])
             continue
         if len(aligned) > 1:
             best = aligned[0]
-            rows.append({**best, "verdict": "ambiguous_alignment", "support_mode": "ambiguous_action", "failure_reason": "runtime_execution_state_ambiguous"})
+            rows.append(
+                best.model_copy(
+                    update={
+                        "verdict": "ambiguous_alignment",
+                        "support_mode": "ambiguous_action",
+                        "failure_reason": "runtime_execution_state_ambiguous",
+                    }
+                )
+            )
             continue
         bridged = [
             _work_state_bridged_action_row(action_id=action_id, claim=claim, runtime_action=action, graph_items=graph_items)
@@ -54,65 +68,81 @@ def _expected_action_alignment_rows(
             continue
         if len(bridged) > 1:
             best = bridged[0]
-            rows.append({**best, "verdict": "ambiguous_alignment", "support_mode": "ambiguous_work_state_bridge", "failure_reason": "runtime_execution_state_ambiguous"})
+            rows.append(
+                best.model_copy(
+                    update={
+                        "verdict": "ambiguous_alignment",
+                        "support_mode": "ambiguous_work_state_bridge",
+                        "failure_reason": "runtime_execution_state_ambiguous",
+                    }
+                )
+            )
             continue
-        partial = [row for row in candidates if row["verdict"] == "partial"]
+        partial = [row for row in candidates if row.verdict == "partial"]
         if partial:
-            rows.append(sorted(partial, key=lambda row: len(_object_sequence(row.get("matched_on"))), reverse=True)[0])
+            rows.append(max(partial, key=lambda row: len(row.matched_on)))
             continue
         if claim_id in runtime_claim_by_oracle:
-            rows.append({
-                "expected_action_id": action_id,
-                "runtime_action_id": "",
-                "runtime_item_id": runtime_claim_by_oracle[claim_id],
-                "verdict": "aligned",
-                "support_mode": "claim_derived_action",
-                "matched_on": ["claim_alignment"],
-                "failed_on": [],
-                "failure_reason": "",
-                "evidence_event_ids": list(claim.evidence.source_event_ids),
-            })
+            rows.append(
+                RuntimeActionAlignmentRow(
+                    expected_action_id=action_id,
+                    runtime_action_id="",
+                    runtime_item_id=runtime_claim_by_oracle[claim_id] or "",
+                    verdict="aligned",
+                    support_mode="claim_derived_action",
+                    matched_on=["claim_alignment"],
+                    failure_reason="",
+                    evidence_event_ids=list(claim.evidence.source_event_ids),
+                )
+            )
             continue
         rows.append(_missing_action_alignment_row(action_id=action_id, failure_reason="runtime_missing_expected_action"))
     return rows
 
-def _action_alignment_row(*, action_id: str, runtime_action: dict[str, object], verdict: str, support_mode: str, matched_on: list[str], failure_reason: str) -> dict[str, object]:
+def _action_alignment_row(
+    *,
+    action_id: str,
+    runtime_action: RuntimeGraphItemRow,
+    verdict: AlignmentVerdict,
+    support_mode: ActionSupportMode,
+    matched_on: list[str],
+    failure_reason: str,
+) -> RuntimeActionAlignmentRow:
     derived_status, status_source = _derived_runtime_action_status(runtime_action)
-    return {
-        "expected_action_id": action_id,
-        "runtime_action_id": str(runtime_action.get("action_id", "")),
-        "runtime_item_id": str(runtime_action.get("runtime_item_id", "")),
-        "verdict": verdict,
-        "support_mode": support_mode,
-        "matched_on": matched_on,
-        "failed_on": [],
-        "failure_reason": failure_reason,
-        "status": derived_status,
-        "model_status_raw": str(runtime_action.get("status", "")),
-        "action_type_raw": str(runtime_action.get("action_type", "")),
-        "status_derived_from": status_source,
-        "target_entity_ids": [str(item) for item in _object_sequence(runtime_action.get("target_entity_ids"))],
-        "evidence_event_ids": [str(item) for item in _object_sequence(runtime_action.get("evidence_event_ids"))],
-    }
+    return RuntimeActionAlignmentRow(
+        expected_action_id=action_id,
+        runtime_action_id=runtime_action.action_id,
+        runtime_item_id=runtime_action.runtime_item_id,
+        verdict=verdict,
+        support_mode=support_mode,
+        matched_on=matched_on,
+        failure_reason=failure_reason,
+        status=derived_status,
+        model_status_raw=runtime_action.status,
+        action_type_raw=runtime_action.action_type,
+        status_derived_from=status_source,
+        target_entity_ids=list(runtime_action.target_entity_ids),
+        evidence_event_ids=list(runtime_action.evidence_event_ids),
+    )
 
-def _missing_action_alignment_row(*, action_id: str, failure_reason: str) -> dict[str, object]:
-    return {
-        "expected_action_id": action_id,
-        "runtime_action_id": "",
-        "runtime_item_id": "",
-        "verdict": "missing_expected",
-        "support_mode": "missing_action",
-        "matched_on": [],
-        "failed_on": [failure_reason],
-        "failure_reason": failure_reason,
-        "evidence_event_ids": [],
-    }
+def _missing_action_alignment_row(*, action_id: str, failure_reason: str) -> RuntimeActionAlignmentRow:
+    return RuntimeActionAlignmentRow(
+        expected_action_id=action_id,
+        runtime_action_id="",
+        runtime_item_id="",
+        verdict="missing_expected",
+        support_mode="missing_action",
+        failed_on=[failure_reason],
+        failure_reason=failure_reason,
+    )
 
-def _semantic_action_alignment_row(*, action_id: str, claim: LatentClaim, runtime_action: dict[str, object]) -> dict[str, object]:
+def _semantic_action_alignment_row(
+    *, action_id: str, claim: LatentClaim, runtime_action: RuntimeGraphItemRow
+) -> RuntimeActionAlignmentRow:
     matched: list[str] = []
     failed: list[str] = []
     derived_status, status_source = _derived_runtime_action_status(runtime_action)
-    runtime_targets = [str(item) for item in _object_sequence(runtime_action.get("target_entity_ids"))]
+    runtime_targets = list(runtime_action.target_entity_ids)
     if _action_target_matches(runtime_targets=runtime_targets, claim=claim):
         matched.append("target_entity")
     else:
@@ -121,61 +151,62 @@ def _semantic_action_alignment_row(*, action_id: str, claim: LatentClaim, runtim
         matched.append("status")
     else:
         failed.append("runtime_action_status_mismatch")
-    runtime_events = {str(item) for item in _object_sequence(runtime_action.get("evidence_event_ids"))}
+    runtime_events = set(runtime_action.evidence_event_ids)
     oracle_events = {str(item) for item in claim.evidence.source_event_ids}
     if runtime_events & oracle_events:
         matched.append("evidence_event")
     else:
         failed.append("runtime_action_evidence_missing")
-    if str(runtime_action.get("lifecycle_state", "active")) == "active":
+    if runtime_action.lifecycle_state == "active":
         matched.append("lifecycle")
     else:
         failed.append("runtime_execution_state_missing")
     verdict = "aligned" if {"target_entity", "status", "evidence_event", "lifecycle"} <= set(matched) else "partial" if matched else "missing_expected"
     support_mode = "runtime_action_semantic" if verdict == "aligned" else "partial_action"
-    return {
-        "expected_action_id": action_id,
-        "runtime_action_id": str(runtime_action.get("action_id", "")),
-        "runtime_item_id": str(runtime_action.get("runtime_item_id", "")),
-        "verdict": verdict,
-        "support_mode": support_mode,
-        "matched_on": matched,
-        "failed_on": failed,
-        "failure_reason": "" if verdict == "aligned" else _primary_action_failure(failed),
-        "status": derived_status,
-        "model_status_raw": str(runtime_action.get("status", "")),
-        "action_type_raw": str(runtime_action.get("action_type", "")),
-        "status_derived_from": status_source,
-        "target_entity_ids": runtime_targets,
-        "evidence_event_ids": sorted(runtime_events),
-    }
+    return RuntimeActionAlignmentRow(
+        expected_action_id=action_id,
+        runtime_action_id=runtime_action.action_id,
+        runtime_item_id=runtime_action.runtime_item_id,
+        verdict=verdict,
+        support_mode=support_mode,
+        matched_on=matched,
+        failed_on=failed,
+        failure_reason="" if verdict == "aligned" else _primary_action_failure(failed),
+        status=derived_status,
+        model_status_raw=runtime_action.status,
+        action_type_raw=runtime_action.action_type,
+        status_derived_from=status_source,
+        target_entity_ids=runtime_targets,
+        evidence_event_ids=sorted(runtime_events),
+    )
 
 def _work_state_bridged_action_row(
     *,
     action_id: str,
     claim: LatentClaim,
-    runtime_action: dict[str, object],
-    graph_items: list[dict[str, object]],
-) -> dict[str, object] | None:
+    runtime_action: RuntimeGraphItemRow,
+    graph_items: list[RuntimeGraphItemRow],
+) -> RuntimeActionAlignmentRow | None:
     row = _semantic_action_alignment_row(action_id=action_id, claim=claim, runtime_action=runtime_action)
-    if row["verdict"] == "aligned" or row["failure_reason"] != "runtime_action_target_mismatch":
+    if row.verdict == "aligned" or row.failure_reason != "runtime_action_target_mismatch":
         return None
-    if not {"status", "evidence_event", "lifecycle"} <= {str(item) for item in _object_sequence(row.get("matched_on"))}:
+    if not {"status", "evidence_event", "lifecycle"} <= set(row.matched_on):
         return None
     derived_status, _status_source = _derived_runtime_action_status(runtime_action)
     if derived_status not in {"in_progress", "resumed"}:
         return None
     if not _claim_has_active_branch_history(claim=claim, graph_items=graph_items):
         return None
-    return {
-        **row,
-        "verdict": "aligned",
-        "support_mode": "runtime_action_work_state_bridge",
-        "matched_on": [*list(_object_sequence(row.get("matched_on"))), "active_branch_history"],
-        "failed_on": [],
-        "failure_reason": "",
-        "bridged_target_entity_id": claim.subject.entity_id,
-    }
+    return row.model_copy(
+        update={
+            "verdict": "aligned",
+            "support_mode": "runtime_action_work_state_bridge",
+            "matched_on": [*row.matched_on, "active_branch_history"],
+            "failed_on": [],
+            "failure_reason": "",
+            "bridged_target_entity_id": claim.subject.entity_id,
+        }
+    )
 
 def normalize_action_status(value: str) -> str:
     normalized = " ".join(value.strip().lower().replace("_", " ").replace("-", " ").split())
@@ -200,9 +231,9 @@ def normalize_action_status(value: str) -> str:
     }
     return mapping.get(normalized, normalized.replace(" ", "_"))
 
-def _derived_runtime_action_status(runtime_action: Mapping[str, object]) -> tuple[str, str]:
-    raw_status = str(runtime_action.get("status", ""))
-    raw_action_type = str(runtime_action.get("action_type", ""))
+def _derived_runtime_action_status(runtime_action: RuntimeGraphItemRow) -> tuple[str, str]:
+    raw_status = runtime_action.status
+    raw_action_type = runtime_action.action_type
     status_signal = _status_signal(raw_status)
     action_type_signal = _status_signal(raw_action_type)
     terminal_states = {"blocked", "abandoned", "completed", "failed", "succeeded"}
@@ -281,12 +312,14 @@ def _action_target_matches(*, runtime_targets: list[str], claim: LatentClaim) ->
         if len(target) >= 4 and len(oracle) >= 4
     )
 
-def _claim_has_active_branch_history(*, claim: LatentClaim, graph_items: list[dict[str, object]]) -> bool:
+def _claim_has_active_branch_history(
+    *, claim: LatentClaim, graph_items: list[RuntimeGraphItemRow]
+) -> bool:
     has_active_history = False
     for item in graph_items:
-        if item.get("item_type") != "action":
+        if item.item_type != "action":
             continue
-        if not _action_target_matches(runtime_targets=[str(value) for value in _object_sequence(item.get("target_entity_ids"))], claim=claim):
+        if not _action_target_matches(runtime_targets=list(item.target_entity_ids), claim=claim):
             continue
         status, _status_source = _derived_runtime_action_status(item)
         if status in {"blocked", "abandoned", "completed", "failed"}:
@@ -305,20 +338,25 @@ def _primary_action_failure(failed: list[str]) -> str:
             return bucket
     return failed[0] if failed else "runtime_missing_expected_action"
 
-def _runtime_action_support_rows(projection: RuntimeProjection) -> list[dict[str, str]]:
+def _runtime_action_support_rows(projection: RuntimeProjection) -> list[RuntimeActionSupportRow]:
     return [
-        {"action_id": action_id, "support_mode": support_mode}
+        RuntimeActionSupportRow(action_id=action_id, support_mode=support_mode)
         for action_id, support_mode in sorted(projection.action_support.items())
     ]
 
-def _suppressed_branch_ids(*, scenario: LatentGraphScenario, checkpoint: OracleCheckpoint, graph_items: list[dict[str, object]]) -> list[str]:
+def _suppressed_branch_ids(
+    *,
+    scenario: LatentGraphScenario,
+    checkpoint: OracleCheckpoint,
+    graph_items: list[RuntimeGraphItemRow],
+) -> list[str]:
     suppressed: list[str] = []
     for claim_id in checkpoint.expected_excluded_claim_ids:
         claim = _claim_by_id(scenario, claim_id)
         if claim is None or claim.claim_kind != "action_state":
             continue
         for item in graph_items:
-            if item.get("item_type") != "action":
+            if item.item_type != "action":
                 continue
             if _runtime_action_suppresses_claim(runtime_action=item, claim=claim, graph_items=graph_items):
                 suppressed.append(claim.subject.entity_id)
@@ -329,10 +367,10 @@ def _suppressed_action_state_claim_ids(
     *,
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
-    graph_items: list[dict[str, object]],
+    graph_items: list[RuntimeGraphItemRow],
 ) -> list[str]:
     suppressed: list[str] = []
-    runtime_actions = [item for item in graph_items if item.get("item_type") == "action"]
+    runtime_actions = [item for item in graph_items if item.item_type == "action"]
     for claim_id in checkpoint.expected_excluded_claim_ids:
         claim = _claim_by_id(scenario, claim_id)
         if claim is None or claim.claim_kind != "action_state":
@@ -341,19 +379,24 @@ def _suppressed_action_state_claim_ids(
             suppressed.append(claim_id)
     return _ordered_unique(suppressed)
 
-def _runtime_action_suppresses_claim(*, runtime_action: dict[str, object], claim: LatentClaim, graph_items: list[dict[str, object]]) -> bool:
+def _runtime_action_suppresses_claim(
+    *,
+    runtime_action: RuntimeGraphItemRow,
+    claim: LatentClaim,
+    graph_items: list[RuntimeGraphItemRow],
+) -> bool:
     status, _status_source = _derived_runtime_action_status(runtime_action)
     expected_status = normalize_action_status(claim.object.value)
     if status != expected_status or status not in {"blocked", "abandoned", "completed", "failed"}:
         return False
-    if str(runtime_action.get("lifecycle_state", "active")) != "active":
+    if runtime_action.lifecycle_state != "active":
         return False
-    runtime_events = {str(item) for item in _object_sequence(runtime_action.get("evidence_event_ids"))}
+    runtime_events = set(runtime_action.evidence_event_ids)
     oracle_events = {str(item) for item in claim.evidence.source_event_ids}
     if oracle_events and not runtime_events & oracle_events:
         return False
     return _action_target_matches(
-        runtime_targets=[str(value) for value in _object_sequence(runtime_action.get("target_entity_ids"))],
+        runtime_targets=list(runtime_action.target_entity_ids),
         claim=claim,
     ) or _claim_has_active_branch_history(
         claim=claim,
@@ -364,12 +407,12 @@ def _runtime_action_suppresses_claim(*, runtime_action: dict[str, object], claim
 def _object_sequence(value: object) -> Sequence[object]:
     return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
 
-def _action_alignment_failure_reason(rows: Sequence[Mapping[str, object]]) -> str:
+def _action_alignment_failure_reason(rows: Sequence[RuntimeActionAlignmentRow]) -> str:
     for row in rows:
-        if row.get("verdict") == "aligned":
+        if row.verdict == "aligned":
             return ""
     for row in rows:
-        reason = str(row.get("failure_reason", ""))
+        reason = row.failure_reason
         if reason:
             return reason
     return ""

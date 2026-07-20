@@ -2,10 +2,6 @@ from datetime import UTC, datetime, timedelta
 
 from memorii.core.memory_evolution import (
     MemoryQueryRequest,
-    QueryAnalysis,
-    QueryScopeKind,
-    QueryTemporalFrame,
-    QueryTemporalKind,
     RuleMemoryExtractor,
     StructuredQueryAnalyzer,
 )
@@ -80,12 +76,9 @@ def test_provider_prefetch_passes_language_and_structured_temporal_analysis() ->
         subject_entity_id = candidates[0].entity_id
         return {
             "language": "es",
-            "temporal_frame": {
-                "temporal_kind": "current",
-                "scope_kind": "task",
-                "scope_key": "task:multilingual",
-                "resolved_entity_ids": [subject_entity_id],
-            },
+            "temporal_intent": "current",
+            "temporal_expression": {"expression_kind": "current"},
+            "candidate_entity_ids": [subject_entity_id],
         }
 
     service = ProviderMemoryService(
@@ -102,22 +95,10 @@ def test_provider_prefetch_passes_language_and_structured_temporal_analysis() ->
         content="Atlas migration owner is Bob.",
         task_id="task:multilingual",
     )
-    subject_entity_id = service.memory_evolution_service.retrieve_claim_states()[0].claim_key.subject_entity_id
-
     service.prefetch(
         "¿Quién es el propietario actual de Atlas?",
         task_id="task:multilingual",
         query_language="es",
-        query_analysis=QueryAnalysis(
-            language="es",
-            temporal_frame=QueryTemporalFrame(
-                temporal_kind=QueryTemporalKind.CURRENT,
-                scope_kind=QueryScopeKind.TASK,
-                scope_key="task:multilingual",
-                resolved_entity_ids=[subject_entity_id],
-            ),
-            analysis_source="structured_model",
-        ),
     )
 
     bundle = service.last_recall_bundle()

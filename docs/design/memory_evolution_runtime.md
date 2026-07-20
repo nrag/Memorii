@@ -103,7 +103,9 @@ Implemented extractors:
 Current limits:
 
 - The rule extractor is intentionally simple and pattern based.
-- The LLM extractor can produce entities, claims, and actions from `memory_extraction:v1`, but the runtime-backed benchmark is not yet the main acceptance gate.
+- The LLM extractor can produce entities, claims, and actions from
+  `memory_extraction:v1`; the runtime-backed benchmark is the memory-component
+  acceptance gate, not an agent-system acceptance gate.
 - Hybrid falls back to rule extraction when the LLM extraction run reports errors.
 
 ## Validation
@@ -188,6 +190,14 @@ Implemented graph edge types include:
 Graph records are written as `CanonicalMemoryRecord` objects with `memory_evolution_kind` set to `graph_node` or `graph_edge`.
 
 Graph records are retained rather than physically deleted. Stale state is represented through lifecycle state and validity status.
+
+Entity splits require grounded identity evidence rather than same-name text
+alone. A split is eligible only when an extracted mention and an existing link
+share an explicit normalized alias, have distinct known entity types, and the
+new mention carries evidence. The child link persists its lineage parent, and
+graph projection emits exactly one `split_from` edge from that persisted state.
+The benchmark may align the native child and parent IDs to oracle labels after
+projection, but it does not create or duplicate lineage edges.
 
 ## Runtime Graph Retrieval APIs
 
@@ -323,11 +333,10 @@ provider.
 
 ## Readiness Position
 
-Runtime evolution is ready for controlled integration pilots behind a feature
-flag after the deterministic gates. It is not yet ready to be the default
-always-on durable agent memory path until live multi-seed validation and an
-agent-harness comparison are green. Pull-request gates validate deterministic
-contracts, schema integrity, and surface-only no-leakage. Scheduled live gates
-must additionally record model/provider/prompt metadata, use scenario-clustered
-confidence intervals, and compare the feature-flagged path with raw retrieval
-in an agent harness before default enablement.
+Runtime evolution is not yet ready for agent integration. Pull-request gates
+validate deterministic contracts, schema integrity, no-leakage, and
+fake-oracle plumbing; scheduled live gates validate the component across seeds,
+replicates, and scenario families using provider-observable metadata and
+hierarchical confidence bounds. Neither gate measures agent policy interaction
+or end-to-end task outcomes. An agent-system evaluation must be designed and
+approved separately before any integration or default enablement work begins.

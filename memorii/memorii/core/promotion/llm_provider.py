@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from memorii.core.llm_decision.models import LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
-from memorii.core.llm_decision.provider import LLMDecisionProvider
+from memorii.core.llm_decision.provider import LLMDecisionProvider, LLMDecisionProviderError
 from memorii.core.promotion.models import PromotionContext, PromotionDecision
 from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
 
@@ -20,7 +22,7 @@ class LLMPromotionDecisionProvider:
                 decision_point=LLMDecisionPoint.PROMOTION,
                 input_payload=input_payload,
             )
-        except Exception as exc:
+        except LLMDecisionProviderError as exc:
             fallback_decision, fallback_trace = self._rule_provider.decide(context=context)
             return fallback_decision, fallback_trace.model_copy(
                 update={
@@ -47,7 +49,7 @@ class LLMPromotionDecisionProvider:
 
         try:
             decision = PromotionDecision.model_validate(trace.final_output)
-        except Exception as exc:
+        except ValidationError as exc:
             return fallback_decision, trace.model_copy(
                 update={
                     "fallback_used": True,

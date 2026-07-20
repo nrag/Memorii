@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Literal, TypeVar
 
@@ -13,9 +13,11 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeActionAlignmentRow,
     RuntimeCheckpointResultRow,
     RuntimeExecutionStateSection,
+    RuntimeExtractorTraceRow,
     RuntimeGraphAlignmentRow,
+    SimScenarioResultRow,
 )
-from memorii.core.benchmark.memory_evolution_sim import SimSystemOutput
+from memorii.core.benchmark.memory_evolution_sim import JudgeAggregate, SimSystemOutput
 from memorii.core.calibration.alignment import RuntimeGraphAlignment
 from memorii.core.memory_evolution import (
     MemoryGraphEdge,
@@ -55,9 +57,9 @@ class RuntimeGraphSnapshotRow(BaseModel):
 class RuntimeGraphItemRow(FlatArtifactModel):
     """Typed normalized graph item persisted by the runtime benchmark.
 
-    Projection code intentionally uses plain mappings while it is assembling
-    an output. This model is the artifact boundary: a new item field must be
-    declared here before it can silently enter alignment reports.
+    Runtime ingestion, projection, alignment, and persistence share this
+    contract. A new item field must be declared here before it can enter an
+    alignment decision or a persisted report.
     """
 
     scenario_id: str = ""
@@ -117,12 +119,21 @@ class RuntimeGraphItemRow(FlatArtifactModel):
         return self
 
 
+class GraphItemNormalizationResult(BaseModel):
+    """Valid graph items plus classified rows rejected at normalization."""
+
+    items: list[RuntimeGraphItemRow] = Field(default_factory=list)
+    validation_errors: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 @dataclass
 class RuntimeSuiteRows:
-    scenario_rows: list[dict[str, object]]
+    scenario_rows: list[SimScenarioResultRow]
     checkpoint_rows: list[RuntimeCheckpointResultRow]
-    judge_rows: list[dict[str, object]]
-    llm_rows: list[dict[str, object]]
+    judge_rows: list[JudgeAggregate]
+    llm_rows: list[RuntimeExtractorTraceRow]
     graph_snapshots: list[RuntimeGraphSnapshotRow] = field(default_factory=list)
     graph_items: list[RuntimeGraphItemRow] = field(default_factory=list)
     alignments: list[RuntimeGraphAlignmentRow] = field(default_factory=list)
@@ -131,17 +142,14 @@ class RuntimeSuiteRows:
     dry_run: bool = False
 
     def __post_init__(self) -> None:
+        _require_row_type("scenario_rows", self.scenario_rows, SimScenarioResultRow)
         _require_row_type("checkpoint_rows", self.checkpoint_rows, RuntimeCheckpointResultRow)
+        _require_row_type("judge_rows", self.judge_rows, JudgeAggregate)
+        _require_row_type("llm_rows", self.llm_rows, RuntimeExtractorTraceRow)
+        _require_row_type("graph_snapshots", self.graph_snapshots, RuntimeGraphSnapshotRow)
+        _require_row_type("graph_items", self.graph_items, RuntimeGraphItemRow)
         _require_row_type("alignments", self.alignments, RuntimeGraphAlignmentRow)
         _require_row_type("runtime_failures", self.runtime_failures, RuntimeCheckpointResultRow)
-        self.graph_snapshots = [
-            snapshot if isinstance(snapshot, RuntimeGraphSnapshotRow) else RuntimeGraphSnapshotRow.model_validate(snapshot)
-            for snapshot in self.graph_snapshots
-        ]
-        self.graph_items = [
-            item if isinstance(item, RuntimeGraphItemRow) else RuntimeGraphItemRow.model_validate(item)
-            for item in self.graph_items
-        ]
 
 
 def _require_row_type(field_name: str, rows: Sequence[object], row_type: type[T]) -> None:
@@ -149,11 +157,12 @@ def _require_row_type(field_name: str, rows: Sequence[object], row_type: type[T]
     if invalid:
         raise TypeError(f"{field_name} must contain {row_type.__name__} rows, got {invalid}")
 
+
 @dataclass
 class RuntimeProjection:
     output: SimSystemOutput
     graph_snapshot: MemoryGraphSnapshot
-    graph_items: Sequence[RuntimeGraphItemRow | Mapping[str, object]]
+    graph_items: list[RuntimeGraphItemRow]
     alignments: list[RuntimeGraphAlignment]
     source_id_to_event_id: dict[str, str]
     relation_support: dict[str, str] = field(default_factory=dict)
@@ -165,13 +174,7 @@ class RuntimeProjection:
     retrieval_decision: ProductionRetrievalDecision | None = None
 
     def __post_init__(self) -> None:
-        self.graph_items = [
-            item if isinstance(item, RuntimeGraphItemRow) else RuntimeGraphItemRow.model_validate(item)
-            for item in self.graph_items
-        ]
-        self.action_alignment_rows = [
-            row if isinstance(row, RuntimeActionAlignmentRow) else RuntimeActionAlignmentRow.from_runtime_alignment(row)
-            for row in self.action_alignment_rows
-        ]
+        _require_row_type("graph_items", self.graph_items, RuntimeGraphItemRow)
+        _require_row_type("action_alignment_rows", self.action_alignment_rows, RuntimeActionAlignmentRow)
         if not isinstance(self.execution_state, RuntimeExecutionStateSection):
-            self.execution_state = RuntimeExecutionStateSection.model_validate(self.execution_state)
+            raise TypeError("execution_state must be a RuntimeExecutionStateSection")

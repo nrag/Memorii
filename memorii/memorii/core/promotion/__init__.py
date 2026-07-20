@@ -24,7 +24,7 @@ from memorii.core.promotion.models import (
 from memorii.core.promotion.models import (
     PromotionDecision as ProviderPromotionDecision,
 )
-from memorii.core.promotion.provider import PromotionDecisionProvider
+from memorii.core.promotion.provider import PromotionDecisionProvider, PromotionDecisionProviderError
 from memorii.core.promotion.rule_based import RuleBasedPromotionDecider
 from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
 from memorii.core.promotion.service import PromotionService
@@ -41,6 +41,7 @@ __all__ = [
     "PromotionDecision",
     "ProviderPromotionDecision",
     "PromotionDecisionProvider",
+    "PromotionDecisionProviderError",
     "PromotionContextBuilder",
     "PromotionDecider",
     "PromotionExecutor",

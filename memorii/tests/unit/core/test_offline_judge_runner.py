@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionPoint
 from memorii.core.llm_eval.models import EvalCaseResult, EvalRunReport
 from memorii.core.llm_judge import OfflineJudgeRunner, attach_judge_refs_to_eval_cases
+from memorii.core.llm_judge.judge import JudgeExecutionError
 from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric
 
 
@@ -344,7 +345,7 @@ class _ExplodingJudge:
     )
 
     def judge(self, *, input_payload: dict[str, object], snapshot_id: str | None = None, trace_id: str | None = None):
-        raise RuntimeError("boom")
+        raise JudgeExecutionError("boom")
 
 
 def test_judge_exception_becomes_human_review_case() -> None:

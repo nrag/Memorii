@@ -5,8 +5,6 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from memorii.core.belief.models import BeliefUpdateContext
-from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_decision.adapters import (
@@ -15,80 +13,14 @@ from memorii.core.llm_decision.adapters import (
 )
 from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionMode
 from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
+from memorii.core.llm_eval.fake_client import EvalFakeClient
 from memorii.core.llm_eval.golden import belief_golden_v1, promotion_golden_v1
 from memorii.core.llm_eval.models import EvalRunReport
 from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
 from memorii.core.llm_provider.factory import LLMClientFactory
-from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.llm_trace.policy import LLMTracePolicy
-from memorii.core.promotion.models import PromotionContext
-from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
-from memorii.core.prompts.registry import PromptRegistry
-
-
-def _extract_context_json(*, label: str, text: str) -> dict[str, object]:
-    prefix = f"{label}: "
-    for line in text.splitlines():
-        if line.startswith(prefix):
-            parsed = json.loads(line.removeprefix(prefix))
-            if isinstance(parsed, dict):
-                return parsed
-    raise ValueError(f"Missing {label} payload")
-
-
-class EvalFakeClient:
-    provider_name = "fake"
-
-    def complete_structured(
-        self,
-        request: LLMStructuredRequest,
-        *,
-        config: LLMRuntimeConfig,
-    ) -> LLMStructuredResponse:
-        del config
-        if request.prompt_ref == "promotion_decision:v1":
-            context = PromotionContext.model_validate(
-                _extract_context_json(label="PromotionContext", text=request.user)
-            )
-            decision, _ = RuleBasedPromotionDecisionProvider().decide(context=context)
-            raw = json.dumps(
-                {
-                    "promote": decision.promote,
-                    "target_plane": decision.target_plane,
-                    "confidence": decision.confidence,
-                    "reason_code": decision.tags[0] if decision.tags else "observation_not_promoted",
-                    "rationale": decision.rationale,
-                    "failure_mode": None,
-                    "requires_judge_review": True,
-                },
-                sort_keys=True,
-            )
-        elif request.prompt_ref == "belief_update:v1":
-            context = BeliefUpdateContext.model_validate(
-                _extract_context_json(label="BeliefUpdateContext", text=request.user)
-            )
-            decision, _ = RuleBasedBeliefUpdateProvider().update(context=context)
-            raw = json.dumps(
-                {
-                    "belief": decision.belief,
-                    "confidence": decision.confidence,
-                    "rationale": decision.rationale,
-                    "failure_mode": None,
-                    "requires_judge_review": True,
-                },
-                sort_keys=True,
-            )
-        else:
-            raw = "{}"
-
-        return LLMStructuredResponse(
-            request_id=request.request_id,
-            provider=self.provider_name,
-            raw_text=raw,
-            valid_json=False,
-            schema_valid=False,
-        )
+from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
 
 
 def _load_snapshots(golden_set: str) -> list[EvalSnapshot]:
@@ -243,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
         live_config=live_config,
     )
 
-    prompt_root = Path(args.prompt_root) if args.prompt_root else Path(__file__).resolve().parents[2] / "prompts"
+    prompt_root = Path(args.prompt_root) if args.prompt_root else default_prompt_root()
 
     client = EvalFakeClient() if args.dry_run else LLMClientFactory.from_config(runtime_config)
     runner = PromptLLMRunner(client=client, config=runtime_config)

@@ -40,7 +40,7 @@ prod = [
 include-package-data = true
 
 [tool.setuptools.package-data]
-memorii = ["core/benchmark/fixture_sets/*.json"]
+memorii = ["core/benchmark/fixture_sets/*.json", "prompts/**/*.yaml"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -68,11 +68,16 @@ ignore = [
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
 include = [
+  "memorii/core/belief",
+  "memorii/core/benchmark/artifact_rows",
+  "memorii/core/benchmark/artifact_validation.py",
+  "memorii/core/benchmark/reproducibility.py",
   "memorii/core/memory_evolution",
   "memorii/core/benchmark/memory_evolution_sim",
   "memorii/core/benchmark/memory_evolution_runtime",
   "memorii/core/calibration",
   "memorii/core/prompts",
+  "memorii/core/llm_decision",
   "memorii/tools/benchmark_suites",
 ]
 exclude = [

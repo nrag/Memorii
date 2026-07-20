@@ -85,6 +85,7 @@ class WorkState(BaseModel):
     evidence_event_ids: list[str] = Field(default_factory=list)
     state_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     ambiguity_reasons: list[str] = Field(default_factory=list)
+    conflicting_event_ids: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -208,12 +209,21 @@ def reduce_work_states(events: Iterable[ActionEvent]) -> WorkStateSnapshot:
     ):
         ordered = sorted(branch_events, key=_event_sort_key)
         last = ordered[-1]
-        status = last.explicit_status
         ambiguity_reasons: list[str] = []
+        terminal_rank = _event_semantic_rank(last)
+        terminal_events = [event for event in ordered if _event_semantic_rank(event) == terminal_rank]
+        terminal_statuses = {_effective_event_status(event) for event in terminal_events}
+        conflicting_event_ids: list[str] = []
+        if len(terminal_statuses) > 1:
+            status = WorkStateStatus.UNKNOWN
+            ambiguity_reasons.append("simultaneous_contradictory_action_events")
+            conflicting_event_ids = sorted(event.event_id for event in terminal_events)
+        else:
+            status = next(iter(terminal_statuses))
         inferred_status = status_for_action_event(last.event_type)
-        if status == WorkStateStatus.UNKNOWN:
+        if status == WorkStateStatus.UNKNOWN and not conflicting_event_ids:
             status = inferred_status
-        elif inferred_status not in {WorkStateStatus.UNKNOWN, status}:
+        elif not conflicting_event_ids and inferred_status not in {WorkStateStatus.UNKNOWN, status}:
             ambiguity_reasons.append("explicit_status_conflicts_with_event_type")
         progress_events = [
             event
@@ -242,15 +252,16 @@ def reduce_work_states(events: Iterable[ActionEvent]) -> WorkStateSnapshot:
                 evidence_event_ids=evidence_event_ids,
                 state_confidence=min(1.0, 0.5 + 0.1 * last.source_trust),
                 ambiguity_reasons=ambiguity_reasons,
+                conflicting_event_ids=conflicting_event_ids,
             )
         )
 
     active = [state for state in states if state.active]
-    ambiguous = [state for state in active if state.ambiguity_reasons]
+    ambiguous = [state for state in states if state.ambiguity_reasons]
     return WorkStateSnapshot(
         states=states,
         active_branch_ids=[state.branch_id for state in active],
-        suppressed_branch_ids=[state.branch_id for state in states if not state.active],
+        suppressed_branch_ids=[state.branch_id for state in states if not state.active and not state.ambiguity_reasons],
         ambiguous_branch_ids=[state.branch_id for state in ambiguous],
     )
 
@@ -354,6 +365,18 @@ def _event_sort_key(event: ActionEvent) -> tuple[datetime, datetime, int, str]:
         (event.transaction_time or datetime.min.replace(tzinfo=UTC)).astimezone(UTC),
         event.source_trust,
         event.event_id,
+    )
+
+
+def _event_semantic_rank(event: ActionEvent) -> tuple[datetime, datetime, int]:
+    return _event_sort_key(event)[:3]
+
+
+def _effective_event_status(event: ActionEvent) -> WorkStateStatus:
+    return (
+        event.explicit_status
+        if event.explicit_status != WorkStateStatus.UNKNOWN
+        else status_for_action_event(event.event_type)
     )
 
 
