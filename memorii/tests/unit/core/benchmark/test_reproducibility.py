@@ -134,6 +134,18 @@ def test_owned_source_fingerprint_fails_closed_on_invalid_ownership(
         build_source_tree_fingerprint(root=tmp_path, relative_paths=relative_paths)
 
 
+def test_owned_source_fingerprint_fails_closed_when_root_does_not_exist(
+    tmp_path: Path,
+) -> None:
+    missing_root = tmp_path / "missing-root"
+
+    with pytest.raises(FileNotFoundError):
+        build_source_tree_fingerprint(
+            root=missing_root,
+            relative_paths=["memorii"],
+        )
+
+
 def test_owned_source_fingerprint_fails_closed_on_absolute_paths(tmp_path: Path) -> None:
     source = tmp_path / "source.py"
     source.write_text("VALUE = 1\n", encoding="utf-8")
