@@ -6,7 +6,10 @@ from collections.abc import Mapping
 from typing import Literal
 
 from memorii.core.memory_evolution.models import ClaimState
-from memorii.core.memory_evolution.retrieval import ProductionRetrievalDecision, SemanticFrameStatus
+from memorii.core.memory_evolution.retrieval_contracts import (
+    ProductionRetrievalDecision,
+    SemanticFrameStatus,
+)
 from memorii.core.provider.models import (
     RetrievalChannelAuthority,
     RetrievalChannelResult,

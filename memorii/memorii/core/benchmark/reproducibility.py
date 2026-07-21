@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import importlib.util
 import json
 import os
 import random
@@ -194,6 +196,141 @@ def build_source_tree_fingerprint(*, root: Path, relative_paths: list[str]) -> s
     digest = hashlib.sha256()
     for path in sorted(files):
         relative = path.relative_to(resolved_root).as_posix()
+        digest.update(relative.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def build_python_dependency_fingerprint(*, root: Path, entry_paths: list[str]) -> str:
+    """Hash entry points and their complete local Python import closure.
+
+    Static local imports are resolved from ``root``. Dynamic imports are
+    rejected because silently omitting one would make the fingerprint an
+    incomplete statement about the code that produced benchmark artifacts.
+    """
+
+    resolved_root = root.resolve()
+    pending = list(_python_entry_files(root=resolved_root, entry_paths=entry_paths))
+    files: set[Path] = set()
+    while pending:
+        path = pending.pop()
+        if path in files:
+            continue
+        files.add(path)
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for module_name in _statically_imported_modules(
+            tree=tree,
+            path=path,
+            root=resolved_root,
+        ):
+            imported_path = _local_module_path(root=resolved_root, module_name=module_name)
+            if imported_path is not None and imported_path not in files:
+                pending.append(imported_path)
+        _reject_dynamic_local_imports(tree=tree, path=path, root=resolved_root)
+    return _fingerprint_files(root=resolved_root, files=files)
+
+
+def _python_entry_files(*, root: Path, entry_paths: list[str]) -> set[Path]:
+    files: set[Path] = set()
+    for relative_path in entry_paths:
+        candidate = (root / relative_path).resolve()
+        if not candidate.is_relative_to(root):
+            raise ValueError(f"Python dependency path escapes root: {relative_path}")
+        if candidate.is_dir():
+            files.update(path.resolve() for path in candidate.rglob("*.py") if path.is_file())
+        elif candidate.is_file() and candidate.suffix == ".py":
+            files.add(candidate)
+        elif candidate.exists():
+            raise ValueError(f"Python dependency path is not Python source: {relative_path}")
+        else:
+            raise ValueError(f"Python dependency path does not exist: {relative_path}")
+    if not files:
+        raise ValueError("Python dependency fingerprint requires at least one source file")
+    return files
+
+
+def _statically_imported_modules(
+    *,
+    tree: ast.AST,
+    path: Path,
+    root: Path,
+) -> set[str]:
+    modules: set[str] = set()
+    current_module = _module_name_for_path(root=root, path=path)
+    current_package = current_module if path.name == "__init__.py" else current_module.rpartition(".")[0]
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+            continue
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        if node.level:
+            relative_name = "." * node.level + (node.module or "")
+            try:
+                module_name = importlib.util.resolve_name(relative_name, current_package)
+            except ImportError as error:
+                raise ValueError(f"cannot resolve relative import in {path}:{node.lineno}") from error
+        else:
+            module_name = node.module
+        if module_name is None:
+            raise ValueError(f"cannot resolve import in {path}:{node.lineno}")
+        modules.add(module_name)
+        modules.update(
+            candidate
+            for alias in node.names
+            if alias.name != "*"
+            if (candidate := f"{module_name}.{alias.name}")
+            if _local_module_path(root=root, module_name=candidate) is not None
+        )
+    return modules
+
+
+def _module_name_for_path(*, root: Path, path: Path) -> str:
+    relative = path.relative_to(root).with_suffix("")
+    parts = list(relative.parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    if not parts:
+        raise ValueError(f"Python source is not contained in a package: {path}")
+    return ".".join(parts)
+
+
+def _local_module_path(*, root: Path, module_name: str) -> Path | None:
+    module_path = root.joinpath(*module_name.split("."))
+    source_path = module_path.with_suffix(".py")
+    package_path = module_path / "__init__.py"
+    if source_path.is_file():
+        return source_path.resolve()
+    if package_path.is_file():
+        return package_path.resolve()
+    return None
+
+
+def _reject_dynamic_local_imports(*, tree: ast.AST, path: Path, root: Path) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        is_dynamic_import = (
+            isinstance(node.func, ast.Name)
+            and node.func.id in {"__import__", "import_module"}
+        ) or (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "import_module"
+        )
+        if not is_dynamic_import:
+            continue
+        if not node.args or not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
+            raise ValueError(f"dynamic import cannot be fingerprinted: {path}:{node.lineno}")
+        if _local_module_path(root=root, module_name=node.args[0].value) is not None:
+            raise ValueError(f"dynamic import cannot be fingerprinted: {path}:{node.lineno}")
+
+
+def _fingerprint_files(*, root: Path, files: set[Path]) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(files):
+        relative = path.relative_to(root).as_posix()
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes())

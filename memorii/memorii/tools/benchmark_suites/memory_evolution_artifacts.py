@@ -49,6 +49,7 @@ from memorii.core.benchmark.memory_evolution_sim import (
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import (
     build_benchmark_fingerprint,
+    build_python_dependency_fingerprint,
     build_run_id,
     build_source_tree_fingerprint,
     resolve_source_revision,
@@ -201,9 +202,9 @@ def write_memory_evolution_artifacts(
         # generated fixture contents intentionally vary by seed, so they must
         # not participate in the seed-invariant gate configuration fingerprint.
         "fixture_contract": "memory_evolution_surface_contract_v1",
-        "source_hash": build_source_tree_fingerprint(
+        "source_hash": build_python_dependency_fingerprint(
             root=_PROJECT_ROOT,
-            relative_paths=[
+            entry_paths=[
                 "memorii/core/benchmark/memory_evolution_sim/generation.py",
                 "memorii/core/benchmark/memory_evolution_sim/schemas.py",
             ],
@@ -214,9 +215,9 @@ def write_memory_evolution_artifacts(
         "evaluation_contract": "memory_evolution_judges_v1",
         "failure_policy_contract": "fail_closed_v1",
         "artifact_contract": 1,
-        "source_hash": build_source_tree_fingerprint(
+        "source_hash": build_python_dependency_fingerprint(
             root=_PROJECT_ROOT,
-            relative_paths=[
+            entry_paths=[
                 "memorii/core/benchmark/artifact_rows",
                 "memorii/core/benchmark/artifact_validation.py",
                 "memorii/core/benchmark/failure_policy.py",

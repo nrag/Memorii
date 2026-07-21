@@ -9,8 +9,23 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.provider.models import ProviderStoredRecord
 from memorii.domain.common import Provenance, RoutingInfo
-from memorii.domain.enums import CommitStatus, Durability, MemoryDomain, MemoryScope, SourceType, TemporalValidityStatus
+from memorii.domain.enums import (
+    CommitStatus,
+    Durability,
+    MemoryDomain,
+    MemoryRecordVisibility,
+    MemoryScope,
+    SourceType,
+    TemporalValidityStatus,
+)
 from memorii.domain.memory_object import MemoryObject
+
+
+class MemoryRecordFence(BaseModel):
+    execution_token: str = Field(min_length=1)
+    ownership_epoch: int = Field(ge=1)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class CanonicalMemoryRecord(BaseModel):
@@ -40,6 +55,8 @@ class CanonicalMemoryRecord(BaseModel):
     rejected_reason: str | None = None
     conflict_with_memory_ids: list[str] = Field(default_factory=list)
     episode_id: str | None = None
+    visibility: MemoryRecordVisibility = MemoryRecordVisibility.RUNTIME_CONTEXT
+    mutation_fence: MemoryRecordFence | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -89,6 +106,8 @@ def from_provider_stored_record(record: ProviderStoredRecord, *, source_kind: st
 
 
 def to_provider_stored_record(record: CanonicalMemoryRecord) -> ProviderStoredRecord:
+    if record.visibility != MemoryRecordVisibility.RUNTIME_CONTEXT:
+        raise ValueError(f"internal memory record cannot enter provider context: {record.memory_id}")
     return ProviderStoredRecord(
         memory_id=record.memory_id,
         domain=record.domain,
@@ -103,6 +122,8 @@ def to_provider_stored_record(record: CanonicalMemoryRecord) -> ProviderStoredRe
 
 
 def to_memory_object(record: CanonicalMemoryRecord) -> MemoryObject:
+    if record.visibility != MemoryRecordVisibility.RUNTIME_CONTEXT:
+        raise ValueError(f"internal memory record cannot enter runtime context: {record.memory_id}")
     namespace: dict[str, str] = {"memory_domain": record.domain.value}
     if record.task_id is not None:
         namespace["task_id"] = record.task_id

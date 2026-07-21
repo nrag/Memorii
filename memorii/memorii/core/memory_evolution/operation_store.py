@@ -1,23 +1,32 @@
-"""Process-safe persistence for mutable memory-evolution operation state."""
+"""Authoritative memory-plane repository for evolution operation state."""
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-import tempfile
-from pathlib import Path
-from threading import RLock
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from memorii.core.memory_evolution.operation_models import EvolutionOperation
-from memorii.core.memory_plane.file_lock import locked_file
+from memorii.core.memory_evolution.operation_models import (
+    EvolutionOperation,
+    EvolutionOperationStatus,
+)
+from memorii.core.memory_plane.models import CanonicalMemoryRecord, MemoryRecordFence
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import (
+    MemoryPlaneRevisionConflictError,
+    RecordAbsentPrecondition,
+    RecordDigestPrecondition,
+    RecordFencePrecondition,
+    record_digest,
+)
+from memorii.domain.enums import (
+    CommitStatus,
+    MemoryDomain,
+    MemoryRecordVisibility,
+    TemporalValidityStatus,
+)
 
 
 class EvolutionOperationStoreCorruptionError(RuntimeError):
-    """Persisted operation state cannot be read without losing truth."""
+    """An internal operation record cannot be decoded without losing truth."""
 
 
 class EvolutionOperationRepository(Protocol):
@@ -35,174 +44,133 @@ class EvolutionOperationRepository(Protocol):
     ) -> bool: ...
 
 
-class InMemoryEvolutionOperationRepository:
-    def __init__(self) -> None:
-        self._operations: dict[str, EvolutionOperation] = {}
-        self._lock = RLock()
+class MemoryPlaneEvolutionOperationRepository:
+    """Stores ownership and completion state in the projection commit authority."""
+
+    def __init__(self, memory_plane: MemoryPlaneService) -> None:
+        self._memory_plane = memory_plane
 
     def create(self, operation: EvolutionOperation) -> EvolutionOperation:
-        with self._lock:
-            existing = self._operations.get(operation.operation_id)
-            if existing is not None:
-                return existing.model_copy(deep=True)
-            self._operations[operation.operation_id] = operation.model_copy(deep=True)
-            return operation.model_copy(deep=True)
-
-    def get(self, operation_id: str) -> EvolutionOperation | None:
-        with self._lock:
-            operation = self._operations.get(operation_id)
-            return operation.model_copy(deep=True) if operation is not None else None
-
-    def list(self) -> list[EvolutionOperation]:
-        with self._lock:
-            return [
-                operation.model_copy(deep=True)
-                for operation in sorted(
-                    self._operations.values(),
-                    key=lambda item: item.operation_id,
-                )
-            ]
-
-    def compare_and_set(
-        self,
-        *,
-        expected_state_revision: int,
-        operation: EvolutionOperation,
-    ) -> bool:
-        with self._lock:
-            current = self._operations.get(operation.operation_id)
-            if current is None or current.state_revision != expected_state_revision:
-                return False
-            if operation.state_revision != expected_state_revision + 1:
-                raise ValueError("operation CAS must advance state_revision by exactly one")
-            self._operations[operation.operation_id] = operation.model_copy(deep=True)
-            return True
-
-
-class _OperationSnapshot(BaseModel):
-    operations: tuple[EvolutionOperation, ...]
-    checksum: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid")
-
-    @classmethod
-    def create(cls, operations: tuple[EvolutionOperation, ...]) -> _OperationSnapshot:
-        ordered = tuple(sorted(operations, key=lambda item: item.operation_id))
-        return cls(operations=ordered, checksum=_snapshot_checksum(ordered))
-
-    @model_validator(mode="after")
-    def validate_checksum(self) -> _OperationSnapshot:
-        if self.checksum != _snapshot_checksum(self.operations):
-            raise ValueError("evolution-operation snapshot checksum mismatch")
-        return self
-
-
-class JsonEvolutionOperationRepository:
-    """Crash-atomic operation snapshot guarded by a process-level lock."""
-
-    def __init__(self, path: str | Path) -> None:
-        self._base_path = Path(path)
-        self._snapshot_path = self._base_path / "evolution_operations.json"
-        self._lock_path = self._base_path / "evolution_operations.lock"
-        self._base_path.mkdir(parents=True, exist_ok=True)
-
-    def create(self, operation: EvolutionOperation) -> EvolutionOperation:
-        with locked_file(self._lock_path, exclusive=True):
-            operations = self._read_unlocked()
-            existing = operations.get(operation.operation_id)
-            if existing is not None:
-                return existing.model_copy(deep=True)
-            operations[operation.operation_id] = operation.model_copy(deep=True)
-            self._write_unlocked(operations)
-            return operation.model_copy(deep=True)
-
-    def get(self, operation_id: str) -> EvolutionOperation | None:
-        with locked_file(self._lock_path, exclusive=False):
-            operation = self._read_unlocked().get(operation_id)
-            return operation.model_copy(deep=True) if operation is not None else None
-
-    def list(self) -> list[EvolutionOperation]:
-        with locked_file(self._lock_path, exclusive=False):
-            return [
-                operation.model_copy(deep=True)
-                for operation in sorted(
-                    self._read_unlocked().values(),
-                    key=lambda item: item.operation_id,
-                )
-            ]
-
-    def compare_and_set(
-        self,
-        *,
-        expected_state_revision: int,
-        operation: EvolutionOperation,
-    ) -> bool:
-        with locked_file(self._lock_path, exclusive=True):
-            operations = self._read_unlocked()
-            current = operations.get(operation.operation_id)
-            if current is None or current.state_revision != expected_state_revision:
-                return False
-            if operation.state_revision != expected_state_revision + 1:
-                raise ValueError("operation CAS must advance state_revision by exactly one")
-            operations[operation.operation_id] = operation.model_copy(deep=True)
-            self._write_unlocked(operations)
-            return True
-
-    def _read_unlocked(self) -> dict[str, EvolutionOperation]:
-        if not self._snapshot_path.exists():
-            return {}
+        existing = self.get(operation.operation_id)
+        if existing is not None:
+            return existing
         try:
-            content = self._snapshot_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            raise EvolutionOperationStoreCorruptionError(f"cannot read evolution-operation snapshot: {exc}") from exc
-        if content and not content.endswith("\n"):
-            raise EvolutionOperationStoreCorruptionError("evolution-operation snapshot is incomplete")
-        try:
-            snapshot = _OperationSnapshot.model_validate_json(content)
-        except ValueError as exc:
-            raise EvolutionOperationStoreCorruptionError(f"invalid evolution-operation snapshot: {exc}") from exc
-        operations = {operation.operation_id: operation for operation in snapshot.operations}
-        if len(operations) != len(snapshot.operations):
-            raise EvolutionOperationStoreCorruptionError(
-                "evolution-operation snapshot contains duplicate operation IDs"
+            self._memory_plane.conditionally_write_records(
+                (record_from_operation(operation),),
+                preconditions=(RecordAbsentPrecondition(memory_id=operation_memory_id(operation.operation_id)),),
             )
-        return operations
+        except MemoryPlaneRevisionConflictError:
+            existing = self.get(operation.operation_id)
+            if existing is None:
+                raise
+            return existing
+        return operation.model_copy(deep=True)
 
-    def _write_unlocked(self, operations: dict[str, EvolutionOperation]) -> None:
-        snapshot = _OperationSnapshot.create(tuple(operations.values()))
-        descriptor, temporary_name = tempfile.mkstemp(
-            dir=self._base_path,
-            prefix=f".{self._snapshot_path.name}.",
-            suffix=".tmp",
-        )
-        temporary_path = Path(temporary_name)
+    def get(self, operation_id: str) -> EvolutionOperation | None:
+        return operation_from_record(self._memory_plane.get_record(operation_memory_id(operation_id)))
+
+    def list(self) -> list[EvolutionOperation]:
+        operations = [
+            operation
+            for record in self._memory_plane.list_records(source_kind="memory_evolution:operation")
+            if (operation := operation_from_record(record)) is not None
+        ]
+        return sorted(operations, key=lambda item: item.operation_id)
+
+    def compare_and_set(
+        self,
+        *,
+        expected_state_revision: int,
+        operation: EvolutionOperation,
+    ) -> bool:
+        current_record = self._memory_plane.get_record(operation_memory_id(operation.operation_id))
+        current = operation_from_record(current_record)
+        if current is None or current_record is None or current.state_revision != expected_state_revision:
+            return False
+        if operation.state_revision != expected_state_revision + 1:
+            raise ValueError("operation CAS must advance state_revision by exactly one")
         try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                handle.write(snapshot.model_dump_json())
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_path, self._snapshot_path)
-            _fsync_directory(self._base_path)
-        except BaseException:
-            temporary_path.unlink(missing_ok=True)
-            raise
+            self._memory_plane.conditionally_write_records(
+                (record_from_operation(operation),),
+                preconditions=(
+                    RecordDigestPrecondition(
+                        memory_id=current_record.memory_id,
+                        expected_digest=record_digest(current_record),
+                    ),
+                ),
+            )
+        except MemoryPlaneRevisionConflictError:
+            return False
+        return True
 
 
-def _snapshot_checksum(operations: tuple[EvolutionOperation, ...]) -> str:
-    payload = json.dumps(
-        [operation.model_dump(mode="json") for operation in operations],
-        sort_keys=True,
-        separators=(",", ":"),
+def operation_memory_id(operation_id: str) -> str:
+    return f"mem:evolution:operation:{operation_id}"
+
+
+def operation_fence_precondition(operation: EvolutionOperation) -> RecordFencePrecondition:
+    if operation.status != EvolutionOperationStatus.RUNNING or operation.execution_token is None:
+        raise ValueError("only a running operation can provide a projection fence")
+    return RecordFencePrecondition(
+        memory_id=operation_memory_id(operation.operation_id),
+        expected_fence=MemoryRecordFence(
+            execution_token=operation.execution_token,
+            ownership_epoch=operation.ownership_epoch,
+        ),
     )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _fsync_directory(path: Path) -> None:
-    if os.name == "nt":
-        return
-    descriptor = os.open(path, os.O_RDONLY)
+def record_from_operation(operation: EvolutionOperation) -> CanonicalMemoryRecord:
+    fence = None
+    if operation.status == EvolutionOperationStatus.RUNNING:
+        if operation.execution_token is None:
+            raise ValueError("running operation is missing its execution token")
+        fence = MemoryRecordFence(
+            execution_token=operation.execution_token,
+            ownership_epoch=operation.ownership_epoch,
+        )
+    return CanonicalMemoryRecord(
+        memory_id=operation_memory_id(operation.operation_id),
+        domain=MemoryDomain.EXECUTION,
+        text=f"Memory evolution {operation.status.value}",
+        content={
+            "memory_evolution_kind": "operation",
+            "operation": operation.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        validity_status=TemporalValidityStatus.ACTIVE,
+        source_kind="memory_evolution:operation",
+        timestamp=operation.updated_at,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        mutation_fence=fence,
+    )
+
+
+def operation_from_record(record: CanonicalMemoryRecord | None) -> EvolutionOperation | None:
+    if record is None:
+        return None
+    if (
+        record.domain != MemoryDomain.EXECUTION
+        or record.status != CommitStatus.COMMITTED
+        or record.source_kind != "memory_evolution:operation"
+        or record.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
+        or record.content.get("memory_evolution_kind") != "operation"
+    ):
+        raise EvolutionOperationStoreCorruptionError(
+            f"invalid memory-evolution operation envelope: {record.memory_id}"
+        )
     try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
+        operation = EvolutionOperation.model_validate(record.content.get("operation"))
+    except ValueError as exc:
+        raise EvolutionOperationStoreCorruptionError(
+            f"invalid memory-evolution operation record {record.memory_id}: {exc}"
+        ) from exc
+    expected_record = record_from_operation(operation)
+    if (
+        record.memory_id != expected_record.memory_id
+        or record.mutation_fence != expected_record.mutation_fence
+    ):
+        raise EvolutionOperationStoreCorruptionError(
+            f"invalid memory-evolution operation envelope: {record.memory_id}"
+        )
+    return operation

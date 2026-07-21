@@ -47,6 +47,8 @@ class EvolutionOperation(BaseModel):
     state_revision: int = Field(default=0, ge=0)
     attempt_count: int = Field(default=0, ge=0)
     lease_recovery_count: int = Field(default=0, ge=0)
+    ownership_epoch: int = Field(default=0, ge=0)
+    completed_fence_epoch: int | None = Field(default=None, ge=1)
     extraction_run_id: str | None = None
     extraction_status: ExtractionRunStatus | None = None
     fallback_provider: str | None = None
@@ -76,6 +78,8 @@ class EvolutionOperation(BaseModel):
                 raise ValueError("running operation requires an execution token and lease")
             if self.attempt_count < 1:
                 raise ValueError("running operation requires at least one attempt")
+            if self.ownership_epoch < 1:
+                raise ValueError("running operation requires a positive ownership epoch")
         elif self.execution_token is not None or self.lease_expires_at is not None:
             raise ValueError("only running operations may hold an execution claim")
         if self.status == EvolutionOperationStatus.COMMITTED:
@@ -85,8 +89,12 @@ class EvolutionOperation(BaseModel):
                 raise ValueError("failed extraction cannot be committed")
             if self.extraction_status == ExtractionRunStatus.FALLBACK_SUCCEEDED and not self.fallback_provider:
                 raise ValueError("committed fallback extraction requires fallback provider")
+            if self.completed_fence_epoch != self.ownership_epoch or self.ownership_epoch < 1:
+                raise ValueError("committed operation requires its completing ownership epoch")
         elif self.extraction_run_id is not None or self.projection_record_ids or self.fallback_provider is not None:
             raise ValueError("only committed operations may identify projection results")
+        elif self.completed_fence_epoch is not None:
+            raise ValueError("only committed operations may identify a completion fence")
         if self.status == EvolutionOperationStatus.FAILED and self.extraction_status not in {
             None,
             ExtractionRunStatus.FAILED,

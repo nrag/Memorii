@@ -6,7 +6,7 @@ from memorii.core.memory_evolution import (
     MemoryEvolutionService,
     MemoryQueryRequest,
 )
-from memorii.core.memory_evolution.graph import MemoryGraphStore
+from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore
 from memorii.core.memory_evolution.models import (
     ClaimKey,
     ClaimLifecycleState,

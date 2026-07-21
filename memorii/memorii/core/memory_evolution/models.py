@@ -597,7 +597,7 @@ class ExtractionRun(BaseModel):
         elif self.status == ExtractionRunStatus.FALLBACK_SUCCEEDED:
             if self.failure_code is None or not self.fallback_provider:
                 raise ValueError("fallback extraction requires the triggering failure and fallback provider")
-        elif self.failure_code is None:
+        elif self.status != ExtractionRunStatus.ABSTAINED and self.failure_code is None:
             raise ValueError("non-successful extraction requires a failure code")
         if self.status != ExtractionRunStatus.FALLBACK_SUCCEEDED and self.fallback_provider is not None:
             raise ValueError("only fallback extraction may identify a fallback provider")

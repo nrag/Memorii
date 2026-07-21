@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from memorii.core.memory_evolution.graph import MemoryGraphStore, subgraph_from_ids
+from memorii.core.memory_evolution.graph import subgraph_from_ids
+from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore
 from memorii.core.memory_evolution.models import (
     MemoryGraphEdgeType,
     MemoryGraphNode,

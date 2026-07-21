@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -13,9 +12,14 @@ from memorii.core.memory_evolution.operation_models import (
 )
 from memorii.core.memory_evolution.operation_store import (
     EvolutionOperationStoreCorruptionError,
-    InMemoryEvolutionOperationRepository,
-    JsonEvolutionOperationRepository,
+    MemoryPlaneEvolutionOperationRepository,
+    operation_from_record,
+    record_from_operation,
 )
+from memorii.core.memory_plane.models import MemoryRecordFence
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, JsonlMemoryPlaneStore
+from memorii.domain.enums import MemoryRecordVisibility
 
 
 def _pending_operation(operation_id: str = "operation:test") -> EvolutionOperation:
@@ -38,15 +42,20 @@ def _running_candidate(operation: EvolutionOperation, *, token: str) -> Evolutio
             "state_revision": operation.state_revision + 1,
             "status": EvolutionOperationStatus.RUNNING,
             "attempt_count": 1,
+            "ownership_epoch": operation.ownership_epoch + 1,
             "execution_token": token,
             "lease_expires_at": operation.updated_at + timedelta(minutes=1),
         }
     )
 
 
+def _repository(store: InMemoryMemoryPlaneStore | JsonlMemoryPlaneStore) -> MemoryPlaneEvolutionOperationRepository:
+    return MemoryPlaneEvolutionOperationRepository(MemoryPlaneService(record_store=store))
+
+
 def _claim_from_process(path: str, operation_payload: dict[str, object], token: str) -> bool:
     operation = EvolutionOperation.model_validate(operation_payload)
-    repository = JsonEvolutionOperationRepository(path)
+    repository = _repository(JsonlMemoryPlaneStore(path))
     return repository.compare_and_set(
         expected_state_revision=operation.state_revision,
         operation=_running_candidate(operation, token=token),
@@ -56,15 +65,15 @@ def _claim_from_process(path: str, operation_payload: dict[str, object], token: 
 @pytest.mark.parametrize(
     "repository_factory",
     [
-        lambda _path: InMemoryEvolutionOperationRepository(),
-        lambda path: JsonEvolutionOperationRepository(path),
+        lambda _path: _repository(InMemoryMemoryPlaneStore()),
+        lambda path: _repository(JsonlMemoryPlaneStore(path)),
     ],
 )
 def test_operation_repository_compare_and_set_has_one_winner(
     tmp_path: Path,
     repository_factory,
 ) -> None:
-    repository = repository_factory(tmp_path / "operations")
+    repository = repository_factory(tmp_path / "memory-plane")
     pending = repository.create(_pending_operation())
 
     first = repository.compare_and_set(
@@ -81,11 +90,12 @@ def test_operation_repository_compare_and_set_has_one_winner(
     stored = repository.get(pending.operation_id)
     assert stored is not None
     assert stored.execution_token == "first"
+    assert stored.ownership_epoch == 1
 
 
-def test_json_operation_repository_serializes_process_claims(tmp_path: Path) -> None:
-    path = tmp_path / "operations"
-    repository = JsonEvolutionOperationRepository(path)
+def test_filesystem_operation_repository_serializes_process_claims(tmp_path: Path) -> None:
+    path = tmp_path / "memory-plane"
+    repository = _repository(JsonlMemoryPlaneStore(path))
     pending = repository.create(_pending_operation("operation:process-contention"))
     payload = pending.model_dump(mode="python")
 
@@ -100,44 +110,52 @@ def test_json_operation_repository_serializes_process_claims(tmp_path: Path) -> 
         )
 
     assert sorted(outcomes) == [False, True]
-    stored = JsonEvolutionOperationRepository(path).get(pending.operation_id)
+    stored = _repository(JsonlMemoryPlaneStore(path)).get(pending.operation_id)
     assert stored is not None
     assert stored.execution_token in {"first", "second"}
 
 
-def test_json_operation_repository_persists_across_reopen(tmp_path: Path) -> None:
-    path = tmp_path / "operations"
-    pending = JsonEvolutionOperationRepository(path).create(_pending_operation("operation:reopen"))
+def test_filesystem_operation_repository_persists_across_reopen(tmp_path: Path) -> None:
+    path = tmp_path / "memory-plane"
+    repository = _repository(JsonlMemoryPlaneStore(path))
+    pending = repository.create(_pending_operation("operation:reopen"))
     running = _running_candidate(pending, token="owner")
-    assert JsonEvolutionOperationRepository(path).compare_and_set(
+    assert repository.compare_and_set(
         expected_state_revision=pending.state_revision,
         operation=running,
     )
 
-    reopened = JsonEvolutionOperationRepository(path).get(pending.operation_id)
+    reopened = _repository(JsonlMemoryPlaneStore(path)).get(pending.operation_id)
 
     assert reopened == running
 
 
-def test_json_operation_repository_rejects_incomplete_snapshot(tmp_path: Path) -> None:
-    path = tmp_path / "operations"
-    repository = JsonEvolutionOperationRepository(path)
-    repository.create(_pending_operation())
-    snapshot_path = path / "evolution_operations.json"
-    snapshot_path.write_text(snapshot_path.read_text(encoding="utf-8").rstrip("\n"), encoding="utf-8")
+def test_operation_repository_fails_closed_on_malformed_internal_record() -> None:
+    plane = MemoryPlaneService()
+    repository = MemoryPlaneEvolutionOperationRepository(plane)
+    operation = _pending_operation("operation:malformed")
+    malformed = record_from_operation(operation).model_copy(
+        update={"content": {"memory_evolution_kind": "operation", "operation": {"operation_id": "bad"}}}
+    )
+    plane.write_records((malformed,))
 
-    with pytest.raises(EvolutionOperationStoreCorruptionError, match="incomplete"):
-        repository.list()
+    with pytest.raises(EvolutionOperationStoreCorruptionError, match="invalid memory-evolution operation"):
+        repository.get(operation.operation_id)
 
 
-def test_json_operation_repository_rejects_checksum_mismatch(tmp_path: Path) -> None:
-    path = tmp_path / "operations"
-    repository = JsonEvolutionOperationRepository(path)
-    repository.create(_pending_operation())
-    snapshot_path = path / "evolution_operations.json"
-    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-    snapshot["operations"][0]["defer_assertions"] = True
-    snapshot_path.write_text(json.dumps(snapshot) + "\n", encoding="utf-8")
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"visibility": MemoryRecordVisibility.RUNTIME_CONTEXT},
+        {"mutation_fence": MemoryRecordFence(execution_token="wrong-owner", ownership_epoch=1)},
+        {"memory_id": "mem:evolution:operation:wrong-id"},
+    ],
+)
+def test_operation_repository_fails_closed_on_malformed_control_envelope(
+    update: dict[str, object],
+) -> None:
+    operation = _pending_operation("operation:malformed-envelope")
+    record = record_from_operation(operation).model_copy(update=update)
 
-    with pytest.raises(EvolutionOperationStoreCorruptionError, match="checksum"):
-        repository.list()
+    with pytest.raises(EvolutionOperationStoreCorruptionError, match="invalid memory-evolution operation envelope"):
+        operation_from_record(record)

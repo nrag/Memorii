@@ -35,15 +35,14 @@ from memorii.core.memory_evolution.query_graph import (
     GraphPatternResolutionStatus,
     GraphResolutionMethod,
 )
-from memorii.core.memory_evolution.retrieval import (
+from memorii.core.memory_evolution.retrieval import rank_claims, reconcile_memory_query
+from memorii.core.memory_evolution.retrieval_contracts import (
     MemoryQueryInput,
     ProductionRetrievalDecision,
     ResolvedMemoryQuery,
     RetrievalPurpose,
     ScopedExecutionView,
     SemanticFrameStatus,
-    rank_claims,
-    reconcile_memory_query,
 )
 from memorii.core.memory_evolution.temporal_contracts import (
     QueryResolutionConfidenceSource,

@@ -1,13 +1,13 @@
 from datetime import UTC, datetime
 
 from memorii.core.memory_evolution import MemoryEvolutionService
-from memorii.core.memory_evolution.graph import (
-    MemoryGraphValidator,
+from memorii.core.memory_evolution.graph_ids import (
     claim_node_id,
     edge_id,
     entity_node_id,
     source_node_id,
 )
+from memorii.core.memory_evolution.graph_persistence import MemoryGraphValidator
 from memorii.core.memory_evolution.models import (
     MemoryGraphEdge,
     MemoryGraphEdgeType,

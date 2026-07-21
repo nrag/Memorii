@@ -16,7 +16,11 @@ from memorii.core.memory_plane.models import (
     to_memory_object,
     to_provider_stored_record,
 )
-from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, MemoryPlaneStore
+from memorii.core.memory_plane.store import (
+    InMemoryMemoryPlaneStore,
+    MemoryPlanePrecondition,
+    MemoryPlaneStore,
+)
 from memorii.core.memory_plane.unit_of_work import MemoryPlaneUnitOfWork
 from memorii.core.provider.blocking_policy import evaluate_operation_policy
 from memorii.core.provider.models import (
@@ -30,7 +34,7 @@ from memorii.core.provider.models import (
 from memorii.core.provider.prefetch import classify_prefetch_query, format_prefetch_context
 from memorii.core.provider.reranking import ProviderReranker
 from memorii.core.retrieval.planner import RetrievalPlanner
-from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.domain.memory_object import MemoryObject
 from memorii.domain.retrieval import (
     DomainRetrievalQuery,
@@ -92,7 +96,8 @@ class MemoryPlaneService:
         return [
             to_memory_object(item)
             for item in records
-            if self._matches_scope(item, query.scope)
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and self._matches_scope(item, query.scope)
             and self._matches_semantics(item, include_candidates=query.include_candidates, freshness=query.freshness)
         ]
 
@@ -101,8 +106,13 @@ class MemoryPlaneService:
         *,
         status: CommitStatus | None = None,
         domains: list[MemoryDomain] | None = None,
+        source_kind: str | None = None,
     ) -> list[CanonicalMemoryRecord]:
-        return self._record_store().list_records(status=status, domains=domains)
+        return self._record_store().list_records(
+            status=status,
+            domains=domains,
+            source_kind=source_kind,
+        )
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         return self._record_store().get_record(memory_id)
@@ -112,6 +122,20 @@ class MemoryPlaneService:
 
     def write_records(self, records: tuple[CanonicalMemoryRecord, ...]) -> int:
         return self._record_store().write_records(records)
+
+    def conditionally_write_records(
+        self,
+        records: tuple[CanonicalMemoryRecord, ...],
+        *,
+        preconditions: tuple[MemoryPlanePrecondition, ...],
+    ) -> int:
+        if self._active_unit_of_work.get() is not None:
+            raise RuntimeError("conditional control writes cannot be nested in a memory-plane unit of work")
+        return self._records.apply_batch(
+            records,
+            expected_revision=None,
+            preconditions=preconditions,
+        )
 
     def upsert_record(self, record: CanonicalMemoryRecord) -> None:
         self._record_store().upsert_record(record)
@@ -156,7 +180,9 @@ class MemoryPlaneService:
         existing = [
             item
             for item in self._record_store().list_records(status=CommitStatus.COMMITTED)
-            if item.source_candidate_id == source_candidate_id and item.status == CommitStatus.COMMITTED
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and item.source_candidate_id == source_candidate_id
+            and item.status == CommitStatus.COMMITTED
         ]
         if existing:
             return existing[0].memory_id
@@ -277,7 +303,8 @@ class MemoryPlaneService:
         pool = {
             item.memory_id: item
             for item in self._record_store().list_records(status=CommitStatus.COMMITTED)
-            if item.domain in planned_domains
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and item.domain in planned_domains
             and not item.source_kind.startswith("memory_evolution")
             and self._matches_scope(item, RetrievalScope(session_id=session_id, task_id=task_id, user_id=user_id))
         }
@@ -319,14 +346,18 @@ class MemoryPlaneService:
         return [
             to_provider_stored_record(item)
             for item in self._record_store().list_records(status=CommitStatus.CANDIDATE)
-            if item.status == CommitStatus.CANDIDATE and item.source_kind.startswith("provider")
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and item.status == CommitStatus.CANDIDATE
+            and item.source_kind.startswith("provider")
         ]
 
     def provider_transcript_records(self) -> list[ProviderStoredRecord]:
         return [
             to_provider_stored_record(item)
             for item in self._record_store().list_records(domains=[MemoryDomain.TRANSCRIPT])
-            if item.domain == MemoryDomain.TRANSCRIPT and item.is_raw_event
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and item.domain == MemoryDomain.TRANSCRIPT
+            and item.is_raw_event
         ]
 
     def last_provider_prefetch_trace(self) -> ProviderPrefetchTrace | None:

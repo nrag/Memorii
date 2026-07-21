@@ -13,7 +13,6 @@ from memorii.core.llm_decision import (
     JsonlGoldenCandidateStore,
     JsonlLLMDecisionTraceStore,
 )
-from memorii.core.memory_evolution.operation_store import JsonEvolutionOperationRepository
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.service import ProviderMemoryService
@@ -27,7 +26,6 @@ class FilesystemStorageBundle:
     work_state_store: JsonlWorkStateStore
     decision_state_store: JsonlDecisionStateStore
     memory_plane_store: JsonlMemoryPlaneStore
-    evolution_operation_repository: JsonEvolutionOperationRepository
     llm_trace_store: JsonlLLMDecisionTraceStore
     eval_snapshot_store: JsonlEvalSnapshotStore
     golden_candidate_store: JsonlGoldenCandidateStore
@@ -48,9 +46,6 @@ class FilesystemStorageBundle:
             work_state_store=JsonlWorkStateStore(resolved_root / "work_state"),
             decision_state_store=JsonlDecisionStateStore(resolved_root / "decision_state"),
             memory_plane_store=JsonlMemoryPlaneStore(resolved_root / "memory_plane"),
-            evolution_operation_repository=JsonEvolutionOperationRepository(
-                resolved_root / "memory_evolution" / "operations"
-            ),
             llm_trace_store=JsonlLLMDecisionTraceStore(resolved_root / "llm_decision" / "traces.jsonl"),
             eval_snapshot_store=JsonlEvalSnapshotStore(resolved_root / "llm_decision" / "eval_snapshots.jsonl"),
             golden_candidate_store=JsonlGoldenCandidateStore(
@@ -75,7 +70,6 @@ class FilesystemStorageBundle:
             work_state_service=self.build_work_state_service(),
             decision_state_service=self.build_decision_state_service(),
             llm_decision_trace_store=self.llm_trace_store,
-            memory_evolution_operation_repository=self.evolution_operation_repository,
         )
 
     def storage_status(self) -> StorageRootStatus:

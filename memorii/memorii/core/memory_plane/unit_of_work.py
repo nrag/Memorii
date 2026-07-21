@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.memory_plane.store import MemoryPlaneStore
+from memorii.core.memory_plane.store import MemoryPlanePrecondition, MemoryPlaneStore
 from memorii.domain.enums import CommitStatus, MemoryDomain
 
 
@@ -15,6 +15,7 @@ class MemoryPlaneUnitOfWork:
         self._base_revision, records = store.read_snapshot()
         self._records = {record.memory_id: record for record in records}
         self._pending: dict[str, CanonicalMemoryRecord] = {}
+        self._pending_preconditions: list[MemoryPlanePrecondition] = []
         self._committed_revision: int | None = None
 
     @property
@@ -49,7 +50,8 @@ class MemoryPlaneUnitOfWork:
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
-        expected_revision: int,
+        expected_revision: int | None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> int:
         self._ensure_open()
         if expected_revision != self._base_revision:
@@ -58,6 +60,7 @@ class MemoryPlaneUnitOfWork:
             )
         for record in records:
             self._pending[record.memory_id] = record.model_copy(deep=True)
+        self._pending_preconditions.extend(preconditions)
         return self._base_revision
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
@@ -88,6 +91,7 @@ class MemoryPlaneUnitOfWork:
         *,
         records: tuple[CanonicalMemoryRecord, ...] | None = None,
         expected_revision: int | None = None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> int:
         self._ensure_open()
         records = self.pending_records if records is None else records
@@ -96,12 +100,16 @@ class MemoryPlaneUnitOfWork:
             raise ValueError("commit records do not match the staged unit-of-work records")
         if expected_revision != self._base_revision:
             raise ValueError("commit revision does not match the unit-of-work base revision")
+        effective_preconditions = (*self._pending_preconditions, *preconditions)
         if not self._pending:
+            if effective_preconditions:
+                raise ValueError("unit-of-work preconditions require staged records")
             self._committed_revision = self._base_revision
             return self._base_revision
         self._committed_revision = self._store.apply_batch(
             records,
             expected_revision=expected_revision,
+            preconditions=effective_preconditions,
         )
         return self._committed_revision
 

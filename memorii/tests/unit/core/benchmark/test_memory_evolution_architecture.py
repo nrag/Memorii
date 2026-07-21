@@ -18,23 +18,36 @@ INDEPENDENT_EVALUATORS = (
     PACKAGE_ROOT / "benchmark" / "memory_evolution_sim",
 )
 DOMAIN_NAMING_PATTERN = re.compile(r"(?:phase\d+|wave\d+|legacy|compat)", re.IGNORECASE)
-COHESION_LINE_BUDGETS = {
-    PRODUCTION_ROOT / "service.py": 600,
-    PRODUCTION_ROOT / "graph_queries.py": 300,
-    PRODUCTION_ROOT / "claim_queries.py": 220,
-    PRODUCTION_ROOT / "record_projection.py": 200,
-    PRODUCTION_ROOT / "state_repository.py": 120,
-    PRODUCTION_ROOT / "claim_policy.py": 400,
-    PRODUCTION_ROOT / "operation_models.py": 140,
-    PRODUCTION_ROOT / "operation_lease.py": 80,
-    PRODUCTION_ROOT / "operation_store.py": 240,
-    PRODUCTION_ROOT / "operations.py": 580,
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_runtime" / "runner.py": 400,
-    PACKAGE_ROOT / "provider" / "service.py": 600,
-    PACKAGE_ROOT / "provider" / "retrieval_composition.py": 180,
-    PACKAGE_ROOT / "provider" / "tool_schemas.py": 200,
-    PACKAGE_ROOT / "provider" / "tool_dispatch.py": 520,
-    PACKAGE_ROOT / "provider" / "work_state_projection.py": 330,
+COHESION_ROOTS = (
+    PRODUCTION_ROOT,
+    PACKAGE_ROOT / "provider",
+    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim",
+    PACKAGE_ROOT / "benchmark" / "memory_evolution_runtime",
+    PACKAGE_ROOT / "benchmark" / "calibration",
+    PACKAGE_ROOT / "benchmark" / "artifact_rows",
+)
+DEFAULT_MODULE_LINE_BUDGET = 750
+DEFAULT_FUNCTION_LINE_BUDGET = 350
+DEFAULT_CLASS_LINE_BUDGET = 500
+MODULE_LINE_BUDGET_EXCEPTIONS = {
+    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "schemas.py": (
+        800,
+        "declarative simulator schema catalog",
+    ),
+    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "judges.py": (
+        780,
+        "single selection and rejection judge policy family; answer judges have a separate owner",
+    ),
+}
+FUNCTION_LINE_BUDGET_EXCEPTIONS = {
+    (
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "family_scenarios.py",
+        "build_family_scenario",
+    ): (650, "exhaustive declarative scenario-family construction"),
+    (
+        PACKAGE_ROOT / "benchmark" / "calibration" / "gates.py",
+        "evaluate_live_gate",
+    ): (450, "ordered fail-closed calibration gate evaluation"),
 }
 
 
@@ -316,11 +329,52 @@ def test_owned_packages_replace_the_removed_monolith_modules() -> None:
 
 
 def test_hardening_owned_modules_stay_within_cohesion_budgets() -> None:
-    violations = [
-        f"{path.relative_to(SOURCE_ROOT)}: {len(path.read_text(encoding='utf-8').splitlines())} > {budget}"
-        for path, budget in COHESION_LINE_BUDGETS.items()
-        if len(path.read_text(encoding="utf-8").splitlines()) > budget
-    ]
+    paths = sorted({path for root in COHESION_ROOTS for path in root.rglob("*.py")})
+    violations: list[str] = []
+    for path in paths:
+        exception = MODULE_LINE_BUDGET_EXCEPTIONS.get(path)
+        budget = exception[0] if exception is not None else DEFAULT_MODULE_LINE_BUDGET
+        line_count = len(path.read_text(encoding="utf-8").splitlines())
+        if line_count > budget:
+            violations.append(f"{path.relative_to(SOURCE_ROOT)}: module {line_count} > {budget}")
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            assert node.end_lineno is not None
+            span = node.end_lineno - node.lineno + 1
+            if isinstance(node, ast.ClassDef):
+                node_budget = DEFAULT_CLASS_LINE_BUDGET
+                kind = "class"
+            else:
+                function_exception = FUNCTION_LINE_BUDGET_EXCEPTIONS.get((path, node.name))
+                node_budget = (
+                    function_exception[0]
+                    if function_exception is not None
+                    else DEFAULT_FUNCTION_LINE_BUDGET
+                )
+                kind = "function"
+            if span > node_budget:
+                violations.append(
+                    f"{path.relative_to(SOURCE_ROOT)}:{node.lineno}: "
+                    f"{kind} {node.name} {span} > {node_budget}"
+                )
+
+    stale_module_exceptions = set(MODULE_LINE_BUDGET_EXCEPTIONS) - set(paths)
+    stale_function_exceptions = {
+        (path, name)
+        for path, name in FUNCTION_LINE_BUDGET_EXCEPTIONS
+        if path not in paths
+        or not any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
+        )
+    }
+    violations.extend(f"stale module exception: {path}" for path in sorted(stale_module_exceptions))
+    violations.extend(
+        f"stale function exception: {path}:{name}"
+        for path, name in sorted(stale_function_exceptions)
+    )
 
     assert violations == []
 

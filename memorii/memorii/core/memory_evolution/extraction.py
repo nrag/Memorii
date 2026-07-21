@@ -6,12 +6,10 @@ import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from memorii.core.llm_provider.runner import PromptLLMRunner
+from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput, MemoryExtractor
 from memorii.core.memory_evolution.language import supports_english_rules
 from memorii.core.memory_evolution.models import (
     ClaimKey,
@@ -29,105 +27,6 @@ from memorii.core.memory_evolution.models import (
 )
 from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
 from memorii.core.prompts.runtime_manifest import PromptOwner
-
-
-class MemoryExtractor(Protocol):
-    @property
-    def provider(self) -> str: ...
-
-    @property
-    def model(self) -> str | None: ...
-
-    @property
-    def prompt_hash(self) -> str | None: ...
-
-    def extract(
-        self, observations: list[SourceObservation]
-    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]: ...
-
-
-class MemoryExtractionRunError(RuntimeError):
-    """Terminal extraction outcome that must not be committed as live success."""
-
-    def __init__(self, run: ExtractionRun) -> None:
-        if run.status != ExtractionRunStatus.FAILED or run.failure_code is None:
-            raise ValueError("extraction failure requires a failed run with a failure code")
-        super().__init__(f"memory extraction failed: {run.failure_code.value}")
-        self.run = run
-
-    @property
-    def retryable(self) -> bool:
-        return self.run.failure_code == ExtractionFailureCode.PROVIDER_ERROR
-
-
-class ExtractedEntityOutput(BaseModel):
-    entity_id: str
-    mention_text: str
-    normalized_name: str
-    aliases: list[str]
-    entity_type: EntityType
-    source_id: str
-    quote: str
-    confidence: float = Field(ge=0.0, le=1.0)
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class EmptyQualifiersOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class ExtractedClaimOutput(BaseModel):
-    claim_id: str
-    subject_entity_id: str
-    predicate_id: Literal[
-        "owner",
-        "approver",
-        "api_owner",
-        "status",
-        "preference",
-        "dependency",
-        "action_state",
-        "belief",
-        "correction",
-        "entity_type",
-        "semantic_fact",
-    ]
-    object_value: str
-    object_entity_id: str | None
-    scope_key: str
-    qualifier_key: str
-    qualifiers: EmptyQualifiersOutput
-    valid_from: str | None
-    valid_to: str | None
-    source_id: str
-    quote: str
-    confidence: float = Field(ge=0.0, le=1.0)
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class ExtractedActionOutput(BaseModel):
-    action_id: str
-    actor_entity_id: str | None
-    action_type: str
-    target_entity_ids: list[str]
-    status: str
-    dependency_ids: list[str]
-    blocking_ids: list[str]
-    timestamp: str | None
-    source_id: str
-    quote: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class MemoryExtractionOutput(BaseModel):
-    entities: list[ExtractedEntityOutput]
-    claims: list[ExtractedClaimOutput]
-    actions: list[ExtractedActionOutput]
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class EnglishRuleMemoryExtractor:
@@ -467,12 +366,24 @@ def models_from_llm_output(
     entities: list[EntityMention] = []
     claims: list[ExtractedClaim] = []
     actions: list[ExtractedAction] = []
+    if len(observation_by_id) != len(observations):
+        run = ExtractionRun(
+            extraction_run_id=run_id,
+            provider=provider,
+            model=model,
+            prompt_hash=prompt_hash,
+            input_source_ids=[obs.source_id for obs in observations],
+            status=ExtractionRunStatus.FAILED,
+            failure_code=ExtractionFailureCode.OUTPUT_VALIDATION,
+            errors=["input: ValueError:source observation IDs must be unique"],
+        )
+        return run, [], [], []
 
     for idx, item in enumerate(_list_output(output, "entities")):
         try:
             source_id = str(item.get("source_id") or "")
             observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
-            span = _span(observation=observation, quote=str(item.get("quote") or item.get("mention_text") or ""))
+            span = _span(observation=observation, quote=str(item.get("quote") or ""))
             observation_scope = memory_scope_from_observation(observation)
             _validate_model_scope(item, observation=observation, scope_key=observation_scope.scope_key)
             entities.append(
@@ -497,7 +408,7 @@ def models_from_llm_output(
             predicate_id = str(item["predicate_id"])
             subject_entity_id = str(item["subject_entity_id"])
             object_value = str(item["object_value"]).strip()
-            span = _span(observation=observation, quote=str(item.get("quote") or object_value))
+            span = _span(observation=observation, quote=str(item.get("quote") or ""))
             observation_scope = memory_scope_from_observation(observation)
             _validate_model_scope(item, observation=observation, scope_key=observation_scope.scope_key)
             claim_key = ClaimKey(
@@ -564,7 +475,7 @@ def models_from_llm_output(
         try:
             source_id = str(item.get("source_id") or "")
             observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
-            quote = str(item.get("quote") or item.get("status") or item.get("action_type") or "")
+            quote = str(item.get("quote") or "")
             span = _span(observation=observation, quote=quote)
             action_type = str(item["action_type"])
             target_entity_ids = [str(value) for value in _sequence_output(item.get("target_entity_ids"))]
@@ -594,7 +505,16 @@ def models_from_llm_output(
             errors.append(f"action[{idx}]: {type(exc).__name__}:{exc}")
 
     claims = _canonicalize_claim_arguments(claims, entities)
-    status = ExtractionRunStatus.PARTIAL if errors else ExtractionRunStatus.SUCCEEDED
+    extracted_anything = bool(entities or claims or actions)
+    if errors:
+        status = ExtractionRunStatus.PARTIAL if extracted_anything else ExtractionRunStatus.FAILED
+        failure_code = ExtractionFailureCode.OUTPUT_VALIDATION
+    elif extracted_anything:
+        status = ExtractionRunStatus.SUCCEEDED
+        failure_code = None
+    else:
+        status = ExtractionRunStatus.ABSTAINED
+        failure_code = None
     run = ExtractionRun(
         extraction_run_id=run_id,
         provider=provider,
@@ -605,7 +525,7 @@ def models_from_llm_output(
         claim_ids=[claim.claim_id for claim in claims],
         action_ids=[action.action_id for action in actions],
         status=status,
-        failure_code=ExtractionFailureCode.OUTPUT_VALIDATION if errors else None,
+        failure_code=failure_code,
         errors=errors,
     )
     return run, entities, claims, actions
@@ -682,9 +602,7 @@ def _resolve_observation(*, source_id: str, observation_by_id: dict[str, SourceO
     observation = observation_by_id.get(source_id)
     if observation is not None:
         return observation
-    if len(observation_by_id) == 1:
-        return next(iter(observation_by_id.values()))
-    raise KeyError(source_id)
+    raise KeyError(f"unknown source_id:{source_id!r}")
 
 
 def _validate_model_scope(
@@ -756,12 +674,16 @@ def _parse_dt_with_normalization(value: object) -> tuple[datetime | None, str | 
 
 
 def _span(*, observation: SourceObservation, quote: str) -> EvidenceSpan:
-    start = observation.text.lower().find(quote.lower())
-    end = start + len(quote) if start >= 0 else None
+    if not quote:
+        raise ValueError("evidence quote must be non-empty")
+    start = observation.text.find(quote)
+    if start < 0:
+        raise ValueError(f"evidence quote is not verbatim in source {observation.source_id!r}")
+    end = start + len(quote)
     return EvidenceSpan(
         source_id=observation.source_id,
         quote=quote,
-        char_start=start if start >= 0 else None,
+        char_start=start,
         char_end=end,
         source_type=observation.source_type,
         timestamp=observation.timestamp,

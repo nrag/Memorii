@@ -33,6 +33,11 @@ class CommitStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class MemoryRecordVisibility(StrEnum):
+    RUNTIME_CONTEXT = "runtime_context"
+    INTERNAL_CONTROL = "internal_control"
+
+
 class SourceType(StrEnum):
     USER = "user"
     AGENT = "agent"

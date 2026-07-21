@@ -17,7 +17,7 @@ from memorii.core.memory_evolution.execution import (
     WorkStateStatus,
 )
 from memorii.core.memory_evolution.models import MemoryGraphSnapshot
-from memorii.core.memory_evolution.retrieval import (
+from memorii.core.memory_evolution.retrieval_contracts import (
     ProductionRetrievalDecision,
     ScopedExecutionView,
     SemanticFrameStatus,

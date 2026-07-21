@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from memorii.core.memory_evolution.extraction import MemoryExtractionRunError
+from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionRunError
 from memorii.core.memory_evolution.models import MemoryEvolutionResult
 from memorii.core.memory_evolution.mutations import MemoryEvolutionMutationValidationError
 from memorii.core.memory_evolution.operation_lease import EvolutionLeaseHeartbeat
@@ -20,14 +20,19 @@ from memorii.core.memory_evolution.operation_models import (
     EvolutionOperation,
     EvolutionOperationStatus,
 )
+from memorii.core.memory_evolution.operation_store import (
+    operation_fence_precondition,
+    operation_memory_id,
+    record_from_operation,
+)
 from memorii.core.memory_evolution.service import MemoryEvolutionService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
     MemoryPlaneCorruptionError,
     MemoryPlaneRevisionConflictError,
+    RecordAbsentPrecondition,
 )
-from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 
 if TYPE_CHECKING:
     from memorii.core.memory_evolution.operation_store import EvolutionOperationRepository
@@ -69,7 +74,6 @@ class EvolutionCoordinator:
         self._heartbeat_interval = resolved_heartbeat_interval
         self._max_lease_recoveries = max_lease_recoveries
         self._operations = operation_repository
-        self._synchronize_audit_markers()
 
     def begin(
         self,
@@ -80,9 +84,6 @@ class EvolutionCoordinator:
         defer_assertions: bool,
     ) -> EvolutionOperation:
         source_fingerprint = _source_fingerprint(source_records)
-        marker = _operation_from_record(self._memory_plane.get_record(_operation_memory_id(operation_id)))
-        if marker is not None:
-            self._operations.create(marker)
         existing = self._read(operation_id)
         if existing is not None:
             _assert_same_operation_definition(
@@ -95,18 +96,15 @@ class EvolutionCoordinator:
         for attempt in range(self._max_attempts):
             try:
                 with self._memory_plane.unit_of_work() as unit_of_work:
-                    durable_marker = _operation_from_record(
-                        self._memory_plane.get_record(_operation_memory_id(operation_id))
-                    )
-                    if durable_marker is not None:
-                        created = self._operations.create(durable_marker)
+                    durable = self._read(operation_id)
+                    if durable is not None:
                         _assert_same_operation_definition(
-                            created,
+                            durable,
                             source_record_ids=source_record_ids,
                             source_fingerprint=source_fingerprint,
                             defer_assertions=defer_assertions,
                         )
-                        return created
+                        return durable
                     now = self._now_provider()
                     operation = EvolutionOperation(
                         operation_id=operation_id,
@@ -117,9 +115,15 @@ class EvolutionCoordinator:
                         created_at=now,
                         updated_at=now,
                     )
-                    self._memory_plane.write_records((*source_records, _record_from_operation(operation)))
-                    unit_of_work.commit()
-                    created = self._operations.create(operation)
+                    self._memory_plane.write_records((*source_records, record_from_operation(operation)))
+                    unit_of_work.commit(
+                        preconditions=(
+                            RecordAbsentPrecondition(memory_id=operation_memory_id(operation_id)),
+                        ),
+                    )
+                    created = self._read(operation_id)
+                    if created is None:
+                        raise RuntimeError(f"evolution operation was not committed: {operation_id}")
                     _assert_same_operation_definition(
                         created,
                         source_record_ids=source_record_ids,
@@ -155,7 +159,7 @@ class EvolutionCoordinator:
                 running.source_record_ids,
                 defer_assertions=running.defer_assertions,
                 completion_record_factory=lambda evolution_result: (
-                    _record_from_operation(
+                    record_from_operation(
                         self._completion_marker_if_claimed(
                             operation_id=running.operation_id,
                             execution_token=execution_token,
@@ -163,6 +167,7 @@ class EvolutionCoordinator:
                         )
                     ),
                 ),
+                commit_preconditions=(operation_fence_precondition(running),),
             )
         except Exception as exc:  # orchestration boundary records every projection failure
             heartbeat.stop()
@@ -182,14 +187,6 @@ class EvolutionCoordinator:
                 execution_token=execution_token,
                 exc=exc,
             )
-            if failed.status == EvolutionOperationStatus.FAILED:
-                try:
-                    self._memory_plane.upsert_record(_record_from_operation(failed))
-                except OSError:
-                    logger.exception(
-                        "memory_evolution_failure_audit_write_failed operation_id=%s",
-                        running.operation_id,
-                    )
             return failed, None
         heartbeat.stop()
         committed = self._synchronize_completion_marker(running.operation_id)
@@ -198,7 +195,6 @@ class EvolutionCoordinator:
         return committed, result
 
     def reconcile(self) -> list[EvolutionOperation]:
-        self._synchronize_audit_markers()
         reconciled: list[EvolutionOperation] = []
         for operation in self._operations.list():
             if operation.status == EvolutionOperationStatus.COMMITTED:
@@ -238,7 +234,6 @@ class EvolutionCoordinator:
                     updated_at=now,
                 )
                 if self._compare_and_set(current=current, updated=exhausted):
-                    self._memory_plane.upsert_record(_record_from_operation(exhausted))
                     return exhausted, False
                 continue
             if current.attempt_count >= self._max_attempts:
@@ -248,7 +243,6 @@ class EvolutionCoordinator:
                     updated_at=now,
                 )
                 if self._compare_and_set(current=current, updated=exhausted):
-                    self._memory_plane.upsert_record(_record_from_operation(exhausted))
                     return exhausted, False
                 continue
             running = _advance_operation(
@@ -256,6 +250,7 @@ class EvolutionCoordinator:
                 status=EvolutionOperationStatus.RUNNING,
                 attempt_count=current.attempt_count + 1,
                 lease_recovery_count=current.lease_recovery_count + int(recovering_expired_lease),
+                ownership_epoch=current.ownership_epoch + 1,
                 execution_token=str(uuid4()),
                 lease_expires_at=now + self._lease_duration,
                 failure=None,
@@ -344,57 +339,11 @@ class EvolutionCoordinator:
             operation=updated,
         )
 
-    def _synchronize_audit_markers(self) -> None:
-        for record in self._memory_plane.list_records(domains=[MemoryDomain.EXECUTION]):
-            marker = _operation_from_record(record)
-            if marker is None:
-                continue
-            current = self._operations.create(marker)
-            if marker.status == EvolutionOperationStatus.COMMITTED and (
-                current.status != EvolutionOperationStatus.COMMITTED
-            ):
-                self._synchronize_completion_marker(marker.operation_id)
-
     def _synchronize_completion_marker(
         self,
         operation_id: str,
     ) -> EvolutionOperation | None:
-        marker = _operation_from_record(self._memory_plane.get_record(_operation_memory_id(operation_id)))
-        current = self._read(operation_id)
-        if marker is None or marker.status != EvolutionOperationStatus.COMMITTED:
-            return current
-        if current is None:
-            return self._operations.create(marker)
-        _assert_same_operation_definition(
-            marker,
-            source_record_ids=current.source_record_ids,
-            source_fingerprint=current.source_fingerprint,
-            defer_assertions=current.defer_assertions,
-        )
-        if current.status == EvolutionOperationStatus.COMMITTED:
-            return current
-        for _attempt in range(self._max_attempts):
-            current = self._read(operation_id)
-            if current is None:
-                return self._operations.create(marker)
-            if current.status == EvolutionOperationStatus.COMMITTED:
-                return current
-            committed = _validated_operation_update(
-                marker,
-                state_revision=current.state_revision + 1,
-                attempt_count=max(current.attempt_count, marker.attempt_count),
-                lease_recovery_count=max(
-                    current.lease_recovery_count,
-                    marker.lease_recovery_count,
-                ),
-            )
-            if self._compare_and_set(current=current, updated=committed):
-                return committed
-        raise AssertionError("bounded completion-marker synchronization loop exited unexpectedly")
-
-
-def _operation_memory_id(operation_id: str) -> str:
-    return f"mem:evolution:operation:{operation_id}"
+        return self._read(operation_id)
 
 
 def _source_fingerprint(records: tuple[CanonicalMemoryRecord, ...]) -> str:
@@ -452,6 +401,7 @@ def _committed_operation(
         extraction_status=result.extraction_run.status,
         fallback_provider=result.extraction_run.fallback_provider,
         projection_record_ids=list(result.written_record_ids),
+        completed_fence_epoch=operation.ownership_epoch,
         execution_token=None,
         lease_expires_at=None,
         updated_at=committed_at,
@@ -498,28 +448,6 @@ def _lease_recovery_exhausted_operation(
         lease_expires_at=None,
         updated_at=updated_at,
     )
-
-
-def _record_from_operation(operation: EvolutionOperation) -> CanonicalMemoryRecord:
-    return CanonicalMemoryRecord(
-        memory_id=_operation_memory_id(operation.operation_id),
-        domain=MemoryDomain.EXECUTION,
-        text=f"Memory evolution {operation.status.value}",
-        content={
-            "memory_evolution_kind": "operation",
-            "operation": operation.model_dump(mode="json"),
-        },
-        status=CommitStatus.COMMITTED,
-        validity_status=TemporalValidityStatus.ACTIVE,
-        source_kind="memory_evolution:operation",
-        timestamp=operation.updated_at,
-    )
-
-
-def _operation_from_record(record: CanonicalMemoryRecord | None) -> EvolutionOperation | None:
-    if record is None or record.content.get("memory_evolution_kind") != "operation":
-        return None
-    return EvolutionOperation.model_validate(record.content.get("operation"))
 
 
 def _classify_failure(exc: Exception) -> EvolutionFailure:

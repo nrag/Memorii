@@ -19,9 +19,9 @@ from memorii.core.memory_evolution import (
     RetrievalView,
 )
 from memorii.core.memory_evolution.models import SourceObservation
+from memorii.core.memory_evolution.operation_models import EvolutionOperationStatus
 from memorii.core.memory_evolution.operation_store import (
-    InMemoryEvolutionOperationRepository,
-    JsonEvolutionOperationRepository,
+    MemoryPlaneEvolutionOperationRepository,
 )
 from memorii.core.memory_evolution.operations import EvolutionCoordinator
 from memorii.core.memory_plane import MemoryPlaneService
@@ -29,6 +29,7 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     JsonlMemoryPlaneStore,
+    MemoryPlanePrecondition,
     MemoryPlaneRevisionConflictError,
 )
 from memorii.core.provider.factory import build_provider_memory_service_from_env
@@ -96,12 +97,17 @@ class _OneConflictStore(InMemoryMemoryPlaneStore):
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
-        expected_revision: int,
+        expected_revision: int | None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> int:
         if self.conflict_next_batch:
             self.conflict_next_batch = False
             raise MemoryPlaneRevisionConflictError("injected conflict")
-        return super().apply_batch(records, expected_revision=expected_revision)
+        return super().apply_batch(
+            records,
+            expected_revision=expected_revision,
+            preconditions=preconditions,
+        )
 
 
 class _LostAcknowledgementStore(InMemoryMemoryPlaneStore):
@@ -113,9 +119,14 @@ class _LostAcknowledgementStore(InMemoryMemoryPlaneStore):
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
-        expected_revision: int,
+        expected_revision: int | None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> int:
-        revision = super().apply_batch(records, expected_revision=expected_revision)
+        revision = super().apply_batch(
+            records,
+            expected_revision=expected_revision,
+            preconditions=preconditions,
+        )
         if self.lose_completion_acknowledgement and any(_is_committed_operation(record) for record in records):
             self.lose_completion_acknowledgement = False
             raise OSError("injected lost commit acknowledgement")
@@ -132,12 +143,42 @@ class _BlockingCompletionStore(InMemoryMemoryPlaneStore):
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
-        expected_revision: int,
+        expected_revision: int | None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> int:
         if any(_is_committed_operation(record) for record in records):
             self.completion_started.wait(timeout=5)
             self.completion_release.wait(timeout=5)
-        return super().apply_batch(records, expected_revision=expected_revision)
+        return super().apply_batch(
+            records,
+            expected_revision=expected_revision,
+            preconditions=preconditions,
+        )
+
+
+class _OwnershipTransferStore(InMemoryMemoryPlaneStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stale_commit_started = Barrier(2)
+        self.stale_commit_release = Barrier(2)
+        self._blocked_once = False
+
+    def apply_batch(
+        self,
+        records: tuple[CanonicalMemoryRecord, ...],
+        *,
+        expected_revision: int | None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+    ) -> int:
+        if not self._blocked_once and any(_is_committed_operation(record) for record in records):
+            self._blocked_once = True
+            self.stale_commit_started.wait(timeout=5)
+            self.stale_commit_release.wait(timeout=5)
+        return super().apply_batch(
+            records,
+            expected_revision=expected_revision,
+            preconditions=preconditions,
+        )
 
 
 class _BlockingGraphProjector(MemoryGraphProjector):
@@ -290,12 +331,10 @@ def test_hybrid_does_not_report_an_abstaining_fallback_as_success() -> None:
 
 def test_failed_evolution_reconciles_after_persistent_store_reopen(tmp_path: Path) -> None:
     store_path = tmp_path / "memory-plane"
-    operation_path = tmp_path / "evolution-operations"
     first_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
     first_provider = ProviderMemoryService(
         memory_plane=first_plane,
         memory_evolution_extractor=_CountingExtractor(failures=1),
-        memory_evolution_operation_repository=JsonEvolutionOperationRepository(operation_path),
     )
 
     initial = first_provider.sync_event(
@@ -312,7 +351,6 @@ def test_failed_evolution_reconciles_after_persistent_store_reopen(tmp_path: Pat
     restarted_provider = ProviderMemoryService(
         memory_plane=reopened_plane,
         memory_evolution_extractor=_CountingExtractor(),
-        memory_evolution_operation_repository=JsonEvolutionOperationRepository(operation_path),
     )
     reconciled = restarted_provider.reconcile_memory_evolution()
 
@@ -470,7 +508,7 @@ def test_distinct_delivery_ids_remain_distinct_after_provider_restart() -> None:
 def test_concurrent_delivery_claims_one_evolution_execution() -> None:
     plane = MemoryPlaneService()
     extractor = _BlockingCountingExtractor()
-    operations = InMemoryEvolutionOperationRepository()
+    operations = MemoryPlaneEvolutionOperationRepository(plane)
     providers = [
         ProviderMemoryService(
             memory_plane=plane,
@@ -510,7 +548,7 @@ def test_active_lease_is_renewed_during_slow_extraction() -> None:
     plane = MemoryPlaneService()
     extractor = _BlockingCountingExtractor()
     evolution_service = MemoryEvolutionService(memory_plane=plane, extractor=extractor)
-    operations = InMemoryEvolutionOperationRepository()
+    operations = MemoryPlaneEvolutionOperationRepository(plane)
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
@@ -552,7 +590,7 @@ def test_active_lease_is_renewed_during_slow_projection() -> None:
     plane = MemoryPlaneService()
     projector = _BlockingGraphProjector()
     evolution_service = MemoryEvolutionService(memory_plane=plane, graph_projector=projector)
-    operations = InMemoryEvolutionOperationRepository()
+    operations = MemoryPlaneEvolutionOperationRepository(plane)
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
@@ -593,7 +631,7 @@ def test_active_lease_is_renewed_during_slow_commit() -> None:
     store = _BlockingCompletionStore()
     plane = MemoryPlaneService(record_store=store)
     evolution_service = MemoryEvolutionService(memory_plane=plane)
-    operations = InMemoryEvolutionOperationRepository()
+    operations = MemoryPlaneEvolutionOperationRepository(plane)
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
@@ -633,7 +671,7 @@ def test_active_lease_is_renewed_during_slow_commit() -> None:
 def test_stale_lease_recovery_has_an_independent_bound() -> None:
     plane = MemoryPlaneService()
     now = [datetime(2026, 1, 1, tzinfo=UTC)]
-    operations = InMemoryEvolutionOperationRepository()
+    operations = MemoryPlaneEvolutionOperationRepository(plane)
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=MemoryEvolutionService(memory_plane=plane),
@@ -671,11 +709,67 @@ def test_stale_lease_recovery_has_an_independent_bound() -> None:
     assert exhausted.lease_recovery_count == 1
 
 
+def test_stale_worker_cannot_commit_after_lease_ownership_transfers() -> None:
+    store = _OwnershipTransferStore()
+    plane = MemoryPlaneService(record_store=store)
+    now = [datetime(2026, 1, 1, tzinfo=UTC)]
+    operations = MemoryPlaneEvolutionOperationRepository(plane)
+    evolution_service = MemoryEvolutionService(memory_plane=plane)
+    owner = EvolutionCoordinator(
+        memory_plane=plane,
+        evolution_service=evolution_service,
+        now_provider=lambda: now[0],
+        lease_duration=timedelta(seconds=10),
+        heartbeat_interval=timedelta(seconds=5),
+        operation_repository=operations,
+    )
+    contender = EvolutionCoordinator(
+        memory_plane=plane,
+        evolution_service=evolution_service,
+        now_provider=lambda: now[0],
+        lease_duration=timedelta(seconds=10),
+        heartbeat_interval=timedelta(seconds=5),
+        operation_repository=operations,
+    )
+    source = _source("tx:fenced-transfer")
+    operation = owner.begin(
+        operation_id="operation:fenced-transfer",
+        source_record_ids=[source.memory_id],
+        source_records=(source,),
+        defer_assertions=False,
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stale_future = pool.submit(owner.execute, operation)
+        store.stale_commit_started.wait(timeout=5)
+        running = operations.get(operation.operation_id)
+        assert running is not None
+        now[0] += timedelta(seconds=11)
+        replacement, acquired = contender._claim(running)
+        assert acquired is True
+        assert replacement.ownership_epoch == running.ownership_epoch + 1
+        assert evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
+        store.stale_commit_release.wait(timeout=5)
+        stale_observation, stale_result = stale_future.result(timeout=5)
+
+    assert stale_result is None
+    assert stale_observation.execution_token == replacement.execution_token
+    assert evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
+
+    now[0] += timedelta(seconds=11)
+    committed, result = contender.execute(replacement)
+
+    assert result is not None
+    assert committed.status == EvolutionOperationStatus.COMMITTED
+    assert committed.completed_fence_epoch == replacement.ownership_epoch + 1
+    assert len(evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS)) == 1
+
+
 def test_projection_and_committed_operation_are_one_atomic_batch() -> None:
     store = _LostAcknowledgementStore()
     plane = MemoryPlaneService(record_store=store)
     extractor = _CountingExtractor()
-    operations = InMemoryEvolutionOperationRepository()
+    operations = MemoryPlaneEvolutionOperationRepository(plane)
     provider = ProviderMemoryService(
         memory_plane=plane,
         memory_evolution_extractor=extractor,

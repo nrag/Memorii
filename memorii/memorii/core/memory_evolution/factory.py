@@ -13,8 +13,8 @@ from memorii.core.memory_evolution.extraction import (
     EnglishRuleMemoryExtractor,
     HybridMemoryExtractor,
     LLMMemoryExtractor,
-    MemoryExtractor,
 )
+from memorii.core.memory_evolution.extraction_contracts import MemoryExtractor
 
 
 def build_memory_extractor_from_env(

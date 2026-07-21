@@ -15,7 +15,11 @@ from memorii.core.memory_plane import (
     MemoryPlaneUnitOfWork,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore
+from memorii.core.memory_plane.store import (
+    InMemoryMemoryPlaneStore,
+    MemoryPlanePrecondition,
+    RecordAbsentPrecondition,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain
 
 
@@ -48,11 +52,16 @@ class _FailingBatchStore(InMemoryMemoryPlaneStore):
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
-        expected_revision: int,
+        expected_revision: int | None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> int:
         if self.fail_batch:
             raise OSError("injected batch failure")
-        return super().apply_batch(records, expected_revision=expected_revision)
+        return super().apply_batch(
+            records,
+            expected_revision=expected_revision,
+            preconditions=preconditions,
+        )
 
 
 def test_graph_validation_failure_leaves_memory_plane_unchanged() -> None:
@@ -99,3 +108,22 @@ def test_stale_unit_of_work_is_rejected_without_overwriting_newer_state() -> Non
 
     assert store.get_record("mem:newer") == newer
     assert store.get_record("mem:stale") is None
+
+
+def test_unit_of_work_preserves_staged_preconditions_until_commit() -> None:
+    store = InMemoryMemoryPlaneStore()
+    existing = _record("mem:existing", "existing", domain=MemoryDomain.SEMANTIC)
+    store.stage_record(existing)
+    unit_of_work = MemoryPlaneUnitOfWork(store)
+    staged = _record("mem:staged", "staged", domain=MemoryDomain.SEMANTIC)
+    unit_of_work.apply_batch(
+        (staged,),
+        expected_revision=unit_of_work.base_revision,
+        preconditions=(RecordAbsentPrecondition(memory_id=existing.memory_id),),
+    )
+
+    with pytest.raises(MemoryPlaneRevisionConflictError, match="precondition failed"):
+        unit_of_work.commit()
+
+    assert store.get_record(existing.memory_id) == existing
+    assert store.get_record(staged.memory_id) is None

@@ -100,7 +100,7 @@ def test_static_tooling_workflow_doc_lists_supported_commands() -> None:
         "owner=PromptOwner.LLM_MEMORY_EXTRACTOR, output_model=MemoryExtractionOutput)"
     )
     assert load_command in doc
-    assert "from memorii.core.memory_evolution.extraction import MemoryExtractionOutput" in doc
+    assert "from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput" in doc
     assert "from memorii.core.prompts.runtime_manifest import PromptOwner" in doc
     assert "Run Ruff" in workflow
     assert "ruff check memorii tests" in workflow
@@ -110,7 +110,7 @@ def test_static_tooling_workflow_doc_lists_supported_commands() -> None:
     assert "pytest -W error" in workflow
     assert "pip wheel . --no-deps" in workflow
     assert load_command in workflow
-    assert "from memorii.core.memory_evolution.extraction import MemoryExtractionOutput" in workflow
+    assert "from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput" in workflow
     assert "from memorii.core.prompts.runtime_manifest import PromptOwner" in workflow
     assert "is_relative_to(root)" in workflow
     assert "memorii.core.promotion.legacy_models" in doc

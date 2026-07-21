@@ -34,7 +34,7 @@ from memorii.core.memory_evolution.execution import (
     WorkState,
     WorkStateSnapshot,
 )
-from memorii.core.memory_evolution.retrieval import ProductionRetrievalDecision
+from memorii.core.memory_evolution.retrieval_contracts import ProductionRetrievalDecision
 
 
 class CheckpointResultRow(FlatArtifactModel):

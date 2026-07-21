@@ -9,6 +9,7 @@ from memorii.core.filesystem_storage import (
     collect_storage_status,
     ensure_within_soft_limits,
 )
+from memorii.core.memory_evolution.operation_store import MemoryPlaneEvolutionOperationRepository
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.service import ProviderMemoryService
@@ -27,7 +28,6 @@ def test_from_root_creates_expected_store_paths_directories(tmp_path) -> None:
     assert bundle.work_state_store._base_path == root / "work_state"
     assert bundle.decision_state_store._base_path == root / "decision_state"
     assert bundle.memory_plane_store._base_path == root / "memory_plane"
-    assert bundle.evolution_operation_repository._base_path == root / "memory_evolution" / "operations"
     assert bundle.llm_trace_store._path == root / "llm_decision" / "traces.jsonl"
     assert bundle.eval_snapshot_store._path == root / "llm_decision" / "eval_snapshots.jsonl"
     assert bundle.golden_candidate_store._path == root / "llm_decision" / "golden_candidates.jsonl"
@@ -35,7 +35,6 @@ def test_from_root_creates_expected_store_paths_directories(tmp_path) -> None:
     assert (root / "work_state").is_dir()
     assert (root / "decision_state").is_dir()
     assert (root / "memory_plane").is_dir()
-    assert (root / "memory_evolution" / "operations").is_dir()
 
 
 def test_build_work_state_service_persists_across_fresh_bundles(tmp_path) -> None:
@@ -104,7 +103,8 @@ def test_build_provider_memory_service_wires_services_together(tmp_path) -> None
     assert isinstance(provider._work_state_service, WorkStateService)
     assert isinstance(provider._decision_state_service, DecisionStateService)
     assert provider._llm_decision_trace_store is not None
-    assert provider._evolution_coordinator._operations is bundle.evolution_operation_repository
+    assert isinstance(provider._evolution_coordinator._operations, MemoryPlaneEvolutionOperationRepository)
+    assert provider._evolution_coordinator._operations._memory_plane is provider._memory_plane
 
 
 def test_provider_record_progress_writes_work_state_event_and_memory_candidate(tmp_path) -> None:

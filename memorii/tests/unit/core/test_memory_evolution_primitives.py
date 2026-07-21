@@ -11,7 +11,9 @@ from memorii.core.memory_evolution import (
     EntityType,
     EvidenceSpan,
     ExtractedClaim,
+    ExtractionFailureCode,
     ExtractionRun,
+    ExtractionRunStatus,
     ExtractionTriggerMode,
     MemoryEvolutionService,
     MemoryEvolutionValidator,
@@ -680,6 +682,175 @@ def test_llm_action_extraction_preserves_observation_execution_context() -> None
     assert actions[0].session_id == "session:incident"
     assert actions[0].user_id == "user:one"
     assert actions[0].scope_key == "task:incident"
+
+
+def test_llm_extraction_rejects_unknown_source_even_with_one_observation() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "tx:known",
+            "text": "Atlas owner is Alice.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+    )
+
+    run, entities, claims, actions = models_from_llm_output(
+        run_id="run:unknown-source",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation],
+        output={
+            "entities": [
+                {
+                    "entity_id": "ent:atlas",
+                    "mention_text": "Atlas",
+                    "source_id": "tx:hallucinated",
+                    "quote": "Atlas",
+                }
+            ],
+            "claims": [],
+            "actions": [],
+        },
+    )
+
+    assert run.status == ExtractionRunStatus.FAILED
+    assert run.failure_code == ExtractionFailureCode.OUTPUT_VALIDATION
+    assert entities == []
+    assert claims == []
+    assert actions == []
+    assert "unknown source_id" in run.errors[0]
+
+
+def test_llm_extraction_preserves_valid_items_and_marks_mixed_provenance_partial() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "tx:known",
+            "text": "Atlas owner is Alice.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+    )
+
+    run, entities, _, _ = models_from_llm_output(
+        run_id="run:mixed-provenance",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation],
+        output={
+            "entities": [
+                {
+                    "entity_id": "ent:atlas",
+                    "mention_text": "Atlas",
+                    "source_id": observation.source_id,
+                    "quote": "Atlas",
+                },
+                {
+                    "entity_id": "ent:alice",
+                    "mention_text": "Alice",
+                    "source_id": "tx:hallucinated",
+                    "quote": "Alice",
+                },
+            ],
+            "claims": [],
+            "actions": [],
+        },
+    )
+
+    assert run.status == ExtractionRunStatus.PARTIAL
+    assert [entity.entity_id for entity in entities] == ["ent:atlas"]
+    assert len(run.errors) == 1
+
+
+def test_llm_extraction_distinguishes_explicit_abstention_from_invalid_output() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "源:東京",
+            "text": "東京プロジェクトの担当者は葵です。",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+            "language": "ja",
+        }
+    )
+
+    abstained, _, _, _ = models_from_llm_output(
+        run_id="run:abstained",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation],
+        output={"entities": [], "claims": [], "actions": []},
+    )
+    succeeded, entities, _, _ = models_from_llm_output(
+        run_id="run:unicode-provenance",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation],
+        output={
+            "entities": [
+                {
+                    "entity_id": "ent:tokyo",
+                    "mention_text": "東京プロジェクト",
+                    "source_id": observation.source_id,
+                    "quote": "東京プロジェクト",
+                }
+            ],
+            "claims": [],
+            "actions": [],
+        },
+    )
+
+    assert abstained.status == ExtractionRunStatus.ABSTAINED
+    assert abstained.failure_code is None
+    assert succeeded.status == ExtractionRunStatus.SUCCEEDED
+    assert entities[0].evidence_spans[0].source_id == "源:東京"
+
+
+def test_llm_extraction_rejects_nonverbatim_evidence_and_duplicate_source_ids() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "tx:known",
+            "text": "Atlas owner is Alice.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+    )
+    output = {
+        "entities": [
+            {
+                "entity_id": "ent:atlas",
+                "mention_text": "Atlas",
+                "source_id": observation.source_id,
+                "quote": "atlas",
+            }
+        ],
+        "claims": [],
+        "actions": [],
+    }
+
+    nonverbatim, _, _, _ = models_from_llm_output(
+        run_id="run:nonverbatim",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation],
+        output=output,
+    )
+    duplicates, _, _, _ = models_from_llm_output(
+        run_id="run:duplicate-sources",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation, observation],
+        output={"entities": [], "claims": [], "actions": []},
+    )
+
+    assert nonverbatim.status == ExtractionRunStatus.FAILED
+    assert "not verbatim" in nonverbatim.errors[0]
+    assert duplicates.status == ExtractionRunStatus.FAILED
+    assert "must be unique" in duplicates.errors[0]
 
 
 def test_rule_extraction_inherits_session_scope_from_source_observation() -> None:

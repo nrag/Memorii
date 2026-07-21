@@ -9,13 +9,13 @@ import tempfile
 from contextlib import AbstractContextManager
 from pathlib import Path
 from threading import RLock
-from typing import Protocol
+from typing import Annotated, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_plane.file_lock import locked_file
-from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.core.memory_plane.models import CanonicalMemoryRecord, MemoryRecordFence
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 
 class MemoryPlaneRevisionConflictError(RuntimeError):
@@ -26,20 +26,61 @@ class MemoryPlaneCorruptionError(RuntimeError):
     """Raised when persisted memory cannot be replayed without data loss."""
 
 
+class RecordAbsentPrecondition(BaseModel):
+    kind: Literal["record_absent"] = "record_absent"
+    memory_id: str = Field(min_length=1)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class RecordDigestPrecondition(BaseModel):
+    kind: Literal["record_digest"] = "record_digest"
+    memory_id: str = Field(min_length=1)
+    expected_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class RecordFencePrecondition(BaseModel):
+    kind: Literal["record_fence"] = "record_fence"
+    memory_id: str = Field(min_length=1)
+    expected_fence: MemoryRecordFence
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+MemoryPlanePrecondition = Annotated[
+    RecordAbsentPrecondition | RecordDigestPrecondition | RecordFencePrecondition,
+    Field(discriminator="kind"),
+]
+
+
 class _PersistedBatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     revision: int
+    data_revision: int = Field(ge=0)
     records: tuple[CanonicalMemoryRecord, ...]
     checksum: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @classmethod
-    def create(cls, *, revision: int, records: tuple[CanonicalMemoryRecord, ...]) -> _PersistedBatch:
-        return cls(revision=revision, records=records, checksum=_batch_checksum(revision, records))
+    def create(
+        cls,
+        *,
+        revision: int,
+        data_revision: int,
+        records: tuple[CanonicalMemoryRecord, ...],
+    ) -> _PersistedBatch:
+        return cls(
+            revision=revision,
+            data_revision=data_revision,
+            records=records,
+            checksum=_batch_checksum(revision, data_revision, records),
+        )
 
     @model_validator(mode="after")
     def validate_checksum(self) -> _PersistedBatch:
-        if self.checksum != _batch_checksum(self.revision, self.records):
+        if self.checksum != _batch_checksum(self.revision, self.data_revision, self.records):
             raise ValueError("memory-plane batch checksum mismatch")
         return self
 
@@ -57,7 +98,8 @@ class MemoryPlaneStore(Protocol):
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
-        expected_revision: int,
+        expected_revision: int | None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> int: ...
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]: ...
@@ -87,7 +129,7 @@ class InMemoryMemoryPlaneStore:
 
     def write_records(self, records: tuple[CanonicalMemoryRecord, ...]) -> int:
         with self._lock:
-            return self._apply_locked(records)
+            return self._apply_locked(records, preconditions=())
 
     def revision(self) -> int:
         with self._lock:
@@ -97,21 +139,29 @@ class InMemoryMemoryPlaneStore:
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
-        expected_revision: int,
+        expected_revision: int | None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> int:
         with self._lock:
-            if expected_revision != self._revision:
+            if expected_revision is not None and expected_revision != self._revision:
                 raise MemoryPlaneRevisionConflictError(
                     f"memory-plane revision changed: expected {expected_revision}, actual {self._revision}"
                 )
-            return self._apply_locked(records)
+            return self._apply_locked(records, preconditions=preconditions)
 
-    def _apply_locked(self, records: tuple[CanonicalMemoryRecord, ...]) -> int:
+    def _apply_locked(
+        self,
+        records: tuple[CanonicalMemoryRecord, ...],
+        *,
+        preconditions: tuple[MemoryPlanePrecondition, ...],
+    ) -> int:
+        _validate_preconditions(self._records, preconditions)
         updated = dict(self._records)
         for record in records:
             updated[record.memory_id] = _clone_record(record)
         self._records = updated
-        self._revision += 1
+        if _contains_runtime_context(records):
+            self._revision += 1
         return self._revision
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
@@ -158,43 +208,60 @@ class JsonlMemoryPlaneStore:
         with self._locked(exclusive=True):
             batches = self._read_batches_unlocked()
             next_revision = batches[-1].revision + 1 if batches else 1
+            current_data_revision = batches[-1].data_revision if batches else 0
+            next_data_revision = current_data_revision + int(_contains_runtime_context(records))
             self._replace_batches(
-                [*batches, _PersistedBatch.create(revision=next_revision, records=records)]
+                [
+                    *batches,
+                    _PersistedBatch.create(
+                        revision=next_revision,
+                        data_revision=next_data_revision,
+                        records=records,
+                    ),
+                ]
             )
-            return next_revision
+            return next_data_revision
 
     def revision(self) -> int:
         with self._locked(exclusive=False):
             batches = self._read_batches_unlocked()
-            return batches[-1].revision if batches else 0
+            return batches[-1].data_revision if batches else 0
 
     def apply_batch(
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
-        expected_revision: int,
+        expected_revision: int | None,
+        preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> int:
         with self._locked(exclusive=True):
             batches = self._read_batches_unlocked()
             actual_revision = batches[-1].revision if batches else 0
-            if expected_revision != actual_revision:
+            actual_data_revision = batches[-1].data_revision if batches else 0
+            if expected_revision is not None and expected_revision != actual_data_revision:
                 raise MemoryPlaneRevisionConflictError(
-                    f"memory-plane revision changed: expected {expected_revision}, actual {actual_revision}"
+                    f"memory-plane revision changed: expected {expected_revision}, actual {actual_data_revision}"
                 )
+            _validate_preconditions(_records_from_batches(batches), preconditions)
             next_revision = actual_revision + 1
+            next_data_revision = actual_data_revision + int(_contains_runtime_context(records))
             self._replace_batches(
-                [*batches, _PersistedBatch.create(revision=next_revision, records=records)]
+                [
+                    *batches,
+                    _PersistedBatch.create(
+                        revision=next_revision,
+                        data_revision=next_data_revision,
+                        records=records,
+                    ),
+                ]
             )
-            return next_revision
+            return next_data_revision
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._locked(exclusive=False):
             batches = self._read_batches_unlocked()
-            latest_by_id: dict[str, CanonicalMemoryRecord] = {}
-            for batch in batches:
-                for record in batch.records:
-                    latest_by_id[record.memory_id] = record
-            revision = batches[-1].revision if batches else 0
+            latest_by_id = _records_from_batches(batches)
+            revision = batches[-1].data_revision if batches else 0
             return revision, tuple(_clone_record(record) for record in latest_by_id.values())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
@@ -229,6 +296,13 @@ class JsonlMemoryPlaneStore:
             if batch.revision != expected_revision:
                 raise MemoryPlaneCorruptionError(
                     f"non-contiguous memory-plane revision: expected {expected_revision}, got {batch.revision}"
+                )
+            previous_data_revision = batches[-1].data_revision if batches else 0
+            expected_data_revision = previous_data_revision + int(_contains_runtime_context(batch.records))
+            if batch.data_revision != expected_data_revision:
+                raise MemoryPlaneCorruptionError(
+                    "invalid memory-plane data revision: "
+                    f"expected {expected_data_revision}, got {batch.data_revision}"
                 )
             batches.append(batch)
             expected_revision += 1
@@ -273,16 +347,56 @@ def _clone_record(record: CanonicalMemoryRecord) -> CanonicalMemoryRecord:
     return record.model_copy(deep=True)
 
 
-def _batch_checksum(revision: int, records: tuple[CanonicalMemoryRecord, ...]) -> str:
+def record_digest(record: CanonicalMemoryRecord) -> str:
+    payload = json.dumps(record.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _batch_checksum(
+    revision: int,
+    data_revision: int,
+    records: tuple[CanonicalMemoryRecord, ...],
+) -> str:
     payload = json.dumps(
         {
             "revision": revision,
+            "data_revision": data_revision,
             "records": [record.model_dump(mode="json") for record in records],
         },
         sort_keys=True,
         separators=(",", ":"),
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _contains_runtime_context(records: tuple[CanonicalMemoryRecord, ...]) -> bool:
+    return any(record.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT for record in records)
+
+
+def _records_from_batches(batches: list[_PersistedBatch]) -> dict[str, CanonicalMemoryRecord]:
+    latest_by_id: dict[str, CanonicalMemoryRecord] = {}
+    for batch in batches:
+        for record in batch.records:
+            latest_by_id[record.memory_id] = record
+    return latest_by_id
+
+
+def _validate_preconditions(
+    records: dict[str, CanonicalMemoryRecord],
+    preconditions: tuple[MemoryPlanePrecondition, ...],
+) -> None:
+    for precondition in preconditions:
+        current = records.get(precondition.memory_id)
+        if isinstance(precondition, RecordAbsentPrecondition):
+            satisfied = current is None
+        elif isinstance(precondition, RecordDigestPrecondition):
+            satisfied = current is not None and record_digest(current) == precondition.expected_digest
+        else:
+            satisfied = current is not None and current.mutation_fence == precondition.expected_fence
+        if not satisfied:
+            raise MemoryPlaneRevisionConflictError(
+                f"memory-plane precondition failed: {precondition.kind}:{precondition.memory_id}"
+            )
 
 
 def _fsync_directory(path: Path) -> None:

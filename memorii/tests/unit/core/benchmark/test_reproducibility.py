@@ -6,6 +6,7 @@ from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import (
+    build_python_dependency_fingerprint,
     build_source_tree_fingerprint,
     resolve_source_identity,
     resolve_source_revision,
@@ -24,6 +25,47 @@ def test_source_tree_fingerprint_is_content_addressed(tmp_path: Path) -> None:
     after = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
 
     assert before != after
+
+
+def test_python_dependency_fingerprint_covers_transitive_local_imports(tmp_path: Path) -> None:
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "entry.py").write_text("from package import dependency\n", encoding="utf-8")
+    (package / "dependency.py").write_text("from package.transitive import VALUE\n", encoding="utf-8")
+    transitive = package / "transitive.py"
+    transitive.write_text("VALUE = 1\n", encoding="utf-8")
+    unrelated = package / "unrelated.py"
+    unrelated.write_text("VALUE = 1\n", encoding="utf-8")
+
+    before = build_python_dependency_fingerprint(root=tmp_path, entry_paths=["package/entry.py"])
+    unrelated.write_text("VALUE = 2\n", encoding="utf-8")
+    after_unrelated_change = build_python_dependency_fingerprint(
+        root=tmp_path,
+        entry_paths=["package/entry.py"],
+    )
+    transitive.write_text("VALUE = 2\n", encoding="utf-8")
+    after_transitive_change = build_python_dependency_fingerprint(
+        root=tmp_path,
+        entry_paths=["package/entry.py"],
+    )
+
+    assert after_unrelated_change == before
+    assert after_transitive_change != before
+
+
+def test_python_dependency_fingerprint_fails_closed_on_dynamic_import(tmp_path: Path) -> None:
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "entry.py").write_text(
+        "import importlib\nMODULE = importlib.import_module('package.dependency')\n",
+        encoding="utf-8",
+    )
+    (package / "dependency.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="dynamic import cannot be fingerprinted"):
+        build_python_dependency_fingerprint(root=tmp_path, entry_paths=["package/entry.py"])
 
 
 def test_live_source_revision_fails_closed_without_revision_identity(

@@ -20,15 +20,15 @@ from memorii.core.memory_evolution.extraction import (
     EnglishRuleMemoryExtractor,
     HybridMemoryExtractor,
     LLMMemoryExtractor,
-    MemoryExtractionRunError,
-    MemoryExtractor,
 )
+from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionRunError, MemoryExtractor
 from memorii.core.memory_evolution.factory import build_memory_extractor_from_env
-from memorii.core.memory_evolution.graph import MemoryGraphProjector, MemoryGraphStore, MemoryGraphValidator
+from memorii.core.memory_evolution.graph import MemoryGraphProjector
 from memorii.core.memory_evolution.graph_constraint_resolution import (
     resolve_graph_constraints,
     resolve_graph_pattern,
 )
+from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore, MemoryGraphValidator
 from memorii.core.memory_evolution.modality import ExtractionTriggerPolicy, SourceModalityClassifier
 from memorii.core.memory_evolution.models import (
     ClaimKey,
@@ -99,7 +99,8 @@ from memorii.core.memory_evolution.query_graph import (
 )
 from memorii.core.memory_evolution.record_projection import source_observation_from_record
 from memorii.core.memory_evolution.reference import BuiltInReferenceKnowledgeProvider, ReferenceClaim, ReferenceEntity
-from memorii.core.memory_evolution.retrieval import (
+from memorii.core.memory_evolution.retrieval import rank_claims, reconcile_memory_query
+from memorii.core.memory_evolution.retrieval_contracts import (
     GraphAuditRequest,
     MemoryQueryInput,
     MemoryQueryRequest,
@@ -110,8 +111,6 @@ from memorii.core.memory_evolution.retrieval import (
     RetrievalPurpose,
     ScopedExecutionView,
     SemanticFrameStatus,
-    rank_claims,
-    reconcile_memory_query,
 )
 from memorii.core.memory_evolution.service import MemoryEvolutionService
 from memorii.core.memory_evolution.temporal_compilation import (

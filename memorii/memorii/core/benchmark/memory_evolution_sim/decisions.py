@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from memorii.core.benchmark.memory_evolution_sim.diagnostics import sim_output_allowed_id_errors
+from memorii.core.benchmark.memory_evolution_sim.output_validation import sim_output_allowed_id_errors
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,

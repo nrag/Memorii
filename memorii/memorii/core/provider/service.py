@@ -25,7 +25,7 @@ from memorii.core.memory_evolution import (
 )
 from memorii.core.memory_evolution.operation_store import (
     EvolutionOperationRepository,
-    InMemoryEvolutionOperationRepository,
+    MemoryPlaneEvolutionOperationRepository,
 )
 from memorii.core.memory_evolution.operations import EvolutionCoordinator
 from memorii.core.memory_plane import MemoryPlaneService
@@ -120,7 +120,7 @@ class ProviderMemoryService:
         operation_repository = (
             memory_evolution_operation_repository
             if memory_evolution_operation_repository is not None
-            else InMemoryEvolutionOperationRepository()
+            else MemoryPlaneEvolutionOperationRepository(self._memory_plane)
         )
         self._evolution_coordinator = EvolutionCoordinator(
             memory_plane=self._memory_plane,

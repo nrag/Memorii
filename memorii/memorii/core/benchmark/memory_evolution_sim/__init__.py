@@ -8,10 +8,7 @@ from memorii.core.benchmark.memory_evolution_sim.decisions import (
     memory_evolution_sim_trace_for_rule,
     rule_sim_output_for_checkpoint,
 )
-from memorii.core.benchmark.memory_evolution_sim.diagnostics import (
-    sim_checkpoint_diagnostics,
-    sim_output_allowed_id_errors,
-)
+from memorii.core.benchmark.memory_evolution_sim.diagnostics import sim_checkpoint_diagnostics
 from memorii.core.benchmark.memory_evolution_sim.generation import (
     MEMORY_EVOLUTION_SCENARIO_FAMILIES,
     generate_memory_evolution_sim_scenarios,
@@ -19,6 +16,7 @@ from memorii.core.benchmark.memory_evolution_sim.generation import (
 from memorii.core.benchmark.memory_evolution_sim.judges import judge_sim_checkpoint
 from memorii.core.benchmark.memory_evolution_sim.metrics import sim_metrics_from_rows
 from memorii.core.benchmark.memory_evolution_sim.opaque_ids import remap_scenario_ids
+from memorii.core.benchmark.memory_evolution_sim.output_validation import sim_output_allowed_id_errors
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     ClaimArgument,
     ClaimEvidence,

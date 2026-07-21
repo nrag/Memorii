@@ -18,14 +18,10 @@ from memorii.core.memory_evolution.execution import (
 )
 from memorii.core.memory_evolution.extraction import (
     EnglishRuleMemoryExtractor,
-    MemoryExtractionRunError,
-    MemoryExtractor,
 )
-from memorii.core.memory_evolution.graph import (
-    MemoryGraphProjector,
-    MemoryGraphStore,
-    MemoryGraphValidator,
-)
+from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionRunError, MemoryExtractor
+from memorii.core.memory_evolution.graph import MemoryGraphProjector
+from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore, MemoryGraphValidator
 from memorii.core.memory_evolution.graph_queries import MemoryGraphQueryService
 from memorii.core.memory_evolution.modality import (
     ExtractionTriggerPolicy,
@@ -63,7 +59,7 @@ from memorii.core.memory_evolution.record_projection import (
     record_from_temporal_anchor,
     source_observation_from_record,
 )
-from memorii.core.memory_evolution.retrieval import (
+from memorii.core.memory_evolution.retrieval_contracts import (
     MemoryQueryInput,
     ProductionRetrievalDecision,
 )
@@ -79,7 +75,7 @@ from memorii.core.memory_evolution.temporal_contracts import (
 from memorii.core.memory_evolution.validation import MemoryEvolutionValidator
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.core.memory_plane.store import MemoryPlaneRevisionConflictError
+from memorii.core.memory_plane.store import MemoryPlanePrecondition, MemoryPlaneRevisionConflictError
 from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 
 CompletionRecordFactory = Callable[[MemoryEvolutionResult], tuple[CanonicalMemoryRecord, ...]]
@@ -167,6 +163,7 @@ class MemoryEvolutionService:
         *,
         defer_assertions: bool = False,
         completion_record_factory: CompletionRecordFactory | None = None,
+        commit_preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> MemoryEvolutionResult:
         prepared = self.prepare_evolution(records, defer_assertions=defer_assertions)
         for attempt in range(3):
@@ -187,6 +184,7 @@ class MemoryEvolutionService:
                     unit_of_work.commit(
                         records=plan.records,
                         expected_revision=plan.expected_revision,
+                        preconditions=commit_preconditions,
                     )
                     return result
             except MemoryPlaneRevisionConflictError:
@@ -389,6 +387,7 @@ class MemoryEvolutionService:
         *,
         defer_assertions: bool = False,
         completion_record_factory: CompletionRecordFactory | None = None,
+        commit_preconditions: tuple[MemoryPlanePrecondition, ...] = (),
     ) -> MemoryEvolutionResult:
         records = [
             record for source_id in source_ids if (record := self._memory_plane.get_record(source_id)) is not None
@@ -397,6 +396,7 @@ class MemoryEvolutionService:
             records,
             defer_assertions=defer_assertions,
             completion_record_factory=completion_record_factory,
+            commit_preconditions=commit_preconditions,
         )
 
     def retrieve_claim_states(
