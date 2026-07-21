@@ -11,13 +11,20 @@ import random
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import Literal, Never, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from memorii.core.benchmark.models import BenchmarkRunConfig, BenchmarkScenarioFixture
 
 SourceState: TypeAlias = Literal["clean", "dirty", "unversioned"]
+_DynamicImportBinding: TypeAlias = Literal[
+    "ambiguous",
+    "builtin",
+    "builtins_module",
+    "function",
+    "module",
+]
 
 
 class SourceIdentity(BaseModel):
@@ -309,22 +316,228 @@ def _local_module_path(*, root: Path, module_name: str) -> Path | None:
 
 
 def _reject_dynamic_local_imports(*, tree: ast.AST, path: Path, root: Path) -> None:
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        is_dynamic_import = (
-            isinstance(node.func, ast.Name)
-            and node.func.id in {"__import__", "import_module"}
-        ) or (
-            isinstance(node.func, ast.Attribute)
-            and node.func.attr == "import_module"
+    _DynamicImportValidator(path=path, root=root).visit(tree)
+
+
+class _DynamicImportValidator(ast.NodeVisitor):
+    """Reject dynamic imports that can make a local dependency closure incomplete."""
+
+    def __init__(self, *, path: Path, root: Path) -> None:
+        self._path = path
+        self._root = root
+        self._bindings: list[dict[str, _DynamicImportBinding | None]] = [
+            {"__import__": "builtin"}
+        ]
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            bound_name = alias.asname or alias.name.partition(".")[0]
+            binding: _DynamicImportBinding | None = None
+            if alias.name == "importlib" or (alias.asname is None and alias.name.startswith("importlib.")):
+                binding = "module"
+            elif alias.name == "builtins":
+                binding = "builtins_module"
+            self._bind(bound_name, binding)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            bound_name = alias.asname or alias.name
+            binding: _DynamicImportBinding | None = None
+            if node.level == 0 and node.module == "importlib" and alias.name == "import_module":
+                binding = "function"
+            elif node.level == 0 and node.module == "builtins" and alias.name == "__import__":
+                binding = "builtin"
+            self._bind(bound_name, binding)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
+        binding = self._expression_binding(node.value)
+        for target in node.targets:
+            self._bind_target(target, binding)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        self.visit(node.annotation)
+        if node.value is not None:
+            self.visit(node.value)
+        self._bind_target(
+            node.target,
+            self._expression_binding(node.value) if node.value is not None else None,
         )
-        if not is_dynamic_import:
-            continue
-        if not node.args or not isinstance(node.args[0], ast.Constant) or not isinstance(node.args[0].value, str):
-            raise ValueError(f"dynamic import cannot be fingerprinted: {path}:{node.lineno}")
-        if _local_module_path(root=root, module_name=node.args[0].value) is not None:
-            raise ValueError(f"dynamic import cannot be fingerprinted: {path}:{node.lineno}")
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
+        self._bind_target(node.target, self._expression_binding(node.value))
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._bind(node.name, None)
+        self._visit_callable_scope(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._bind(node.name, None)
+        self._visit_callable_scope(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self._bindings.append({argument.arg: None for argument in _arguments(node.args)})
+        self.visit(node.body)
+        self._bindings.pop()
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._bind(node.name, None)
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        for type_parameter in getattr(node, "type_params", ()):
+            self.visit(type_parameter)
+        self._bindings.append({})
+        for statement in node.body:
+            self.visit(statement)
+        self._bindings.pop()
+
+    def visit_Call(self, node: ast.Call) -> None:
+        binding = self._expression_binding(node.func)
+        if binding == "ambiguous":
+            self._reject(node)
+        if binding in {"builtin", "function"}:
+            self._validate_dynamic_target(node=node, binding=binding)
+        self.generic_visit(node)
+
+    def visit_For(self, node: ast.For) -> None:
+        self._visit_for(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._visit_for(node)
+
+    def _visit_for(self, node: ast.For | ast.AsyncFor) -> None:
+        self.visit(node.iter)
+        self._bind_target(node.target, None)
+        for statement in (*node.body, *node.orelse):
+            self.visit(statement)
+
+    def visit_With(self, node: ast.With) -> None:
+        self._visit_with(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self._visit_with(node)
+
+    def _visit_with(self, node: ast.With | ast.AsyncWith) -> None:
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is not None:
+                self._bind_target(item.optional_vars, None)
+        for statement in node.body:
+            self.visit(statement)
+
+    def _visit_callable_scope(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for default in (*node.args.defaults, *node.args.kw_defaults):
+            if default is not None:
+                self.visit(default)
+        for argument in _arguments(node.args):
+            if argument.annotation is not None:
+                self.visit(argument.annotation)
+        if node.returns is not None:
+            self.visit(node.returns)
+        for type_parameter in getattr(node, "type_params", ()):
+            self.visit(type_parameter)
+        self._bindings.append({argument.arg: None for argument in _arguments(node.args)})
+        for statement in node.body:
+            self.visit(statement)
+        self._bindings.pop()
+
+    def _validate_dynamic_target(
+        self,
+        *,
+        node: ast.Call,
+        binding: _DynamicImportBinding,
+    ) -> None:
+        if not node.args:
+            self._reject(node)
+        target_node = node.args[0]
+        if not isinstance(target_node, ast.Constant):
+            self._reject(node)
+        target = target_node.value
+        if not isinstance(target, str) or not target or target.startswith("."):
+            self._reject(node)
+        if binding == "builtin" and _builtin_import_level(node) != 0:
+            self._reject(node)
+        if _local_module_path(root=self._root, module_name=target) is not None:
+            self._reject(node)
+
+    def _expression_binding(self, node: ast.expr) -> _DynamicImportBinding | None:
+        if isinstance(node, ast.Name):
+            return self._resolve(node.id)
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr == "import_module"
+        ):
+            owner_binding = self._expression_binding(node.value)
+            if owner_binding == "module":
+                return "function"
+            if owner_binding == "ambiguous":
+                return "ambiguous"
+        if isinstance(node, ast.Attribute) and node.attr == "__import__":
+            owner_binding = self._expression_binding(node.value)
+            if owner_binding == "builtins_module":
+                return "builtin"
+            if owner_binding == "ambiguous":
+                return "ambiguous"
+        return None
+
+    def _resolve(self, name: str) -> _DynamicImportBinding | None:
+        for scope in reversed(self._bindings):
+            if name in scope:
+                return scope[name]
+        return None
+
+    def _bind(self, name: str, binding: _DynamicImportBinding | None) -> None:
+        existing = self._bindings[-1].get(name)
+        if existing in {
+            "ambiguous",
+            "builtin",
+            "builtins_module",
+            "function",
+            "module",
+        } and binding is None:
+            self._bindings[-1][name] = "ambiguous"
+            return
+        self._bindings[-1][name] = binding
+
+    def _bind_target(
+        self,
+        target: ast.expr,
+        binding: _DynamicImportBinding | None,
+    ) -> None:
+        if isinstance(target, ast.Name):
+            self._bind(target.id, binding)
+        elif isinstance(target, (ast.List, ast.Tuple)):
+            for element in target.elts:
+                self._bind_target(element, None)
+
+    def _reject(self, node: ast.Call) -> Never:
+        raise ValueError(f"dynamic import cannot be fingerprinted: {self._path}:{node.lineno}")
+
+
+def _arguments(arguments: ast.arguments) -> tuple[ast.arg, ...]:
+    positional = (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)
+    optional = tuple(argument for argument in (arguments.vararg, arguments.kwarg) if argument)
+    return (*positional, *optional)
+
+
+def _builtin_import_level(node: ast.Call) -> int | None:
+    level_node: ast.expr | None = node.args[4] if len(node.args) >= 5 else None
+    for keyword in node.keywords:
+        if keyword.arg == "level":
+            level_node = keyword.value
+            break
+    if level_node is None:
+        return 0
+    if isinstance(level_node, ast.Constant) and isinstance(level_node.value, int):
+        return level_node.value
+    return None
 
 
 def _fingerprint_files(*, root: Path, files: set[Path]) -> str:

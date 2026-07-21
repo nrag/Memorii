@@ -68,6 +68,95 @@ def test_python_dependency_fingerprint_fails_closed_on_dynamic_import(tmp_path: 
         build_python_dependency_fingerprint(root=tmp_path, entry_paths=["package/entry.py"])
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import importlib as loader\nMODULE = loader.import_module('package.dependency')\n",
+        "import importlib.util\nMODULE = importlib.import_module('package.dependency')\n",
+        "from importlib import import_module as load\nMODULE = load('package.dependency')\n",
+        "from builtins import __import__ as load\nMODULE = load('package.dependency')\n",
+        "import builtins as runtime\nMODULE = runtime.__import__('package.dependency')\n",
+        (
+            "from importlib import import_module as load\n"
+            "class Record:\n"
+            "    value: load('package.dependency').Value\n"
+        ),
+        (
+            "from importlib import import_module\n"
+            "load = import_module\n"
+            "MODULE = load('package.dependency')\n"
+        ),
+    ],
+)
+def test_python_dependency_fingerprint_rejects_aliased_dynamic_local_imports(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    _write_dynamic_import_package(tmp_path=tmp_path, source=source)
+
+    with pytest.raises(ValueError, match="dynamic import cannot be fingerprinted"):
+        build_python_dependency_fingerprint(root=tmp_path, entry_paths=["package/entry.py"])
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import importlib as loader\nMODULE = loader.import_module(MODULE_NAME)\n",
+        (
+            "from importlib import import_module as load\n"
+            "load = factory\n"
+            "MODULE = load('package.dependency')\n"
+        ),
+        "from importlib import import_module as load\nMODULE = load('.dependency', __package__)\n",
+        "MODULE = __import__('dependency', globals(), locals(), (), 1)\n",
+    ],
+)
+def test_python_dependency_fingerprint_fails_closed_on_ambiguous_dynamic_imports(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    _write_dynamic_import_package(tmp_path=tmp_path, source=source)
+
+    with pytest.raises(ValueError, match="dynamic import cannot be fingerprinted"):
+        build_python_dependency_fingerprint(root=tmp_path, entry_paths=["package/entry.py"])
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "from importlib import import_module\n"
+            "def call_other(import_module):\n"
+            "    return import_module('package.dependency')\n"
+        ),
+        (
+            "class Loader:\n"
+            "    def import_module(self, name):\n"
+            "        return name\n"
+            "MODULE = Loader().import_module(MODULE_NAME)\n"
+        ),
+    ],
+)
+def test_python_dependency_fingerprint_ignores_unrelated_shadowed_callables(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    _write_dynamic_import_package(tmp_path=tmp_path, source=source)
+
+    assert build_python_dependency_fingerprint(
+        root=tmp_path,
+        entry_paths=["package/entry.py"],
+    )
+
+
+def _write_dynamic_import_package(*, tmp_path: Path, source: str) -> None:
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "entry.py").write_text(source, encoding="utf-8")
+    (package / "dependency.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+
 def test_live_source_revision_fails_closed_without_revision_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

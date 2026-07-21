@@ -5,6 +5,17 @@ Live benchmark evidence is valid only for the exact clean commit that produced i
 verifying `git rev-parse HEAD`, requiring a clean source tree, and exporting the same value
 as `MEMORII_SOURCE_REVISION` to every benchmark process.
 
+## One-time workflow bootstrap
+
+GitHub accepts `workflow_dispatch` only when that workflow path already exists on the
+default branch. Before the first hardening PR can be certified, land a credential-free bootstrap PR
+that adds `.github/workflows/benchmark-scheduled.yml` at the same path. The bootstrap must not
+contain provider secrets, check out candidate code, or run benchmarks; its only purpose is to
+register the workflow identity on the default branch. Keep that prerequisite PR isolated from
+production, benchmark, prompt, and policy changes. Once it is merged, a dispatch using
+`--ref <pr-branch>` runs the complete workflow definition from that branch. This setup is needed
+only once; the complete workflow replaces the placeholder when the hardening PR merges.
+
 For a merge candidate, dispatch the workflow on the PR branch itself, for example
 `gh workflow run benchmark-scheduled.yml --ref <pr-branch>`. Manual dispatch always runs the live
 matrix; it cannot be disabled by a repository variable. The workflow binds checkout, reports, and

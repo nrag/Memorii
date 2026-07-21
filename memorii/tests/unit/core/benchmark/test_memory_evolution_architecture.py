@@ -3,6 +3,9 @@ import importlib
 import importlib.util
 import re
 from pathlib import Path
+from typing import Literal, Never, TypeAlias
+
+import pytest
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[4] / "memorii" / "core"
 SOURCE_ROOT = PACKAGE_ROOT.parent
@@ -18,6 +21,13 @@ INDEPENDENT_EVALUATORS = (
     PACKAGE_ROOT / "benchmark" / "memory_evolution_sim",
 )
 DOMAIN_NAMING_PATTERN = re.compile(r"(?:phase\d+|wave\d+|legacy|compat)", re.IGNORECASE)
+_ImportBinding: TypeAlias = Literal[
+    "ambiguous",
+    "builtin",
+    "builtins_module",
+    "function",
+    "module",
+]
 COHESION_ROOTS = (
     PRODUCTION_ROOT,
     PACKAGE_ROOT / "provider",
@@ -64,23 +74,266 @@ def _imports(path: Path) -> list[tuple[str, tuple[str, ...]]]:
 
 def _dynamic_imports(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(), filename=str(path))
-    modules: list[str] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or not node.args:
-            continue
-        first_argument = node.args[0]
-        if not isinstance(first_argument, ast.Constant) or not isinstance(first_argument.value, str):
-            continue
-        is_builtin_import = isinstance(node.func, ast.Name) and node.func.id == "__import__"
-        is_importlib_import = (
-            isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "importlib"
-            and node.func.attr == "import_module"
+    scanner = _DynamicImportScanner(path=path)
+    scanner.visit(tree)
+    return scanner.modules
+
+
+class _DynamicImportScanner(ast.NodeVisitor):
+    """Independent architecture scanner for dynamically imported modules."""
+
+    def __init__(self, *, path: Path) -> None:
+        self._path = path
+        self._bindings: list[dict[str, _ImportBinding | None]] = [{"__import__": "builtin"}]
+        self.modules: list[str] = []
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            bound_name = alias.asname or alias.name.partition(".")[0]
+            binding: _ImportBinding | None = None
+            if alias.name == "importlib" or (alias.asname is None and alias.name.startswith("importlib.")):
+                binding = "module"
+            elif alias.name == "builtins":
+                binding = "builtins_module"
+            self._bind(bound_name, binding)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        for alias in node.names:
+            bound_name = alias.asname or alias.name
+            binding: _ImportBinding | None = None
+            if node.level == 0 and node.module == "importlib" and alias.name == "import_module":
+                binding = "function"
+            elif node.level == 0 and node.module == "builtins" and alias.name == "__import__":
+                binding = "builtin"
+            self._bind(bound_name, binding)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
+        binding = self._expression_binding(node.value)
+        for target in node.targets:
+            self._bind_target(target, binding)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        self.visit(node.annotation)
+        if node.value is not None:
+            self.visit(node.value)
+        self._bind_target(
+            node.target,
+            self._expression_binding(node.value) if node.value is not None else None,
         )
-        if is_builtin_import or is_importlib_import:
-            modules.append(first_argument.value)
-    return modules
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
+        self._bind_target(node.target, self._expression_binding(node.value))
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._bind(node.name, None)
+        self._visit_callable(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._bind(node.name, None)
+        self._visit_callable(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self._bindings.append({argument.arg: None for argument in _callable_arguments(node.args)})
+        self.visit(node.body)
+        self._bindings.pop()
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._bind(node.name, None)
+        for expression in (*node.decorator_list, *node.bases):
+            self.visit(expression)
+        for keyword in node.keywords:
+            self.visit(keyword.value)
+        for type_parameter in getattr(node, "type_params", ()):
+            self.visit(type_parameter)
+        self._bindings.append({})
+        for statement in node.body:
+            self.visit(statement)
+        self._bindings.pop()
+
+    def visit_Call(self, node: ast.Call) -> None:
+        binding = self._expression_binding(node.func)
+        if binding == "ambiguous":
+            self._reject(node)
+        if binding in {"builtin", "function"}:
+            self._record_target(node=node, binding=binding)
+        self.generic_visit(node)
+
+    def _visit_callable(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> None:
+        for expression in (*node.decorator_list, *node.args.defaults, *node.args.kw_defaults):
+            if expression is not None:
+                self.visit(expression)
+        for argument in _callable_arguments(node.args):
+            if argument.annotation is not None:
+                self.visit(argument.annotation)
+        if node.returns is not None:
+            self.visit(node.returns)
+        for type_parameter in getattr(node, "type_params", ()):
+            self.visit(type_parameter)
+        self._bindings.append({argument.arg: None for argument in _callable_arguments(node.args)})
+        for statement in node.body:
+            self.visit(statement)
+        self._bindings.pop()
+
+    def _record_target(self, *, node: ast.Call, binding: _ImportBinding) -> None:
+        if not node.args:
+            self._reject(node)
+        target_node = node.args[0]
+        if not isinstance(target_node, ast.Constant) or not isinstance(target_node.value, str):
+            self._reject(node)
+        target = target_node.value
+        if not target or target.startswith("."):
+            self._reject(node)
+        if binding == "builtin" and _architecture_builtin_import_level(node) != 0:
+            self._reject(node)
+        self.modules.append(target)
+
+    def _expression_binding(self, node: ast.expr) -> _ImportBinding | None:
+        if isinstance(node, ast.Name):
+            return self._resolve(node.id)
+        if isinstance(node, ast.Attribute) and node.attr == "import_module":
+            owner = self._expression_binding(node.value)
+            if owner == "module":
+                return "function"
+            if owner == "ambiguous":
+                return "ambiguous"
+        if isinstance(node, ast.Attribute) and node.attr == "__import__":
+            owner = self._expression_binding(node.value)
+            if owner == "builtins_module":
+                return "builtin"
+            if owner == "ambiguous":
+                return "ambiguous"
+        return None
+
+    def _resolve(self, name: str) -> _ImportBinding | None:
+        for scope in reversed(self._bindings):
+            if name in scope:
+                return scope[name]
+        return None
+
+    def _bind(self, name: str, binding: _ImportBinding | None) -> None:
+        existing = self._bindings[-1].get(name)
+        if existing in {
+            "ambiguous",
+            "builtin",
+            "builtins_module",
+            "function",
+            "module",
+        } and binding is None:
+            self._bindings[-1][name] = "ambiguous"
+            return
+        self._bindings[-1][name] = binding
+
+    def _bind_target(self, target: ast.expr, binding: _ImportBinding | None) -> None:
+        if isinstance(target, ast.Name):
+            self._bind(target.id, binding)
+        elif isinstance(target, (ast.List, ast.Tuple)):
+            for element in target.elts:
+                self._bind_target(element, None)
+
+    def _reject(self, node: ast.Call) -> Never:
+        raise ValueError(f"dynamic import cannot be resolved: {self._path}:{node.lineno}")
+
+
+def _callable_arguments(arguments: ast.arguments) -> tuple[ast.arg, ...]:
+    positional = (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)
+    optional = tuple(argument for argument in (arguments.vararg, arguments.kwarg) if argument)
+    return (*positional, *optional)
+
+
+def _architecture_builtin_import_level(node: ast.Call) -> int | None:
+    level_node: ast.expr | None = node.args[4] if len(node.args) >= 5 else None
+    for keyword in node.keywords:
+        if keyword.arg == "level":
+            level_node = keyword.value
+            break
+    if level_node is None:
+        return 0
+    if isinstance(level_node, ast.Constant) and isinstance(level_node.value, int):
+        return level_node.value
+    return None
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import importlib as loader\nloader.import_module('memorii.core.benchmark.hidden')\n",
+        "import importlib.util\nimportlib.import_module('memorii.core.benchmark.hidden')\n",
+        (
+            "from importlib import import_module as load\n"
+            "load('memorii.core.benchmark.hidden')\n"
+        ),
+        (
+            "from builtins import __import__ as load\n"
+            "load('memorii.core.benchmark.hidden')\n"
+        ),
+        "import builtins as runtime\nruntime.__import__('memorii.core.benchmark.hidden')\n",
+        (
+            "from importlib import import_module as load\n"
+            "def consume(value: load('memorii.core.benchmark.hidden').Value):\n"
+            "    return value\n"
+        ),
+    ],
+)
+def test_dynamic_import_scanner_resolves_import_aliases(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    path = tmp_path / "module.py"
+    path.write_text(source, encoding="utf-8")
+
+    assert _dynamic_imports(path) == ["memorii.core.benchmark.hidden"]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import importlib as loader\nloader.import_module(MODULE_NAME)\n",
+        (
+            "from importlib import import_module as load\n"
+            "load = factory\n"
+            "load('memorii.core.benchmark.hidden')\n"
+        ),
+        "from importlib import import_module as load\nload('.hidden', __package__)\n",
+        "from builtins import __import__ as load\nload('hidden', globals(), locals(), (), 1)\n",
+    ],
+)
+def test_dynamic_import_scanner_fails_closed_when_target_is_ambiguous(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    path = tmp_path / "module.py"
+    path.write_text(source, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="dynamic import cannot be resolved"):
+        _dynamic_imports(path)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "from importlib import import_module\n"
+            "def call_other(import_module):\n"
+            "    return import_module('memorii.core.benchmark.hidden')\n"
+        ),
+        (
+            "class Loader:\n"
+            "    def import_module(self, name):\n"
+            "        return name\n"
+            "Loader().import_module(MODULE_NAME)\n"
+        ),
+    ],
+)
+def test_dynamic_import_scanner_ignores_unrelated_shadowed_callables(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    path = tmp_path / "module.py"
+    path.write_text(source, encoding="utf-8")
+
+    assert _dynamic_imports(path) == []
 
 
 def _module_name(path: Path) -> str:

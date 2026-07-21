@@ -4,6 +4,8 @@ import re
 import tomllib
 from pathlib import Path
 
+import yaml
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 REPO_ROOT = PROJECT_ROOT.parent
 
@@ -19,6 +21,15 @@ def _tool_config(name: str) -> dict[str, object]:
     config = tool[name]
     assert isinstance(config, dict)
     return config
+
+
+def _workflow_config(name: str) -> dict[str, object]:
+    data = yaml.load(
+        (REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"),
+        Loader=yaml.BaseLoader,
+    )
+    assert isinstance(data, dict)
+    return data
 
 
 def test_dev_extra_installs_static_tooling() -> None:
@@ -151,7 +162,27 @@ def test_hardening_closure_matrix_covers_every_declared_contract() -> None:
 
 
 def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_scheduled_runs() -> None:
-    workflow = (REPO_ROOT / ".github" / "workflows" / "benchmark-scheduled.yml").read_text(encoding="utf-8")
+    workflow_path = REPO_ROOT / ".github" / "workflows" / "benchmark-scheduled.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+    config = _workflow_config("benchmark-scheduled.yml")
+    triggers = config["on"]
+    environment = config["env"]
+    concurrency = config["concurrency"]
+    jobs = config["jobs"]
+
+    assert isinstance(triggers, dict)
+    assert set(triggers) == {"schedule", "workflow_dispatch"}
+    assert isinstance(environment, dict)
+    assert environment["MEMORII_SOURCE_REVISION"] == "${{ github.sha }}"
+    assert isinstance(concurrency, dict)
+    assert concurrency["group"] == "benchmark-certification-${{ github.sha }}"
+    assert concurrency["cancel-in-progress"] == "false"
+    assert isinstance(jobs, dict)
+    assert set(jobs) == {"fake-oracle-plumbing", "live-runtime-smoke", "live-runtime-gate"}
+    live_gate = jobs["live-runtime-gate"]
+    assert isinstance(live_gate, dict)
+    assert live_gate["name"] == "Live Runtime Statistical Gate"
+    assert live_gate["needs"] == "live-runtime-smoke"
 
     assert "MEMORII_RUN_LIVE_GATES" in workflow
     assert "github.event_name == 'schedule'" in workflow
@@ -166,6 +197,17 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     assert "Verify source-bound gate certificate" in workflow
     assert "summary.interval_coverage_certificate.configuration.source_revision" in workflow
     assert "from memorii.core.benchmark.calibration.gates import LiveGateSummary" in workflow
+
+
+def test_live_certification_documentation_requires_default_branch_bootstrap() -> None:
+    certification_doc = (
+        REPO_ROOT / "docs" / "development" / "benchmark_certification.md"
+    ).read_text(encoding="utf-8")
+
+    assert "default branch" in certification_doc
+    assert "credential-free bootstrap PR" in certification_doc
+    assert "`.github/workflows/benchmark-scheduled.yml`" in certification_doc
+    assert re.search(r"must not\s+contain provider secrets", certification_doc)
 
 
 def test_pr_and_live_workflows_bind_reports_to_checked_out_revision() -> None:

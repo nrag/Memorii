@@ -8,7 +8,7 @@ It intentionally excludes overall changelist size and agent-system integration.
 | C1 | P1 | Persisted lifecycle values are typed and unknown values fail closed. | Exhaustive temporal-policy and malformed-row tests. |
 | C2 | P1 | Prompt output schemas and provider transport models accept exactly the same JSON values; cross-field domain semantics run as an explicit, typed post-transport validation stage. | Prompt-to-transport parity, adversarial semantic-boundary, and runtime failure-classification tests. |
 | C3 | P1 | Memory evolution is active through normal production composition. | Default-constructor integration tests. |
-| C4 | P1 | The exact clean revision passes the declared live statistical gate before merge. | Required `Live Runtime Statistical Gate` check from a manual workflow dispatch on the PR branch, bound throughout to `github.sha`. |
+| C4 | P1 | The exact clean revision passes the declared live statistical gate before merge. | After a credential-free workflow-identity bootstrap on the default branch, require `Live Runtime Statistical Gate` from a manual dispatch on the PR branch, bound throughout to `github.sha`. |
 | C5 | P2 | Calibration and artifact data remains typed until the JSON boundary. | Schema, round-trip, and AST boundary tests. |
 | C6 | P2 | Benchmark/runtime modules have cohesive responsibilities with no relocation facades. | Dependency tests and module-size audit. |
 | C7 | P2 | Architecture boundaries and production-shaped tests are enforced structurally. | Repository-wide AST boundaries and error-mode type checks across every hardening-owned runtime surface. |
