@@ -43,6 +43,7 @@ OPERATIONAL_FAILURE_BUCKETS = frozenset(
         "runtime_provider_failure",
         "runtime_provider_fallback",
         "schema_validation",
+        "semantic_validation",
         "invalid_json",
     }
 )

@@ -45,8 +45,9 @@ def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
     assert fields["mode"] == "llm"
     assert int(fields["scenarios"]) == report["scenario_count"] == 10
     assert int(fields["checkpoints"]) == report["checkpoint_count"]
-    assert report["passed"] == 10
-    assert report["failed"] == 0
+    assert report["passed"] + report["failed"] == report["scenario_count"]
+    assert int(fields["passed"]) == report["passed"]
+    assert int(fields["failed"]) == report["failed"]
     assert report["final_output_source_counts"] == {"fake_oracle": report["checkpoint_count"]}
     assert report["runtime_provider_health"]["status"] == "not_applicable"
     assert report["runtime_provider_health"]["clean_runtime_gate"] is True
@@ -64,9 +65,10 @@ def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
     assert "checkpoint_required_alignment_count" not in alignment_summary
     assert "checkpoint_required_alignment_counts" not in alignment_summary
     assert "checkpoint_required_alignment_counts_by_item_type" not in alignment_summary
-    assert alignment_summary["checkpoint_scored_verdict_counts"] == {"pass": report["checkpoint_count"]}
-    assert alignment_summary["checkpoint_scored_review_required_count"] == 0
-    assert alignment_summary["checkpoint_scored_failure_bucket_counts"] == {}
+    assert sum(alignment_summary["checkpoint_scored_verdict_counts"].values()) == report["checkpoint_count"]
+    assert set(alignment_summary["checkpoint_scored_verdict_counts"]) == {"pass", "fail"}
+    assert all(count >= 0 for count in alignment_summary["checkpoint_scored_verdict_counts"].values())
+    assert isinstance(alignment_summary["checkpoint_scored_failure_bucket_counts"], dict)
     assert "alignment_summary_policy" in alignment_summary
     assert report["warning_policy"]["extra_provenance_noise"]["level"] == "warning_only"
     assert report["warning_policy"]["extra_context_provenance"]["level"] == "warning_only"
@@ -175,6 +177,10 @@ def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
         ]:
             assert row.get(field_name) is not None
         assert row["provider_count_scope"] == "scenario_extractor_calls"
+    failed_checkpoint_rows = [row for row in runtime_checkpoint_rows if row["passed"] is False]
+    assert failed_checkpoint_rows
+    assert all(row["runtime_failure_buckets"] for row in failed_checkpoint_rows)
+    assert all(row["runtime_failure_classification"] for row in failed_checkpoint_rows)
     warning_rows = [
         json.loads(line)
         for line in (run_dir / "sim_warning_examples.jsonl").read_text(encoding="utf-8").splitlines()

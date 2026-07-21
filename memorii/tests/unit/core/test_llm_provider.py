@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from memorii.core.grounding.models import EvidenceSelectionOutput
+from memorii.core.grounding.models import EvidenceSelectionDecision, EvidenceSelectionOutput
 from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
 from memorii.core.llm_provider.runner import PromptLLMRunner
@@ -90,7 +90,9 @@ def test_non_object_json_returns_failure() -> None:
 
 
 def test_schema_missing_required_field_returns_failure() -> None:
-    runner, _ = _runner('{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "requires_judge_review": false}')
+    runner, _ = _runner(
+        '{"promote": false, "target_plane": null, "rationale": "x", "confidence": 0.5, "requires_judge_review": false}'
+    )
     result = runner.run(contract=_contract(), variables=_variables(), request_id="r1")
     assert result.success is False
     assert result.failure_mode == "schema_validation"
@@ -142,12 +144,15 @@ def test_domain_output_validation_rejects_semantically_invalid_schema_valid_json
         variables={"context_json": {}, "query": "Who owns Atlas?"},
         request_id="semantic-invalid",
         output_model=EvidenceSelectionOutput,
+        semantic_model=EvidenceSelectionDecision,
     )
 
     assert result.success is False
-    assert result.failure_mode == "schema_validation"
+    assert result.failure_mode == "semantic_validation"
     assert result.output is None
-    assert result.response.error == "Domain output validation failed: ValidationError"
+    assert result.response.schema_valid is True
+    assert result.response.semantic_valid is False
+    assert result.response.error == "Semantic output validation failed: PromptSemanticValidationError"
 
 
 def test_provider_exception_returns_failure_safely() -> None:
@@ -205,8 +210,8 @@ def test_request_metadata_redaction_is_recursive_and_non_mutating() -> None:
     assert metadata == original
     dumped = json.dumps(result.model_dump(mode="json"))
     assert "top" not in dumped
-    assert "\"pw\"" not in dumped
-    assert "\"a1\"" not in dumped
+    assert '"pw"' not in dumped
+    assert '"a1"' not in dumped
 
 
 def test_schema_error_message_is_safe_and_does_not_echo_values() -> None:

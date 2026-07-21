@@ -15,7 +15,8 @@ The codebase now has the main integration primitives:
 - decision-state tools
 - recall-state bundles
 - next-step engine
-- opt-in runtime memory evolution
+- default-on, transactionally recoverable runtime memory evolution within provider ingestion;
+  process-restart durability requires a persistent memory-plane store
 - runtime graph projection and graph retrieval APIs
 - benchmark suites for lifecycle, retrieval corruption, execution graph, hand-authored memory evolution, latent graph simulation, HotpotQA, and calibration reporting
 
@@ -66,18 +67,22 @@ Future evaluation safety requirements:
 - expose graph/debug views for inspection
 - do not let unsupported extracted claims silently become durable user truth
 - keep calibration report-only
-- allow rollback by disabling runtime evolution
+- define an explicit operational rollback mechanism before agent integration;
+  the current default-on component has no runtime disable flag
 
 ## Candidate Agent Capabilities
 
 A future harness may expose these capabilities after its protocol is reviewed:
 
 - `prefetch(query, session_id, task_id, user_id)`
-- `sync_turn(user_content, assistant_content, ...)`
-- `on_memory_write(action, target, content, ...)`
-- `on_delegation(task, result, ...)`
-- `on_session_end(...)`
-- `on_pre_compress(...)`
+- `sync_turn(user_content, assistant_content, operation_id=..., ...)`
+- `on_memory_write(action, target, content, operation_id=..., ...)`
+- `on_delegation(task, result, operation_id=..., ...)`
+- `on_session_end(..., operation_id=...)`
+- `on_pre_compress(..., operation_id=...)`
+
+Every mutating hook requires the caller's stable delivery ID. Retries must reuse that ID;
+turn synchronization derives deterministic user and assistant child IDs from it.
 
 Expose provider tools:
 
@@ -99,7 +104,7 @@ The suite should:
 
 1. Generate latent graph scenarios using the existing simulator.
 2. Feed only surface observations through `HermesMemoryProvider` or `ProviderMemoryService`.
-3. Enable runtime memory evolution.
+3. Use the standard default-on runtime memory-evolution composition.
 4. Project runtime graph state.
 5. Align runtime graph items to latent graph oracle items.
 6. Score entity, claim, relation, provenance, lifecycle, conflict, scope, source trust, and hidden hallucination behavior.
@@ -141,14 +146,13 @@ Do not attempt these during benchmark hardening:
 
 Ready now:
 
-- isolated opt-in runtime component validation
+- isolated runtime component validation
 - benchmark-backed trace inspection
 - provider tools for explicit state management
 
 Not ready yet:
 
 - controlled agent integration
-- default always-on memory evolution
 - unguarded durable fact writes from ordinary chat
 - broad production deployment
 - claims about agent-level quality or task improvement

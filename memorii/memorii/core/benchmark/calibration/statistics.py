@@ -8,7 +8,7 @@ from math import comb, exp, lgamma, sqrt
 from statistics import NormalDist
 from typing import TypeVar
 
-from memorii.core.calibration.models import (
+from memorii.core.benchmark.calibration.models import (
     GateCoverageAlgorithmVersion,
     GateCoverageCertificate,
     GateCoverageConfiguration,
@@ -17,7 +17,7 @@ from memorii.core.calibration.models import (
     ScenarioClusterInterval,
     ScenarioPassInterval,
 )
-from memorii.core.calibration.simulation_models import (
+from memorii.core.benchmark.calibration.simulation_models import (
     GateSimulationModel,
     family_mixture_rate,
     sample_seed_rate,

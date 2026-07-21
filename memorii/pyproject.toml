@@ -69,8 +69,6 @@ ignore = [
 
 [tool.pyright]
 pythonVersion = "3.11"
-venvPath = ".."
-venv = ".venv"
 typeCheckingMode = "basic"
 include = [
   "memorii/core/belief",
@@ -78,11 +76,15 @@ include = [
   "memorii/core/benchmark/artifact_validation.py",
   "memorii/core/benchmark/reproducibility.py",
   "memorii/core/memory_evolution",
+  "memorii/core/memory_plane",
+  "memorii/core/provider",
+  "memorii/core/promotion",
   "memorii/core/benchmark/memory_evolution_sim",
   "memorii/core/benchmark/memory_evolution_runtime",
-  "memorii/core/calibration",
+  "memorii/core/benchmark/calibration",
   "memorii/core/prompts",
   "memorii/core/llm_decision",
+  "memorii/integrations",
   "memorii/tools/benchmark_suites",
 ]
 exclude = [

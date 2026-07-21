@@ -16,6 +16,12 @@ from memorii.core.benchmark.artifact_rows.common import (
     FlatArtifactModel,
     ProviderCountScope,
 )
+from memorii.core.benchmark.calibration.alignment import RuntimeGraphAlignment
+from memorii.core.benchmark.checkpoint_diagnostics import (
+    ChannelOverlapSection,
+    CheckpointDiagnosticsSection,
+    SelectedClaimSupportClosureErrorSection,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     JudgeAggregate,
     JudgeVote,
@@ -23,37 +29,12 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     OracleCheckpoint,
     SimSystemOutput,
 )
-from memorii.core.calibration.alignment import RuntimeGraphAlignment
 from memorii.core.memory_evolution.execution import (
     ContinuationDecision,
     WorkState,
     WorkStateSnapshot,
 )
 from memorii.core.memory_evolution.retrieval import ProductionRetrievalDecision
-
-
-class ChannelOverlapSection(BaseModel):
-    """Role-channel overlap diagnostics for selected/support/rejected/context views."""
-
-    critical: list[str] = Field(default_factory=list)
-    warning: list[str] = Field(default_factory=list)
-    critical_ids: dict[str, list[str]] = Field(default_factory=dict)
-    warning_ids: dict[str, list[str]] = Field(default_factory=dict)
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class SelectedClaimSupportClosureErrorSection(BaseModel):
-    """Claim-local selected/supporting/citation closure diagnostics."""
-
-    claim_id: str
-    missing_supporting_claim: bool
-    expected_event_ids: list[str] = Field(default_factory=list)
-    present_event_ids: list[str] = Field(default_factory=list)
-    missing_event_ids: list[str] = Field(default_factory=list)
-    is_action_state: bool
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class CheckpointResultRow(FlatArtifactModel):
@@ -70,7 +51,7 @@ class CheckpointResultRow(FlatArtifactModel):
     review_required: bool
     failure_buckets: list[str] = Field(default_factory=list)
     warning_buckets: list[str] = Field(default_factory=list)
-    diagnostics: CheckpointDiagnosticsPayload = Field(default_factory=lambda: CheckpointDiagnosticsPayload())
+    diagnostics: CheckpointDiagnosticsPayload
     output: SimSystemOutput
     phase: str = "checkpoint"
     horizon_distance: int = Field(default=0, ge=0)
@@ -136,11 +117,47 @@ class CheckpointResultRow(FlatArtifactModel):
     role_misclassification: bool = False
     precision_failure_classification: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def project_public_diagnostics(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        diagnostics_value = value.get("diagnostics")
+        if diagnostics_value is None:
+            return value
+        diagnostics = (
+            diagnostics_value
+            if isinstance(diagnostics_value, CheckpointDiagnosticsPayload)
+            else CheckpointDiagnosticsPayload.model_validate(diagnostics_value)
+        )
+        flat_fields = diagnostics.to_flat_fields()
+        inconsistent_fields = [
+            field_name
+            for field_name, field_value in flat_fields.items()
+            if field_name in value and value[field_name] != field_value
+        ]
+        if inconsistent_fields:
+            raise ValueError(
+                "checkpoint top-level diagnostics must match diagnostics payload: "
+                f"{sorted(inconsistent_fields)!r}"
+            )
+        return {**value, **flat_fields}
+
     @model_validator(mode="after")
     def validate_verdict_projection(self) -> CheckpointResultRow:
         expected_passed = self.verdict == "pass"
         if self.passed != expected_passed:
             raise ValueError("checkpoint passed must be true exactly when verdict is pass")
+        inconsistent_diagnostics = [
+            field_name
+            for field_name in CheckpointDiagnosticsSection.model_fields
+            if getattr(self, field_name) != getattr(self.diagnostics, field_name)
+        ]
+        if inconsistent_diagnostics:
+            raise ValueError(
+                "checkpoint top-level diagnostics must match diagnostics payload: "
+                f"{sorted(inconsistent_diagnostics)!r}"
+            )
         return self
 
 
@@ -194,58 +211,6 @@ class CheckpointVerdictSection(BaseModel):
     review_required: bool
     failure_buckets: list[str] = Field(default_factory=list)
     warning_buckets: list[str] = Field(default_factory=list)
-
-    model_config = ConfigDict(extra="forbid")
-
-    def to_flat_fields(self) -> dict[str, object]:
-        return self.model_dump(mode="json")
-
-
-class CheckpointDiagnosticsSection(BaseModel):
-    """Typed diagnostics emitted by sim/runtime judge diagnostics."""
-
-    missing_expected_ids: dict[str, list[str]] = Field(default_factory=dict)
-    extra_selected_ids: dict[str, list[str]] = Field(default_factory=dict)
-    allowed_definition_selected_ids: dict[str, list[str]] = Field(default_factory=dict)
-    allowed_context_selected_ids: dict[str, list[str]] = Field(default_factory=dict)
-    forbidden_selected_ids: dict[str, list[str]] = Field(default_factory=dict)
-    answer_match_type: str = "unknown"
-    failure_classification: list[str] = Field(default_factory=list)
-    selected_excluded_ids: dict[str, list[str]] = Field(default_factory=dict)
-    supporting_excluded_ids: dict[str, list[str]] = Field(default_factory=dict)
-    rejected_expected_ids: dict[str, list[str]] = Field(default_factory=dict)
-    missing_rejected_ids: dict[str, list[str]] = Field(default_factory=dict)
-    missing_rejected_claim_subject_entity_ids: list[str] = Field(default_factory=list)
-    supporting_wrong_entity_claim_ids: list[str] = Field(default_factory=list)
-    supporting_wrong_subject_claim_ids: list[str] = Field(default_factory=list)
-    supporting_wrong_subject_entity_ids: list[str] = Field(default_factory=list)
-    supporting_disambiguation_claim_ids: list[str] = Field(default_factory=list)
-    missing_wrong_entity_rejection_claim_ids: list[str] = Field(default_factory=list)
-    missing_wrong_entity_rejection_subject_ids: list[str] = Field(default_factory=list)
-    selected_noncurrent_claim_ids: list[str] = Field(default_factory=list)
-    required_definition_claim_ids: list[str] = Field(default_factory=list)
-    missing_definition_claim_ids: list[str] = Field(default_factory=list)
-    missing_definition_support_claim_ids: list[str] = Field(default_factory=list)
-    rejected_required_definition_claim_ids: list[str] = Field(default_factory=list)
-    selected_entity_role_mismatches: list[str] = Field(default_factory=list)
-    missing_selected_subject_entity_ids: list[str] = Field(default_factory=list)
-    selected_object_entity_instead_of_subject_ids: list[str] = Field(default_factory=list)
-    selected_graph_entity_overbreadth: list[str] = Field(default_factory=list)
-    selected_nonrequired_graph_entity_ids: list[str] = Field(default_factory=list)
-    selected_context_only_entity_ids: list[str] = Field(default_factory=list)
-    selected_rejected_or_context_entity_ids: list[str] = Field(default_factory=list)
-    supporting_noisy_citation_event_ids: list[str] = Field(default_factory=list)
-    selected_claim_support_closure_errors: list[SelectedClaimSupportClosureErrorSection] = Field(default_factory=list)
-    selected_claim_ids_missing_support: list[str] = Field(default_factory=list)
-    selected_claim_evidence_event_ids_missing_support: list[str] = Field(default_factory=list)
-    selected_action_state_event_ids_missing_support: list[str] = Field(default_factory=list)
-    context_only_noise_event_ids: list[str] = Field(default_factory=list)
-    supporting_role_violations: dict[str, list[str]] = Field(default_factory=dict)
-    supporting_rejection_provenance_overlap: dict[str, list[str]] = Field(default_factory=dict)
-    channel_overlap: ChannelOverlapSection = Field(default_factory=ChannelOverlapSection)
-    role_misclassification: bool = False
-    precision_failure_classification: list[str] = Field(default_factory=list)
-    required_judge_ids: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -470,7 +435,7 @@ class CheckpointDiagnosticsPayload(CheckpointDiagnosticsSection):
     def from_sections(
         cls,
         checkpoint: CheckpointDiagnosticsSection,
-        runtime: RuntimeDiagnosticsSection,
+        runtime: RuntimeDiagnosticsSection | None = None,
     ) -> CheckpointDiagnosticsPayload:
         return cls(
             missing_expected_ids=checkpoint.missing_expected_ids,
@@ -515,15 +480,15 @@ class CheckpointDiagnosticsPayload(CheckpointDiagnosticsSection):
             role_misclassification=checkpoint.role_misclassification,
             precision_failure_classification=checkpoint.precision_failure_classification,
             required_judge_ids=checkpoint.required_judge_ids,
-            runtime_graph_validation_errors=runtime.runtime_graph_validation_errors,
-            runtime_relation_support=runtime.runtime_relation_support,
-            runtime_action_support=runtime.runtime_action_support,
-            runtime_action_alignments=runtime.runtime_action_alignments,
-            runtime_execution_state=runtime.runtime_execution_state,
-            runtime_retrieval_decision=runtime.runtime_retrieval_decision,
-            active_continuation_branch=runtime.active_continuation_branch,
-            suppressed_branch_ids=runtime.suppressed_branch_ids,
-            action_alignment_failure_reason=runtime.action_alignment_failure_reason,
+            runtime_graph_validation_errors=[] if runtime is None else runtime.runtime_graph_validation_errors,
+            runtime_relation_support=[] if runtime is None else runtime.runtime_relation_support,
+            runtime_action_support=[] if runtime is None else runtime.runtime_action_support,
+            runtime_action_alignments=[] if runtime is None else runtime.runtime_action_alignments,
+            runtime_execution_state=None if runtime is None else runtime.runtime_execution_state,
+            runtime_retrieval_decision=None if runtime is None else runtime.runtime_retrieval_decision,
+            active_continuation_branch=None if runtime is None else runtime.active_continuation_branch,
+            suppressed_branch_ids=[] if runtime is None else runtime.suppressed_branch_ids,
+            action_alignment_failure_reason="" if runtime is None else runtime.action_alignment_failure_reason,
         )
 
 
@@ -533,8 +498,6 @@ CheckpointDiagnosticsPayload.model_rebuild()
 CheckpointResultRow.model_rebuild()
 SimCheckpointResultRow.model_rebuild()
 RuntimeCheckpointResultRow.model_rebuild()
-
-
 
 
 def checkpoint_warning_buckets(

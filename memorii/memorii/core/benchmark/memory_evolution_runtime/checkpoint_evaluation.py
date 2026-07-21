@@ -8,7 +8,11 @@ from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection 
     action_alignment_failure_reason,
 )
 from memorii.core.benchmark.memory_evolution_runtime.graph_items import title_from_normalized
-from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow, RuntimeProjection
+from memorii.core.benchmark.memory_evolution_runtime.models import (
+    RuntimeClaimGraphItemRow,
+    RuntimeGraphItem,
+    RuntimeProjection,
+)
 from memorii.core.benchmark.memory_evolution_runtime.utils import ordered_unique
 from memorii.core.benchmark.memory_evolution_sim import JudgeAggregate, OracleCheckpoint, SimSystemOutput
 from memorii.core.memory_evolution import MemoryGraphSnapshot
@@ -89,6 +93,8 @@ def runtime_failure_buckets(
         buckets.append("stale_fact_resurfaced")
     if "historical_truth_lost" in critical:
         buckets.append("historical_fact_lost")
+    if "missing_rejected_id" in critical:
+        buckets.append("runtime_missing_expected_rejection")
     if "overconfident_wrong_answer" in critical:
         buckets.append("calibration_drift")
     return sorted(set(buckets))
@@ -99,7 +105,7 @@ def runtime_answer_for_checkpoint(
     checkpoint: OracleCheckpoint,
     selected_claim_ids: list[str],
     runtime_claim_by_oracle: Mapping[str, str | None],
-    item_by_id: Mapping[str, RuntimeGraphItemRow],
+    item_by_id: Mapping[str, RuntimeGraphItem],
 ) -> str | None:
     if checkpoint.expected_abstention:
         return None
@@ -111,7 +117,7 @@ def runtime_answer_for_checkpoint(
     if runtime_id is None:
         return None
     item = item_by_id.get(runtime_id)
-    if item is None:
+    if not isinstance(item, RuntimeClaimGraphItemRow):
         return None
     if checkpoint.answer_projection_policy == "claim_subject":
         return title_from_normalized(item.subject) or None
@@ -122,13 +128,14 @@ def mean_runtime_confidence(
     *,
     selected_claim_ids: list[str],
     runtime_claim_by_oracle: Mapping[str, str | None],
-    item_by_id: Mapping[str, RuntimeGraphItemRow],
+    item_by_id: Mapping[str, RuntimeGraphItem],
 ) -> float:
     values = [
         item.confidence
         for claim_id in selected_claim_ids
         if (runtime_id := runtime_claim_by_oracle.get(claim_id)) is not None
         if (item := item_by_id.get(runtime_id)) is not None
+        if isinstance(item, RuntimeClaimGraphItemRow)
     ]
     if not values:
         return 0.35
@@ -139,13 +146,13 @@ def supporting_events_for_claims(
     *,
     claim_ids: list[str],
     runtime_claim_by_oracle: Mapping[str, str | None],
-    item_by_id: Mapping[str, RuntimeGraphItemRow],
+    item_by_id: Mapping[str, RuntimeGraphItem],
     expected_event_ids: list[str],
 ) -> list[str]:
     events: list[str] = []
     for claim_id in claim_ids:
         runtime_id = runtime_claim_by_oracle.get(claim_id)
-        if runtime_id is None or (item := item_by_id.get(runtime_id)) is None:
+        if runtime_id is None or not isinstance(item := item_by_id.get(runtime_id), RuntimeClaimGraphItemRow):
             continue
         evidence = list(item.evidence_event_ids)
         preferred = [event_id for event_id in evidence if event_id in expected_event_ids]

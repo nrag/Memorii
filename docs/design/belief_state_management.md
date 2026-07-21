@@ -738,8 +738,8 @@ recovery behavior, or end-to-end task outcomes.
 
 ### Updated readiness position
 
-Memorii is not yet ready for agent integration. Runtime evolution remains an
-opt-in component under isolated validation; passing
+Memorii is not yet ready for agent integration. Runtime evolution is default-on
+inside the memory component and remains under isolated validation; passing
 `memory_evolution_runtime_v1` establishes the following component path only:
 
 ```text

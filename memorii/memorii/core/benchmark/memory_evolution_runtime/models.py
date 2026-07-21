@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Literal, TypeVar
+from enum import StrEnum
+from typing import Annotated, Literal, TypeAlias, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 
 from memorii.core.benchmark.artifact_rows import (
     FlatArtifactModel,
@@ -17,17 +18,20 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeGraphAlignmentRow,
     SimScenarioResultRow,
 )
+from memorii.core.benchmark.calibration.alignment import RuntimeGraphAlignment
 from memorii.core.benchmark.memory_evolution_sim import JudgeAggregate, SimSystemOutput
-from memorii.core.calibration.alignment import RuntimeGraphAlignment
 from memorii.core.memory_evolution import (
     MemoryGraphEdge,
     MemoryGraphNode,
     MemoryGraphSnapshot,
     ProductionRetrievalDecision,
+    RecordLifecycleState,
     WorkStateSnapshot,
+    WorkStateStatus,
 )
 
 T = TypeVar("T")
+NonEmptyString: TypeAlias = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
 class RuntimeGraphSnapshotRow(BaseModel):
@@ -55,74 +59,91 @@ class RuntimeGraphSnapshotRow(BaseModel):
 
 
 class RuntimeGraphItemRow(FlatArtifactModel):
-    """Typed normalized graph item persisted by the runtime benchmark.
+    """Fields shared by every normalized runtime graph item."""
 
-    Runtime ingestion, projection, alignment, and persistence share this
-    contract. A new item field must be declared here before it can enter an
-    alignment decision or a persisted report.
-    """
-
-    scenario_id: str = ""
-    runtime_item_id: str = ""
+    scenario_id: NonEmptyString
+    runtime_item_id: NonEmptyString
     item_type: Literal["entity", "claim", "relation", "action"]
-    canonical_name: str = ""
-    canonical_id: str = ""
-    entity_type: str = ""
+    lifecycle_state: RecordLifecycleState
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    evidence_event_ids: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid", validate_default=True)
+
+
+class RuntimeEntityGraphItemRow(RuntimeGraphItemRow):
+    item_type: Literal["entity"] = "entity"
+    canonical_name: NonEmptyString
+    canonical_id: NonEmptyString
+    entity_type: NonEmptyString
     aliases: list[str] = Field(default_factory=list)
-    claim_id: str = ""
+
+
+class RuntimeClaimGraphItemRow(RuntimeGraphItemRow):
+    item_type: Literal["claim"] = "claim"
+    claim_id: NonEmptyString
     subject: str = ""
-    subject_entity_id: str = ""
-    predicate: str = ""
+    subject_entity_id: NonEmptyString
+    predicate: NonEmptyString
     object: str = ""
     object_entity_id: str = ""
     object_value: str = ""
     scope: str = ""
     valid_from: str = ""
     valid_to: str = ""
-    relation_type: str = ""
-    source: str = ""
-    target: str = ""
-    directionality: Literal["directed", "undirected"] = "directed"
-    action_id: str = ""
-    action_type: str = ""
-    status: str = ""
-    target_entity_ids: list[str] = Field(default_factory=list)
-    lifecycle_state: str = ""
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
-    evidence_event_ids: list[str] = Field(default_factory=list)
-
-    model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_identity_and_payload(self) -> RuntimeGraphItemRow:
-        for field_name in ("scenario_id", "runtime_item_id", "lifecycle_state"):
-            if not getattr(self, field_name).strip():
-                raise ValueError(f"{field_name} must be non-empty")
-        required_fields: tuple[str, ...]
-        if self.item_type == "entity":
-            required_fields = ("canonical_id", "canonical_name")
-        elif self.item_type == "claim":
-            if not self.claim_id.strip():
-                raise ValueError("claim graph items must have claim_id")
-            if not self.subject_entity_id.strip() or not self.predicate.strip():
-                raise ValueError("claim graph items must have subject_entity_id and predicate")
-            if not (self.object_entity_id.strip() or self.object_value.strip() or self.object.strip()):
-                raise ValueError("claim graph items must have an object")
-            required_fields = ()
-        elif self.item_type == "relation":
-            required_fields = ("relation_type", "source", "target")
-        else:
-            required_fields = ("action_id", "action_type", "status")
-        for field_name in required_fields:
-            if not getattr(self, field_name).strip():
-                raise ValueError(f"{self.item_type} graph items must have {field_name}")
+    def validate_claim(self) -> RuntimeClaimGraphItemRow:
+        if not self.claim_id.strip():
+            raise ValueError("claim graph items must have claim_id")
+        if not self.subject_entity_id.strip() or not self.predicate.strip():
+            raise ValueError("claim graph items must have subject_entity_id and predicate")
+        if not (self.object_entity_id.strip() or self.object_value.strip() or self.object.strip()):
+            raise ValueError("claim graph items must have an object")
         return self
+
+
+class RuntimeRelationType(StrEnum):
+    CONTRADICTS = "contradicts"
+    SUPERSEDES = "supersedes"
+    MERGED_INTO = "merged_into"
+    SPLIT_FROM = "split_from"
+    REKEYED_FROM = "rekeyed_from"
+
+
+class RuntimeRelationGraphItemRow(RuntimeGraphItemRow):
+    item_type: Literal["relation"] = "relation"
+    relation_type: RuntimeRelationType
+    source: NonEmptyString
+    target: NonEmptyString
+    directionality: Literal["directed", "undirected"] = "directed"
+
+
+class RuntimeActionGraphItemRow(RuntimeGraphItemRow):
+    item_type: Literal["action"] = "action"
+    action_id: NonEmptyString
+    action_type: NonEmptyString
+    status: WorkStateStatus
+    target_entity_ids: list[str] = Field(default_factory=list)
+
+
+RuntimeGraphItem: TypeAlias = Annotated[
+    RuntimeEntityGraphItemRow | RuntimeClaimGraphItemRow | RuntimeRelationGraphItemRow | RuntimeActionGraphItemRow,
+    Field(discriminator="item_type"),
+]
+RUNTIME_GRAPH_ITEM_ADAPTER = TypeAdapter(RuntimeGraphItem)
+RUNTIME_GRAPH_ITEM_TYPES = (
+    RuntimeEntityGraphItemRow,
+    RuntimeClaimGraphItemRow,
+    RuntimeRelationGraphItemRow,
+    RuntimeActionGraphItemRow,
+)
 
 
 class GraphItemNormalizationResult(BaseModel):
     """Valid graph items plus classified rows rejected at normalization."""
 
-    items: list[RuntimeGraphItemRow] = Field(default_factory=list)
+    items: list[RuntimeGraphItem] = Field(default_factory=list)
     validation_errors: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
@@ -135,7 +156,7 @@ class RuntimeSuiteRows:
     judge_rows: list[JudgeAggregate]
     llm_rows: list[RuntimeExtractorTraceRow]
     graph_snapshots: list[RuntimeGraphSnapshotRow] = field(default_factory=list)
-    graph_items: list[RuntimeGraphItemRow] = field(default_factory=list)
+    graph_items: list[RuntimeGraphItem] = field(default_factory=list)
     alignments: list[RuntimeGraphAlignmentRow] = field(default_factory=list)
     runtime_failures: list[RuntimeCheckpointResultRow] = field(default_factory=list)
     effective_mode: str | None = None
@@ -147,7 +168,7 @@ class RuntimeSuiteRows:
         _require_row_type("judge_rows", self.judge_rows, JudgeAggregate)
         _require_row_type("llm_rows", self.llm_rows, RuntimeExtractorTraceRow)
         _require_row_type("graph_snapshots", self.graph_snapshots, RuntimeGraphSnapshotRow)
-        _require_row_type("graph_items", self.graph_items, RuntimeGraphItemRow)
+        _require_row_types("graph_items", self.graph_items, RUNTIME_GRAPH_ITEM_TYPES)
         _require_row_type("alignments", self.alignments, RuntimeGraphAlignmentRow)
         _require_row_type("runtime_failures", self.runtime_failures, RuntimeCheckpointResultRow)
 
@@ -158,11 +179,22 @@ def _require_row_type(field_name: str, rows: Sequence[object], row_type: type[T]
         raise TypeError(f"{field_name} must contain {row_type.__name__} rows, got {invalid}")
 
 
+def _require_row_types(
+    field_name: str,
+    rows: Sequence[object],
+    row_types: tuple[type[BaseModel], ...],
+) -> None:
+    invalid = [type(row).__name__ for row in rows if not isinstance(row, row_types)]
+    if invalid:
+        expected = ", ".join(row_type.__name__ for row_type in row_types)
+        raise TypeError(f"{field_name} must contain one of ({expected}), got {invalid}")
+
+
 @dataclass
 class RuntimeProjection:
     output: SimSystemOutput
     graph_snapshot: MemoryGraphSnapshot
-    graph_items: list[RuntimeGraphItemRow]
+    graph_items: list[RuntimeGraphItem]
     alignments: list[RuntimeGraphAlignment]
     source_id_to_event_id: dict[str, str]
     relation_support: dict[str, str] = field(default_factory=dict)
@@ -174,7 +206,7 @@ class RuntimeProjection:
     retrieval_decision: ProductionRetrievalDecision | None = None
 
     def __post_init__(self) -> None:
-        _require_row_type("graph_items", self.graph_items, RuntimeGraphItemRow)
+        _require_row_types("graph_items", self.graph_items, RUNTIME_GRAPH_ITEM_TYPES)
         _require_row_type("action_alignment_rows", self.action_alignment_rows, RuntimeActionAlignmentRow)
         if not isinstance(self.execution_state, RuntimeExecutionStateSection):
             raise TypeError("execution_state must be a RuntimeExecutionStateSection")

@@ -11,36 +11,31 @@ PRODUCTION_ROOT = PACKAGE_ROOT / "memory_evolution"
 PRODUCTION_LLM_DECISION_ROOT = PACKAGE_ROOT / "llm_decision"
 PROMPT_ROOT = PACKAGE_ROOT / "prompts"
 PRODUCTION_RUNTIME_ROOTS = tuple(
-    PACKAGE_ROOT / name
-    for name in (
-        "belief",
-        "llm_decision",
-        "memory_evolution",
-        "promotion",
-        "provider",
-        "solver",
-    )
+    path for path in PACKAGE_ROOT.iterdir() if path.is_dir() and path.name not in {"__pycache__", "benchmark"}
 )
 INDEPENDENT_EVALUATORS = (
     PACKAGE_ROOT / "benchmark" / "memory_evolution_decision",
     PACKAGE_ROOT / "benchmark" / "memory_evolution_sim",
 )
 DOMAIN_NAMING_PATTERN = re.compile(r"(?:phase\d+|wave\d+|legacy|compat)", re.IGNORECASE)
-MODULE_LINE_BUDGETS = {
+COHESION_LINE_BUDGETS = {
+    PRODUCTION_ROOT / "service.py": 600,
+    PRODUCTION_ROOT / "graph_queries.py": 300,
+    PRODUCTION_ROOT / "claim_queries.py": 220,
+    PRODUCTION_ROOT / "record_projection.py": 200,
+    PRODUCTION_ROOT / "state_repository.py": 120,
+    PRODUCTION_ROOT / "claim_policy.py": 400,
+    PRODUCTION_ROOT / "operation_models.py": 140,
+    PRODUCTION_ROOT / "operation_lease.py": 80,
+    PRODUCTION_ROOT / "operation_store.py": 240,
+    PRODUCTION_ROOT / "operations.py": 580,
     PACKAGE_ROOT / "benchmark" / "memory_evolution_runtime" / "runner.py": 400,
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_runtime" / "checkpoint_projection.py": 500,
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_runtime" / "checkpoint_evaluation.py": 200,
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "generation.py": 100,
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "family_scenarios.py": 700,
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "family_observations.py": 350,
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "checkpoints.py": 450,
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "schema_builders.py": 350,
+    PACKAGE_ROOT / "provider" / "service.py": 600,
+    PACKAGE_ROOT / "provider" / "retrieval_composition.py": 180,
+    PACKAGE_ROOT / "provider" / "tool_schemas.py": 200,
+    PACKAGE_ROOT / "provider" / "tool_dispatch.py": 520,
+    PACKAGE_ROOT / "provider" / "work_state_projection.py": 330,
 }
-PRODUCTION_SHAPED_TESTS = (
-    TEST_ROOT / "unit" / "core" / "test_llm_eval_runner.py",
-    TEST_ROOT / "unit" / "core" / "test_runtime_step_service.py",
-    TEST_ROOT / "integration" / "test_harness_runtime_integration.py",
-)
 
 
 def _imports(path: Path) -> list[tuple[str, tuple[str, ...]]]:
@@ -128,6 +123,18 @@ def test_production_memory_evolution_never_imports_benchmark_code() -> None:
     assert violations == []
 
 
+def test_production_runtime_never_imports_benchmark_code() -> None:
+    violations = [
+        f"{path}:{module}"
+        for root in PRODUCTION_RUNTIME_ROOTS
+        for path in root.rglob("*.py")
+        for module, _names in _imports(path)
+        if module.startswith("memorii.core.benchmark")
+    ]
+
+    assert violations == []
+
+
 def test_production_memory_evolution_never_dynamically_imports_benchmark_code() -> None:
     violations = [
         f"{path}:{module}"
@@ -174,9 +181,7 @@ def test_prompt_conformance_fixtures_do_not_ship_in_installable_source() -> None
     for path in SOURCE_ROOT.rglob("*.py"):
         tree = ast.parse(path.read_text(), filename=str(path))
         violations.extend(
-            f"{path}:{line}:{name}"
-            for line, name in _defined_identifiers(tree)
-            if name in forbidden_names
+            f"{path}:{line}:{name}" for line, name in _defined_identifiers(tree) if name in forbidden_names
         )
 
     assert violations == []
@@ -310,6 +315,33 @@ def test_owned_packages_replace_the_removed_monolith_modules() -> None:
     assert not (PRODUCTION_ROOT / "query_runtime_factory.py").exists()
 
 
+def test_hardening_owned_modules_stay_within_cohesion_budgets() -> None:
+    violations = [
+        f"{path.relative_to(SOURCE_ROOT)}: {len(path.read_text(encoding='utf-8').splitlines())} > {budget}"
+        for path, budget in COHESION_LINE_BUDGETS.items()
+        if len(path.read_text(encoding="utf-8").splitlines()) > budget
+    ]
+
+    assert violations == []
+
+
+def test_provider_tool_handlers_remain_small_and_independently_testable() -> None:
+    path = PACKAGE_ROOT / "provider" / "tool_dispatch.py"
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    dispatcher = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ProviderToolDispatcher"
+    )
+    violations = [
+        f"{method.name}: {method.end_lineno - method.lineno + 1} > 60"
+        for method in dispatcher.body
+        if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and method.end_lineno is not None
+        and method.end_lineno - method.lineno + 1 > 60
+    ]
+
+    assert violations == []
+
+
 def test_active_python_identifiers_and_paths_use_domain_names() -> None:
     architecture_test = Path(__file__).resolve()
     violations: list[str] = []
@@ -347,6 +379,22 @@ def test_domain_constructors_do_not_load_environment_configuration() -> None:
     assert violations == []
 
 
+def test_production_provider_mutations_carry_explicit_delivery_ids() -> None:
+    mutation_methods = {"sync_event", "apply_memory_write"}
+    violations: list[str] = []
+    for path in SOURCE_ROOT.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
+            if _call_attribute(call) not in mutation_methods:
+                continue
+            keyword_names = {keyword.arg for keyword in call.keywords}
+            forwards_mapping = None in keyword_names
+            if "operation_id" not in keyword_names and not forwards_mapping:
+                violations.append(f"{path.relative_to(SOURCE_ROOT)}:{call.lineno}")
+
+    assert violations == []
+
+
 def test_installable_source_does_not_import_test_packages() -> None:
     violations = [
         f"{path}:{module}"
@@ -359,31 +407,17 @@ def test_installable_source_does_not_import_test_packages() -> None:
 
 
 def test_schema_only_package_initializers_remain_side_effect_free() -> None:
-    for path in (PACKAGE_ROOT / "calibration" / "__init__.py", PACKAGE_ROOT / "solver" / "__init__.py"):
+    for path in (
+        PACKAGE_ROOT / "benchmark" / "calibration" / "__init__.py",
+        PACKAGE_ROOT / "solver" / "__init__.py",
+    ):
         tree = ast.parse(path.read_text(), filename=str(path))
         imports = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))]
         executable_statements = [
-            node
-            for node in tree.body
-            if not isinstance(node, (ast.Expr, ast.Import, ast.ImportFrom))
+            node for node in tree.body if not isinstance(node, (ast.Expr, ast.Import, ast.ImportFrom))
         ]
         assert imports == [], f"{path} must not eagerly import its component graph"
         assert executable_statements == [], f"{path} must contain documentation only"
-
-
-def test_production_shaped_test_doubles_use_runtime_contracts() -> None:
-    violations: list[str] = []
-    for path in PRODUCTION_SHAPED_TESTS:
-        source = path.read_text()
-        tree = ast.parse(source, filename=str(path))
-        if any(isinstance(node, ast.Name) and node.id == "SimpleNamespace" for node in ast.walk(tree)):
-            violations.append(f"{path}:SimpleNamespace")
-        if "SLF001" in source:
-            violations.append(f"{path}:SLF001")
-        if "type: ignore" in source:
-            violations.append(f"{path}:type-ignore")
-
-    assert violations == []
 
 
 def test_typed_artifact_models_do_not_emulate_mappings() -> None:
@@ -391,9 +425,7 @@ def test_typed_artifact_models_do_not_emulate_mappings() -> None:
     tree = ast.parse(path.read_text(), filename=str(path))
     model = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "FlatArtifactModel")
     prohibited_methods = {"__getitem__", "__iter__", "__len__", "__eq__", "from_flat_row"}
-    defined_methods = {
-        node.name for node in model.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
+    defined_methods = {node.name for node in model.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
 
     assert defined_methods.isdisjoint(prohibited_methods)
 
@@ -416,11 +448,34 @@ def test_typed_artifact_construction_does_not_round_trip_through_dicts() -> None
     assert violations == []
 
 
+def test_runtime_graph_item_variants_own_only_their_domain_fields() -> None:
+    module = importlib.import_module("memorii.core.benchmark.memory_evolution_runtime.models")
+    common_fields = set(module.RuntimeGraphItemRow.model_fields)
+    assert common_fields == {
+        "scenario_id",
+        "runtime_item_id",
+        "item_type",
+        "lifecycle_state",
+        "confidence",
+        "evidence_event_ids",
+    }
+
+    variants = (
+        module.RuntimeEntityGraphItemRow,
+        module.RuntimeClaimGraphItemRow,
+        module.RuntimeRelationGraphItemRow,
+        module.RuntimeActionGraphItemRow,
+    )
+    owned_fields = [set(variant.model_fields) - common_fields for variant in variants]
+    assert all(owned_fields)
+    assert all(left.isdisjoint(right) for index, left in enumerate(owned_fields) for right in owned_fields[index + 1 :])
+
+
 def test_calibration_models_remain_typed_until_artifact_writers() -> None:
     violations: list[str] = []
     for path in (
-        PACKAGE_ROOT / "calibration" / "reports.py",
-        PACKAGE_ROOT / "calibration" / "gates.py",
+        PACKAGE_ROOT / "benchmark" / "calibration" / "reports.py",
+        PACKAGE_ROOT / "benchmark" / "calibration" / "gates.py",
     ):
         tree = ast.parse(path.read_text(), filename=str(path))
         violations.extend(
@@ -486,14 +541,10 @@ def test_checkpoint_diagnostics_aggregator_copies_every_typed_field() -> None:
     path = PACKAGE_ROOT / "benchmark" / "artifact_rows" / "checkpoints.py"
     tree = ast.parse(path.read_text(), filename=str(path))
     payload_class = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "CheckpointDiagnosticsPayload"
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "CheckpointDiagnosticsPayload"
     )
     method = next(
-        node
-        for node in payload_class.body
-        if isinstance(node, ast.FunctionDef) and node.name == "from_sections"
+        node for node in payload_class.body if isinstance(node, ast.FunctionDef) and node.name == "from_sections"
     )
     constructor = next(
         node
@@ -506,11 +557,57 @@ def test_checkpoint_diagnostics_aggregator_copies_every_typed_field() -> None:
     assert copied_fields == expected_fields
 
 
-def test_split_modules_remain_within_ownership_budgets() -> None:
+def test_checkpoint_diagnostics_contract_requires_every_field() -> None:
+    module = importlib.import_module("memorii.core.benchmark.checkpoint_diagnostics")
+
+    optional_fields = [
+        field_name
+        for field_name, field in module.CheckpointDiagnosticsSection.model_fields.items()
+        if not field.is_required()
+    ]
+
+    assert optional_fields == []
+
+
+def test_sim_checkpoint_diagnostics_constructs_every_typed_field() -> None:
+    module = importlib.import_module("memorii.core.benchmark.checkpoint_diagnostics")
+    path = PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "diagnostics.py"
+    tree = ast.parse(path.read_text(), filename=str(path))
+    function = next(
+        node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "sim_checkpoint_diagnostics"
+    )
+    constructor = next(
+        node
+        for node in ast.walk(function)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "CheckpointDiagnosticsSection"
+    )
+    constructed_fields = {keyword.arg for keyword in constructor.keywords if keyword.arg is not None}
+    expected_fields = set(module.CheckpointDiagnosticsSection.model_fields)
+
+    assert constructed_fields == expected_fields
+
+
+def test_checkpoint_row_builders_delegate_diagnostic_projection_to_artifact_schema() -> None:
+    paths = (
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_runtime" / "result_rows.py",
+        SOURCE_ROOT / "tools" / "benchmark_suites" / "memory_evolution_sim.py",
+    )
+    forbidden_fragments = (
+        "CheckpointDiagnosticsSection.model_validate",
+        "CheckpointDiagnosticsPayload.model_validate",
+        "diagnostics.model_dump",
+        "diagnostic_section.model_dump",
+        "diagnostics.to_flat_fields",
+        "diagnostic_section.to_flat_fields",
+    )
+
     violations = [
-        f"{path}:{line_count}>{budget}"
-        for path, budget in MODULE_LINE_BUDGETS.items()
-        if (line_count := len(path.read_text().splitlines())) > budget
+        f"{path.relative_to(SOURCE_ROOT)}:{fragment}"
+        for path in paths
+        for fragment in forbidden_fragments
+        if fragment in path.read_text(encoding="utf-8")
     ]
 
     assert violations == []

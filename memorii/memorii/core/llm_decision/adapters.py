@@ -5,8 +5,10 @@ from memorii.core.grounding.models import (
     AnswerVerificationContext,
     AnswerVerificationOutput,
     EvidenceSelectionContext,
+    EvidenceSelectionDecision,
     EvidenceSelectionOutput,
     GroundedAnswerContext,
+    GroundedAnswerDecision,
     GroundedAnswerOutput,
 )
 from memorii.core.llm_judge.models import JudgeDecisionOutput, JudgeDimension, JudgeRubric
@@ -103,6 +105,7 @@ class LLMBeliefUpdateAdapter:
 
 class LLMEvidenceSelectionAdapter:
     output_model = EvidenceSelectionOutput
+    semantic_model = EvidenceSelectionDecision
 
     def __init__(
         self,
@@ -137,11 +140,13 @@ class LLMEvidenceSelectionAdapter:
             request_id=request_id,
             metadata=metadata,
             output_model=self.output_model,
+            semantic_model=self.semantic_model,
         )
 
 
 class LLMGroundedAnswerAdapter:
     output_model = GroundedAnswerOutput
+    semantic_model = GroundedAnswerDecision
 
     def __init__(
         self,
@@ -176,6 +181,7 @@ class LLMGroundedAnswerAdapter:
             request_id=request_id,
             metadata=metadata,
             output_model=self.output_model,
+            semantic_model=self.semantic_model,
         )
 
 

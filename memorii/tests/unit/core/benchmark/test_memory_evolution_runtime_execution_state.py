@@ -125,12 +125,10 @@ def test_runtime_execution_projection_selects_action_backed_continuation_state()
     graph_items = [
         *runtime_execution_base_items(scenario=scenario),
         runtime_action(target="ent:atlas-cleanup-branch-b", status="in_progress", events=[oracle.progress_event_id]),
-        runtime_action(target="ent:atlas-cleanup-branch-a", status="started", events=[oracle.branch_a_started_event_id]),
         runtime_action(
-            target="ent:atlas-cleanup",
-            status="blocked",
-            events=[oracle.blocked_event_id],
-        ).model_copy(update={"lifecycle_state": "blocked"}),
+            target="ent:atlas-cleanup-branch-a", status="started", events=[oracle.branch_a_started_event_id]
+        ),
+        runtime_action(target="ent:atlas-cleanup", status="blocked", events=[oracle.blocked_event_id]),
     ]
 
     projection = project_runtime_checkpoint(
@@ -262,8 +260,12 @@ def test_runtime_execution_projection_bridges_subtask_progress_to_active_branch(
     oracle = _execution_oracle(scenario)
     graph_items = [
         *runtime_execution_base_items(scenario=scenario, branch_b_events=[oracle.branch_b_started_event_id]),
-        runtime_action(target="ent:atlas-cleanup-branch-b", status="started", events=[oracle.branch_b_started_event_id]),
-        runtime_action(target="ent:org-directory-owner-cleanup", status="in_progress", events=[oracle.progress_event_id]),
+        runtime_action(
+            target="ent:atlas-cleanup-branch-b", status="started", events=[oracle.branch_b_started_event_id]
+        ),
+        runtime_action(
+            target="ent:org-directory-owner-cleanup", status="in_progress", events=[oracle.progress_event_id]
+        ),
         runtime_action(target="ent:atlas-cleanup-branch-a", status="blocked", events=[oracle.blocked_event_id]),
     ]
 
@@ -296,7 +298,9 @@ def test_runtime_execution_projection_does_not_bridge_subtask_without_branch_his
     graph_items = [
         *base_items[:1],
         *base_items[2:],
-        runtime_action(target="ent:org-directory-owner-cleanup", status="in_progress", events=[oracle.progress_event_id]),
+        runtime_action(
+            target="ent:org-directory-owner-cleanup", status="in_progress", events=[oracle.progress_event_id]
+        ),
     ]
 
     projection = project_runtime_checkpoint(
@@ -323,14 +327,20 @@ def test_runtime_execution_projection_does_not_reject_active_or_wrong_branch() -
         scenario=scenario,
         checkpoint=checkpoint,
         graph_snapshot=MemoryGraphSnapshot(snapshot_id="test"),
-        graph_items=[*base_items, runtime_action(target="ent:branch-a", status="in_progress", events=[oracle.blocked_event_id])],
+        graph_items=[
+            *base_items,
+            runtime_action(target="ent:branch-a", status="in_progress", events=[oracle.blocked_event_id]),
+        ],
         source_id_to_event_id={},
     )
     wrong_branch = project_runtime_checkpoint(
         scenario=scenario,
         checkpoint=checkpoint,
         graph_snapshot=MemoryGraphSnapshot(snapshot_id="test"),
-        graph_items=[*base_items, runtime_action(target="ent:branch-c", status="blocked", events=[oracle.blocked_event_id])],
+        graph_items=[
+            *base_items,
+            runtime_action(target="ent:branch-c", status="blocked", events=[oracle.blocked_event_id]),
+        ],
         source_id_to_event_id={},
     )
 

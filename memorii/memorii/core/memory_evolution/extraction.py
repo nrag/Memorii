@@ -21,7 +21,9 @@ from memorii.core.memory_evolution.models import (
     EvidenceSpan,
     ExtractedAction,
     ExtractedClaim,
+    ExtractionFailureCode,
     ExtractionRun,
+    ExtractionRunStatus,
     SourceObservation,
     memory_scope_from_observation,
 )
@@ -42,6 +44,20 @@ class MemoryExtractor(Protocol):
     def extract(
         self, observations: list[SourceObservation]
     ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]: ...
+
+
+class MemoryExtractionRunError(RuntimeError):
+    """Terminal extraction outcome that must not be committed as live success."""
+
+    def __init__(self, run: ExtractionRun) -> None:
+        if run.status != ExtractionRunStatus.FAILED or run.failure_code is None:
+            raise ValueError("extraction failure requires a failed run with a failure code")
+        super().__init__(f"memory extraction failed: {run.failure_code.value}")
+        self.run = run
+
+    @property
+    def retryable(self) -> bool:
+        return self.run.failure_code == ExtractionFailureCode.PROVIDER_ERROR
 
 
 class ExtractedEntityOutput(BaseModel):
@@ -136,9 +152,7 @@ class EnglishRuleMemoryExtractor:
 
         for observation in observations:
             if not supports_english_rules(observation.language):
-                errors.append(
-                    f"{observation.source_id}: unsupported_language:{observation.language}"
-                )
+                errors.append(f"{observation.source_id}: unsupported_language:{observation.language}")
                 continue
             try:
                 obs_entities, obs_claims, obs_actions = self._extract_observation(
@@ -148,13 +162,27 @@ class EnglishRuleMemoryExtractor:
                 errors.append(f"{observation.source_id}: {exc}")
                 continue
             for entity in obs_entities:
-                key = (entity.entity_id, entity.normalized_name, entity.scope.scope_key)
+                key = (entity.entity_id, entity.normalized_name, entity.scope.stable_id())
                 entities.setdefault(key, entity)
             claims.extend(obs_claims)
             actions.extend(obs_actions)
 
         entity_list = list(entities.values())
         claims = _canonicalize_claim_arguments(claims, entity_list)
+        if errors:
+            status = (
+                ExtractionRunStatus.PARTIAL
+                if entity_list or claims or actions
+                else ExtractionRunStatus.ABSTAINED
+            )
+            failure_code = (
+                ExtractionFailureCode.UNSUPPORTED_LANGUAGE
+                if all("unsupported_language:" in error for error in errors)
+                else ExtractionFailureCode.OUTPUT_VALIDATION
+            )
+        else:
+            status = ExtractionRunStatus.SUCCEEDED
+            failure_code = None
         run = ExtractionRun(
             extraction_run_id=run_id,
             provider=self.provider,
@@ -165,6 +193,8 @@ class EnglishRuleMemoryExtractor:
             claim_ids=[claim.claim_id for claim in claims],
             action_ids=[action.action_id for action in actions],
             validation_summary={},
+            status=status,
+            failure_code=failure_code,
             errors=errors,
         )
         return run, entity_list, claims, actions
@@ -214,7 +244,7 @@ class EnglishRuleMemoryExtractor:
                     claim_key=ClaimKey(
                         subject_entity_id=subject_entity_id,
                         predicate_id=predicate,
-                        scope_key=observation_scope.scope_key,
+                        scope=observation_scope,
                         qualifier_key="default",
                     ),
                     object_value=value,
@@ -242,10 +272,7 @@ class EnglishRuleMemoryExtractor:
                     target_entity_ids=[_entity_id(target)],
                     status=status,
                     timestamp=observation.timestamp,
-                    task_id=observation.task_id,
-                    session_id=observation.session_id,
-                    user_id=observation.user_id,
-                    scope_key=observation_scope.scope_key,
+                    scope=observation_scope,
                     evidence_spans=[span],
                     extraction_run_id=run_id,
                 )
@@ -295,7 +322,13 @@ class LLMMemoryExtractor:
         self.model = result.response.actual_model or result.response.requested_model
         self.prompt_hash = result.request.prompt_hash
         if not result.success or result.output is None:
-            errors = [result.failure_mode or "llm_extraction_failed"]
+            failure_mode = result.failure_mode or "output_validation"
+            failure_code = {
+                "provider_error": ExtractionFailureCode.PROVIDER_ERROR,
+                "invalid_json": ExtractionFailureCode.INVALID_JSON,
+                "schema_validation": ExtractionFailureCode.SCHEMA_VALIDATION,
+            }.get(failure_mode, ExtractionFailureCode.OUTPUT_VALIDATION)
+            errors = [failure_mode]
             if result.response.error:
                 errors.append(result.response.error)
             run = ExtractionRun(
@@ -304,6 +337,8 @@ class LLMMemoryExtractor:
                 model=result.response.actual_model or result.response.requested_model,
                 prompt_hash=result.request.prompt_hash,
                 input_source_ids=[obs.source_id for obs in observations],
+                status=ExtractionRunStatus.FAILED,
+                failure_code=failure_code,
                 errors=errors,
             )
             return run, [], [], []
@@ -337,13 +372,27 @@ class HybridMemoryExtractor:
         run, entities, claims, actions = self._llm_extractor.extract(observations)
         self.model = run.model
         self.prompt_hash = run.prompt_hash
-        if run.errors:
+        if run.status == ExtractionRunStatus.FAILED:
             fallback_run, fallback_entities, fallback_claims, fallback_actions = self._rule_extractor.extract(
                 observations
             )
+            if fallback_run.status != ExtractionRunStatus.SUCCEEDED:
+                failed_run = run.model_copy(
+                    update={
+                        "errors": [
+                            *run.errors,
+                            *fallback_run.errors,
+                            f"fallback_failed:{fallback_run.status.value}",
+                        ]
+                    }
+                )
+                return failed_run, [], [], []
             fallback_run = fallback_run.model_copy(
                 update={
                     "provider": self.provider,
+                    "status": ExtractionRunStatus.FALLBACK_SUCCEEDED,
+                    "failure_code": run.failure_code,
+                    "fallback_provider": self._rule_extractor.provider,
                     "errors": [*run.errors, "fallback_used:english_rule"],
                 }
             )
@@ -454,7 +503,7 @@ def models_from_llm_output(
             claim_key = ClaimKey(
                 subject_entity_id=subject_entity_id,
                 predicate_id=predicate_id,
-                scope_key=observation_scope.scope_key,
+                scope=observation_scope,
                 qualifier_key=str(item.get("qualifier_key") or "default"),
             )
             confidence = _float_output(item.get("confidence"), default=0.6)
@@ -481,7 +530,7 @@ def models_from_llm_output(
                         subject_entity_id,
                         object_value,
                         object_entity_id or "",
-                        claim_key.scope_key,
+                        claim_key.scope.stable_id(),
                         claim_key.qualifier_key,
                     ]
                 ),
@@ -536,10 +585,7 @@ def models_from_llm_output(
                     dependency_ids=[str(value) for value in _sequence_output(item.get("dependency_ids"))],
                     blocking_ids=[str(value) for value in _sequence_output(item.get("blocking_ids"))],
                     timestamp=_parse_dt(item.get("timestamp")) or observation.timestamp,
-                    task_id=observation.task_id,
-                    session_id=observation.session_id,
-                    user_id=observation.user_id,
-                    scope_key=observation_scope.scope_key,
+                    scope=observation_scope,
                     evidence_spans=[span],
                     extraction_run_id=run_id,
                 )
@@ -548,6 +594,7 @@ def models_from_llm_output(
             errors.append(f"action[{idx}]: {type(exc).__name__}:{exc}")
 
     claims = _canonicalize_claim_arguments(claims, entities)
+    status = ExtractionRunStatus.PARTIAL if errors else ExtractionRunStatus.SUCCEEDED
     run = ExtractionRun(
         extraction_run_id=run_id,
         provider=provider,
@@ -557,6 +604,8 @@ def models_from_llm_output(
         entity_ids=[entity.entity_id for entity in entities],
         claim_ids=[claim.claim_id for claim in claims],
         action_ids=[action.action_id for action in actions],
+        status=status,
+        failure_code=ExtractionFailureCode.OUTPUT_VALIDATION if errors else None,
         errors=errors,
     )
     return run, entities, claims, actions
@@ -599,7 +648,7 @@ def _canonicalize_claim_argument(claim: ExtractedClaim, entities_by_id: dict[str
                 new_claim_key.subject_entity_id,
                 object_value,
                 original_subject_id,
-                new_claim_key.scope_key,
+                new_claim_key.scope.stable_id(),
                 new_claim_key.qualifier_key,
             ]
         ),

@@ -5,9 +5,13 @@ Live benchmark evidence is valid only for the exact clean commit that produced i
 verifying `git rev-parse HEAD`, requiring a clean source tree, and exporting the same value
 as `MEMORII_SOURCE_REVISION` to every benchmark process.
 
-For a release candidate, dispatch the workflow with the full commit SHA in
-`source_revision`. Leaving the input empty certifies the workflow's triggering revision.
-Scheduled runs certify the scheduled default-branch revision.
+For a merge candidate, dispatch the workflow on the PR branch itself, for example
+`gh workflow run benchmark-scheduled.yml --ref <pr-branch>`. Manual dispatch always runs the live
+matrix; it cannot be disabled by a repository variable. The workflow binds checkout, reports, and
+the certificate to `github.sha`, so GitHub associates `Live Runtime Statistical Gate` with the
+same commit being reviewed. Configure that check as required branch protection; if the branch
+advances, dispatch it again for the new SHA. Scheduled runs certify the scheduled default-branch
+revision only when `MEMORII_RUN_LIVE_GATES` is `true`.
 
 The matrix jobs upload source-bound reports. The aggregation job rejects mixed revisions,
 dirty or unversioned source states, insufficient seeds or replicates, provider/fallback
@@ -15,7 +19,13 @@ rates above policy, weak confidence bounds, and inadequate simulated interval co
 It then validates `live_runtime_gate_summary.json` as `LiveGateSummary` and requires both
 the gate summary and its coverage certificate to name the requested commit.
 
-PR gates remain deterministic and credential-free. They run unit, static, packaging, prompt,
-and fake-oracle benchmark contract checks against `${{ github.sha }}`. Live certification is
-an explicit post-commit gate because a statistically meaningful run is costly and requires
-provider credentials; it must never be inferred from a developer's dirty working tree.
+Pull-request-triggered gates remain deterministic and credential-free. They run unit, static, packaging, prompt,
+and benchmark artifact-contract checks against `${{ github.sha }}`. Simulator fake-oracle
+runs are semantic gates. Runtime dry runs are plumbing gates: they exercise production
+retrieval defaults and validate complete artifacts, but do not require every deterministic
+checkpoint to pass because doing so would either alter production defaults or manufacture
+evaluation-only rejection channels. Runtime semantic quality is enforced by the
+revision-bound live statistical gate. Live certification is an explicit pre-merge check launched
+against the committed PR SHA because a statistically meaningful run is costly and requires
+provider credentials; it must never execute unreviewed pull-request code with secrets or be
+inferred from a developer's dirty working tree.

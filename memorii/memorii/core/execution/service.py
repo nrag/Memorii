@@ -130,7 +130,7 @@ class RuntimeStepService:
     ) -> ProviderWriteDecision:
         """Apply a provider-style write through the canonical memory plane."""
         event = make_event(
-            event_id=build_event_id("runtime-write", session_id=session_id, task_id=task_id, sequence=1),
+            event_id=build_event_id("runtime-write", session_id=session_id, task_id=task_id),
             operation=operation,
             content=content,
             action=action,

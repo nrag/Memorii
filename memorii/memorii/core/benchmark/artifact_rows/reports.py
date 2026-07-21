@@ -22,9 +22,9 @@ from memorii.core.benchmark.artifact_rows.common import (
     empty_json_object,
     execution_source_from_counts,
 )
+from memorii.core.benchmark.calibration.models import CalibrationReport, DecisionCostReport
 from memorii.core.benchmark.memory_evolution_sim.schemas import SimSystemOutput
 from memorii.core.benchmark.reproducibility import SourceState, canonical_json_digest
-from memorii.core.calibration.models import CalibrationReport, DecisionCostReport
 from memorii.core.llm_decision.models import LLMDecisionTrace
 
 _CALIBRATION_REQUIRED_SUITES = {"memory_evolution_sim_v1", "memory_evolution_runtime_v1"}

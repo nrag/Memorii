@@ -38,7 +38,7 @@ def test_memory_evolution_sim_noisy_support_citation_fails_precision() -> None:
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "supporting_noisy_or_stale_provenance" in aggregate.critical_failure_buckets
-    assert diagnostics["supporting_noisy_citation_event_ids"] == [noise_event]
+    assert diagnostics.supporting_noisy_citation_event_ids == [noise_event]
 
 
 def test_memory_evolution_sim_noisy_context_citation_does_not_fail_answer_support() -> None:
@@ -66,8 +66,8 @@ def test_memory_evolution_sim_noisy_context_citation_does_not_fail_answer_suppor
     )
 
     assert aggregate.verdict == JudgeVerdict.PASS
-    assert diagnostics["context_only_noise_event_ids"] == [noise_event]
-    assert diagnostics["supporting_noisy_citation_event_ids"] == []
+    assert diagnostics.context_only_noise_event_ids == [noise_event]
+    assert diagnostics.supporting_noisy_citation_event_ids == []
 
 
 def test_memory_evolution_sim_hidden_id_in_selected_channel_fails_judge() -> None:
@@ -133,13 +133,11 @@ def test_memory_evolution_sim_oracle_output_never_contains_hidden_ids() -> None:
         noise_rate=0.35,
     )
     checkpoint = checkpoint_by_type(scenario, "entity_reconstruction")
-    hidden_ids = {
-        item.entity_id for item in scenario.entities if item.observability == ObservabilityLabel.HIDDEN
-    } | {
-        item.claim_id for item in scenario.claims if item.observability == ObservabilityLabel.HIDDEN
-    } | {
-        item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN
-    }
+    hidden_ids = (
+        {item.entity_id for item in scenario.entities if item.observability == ObservabilityLabel.HIDDEN}
+        | {item.claim_id for item in scenario.claims if item.observability == ObservabilityLabel.HIDDEN}
+        | {item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN}
+    )
     output = expected_sim_output_for_checkpoint(checkpoint)
 
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)

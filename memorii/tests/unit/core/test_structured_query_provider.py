@@ -26,7 +26,6 @@ from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
 
 def _scope(*, task: str, session: str, user: str = "user:one") -> MemoryScope:
     return MemoryScope(
-        scope_key=task,
         task_id=task,
         session_id=session,
         user_id=user,

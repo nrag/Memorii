@@ -26,6 +26,8 @@ from memorii.core.benchmark.artifact_validation import (
     write_json_atomic,
     write_typed_jsonl,
 )
+from memorii.core.benchmark.calibration.alignment import RuntimeGraphAlignment, RuntimeGraphAlignmentVerdict
+from memorii.core.benchmark.calibration.models import CalibrationSlice
 from memorii.core.benchmark.memory_evolution_runtime import (
     RuntimeSuiteRows,
     runtime_alignment_summary,
@@ -43,10 +45,9 @@ from memorii.core.benchmark.memory_evolution_sim import (
     judge_sim_checkpoint,
     sim_reconstruction_context_for_checkpoint,
 )
-from memorii.core.calibration.alignment import RuntimeGraphAlignment, RuntimeGraphAlignmentVerdict
-from memorii.core.calibration.models import CalibrationSlice
 from memorii.tools.run_benchmark import main
 from pydantic import ValidationError
+from tests.unit.core.benchmark.checkpoint_artifact_test_helpers import checkpoint_diagnostics_payload
 
 
 def test_json_writer_serializes_nested_typed_models_at_boundary(tmp_path: Path) -> None:
@@ -332,10 +333,10 @@ def _runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
                 **judge_payload,
             }
         ),
-        diagnostics={
+        diagnostics=checkpoint_diagnostics_payload(
             **dict(row_fields.pop("diagnostics", {})),
             **row_fields,
-        },
+        ),
     )
 
 
@@ -352,7 +353,7 @@ def test_artifact_row_models_are_strict_and_serialize_flat_json() -> None:
             "review_required": False,
             "failure_buckets": [],
             "warning_buckets": [],
-            "diagnostics": {},
+            "diagnostics": checkpoint_diagnostics_payload().model_dump(mode="json"),
             "output": {"operation": "abstain", "rationale": "test"},
             "raw_output": {"operation": "abstain", "rationale": "test"},
             "expected": {
@@ -771,7 +772,7 @@ def test_memory_evolution_runtime_public_summary_contract() -> None:
         ("judge_rows", {}, "JudgeAggregate"),
         ("llm_rows", {}, "RuntimeExtractorTraceRow"),
         ("graph_snapshots", {}, "RuntimeGraphSnapshotRow"),
-        ("graph_items", {}, "RuntimeGraphItemRow"),
+        ("graph_items", {}, "Runtime.*GraphItemRow"),
         ("alignments", {}, "RuntimeGraphAlignmentRow"),
         ("runtime_failures", {}, "RuntimeCheckpointResultRow"),
     ],

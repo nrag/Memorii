@@ -32,6 +32,7 @@ class CanonicalMemoryRecord(BaseModel):
     agent_id: str | None = None
     language: str = "en"
     is_raw_event: bool = False
+    source_record_ids: list[str] = Field(default_factory=list)
     source_candidate_id: str | None = None
     promotion_state: str | None = None
     supersedes_memory_ids: list[str] = Field(default_factory=list)

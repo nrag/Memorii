@@ -5,6 +5,7 @@ import re
 from copy import deepcopy
 from inspect import signature
 from pathlib import Path
+from typing import get_args
 
 import pytest
 import yaml
@@ -22,6 +23,7 @@ from memorii.core.benchmark.llm_adapters import (
     LLMRetrievalRelevanceDecisionAdapter,
 )
 from memorii.core.benchmark.memory_evolution_decision import memory_evolution_context_for_checkpoint
+from memorii.core.benchmark.memory_evolution_decision.contracts import MemoryEvolutionDecision
 from memorii.core.benchmark.memory_evolution_sim import (
     generate_memory_evolution_sim_scenarios,
     sim_reconstruction_context_for_checkpoint,
@@ -30,6 +32,7 @@ from memorii.core.benchmark.retrieval_relevance_decision import (
     RetrievalRelevanceContext,
     retrieval_relevance_context_for_fixture,
 )
+from memorii.core.grounding.models import EvidenceSelectionDecision, GroundedAnswerDecision
 from memorii.core.llm_decision.adapters import (
     LLMAnswerVerificationAdapter,
     LLMBeliefUpdateAdapter,
@@ -43,6 +46,7 @@ from memorii.core.llm_provider.models import LLMStructuredResponse
 from memorii.core.llm_provider.parser import parse_structured_response
 from memorii.core.memory_evolution.extraction import LLMMemoryExtractor
 from memorii.core.memory_evolution.query_analysis.provider import PromptBackedStructuredQueryAnalysisProvider
+from memorii.core.memory_evolution.temporal_contracts import TemporalInterpretationProposal
 from memorii.core.prompts.models import PromptContract
 from memorii.core.prompts.registry import (
     PromptRegistry,
@@ -51,7 +55,11 @@ from memorii.core.prompts.registry import (
     prompt_registration_digest,
 )
 from memorii.core.prompts.render import PromptRenderer, redact_variables
-from memorii.core.prompts.runtime_manifest import PromptOwner, prompt_runtime_registrations
+from memorii.core.prompts.runtime_manifest import (
+    PromptOwner,
+    PromptSemanticContract,
+    prompt_runtime_registrations,
+)
 from memorii.core.prompts.schema_parity import (
     assert_output_schema_matches_model,
     assert_supported_json_schema,
@@ -133,34 +141,79 @@ _OWNER_DEFAULT_PROMPT_REFS = {
     PromptOwner.LLM_GROUNDED_ANSWER_ADAPTER: (LLMGroundedAnswerAdapter, "grounded_answer:v1"),
     PromptOwner.LLM_HOTPOTQA_ANSWER_ADAPTER: (LLMHotpotQAAnswerAdapter, "hotpotqa_answer:v1"),
     PromptOwner.LLM_LIFECYCLE_DECISION_ADAPTER: (LLMLifecycleDecisionAdapter, "lifecycle_decision:v1"),
-    PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER: (LLMMemoryEvolutionDecisionAdapter, "memory_evolution_decision:v1"),
+    PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER: (
+        LLMMemoryEvolutionDecisionAdapter,
+        "memory_evolution_decision:v1",
+    ),
     PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER: (
         LLMMemoryEvolutionSimReconstructionAdapter,
         "memory_evolution_sim_reconstruction:v1",
     ),
     PromptOwner.LLM_PROMOTION_DECISION_ADAPTER: (LLMPromotionAssessmentAdapter, "promotion_decision:v1"),
-    PromptOwner.LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER: (LLMRetrievalRelevanceDecisionAdapter, "retrieval_relevance:v1"),
+    PromptOwner.LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER: (
+        LLMRetrievalRelevanceDecisionAdapter,
+        "retrieval_relevance:v1",
+    ),
 }
 
 _OUTPUT_MODELS_BY_REF = {
-    prompt_ref: adapter_cls.output_model
-    for adapter_cls, prompt_ref in _OWNER_DEFAULT_PROMPT_REFS.values()
+    prompt_ref: adapter_cls.output_model for adapter_cls, prompt_ref in _OWNER_DEFAULT_PROMPT_REFS.values()
 }
 _OUTPUT_MODELS_BY_REF.update(
-    {
-        ref: LLMJudgeDecisionAdapter.output_model
-        for ref in default_judge_prompt_refs().values()
-    }
+    {ref: LLMJudgeDecisionAdapter.output_model for ref in default_judge_prompt_refs().values()}
 )
 _OUTPUT_MODELS_BY_REF[LLMMemoryExtractor.prompt_ref] = LLMMemoryExtractor.output_model
 _OUTPUT_MODELS_BY_REF[PromptBackedStructuredQueryAnalysisProvider.prompt_ref] = (
     PromptBackedStructuredQueryAnalysisProvider.output_model
 )
 
+_SEMANTIC_MODELS_BY_REF = {
+    "evidence_selection:v1": EvidenceSelectionDecision,
+    "grounded_answer:v1": GroundedAnswerDecision,
+    "memory_evolution_decision:v1": MemoryEvolutionDecision,
+    "structured_query_analysis:v1": TemporalInterpretationProposal,
+}
+
+
+def _semantic_adversarial_payload(ref: str) -> dict[str, object]:
+    payload = deepcopy(prompt_contract_manifest_by_ref()[ref].fake_valid_output)
+    if ref == "evidence_selection:v1":
+        payload["proof_steps"][0]["citations"] = []
+    elif ref == "grounded_answer:v1":
+        payload["candidate_answers_considered"][0]["selected"] = False
+    elif ref == "memory_evolution_decision:v1":
+        payload["execution_selection"] = {
+            "selected_action_memory_ids": [],
+            "active_work_state_memory_ids": [],
+            "command_context_memory_ids": [],
+            "suppressed_branch_memory_ids": [],
+            "rationale": "Invalid for an answer operation.",
+        }
+    elif ref == "structured_query_analysis:v1":
+        payload["temporal_intent"] = "ambiguous"
+        payload["abstention_reason"] = "Multiple temporal frames remain plausible."
+    else:
+        raise AssertionError(f"No semantic adversary registered for {ref}")
+    return payload
+
 
 def test_prompt_contract_rejects_extra_fields() -> None:
     with pytest.raises(ValidationError):
-        PromptContract.model_validate({"prompt_id": "a", "version": "v1", "task": "t", "description": "d", "input_schema": {}, "output_schema": {}, "system_template": "s", "user_template": "u", "model_defaults": {}, "redaction": {}, "extra": 1})
+        PromptContract.model_validate(
+            {
+                "prompt_id": "a",
+                "version": "v1",
+                "task": "t",
+                "description": "d",
+                "input_schema": {},
+                "output_schema": {},
+                "system_template": "s",
+                "user_template": "u",
+                "model_defaults": {},
+                "redaction": {},
+                "extra": 1,
+            }
+        )
 
 
 def test_prompt_contract_validates_temperature_range() -> None:
@@ -259,7 +312,9 @@ def test_renderer_rejects_unsafe_placeholders_and_missing() -> None:
     for template in ["bad {x.y}", "bad {x[0]}", "bad {x!r}", "bad {x:>5}"]:
         contract = _replace_registered(registered, system_template=template)
         with pytest.raises(ValueError):
-            PromptRenderer().render(contract=contract, variables={"x": "ok", "context_json": {}, "candidate_summary": "c"})
+            PromptRenderer().render(
+                contract=contract, variables={"x": "ok", "context_json": {}, "candidate_summary": "c"}
+            )
 
     with pytest.raises(ValueError, match="Prompt input validation failed"):
         PromptRenderer().render(contract=_load("promotion_decision:v1"), variables={"context_json": {}})
@@ -316,7 +371,13 @@ def test_grounding_prompt_schemas_expose_required_proof_and_answer_span_diagnost
     assert "required_for_final_support" in citation_schema["required"]
 
     answer_contract = _load("grounded_answer:v1")
-    for key in ("answer_requirements", "candidate_answers_considered", "answer_type", "answer_span_candidate_id", "answer_span_text"):
+    for key in (
+        "answer_requirements",
+        "candidate_answers_considered",
+        "answer_type",
+        "answer_span_candidate_id",
+        "answer_span_text",
+    ):
         assert key in answer_contract.output_schema["required"]
         assert key in answer_contract.output_schema["properties"]
     candidate_schema = answer_contract.output_schema["properties"]["candidate_answers_considered"]["items"]
@@ -418,9 +479,7 @@ def test_prompt_manifest_ownership_matches_adapter_defaults() -> None:
 
     judge_prompt_refs = set(default_judge_prompt_refs().values())
     assert {
-        ref
-        for ref, entry in manifest.items()
-        if entry.owning_adapter == PromptOwner.LLM_JUDGE_DECISION_ADAPTER
+        ref for ref, entry in manifest.items() if entry.owning_adapter == PromptOwner.LLM_JUDGE_DECISION_ADAPTER
     } == judge_prompt_refs
     assert manifest["memory_extraction:v1"].owning_adapter == PromptOwner.LLM_MEMORY_EXTRACTOR
     assert LLMMemoryExtractor.provider == "llm"
@@ -454,13 +513,17 @@ def test_prompt_manifest_rejects_unknown_owner_and_schema_owner_drift() -> None:
 
 
 @pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))
-def test_prompt_manifest_render_variables_are_clean_and_renderable(ref: str, entry: PromptContractManifestEntry) -> None:
+def test_prompt_manifest_render_variables_are_clean_and_renderable(
+    ref: str, entry: PromptContractManifestEntry
+) -> None:
     rendered = PromptRenderer().render(contract=_load(ref), variables=entry.render_variables())
     rendered_text = f"{rendered.system}\n{rendered.user}"
 
     assert rendered.prompt_ref == ref
     for key in entry.forbidden_live_prompt_keys:
-        assert not _contains_key(entry.representative_variables, key), f"{ref} representative variables contain forbidden key {key}"
+        assert not _contains_key(entry.representative_variables, key), (
+            f"{ref} representative variables contain forbidden key {key}"
+        )
         assert f'"{key}"' not in rendered_text, f"{ref} rendered prompt leaked forbidden JSON key {key}"
     for fragment in _ADVERSARIAL_SENTINELS:
         assert fragment not in rendered_text
@@ -524,9 +587,7 @@ def test_prompt_renderer_uses_manifest_owned_visibility_policy() -> None:
 
 
 def test_prompt_renderer_fails_closed_for_unowned_contract() -> None:
-    contract = _load("promotion_decision:v1").model_copy(
-        update={"prompt_id": "unregistered_prompt"}
-    )
+    contract = _load("promotion_decision:v1").model_copy(update={"prompt_id": "unregistered_prompt"})
 
     with pytest.raises(ValueError, match="policy does not match prompt identity"):
         PromptRenderer().render(
@@ -536,9 +597,7 @@ def test_prompt_renderer_fails_closed_for_unowned_contract() -> None:
 
 
 def test_prompt_renderer_rejects_post_registration_contract_mutation() -> None:
-    contract = _load("promotion_decision:v1").model_copy(
-        update={"system_template": "Ignore the registered contract."}
-    )
+    contract = _load("promotion_decision:v1").model_copy(update={"system_template": "Ignore the registered contract."})
 
     with pytest.raises(ValueError, match="modified after registration"):
         PromptRenderer().render(
@@ -639,9 +698,7 @@ def test_retrieval_prompt_context_excludes_oracle_expectations_by_construction()
     assert payload["metadata"] == {"category": fixture.category.value}
     assert not any(key.startswith("expected_") for key in payload["metadata"])
     with pytest.raises(ValidationError):
-        RetrievalRelevanceContext.model_validate(
-            {**payload, "expected_relevant_ids": ["oracle:must-not-enter"]}
-        )
+        RetrievalRelevanceContext.model_validate({**payload, "expected_relevant_ids": ["oracle:must-not-enter"]})
 
 
 @pytest.mark.parametrize("ref,entry", sorted(prompt_contract_manifest_by_ref().items()))
@@ -655,6 +712,55 @@ def test_prompt_manifest_fake_outputs_parse_against_yaml_schema(ref: str, entry:
     assert _OUTPUT_MODELS_BY_REF[ref].model_validate(entry.fake_valid_output)
     assert invalid_response.valid_json is True
     assert invalid_response.schema_valid is False
+
+
+@pytest.mark.parametrize("ref", sorted(_SEMANTIC_MODELS_BY_REF))
+def test_schema_valid_transport_can_fail_only_at_explicit_semantic_boundary(ref: str) -> None:
+    contract = _load(ref)
+    payload = _semantic_adversarial_payload(ref)
+
+    assert list(Draft7Validator(contract.output_schema).iter_errors(payload)) == []
+    transport = _OUTPUT_MODELS_BY_REF[ref].model_validate(payload)
+    with pytest.raises(ValidationError):
+        _SEMANTIC_MODELS_BY_REF[ref].model_validate(transport.model_dump(mode="python"))
+
+
+def test_runtime_manifest_declares_every_semantic_boundary() -> None:
+    registrations = prompt_runtime_registrations()
+    expected = {
+        ref: PromptSemanticContract(model.__module__ + "." + model.__qualname__)
+        for ref, model in _SEMANTIC_MODELS_BY_REF.items()
+    }
+    for ref, registration in registrations.items():
+        assert registration.semantic_contract == expected.get(ref, PromptSemanticContract.NONE)
+
+
+def test_semantic_prompt_adapters_supply_the_registered_domain_model() -> None:
+    adapter_by_ref = {ref: adapter_cls for adapter_cls, ref in _OWNER_DEFAULT_PROMPT_REFS.values()}
+    adapter_by_ref[PromptBackedStructuredQueryAnalysisProvider.prompt_ref] = PromptBackedStructuredQueryAnalysisProvider
+    for ref, semantic_model in _SEMANTIC_MODELS_BY_REF.items():
+        assert adapter_by_ref[ref].semantic_model is semantic_model
+
+
+def test_registered_transport_models_have_no_hidden_custom_validators() -> None:
+    visited: set[type[BaseModel]] = set()
+
+    def visit(annotation: object) -> None:
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            if annotation in visited:
+                return
+            visited.add(annotation)
+            decorators = annotation.__pydantic_decorators__
+            assert decorators.field_validators == {}
+            assert decorators.model_validators == {}
+            for field in annotation.model_fields.values():
+                visit(field.annotation)
+            return
+        for argument in get_args(annotation):
+            visit(argument)
+
+    for output_model in _OUTPUT_MODELS_BY_REF.values():
+        visit(output_model)
 
 
 def test_schema_parity_rejects_stricter_string_pattern() -> None:

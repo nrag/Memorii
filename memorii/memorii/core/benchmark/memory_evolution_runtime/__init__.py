@@ -27,9 +27,14 @@ from memorii.core.benchmark.memory_evolution_runtime.ingestion import (
     ingest_scenario_surface_observations,
 )
 from memorii.core.benchmark.memory_evolution_runtime.models import (
+    RuntimeActionGraphItemRow,
+    RuntimeClaimGraphItemRow,
+    RuntimeEntityGraphItemRow,
+    RuntimeGraphItem,
     RuntimeGraphItemRow,
     RuntimeGraphSnapshotRow,
     RuntimeProjection,
+    RuntimeRelationGraphItemRow,
     RuntimeSuiteRows,
 )
 from memorii.core.benchmark.memory_evolution_runtime.result_rows import (
@@ -45,8 +50,13 @@ __all__ = [
     "OracleVisibleMemoryExtractor",
     "RecordingMemoryExtractor",
     "RuntimeProjection",
+    "RuntimeActionGraphItemRow",
+    "RuntimeClaimGraphItemRow",
+    "RuntimeEntityGraphItemRow",
+    "RuntimeGraphItem",
     "RuntimeGraphSnapshotRow",
     "RuntimeGraphItemRow",
+    "RuntimeRelationGraphItemRow",
     "RuntimeSuiteRows",
     "expected_action_alignment_rows",
     "align_runtime_graph_to_oracle",

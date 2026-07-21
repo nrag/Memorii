@@ -39,7 +39,7 @@ class RuleBasedPromotionAssessmentProvider:
         if context.created_from in {"decision_finalized", "task_outcome", "investigation_conclusion"}:
             return PromotionAssessment(
                 promote=True,
-                target_plane="episodic",
+                target_plane=PromotionCandidateType.EPISODIC,
                 confidence=0.8,
                 reason_code=PromotionReason(context.created_from),
                 rationale=context.created_from,
@@ -52,7 +52,7 @@ class RuleBasedPromotionAssessmentProvider:
             if context.explicit_user_memory_request:
                 return PromotionAssessment(
                     promote=True,
-                    target_plane=PromotionCandidateType.USER_MEMORY.value,
+                    target_plane=PromotionCandidateType.USER_MEMORY,
                     confidence=0.9,
                     reason_code=PromotionReason.EXPLICIT_USER_MEMORY_REQUEST,
                     rationale="explicit_user_memory_request",
@@ -76,7 +76,7 @@ class RuleBasedPromotionAssessmentProvider:
         ):
             return PromotionAssessment(
                 promote=True,
-                target_plane=context.candidate_type.value,
+                target_plane=context.candidate_type,
                 confidence=0.7,
                 reason_code=PromotionReason.REPEATED_ACROSS_EPISODES,
                 rationale="repeated_across_episodes",

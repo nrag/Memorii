@@ -26,8 +26,11 @@ class PromotionExecutionContextBuilder:
         same_domain_committed = [item for item in committed_in_scope if item.domain == candidate.domain]
         same_domain_candidates = [item for item in candidates_in_scope if item.domain == candidate.domain]
 
-        duplicates = [item for item in same_domain_committed if self._is_duplicate(item, candidate)]
-        conflicts = [item for item in same_domain_committed if self._is_conflict(item, candidate)]
+        independently_derived = [
+            item for item in same_domain_committed if not self._shares_source_lineage(item, candidate)
+        ]
+        duplicates = [item for item in independently_derived if self._is_duplicate(item, candidate)]
+        conflicts = [item for item in independently_derived if self._is_conflict(item, candidate)]
 
         return PromotionExecutionContext(
             candidate=candidate,
@@ -62,6 +65,15 @@ class PromotionExecutionContextBuilder:
 
     def _is_duplicate(self, existing: CanonicalMemoryRecord, candidate: CanonicalMemoryRecord) -> bool:
         return existing.text.strip().lower() == candidate.text.strip().lower()
+
+    @staticmethod
+    def _shares_source_lineage(
+        existing: CanonicalMemoryRecord,
+        candidate: CanonicalMemoryRecord,
+    ) -> bool:
+        """Exclude projections of the candidate's own source from conflict evidence."""
+
+        return bool(set(existing.source_record_ids).intersection(candidate.source_record_ids))
 
     def _is_conflict(self, existing: CanonicalMemoryRecord, candidate: CanonicalMemoryRecord) -> bool:
         if self._is_duplicate(existing, candidate):

@@ -195,10 +195,7 @@ def test_relation_condition_resolves_shared_alias_from_object_evidence() -> None
     assert decision.graph_pattern_resolution.resolution_method.value == "lexical_participant_fallback"
     assert decision.temporal_frame is not None
     assert decision.temporal_frame.resolution_confidence == 0.65
-    assert (
-        decision.temporal_frame.resolution_confidence_source
-        == "lexical_participant_fallback"
-    )
+    assert decision.temporal_frame.resolution_confidence_source == "lexical_participant_fallback"
     assert decision.context_record_ids == ["claim:project-owner"]
 
     contrastive = runtime.retrieve(
@@ -344,7 +341,7 @@ def test_scoped_retrieval_prefers_exact_scope_over_global_fallback() -> None:
     decision = service.retrieve(
         MemoryQueryRequest(
             query="Who owns the Atlas migration?",
-            scope=MemoryScope(scope_key="task:incident", task_id="task:incident"),
+            scope=MemoryScope(task_id="task:incident"),
             reference_time=datetime(2026, 1, 3, tzinfo=UTC),
         )
     )
@@ -372,7 +369,6 @@ def test_task_retrieval_can_fall_back_to_readable_user_scope() -> None:
         MemoryQueryRequest(
             query="Who owns the Atlas migration?",
             scope=MemoryScope(
-                scope_key="task:incident",
                 task_id="task:incident",
                 session_id="session:incident",
                 user_id="user:one",
@@ -417,7 +413,6 @@ def test_task_scope_shadows_readable_user_scope_for_same_claim_identity() -> Non
         MemoryQueryRequest(
             query="Who owns the Atlas migration?",
             scope=MemoryScope(
-                scope_key="task:incident",
                 task_id="task:incident",
                 session_id="session:incident",
                 user_id="user:one",
@@ -457,7 +452,7 @@ def test_scope_shadowing_is_local_to_each_semantic_claim_during_graph_audit() ->
     decision = service.retrieve(
         GraphAuditRequest(
             query="Reconstruct the ownership graph.",
-            scope=MemoryScope(scope_key="task:incident", task_id="task:incident"),
+            scope=MemoryScope(task_id="task:incident"),
             purpose="graph_audit",
             scope_mode="full",
             reference_time=datetime(2026, 1, 3, tzinfo=UTC),
@@ -502,7 +497,7 @@ def test_scope_shadowing_does_not_hide_distinct_same_name_entity() -> None:
             normalized_name="atlas",
             aliases=["Atlas"],
             confidence=1.0,
-            scope=MemoryScope(scope_key="task:incident", task_id="task:incident"),
+            scope=MemoryScope(task_id="task:incident"),
         ),
     ]
     runtime = MemoryEvolutionRetrievalRuntime(
@@ -517,7 +512,7 @@ def test_scope_shadowing_does_not_hide_distinct_same_name_entity() -> None:
     runtime.retrieve(
         MemoryQueryRequest(
             query="Who owns the Atlas project?",
-            scope=MemoryScope(scope_key="task:incident", task_id="task:incident"),
+            scope=MemoryScope(task_id="task:incident"),
         )
     )
 
@@ -592,7 +587,6 @@ def test_scope_shadowing_keeps_readable_global_object_link_referential_integrity
         update={
             "link_id": "link:owner:session",
             "scope": MemoryScope(
-                scope_key="session:incident",
                 session_id="session:incident",
                 user_id="user:one",
             ),
@@ -629,7 +623,6 @@ def test_scope_shadowing_keeps_readable_global_object_link_referential_integrity
         MemoryQueryRequest(
             query="What does Iris own?",
             scope=MemoryScope(
-                scope_key="session:incident",
                 session_id="session:incident",
                 user_id="user:one",
             ),
@@ -803,14 +796,12 @@ def test_structured_graph_retrieval_is_language_invariant(
         project = next(
             candidate
             for candidate in candidates
-            if hasattr(candidate, "names")
-            and any("migration" in name.casefold() for name in candidate.names)
+            if hasattr(candidate, "names") and any("migration" in name.casefold() for name in candidate.names)
         )
         bob = next(
             candidate
             for candidate in candidates
-            if hasattr(candidate, "names")
-            and any(name.casefold() == "bob" for name in candidate.names)
+            if hasattr(candidate, "names") and any(name.casefold() == "bob" for name in candidate.names)
         )
         return {
             "language": kwargs["language"],
@@ -854,9 +845,7 @@ def test_structured_graph_retrieval_is_language_invariant(
         ]
     )
 
-    decision = service.retrieve(
-        MemoryQueryRequest(query=query, query_language=language)
-    )
+    decision = service.retrieve(MemoryQueryRequest(query=query, query_language=language))
 
     assert decision.abstained is False
     assert len(decision.selected_record_ids) == 1
@@ -878,14 +867,9 @@ def test_structured_graph_retrieval_abstains_on_ambiguous_object_reference() -> 
         project = next(
             candidate
             for candidate in candidates
-            if hasattr(candidate, "names")
-            and any("migration" in name.casefold() for name in candidate.names)
+            if hasattr(candidate, "names") and any("migration" in name.casefold() for name in candidate.names)
         )
-        people = [
-            candidate
-            for candidate in candidates
-            if getattr(candidate, "entity_type", None) == "person"
-        ]
+        people = [candidate for candidate in candidates if getattr(candidate, "entity_type", None) == "person"]
         assert len(people) >= 2
         return {
             "language": "en",
@@ -942,9 +926,7 @@ def test_structured_graph_retrieval_abstains_on_ambiguous_object_reference() -> 
     assert decision.abstained is True
     assert decision.graph_pattern_resolution is not None
     assert decision.graph_pattern_resolution.status.value == "ambiguous"
-    assert decision.graph_pattern_resolution.failure_reasons == [
-        "ambiguous_entity_reference"
-    ]
+    assert decision.graph_pattern_resolution.failure_reasons == ["ambiguous_entity_reference"]
 
 
 def test_natural_query_request_rejects_caller_temporal_override() -> None:

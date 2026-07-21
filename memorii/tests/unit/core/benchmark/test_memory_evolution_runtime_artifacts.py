@@ -9,6 +9,7 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeExtractorTraceRow,
 )
 from memorii.core.benchmark.memory_evolution_runtime import (
+    RuntimeGraphItem,
     RuntimeGraphItemRow,
     RuntimeGraphSnapshotRow,
     RuntimeSuiteRows,
@@ -20,29 +21,56 @@ from memorii.core.benchmark.memory_evolution_runtime.extractors import (
     RecordedExtractionRun,
     RecordingMemoryExtractor,
 )
-from memorii.core.benchmark.memory_evolution_runtime.result_rows import runtime_final_output_source
+from memorii.core.benchmark.memory_evolution_runtime.models import RUNTIME_GRAPH_ITEM_ADAPTER
+from memorii.core.benchmark.memory_evolution_runtime.result_rows import (
+    runtime_failure_classification,
+    runtime_final_output_source,
+)
 from memorii.core.memory_evolution import EnglishRuleMemoryExtractor
 from memorii.core.memory_evolution.execution import (
     ContinuationDecision,
     ContinuationResolutionStatus,
     WorkStateSnapshot,
 )
+from tests.unit.core.benchmark.checkpoint_artifact_test_helpers import checkpoint_diagnostics_payload
 from tests.unit.core.benchmark.memory_evolution_runtime_test_helpers import runtime_checkpoint_row
 
 
-def runtime_graph_item(**overrides: object) -> RuntimeGraphItemRow:
+def runtime_graph_item(**overrides: object) -> RuntimeGraphItem:
+    item_type = str(overrides.pop("item_type", "claim"))
     payload: dict[str, object] = {
-        "item_type": "claim",
+        "item_type": item_type,
         "scenario_id": "scenario_1",
-        "runtime_item_id": "claim:1",
-        "claim_id": "claim:1",
-        "subject_entity_id": "entity:1",
-        "predicate": "status",
-        "object_value": "active",
+        "runtime_item_id": f"{item_type}:1",
         "lifecycle_state": "active",
     }
+    payload.update(
+        {
+            "claim": {
+                "claim_id": "claim:1",
+                "subject_entity_id": "entity:1",
+                "predicate": "status",
+                "object_value": "active",
+            },
+            "entity": {
+                "canonical_id": "entity:1",
+                "canonical_name": "Entity",
+                "entity_type": "unknown",
+            },
+            "relation": {
+                "relation_type": "supersedes",
+                "source": "claim:1",
+                "target": "claim:2",
+            },
+            "action": {
+                "action_id": "action:1",
+                "action_type": "work",
+                "status": "in_progress",
+            },
+        }[item_type]
+    )
     payload.update(overrides)
-    return RuntimeGraphItemRow.model_validate(payload)
+    return RUNTIME_GRAPH_ITEM_ADAPTER.validate_python(payload)
 
 
 def runtime_extractor_trace(
@@ -92,7 +120,7 @@ def test_runtime_graph_items_are_typed_at_the_artifact_boundary() -> None:
     assert isinstance(rows.graph_items[0], RuntimeGraphItemRow)
     assert rows.graph_items[0].claim_id == "claim:1"
 
-    with pytest.raises(TypeError, match="RuntimeGraphItemRow"):
+    with pytest.raises(TypeError, match="Runtime.*GraphItemRow"):
         RuntimeSuiteRows(
             scenario_rows=[],
             checkpoint_rows=[],
@@ -102,15 +130,15 @@ def test_runtime_graph_items_are_typed_at_the_artifact_boundary() -> None:
         )
 
     with pytest.raises(ValueError, match="extra_field"):
-        RuntimeGraphItemRow.model_validate(
+        RUNTIME_GRAPH_ITEM_ADAPTER.validate_python(
             {
                 "item_type": "claim",
                 "extra_field": "must_be_declared",
             }
         )
 
-    with pytest.raises(ValueError, match="subject_entity_id and predicate"):
-        RuntimeGraphItemRow.model_validate(
+    with pytest.raises(ValueError, match="subject_entity_id"):
+        RUNTIME_GRAPH_ITEM_ADAPTER.validate_python(
             {
                 "scenario_id": "scenario_1",
                 "runtime_item_id": "runtime:claim:1",
@@ -124,6 +152,28 @@ def test_runtime_graph_items_are_typed_at_the_artifact_boundary() -> None:
 def test_runtime_graph_snapshot_requires_identity() -> None:
     with pytest.raises(ValueError, match="snapshot_id must be non-empty"):
         RuntimeGraphSnapshotRow.model_validate({"scenario_id": "scenario_1", "checkpoint_id": "checkpoint_1"})
+
+
+def test_runtime_missing_rejection_has_named_failure_classification() -> None:
+    assert runtime_failure_classification(
+        ["runtime_missing_expected_rejection"],
+        checkpoint_diagnostics_payload(failure_classification=["unclassified_failure"]),
+    ) == ["runtime_missing_expected_rejection"]
+
+
+def test_runtime_checkpoint_diagnostics_cannot_drift_between_public_views() -> None:
+    row = runtime_checkpoint_row(
+        answer_match_type="semantic",
+        required_judge_ids=["claim_spo_judge"],
+    )
+
+    assert row.answer_match_type == row.diagnostics.answer_match_type == "semantic"
+    assert row.required_judge_ids == row.diagnostics.required_judge_ids == ["claim_spo_judge"]
+
+    payload = row.model_dump(mode="json")
+    payload["answer_match_type"] = "mismatch"
+    with pytest.raises(ValueError, match="top-level diagnostics must match"):
+        type(row).model_validate(payload)
 
 
 def test_runtime_execution_artifact_nested_state_is_typed_and_json_readable() -> None:
@@ -188,21 +238,13 @@ def test_runtime_graph_completeness_metrics_report_claim_provenance_and_edge_cou
                 runtime_item_id="entity:1",
                 canonical_id="entity:1",
                 canonical_name="Entity",
-                claim_id="",
-                subject_entity_id="",
-                predicate="",
-                object_value="",
             ),
             runtime_graph_item(
                 item_type="relation",
                 runtime_item_id="relation:1",
-                relation_type="supports",
+                relation_type="supersedes",
                 source="claim:1",
                 target="entity:1",
-                claim_id="",
-                subject_entity_id="",
-                predicate="",
-                object_value="",
             ),
             runtime_graph_item(
                 item_type="action",
@@ -210,10 +252,6 @@ def test_runtime_graph_completeness_metrics_report_claim_provenance_and_edge_cou
                 action_id="action:1",
                 action_type="work",
                 status="in_progress",
-                claim_id="",
-                subject_entity_id="",
-                predicate="",
-                object_value="",
             ),
         ],
         graph_snapshots=[
@@ -355,10 +393,6 @@ def test_runtime_graph_item_metrics_dedupe_repeated_checkpoint_items() -> None:
                 runtime_item_id="entity:1",
                 canonical_id="entity:1",
                 canonical_name="Entity",
-                claim_id="",
-                subject_entity_id="",
-                predicate="",
-                object_value="",
             ),
         ],
     )

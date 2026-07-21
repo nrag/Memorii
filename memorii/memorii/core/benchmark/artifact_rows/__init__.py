@@ -1,10 +1,8 @@
 """Typed benchmark artifact contracts."""
 
 from memorii.core.benchmark.artifact_rows.checkpoints import (
-    ChannelOverlapSection,
     CheckpointDecisionTraceSection,
     CheckpointDiagnosticsPayload,
-    CheckpointDiagnosticsSection,
     CheckpointHorizonSection,
     CheckpointResultRow,
     CheckpointVerdictSection,
@@ -16,7 +14,6 @@ from memorii.core.benchmark.artifact_rows.checkpoints import (
     RuntimeExecutionStateSection,
     RuntimeGraphAlignmentRow,
     RuntimeRelationSupportRow,
-    SelectedClaimSupportClosureErrorSection,
     SimCheckpointResultRow,
     checkpoint_warning_buckets,
 )
@@ -55,6 +52,11 @@ from memorii.core.benchmark.artifact_rows.reports import (
     ValidationScenarioCatalogRow,
     WarningExampleRow,
     WarningPolicyEntry,
+)
+from memorii.core.benchmark.checkpoint_diagnostics import (
+    ChannelOverlapSection,
+    CheckpointDiagnosticsSection,
+    SelectedClaimSupportClosureErrorSection,
 )
 
 __all__ = [

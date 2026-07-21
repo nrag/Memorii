@@ -70,6 +70,7 @@ def ingest_surface_observation(
             user_id=context.user_id,
             action="write",
             target="memory",
+            operation_id=f"benchmark:runtime:{observation.event_id}",
         )
     else:
         provider.sync_event(
@@ -79,6 +80,7 @@ def ingest_surface_observation(
             session_id=context.session_id,
             task_id=context.task_id,
             user_id=context.user_id,
+            operation_id=f"benchmark:runtime:{observation.event_id}",
         )
     return {
         record.memory_id: observation.event_id

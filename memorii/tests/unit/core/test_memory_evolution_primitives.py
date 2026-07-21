@@ -111,7 +111,7 @@ class _StableClaimIdExtractor:
             claim_key=ClaimKey(
                 subject_entity_id="ent:atlas",
                 predicate_id="owner",
-                scope_key="task:evolution",
+                scope=MemoryScope(task_id="task:evolution"),
             ),
             object_value="Bob",
             valid_from=observation.timestamp,
@@ -141,45 +141,43 @@ def test_claim_key_is_stable_and_excludes_object_value() -> None:
     first = ClaimKey(
         subject_entity_id="ent:atlas",
         predicate_id="owner",
-        scope_key="task:1",
+        scope=MemoryScope(task_id="task:1"),
         qualifier_key="default",
     )
     second = ClaimKey(
         subject_entity_id="ent:atlas",
         predicate_id="owner",
-        scope_key="task:1",
+        scope=MemoryScope(task_id="task:1"),
         qualifier_key="default",
     )
 
     assert first.stable_id() == second.stable_id()
-    assert first.stable_id() == "ent:atlas|owner|task:1|default"
+    assert first.stable_id() == "ent:atlas|owner|||task:1|default"
 
 
 def test_memory_scope_visibility_is_hierarchical_and_identity_safe() -> None:
     request_scope = MemoryScope(
-        scope_key="task:deploy",
         task_id="task:deploy",
         session_id="session:1",
         user_id="user:1",
     )
 
     assert request_scope.can_read(MemoryScope())
-    assert request_scope.can_read(MemoryScope(scope_key="user:1", user_id="user:1"))
-    assert request_scope.can_read(MemoryScope(scope_key="session:1", session_id="session:1", user_id="user:1"))
+    assert request_scope.can_read(MemoryScope(user_id="user:1"))
+    assert request_scope.can_read(MemoryScope(session_id="session:1", user_id="user:1"))
     assert request_scope.can_read(
         MemoryScope(
-            scope_key="task:deploy",
             task_id="task:deploy",
             session_id="session:1",
             user_id="user:1",
         )
     )
-    assert not request_scope.can_read(MemoryScope(scope_key="session:2", session_id="session:2", user_id="user:1"))
-    assert not request_scope.can_read(MemoryScope(scope_key="user:2", user_id="user:2"))
-    assert not MemoryScope().can_read(MemoryScope(scope_key="user:1", user_id="user:1"))
+    assert not request_scope.can_read(MemoryScope(session_id="session:2", user_id="user:1"))
+    assert not request_scope.can_read(MemoryScope(user_id="user:2"))
+    assert not MemoryScope().can_read(MemoryScope(user_id="user:1"))
 
-    with pytest.raises(ValueError, match="most-specific"):
-        MemoryScope(scope_key="task:other", task_id="task:deploy")
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        MemoryScope.model_validate({"scope_key": "task:other", "task_id": "task:deploy"})
 
 
 def test_entity_resolution_keeps_same_name_entities_distinct_and_uses_injected_clock() -> None:
@@ -244,7 +242,7 @@ def test_entity_resolution_persists_same_entity_independently_by_scope() -> None
             mention_text="Atlas",
             normalized_name="atlas",
             confidence=0.9,
-            scope=MemoryScope(scope_key="task:incident", task_id="task:incident"),
+            scope=MemoryScope(task_id="task:incident"),
         ),
     ]
 
@@ -257,7 +255,7 @@ def test_entity_resolution_persists_same_entity_independently_by_scope() -> None
         resolver.link_for_entity(
             "ent:atlas",
             links,
-            scope_key="task:incident",
+            scope=MemoryScope(task_id="task:incident"),
         )
         == links[1]
     )
@@ -278,7 +276,7 @@ def test_entity_resolution_rejects_cross_scope_merge_and_preserves_split_scope()
                 mention_text="Atlas",
                 normalized_name="atlas",
                 confidence=0.9,
-                scope=MemoryScope(scope_key="task:incident", task_id="task:incident"),
+                scope=MemoryScope(task_id="task:incident"),
             ),
         ],
         [],
@@ -374,7 +372,7 @@ def test_validator_requires_evidence_quote_to_exist_in_source() -> None:
         claim_key=ClaimKey(
             subject_entity_id="ent:atlas",
             predicate_id="owner",
-            scope_key="task:evolution",
+            scope=MemoryScope(task_id="task:evolution"),
         ),
         object_value="Alice",
         evidence_spans=[
@@ -411,7 +409,7 @@ def test_validator_rejects_wrong_predicate_even_when_quote_exists() -> None:
         claim_key=ClaimKey(
             subject_entity_id="ent:atlas",
             predicate_id="owner",
-            scope_key="task:evolution",
+            scope=MemoryScope(task_id="task:evolution"),
         ),
         object_value="Bob",
         evidence_spans=[
@@ -1190,7 +1188,7 @@ def test_entity_resolution_exposes_merge_split_and_claim_rekey_transitions() -> 
         claim_key=ClaimKey(
             subject_entity_id="ent:atlas-project",
             predicate_id="owner",
-            scope_key="task:evolution",
+            scope=MemoryScope(task_id="task:evolution"),
         ),
         object_value="Bob",
         confidence=ConfidenceComponents(
@@ -1224,6 +1222,7 @@ def test_provider_chat_ingestion_is_deferred_when_evolution_is_opted_in() -> Non
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
+        operation_id="test:deferred-chat",
         role="user",
         task_id="task:evolution",
     )
@@ -1248,6 +1247,7 @@ def test_explicit_provider_memory_write_triggers_runtime_memory_evolution() -> N
         user_id=None,
         action="upsert",
         target="memory",
+        operation_id="test:explicit-memory-write",
     )
 
     result = service.last_memory_evolution_result()

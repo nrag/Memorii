@@ -7,12 +7,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from memorii.core.benchmark.artifact_rows import CheckpointResultRow
-from memorii.core.benchmark.memory_evolution_sim.schemas import (
-    OracleCheckpoint,
-    VisibleClaimCandidate,
-    VisibleRelationCandidate,
-)
-from memorii.core.calibration.metrics import (
+from memorii.core.benchmark.calibration.metrics import (
     brier_score,
     build_calibration_slices,
     expected_calibration_error,
@@ -23,7 +18,7 @@ from memorii.core.calibration.metrics import (
     rolling_window_metrics,
     scenario_cluster_accuracy_interval,
 )
-from memorii.core.calibration.models import (
+from memorii.core.benchmark.calibration.models import (
     CalibrationDecisionChannel,
     CalibrationEvent,
     CalibrationHierarchyLayer,
@@ -37,7 +32,12 @@ from memorii.core.calibration.models import (
     DecisionAction,
     DecisionCostReport,
 )
-from memorii.core.calibration.policy import DEFAULT_DECISION_COSTS, response_for_failure_buckets
+from memorii.core.benchmark.calibration.policy import DEFAULT_DECISION_COSTS, response_for_failure_buckets
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    OracleCheckpoint,
+    VisibleClaimCandidate,
+    VisibleRelationCandidate,
+)
 
 
 def build_calibration_artifacts(

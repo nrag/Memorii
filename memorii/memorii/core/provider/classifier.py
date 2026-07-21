@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from memorii.core.provider.models import ProviderEvent, ProviderOperation
 
 
-def build_event_id(prefix: str, *, session_id: str | None, task_id: str | None, sequence: int) -> str:
+def build_event_id(prefix: str, *, session_id: str | None, task_id: str | None) -> str:
+    """Return a process-independent identifier for a newly observed event.
+
+    Generated identifiers express uniqueness, not replay identity. Integrations
+    that can recognize a replay must pass their own stable ``operation_id``.
+    """
+
     identity = session_id or task_id or "global"
-    return f"prov:{prefix}:{identity}:{sequence}"
+    return f"prov:{prefix}:{identity}:{uuid4()}"
 
 
 def classify_memory_target(target: str) -> ProviderOperation:

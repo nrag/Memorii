@@ -351,6 +351,7 @@ class ScenarioExecutor:
             session_id="session:learning",
             task_id=expected.task_id,
             user_id="user:learning",
+            operation_id=f"benchmark:{fixture.scenario_id}:learning-write",
         )
         if not stage_result.candidate_ids:
             raise ValueError("learning benchmark expected a staged candidate via provider path")
@@ -785,11 +786,13 @@ class ScenarioExecutor:
                         )
                     )
             retrieved_context = "No durable memory context available."
-            for operation in fx.provider_operations:
+            for operation_index, operation in enumerate(fx.provider_operations):
+                operation_id = f"benchmark:{fixture.scenario_id}:{operation_index}:{operation}"
                 if operation == "sync_turn":
                     sync_result = provider.sync_turn(
                         user_content=str(event.payload),
                         assistant_content="Acknowledged update.",
+                        operation_id=operation_id,
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
@@ -816,6 +819,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(write_result.blocked_domains)
                     blocked_reasons.update(write_result.blocked_reasons)
@@ -829,6 +833,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(write_result.blocked_domains)
                     blocked_reasons.update(write_result.blocked_reasons)
@@ -840,6 +845,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(sync_result.blocked_domains)
                     blocked_reasons.update(sync_result.blocked_reasons)
@@ -851,6 +857,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(sync_result.blocked_domains)
                     blocked_reasons.update(sync_result.blocked_reasons)
@@ -863,6 +870,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(sync_result.blocked_domains)
                     blocked_reasons.update(sync_result.blocked_reasons)

@@ -34,6 +34,7 @@ class LLMStructuredResponse(BaseModel):
     parsed_json: dict[str, object] | None = None
     valid_json: bool
     schema_valid: bool
+    semantic_valid: bool | None = None
     refusal: str | None = None
     error: str | None = None
     usage: dict[str, object] = Field(default_factory=dict)

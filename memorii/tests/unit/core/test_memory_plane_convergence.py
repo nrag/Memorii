@@ -110,6 +110,7 @@ def test_provider_and_runtime_writes_share_blocking_and_candidate_staging() -> N
         task_id="task:compat",
         session_id="session:compat",
         user_id="user:compat",
+        operation_id="test:convergence:provider-write",
     )
     runtime_result = runtime.apply_provider_write(
         operation=ProviderOperation.MEMORY_WRITE_LONGTERM,

@@ -6,7 +6,11 @@ from memorii.core.memory_plane.models import (
     from_provider_stored_record,
 )
 from memorii.core.memory_plane.service import MemoryPlaneService, RuntimeRetrievalTrace
-from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, MemoryPlaneRevisionConflictError
+from memorii.core.memory_plane.store import (
+    JsonlMemoryPlaneStore,
+    MemoryPlaneCorruptionError,
+    MemoryPlaneRevisionConflictError,
+)
 from memorii.core.memory_plane.unit_of_work import MemoryPlaneUnitOfWork
 
 __all__ = [
@@ -14,6 +18,7 @@ __all__ = [
     "from_memory_object",
     "from_provider_stored_record",
     "JsonlMemoryPlaneStore",
+    "MemoryPlaneCorruptionError",
     "MemoryPlaneRevisionConflictError",
     "MemoryPlaneService",
     "MemoryPlaneUnitOfWork",

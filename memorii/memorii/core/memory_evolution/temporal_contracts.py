@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from memorii.core.memory_evolution.models import (
     ClaimLifecycleState,
     EntityLinkLifecycleState,
-    MemoryGraphLifecycleState,
     MemoryScope,
+    RecordLifecycleState,
 )
 from memorii.core.memory_evolution.query_graph import GraphPatternConstraint, GraphPatternConstraintOutput
 from memorii.core.memory_evolution.query_text import contains_query_phrase, normalize_query_text
@@ -118,6 +118,16 @@ TemporalExpression = Annotated[
 ]
 
 
+class QueryTextSpanOutput(BaseModel):
+    """Schema-only provider transport for a query span."""
+
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    text: str = Field(min_length=1)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class CurrentTemporalExpressionOutput(BaseModel):
     expression_kind: Literal["current"] = Field()
 
@@ -127,29 +137,29 @@ class CurrentTemporalExpressionOutput(BaseModel):
 class CatalogAnchorTemporalExpressionOutput(BaseModel):
     expression_kind: Literal["catalog_anchor"] = Field()
     anchor_id: str = Field(min_length=1)
-    source_span: QueryTextSpan
+    source_span: QueryTextSpanOutput
 
     model_config = ConfigDict(extra="forbid")
 
 
 class AbsoluteDateTemporalExpressionOutput(BaseModel):
     expression_kind: Literal["absolute_date"] = Field()
-    source_span: QueryTextSpan
+    source_span: QueryTextSpanOutput
 
     model_config = ConfigDict(extra="forbid")
 
 
 class IntervalTemporalExpressionOutput(BaseModel):
     expression_kind: Literal["interval"] = Field()
-    start_span: QueryTextSpan
-    end_span: QueryTextSpan
+    start_span: QueryTextSpanOutput
+    end_span: QueryTextSpanOutput
 
     model_config = ConfigDict(extra="forbid")
 
 
 class RelativeDateTemporalExpressionOutput(BaseModel):
     expression_kind: Literal["relative_date"] = Field()
-    source_span: QueryTextSpan
+    source_span: QueryTextSpanOutput
 
     model_config = ConfigDict(extra="forbid")
 
@@ -197,7 +207,7 @@ class TemporalInterpretationProposal(BaseModel):
 
 
 class TemporalInterpretationOutput(BaseModel):
-    """Strict provider transport consumed by the trusted temporal compiler."""
+    """Structural provider transport consumed by the trusted semantic compiler."""
 
     language: str = Field()
     temporal_intent: QueryTemporalKind
@@ -212,17 +222,6 @@ class TemporalInterpretationOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="after")
-    def validate_resolution_claim(self) -> TemporalInterpretationOutput:
-        if self.temporal_intent == QueryTemporalKind.AMBIGUOUS:
-            if self.temporal_expression is not None:
-                raise ValueError("ambiguous proposals cannot carry a resolved temporal expression")
-            if self.abstention_reason is None:
-                raise ValueError("ambiguous proposals require an abstention reason")
-        elif self.temporal_expression is None:
-            raise ValueError("resolved temporal proposals require an expression")
-        return self
-
 
 class QueryTemporalFrame(BaseModel):
     temporal_kind: QueryTemporalKind = QueryTemporalKind.CURRENT
@@ -234,9 +233,7 @@ class QueryTemporalFrame(BaseModel):
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     resolution_confidence: float = Field(default=1.0, ge=0.0, le=1.0)
-    resolution_confidence_source: QueryResolutionConfidenceSource = (
-        QueryResolutionConfidenceSource.CALLER
-    )
+    resolution_confidence_source: QueryResolutionConfidenceSource = QueryResolutionConfidenceSource.CALLER
     resolution_confidence_is_calibrated: bool = False
     ambiguity_reasons: list[str] = Field(default_factory=list)
 
@@ -321,7 +318,7 @@ class TemporalCandidate(BaseModel):
     record_id: str
     entity_id: str | None = None
     scope_key: str = "global"
-    lifecycle_state: MemoryGraphLifecycleState
+    lifecycle_state: RecordLifecycleState
     valid_from: datetime | None = None
     valid_to: datetime | None = None
 
@@ -350,26 +347,26 @@ class TemporalEligibilityDecision(BaseModel):
 
 _NEVER_ELIGIBLE_LIFECYCLE_STATES = frozenset(
     {
-        MemoryGraphLifecycleState.CANDIDATE,
-        MemoryGraphLifecycleState.INVALIDATED,
-        MemoryGraphLifecycleState.ARCHIVED,
-        MemoryGraphLifecycleState.UNKNOWN,
+        RecordLifecycleState.CANDIDATE,
+        RecordLifecycleState.INVALIDATED,
+        RecordLifecycleState.ARCHIVED,
+        RecordLifecycleState.UNKNOWN,
     }
 )
 _CLOSED_LIFECYCLE_STATES = frozenset(
     {
-        MemoryGraphLifecycleState.SUPERSEDED,
-        MemoryGraphLifecycleState.EXPIRED,
-        MemoryGraphLifecycleState.MERGED,
-        MemoryGraphLifecycleState.SPLIT,
-        MemoryGraphLifecycleState.RELINKED,
+        RecordLifecycleState.SUPERSEDED,
+        RecordLifecycleState.EXPIRED,
+        RecordLifecycleState.MERGED,
+        RecordLifecycleState.SPLIT,
+        RecordLifecycleState.RELINKED,
     }
 )
 
 
 def evaluate_temporal_eligibility(
     *,
-    lifecycle_state: MemoryGraphLifecycleState | ClaimLifecycleState | EntityLinkLifecycleState | str,
+    lifecycle_state: RecordLifecycleState | ClaimLifecycleState | EntityLinkLifecycleState | str,
     valid_from: datetime | None,
     valid_to: datetime | None,
     temporal_kind: QueryTemporalKind,
@@ -385,10 +382,10 @@ def evaluate_temporal_eligibility(
     """
 
     lifecycle_value = lifecycle_state.value if isinstance(lifecycle_state, StrEnum) else lifecycle_state
-    graph_lifecycle_state = MemoryGraphLifecycleState(lifecycle_value)
-    if graph_lifecycle_state == MemoryGraphLifecycleState.INVALIDATED:
+    graph_lifecycle_state = RecordLifecycleState(lifecycle_value)
+    if graph_lifecycle_state == RecordLifecycleState.INVALIDATED:
         return TemporalEligibilityDecision(eligible=False, reason=TemporalEligibilityReason.INVALIDATED)
-    if graph_lifecycle_state == MemoryGraphLifecycleState.ARCHIVED:
+    if graph_lifecycle_state == RecordLifecycleState.ARCHIVED:
         return TemporalEligibilityDecision(eligible=False, reason=TemporalEligibilityReason.ARCHIVED)
     if temporal_kind in {QueryTemporalKind.CURRENT, QueryTemporalKind.EXECUTION, QueryTemporalKind.BELIEF}:
         # A checkpoint can ask for current truth *at a historical evaluation
@@ -398,12 +395,12 @@ def evaluate_temporal_eligibility(
         if graph_lifecycle_state in _CLOSED_LIFECYCLE_STATES and (evaluation_time is None or valid_to is None):
             reason = (
                 TemporalEligibilityReason.SUPERSEDED_FOR_CURRENT
-                if graph_lifecycle_state != MemoryGraphLifecycleState.EXPIRED
+                if graph_lifecycle_state != RecordLifecycleState.EXPIRED
                 else TemporalEligibilityReason.EXPIRED_FOR_CURRENT
             )
             return TemporalEligibilityDecision(eligible=False, reason=reason)
         if (
-            graph_lifecycle_state != MemoryGraphLifecycleState.ACTIVE
+            graph_lifecycle_state != RecordLifecycleState.ACTIVE
             and graph_lifecycle_state not in _CLOSED_LIFECYCLE_STATES
         ):
             return TemporalEligibilityDecision(eligible=False, reason=TemporalEligibilityReason.OUTSIDE_INTERVAL)
@@ -471,7 +468,7 @@ class TemporalEntityCandidate(BaseModel):
     names: list[str] = Field(min_length=1)
     entity_type: str | None = None
     scope: MemoryScope = Field(default_factory=MemoryScope)
-    lifecycle_state: MemoryGraphLifecycleState = MemoryGraphLifecycleState.ACTIVE
+    lifecycle_state: RecordLifecycleState = RecordLifecycleState.ACTIVE
     lineage_parent_entity_id: str | None = None
     valid_from: datetime | None = None
     valid_to: datetime | None = None

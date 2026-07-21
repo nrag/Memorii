@@ -40,13 +40,13 @@ def test_memory_evolution_sim_entity_split_fails_when_service_owner_supports_pro
     assert "supporting_role_violation" in aggregate.critical_failure_buckets
     assert "wrong_entity_support_used" in aggregate.critical_failure_buckets
     assert "disambiguation_evidence_used_as_support" in aggregate.critical_failure_buckets
-    assert diagnostics["supporting_excluded_ids"]["claim_ids"] == [service_owner_claim]
-    assert diagnostics["supporting_role_violations"] == {
+    assert diagnostics.supporting_excluded_ids["claim_ids"] == [service_owner_claim]
+    assert diagnostics.supporting_role_violations == {
         "rejection_support": [service_owner_claim],
         "wrong_subject_support": [service_owner_claim],
     }
-    assert diagnostics["supporting_wrong_subject_claim_ids"] == [service_owner_claim]
-    assert "disambiguation_evidence_used_as_support" in diagnostics["precision_failure_classification"]
+    assert diagnostics.supporting_wrong_subject_claim_ids == [service_owner_claim]
+    assert "disambiguation_evidence_used_as_support" in diagnostics.precision_failure_classification
 
 
 def test_memory_evolution_sim_entity_split_fails_when_sibling_definition_supports_project_owner() -> None:
@@ -81,9 +81,9 @@ def test_memory_evolution_sim_entity_split_fails_when_sibling_definition_support
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "supporting_role_violation" in aggregate.critical_failure_buckets
-    assert diagnostics["supporting_wrong_subject_claim_ids"] == [service_type_claim.claim_id]
-    assert diagnostics["supporting_wrong_subject_entity_ids"] == [service_type_claim.subject.entity_id]
-    assert diagnostics["supporting_disambiguation_claim_ids"] == [service_type_claim.claim_id]
+    assert diagnostics.supporting_wrong_subject_claim_ids == [service_type_claim.claim_id]
+    assert diagnostics.supporting_wrong_subject_entity_ids == [service_type_claim.subject.entity_id]
+    assert diagnostics.supporting_disambiguation_claim_ids == [service_type_claim.claim_id]
 
 
 def test_memory_evolution_sim_entity_split_context_marks_sibling_claims_as_context_candidates() -> None:
@@ -100,8 +100,7 @@ def test_memory_evolution_sim_entity_split_context_marks_sibling_claims_as_conte
     service_type_card = next(
         claim
         for claim in context.visible_claims
-        if claim.subject_entity_id == service_owner_card.subject_entity_id
-        and claim.predicate_id == "entity_type"
+        if claim.subject_entity_id == service_owner_card.subject_entity_id and claim.predicate_id == "entity_type"
     )
 
     assert "metadata" not in context.model_dump(mode="json")
@@ -136,8 +135,8 @@ def test_memory_evolution_sim_entity_split_requires_wrong_entity_subject_rejecti
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "missing_rejected_id" in aggregate.critical_failure_buckets
-    assert diagnostics["missing_rejected_claim_subject_entity_ids"] == [service_entity]
-    assert "missing_rejected_claim_subject_entity" in diagnostics["precision_failure_classification"]
+    assert diagnostics.missing_rejected_claim_subject_entity_ids == [service_entity]
+    assert "missing_rejected_claim_subject_entity" in diagnostics.precision_failure_classification
 
 
 def test_memory_evolution_sim_rejected_object_entity_does_not_replace_wrong_entity_subject() -> None:
@@ -170,8 +169,8 @@ def test_memory_evolution_sim_rejected_object_entity_does_not_replace_wrong_enti
     )
 
     assert aggregate.verdict == JudgeVerdict.FAIL
-    assert diagnostics["missing_rejected_claim_subject_entity_ids"] == [service_entity]
-    assert "missing_rejected_claim_subject_entity" in diagnostics["precision_failure_classification"]
+    assert diagnostics.missing_rejected_claim_subject_entity_ids == [service_entity]
+    assert "missing_rejected_claim_subject_entity" in diagnostics.precision_failure_classification
 
 
 def test_memory_evolution_sim_inverse_ownership_requires_owned_subject_entity() -> None:
@@ -266,8 +265,8 @@ def test_memory_evolution_sim_claim_rekey_classifies_definition_left_in_context(
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "claim_rekey_error" in aggregate.critical_failure_buckets
     assert "missing_provenance" in aggregate.critical_failure_buckets
-    assert "missing_required_defining_claim" in diagnostics["failure_classification"]
-    assert "missing_required_defining_provenance" in diagnostics["failure_classification"]
+    assert "missing_required_defining_claim" in diagnostics.failure_classification
+    assert "missing_required_defining_provenance" in diagnostics.failure_classification
 
 
 def test_memory_evolution_sim_claim_rekey_passes_with_defining_claim_and_current_fact() -> None:
@@ -296,7 +295,9 @@ def test_memory_evolution_sim_active_graph_subjects_reports_overbroad_selected_e
         seed=7,
     )
     checkpoint = checkpoint_by_type(scenario, "claim_rekey")
-    current_owner_claim = next(claim for claim in scenario.claims if claim.claim_id == checkpoint.expected_claim_ids[-1])
+    current_owner_claim = next(
+        claim for claim in scenario.claims if claim.claim_id == checkpoint.expected_claim_ids[-1]
+    )
     assert current_owner_claim.object.entity_id is not None
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
@@ -313,8 +314,8 @@ def test_memory_evolution_sim_active_graph_subjects_reports_overbroad_selected_e
     )
 
     assert aggregate.verdict == JudgeVerdict.PASS
-    assert diagnostics["selected_nonrequired_graph_entity_ids"] == [current_owner_claim.object.entity_id]
-    assert diagnostics["selected_graph_entity_overbreadth"] == [current_owner_claim.object.entity_id]
+    assert diagnostics.selected_nonrequired_graph_entity_ids == [current_owner_claim.object.entity_id]
+    assert diagnostics.selected_graph_entity_overbreadth == [current_owner_claim.object.entity_id]
 
 
 def test_memory_evolution_sim_graph_reconstruction_allows_invalidated_claim_as_rejected_context() -> None:
@@ -335,4 +336,4 @@ def test_memory_evolution_sim_graph_reconstruction_allows_invalidated_claim_as_r
     )
 
     assert aggregate.verdict == JudgeVerdict.PASS
-    assert diagnostics["rejected_expected_ids"]["claim_ids"] == checkpoint.expected_excluded_claim_ids
+    assert diagnostics.rejected_expected_ids["claim_ids"] == checkpoint.expected_excluded_claim_ids

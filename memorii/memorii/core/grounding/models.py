@@ -74,7 +74,9 @@ class ProofStep(BaseModel):
 
     @model_validator(mode="after")
     def required_candidates_must_be_cited(self) -> ProofStep:
-        missing = [candidate_id for candidate_id in self.required_candidate_ids if candidate_id not in self.candidate_ids]
+        missing = [
+            candidate_id for candidate_id in self.required_candidate_ids if candidate_id not in self.candidate_ids
+        ]
         if missing:
             raise ValueError(f"required_candidate_ids must be a subset of candidate_ids: {missing}")
         citation_ids = [citation.candidate_id for citation in self.citations]
@@ -112,19 +114,32 @@ class ProofStepCitationOutput(ProofStepCitation):
     required_for_final_support: bool
 
 
-class ProofStepOutput(ProofStep):
+class ProofStepOutput(BaseModel):
+    """Schema-only provider transport for a proof step."""
+
+    step_id: str
+    description: str
+    candidate_ids: list[str]
+    required_candidate_ids: list[str]
     citations: list[ProofStepCitationOutput]
+    rationale: str
+
+    model_config = ConfigDict(extra="forbid")
 
 
-class EvidenceSelectionOutput(EvidenceSelectionDecision):
-    """Strict provider output before conversion to a domain decision."""
+class EvidenceSelectionOutput(BaseModel):
+    """Structural provider output validated semantically as a domain decision."""
 
     selected_candidate_ids: list[str]
     excluded_candidate_ids: list[str]
     ranking: list[str]
     proof_steps: list[ProofStepOutput]
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: str
     failure_mode: str | None
     requires_judge_review: bool
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class GroundedAnswerContext(BaseModel):
@@ -189,14 +204,20 @@ class GroundedAnswerDecision(BaseModel):
             raise ValueError("answer_requirements must describe every non-noanswer answer")
         selected = [candidate for candidate in self.candidate_answers_considered if candidate.selected]
         if self.answer != "noanswer" and len(selected) != 1:
-            raise ValueError("candidate_answers_considered must include exactly one selected candidate for non-noanswer answers")
+            raise ValueError(
+                "candidate_answers_considered must include exactly one selected candidate for non-noanswer answers"
+            )
         if selected and selected[0].answer != self.answer:
             raise ValueError("selected candidate answer must match answer")
         requirement_ids = {requirement.requirement_id for requirement in self.answer_requirements}
         for candidate in self.candidate_answers_considered:
             unknown_satisfied = [item for item in candidate.satisfied_requirement_ids if item not in requirement_ids]
             unknown_missing = [item for item in candidate.missing_requirement_ids if item not in requirement_ids]
-            unknown_coverage = [item.requirement_id for item in candidate.requirement_coverage if item.requirement_id not in requirement_ids]
+            unknown_coverage = [
+                item.requirement_id
+                for item in candidate.requirement_coverage
+                if item.requirement_id not in requirement_ids
+            ]
             if unknown_satisfied or unknown_missing or unknown_coverage:
                 raise ValueError(
                     "candidate answer requirement coverage must reference answer_requirements: "
@@ -231,9 +252,11 @@ class CandidateAnswerConsideredOutput(CandidateAnswerConsidered):
     missing_requirement_ids: list[str]
 
 
-class GroundedAnswerOutput(GroundedAnswerDecision):
-    """Strict provider output before conversion to a domain decision."""
+class GroundedAnswerOutput(BaseModel):
+    """Structural provider output validated semantically as a domain decision."""
 
+    answer: str
+    citation_candidate_ids: list[str]
     answer_requirements: list[AnswerRequirementOutput]
     candidate_answers_considered: list[CandidateAnswerConsideredOutput]
     answer_type: Literal[
@@ -246,8 +269,14 @@ class GroundedAnswerOutput(GroundedAnswerDecision):
         "description",
         "noanswer",
     ]
+    answer_span_candidate_id: str | None
+    answer_span_text: str | None
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: str
     failure_mode: str | None
     requires_judge_review: bool
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class AnswerVerificationContext(BaseModel):

@@ -8,7 +8,7 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.promotion.assessment import PromotionAssessmentContext
 from memorii.core.promotion.provider import PromotionAssessmentProviderError
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService, _decision_evidence_ids
+from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind, WorkStateStatus
 from memorii.core.work_state.service import WorkStateService
@@ -262,29 +262,6 @@ def test_decision_finalize_linked_decision_records_completed_work_state_outcome(
     events = work_state_service.list_work_state_events(work_state.work_state_id)
     assert events
     assert events[-1].content == "Decision finalized: Use Redis"
-
-
-def test_decision_evidence_ids_dedupes_with_stable_order() -> None:
-    decision_state_service = DecisionStateService()
-    decision = decision_state_service.open_decision(question="Which db?")
-    decision_state_service.add_evidence(
-        decision_id=decision.decision_id,
-        evidence_id="ev:1",
-        content="first",
-        polarity=DecisionEvidencePolarity.NEUTRAL,
-        source_ids=["src:1", "src:2", "ev:1"],
-    )
-    decision_state_service.add_evidence(
-        decision_id=decision.decision_id,
-        evidence_id="src:2",
-        content="second",
-        polarity=DecisionEvidencePolarity.NEUTRAL,
-        source_ids=["src:3", "src:1"],
-    )
-    updated = decision_state_service.get_decision(decision.decision_id)
-    assert updated is not None
-
-    assert _decision_evidence_ids(updated) == ["ev:1", "src:1", "src:2", "src:3"]
 
 
 def test_decision_finalize_linked_outcome_records_deduped_evidence_ids() -> None:
@@ -1018,6 +995,7 @@ def test_get_state_summary_with_matching_state_returns_state() -> None:
     provider.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="please implement parser updates and write tests",
+        operation_id="test:tools:state-summary",
         session_id="session:tool:1",
         task_id="task:tool:1",
         user_id="user:tool:1",
@@ -1190,6 +1168,7 @@ def test_get_next_step_with_task_state_returns_continue_task_stub() -> None:
     provider.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="please implement parser updates and write tests",
+        operation_id="test:tools:next-step-task",
         session_id="session:tool:2",
         task_id="task:tool:2",
         user_id="user:tool:2",
@@ -1212,6 +1191,7 @@ def test_get_next_step_with_investigation_state_returns_inspect_failure_stub() -
     provider.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="build failed on CI while running tests",
+        operation_id="test:tools:next-step-investigation",
         session_id="session:tool:3",
         task_id="task:tool:3",
         user_id="user:tool:3",

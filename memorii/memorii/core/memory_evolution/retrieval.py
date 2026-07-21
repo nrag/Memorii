@@ -92,7 +92,6 @@ class ResolvedMemoryQuery(QueryRequestOptions):
     predicate_id: str | None = None
     graph_pattern_resolution: GraphPatternResolution | None = None
     scope_mode: Literal["scoped", "full"] = "scoped"
-    readable_scope_keys: frozenset[str] = Field(min_length=1)
 
 
 MemoryQueryInput = MemoryQueryRequest
@@ -168,8 +167,7 @@ class ProductionRetrievalDecision(RetrievalDecision):
         if self.execution_state is None:
             return self
         readable_record_ids = {
-            event_id.removeprefix("action:")
-            for event_id in self.execution_state.readable_action_event_ids
+            event_id.removeprefix("action:") for event_id in self.execution_state.readable_action_event_ids
         }
         disclosed_record_ids = {
             *self.selected_record_ids,
@@ -228,7 +226,13 @@ def _reconcile_request_frame(
     if request.scope_key is not None:
         if frame.scope_key is not None and frame.scope_key != request.scope_key:
             return (
-                frame.model_copy(update={"temporal_kind": QueryTemporalKind.AMBIGUOUS, "resolution_confidence": 0.0, "ambiguity_reasons": ["request_frame_scope_mismatch"]}),
+                frame.model_copy(
+                    update={
+                        "temporal_kind": QueryTemporalKind.AMBIGUOUS,
+                        "resolution_confidence": 0.0,
+                        "ambiguity_reasons": ["request_frame_scope_mismatch"],
+                    }
+                ),
                 "ambiguous",
                 "request scope does not match the supplied temporal frame",
             )
@@ -237,15 +241,21 @@ def _reconcile_request_frame(
     if request.subject_entity_id is not None:
         if frame.resolved_entity_ids and request.subject_entity_id not in frame.resolved_entity_ids:
             return (
-                frame.model_copy(update={"temporal_kind": QueryTemporalKind.AMBIGUOUS, "resolution_confidence": 0.0, "ambiguity_reasons": ["request_frame_entity_mismatch"]}),
+                frame.model_copy(
+                    update={
+                        "temporal_kind": QueryTemporalKind.AMBIGUOUS,
+                        "resolution_confidence": 0.0,
+                        "ambiguity_reasons": ["request_frame_entity_mismatch"],
+                    }
+                ),
                 "ambiguous",
                 "request entity does not match the supplied temporal frame",
             )
         if request.subject_entity_id not in frame.resolved_entity_ids:
-            frame = frame.model_copy(update={"resolved_entity_ids": [*frame.resolved_entity_ids, request.subject_entity_id]})
-    if (
-        frame.temporal_kind in {QueryTemporalKind.CURRENT, QueryTemporalKind.EXECUTION, QueryTemporalKind.BELIEF}
-    ):
+            frame = frame.model_copy(
+                update={"resolved_entity_ids": [*frame.resolved_entity_ids, request.subject_entity_id]}
+            )
+    if frame.temporal_kind in {QueryTemporalKind.CURRENT, QueryTemporalKind.EXECUTION, QueryTemporalKind.BELIEF}:
         if frame.evaluation_time is not None and frame.evaluation_time != request.reference_time:
             return (
                 frame.model_copy(
@@ -260,7 +270,11 @@ def _reconcile_request_frame(
             )
         if frame.evaluation_time is None and request.reference_time is not None:
             frame = frame.model_copy(update={"evaluation_time": request.reference_time})
-    if frame.temporal_kind == QueryTemporalKind.AMBIGUOUS or frame.ambiguity_reasons or frame.resolution_confidence <= 0.0:
+    if (
+        frame.temporal_kind == QueryTemporalKind.AMBIGUOUS
+        or frame.ambiguity_reasons
+        or frame.resolution_confidence <= 0.0
+    ):
         return frame, "ambiguous", "temporal frame is ambiguous or unresolved"
     return frame, "resolved", "request context and temporal frame are consistent"
 
@@ -283,15 +297,10 @@ def rank_claims(
         or frame.ambiguity_reasons
         or frame.resolution_confidence <= 0.0
     ):
-        graph_status = (
-            request.graph_pattern_resolution.status
-            if request.graph_pattern_resolution is not None
-            else None
-        )
+        graph_status = request.graph_pattern_resolution.status if request.graph_pattern_resolution is not None else None
         semantic_frame_status = (
             SemanticFrameStatus.MATCHED
-            if graph_status == GraphPatternResolutionStatus.NO_MATCH
-            and request.predicate_id is not None
+            if graph_status == GraphPatternResolutionStatus.NO_MATCH and request.predicate_id is not None
             else SemanticFrameStatus.UNSUPPORTED
             if request.query_analysis.failure_code is not None
             or request.query_analysis.analysis_source in {"language_guard", "provider"}
@@ -338,24 +347,28 @@ def rank_claims(
     # predicate from the wording would silently turn that audit into an
     # answer query and drop definition/rekey evidence. An explicit predicate
     # remains authoritative for callers that intentionally narrow the audit.
-    effective_predicate_id = (
-        request.predicate_id
-        if request.predicate_id is not None
-        else None
-    )
+    effective_predicate_id = request.predicate_id if request.predicate_id is not None else None
     if request.predicate_id is None and request.purpose != RetrievalPurpose.GRAPH_AUDIT:
         eligible_predicates = {
             state.claim_key.predicate_id
             for state in states
-            if (not request.subject_entity_id or subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id) == request.subject_entity_id)
-            and (not frame.resolved_entity_ids or subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id) in frame.resolved_entity_ids)
-            and state.claim_key.scope_key in request.readable_scope_keys
+            if (
+                not request.subject_entity_id
+                or subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id)
+                == request.subject_entity_id
+            )
+            and (
+                not frame.resolved_entity_ids
+                or subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id)
+                in frame.resolved_entity_ids
+            )
+            and request.scope.can_read(state.claim_key.scope)
             and _frame_matches(
                 state,
                 frame,
                 resolved_subject=subject_entity_by_claim.get(state.claim_id),
                 resolved_object=object_entity_by_claim.get(state.claim_id),
-                readable_scope_keys=request.readable_scope_keys,
+                request_scope=request.scope,
             )
         }
         if len(eligible_predicates) > 1 and effective_predicate_id not in eligible_predicates:
@@ -375,20 +388,20 @@ def rank_claims(
         if graph_matched_claim_ids and state.claim_id not in graph_matched_claim_ids:
             continue
         if (
-            state.claim_key.scope_key not in request.readable_scope_keys
+            not request.scope.can_read(state.claim_key.scope)
             or (effective_predicate_id and state.claim_key.predicate_id != effective_predicate_id)
             or not _frame_matches(
                 state,
                 frame,
                 resolved_subject=subject_entity_by_claim.get(state.claim_id),
                 resolved_object=object_entity_by_claim.get(state.claim_id),
-                readable_scope_keys=request.readable_scope_keys,
+                request_scope=request.scope,
             )
         ):
             continue
         identity = _claim_scope_identity(state)
         selected_scope_specificity_by_claim[identity] = max(
-            _scope_specificity(state.claim_key.scope_key, request),
+            _scope_specificity(state.claim_key.scope, request),
             selected_scope_specificity_by_claim.get(identity, 0),
         )
     for state in states:
@@ -402,9 +415,9 @@ def rank_claims(
             continue
         if effective_predicate_id and state.claim_key.predicate_id != effective_predicate_id:
             continue
-        if state.claim_key.scope_key not in request.readable_scope_keys:
+        if not request.scope.can_read(state.claim_key.scope):
             continue
-        if _scope_specificity(state.claim_key.scope_key, request) < selected_scope_specificity_by_claim.get(
+        if _scope_specificity(state.claim_key.scope, request) < selected_scope_specificity_by_claim.get(
             _claim_scope_identity(state),
             0,
         ):
@@ -426,7 +439,7 @@ def rank_claims(
             frame_for_match,
             resolved_subject=resolved_subject,
             resolved_object=resolved_object,
-            readable_scope_keys=request.readable_scope_keys,
+            request_scope=request.scope,
         ):
             entity_terms = _tokens(" ".join(entity_names_by_id.get(resolved_subject, set())))
             if entity_terms & query_tokens and state.lifecycle_state == ClaimLifecycleState.ACTIVE:
@@ -435,9 +448,16 @@ def rank_claims(
                         rejected.append(state.claim_id)
                     elif request.include_context:
                         context.append(state.claim_id)
-                elif request.include_context and frame.temporal_kind in {QueryTemporalKind.HISTORICAL, QueryTemporalKind.INTERVAL}:
+                elif request.include_context and frame.temporal_kind in {
+                    QueryTemporalKind.HISTORICAL,
+                    QueryTemporalKind.INTERVAL,
+                }:
                     context.append(state.claim_id)
-            elif request.include_context and state.lifecycle_state in {ClaimLifecycleState.SUPERSEDED, ClaimLifecycleState.INVALIDATED, ClaimLifecycleState.EXPIRED}:
+            elif request.include_context and state.lifecycle_state in {
+                ClaimLifecycleState.SUPERSEDED,
+                ClaimLifecycleState.INVALIDATED,
+                ClaimLifecycleState.EXPIRED,
+            }:
                 context.append(state.claim_id)
             continue
         searchable = _tokens(
@@ -493,7 +513,8 @@ def rank_claims(
         rejected.extend(
             state.claim_id
             for state in states
-            if state.lifecycle_state in {ClaimLifecycleState.SUPERSEDED, ClaimLifecycleState.INVALIDATED, ClaimLifecycleState.EXPIRED}
+            if state.lifecycle_state
+            in {ClaimLifecycleState.SUPERSEDED, ClaimLifecycleState.INVALIDATED, ClaimLifecycleState.EXPIRED}
             and state.claim_id not in selected_ids
         )
     result = ProductionRetrievalDecision(
@@ -552,14 +573,22 @@ def _frame_matches(
     *,
     resolved_subject: str | None = None,
     resolved_object: str | None = None,
-    readable_scope_keys: frozenset[str] | None = None,
+    request_scope: MemoryScope | None = None,
 ) -> bool:
     effective_subject = resolved_subject or state.claim_key.subject_entity_id
-    if frame.resolved_entity_ids and effective_subject not in frame.resolved_entity_ids and resolved_object not in frame.resolved_entity_ids:
+    if (
+        frame.resolved_entity_ids
+        and effective_subject not in frame.resolved_entity_ids
+        and resolved_object not in frame.resolved_entity_ids
+    ):
         return False
-    if readable_scope_keys is not None and state.claim_key.scope_key not in readable_scope_keys:
+    if request_scope is not None and not request_scope.can_read(state.claim_key.scope):
         return False
-    if readable_scope_keys is None and frame.scope_key is not None and state.claim_key.scope_key not in {frame.scope_key, "global"}:
+    if (
+        request_scope is None
+        and frame.scope_key is not None
+        and state.claim_key.scope_key not in {frame.scope_key, "global"}
+    ):
         return False
     if frame.temporal_kind in {QueryTemporalKind.CURRENT, QueryTemporalKind.EXECUTION, QueryTemporalKind.BELIEF}:
         return evaluate_temporal_eligibility(
@@ -581,14 +610,8 @@ def _frame_matches(
     return False
 
 
-def _scope_specificity(scope_key: str, request: ResolvedMemoryQuery) -> int:
-    if request.task_id is not None and scope_key == request.task_id:
-        return 3
-    if request.session_id is not None and scope_key == request.session_id:
-        return 2
-    if request.user_id is not None and scope_key == request.user_id:
-        return 1
-    return 0
+def _scope_specificity(scope: MemoryScope, request: ResolvedMemoryQuery) -> int:
+    return scope.specificity if request.scope.can_read(scope) else -1
 
 
 def _claim_scope_identity(state: ClaimState) -> tuple[str, str, str]:

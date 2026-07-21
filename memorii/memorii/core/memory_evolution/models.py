@@ -115,8 +115,8 @@ class EntityLinkLifecycleState(StrEnum):
     INVALIDATED = "invalidated"
 
 
-class MemoryGraphLifecycleState(StrEnum):
-    """Lifecycle states accepted by persisted graph nodes and edges."""
+class RecordLifecycleState(StrEnum):
+    """Persistence lifecycle for graph records, independent of domain state."""
 
     CANDIDATE = "candidate"
     ACTIVE = "active"
@@ -127,13 +127,6 @@ class MemoryGraphLifecycleState(StrEnum):
     MERGED = "merged"
     SPLIT = "split"
     RELINKED = "relinked"
-    STARTED = "started"
-    IN_PROGRESS = "in_progress"
-    BLOCKED = "blocked"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    SUCCEEDED = "succeeded"
-    ABANDONED = "abandoned"
     UNKNOWN = "unknown"
 
 
@@ -215,21 +208,24 @@ class SourceObservation(BaseModel):
 class MemoryScope(BaseModel):
     """Server-owned visibility boundary for memory records and query catalogs."""
 
-    scope_key: str = "global"
     task_id: str | None = None
     session_id: str | None = None
     user_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="after")
-    def validate_scope(self) -> MemoryScope:
-        if not self.scope_key.strip():
-            raise ValueError("scope_key must not be empty")
-        expected_scope_key = self.task_id or self.session_id or self.user_id or "global"
-        if self.scope_key != expected_scope_key:
-            raise ValueError("scope_key must identify the most-specific task, session, or user scope")
-        return self
+    @property
+    def scope_key(self) -> str:
+        """Return a display key; authorization must use the complete scope."""
+
+        return self.task_id or self.session_id or self.user_id or "global"
+
+    @property
+    def identity(self) -> tuple[str | None, str | None, str | None]:
+        return (self.user_id, self.session_id, self.task_id)
+
+    def stable_id(self) -> str:
+        return "|".join(value or "" for value in self.identity)
 
     @property
     def is_global(self) -> bool:
@@ -258,17 +254,9 @@ class MemoryScope(BaseModel):
             return False
         return candidate.task_id is None or self.task_id == candidate.task_id
 
-    @property
-    def readable_scope_keys(self) -> frozenset[str]:
-        return frozenset(
-            value for value in ("global", self.user_id, self.session_id, self.task_id) if value is not None
-        )
-
 
 def memory_scope_from_observation(observation: SourceObservation) -> MemoryScope:
-    scope_key = observation.task_id or observation.session_id or observation.user_id or "global"
     return MemoryScope(
-        scope_key=scope_key,
         task_id=observation.task_id,
         session_id=observation.session_id,
         user_id=observation.user_id,
@@ -347,7 +335,7 @@ class EntityLinkState(BaseModel):
 class ClaimKey(BaseModel):
     subject_entity_id: str
     predicate_id: str
-    scope_key: str = "global"
+    scope: MemoryScope = Field(default_factory=MemoryScope)
     qualifier_key: str = "default"
 
     model_config = ConfigDict(extra="forbid")
@@ -357,10 +345,14 @@ class ClaimKey(BaseModel):
             [
                 self.subject_entity_id,
                 self.predicate_id,
-                self.scope_key,
+                self.scope.stable_id(),
                 self.qualifier_key,
             ]
         )
+
+    @property
+    def scope_key(self) -> str:
+        return self.scope.scope_key
 
 
 class ExtractedClaim(BaseModel):
@@ -392,14 +384,27 @@ class ExtractedAction(BaseModel):
     dependency_ids: list[str] = Field(default_factory=list)
     blocking_ids: list[str] = Field(default_factory=list)
     timestamp: datetime
-    task_id: str | None = None
-    session_id: str | None = None
-    user_id: str | None = None
-    scope_key: str = "global"
+    scope: MemoryScope = Field(default_factory=MemoryScope)
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
     extraction_run_id: str
 
     model_config = ConfigDict(extra="forbid")
+
+    @property
+    def task_id(self) -> str | None:
+        return self.scope.task_id
+
+    @property
+    def session_id(self) -> str | None:
+        return self.scope.session_id
+
+    @property
+    def user_id(self) -> str | None:
+        return self.scope.user_id
+
+    @property
+    def scope_key(self) -> str:
+        return self.scope.scope_key
 
 
 class ValidationResult(BaseModel):
@@ -511,7 +516,7 @@ class MemoryGraphNode(BaseModel):
     node_type: MemoryGraphNodeType
     label: str
     canonical_id: str | None = None
-    lifecycle_state: MemoryGraphLifecycleState
+    lifecycle_state: RecordLifecycleState
     confidence: float = Field(ge=0.0, le=1.0)
     source_record_ids: list[str] = Field(default_factory=list)
     payload_ref: str
@@ -528,7 +533,7 @@ class MemoryGraphEdge(BaseModel):
     source_node_id: str
     target_node_id: str
     directed: bool = True
-    lifecycle_state: MemoryGraphLifecycleState
+    lifecycle_state: RecordLifecycleState
     confidence: float = Field(ge=0.0, le=1.0)
     evidence_span_ids: list[str] = Field(default_factory=list)
     source_record_ids: list[str] = Field(default_factory=list)
@@ -550,6 +555,22 @@ class MemoryGraphSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ExtractionRunStatus(StrEnum):
+    SUCCEEDED = "succeeded"
+    PARTIAL = "partial"
+    ABSTAINED = "abstained"
+    FAILED = "failed"
+    FALLBACK_SUCCEEDED = "fallback_succeeded"
+
+
+class ExtractionFailureCode(StrEnum):
+    PROVIDER_ERROR = "provider_error"
+    INVALID_JSON = "invalid_json"
+    SCHEMA_VALIDATION = "schema_validation"
+    OUTPUT_VALIDATION = "output_validation"
+    UNSUPPORTED_LANGUAGE = "unsupported_language"
+
+
 class ExtractionRun(BaseModel):
     extraction_run_id: str
     provider: str
@@ -560,10 +581,35 @@ class ExtractionRun(BaseModel):
     claim_ids: list[str] = Field(default_factory=list)
     action_ids: list[str] = Field(default_factory=list)
     validation_summary: dict[str, int] = Field(default_factory=dict)
+    status: ExtractionRunStatus = ExtractionRunStatus.SUCCEEDED
+    failure_code: ExtractionFailureCode | None = None
+    fallback_provider: str | None = None
     errors: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> ExtractionRun:
+        if self.status == ExtractionRunStatus.SUCCEEDED:
+            if self.failure_code is not None or self.fallback_provider is not None:
+                raise ValueError("successful extraction cannot contain failure or fallback metadata")
+        elif self.status == ExtractionRunStatus.FALLBACK_SUCCEEDED:
+            if self.failure_code is None or not self.fallback_provider:
+                raise ValueError("fallback extraction requires the triggering failure and fallback provider")
+        elif self.failure_code is None:
+            raise ValueError("non-successful extraction requires a failure code")
+        if self.status != ExtractionRunStatus.FALLBACK_SUCCEEDED and self.fallback_provider is not None:
+            raise ValueError("only fallback extraction may identify a fallback provider")
+        return self
+
+    @property
+    def live_success(self) -> bool:
+        return self.status == ExtractionRunStatus.SUCCEEDED
+
+    @property
+    def fallback_used(self) -> bool:
+        return self.status == ExtractionRunStatus.FALLBACK_SUCCEEDED
 
 
 class MemoryEvolutionResult(BaseModel):

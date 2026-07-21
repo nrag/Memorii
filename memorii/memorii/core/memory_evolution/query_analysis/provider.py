@@ -33,6 +33,7 @@ class PromptBackedStructuredQueryAnalysisProvider:
 
     prompt_ref = "structured_query_analysis:v1"
     output_model = TemporalInterpretationOutput
+    semantic_model = TemporalInterpretationProposal
 
     def __init__(
         self,
@@ -79,6 +80,7 @@ class PromptBackedStructuredQueryAnalysisProvider:
             request_id=f"structured-query:{request_digest}",
             metadata={"language": language, "scope_kind": context.scope_kind.value},
             output_model=self.output_model,
+            semantic_model=self.semantic_model,
         )
         if not result.success or result.output is None:
             raise StructuredQueryProviderError(

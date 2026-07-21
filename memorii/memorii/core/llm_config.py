@@ -103,6 +103,21 @@ class LLMDecisionRuntimeConfig(BaseModel):
         return self.mode  # type: ignore[return-value]
 
 
+class ResolvedLLMDecisionConfig(BaseModel):
+    """Validated LLM runtime and decision mode derived from one environment mapping."""
+
+    runtime: LLMRuntimeConfig
+    mode: ResolvedDecisionModeName
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str]) -> ResolvedLLMDecisionConfig:
+        runtime = LLMRuntimeConfig.from_env(env)
+        decision = LLMDecisionRuntimeConfig.from_env(env)
+        return cls(runtime=runtime, mode=decision.resolve(runtime))
+
+
 def _parse_bool(value: str | None, *, default: bool) -> bool:
     if value is None:
         return default

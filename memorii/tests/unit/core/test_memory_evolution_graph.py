@@ -73,9 +73,25 @@ def test_literal_object_claim_uses_literal_object_edge() -> None:
     service.evolve_records([record])
 
     assert any(
-        edge.edge_type == MemoryGraphEdgeType.HAS_LITERAL_OBJECT
-        for edge in service.retrieve_graph_snapshot().edges
+        edge.edge_type == MemoryGraphEdgeType.HAS_LITERAL_OBJECT for edge in service.retrieve_graph_snapshot().edges
     )
+
+
+def test_action_execution_status_is_independent_of_record_lifecycle() -> None:
+    plane = MemoryPlaneService()
+    service = MemoryEvolutionService(memory_plane=plane)
+
+    service.evolve_records([_record("tx:completed", "Atlas completed.", source_kind="tool")])
+
+    action = next(
+        node for node in service.retrieve_graph_snapshot().nodes if node.node_type == MemoryGraphNodeType.ACTION
+    )
+    persisted = plane.get_record(f"mem:evolution:graph-node:{action.node_id}")
+
+    assert action.lifecycle_state == "active"
+    assert action.properties["execution_status"] == "completed"
+    assert persisted is not None
+    assert persisted.validity_status == "active"
 
 
 def test_superseded_claim_history_is_retained_in_graph() -> None:
@@ -107,9 +123,7 @@ def test_current_truth_graph_excludes_superseded_claims() -> None:
 
     current = service.retrieve_current_truth_graph(predicate_id="owner", subject_entity_id="ent:atlas")
     claim_values = [
-        node.properties.get("object_value")
-        for node in current.nodes
-        if node.node_type == MemoryGraphNodeType.CLAIM
+        node.properties.get("object_value") for node in current.nodes if node.node_type == MemoryGraphNodeType.CLAIM
     ]
 
     assert claim_values == ["Bob"]
@@ -126,14 +140,10 @@ def test_entity_subgraph_can_include_historical_claims() -> None:
     historical = service.retrieve_entity_subgraph("ent:atlas", include_historical=True)
 
     current_values = {
-        node.properties.get("object_value")
-        for node in current.nodes
-        if node.node_type == MemoryGraphNodeType.CLAIM
+        node.properties.get("object_value") for node in current.nodes if node.node_type == MemoryGraphNodeType.CLAIM
     }
     historical_values = {
-        node.properties.get("object_value")
-        for node in historical.nodes
-        if node.node_type == MemoryGraphNodeType.CLAIM
+        node.properties.get("object_value") for node in historical.nodes if node.node_type == MemoryGraphNodeType.CLAIM
     }
     assert current_values == {"Bob"}
     assert historical_values == {"Alice", "Bob"}

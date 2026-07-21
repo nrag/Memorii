@@ -6,11 +6,18 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.domain.enums import MemoryDomain
 
 PrefetchDecisionT = TypeVar("PrefetchDecisionT", bound=BaseModel)
+ExtractionOutcomeStatus = Literal[
+    "succeeded",
+    "partial",
+    "abstained",
+    "failed",
+    "fallback_succeeded",
+]
 
 
 class ProviderOperation(StrEnum):
@@ -30,6 +37,42 @@ class ProviderWriteKind(StrEnum):
     RAW_APPEND = "raw_append"
     CANDIDATE_STAGE = "candidate_stage"
     COMMIT = "commit"
+
+
+class ProviderEvolutionOutcome(BaseModel):
+    operation_id: str
+    status: Literal[
+        "evolution_pending",
+        "evolution_running",
+        "evolution_committed",
+        "evolution_failed",
+    ]
+    attempt_count: int = Field(ge=0)
+    failure_code: str | None = None
+    retryable: bool = False
+    extraction_status: ExtractionOutcomeStatus | None = None
+    live_success: bool = False
+    fallback_used: bool = False
+    fallback_provider: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> ProviderEvolutionOutcome:
+        committed = self.status == "evolution_committed"
+        if self.live_success != (committed and self.extraction_status == "succeeded"):
+            raise ValueError("live_success must identify a committed primary extraction")
+        if self.fallback_used != (
+            committed and self.extraction_status == "fallback_succeeded"
+        ):
+            raise ValueError("fallback_used must identify a committed fallback extraction")
+        if self.fallback_used != bool(self.fallback_provider):
+            raise ValueError("fallback_provider is required exactly when fallback_used is true")
+        if committed and self.failure_code is not None:
+            raise ValueError("committed outcome cannot contain an operation failure")
+        if self.status == "evolution_failed" and self.failure_code is None:
+            raise ValueError("failed outcome requires a failure code")
+        return self
 
 
 class ProviderEvent(BaseModel):
@@ -75,6 +118,7 @@ class ProviderWriteDecision(BaseModel):
     candidate_ids: list[str] = Field(default_factory=list)
     raw_append_domains: list[MemoryDomain] = Field(default_factory=list)
     blocked_commit_domains: list[MemoryDomain] = Field(default_factory=list)
+    evolution_outcomes: list[ProviderEvolutionOutcome] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -87,6 +131,7 @@ class ProviderSyncResult(BaseModel):
     allowed_candidate_domains: list[MemoryDomain] = Field(default_factory=list)
     raw_append_domains: list[MemoryDomain] = Field(default_factory=list)
     blocked_commit_domains: list[MemoryDomain] = Field(default_factory=list)
+    evolution_outcomes: list[ProviderEvolutionOutcome] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from memorii.core.calibration.models import CalibrationResponseLevel
+from memorii.core.benchmark.calibration.models import CalibrationResponseLevel
 
 DEFAULT_DECISION_COSTS: dict[str, int] = {
     "hidden_fact_hallucinated": 100,

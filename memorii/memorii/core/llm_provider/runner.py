@@ -11,6 +11,11 @@ from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredReq
 from memorii.core.llm_provider.parser import parse_structured_response
 from memorii.core.prompts.registry import RegisteredPromptContract
 from memorii.core.prompts.render import PromptRenderer
+from memorii.core.prompts.semantics import (
+    PromptSemanticValidationError,
+    assert_semantic_contract_configuration,
+    validate_prompt_semantics,
+)
 from memorii.core.prompts.sensitivity import redact_sensitive_value
 
 
@@ -41,7 +46,14 @@ class PromptLLMRunner:
         request_id: str,
         metadata: dict[str, object] | None = None,
         output_model: type[BaseModel] | None = None,
+        semantic_model: type[BaseModel] | None = None,
     ) -> LLMDecisionResult:
+        assert_semantic_contract_configuration(
+            registration=contract.runtime_registration,
+            semantic_model=semantic_model,
+        )
+        if semantic_model is not None and output_model is None:
+            raise ValueError("semantic validation requires a transport output model")
         input_errors = sorted(
             Draft7Validator(contract.input_schema).iter_errors(cast(Any, variables)),
             key=lambda error: list(error.absolute_path),
@@ -88,7 +100,9 @@ class PromptLLMRunner:
                 schema_valid=False,
                 error=f"Provider request failed: {type(exc).__name__}",
             )
-            return LLMDecisionResult(request=request, response=failed_response, output=None, success=False, failure_mode="provider_error")
+            return LLMDecisionResult(
+                request=request, response=failed_response, output=None, success=False, failure_mode="provider_error"
+            )
 
         if raw_response.request_id != request_id:
             mismatch_response = raw_response.model_copy(
@@ -100,23 +114,52 @@ class PromptLLMRunner:
                     "error": "Provider returned mismatched request identifier.",
                 }
             )
-            return LLMDecisionResult(request=request, response=mismatch_response, output=None, success=False, failure_mode="provider_error")
+            return LLMDecisionResult(
+                request=request, response=mismatch_response, output=None, success=False, failure_mode="provider_error"
+            )
 
-        parsed_response = parse_structured_response(response=raw_response, output_schema=rendered.expected_output_schema)
-        success = parsed_response.valid_json and parsed_response.schema_valid and parsed_response.parsed_json is not None
+        parsed_response = parse_structured_response(
+            response=raw_response, output_schema=rendered.expected_output_schema
+        )
+        success = (
+            parsed_response.valid_json and parsed_response.schema_valid and parsed_response.parsed_json is not None
+        )
         parsed_output = parsed_response.parsed_json
+        failure_mode: str | None = None
         if success and output_model is not None:
             try:
-                parsed_output = output_model.model_validate(parsed_output).model_dump(mode="json")
+                transport_output = output_model.model_validate(parsed_output)
+                parsed_output = transport_output.model_dump(mode="json")
             except ValidationError as exc:
                 parsed_response = parsed_response.model_copy(
                     update={
                         "schema_valid": False,
-                        "error": f"Domain output validation failed: {type(exc).__name__}",
+                        "error": f"Transport output validation failed: {type(exc).__name__}",
                     }
                 )
                 success = False
-        failure_mode = None if success else ("invalid_json" if not parsed_response.valid_json else "schema_validation")
+                failure_mode = "schema_validation"
+            else:
+                try:
+                    validate_prompt_semantics(
+                        registration=contract.runtime_registration,
+                        output=transport_output,
+                        semantic_model=semantic_model,
+                    )
+                except PromptSemanticValidationError as exc:
+                    parsed_response = parsed_response.model_copy(
+                        update={
+                            "semantic_valid": False,
+                            "error": f"Semantic output validation failed: {type(exc).__name__}",
+                        }
+                    )
+                    success = False
+                    failure_mode = "semantic_validation"
+                else:
+                    if semantic_model is not None:
+                        parsed_response = parsed_response.model_copy(update={"semantic_valid": True})
+        if not success and failure_mode is None:
+            failure_mode = "invalid_json" if not parsed_response.valid_json else "schema_validation"
         return LLMDecisionResult(
             request=request,
             response=parsed_response,

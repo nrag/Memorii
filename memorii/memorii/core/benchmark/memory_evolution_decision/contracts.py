@@ -48,6 +48,7 @@ class MemoryEvolutionEvent(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+
 class MemoryEvolutionBeliefState(StrEnum):
     UNKNOWN = "unknown"
     CONFIDENT = "confident"
@@ -436,9 +437,7 @@ class MemoryEvolutionScenario(BaseModel):
             ]
             missing = sorted({item for item in referenced if item not in event_ids})
             if missing:
-                raise ValueError(
-                    f"checkpoint {checkpoint.checkpoint_id} references unknown event ids: {missing}"
-                )
+                raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown event ids: {missing}")
         return self
 
 
@@ -528,11 +527,13 @@ class MemoryEvolutionExecutionSelectionOutput(MemoryEvolutionExecutionSelection)
     rationale: str
 
 
-class MemoryEvolutionDecisionOutput(MemoryEvolutionDecision):
-    """Strict provider response for benchmark memory-evolution decisions."""
+class MemoryEvolutionDecisionOutput(BaseModel):
+    """Structural provider response validated against the decision domain model."""
 
+    operation: MemoryEvolutionDecisionOperation
     answer: str | None
     next_action: str | None
+    confidence: float = Field(ge=0.0, le=1.0)
     query_temporal_frame: MemoryEvolutionTemporalFrameOutput
     answer_selection: MemoryEvolutionAnswerSelectionOutput
     lifecycle_snapshot: MemoryEvolutionLifecycleSnapshotOutput
@@ -540,8 +541,12 @@ class MemoryEvolutionDecisionOutput(MemoryEvolutionDecision):
     execution_selection: MemoryEvolutionExecutionSelectionOutput | None
     evaluated_belief_ids: list[str]
     belief_scores: list[MemoryEvolutionBeliefScoreOutput]
+    rationale: str
     failure_mode: str | None
     requires_judge_review: bool
+
+    model_config = ConfigDict(extra="forbid")
+
 
 class MemoryEvolutionFailureBucket(StrEnum):
     SCHEMA_VALIDATION_FAILED = "schema_validation_failed"
@@ -561,7 +566,9 @@ class MemoryEvolutionFailureBucket(StrEnum):
     SELECTED_MEMORY_REJECTED = "selected_memory_rejected"
     WRONG_TEMPORAL_MODE = "wrong_temporal_mode"
     HISTORICAL_MEMORY_NOT_MARKED_QUERY_RELEVANT = "historical_memory_not_marked_query_relevant"
-    CHECKPOINT_ACTIVE_RECORD_MISSING_FROM_LIFECYCLE_SNAPSHOT = "checkpoint_active_record_missing_from_lifecycle_snapshot"
+    CHECKPOINT_ACTIVE_RECORD_MISSING_FROM_LIFECYCLE_SNAPSHOT = (
+        "checkpoint_active_record_missing_from_lifecycle_snapshot"
+    )
     COMMAND_EVENT_SELECTED_AS_ACTIVE_STATE = "command_event_selected_as_active_state"
     ACTIVE_EXECUTION_STATE_MISSING = "active_execution_state_missing"
     EXPECTED_CHECKPOINT_RETAINED_RECORD_MISSING = "expected_checkpoint_retained_record_missing"

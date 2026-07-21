@@ -100,7 +100,7 @@ def test_memory_evolution_sim_execution_continuation_allows_different_next_actio
     )
 
     assert aggregate.verdict == JudgeVerdict.PASS
-    assert diagnostics["answer_match_type"] == "diagnostic_only"
+    assert diagnostics.answer_match_type == "diagnostic_only"
 
 
 def test_memory_evolution_sim_execution_continuation_keeps_owner_facts_context_only() -> None:
@@ -133,8 +133,8 @@ def test_memory_evolution_sim_execution_continuation_keeps_owner_facts_context_o
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "execution_context_claim_used_as_support" in aggregate.critical_failure_buckets
-    assert "execution_context_claim_used_as_support" in diagnostics["precision_failure_classification"]
-    assert diagnostics["supporting_role_violations"]["execution_context_support"] == sorted(
+    assert "execution_context_claim_used_as_support" in diagnostics.precision_failure_classification
+    assert diagnostics.supporting_role_violations["execution_context_support"] == sorted(
         [current_owner.claim_id, project_type.claim_id]
     )
 
@@ -200,11 +200,11 @@ def test_memory_evolution_sim_execution_continuation_fails_when_blocked_branch_i
     vote_buckets = {bucket for vote in aggregate.votes for bucket in vote.failure_buckets}
     assert "selected_rejected_channel_overlap" in vote_buckets
     assert "supporting_rejected_channel_overlap" in vote_buckets
-    assert diagnostics["channel_overlap"]["critical_ids"]["selected_rejected_claim_ids"] == [blocked_claim_id]
-    assert diagnostics["channel_overlap"]["critical_ids"]["supporting_rejected_claim_ids"] == [blocked_claim_id]
-    assert "selected_rejected_channel_overlap" in diagnostics["precision_failure_classification"]
-    assert "supporting_rejected_channel_overlap" in diagnostics["precision_failure_classification"]
-    assert "execution_text_mismatch_only" not in diagnostics["failure_classification"]
+    assert diagnostics.channel_overlap.critical_ids["selected_rejected_claim_ids"] == [blocked_claim_id]
+    assert diagnostics.channel_overlap.critical_ids["supporting_rejected_claim_ids"] == [blocked_claim_id]
+    assert "selected_rejected_channel_overlap" in diagnostics.precision_failure_classification
+    assert "supporting_rejected_channel_overlap" in diagnostics.precision_failure_classification
+    assert "execution_text_mismatch_only" not in diagnostics.failure_classification
 
 
 def test_memory_evolution_sim_execution_continuation_requires_active_action_support_and_citation() -> None:
@@ -234,8 +234,10 @@ def test_memory_evolution_sim_execution_continuation_requires_active_action_supp
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "execution_state_support_missing" in aggregate.critical_failure_buckets
     assert "active_action_provenance_missing" in aggregate.critical_failure_buckets
-    assert diagnostics["selected_claim_ids_missing_support"] == checkpoint.expected_execution_claim_ids
-    assert diagnostics["selected_action_state_event_ids_missing_support"] == checkpoint.expected_execution_citation_event_ids
-    assert "execution_state_support_missing" in diagnostics["failure_classification"]
-    assert "active_action_provenance_missing" in diagnostics["failure_classification"]
-    assert "unclassified_failure" not in diagnostics["failure_classification"]
+    assert diagnostics.selected_claim_ids_missing_support == checkpoint.expected_execution_claim_ids
+    assert (
+        diagnostics.selected_action_state_event_ids_missing_support == checkpoint.expected_execution_citation_event_ids
+    )
+    assert "execution_state_support_missing" in diagnostics.failure_classification
+    assert "active_action_provenance_missing" in diagnostics.failure_classification
+    assert "unclassified_failure" not in diagnostics.failure_classification

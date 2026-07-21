@@ -32,7 +32,7 @@ def _observation(*, language: str) -> CanonicalMemoryRecord:
 
 
 def _scope() -> MemoryScope:
-    return MemoryScope(scope_key="task:atlas", task_id="task:atlas")
+    return MemoryScope(task_id="task:atlas")
 
 
 def test_english_rules_do_not_parse_text_declared_as_spanish() -> None:
@@ -109,7 +109,5 @@ def test_structured_analysis_can_resolve_spanish_query_from_visible_catalog() ->
     assert decision.semantic_frame_status == SemanticFrameStatus.MATCHED
     assert decision.abstained is False
     assert len(decision.selected_record_ids) == 1
-    selected_states = {
-        state.claim_id: state for state in service.retrieve_claim_states()
-    }
+    selected_states = {state.claim_id: state for state in service.retrieve_claim_states()}
     assert selected_states[decision.selected_record_ids[0]].object_value == "Bob"

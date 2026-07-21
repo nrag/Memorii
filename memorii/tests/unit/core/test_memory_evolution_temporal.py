@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from memorii.core.memory_evolution.models import MemoryGraphLifecycleState, MemoryScope
+from memorii.core.memory_evolution.models import MemoryScope, RecordLifecycleState
 from memorii.core.memory_evolution.query_analysis import (
     LexicalQueryAnalyzer,
     StructuredQueryAnalyzer,
@@ -74,9 +74,9 @@ def test_point_in_time_current_allows_claim_until_supersession_but_now_does_not(
     )
 
 
-@pytest.mark.parametrize("lifecycle_state", list(MemoryGraphLifecycleState))
+@pytest.mark.parametrize("lifecycle_state", list(RecordLifecycleState))
 def test_current_temporal_eligibility_is_exhaustive_and_fail_closed(
-    lifecycle_state: MemoryGraphLifecycleState,
+    lifecycle_state: RecordLifecycleState,
 ) -> None:
     decision = evaluate_temporal_eligibility(
         lifecycle_state=lifecycle_state,
@@ -85,7 +85,7 @@ def test_current_temporal_eligibility_is_exhaustive_and_fail_closed(
         temporal_kind=QueryTemporalKind.CURRENT,
     )
 
-    assert decision.eligible is (lifecycle_state == MemoryGraphLifecycleState.ACTIVE)
+    assert decision.eligible is (lifecycle_state == RecordLifecycleState.ACTIVE)
 
 
 def test_temporal_candidate_rejects_unknown_lifecycle_state() -> None:
@@ -139,7 +139,6 @@ def test_global_request_normalizes_unscoped_frame_to_explicit_global_scope() -> 
     [
         (
             MemoryScope(
-                scope_key="task:incident",
                 task_id="task:incident",
                 session_id="session:incident",
                 user_id="user:one",
@@ -148,13 +147,12 @@ def test_global_request_normalizes_unscoped_frame_to_explicit_global_scope() -> 
         ),
         (
             MemoryScope(
-                scope_key="session:incident",
                 session_id="session:incident",
                 user_id="user:one",
             ),
             QueryScopeKind.SESSION,
         ),
-        (MemoryScope(scope_key="user:one", user_id="user:one"), QueryScopeKind.USER),
+        (MemoryScope(user_id="user:one"), QueryScopeKind.USER),
     ],
 )
 def test_structured_frame_inherits_typed_request_scope(
@@ -174,7 +172,6 @@ def test_structured_frame_inherits_typed_request_scope(
 
 def test_task_request_can_select_entity_from_readable_parent_scope() -> None:
     request_scope = MemoryScope(
-        scope_key="task:incident",
         task_id="task:incident",
         session_id="session:incident",
         user_id="user:one",
@@ -186,7 +183,6 @@ def test_task_request_can_select_entity_from_readable_parent_scope() -> None:
                 entity_id="atlas",
                 names=["Atlas"],
                 scope=MemoryScope(
-                    scope_key="session:incident",
                     session_id="session:incident",
                     user_id="user:one",
                 ),
@@ -201,7 +197,6 @@ def test_task_request_can_select_entity_from_readable_parent_scope() -> None:
 
 def test_task_request_can_use_temporal_anchor_from_readable_parent_scope() -> None:
     request_scope = MemoryScope(
-        scope_key="task:incident",
         task_id="task:incident",
         session_id="session:incident",
         user_id="user:one",
@@ -213,7 +208,6 @@ def test_task_request_can_use_temporal_anchor_from_readable_parent_scope() -> No
         valid_to=datetime(2026, 6, 8, tzinfo=UTC),
         source_ids=["event:session-release"],
         scope=MemoryScope(
-            scope_key="session:incident",
             session_id="session:incident",
             user_id="user:one",
         ),
@@ -237,7 +231,6 @@ def test_task_request_can_use_temporal_anchor_from_readable_parent_scope() -> No
 
 def test_task_request_rejects_entity_from_unreadable_sibling_scope() -> None:
     request_scope = MemoryScope(
-        scope_key="task:incident",
         task_id="task:incident",
         session_id="session:incident",
         user_id="user:one",
@@ -250,7 +243,6 @@ def test_task_request_rejects_entity_from_unreadable_sibling_scope() -> None:
                     entity_id="atlas",
                     names=["Atlas"],
                     scope=MemoryScope(
-                        scope_key="session:other",
                         session_id="session:other",
                         user_id="user:one",
                     ),
@@ -400,7 +392,7 @@ def test_structured_catalog_anchor_uses_catalog_interval_and_request_scope() -> 
         names=[anchor_text],
         valid_from=datetime(2026, 6, 1, tzinfo=UTC),
         valid_to=datetime(2026, 6, 8, tzinfo=UTC),
-        scope=MemoryScope(scope_key="task:release", task_id="task:release"),
+        scope=MemoryScope(task_id="task:release"),
         source_ids=["event:release"],
     )
     analyzer = StructuredQueryAnalyzer(
@@ -426,7 +418,7 @@ def test_structured_catalog_anchor_uses_catalog_interval_and_request_scope() -> 
         reference_time=datetime(2026, 7, 16, tzinfo=UTC),
         entity_candidates=[],
         anchor_catalog=TemporalAnchorCatalog(anchors=[anchor]),
-        request_scope=MemoryScope(scope_key="task:release", task_id="task:release"),
+        request_scope=MemoryScope(task_id="task:release"),
     )
 
     assert result.failure_code is None
@@ -739,9 +731,7 @@ def test_structured_graph_pattern_rejects_entity_type_mismatch() -> None:
         query="Who owns the project?",
         language="en",
         reference_time=None,
-        entity_candidates=[
-            TemporalEntityCandidate(entity_id="service", names=["Atlas"], entity_type="service")
-        ],
+        entity_candidates=[TemporalEntityCandidate(entity_id="service", names=["Atlas"], entity_type="service")],
         anchor_catalog=TemporalAnchorCatalog(),
     )
 
@@ -1032,7 +1022,7 @@ def test_registered_temporal_anchor_is_filtered_by_query_scope() -> None:
                 names=["release week"],
                 valid_from=datetime(2026, 6, 1, tzinfo=UTC),
                 valid_to=datetime(2026, 6, 8, tzinfo=UTC),
-                scope=MemoryScope(scope_key="task:incident", task_id="task:incident"),
+                scope=MemoryScope(task_id="task:incident"),
                 source_ids=["event:incident-release"],
             ),
             TemporalAnchor(
@@ -1040,7 +1030,7 @@ def test_registered_temporal_anchor_is_filtered_by_query_scope() -> None:
                 names=["release week"],
                 valid_from=datetime(2026, 7, 1, tzinfo=UTC),
                 valid_to=datetime(2026, 7, 8, tzinfo=UTC),
-                scope=MemoryScope(scope_key="task:platform", task_id="task:platform"),
+                scope=MemoryScope(task_id="task:platform"),
                 source_ids=["event:platform-release"],
             ),
         ]
@@ -1050,7 +1040,7 @@ def test_registered_temporal_anchor_is_filtered_by_query_scope() -> None:
         "What happened to Atlas during release week?",
         anchor_catalog=catalog,
         entity_candidates=[TemporalEntityCandidate(entity_id="atlas", names=["Atlas"])],
-        request_scope=MemoryScope(scope_key="task:incident", task_id="task:incident"),
+        request_scope=MemoryScope(task_id="task:incident"),
     )
 
     assert result.status == "resolved"
@@ -1065,7 +1055,7 @@ def test_scoped_temporal_anchor_does_not_leak_into_global_query() -> None:
                 names=["release week"],
                 valid_from=datetime(2026, 6, 1, tzinfo=UTC),
                 valid_to=datetime(2026, 6, 8, tzinfo=UTC),
-                scope=MemoryScope(scope_key="task:incident", task_id="task:incident"),
+                scope=MemoryScope(task_id="task:incident"),
                 source_ids=["event:incident-release"],
             )
         ]
@@ -1078,7 +1068,6 @@ def test_scoped_temporal_anchor_does_not_leak_into_global_query() -> None:
 
 def test_session_scoped_temporal_anchor_preserves_full_scope_identity() -> None:
     session_scope = MemoryScope(
-        scope_key="session:incident",
         session_id="session:incident",
         user_id="user:one",
     )
@@ -1108,7 +1097,6 @@ def test_session_scoped_temporal_anchor_preserves_full_scope_identity() -> None:
 
 def test_temporal_anchor_prefers_most_specific_readable_scope() -> None:
     request_scope = MemoryScope(
-        scope_key="task:incident",
         task_id="task:incident",
         session_id="session:incident",
         user_id="user:one",
@@ -1120,7 +1108,7 @@ def test_temporal_anchor_prefers_most_specific_readable_scope() -> None:
                 names=["release week"],
                 valid_from=datetime(2026, 5, 1, tzinfo=UTC),
                 valid_to=datetime(2026, 5, 8, tzinfo=UTC),
-                scope=MemoryScope(scope_key="user:one", user_id="user:one"),
+                scope=MemoryScope(user_id="user:one"),
                 source_ids=["event:user-release"],
             ),
             TemporalAnchor(
@@ -1129,7 +1117,6 @@ def test_temporal_anchor_prefers_most_specific_readable_scope() -> None:
                 valid_from=datetime(2026, 6, 1, tzinfo=UTC),
                 valid_to=datetime(2026, 6, 8, tzinfo=UTC),
                 scope=MemoryScope(
-                    scope_key="session:incident",
                     session_id="session:incident",
                     user_id="user:one",
                 ),

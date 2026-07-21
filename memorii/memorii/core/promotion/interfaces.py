@@ -18,3 +18,4 @@ class PromotionExecutionPolicy(Protocol):
         context: PromotionExecutionContext,
     ) -> PromotionExecutionPlan:
         """Produce an execution plan without mutating storage."""
+        ...

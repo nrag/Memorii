@@ -1,6 +1,6 @@
 # Static Tooling Workflow
 
-This project uses Ruff and scoped Pyright checks as PR gates. Ruff runs across the repository in error mode; Pyright is intentionally scoped to the memory-evolution, benchmark, calibration, prompt-contract, and benchmark-runner surfaces while type coverage is expanded deliberately.
+This project uses Ruff and scoped Pyright checks as PR gates. Ruff runs across the repository in error mode; Pyright covers every runtime, integration, benchmark, calibration, prompt-contract, and benchmark-runner surface owned by the engineering-hardening work.
 
 ## Install
 
@@ -53,11 +53,15 @@ The Pyright scope is intentionally limited to:
 - `memorii/core/benchmark/artifact_validation.py`
 - `memorii/core/benchmark/reproducibility.py`
 - `memorii/core/memory_evolution`
+- `memorii/core/memory_plane`
+- `memorii/core/provider`
+- `memorii/core/promotion`
 - `memorii/core/benchmark/memory_evolution_sim`
 - `memorii/core/benchmark/memory_evolution_runtime`
-- `memorii/core/calibration`
+- `memorii/core/benchmark/calibration`
 - `memorii/core/llm_decision`
 - `memorii/core/prompts`
+- `memorii/integrations`
 - `memorii/tools/benchmark_suites`
 
 Pyright is error-mode for the scoped surfaces above. Full-repo type checking is intentionally deferred until the rest of the repository has an explicit baseline.

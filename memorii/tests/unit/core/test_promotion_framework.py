@@ -191,6 +191,42 @@ def test_conflicting_user_candidate_is_not_blindly_committed() -> None:
     assert result.reason_codes == [PromotionReasonCode.POSSIBLE_CONFLICT_WITH_COMMITTED_MEMORY]
 
 
+def test_projection_from_same_source_is_not_independent_conflict_evidence() -> None:
+    plane = MemoryPlaneService()
+    source_record_id = "tx:write:user-preference"
+    plane.stage_record(
+        CanonicalMemoryRecord(
+            memory_id="mem:evolution:claim:user-preference",
+            domain=MemoryDomain.USER,
+            text="ent:user preference is concise bullet points",
+            content={"memory_evolution_kind": "claim_state"},
+            status=CommitStatus.COMMITTED,
+            source_kind="memory_evolution",
+            task_id="task:1",
+            source_record_ids=[source_record_id],
+        )
+    )
+    candidate = _candidate(
+        memory_id="cand:user:preference",
+        domain=MemoryDomain.USER,
+        text="user prefers concise bullet points",
+        source_kind="provider:memory_write_user",
+    ).model_copy(update={"source_record_ids": [source_record_id]})
+    plane.stage_record(candidate)
+
+    service = PromotionService(
+        context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+        execution_policy=RuleBasedPromotionExecutionPolicy(),
+        executor=PromotionExecutor(memory_plane=plane),
+    )
+
+    result = service.promote_candidate(candidate.memory_id)
+
+    assert result.action == PromotionAction.COMMIT
+    assert result.conflict_with_memory_ids == []
+    assert result.reason_codes == [PromotionReasonCode.USER_EXPLICIT_WRITE_SAFE]
+
+
 def test_promoted_memory_is_visible_through_provider_prefetch_trace() -> None:
     plane = MemoryPlaneService()
     candidate = _candidate(
@@ -246,6 +282,7 @@ def test_provider_staged_learning_candidate_uses_natural_source_kind_for_promoti
         user_id="user:learning",
         action="upsert",
         target="user",
+        operation_id="test:promotion:natural-source-kind",
     )
     assert staged.candidate_ids
     candidate_id = staged.candidate_ids[0]

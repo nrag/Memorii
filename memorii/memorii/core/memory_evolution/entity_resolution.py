@@ -22,8 +22,8 @@ from memorii.core.memory_evolution.models import (
 )
 
 
-def _scope_identity(scope: MemoryScope) -> tuple[str, str | None, str | None, str | None]:
-    return (scope.scope_key, scope.task_id, scope.session_id, scope.user_id)
+def _scope_identity(scope: MemoryScope) -> tuple[str | None, str | None, str | None]:
+    return scope.identity
 
 
 class EntityResolutionService:
@@ -221,7 +221,7 @@ class EntityResolutionService:
         identity = "|".join(
             [
                 mention.entity_id,
-                mention.scope.scope_key,
+                mention.scope.stable_id(),
                 decision_type.value,
                 parent_entity_id or "",
                 *candidate_ids,
@@ -248,12 +248,12 @@ class EntityResolutionService:
         entity_id: str | None,
         links: list[EntityLinkState],
         *,
-        scope_key: str,
+        scope: MemoryScope,
     ) -> EntityLinkState | None:
         if entity_id is None:
             return None
         for link in links:
-            if link.canonical_entity_id == entity_id and link.scope.scope_key == scope_key:
+            if link.canonical_entity_id == entity_id and link.scope == scope:
                 return link
         return None
 

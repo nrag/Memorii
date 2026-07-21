@@ -93,7 +93,7 @@ def test_memory_evolution_sim_alias_answer_passes_when_entity_is_correct() -> No
     )
 
     assert aggregate.verdict == JudgeVerdict.PASS
-    assert diagnostics["answer_match_type"] == "semantic_entity"
+    assert diagnostics.answer_match_type == "semantic_entity"
 
 
 def test_memory_evolution_sim_execution_checkpoint_requires_next_action_shape() -> None:
@@ -117,7 +117,7 @@ def test_memory_evolution_sim_execution_checkpoint_requires_next_action_shape() 
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "abandoned_branch_selected" in aggregate.critical_failure_buckets
-    assert "wrong_output_shape" in diagnostics["failure_classification"]
+    assert "wrong_output_shape" in diagnostics.failure_classification
 
 
 def test_memory_evolution_sim_missing_visible_relation_is_classified() -> None:
@@ -145,8 +145,8 @@ def test_memory_evolution_sim_missing_visible_relation_is_classified() -> None:
     )
 
     assert aggregate.verdict == JudgeVerdict.FAIL
-    assert diagnostics["missing_expected_ids"]["relation_ids"] == checkpoint.expected_relation_ids
-    assert "missing_visible_relation" in diagnostics["failure_classification"]
+    assert diagnostics.missing_expected_ids["relation_ids"] == checkpoint.expected_relation_ids
+    assert "missing_visible_relation" in diagnostics.failure_classification
 
 
 def test_memory_evolution_sim_belief_judge_uses_explicit_ranking_field() -> None:
@@ -187,8 +187,8 @@ def test_memory_evolution_sim_current_truth_fails_when_stale_claim_is_selected()
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "selected_truth_precision_error" in aggregate.critical_failure_buckets
-    assert diagnostics["selected_noncurrent_claim_ids"] == checkpoint.expected_excluded_claim_ids
-    assert "selected_noncurrent_claim" in diagnostics["precision_failure_classification"]
+    assert diagnostics.selected_noncurrent_claim_ids == checkpoint.expected_excluded_claim_ids
+    assert "selected_noncurrent_claim" in diagnostics.precision_failure_classification
 
 
 def test_memory_evolution_sim_current_truth_fails_when_stale_claim_is_supporting() -> None:
@@ -214,8 +214,8 @@ def test_memory_evolution_sim_current_truth_fails_when_stale_claim_is_supporting
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "supporting_noncurrent_claim_selected" in aggregate.critical_failure_buckets
-    assert diagnostics["supporting_excluded_ids"]["claim_ids"] == checkpoint.expected_excluded_claim_ids
-    assert "supporting_excluded_id" in diagnostics["precision_failure_classification"]
+    assert diagnostics.supporting_excluded_ids["claim_ids"] == checkpoint.expected_excluded_claim_ids
+    assert "supporting_excluded_id" in diagnostics.precision_failure_classification
 
 
 def test_memory_evolution_sim_current_truth_fails_when_selected_claim_lacks_support_closure() -> None:
@@ -245,9 +245,9 @@ def test_memory_evolution_sim_current_truth_fails_when_selected_claim_lacks_supp
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "selected_claim_support_missing" in aggregate.critical_failure_buckets
     assert "selected_claim_provenance_missing" in aggregate.critical_failure_buckets
-    assert diagnostics["selected_claim_ids_missing_support"] == [selected_claim_id]
-    assert diagnostics["selected_claim_evidence_event_ids_missing_support"]
-    assert "selected_claim_support_missing" in diagnostics["precision_failure_classification"]
+    assert diagnostics.selected_claim_ids_missing_support == [selected_claim_id]
+    assert diagnostics.selected_claim_evidence_event_ids_missing_support
+    assert "selected_claim_support_missing" in diagnostics.precision_failure_classification
 
 
 def test_memory_evolution_sim_current_truth_fails_when_selected_claim_lacks_direct_citation() -> None:
@@ -277,19 +277,17 @@ def test_memory_evolution_sim_current_truth_fails_when_selected_claim_lacks_dire
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "selected_claim_support_missing" not in aggregate.critical_failure_buckets
     assert "selected_claim_provenance_missing" in aggregate.critical_failure_buckets
-    assert diagnostics["selected_claim_ids_missing_support"] == []
-    closure_errors = diagnostics["selected_claim_support_closure_errors"]
-    assert closure_errors == [
-        {
-            "claim_id": selected_claim_id,
-            "missing_supporting_claim": False,
-            "expected_event_ids": diagnostics["selected_claim_evidence_event_ids_missing_support"],
-            "present_event_ids": [],
-            "missing_event_ids": diagnostics["selected_claim_evidence_event_ids_missing_support"],
-            "is_action_state": False,
-        }
-    ]
-    assert "selected_claim_provenance_missing" in diagnostics["precision_failure_classification"]
+    assert diagnostics.selected_claim_ids_missing_support == []
+    closure_errors = diagnostics.selected_claim_support_closure_errors
+    assert len(closure_errors) == 1
+    closure_error = closure_errors[0]
+    assert closure_error.claim_id == selected_claim_id
+    assert closure_error.missing_supporting_claim is False
+    assert closure_error.expected_event_ids == diagnostics.selected_claim_evidence_event_ids_missing_support
+    assert closure_error.present_event_ids == []
+    assert closure_error.missing_event_ids == diagnostics.selected_claim_evidence_event_ids_missing_support
+    assert closure_error.is_action_state is False
+    assert "selected_claim_provenance_missing" in diagnostics.precision_failure_classification
 
 
 def test_memory_evolution_sim_current_truth_passes_when_stale_claim_is_rejected() -> None:
@@ -310,8 +308,8 @@ def test_memory_evolution_sim_current_truth_passes_when_stale_claim_is_rejected(
     )
 
     assert aggregate.verdict == JudgeVerdict.PASS
-    assert diagnostics["rejected_expected_ids"]["claim_ids"] == checkpoint.expected_excluded_claim_ids
-    assert diagnostics["precision_failure_classification"] == []
+    assert diagnostics.rejected_expected_ids["claim_ids"] == checkpoint.expected_excluded_claim_ids
+    assert diagnostics.precision_failure_classification == []
 
 
 def test_memory_evolution_sim_definition_support_overlap_is_warning_not_failure() -> None:
@@ -345,13 +343,13 @@ def test_memory_evolution_sim_definition_support_overlap_is_warning_not_failure(
     )
 
     assert aggregate.verdict == JudgeVerdict.PASS
-    assert diagnostics["allowed_definition_selected_ids"] == {
+    assert diagnostics.allowed_definition_selected_ids == {
         "claim_ids": [project_type_claim.claim_id],
         "citation_event_ids": [project_type_claim.evidence.source_event_ids[0]],
     }
-    assert diagnostics["channel_overlap"]["critical"] == []
-    assert diagnostics["channel_overlap"]["warning"] == ["role_channel_context_overlap"]
-    assert diagnostics["precision_failure_classification"] == []
+    assert diagnostics.channel_overlap.critical == []
+    assert diagnostics.channel_overlap.warning == ["role_channel_context_overlap"]
+    assert diagnostics.precision_failure_classification == []
 
 
 def test_memory_evolution_sim_required_definition_claim_in_rejected_channel_fails() -> None:
@@ -391,8 +389,8 @@ def test_memory_evolution_sim_required_definition_claim_in_rejected_channel_fail
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "definition_claim_rejected" in aggregate.critical_failure_buckets
-    assert diagnostics["rejected_required_definition_claim_ids"] == [required_definition_claim_id]
-    assert "definition_claim_rejected" in diagnostics["precision_failure_classification"]
+    assert diagnostics.rejected_required_definition_claim_ids == [required_definition_claim_id]
+    assert "definition_claim_rejected" in diagnostics.precision_failure_classification
 
 
 def test_memory_evolution_sim_historical_truth_allows_superseded_selected_claim() -> None:
@@ -435,10 +433,10 @@ def test_memory_evolution_sim_historical_truth_requires_selected_claim_subject_e
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "entity_role_mismatch" in aggregate.critical_failure_buckets
-    assert diagnostics["selected_entity_role_mismatches"] == [claim.subject.entity_id]
-    assert diagnostics["missing_selected_subject_entity_ids"] == [claim.subject.entity_id]
-    assert "entity_role_mismatch" in diagnostics["precision_failure_classification"]
-    assert "entity_role_mismatch" in diagnostics["failure_classification"]
+    assert diagnostics.selected_entity_role_mismatches == [claim.subject.entity_id]
+    assert diagnostics.missing_selected_subject_entity_ids == [claim.subject.entity_id]
+    assert "entity_role_mismatch" in diagnostics.precision_failure_classification
+    assert "entity_role_mismatch" in diagnostics.failure_classification
 
 
 def test_memory_evolution_sim_current_truth_requires_selected_claim_subject_entity() -> None:
@@ -502,7 +500,7 @@ def test_memory_evolution_sim_graph_reconstruction_answer_is_optional_by_contrac
     assert checkpoint.checkpoint_contract.answer_required is False
     assert "answer_required" not in context.model_dump_json()
     assert aggregate.verdict == JudgeVerdict.PASS
-    assert diagnostics["answer_match_type"] == "optional_missing"
+    assert diagnostics.answer_match_type == "optional_missing"
 
 
 def test_memory_evolution_sim_entity_reconstruction_requires_subject_definition_claims() -> None:
@@ -515,7 +513,9 @@ def test_memory_evolution_sim_entity_reconstruction_requires_subject_definition_
     service_type_claim = checkpoint.expected_claim_ids[1]
     output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
         update={
-            "selected_claim_ids": [claim_id for claim_id in checkpoint.expected_claim_ids if claim_id != service_type_claim],
+            "selected_claim_ids": [
+                claim_id for claim_id in checkpoint.expected_claim_ids if claim_id != service_type_claim
+            ],
             "supporting_claim_ids": [
                 claim_id for claim_id in checkpoint.expected_claim_ids if claim_id != service_type_claim
             ],
@@ -533,4 +533,4 @@ def test_memory_evolution_sim_entity_reconstruction_requires_subject_definition_
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "claim_rekey_error" in aggregate.critical_failure_buckets
-    assert "missing_definition_claim" in diagnostics["failure_classification"]
+    assert "missing_definition_claim" in diagnostics.failure_classification

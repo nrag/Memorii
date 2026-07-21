@@ -1,13 +1,13 @@
 import pytest
 from memorii.core.benchmark.artifact_rows import BenchmarkReportSummary, SimScenarioResultRow
-from memorii.core.calibration.gates import evaluate_live_gate
-from memorii.core.calibration.models import CalibrationReport, DecisionCostReport
-from memorii.core.calibration.simulation_models import (
+from memorii.core.benchmark.calibration.gates import evaluate_live_gate
+from memorii.core.benchmark.calibration.models import CalibrationReport, DecisionCostReport
+from memorii.core.benchmark.calibration.simulation_models import (
     calibrated_logistic_normal_parameters,
     family_mixture_rate,
     simulation_model_moments,
 )
-from memorii.core.calibration.statistics import (
+from memorii.core.benchmark.calibration.statistics import (
     DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS,
     GateSimulationModel,
     certify_scenario_interval_coverage,

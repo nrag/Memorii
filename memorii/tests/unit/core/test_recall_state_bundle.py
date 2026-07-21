@@ -54,6 +54,7 @@ def test_prefetch_with_work_state_service_and_no_matching_states_has_no_section(
     provider.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="please implement parser changes",
+        operation_id="test:recall:no-match",
         session_id="session:other",
         task_id="task:other",
         user_id="user:other",
@@ -73,6 +74,7 @@ def test_prefetch_includes_matching_candidate_task_state() -> None:
     provider.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="please implement parser updates and write tests",
+        operation_id="test:recall:matching-state",
         session_id="session:2",
         task_id="task:2",
         user_id="user:2",
@@ -202,6 +204,7 @@ def test_last_recall_bundle_trace_is_populated() -> None:
     provider.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="please implement and update parser",
+        operation_id="test:recall:trace",
         session_id="session:5",
         task_id="task:5",
         user_id="user:5",

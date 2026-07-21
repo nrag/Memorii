@@ -6,8 +6,8 @@ import argparse
 import json
 from pathlib import Path
 
+from memorii.core.benchmark.calibration.gates import evaluate_live_gate, load_live_reports
 from memorii.core.benchmark.memory_evolution_sim import MEMORY_EVOLUTION_SCENARIO_FAMILIES
-from memorii.core.calibration.gates import evaluate_live_gate, load_live_reports
 
 
 def _parser() -> argparse.ArgumentParser:

@@ -20,6 +20,7 @@ from memorii.core.memory_evolution.extraction import (
     EnglishRuleMemoryExtractor,
     HybridMemoryExtractor,
     LLMMemoryExtractor,
+    MemoryExtractionRunError,
     MemoryExtractor,
 )
 from memorii.core.memory_evolution.factory import build_memory_extractor_from_env
@@ -45,16 +46,18 @@ from memorii.core.memory_evolution.models import (
     EvidenceSpan,
     ExtractedAction,
     ExtractedClaim,
+    ExtractionFailureCode,
     ExtractionRun,
+    ExtractionRunStatus,
     ExtractionTriggerMode,
     MemoryEvolutionResult,
     MemoryGraphEdge,
     MemoryGraphEdgeType,
-    MemoryGraphLifecycleState,
     MemoryGraphNode,
     MemoryGraphNodeType,
     MemoryGraphSnapshot,
     MemoryScope,
+    RecordLifecycleState,
     RetrievalView,
     SourceModality,
     SourceObservation,
@@ -94,6 +97,7 @@ from memorii.core.memory_evolution.query_graph import (
     ResolvedEntityReference,
     UnresolvedEntityReference,
 )
+from memorii.core.memory_evolution.record_projection import source_observation_from_record
 from memorii.core.memory_evolution.reference import BuiltInReferenceKnowledgeProvider, ReferenceClaim, ReferenceEntity
 from memorii.core.memory_evolution.retrieval import (
     GraphAuditRequest,
@@ -109,7 +113,7 @@ from memorii.core.memory_evolution.retrieval import (
     rank_claims,
     reconcile_memory_query,
 )
-from memorii.core.memory_evolution.service import MemoryEvolutionService, source_observation_from_record
+from memorii.core.memory_evolution.service import MemoryEvolutionService
 from memorii.core.memory_evolution.temporal_compilation import (
     RelativeTemporalExpressionResolver,
     TemporalCompilationError,
@@ -158,10 +162,12 @@ __all__ = [
     "EvidenceSpan",
     "ExtractedAction",
     "ExtractedClaim",
+    "ExtractionFailureCode",
     "ExtractionRun",
+    "ExtractionRunStatus",
     "MemoryGraphEdge",
     "MemoryGraphEdgeType",
-    "MemoryGraphLifecycleState",
+    "RecordLifecycleState",
     "MemoryGraphNode",
     "MemoryGraphNodeType",
     "MemoryGraphProjector",
@@ -170,6 +176,7 @@ __all__ = [
     "MemoryGraphValidator",
     "MemoryScope",
     "MemoryEvolutionResult",
+    "MemoryExtractionRunError",
     "EvolutionMutationPlan",
     "MemoryEvolutionService",
     "MemoryEvolutionMutationValidationError",

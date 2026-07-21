@@ -13,6 +13,7 @@ from memorii.core.benchmark.execution_graph_decision import (
 from memorii.core.benchmark.hotpotqa_official import HotpotQAAnswerContext, HotpotQAAnswerOutput
 from memorii.core.benchmark.lifecycle_decision import LifecycleDecisionContext, LifecycleDecisionOutput
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
+    MemoryEvolutionDecision,
     MemoryEvolutionDecisionContext,
     MemoryEvolutionDecisionOutput,
 )
@@ -34,6 +35,7 @@ class _BenchmarkPromptAdapter:
     prompt_ref: ClassVar[str]
     owner: ClassVar[PromptOwner]
     output_model: ClassVar[type[BaseModel]]
+    semantic_model: ClassVar[type[BaseModel] | None] = None
 
     def __init__(
         self,
@@ -67,6 +69,7 @@ class _BenchmarkPromptAdapter:
             request_id=request_id,
             metadata=metadata,
             output_model=self.output_model,
+            semantic_model=self.semantic_model,
         )
 
 
@@ -118,6 +121,7 @@ class LLMMemoryEvolutionDecisionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "memory_evolution_decision:v1"
     owner = PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER
     output_model = MemoryEvolutionDecisionOutput
+    semantic_model = MemoryEvolutionDecision
 
     def decide(
         self,

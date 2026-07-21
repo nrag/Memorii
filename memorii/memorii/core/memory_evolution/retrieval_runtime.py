@@ -21,8 +21,8 @@ from memorii.core.memory_evolution.models import (
     ClaimState,
     EntityLinkState,
     ExtractedAction,
-    MemoryGraphLifecycleState,
     MemoryScope,
+    RecordLifecycleState,
     RetrievalView,
 )
 from memorii.core.memory_evolution.predicates import PredicateRegistry
@@ -104,7 +104,7 @@ class MemoryEvolutionRetrievalRuntime:
                 names=sorted({link.mention_text, link.normalized_name, *link.aliases}),
                 entity_type=link.entity_type.value,
                 scope=link.scope,
-                lifecycle_state=MemoryGraphLifecycleState(link.lifecycle_state.value),
+                lifecycle_state=RecordLifecycleState(link.lifecycle_state.value),
                 lineage_parent_entity_id=link.lineage_parent_entity_id,
                 valid_from=link.valid_from,
                 valid_to=link.valid_to,
@@ -141,7 +141,6 @@ class MemoryEvolutionRetrievalRuntime:
                 temporal_frame=analysis.temporal_frame,
                 predicate_id=(None if request.purpose == RetrievalPurpose.GRAPH_AUDIT else analysis.predicate_id),
                 subject_entity_id=analysis.subject_entity_id,
-                readable_scope_keys=request_scope.readable_scope_keys,
             )
         except StructuredQueryConstraintError as exc:
             frame = QueryTemporalFrame(
@@ -156,8 +155,7 @@ class MemoryEvolutionRetrievalRuntime:
                     SemanticFrameStatus.UNSUPPORTED
                     if analysis is not None
                     and (
-                        analysis.failure_code is not None
-                        or analysis.analysis_source in {"language_guard", "provider"}
+                        analysis.failure_code is not None or analysis.analysis_source in {"language_guard", "provider"}
                     )
                     else SemanticFrameStatus.AMBIGUOUS
                 ),
@@ -189,7 +187,7 @@ class MemoryEvolutionRetrievalRuntime:
             ),
             predicate_id=resolved_request.predicate_id,
             subject_entity_id=None,
-            readable_scope_keys=resolved_request.readable_scope_keys,
+            request_scope=resolved_request.scope,
         )
         entity_names_by_id = {
             link.canonical_entity_id: {link.mention_text, link.normalized_name, *link.aliases} for link in links
@@ -206,9 +204,7 @@ class MemoryEvolutionRetrievalRuntime:
         for state in states:
             subject_link = link_by_id.get(state.subject_link_id or "")
             subject_entity_by_claim[state.claim_id] = (
-                subject_link.canonical_entity_id
-                if subject_link is not None
-                else state.claim_key.subject_entity_id
+                subject_link.canonical_entity_id if subject_link is not None else state.claim_key.subject_entity_id
             )
             if state.object_link_id is None:
                 continue
@@ -234,15 +230,12 @@ class MemoryEvolutionRetrievalRuntime:
                 if subject_entity_id is None:
                     raise RuntimeError("resolved graph pattern omitted subject entity")
                 structured_resolution = (
-                    pattern_resolution.resolution_method
-                    == GraphResolutionMethod.STRUCTURED_CONSTRAINT
+                    pattern_resolution.resolution_method == GraphResolutionMethod.STRUCTURED_CONSTRAINT
                 )
                 resolution_source = (
                     QueryResolutionConfidenceSource.GRAPH_CONSTRAINT
                     if structured_resolution
-                    else QueryResolutionConfidenceSource(
-                        pattern_resolution.resolution_method.value
-                    )
+                    else QueryResolutionConfidenceSource(pattern_resolution.resolution_method.value)
                 )
                 frame = frame.model_copy(
                     update={
@@ -304,11 +297,7 @@ class MemoryEvolutionRetrievalRuntime:
         frame: QueryTemporalFrame,
         resolution_status: str,
     ) -> ProductionRetrievalDecision:
-        actions = [
-            action
-            for action in self._action_reader()
-            if request.scope.can_read(_scope_for_action(action))
-        ]
+        actions = [action for action in self._action_reader() if request.scope.can_read(_scope_for_action(action))]
         snapshot = reduce_work_states(action_event_from_extracted(action) for action in actions)
         continuation = resolve_continuation(
             snapshot,
@@ -365,9 +354,4 @@ class MemoryEvolutionRetrievalRuntime:
 
 
 def _scope_for_action(action: ExtractedAction) -> MemoryScope:
-    return MemoryScope(
-        scope_key=action.scope_key,
-        task_id=action.task_id,
-        session_id=action.session_id,
-        user_id=action.user_id,
-    )
+    return action.scope

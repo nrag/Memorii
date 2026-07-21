@@ -9,7 +9,7 @@ from memorii.core.memory_evolution.execution import (
     reduce_work_states,
     resolve_continuation,
 )
-from memorii.core.memory_evolution.models import ExtractedAction
+from memorii.core.memory_evolution.models import ExtractedAction, MemoryScope
 
 
 def test_explicit_progress_status_beats_resume_event_type() -> None:
@@ -172,9 +172,7 @@ def test_task_context_selects_matching_branch_when_target_is_shared() -> None:
             target_entity_ids=event.target_entity_ids,
             status="in_progress",
             timestamp=event.event_time,
-            task_id=event.task_id,
-            session_id=event.session_id,
-            scope_key=event.scope_key,
+            scope=MemoryScope(task_id=event.task_id, session_id=event.session_id),
             extraction_run_id="run",
         )
         for event in events

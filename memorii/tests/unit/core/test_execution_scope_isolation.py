@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from memorii.core.memory_evolution import EnglishRuleMemoryExtractor
+from memorii.core.memory_evolution import EnglishRuleMemoryExtractor, MemoryQueryRequest, MemoryScope, RetrievalView
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.service import ProviderMemoryService
@@ -98,3 +98,44 @@ def test_execution_prefetch_is_unchanged_when_unreadable_state_is_added() -> Non
     )
 
     assert after == before
+
+
+def test_same_task_identifier_never_crosses_user_scope() -> None:
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        memory_evolution_extractor=EnglishRuleMemoryExtractor(),
+    )
+    evolution = service.memory_evolution_service
+    shared_task = "task:shared"
+    evolution.evolve_records(
+        [
+            _action_record(
+                memory_id="event:alice-owner",
+                text="Atlas migration owner is Alice.",
+                task_id=shared_task,
+                user_id="user:alice",
+            ),
+            _action_record(
+                memory_id="event:bob-owner",
+                text="Atlas migration owner is Bob.",
+                task_id=shared_task,
+                user_id="user:bob",
+            ),
+        ]
+    )
+
+    decision = evolution.retrieve(
+        MemoryQueryRequest(
+            query="Who owns the Atlas migration?",
+            scope=MemoryScope(task_id=shared_task, user_id="user:alice"),
+            reference_time=datetime(2026, 1, 16, tzinfo=UTC),
+        )
+    )
+    all_states = evolution.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS)
+    state_by_id = {state.claim_id: state for state in all_states}
+
+    assert {state_by_id[claim_id].object_value for claim_id in decision.selected_record_ids} == {"Alice"}
+    assert {state.object_value for state in all_states} == {"Alice", "Bob"}
+    assert all(state.lifecycle_state.value == "active" for state in all_states)
+    assert {evidence.source_id for evidence in decision.evidence} == {"event:alice-owner"}
+    assert "event:bob-owner" not in str(decision)

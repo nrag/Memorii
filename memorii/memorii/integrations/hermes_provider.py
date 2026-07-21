@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from memorii.core.provider.classifier import classify_memory_target
+from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation, ProviderSyncResult, ProviderWriteDecision
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.integrations.provider_interface import MemoryProviderInterface
@@ -12,7 +13,7 @@ from memorii.integrations.provider_interface import MemoryProviderInterface
 
 class HermesMemoryProvider(MemoryProviderInterface):
     def __init__(self, service: ProviderMemoryService | None = None) -> None:
-        self._service = service or ProviderMemoryService()
+        self._service = service or build_provider_memory_service_from_env()
 
     def prefetch(
         self,
@@ -38,6 +39,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
         user_content: str,
         assistant_content: str,
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
@@ -49,6 +51,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
+            operation_id=_child_operation_id(operation_id, "user"),
         )
         assistant_result = self._service.sync_event(
             operation=ProviderOperation.CHAT_ASSISTANT_TURN,
@@ -57,6 +60,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
+            operation_id=_child_operation_id(operation_id, "assistant"),
         )
         return ProviderSyncResult(
             transcript_ids=[*user_result.transcript_ids, *assistant_result.transcript_ids],
@@ -77,12 +81,17 @@ class HermesMemoryProvider(MemoryProviderInterface):
                 set(user_result.blocked_commit_domains) | set(assistant_result.blocked_commit_domains),
                 key=lambda domain: domain.value,
             ),
+            evolution_outcomes=[
+                *user_result.evolution_outcomes,
+                *assistant_result.evolution_outcomes,
+            ],
         )
 
     def on_session_end(
         self,
         messages: list[dict[str, object]] | list[str],
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
@@ -94,12 +103,14 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
+            operation_id=_operation_id(operation_id),
         )
 
     def on_pre_compress(
         self,
         messages: list[dict[str, object]] | list[str],
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
@@ -111,6 +122,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
+            operation_id=_operation_id(operation_id),
         )
 
     def on_memory_write(
@@ -119,6 +131,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
         target: str,
         content: str,
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
@@ -131,6 +144,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
+            operation_id=_operation_id(operation_id),
         )
 
     def on_delegation(
@@ -138,6 +152,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
         task: str,
         result: str,
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
@@ -149,6 +164,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
+            operation_id=_operation_id(operation_id),
         )
 
 
@@ -162,3 +178,14 @@ def _messages_to_text(messages: list[dict[str, object]] | list[str]) -> str:
             content = str(item.get("content", ""))
             serialized.append(f"{role}: {content}")
     return "\n".join(serialized)
+
+
+def _operation_id(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("operation_id must be non-empty")
+    return normalized
+
+
+def _child_operation_id(parent: str, child: str) -> str:
+    return f"{_operation_id(parent)}:{child}"

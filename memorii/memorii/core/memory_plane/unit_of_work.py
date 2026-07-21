@@ -23,7 +23,7 @@ class MemoryPlaneUnitOfWork:
 
     @property
     def pending_records(self) -> tuple[CanonicalMemoryRecord, ...]:
-        return tuple(self._pending.values())
+        return tuple(record.model_copy(deep=True) for record in self._pending.values())
 
     @property
     def committed(self) -> bool:
@@ -31,7 +31,13 @@ class MemoryPlaneUnitOfWork:
 
     def stage_record(self, record: CanonicalMemoryRecord) -> None:
         self._ensure_open()
-        self._pending[record.memory_id] = record
+        self._pending[record.memory_id] = record.model_copy(deep=True)
+
+    def write_records(self, records: tuple[CanonicalMemoryRecord, ...]) -> int:
+        self._ensure_open()
+        for record in records:
+            self.stage_record(record)
+        return self._base_revision
 
     def upsert_record(self, record: CanonicalMemoryRecord) -> None:
         self.stage_record(record)
@@ -51,14 +57,15 @@ class MemoryPlaneUnitOfWork:
                 f"unit-of-work revision mismatch: expected {expected_revision}, base {self._base_revision}"
             )
         for record in records:
-            self._pending[record.memory_id] = record
+            self._pending[record.memory_id] = record.model_copy(deep=True)
         return self._base_revision
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
-        return self._base_revision, tuple(self._current_records().values())
+        return self._base_revision, tuple(record.model_copy(deep=True) for record in self._current_records().values())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
-        return self._pending.get(memory_id, self._records.get(memory_id))
+        record = self._pending.get(memory_id, self._records.get(memory_id))
+        return record.model_copy(deep=True) if record is not None else None
 
     def list_records(
         self,
@@ -69,7 +76,7 @@ class MemoryPlaneUnitOfWork:
     ) -> list[CanonicalMemoryRecord]:
         domain_set = set(domains) if domains is not None else None
         return [
-            record
+            record.model_copy(deep=True)
             for record in self._current_records().values()
             if (status is None or record.status == status)
             and (domain_set is None or record.domain in domain_set)

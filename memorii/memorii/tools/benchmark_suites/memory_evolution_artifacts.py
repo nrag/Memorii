@@ -34,6 +34,8 @@ from memorii.core.benchmark.artifact_validation import (
     write_text_atomic,
     write_typed_jsonl,
 )
+from memorii.core.benchmark.calibration.models import CalibrationEvent
+from memorii.core.benchmark.calibration.reports import build_calibration_artifacts
 from memorii.core.benchmark.failure_policy import (
     WARNING_ONLY_BUCKET_RATIONALES,
     is_critical_failure_bucket,
@@ -52,8 +54,6 @@ from memorii.core.benchmark.reproducibility import (
     resolve_source_revision,
     resolve_source_state,
 )
-from memorii.core.calibration.models import CalibrationEvent
-from memorii.core.calibration.reports import build_calibration_artifacts
 from memorii.tools.benchmark_suites.artifact_io import write_jsonl
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -224,7 +224,7 @@ def write_memory_evolution_artifacts(
                 "memorii/core/benchmark/memory_evolution_sim/judges.py",
                 "memorii/core/benchmark/memory_evolution_sim/schemas.py",
                 "memorii/core/benchmark/memory_evolution_sim/utils.py",
-                "memorii/core/calibration",
+                "memorii/core/benchmark/calibration",
                 *(
                     [
                         "memorii/core/benchmark/memory_evolution_runtime/alignment.py",

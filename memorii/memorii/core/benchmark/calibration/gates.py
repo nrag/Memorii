@@ -11,9 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.benchmark.artifact_rows import BenchmarkReportSummary, SimScenarioResultRow
 from memorii.core.benchmark.artifact_validation import validate_memory_evolution_run
-from memorii.core.calibration.models import GateCoverageCertificate, GatePowerEstimate, ScenarioPassInterval
-from memorii.core.calibration.simulation_models import GateSimulationModel
-from memorii.core.calibration.statistics import (
+from memorii.core.benchmark.calibration.models import GateCoverageCertificate, GatePowerEstimate, ScenarioPassInterval
+from memorii.core.benchmark.calibration.simulation_models import GateSimulationModel
+from memorii.core.benchmark.calibration.statistics import (
     DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS,
     certify_scenario_interval_coverage,
     estimate_live_gate_power,

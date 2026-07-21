@@ -10,6 +10,7 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeExecutionStateSection,
     RuntimeRelationSupportRow,
 )
+from memorii.core.benchmark.calibration.alignment import RuntimeGraphAlignment, RuntimeGraphAlignmentVerdict
 from memorii.core.benchmark.memory_evolution_runtime.alignment import align_runtime_graph_to_oracle, best_alignment_map
 from memorii.core.benchmark.memory_evolution_runtime.checkpoint_evaluation import (
     mean_runtime_confidence,
@@ -20,14 +21,19 @@ from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection 
     expected_action_alignment_rows,
     suppressed_action_state_claim_ids,
 )
-from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow, RuntimeProjection
+from memorii.core.benchmark.memory_evolution_runtime.models import (
+    RuntimeActionGraphItemRow,
+    RuntimeClaimGraphItemRow,
+    RuntimeGraphItem,
+    RuntimeProjection,
+    RuntimeRelationGraphItemRow,
+)
 from memorii.core.benchmark.memory_evolution_runtime.utils import claim_by_id, ordered_unique
 from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
     OracleCheckpoint,
     SimSystemOutput,
 )
-from memorii.core.calibration.alignment import RuntimeGraphAlignment, RuntimeGraphAlignmentVerdict
 from memorii.core.memory_evolution import MemoryGraphSnapshot, ProductionRetrievalDecision, WorkStateSnapshot
 
 
@@ -36,7 +42,7 @@ def project_runtime_checkpoint(
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
     graph_snapshot: MemoryGraphSnapshot,
-    graph_items: list[RuntimeGraphItemRow],
+    graph_items: list[RuntimeGraphItem],
     source_id_to_event_id: dict[str, str],
     work_state: WorkStateSnapshot | None = None,
     retrieval_decision: ProductionRetrievalDecision | None = None,
@@ -70,11 +76,9 @@ def project_runtime_checkpoint(
         graph_items=graph_items,
     )
     selected_runtime_decision_ids = {
-        value
-        for item in [*selected_runtime_claims, *selected_runtime_actions]
-        for value in (item.action_id, item.runtime_item_id)
-        if value
+        item.runtime_item_id for item in [*selected_runtime_claims, *selected_runtime_actions]
     }
+    selected_runtime_decision_ids.update(item.action_id for item in selected_runtime_actions)
     selected_action_alignment_rows = [
         row
         for row in action_alignment_rows
@@ -234,8 +238,8 @@ def project_runtime_checkpoint(
 def _runtime_claims_for_decision(
     *,
     decision: ProductionRetrievalDecision | None,
-    graph_items: list[RuntimeGraphItemRow],
-) -> list[RuntimeGraphItemRow]:
+    graph_items: list[RuntimeGraphItem],
+) -> list[RuntimeClaimGraphItemRow]:
     if decision is None:
         return []
     selected_ids = set(decision.selected_record_ids)
@@ -245,8 +249,8 @@ def _runtime_claims_for_decision(
 def _runtime_actions_for_decision(
     *,
     decision: ProductionRetrievalDecision | None,
-    graph_items: list[RuntimeGraphItemRow],
-) -> list[RuntimeGraphItemRow]:
+    graph_items: list[RuntimeGraphItem],
+) -> list[RuntimeActionGraphItemRow]:
     if decision is None:
         return []
     selected_ids = set(decision.selected_record_ids)
@@ -264,7 +268,7 @@ def _runtime_actions_for_decision(
 
 def _oracle_claim_ids_for_selected_actions(
     *,
-    selected_runtime_actions: list[RuntimeGraphItemRow],
+    selected_runtime_actions: list[RuntimeActionGraphItemRow],
     action_alignment_rows: list[RuntimeActionAlignmentRow],
 ) -> list[str]:
     selected_runtime_ids = {
@@ -314,9 +318,9 @@ def _production_execution_state(
 
 def _runtime_relations_for_claims(
     *,
-    graph_items: list[RuntimeGraphItemRow],
-    selected_runtime_claims: list[RuntimeGraphItemRow],
-) -> list[RuntimeGraphItemRow]:
+    graph_items: list[RuntimeGraphItem],
+    selected_runtime_claims: list[RuntimeClaimGraphItemRow],
+) -> list[RuntimeRelationGraphItemRow]:
     selected_runtime_ids = {item.runtime_item_id for item in selected_runtime_claims}
     selected_claim_ids = {item.claim_id for item in selected_runtime_claims}
     selected_entity_ids = {
@@ -341,7 +345,7 @@ def _runtime_relations_for_claims(
 
 
 def _oracle_ids_for_runtime_items(
-    *, runtime_items: list[RuntimeGraphItemRow], alignments: Sequence[RuntimeGraphAlignment], item_type: str
+    *, runtime_items: Sequence[RuntimeGraphItem], alignments: Sequence[RuntimeGraphAlignment], item_type: str
 ) -> list[str]:
     runtime_ids = {item.runtime_item_id for item in runtime_items}
     return ordered_unique(
@@ -378,7 +382,7 @@ def _oracle_subject_ids_for_oracle_claim_ids(*, claim_ids: Sequence[str], scenar
 
 def _oracle_subject_ids_for_runtime_claims(
     *,
-    runtime_items: list[RuntimeGraphItemRow],
+    runtime_items: Sequence[RuntimeClaimGraphItemRow],
     alignments: Sequence[RuntimeGraphAlignment],
     scenario: LatentGraphScenario,
 ) -> list[str]:
@@ -391,7 +395,7 @@ def _oracle_subject_ids_for_runtime_claims(
 def _runtime_action_evidence_events(
     *,
     action_alignment_rows: list[RuntimeActionAlignmentRow],
-    item_by_id: Mapping[str, RuntimeGraphItemRow],
+    item_by_id: Mapping[str, RuntimeGraphItem],
 ) -> list[str]:
     events: list[str] = []
     for row in action_alignment_rows:

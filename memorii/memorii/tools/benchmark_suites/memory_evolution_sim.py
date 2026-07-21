@@ -220,7 +220,7 @@ def _run_memory_evolution_sim_transitions(
                 and not invalid_reference_failure
             )
             warning_buckets = checkpoint_warning_buckets(
-                answer_match_type=diagnostics["answer_match_type"],
+                answer_match_type=diagnostics.answer_match_type,
                 output=output,
             )
             checkpoint_row = _build_sim_checkpoint_result_row(
@@ -279,7 +279,7 @@ def _build_sim_checkpoint_result_row(
     request_id: str,
     success: bool,
     aggregate: JudgeAggregate,
-    diagnostics: dict[str, object],
+    diagnostics: CheckpointDiagnosticsSection,
     engine_failure_buckets: list[str],
     warning_buckets: list[str],
     raw_output: SimSystemOutput,
@@ -317,7 +317,7 @@ def _build_sim_checkpoint_result_row(
         failure_buckets=_ordered_unique([*aggregate.critical_failure_buckets, *engine_failure_buckets]),
         warning_buckets=warning_buckets,
     )
-    diagnostic_section = CheckpointDiagnosticsSection.model_validate(diagnostics)
+    diagnostic_section = diagnostics
     if engine_failure_buckets:
         diagnostic_section = diagnostic_section.model_copy(
             update={
@@ -329,10 +329,7 @@ def _build_sim_checkpoint_result_row(
                 ),
             }
         )
-    diagnostics_payload = CheckpointDiagnosticsPayload.model_validate(
-        diagnostic_section,
-        from_attributes=True,
-    )
+    diagnostics_payload = CheckpointDiagnosticsPayload.from_sections(diagnostic_section)
     return SimCheckpointResultRow(
         scenario_id=scenario.scenario_id,
         checkpoint_id=checkpoint.checkpoint_id,
@@ -370,7 +367,6 @@ def _build_sim_checkpoint_result_row(
         candidate_cards=context,
         raw_output=raw_output,
         judge_aggregate=aggregate,
-        **diagnostic_section.model_dump(mode="python"),
     )
 
 

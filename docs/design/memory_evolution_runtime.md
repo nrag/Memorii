@@ -4,7 +4,19 @@
 
 This document describes the runtime memory evolution implementation as it exists now. It is not a future-only architecture note.
 
-Runtime memory evolution is implemented as an opt-in layer inside `ProviderMemoryService` and `MemoryEvolutionService`. It is not enabled by default for provider integrations yet.
+Runtime memory evolution is part of the standard `ProviderMemoryService` composition. Provider ingestion durably records an evolution operation and projects eligible source observations without requiring an enablement flag.
+
+`build_provider_memory_service_from_env(...)` is the production composition root. It
+selects extraction and promotion providers from one environment snapshot, constructs
+the dependency-injected service, and reconciles recoverable evolution operations.
+Direct `ProviderMemoryService(...)` construction remains deterministic for explicit
+embedding and tests; it does not read process configuration.
+
+The production composition runs one recovery cycle at startup. Hosts with long-lived
+shared stores should also schedule `reconcile_memory_evolution()` periodically; active
+leased operations are skipped, while expired leases and retryable failures are reclaimed.
+Durable operation records contain bounded failure categories and sanitized messages.
+Full exception details remain operational logs and are not written into canonical memory.
 
 ## Purpose
 
@@ -32,8 +44,8 @@ Runtime evolution is part of the standard `ProviderMemoryService` composition.
 
 Current provider entry points:
 
-- `sync_event(...)`
-- `apply_memory_write(...)`
+- `sync_event(..., operation_id=...)`
+- `apply_memory_write(..., operation_id=...)`
 - `prefetch(...)`
 - `retrieve_evolution_decision(...)`
 - `handle_tool_call(...)`
@@ -50,8 +62,13 @@ Current provider entry points:
 
 Important current behavior:
 
-- Runtime memory evolution is disabled by default.
-- When enabled, provider transcript/source IDs are passed to `MemoryEvolutionService.evolve_source_ids(...)`.
+- Mutating provider entry points require a stable caller-supplied operation ID. Replayed
+  deliveries reuse their durable operation result instead of duplicating source events or
+  projections.
+- Provider transcript/source IDs are passed through the recoverable evolution coordinator to
+  `MemoryEvolutionService.evolve_source_ids(...)` by default. Operations and projections are
+  committed transactionally to the configured memory-plane store. They survive a process restart
+  only when that store is persistent; the default standalone composition remains in-memory.
 - The latest evolution result is available through `ProviderMemoryService.last_memory_evolution_result()`.
 - Provider prefetch currently returns memory context plus work-state summaries. It does not yet default to graph-grounded current truth retrieval.
 

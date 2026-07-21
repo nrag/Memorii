@@ -56,7 +56,7 @@ def build_runtime_checkpoint_result_row(
     final_output_source: FinalOutputSource,
     success: bool,
     aggregate: JudgeAggregate,
-    diagnostics: dict[str, object],
+    diagnostics: CheckpointDiagnosticsSection,
     runtime_buckets: list[str],
     graph_snapshot: MemoryGraphSnapshot,
     projection: RuntimeProjection,
@@ -90,10 +90,9 @@ def build_runtime_checkpoint_result_row(
         final_output_source=final_output_source,
         request_id=f"memory_evolution_runtime:{mode}:{scenario.scenario_id}:{checkpoint.checkpoint_id}",
     )
-    diagnostic_section = CheckpointDiagnosticsSection.model_validate(diagnostics)
     candidate_cards = sim_reconstruction_context_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
     warning_buckets = checkpoint_warning_buckets(
-        answer_match_type=diagnostic_section.answer_match_type,
+        answer_match_type=diagnostics.answer_match_type,
         output=output,
     )
     verdict = CheckpointVerdictSection(
@@ -129,7 +128,7 @@ def build_runtime_checkpoint_result_row(
         review_required=verdict.review_required,
         failure_buckets=verdict.failure_buckets,
         warning_buckets=verdict.warning_buckets,
-        diagnostics=CheckpointDiagnosticsPayload.from_sections(diagnostic_section, runtime_section),
+        diagnostics=CheckpointDiagnosticsPayload.from_sections(diagnostics, runtime_section),
         output=output,
         profile=horizon.profile,
         family=horizon.family,
@@ -236,9 +235,7 @@ def runtime_final_output_source(
     return "reused_runtime_state"
 
 
-def run_output_source(
-    *, effective_mode: str, dry_run: bool, run: RecordedExtractionRun
-) -> FinalOutputSource:
+def run_output_source(*, effective_mode: str, dry_run: bool, run: RecordedExtractionRun) -> FinalOutputSource:
     if effective_mode == "rule":
         return "rule"
     if dry_run:
@@ -246,16 +243,14 @@ def run_output_source(
     return "rule" if run.fallback_used else "live_llm"
 
 
-def runtime_failure_classification(
-    runtime_buckets: list[str], diagnostics: dict[str, object]
-) -> list[str]:
-    raw_classifications = diagnostics.get("failure_classification", ())
-    classifications = [str(item) for item in object_sequence(raw_classifications)]
+def runtime_failure_classification(runtime_buckets: list[str], diagnostics: CheckpointDiagnosticsSection) -> list[str]:
+    classifications = list(diagnostics.failure_classification)
     known_buckets = {
         "runtime_missing_expected_entity",
         "runtime_missing_expected_claim",
         "runtime_missing_expected_relation",
         "runtime_missing_expected_action",
+        "runtime_missing_expected_rejection",
         "runtime_action_target_mismatch",
         "runtime_action_status_mismatch",
         "runtime_action_evidence_missing",
@@ -280,9 +275,8 @@ def runtime_failure_classification(
         "hidden_fact_leak",
         "calibration_drift",
     }
-    classifications.extend(bucket for bucket in runtime_buckets if bucket in known_buckets)
+    concrete_runtime_classifications = [bucket for bucket in runtime_buckets if bucket in known_buckets]
+    if concrete_runtime_classifications:
+        classifications = [item for item in classifications if item != "unclassified_failure"]
+    classifications.extend(concrete_runtime_classifications)
     return ordered_unique(classifications)
-
-
-def object_sequence(value: object) -> Sequence[object]:
-    return value if isinstance(value, Sequence) and not isinstance(value, str) else ()

@@ -15,7 +15,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Literal, TypeAlias, TypeVar
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 
 from memorii.core.benchmark.artifact_rows import (
@@ -30,8 +30,8 @@ from memorii.core.benchmark.artifact_rows import (
     WarningExampleRow,
     execution_source_from_counts,
 )
+from memorii.core.benchmark.calibration.models import CalibrationEvent, CalibrationReport, DecisionCostReport
 from memorii.core.benchmark.reproducibility import file_sha256
-from memorii.core.calibration.models import CalibrationEvent, CalibrationReport, DecisionCostReport
 
 T = TypeVar("T", bound=BaseModel)
 CheckpointArtifactRow: TypeAlias = SimCheckpointResultRow | RuntimeCheckpointResultRow
@@ -65,9 +65,7 @@ def finalize_memory_evolution_run(run_dir: Path) -> BenchmarkReportSummary:
         entries=[_manifest_entry(path, run_dir=run_dir) for path in _manifest_paths(run_dir)],
     )
     write_json_atomic(run_dir / "artifact_manifest.json", manifest)
-    bound_report = report.model_copy(
-        update={"artifact_manifest_digest": manifest.digest()}
-    ).with_content_digest()
+    bound_report = report.model_copy(update={"artifact_manifest_digest": manifest.digest()}).with_content_digest()
     write_json_atomic(report_path, bound_report)
     return bound_report
 
@@ -136,9 +134,7 @@ def write_typed_jsonl(path: Path, rows: Sequence[T], *, model_type: type[T]) -> 
     serialized: list[str] = []
     for index, row in enumerate(rows):
         if not isinstance(row, model_type):
-            raise ArtifactValidationError(
-                f"{path.name}[{index}] must be a validated {model_type.__name__}"
-            )
+            raise ArtifactValidationError(f"{path.name}[{index}] must be a validated {model_type.__name__}")
         serialized.append(json.dumps(row.model_dump(mode="json"), sort_keys=True))
     _atomic_write_text(path, "".join(f"{row}\n" for row in serialized))
 
@@ -216,15 +212,25 @@ def _read_json_array(path: Path) -> list[dict[str, object]]:
     return value
 
 
-def _validate_jsonl(path: Path, model_type: type[T], *, required: bool = False) -> list[T]:
+def _validate_jsonl(
+    path: Path,
+    model_type: type[T] | TypeAdapter[T],
+    *,
+    required: bool = False,
+) -> list[T]:
     if required and not path.exists():
         raise ArtifactValidationError(f"required artifact is missing: {path.name}")
     validated: list[T] = []
     for index, row in enumerate(_read_jsonl(path)):
         try:
-            validated.append(model_type.model_validate(row))
+            validated.append(
+                model_type.validate_python(row)
+                if isinstance(model_type, TypeAdapter)
+                else model_type.model_validate(row)
+            )
         except ValidationError as exc:
-            raise ArtifactValidationError(f"{path.name}[{index}] failed {model_type.__name__} validation: {exc}") from exc
+            model_name = "typed union" if isinstance(model_type, TypeAdapter) else model_type.__name__
+            raise ArtifactValidationError(f"{path.name}[{index}] failed {model_name} validation: {exc}") from exc
     return validated
 
 
@@ -236,7 +242,9 @@ def _validate_json_array(path: Path, model_type: type[T], *, required: bool = Fa
         try:
             validated.append(model_type.model_validate(row))
         except ValidationError as exc:
-            raise ArtifactValidationError(f"{path.name}[{index}] failed {model_type.__name__} validation: {exc}") from exc
+            raise ArtifactValidationError(
+                f"{path.name}[{index}] failed {model_type.__name__} validation: {exc}"
+            ) from exc
     return validated
 
 
@@ -268,7 +276,10 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
 
     # Import lazily because runtime models are re-exported by the runtime
     # package, whose artifact writer depends on this module.
-    from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow, RuntimeGraphSnapshotRow
+    from memorii.core.benchmark.memory_evolution_runtime.models import (
+        RUNTIME_GRAPH_ITEM_ADAPTER,
+        RuntimeGraphSnapshotRow,
+    )
 
     report_path = run_dir / "report.json"
     if not report_path.exists():
@@ -301,7 +312,11 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
             run_dir / "runtime_checkpoint_results.jsonl", RuntimeCheckpointResultRow, required=True
         )
         checkpoint_rows = runtime_checkpoint_rows
-        graph_items = _validate_jsonl(run_dir / "runtime_graph_items.jsonl", RuntimeGraphItemRow, required=True)
+        graph_items = _validate_jsonl(
+            run_dir / "runtime_graph_items.jsonl",
+            RUNTIME_GRAPH_ITEM_ADAPTER,
+            required=True,
+        )
         snapshot_rows = _validate_json_array(
             run_dir / "runtime_graph_snapshot.json", RuntimeGraphSnapshotRow, required=True
         )
@@ -311,9 +326,7 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
             AlignmentSummary,
             required=True,
         )
-        failure_rows = _validate_jsonl(
-            run_dir / "runtime_failures.jsonl", RuntimeCheckpointResultRow
-        )
+        failure_rows = _validate_jsonl(run_dir / "runtime_failures.jsonl", RuntimeCheckpointResultRow)
     else:
         raise ArtifactValidationError(f"unsupported memory-evolution suite: {suite}")
 
@@ -335,12 +348,8 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
         for bucket in (row.model_dump(mode="python").get("failure_buckets") or [])
     )
     actual_source_counts = Counter(str(row.final_output_source) for row in checkpoint_rows)
-    if dict(sorted(actual_source_counts.items())) != dict(
-        sorted(report.final_output_source_counts.items())
-    ):
-        raise ArtifactValidationError(
-            "checkpoint output sources do not match report final_output_source_counts"
-        )
+    if dict(sorted(actual_source_counts.items())) != dict(sorted(report.final_output_source_counts.items())):
+        raise ArtifactValidationError("checkpoint output sources do not match report final_output_source_counts")
     if report.execution_source != execution_source_from_counts(actual_source_counts):
         raise ArtifactValidationError("report execution_source is not derived from checkpoint rows")
     if report.dry_run and actual_source_counts.get("live_llm", 0):
@@ -352,8 +361,7 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
         raise ArtifactValidationError("report checkpoint_results identities do not match checkpoint artifact")
     if report.checkpoint_results:
         report_rows_by_key: dict[tuple[str, str], CheckpointArtifactRow] = {
-            key: row
-            for key, row in zip(report_checkpoint_keys, report.checkpoint_results, strict=True)
+            key: row for key, row in zip(report_checkpoint_keys, report.checkpoint_results, strict=True)
         }
         for artifact_row in checkpoint_rows:
             key = (artifact_row.scenario_id, artifact_row.checkpoint_id)
@@ -370,7 +378,9 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
                 )
     if isinstance(report.runtime_graph_alignments_summary, AlignmentSummary):
         summary = report.runtime_graph_alignments_summary
-        if dict(sorted(summary.checkpoint_scored_verdict_counts.items())) != dict(sorted(actual_verdict_counts.items())):
+        if dict(sorted(summary.checkpoint_scored_verdict_counts.items())) != dict(
+            sorted(actual_verdict_counts.items())
+        ):
             raise ArtifactValidationError(
                 "runtime checkpoint verdict counts do not match runtime_graph_alignments_summary"
             )
@@ -378,16 +388,16 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
             raise ArtifactValidationError(
                 "runtime checkpoint review count does not match runtime_graph_alignments_summary"
             )
-        if dict(sorted(summary.checkpoint_scored_failure_bucket_counts.items())) != dict(sorted(actual_failure_bucket_counts.items())):
+        if dict(sorted(summary.checkpoint_scored_failure_bucket_counts.items())) != dict(
+            sorted(actual_failure_bucket_counts.items())
+        ):
             raise ArtifactValidationError(
                 "runtime checkpoint failure buckets do not match runtime_graph_alignments_summary"
             )
 
     if suite == "memory_evolution_runtime_v1":
         if report.runtime_graph_alignments_summary != standalone_alignment_summary:
-            raise ArtifactValidationError(
-                "runtime_graph_alignments_summary.json disagrees with report.json"
-            )
+            raise ArtifactValidationError("runtime_graph_alignments_summary.json disagrees with report.json")
         assert standalone_alignment_summary is not None
         full_counts = Counter(str(row.verdict) for row in alignment_rows)
         full_item_counts = Counter(f"{row.item_type}:{row.verdict}" for row in alignment_rows)
@@ -421,19 +431,12 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
             row
             for row in alignment_rows
             if row.oracle_id
-            and row.oracle_id
-            in checkpoint_expected_ids.get((row.scenario_id, row.checkpoint_id), set())
+            and row.oracle_id in checkpoint_expected_ids.get((row.scenario_id, row.checkpoint_id), set())
         ]
         checkpoint_counts = Counter(str(row.verdict) for row in checkpoint_alignment_rows)
-        checkpoint_item_counts = Counter(
-            f"{row.item_type}:{row.verdict}" for row in checkpoint_alignment_rows
-        )
-        if standalone_alignment_summary.checkpoint_expected_alignment_audit_count != len(
-            checkpoint_alignment_rows
-        ):
-            raise ArtifactValidationError(
-                "checkpoint expected alignment count disagrees with raw alignment rows"
-            )
+        checkpoint_item_counts = Counter(f"{row.item_type}:{row.verdict}" for row in checkpoint_alignment_rows)
+        if standalone_alignment_summary.checkpoint_expected_alignment_audit_count != len(checkpoint_alignment_rows):
+            raise ArtifactValidationError("checkpoint expected alignment count disagrees with raw alignment rows")
         if standalone_alignment_summary.checkpoint_expected_alignment_audit_counts != dict(
             sorted(checkpoint_counts.items())
         ):
@@ -443,9 +446,7 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
         if standalone_alignment_summary.checkpoint_expected_alignment_audit_counts_by_item_type != dict(
             sorted(checkpoint_item_counts.items())
         ):
-            raise ArtifactValidationError(
-                "checkpoint expected alignment item counts disagree with raw alignment rows"
-            )
+            raise ArtifactValidationError("checkpoint expected alignment item counts disagree with raw alignment rows")
         expected_scenario_ids = {row.scenario_id for row in checkpoint_rows}
         snapshot_scenario_ids = {row.scenario_id for row in snapshot_rows}
         if snapshot_scenario_ids != expected_scenario_ids:
@@ -490,13 +491,7 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
         if key in failure_keys:
             raise ArtifactValidationError(f"{failure_path.name} contains duplicate checkpoint {key}")
         failure_keys.add(key)
-    expected_failure_keys = {
-        (row.scenario_id, row.checkpoint_id)
-        for row in checkpoint_rows
-        if row.success is False
-    }
+    expected_failure_keys = {(row.scenario_id, row.checkpoint_id) for row in checkpoint_rows if row.success is False}
     if failure_keys != expected_failure_keys:
-        raise ArtifactValidationError(
-            f"{failure_path.name} identities do not match non-pass checkpoint verdicts"
-        )
+        raise ArtifactValidationError(f"{failure_path.name} identities do not match non-pass checkpoint verdicts")
     return report

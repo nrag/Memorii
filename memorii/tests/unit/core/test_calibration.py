@@ -3,8 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from memorii.core.benchmark.artifact_rows import SimCheckpointResultRow
-from memorii.core.benchmark.memory_evolution_sim.schemas import SimCheckpointContract
-from memorii.core.calibration.alignment import (
+from memorii.core.benchmark.calibration.alignment import (
     RuntimeGraphAlignmentVerdict,
     align_by_normalized_fields,
     align_claim_by_fields,
@@ -12,7 +11,7 @@ from memorii.core.calibration.alignment import (
     align_evidence_by_fields,
     align_relation_by_fields,
 )
-from memorii.core.calibration.metrics import (
+from memorii.core.benchmark.calibration.metrics import (
     brier_score,
     build_calibration_slices,
     expected_calibration_error,
@@ -21,7 +20,7 @@ from memorii.core.calibration.metrics import (
     scenario_cluster_accuracy_interval,
     wilson_interval,
 )
-from memorii.core.calibration.models import (
+from memorii.core.benchmark.calibration.models import (
     CalibrationDecisionChannel,
     CalibrationEvent,
     CalibrationHierarchyLayer,
@@ -31,8 +30,10 @@ from memorii.core.calibration.models import (
     CalibrationResponseLevel,
     DecisionAction,
 )
-from memorii.core.calibration.policy import response_for_failure_buckets, response_for_slice
-from memorii.core.calibration.reports import build_calibration_artifacts, build_decision_cost_report
+from memorii.core.benchmark.calibration.policy import response_for_failure_buckets, response_for_slice
+from memorii.core.benchmark.calibration.reports import build_calibration_artifacts, build_decision_cost_report
+from memorii.core.benchmark.memory_evolution_sim.schemas import SimCheckpointContract
+from tests.unit.core.benchmark.checkpoint_artifact_test_helpers import checkpoint_diagnostics_payload
 
 
 def _checkpoint_row(partial: dict[str, object]) -> SimCheckpointResultRow:
@@ -116,7 +117,7 @@ def _checkpoint_row(partial: dict[str, object]) -> SimCheckpointResultRow:
         "review_required": not success,
         "failure_buckets": [],
         "warning_buckets": [],
-        "diagnostics": {},
+        "diagnostics": checkpoint_diagnostics_payload(),
         "profile": "adversarial",
         "family": "calibration",
         "decision_mode": "rule",

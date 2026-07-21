@@ -7,6 +7,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from memorii.core.benchmark.calibration.alignment import normalize_alignment_value
 from memorii.core.benchmark.memory_evolution_runtime.graph_items import (
     claim_quote,
     entity_quote,
@@ -25,7 +26,6 @@ from memorii.core.benchmark.memory_evolution_sim import (
     ObservabilityLabel,
     SurfaceObservation,
 )
-from memorii.core.calibration.alignment import normalize_alignment_value
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.base import LLMStructuredClient
 from memorii.core.llm_provider.factory import LLMClientFactory
@@ -45,6 +45,8 @@ from memorii.core.memory_evolution import (
 )
 from memorii.core.memory_evolution.models import (
     ConfidenceComponents,
+    ExtractionFailureCode,
+    ExtractionRunStatus,
     MemoryScope,
     memory_scope_from_observation,
 )
@@ -141,7 +143,7 @@ class OracleVisibleMemoryExtractor:
                         claim_key=ClaimKey(
                             subject_entity_id=claim.subject.entity_id,
                             predicate_id=claim.predicate.predicate_id,
-                            scope_key=claim.scope.scope_key,
+                            scope=runtime_scope_for_claim(claim),
                             qualifier_key="default",
                         ),
                         object_value=claim.object.value,
@@ -186,8 +188,7 @@ class OracleVisibleMemoryExtractor:
                             target_entity_ids=[claim.subject.entity_id],
                             status=claim.object.normalized_value or claim.object.value,
                             timestamp=claim.lifecycle.valid_from or surface.timestamp,
-                            task_id=claim.scope.scope_key if claim.scope.scope_key != "global" else None,
-                            scope_key=claim.scope.scope_key,
+                            scope=runtime_scope_for_claim(claim),
                             evidence_spans=[span],
                             extraction_run_id=run_id,
                         )
@@ -203,6 +204,8 @@ class OracleVisibleMemoryExtractor:
             entity_ids=sorted({entity_id for entity_id, _scope_key in entity_by_scope}),
             claim_ids=[claim.claim_id for claim in claims],
             action_ids=[action.action_id for action in actions],
+            status=ExtractionRunStatus.PARTIAL if errors else ExtractionRunStatus.SUCCEEDED,
+            failure_code=ExtractionFailureCode.OUTPUT_VALIDATION if errors else None,
             errors=errors,
         )
         return run, list(entity_by_scope.values()), claims, actions
@@ -216,7 +219,6 @@ def runtime_scope_for_claim(claim: LatentClaim) -> MemoryScope:
     """Translate simulator scope into the runtime's server-owned scope model."""
 
     return MemoryScope(
-        scope_key=claim.scope.scope_key,
         task_id=claim.scope.task_id,
         session_id=claim.scope.session_id,
     )
@@ -245,16 +247,15 @@ class RecordingMemoryExtractor:
         self, observations: list[SourceObservation]
     ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run, entities, claims, actions = self._delegate.extract(observations)
-        fallback_used = any("fallback_used" in error for error in run.errors)
         self.recorded_runs.append(
             RecordedExtractionRun(
                 input_source_ids=list(run.input_source_ids),
                 provider=run.provider,
                 model=run.model,
                 prompt_hash=run.prompt_hash,
-                success=not run.errors,
-                fallback_used=fallback_used,
-                failure_classification=classify_extraction_failure(run.errors),
+                success=run.live_success,
+                fallback_used=run.fallback_used,
+                failure_classification=_failure_classification(run),
                 errors=list(run.errors),
                 entity_count=len(entities),
                 claim_count=len(claims),
@@ -268,20 +269,19 @@ class RecordingMemoryExtractor:
         return run, entities, claims, actions
 
 
-def classify_extraction_failure(errors: list[str]) -> str | None:
-    """Classify extraction failures without exposing provider payloads."""
+def _failure_classification(run: ExtractionRun) -> str | None:
+    """Map typed extraction state to stable benchmark telemetry."""
 
-    if not errors:
-        return None
-    if any(error.startswith("provider_error") or "Provider request failed:" in error for error in errors):
-        return "provider_request_error"
-    if any("invalid_json" in error for error in errors):
-        return "provider_invalid_json"
-    if any("schema_validation" in error for error in errors):
-        return "provider_schema_validation"
-    if any(error.startswith("fallback_used:") for error in errors):
+    if run.fallback_used:
         return "runtime_extractor_fallback"
-    return "runtime_extractor_failure"
+    return {
+        None: None,
+        ExtractionFailureCode.PROVIDER_ERROR: "provider_request_error",
+        ExtractionFailureCode.INVALID_JSON: "provider_invalid_json",
+        ExtractionFailureCode.SCHEMA_VALIDATION: "provider_schema_validation",
+        ExtractionFailureCode.OUTPUT_VALIDATION: "runtime_extractor_failure",
+        ExtractionFailureCode.UNSUPPORTED_LANGUAGE: "unsupported_language",
+    }[run.failure_code]
 
 
 def build_runtime_extractor(

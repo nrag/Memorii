@@ -1,10 +1,12 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from memorii.core.memory_evolution import (
     EnglishRuleMemoryExtractor,
     MemoryQueryRequest,
     StructuredQueryAnalyzer,
 )
+from memorii.core.memory_evolution.models import SourceObservation
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
@@ -13,12 +15,24 @@ from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 
+class _FailFirstTurnExtractor(EnglishRuleMemoryExtractor):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def extract(self, observations: list[SourceObservation]):
+        self.calls += 1
+        if self.calls == 1:
+            raise OSError("injected first-turn extraction failure")
+        return super().extract(observations)
+
+
 def test_default_provider_composition_enables_memory_evolution() -> None:
     service = ProviderMemoryService()
 
     service.sync_event(
         operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
         content="Atlas migration owner is Bob.",
+        operation_id="test:default-evolution",
         task_id="task:default-evolution",
     )
 
@@ -44,6 +58,7 @@ def test_prefetch_excludes_candidate_only_records_and_formats_context() -> None:
         action="upsert",
         target="memory",
         content="The service maybe uses legacy timeout",
+        operation_id="test:prefetch:write",
         task_id="task:1",
     )
 
@@ -56,11 +71,30 @@ def test_prefetch_excludes_candidate_only_records_and_formats_context() -> None:
 
 def test_provider_hook_methods_cover_core_operations() -> None:
     provider = HermesMemoryProvider(ProviderMemoryService())
-    turn_result = provider.sync_turn("User asked to summarize", "Assistant summarized", task_id="task:2")
-    write_result = provider.on_memory_write("upsert", "user", "Maybe user likes terse responses", task_id="task:2")
-    session_result = provider.on_session_end(["incident fixed after deploy rollback"], task_id="task:2")
-    precompress_result = provider.on_pre_compress([{"role": "assistant", "content": "resolved bug"}], task_id="task:2")
-    delegation_result = provider.on_delegation("verify migration", "migration completed", task_id="task:2")
+    turn_result = provider.sync_turn(
+        "User asked to summarize",
+        "Assistant summarized",
+        operation_id="test:hooks:turn",
+        task_id="task:2",
+    )
+    write_result = provider.on_memory_write(
+        "upsert",
+        "user",
+        "Maybe user likes terse responses",
+        operation_id="test:hooks:write",
+        task_id="task:2",
+    )
+    session_result = provider.on_session_end(
+        ["incident fixed after deploy rollback"], operation_id="test:hooks:end", task_id="task:2"
+    )
+    precompress_result = provider.on_pre_compress(
+        [{"role": "assistant", "content": "resolved bug"}],
+        operation_id="test:hooks:compress",
+        task_id="task:2",
+    )
+    delegation_result = provider.on_delegation(
+        "verify migration", "migration completed", operation_id="test:hooks:delegation", task_id="task:2"
+    )
     prefetch_text = provider.prefetch("what happened last session", task_id="task:2")
 
     assert len(turn_result.transcript_ids) == 2
@@ -71,12 +105,33 @@ def test_provider_hook_methods_cover_core_operations() -> None:
     assert isinstance(prefetch_text, str)
 
 
+def test_sync_turn_preserves_every_evolution_outcome_after_partial_failure() -> None:
+    extractor = _FailFirstTurnExtractor()
+    provider = HermesMemoryProvider(ProviderMemoryService(memory_evolution_extractor=extractor))
+
+    result = provider.sync_turn(
+        "Atlas migration owner is Alice.",
+        "Atlas migration owner is Alice.",
+        operation_id="test:partial-failure",
+        task_id="task:partial-failure",
+    )
+
+    assert [outcome.status for outcome in result.evolution_outcomes] == [
+        "evolution_failed",
+        "evolution_committed",
+    ]
+    assert result.evolution_outcomes[0].retryable is True
+    assert result.evolution_outcomes[0].failure_code == "store_error"
+    assert result.evolution_outcomes[0].operation_id != result.evolution_outcomes[1].operation_id
+
+
 def test_prefetch_includes_transcript_continuity_records() -> None:
     service = ProviderMemoryService()
     provider = HermesMemoryProvider(service)
     provider.sync_turn(
         "I moved the deploy window to Friday.",
         "Understood, deploy window moved to Friday.",
+        operation_id="test:history:turn",
         task_id="task:history",
     )
 
@@ -107,6 +162,7 @@ def test_provider_prefetch_passes_language_and_structured_temporal_analysis() ->
     service.sync_event(
         operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
         content="Atlas migration owner is Bob.",
+        operation_id="test:multilingual-owner",
         task_id="task:multilingual",
     )
     service.prefetch(
@@ -141,7 +197,9 @@ def test_provider_exposes_structured_evolution_decision() -> None:
 
 def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
     provider = HermesMemoryProvider(ProviderMemoryService())
-    result = provider.on_memory_write("upsert", "memory", "timeout is 30s", task_id="task:w")
+    result = provider.on_memory_write(
+        "upsert", "memory", "timeout is 30s", operation_id="test:write:memory", task_id="task:w"
+    )
     assert any(candidate_id.startswith("cand:semantic:") for candidate_id in result.candidate_ids)
     assert result.allowed_candidate_domains == [MemoryDomain.SEMANTIC]
     assert MemoryDomain.SEMANTIC in result.blocked_commit_domains
@@ -151,7 +209,9 @@ def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
 
 def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:
     provider = HermesMemoryProvider(ProviderMemoryService())
-    result = provider.on_memory_write("upsert", "user", "prefers concise responses", task_id="task:w")
+    result = provider.on_memory_write(
+        "upsert", "user", "prefers concise responses", operation_id="test:write:user", task_id="task:w"
+    )
     assert any(candidate_id.startswith("cand:user:") for candidate_id in result.candidate_ids)
     assert result.allowed_candidate_domains == [MemoryDomain.USER]
     assert MemoryDomain.USER in result.blocked_commit_domains
@@ -161,17 +221,84 @@ def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:
 
 def test_session_end_stages_episodic_candidate() -> None:
     provider = HermesMemoryProvider(ProviderMemoryService())
-    result = provider.on_session_end(["resolved incident"], task_id="task:end")
+    result = provider.on_session_end(
+        ["resolved incident"], operation_id="test:session:end", task_id="task:end"
+    )
     assert result.allowed_candidate_domains == [MemoryDomain.EPISODIC]
     assert any(candidate_id.startswith("cand:episodic:") for candidate_id in result.candidate_ids)
 
 
 def test_sync_turn_raw_transcript_only_no_direct_commits() -> None:
     provider = HermesMemoryProvider(ProviderMemoryService())
-    result = provider.sync_turn("user says x", "assistant replies y", task_id="task:sync")
+    result = provider.sync_turn(
+        "user says x", "assistant replies y", operation_id="test:sync:turn", task_id="task:sync"
+    )
     assert len(result.transcript_ids) == 2
     assert result.candidate_ids == []
     assert result.blocked_commit_domains
+
+
+def test_sync_turn_replay_is_idempotent_across_both_child_events() -> None:
+    memory_plane = MemoryPlaneService()
+    service = ProviderMemoryService(memory_plane=memory_plane)
+    provider = HermesMemoryProvider(service)
+
+    first = provider.sync_turn(
+        "Atlas migration owner is Alice.",
+        "Acknowledged.",
+        operation_id="delivery:turn:atlas",
+        task_id="task:atlas",
+    )
+    second = provider.sync_turn(
+        "Atlas migration owner is Alice.",
+        "Acknowledged.",
+        operation_id="delivery:turn:atlas",
+        task_id="task:atlas",
+    )
+
+    assert second == first
+    assert len(memory_plane.provider_transcript_records()) == 2
+    assert [outcome.operation_id for outcome in first.evolution_outcomes] == [
+        "delivery:turn:atlas:user",
+        "delivery:turn:atlas:assistant",
+    ]
+
+
+def test_sync_turn_recovers_after_only_the_first_child_event_was_committed() -> None:
+    memory_plane = MemoryPlaneService()
+    service = ProviderMemoryService(memory_plane=memory_plane)
+    provider = HermesMemoryProvider(service)
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas migration owner is Alice.",
+        role="user",
+        operation_id="delivery:partial-turn:user",
+        task_id="task:atlas",
+    )
+
+    result = provider.sync_turn(
+        "Atlas migration owner is Alice.",
+        "Acknowledged.",
+        operation_id="delivery:partial-turn",
+        task_id="task:atlas",
+    )
+
+    assert len(memory_plane.provider_transcript_records()) == 2
+    assert [outcome.operation_id for outcome in result.evolution_outcomes] == [
+        "delivery:partial-turn:user",
+        "delivery:partial-turn:assistant",
+    ]
+
+
+def test_provider_mutations_reject_empty_operation_ids() -> None:
+    service = ProviderMemoryService()
+
+    with pytest.raises(ValueError, match="operation_id must be non-empty"):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="hello",
+            operation_id="   ",
+        )
 
 
 def test_prefetch_general_continuity_prefers_recent_transcript_over_old_semantic() -> None:
@@ -251,6 +378,7 @@ def test_evolution_prefetch_does_not_merge_unfiltered_provider_context() -> None
     service.sync_event(
         operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
         content="Unvalidated pasted noise about Atlas owner is Mallory.",
+        operation_id="test:authority-noise",
         task_id="task:authority",
     )
 

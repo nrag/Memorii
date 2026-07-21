@@ -21,9 +21,7 @@ def _validate_distinct_entity_identifiers(
     description: str,
 ) -> list[str]:
     identifiers = list(dict.fromkeys(values))
-    if len(identifiers) < minimum_count or any(
-        not value.strip() or value != value.strip() for value in identifiers
-    ):
+    if len(identifiers) < minimum_count or any(not value.strip() or value != value.strip() for value in identifiers):
         raise ValueError(description)
     return identifiers
 
@@ -161,11 +159,6 @@ class ResolvedEntityReferenceOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("entity_id")
-    @classmethod
-    def validate_entity_id(cls, value: str) -> str:
-        return _validate_entity_identifier(value)
-
 
 class AmbiguousEntityReferenceOutput(BaseModel):
     reference_kind: Literal["ambiguous"] = Field()
@@ -174,15 +167,6 @@ class AmbiguousEntityReferenceOutput(BaseModel):
     expected_entity_types: list[str] = Field()
 
     model_config = ConfigDict(extra="forbid")
-
-    @field_validator("candidate_entity_ids")
-    @classmethod
-    def validate_candidates(cls, values: list[str]) -> list[str]:
-        return _validate_distinct_entity_identifiers(
-            values,
-            minimum_count=2,
-            description="ambiguous references require at least two distinct non-empty candidates",
-        )
 
 
 class UnresolvedEntityReferenceOutput(BaseModel):
@@ -200,15 +184,6 @@ class ExplicitEntitySetOutput(BaseModel):
     expected_entity_types: list[str] = Field()
 
     model_config = ConfigDict(extra="forbid")
-
-    @field_validator("entity_ids")
-    @classmethod
-    def validate_entity_ids(cls, values: list[str]) -> list[str]:
-        return _validate_distinct_entity_identifiers(
-            values,
-            minimum_count=1,
-            description="entity sets require non-empty distinct IDs",
-        )
 
 
 EntityReferenceOutput = Annotated[
@@ -229,22 +204,6 @@ class ObjectConstraintOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="after")
-    def validate_value(self) -> ObjectConstraintOutput:
-        if (self.entity is None) == (self.literal_value is None):
-            raise ValueError("object constraint requires exactly one entity or literal value")
-        if self.normalized_literal is not None and self.literal_value is None:
-            raise ValueError("normalized_literal requires literal_value")
-        if self.entity is not None:
-            if isinstance(self.entity, ExplicitEntitySetOutput):
-                if self.operator not in {GraphConstraintOperator.IN, GraphConstraintOperator.NOT_IN}:
-                    raise ValueError("explicit entity sets require an IN or NOT_IN operator")
-            elif self.operator in {GraphConstraintOperator.IN, GraphConstraintOperator.NOT_IN}:
-                raise ValueError("IN and NOT_IN require an explicit entity set")
-        elif self.operator in {GraphConstraintOperator.IN, GraphConstraintOperator.NOT_IN}:
-            raise ValueError("literal set operators require a typed literal-set representation")
-        return self
-
 
 class GraphPatternConstraintOutput(BaseModel):
     subject: EntityReferenceOutput = Field()
@@ -252,14 +211,6 @@ class GraphPatternConstraintOutput(BaseModel):
     object: ObjectConstraintOutput | None = Field()
 
     model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="after")
-    def validate_pattern(self) -> GraphPatternConstraintOutput:
-        if self.object is not None and self.predicate_id is None:
-            raise ValueError("object constraints require a predicate_id")
-        if isinstance(self.subject, ExplicitEntitySetOutput):
-            raise ValueError("set-valued subjects are not supported")
-        return self
 
 
 class GraphCompilationFailureCode(StrEnum):

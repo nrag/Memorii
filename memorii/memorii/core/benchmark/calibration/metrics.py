@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from math import sqrt
 
-from memorii.core.calibration.models import (
+from memorii.core.benchmark.calibration.models import (
     CalibrationEvent,
     CalibrationLabel,
     CalibrationLabelSource,
@@ -15,8 +15,8 @@ from memorii.core.calibration.models import (
     RiskCoveragePoint,
     ScenarioClusterInterval,
 )
-from memorii.core.calibration.policy import response_for_slice
-from memorii.core.calibration.statistics import scenario_cluster_bootstrap
+from memorii.core.benchmark.calibration.policy import response_for_slice
+from memorii.core.benchmark.calibration.statistics import scenario_cluster_bootstrap
 
 
 def labeled_events(events: Iterable[CalibrationEvent]) -> list[CalibrationEvent]:

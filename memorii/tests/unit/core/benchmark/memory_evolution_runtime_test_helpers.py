@@ -3,8 +3,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
-from memorii.core.benchmark.artifact_rows import RuntimeCheckpointResultRow
-from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow
+from memorii.core.benchmark.artifact_rows import (
+    CheckpointDiagnosticsPayload,
+    RuntimeCheckpointResultRow,
+)
+from memorii.core.benchmark.calibration.alignment import RuntimeGraphAlignment
+from memorii.core.benchmark.memory_evolution_runtime.models import (
+    RUNTIME_GRAPH_ITEM_ADAPTER,
+    RuntimeGraphItem,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     JudgeAggregate,
     JudgeVerdict,
@@ -15,8 +22,8 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     SimCheckpointContract,
     SimSystemOutput,
 )
-from memorii.core.calibration.alignment import RuntimeGraphAlignment
 from pydantic import BaseModel, ConfigDict, Field
+from tests.unit.core.benchmark.checkpoint_artifact_test_helpers import checkpoint_diagnostics_payload
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
     claim_by_role,
@@ -24,7 +31,6 @@ from tests.unit.core.benchmark.memory_evolution_test_helpers import (
 )
 
 RuntimeGraphItemKind = Literal["entity", "claim", "action"]
-RuntimeGraphItem = RuntimeGraphItemRow
 
 
 class RuntimeGraphItemFixture(BaseModel):
@@ -38,7 +44,7 @@ class RuntimeGraphItemFixture(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     def to_graph_item(self) -> RuntimeGraphItem:
-        return RuntimeGraphItemRow.model_validate(self.model_dump(mode="json"))
+        return RUNTIME_GRAPH_ITEM_ADAPTER.validate_python(self.model_dump(mode="json"))
 
 
 class RuntimeEntityFixture(RuntimeGraphItemFixture):
@@ -77,6 +83,11 @@ def runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
     candidate_payload = dict(row_fields.pop("candidate_cards", {}))
     raw_output_payload = dict(row_fields.pop("raw_output", output_payload))
     judge_payload = dict(row_fields.pop("judge_aggregate", {}))
+    diagnostic_overrides = dict(row_fields.pop("diagnostics", {}))
+    for field_name in CheckpointDiagnosticsPayload.model_fields:
+        if field_name in row_fields:
+            diagnostic_overrides[field_name] = row_fields.pop(field_name)
+    diagnostics = checkpoint_diagnostics_payload(**diagnostic_overrides)
     return RuntimeCheckpointResultRow(
         scenario_id=str(row_fields.pop("scenario_id", "scenario_1")),
         checkpoint_id=str(row_fields.pop("checkpoint_id", "checkpoint_1")),
@@ -150,10 +161,7 @@ def runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
                 **judge_payload,
             }
         ),
-        diagnostics={
-            **dict(row_fields.pop("diagnostics", {})),
-            **row_fields,
-        },
+        diagnostics=diagnostics,
     )
 
 

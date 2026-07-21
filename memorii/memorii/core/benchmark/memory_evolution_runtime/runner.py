@@ -24,7 +24,7 @@ from memorii.core.benchmark.memory_evolution_runtime.graph_items import (
 )
 from memorii.core.benchmark.memory_evolution_runtime.ingestion import IngestionContext, ingest_surface_observation
 from memorii.core.benchmark.memory_evolution_runtime.models import (
-    RuntimeGraphItemRow,
+    RuntimeGraphItem,
     RuntimeGraphSnapshotRow,
     RuntimeSuiteRows,
 )
@@ -99,7 +99,7 @@ def run_runtime_scenarios(
     judge_rows: list[JudgeAggregate] = []
     llm_rows: list[RuntimeExtractorTraceRow] = []
     graph_snapshots: list[RuntimeGraphSnapshotRow] = []
-    graph_items: list[RuntimeGraphItemRow] = []
+    graph_items: list[RuntimeGraphItem] = []
     alignments: list[RuntimeGraphAlignmentRow] = []
     runtime_failures: list[RuntimeCheckpointResultRow] = []
 
@@ -165,18 +165,32 @@ def run_runtime_scenarios(
                 if checkpoint.checkpoint_type == "execution_continuation"
                 else RetrievalPurpose.ANSWER
             )
-            prefetch_result = provider.prefetch_result(
-                checkpoint.query_or_task,
-                reference_time=checkpoint.timestamp,
-                top_k=8,
-                include_context=True,
-                include_conflicts=True,
-                purpose=retrieval_purpose,
-                query_language=checkpoint.query_language,
-                task_id=request_task_id,
-                session_id=request_session_id,
-                user_id=request_user_id,
-            )
+            if is_graph_audit:
+                prefetch_result = provider.prefetch_result(
+                    checkpoint.query_or_task,
+                    reference_time=checkpoint.timestamp,
+                    top_k=8,
+                    include_context=True,
+                    include_conflicts=True,
+                    purpose=retrieval_purpose,
+                    query_language=checkpoint.query_language,
+                    task_id=request_task_id,
+                    session_id=request_session_id,
+                    user_id=request_user_id,
+                )
+            else:
+                # Omit optional retrieval controls so answer and execution
+                # checkpoints certify the provider's production defaults.
+                prefetch_result = provider.prefetch_result(
+                    checkpoint.query_or_task,
+                    reference_time=checkpoint.timestamp,
+                    top_k=8,
+                    purpose=retrieval_purpose,
+                    query_language=checkpoint.query_language,
+                    task_id=request_task_id,
+                    session_id=request_session_id,
+                    user_id=request_user_id,
+                )
             retrieval_decision = prefetch_result.evolution_decision
             if retrieval_decision is None:
                 raise RuntimeError("production prefetch omitted its evolution decision")

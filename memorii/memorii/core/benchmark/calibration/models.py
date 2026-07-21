@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.core.calibration.simulation_models import (
+from memorii.core.benchmark.calibration.simulation_models import (
     GateDependenceParameterization,
     GateSimulationModel,
 )

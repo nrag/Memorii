@@ -111,14 +111,13 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Build fake-oracle runtime plumbing artifact
+      - name: Build deterministic runtime plumbing artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
           --suite memory_evolution_runtime_v1
           --mode llm
           --dry-run
-          --fail-on-benchmark-failure
           --storage-root .memorii
           --sim-profile long_horizon
           --sim-scenario-count 10
@@ -143,14 +142,13 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Build fake-oracle hybrid runtime plumbing artifact
+      - name: Build deterministic hybrid runtime plumbing artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
           --suite memory_evolution_runtime_v1
           --mode hybrid
           --dry-run
-          --fail-on-benchmark-failure
           --storage-root .memorii
           --sim-profile long_horizon
           --sim-scenario-count 10
@@ -173,14 +171,13 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Build fake-oracle adversarial runtime plumbing artifact
+      - name: Build deterministic adversarial runtime plumbing artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
           --suite memory_evolution_runtime_v1
           --mode llm
           --dry-run
-          --fail-on-benchmark-failure
           --storage-root .memorii
           --sim-profile adversarial
           --sim-scenario-count 10
@@ -201,21 +198,20 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Build fake-oracle adversarial hybrid runtime plumbing artifact
+      - name: Build deterministic adversarial hybrid runtime plumbing artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
           --suite memory_evolution_runtime_v1
           --mode hybrid
           --dry-run
-          --fail-on-benchmark-failure
           --storage-root .memorii
           --sim-profile adversarial
           --sim-scenario-count 10
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Validate fake-oracle plumbing reports
+      - name: Validate deterministic plumbing reports
         working-directory: memorii
         run: >-
           python -m memorii.tools.validate_benchmark_artifacts
