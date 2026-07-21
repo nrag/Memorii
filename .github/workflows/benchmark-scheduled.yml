@@ -1,0 +1,15 @@
+name: Scheduled Benchmark Reports
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-identity-bootstrap:
+    name: Workflow Identity Bootstrap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm bootstrap installation
+        run: echo "Live benchmark implementation is supplied by the reviewed candidate branch."
