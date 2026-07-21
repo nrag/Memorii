@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,6 @@ from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import (
-    build_python_dependency_fingerprint,
     build_source_tree_fingerprint,
     resolve_source_identity,
     resolve_source_revision,
@@ -27,134 +27,200 @@ def test_source_tree_fingerprint_is_content_addressed(tmp_path: Path) -> None:
     assert before != after
 
 
-def test_python_dependency_fingerprint_covers_transitive_local_imports(tmp_path: Path) -> None:
-    package = tmp_path / "package"
-    package.mkdir()
-    (package / "__init__.py").write_text("", encoding="utf-8")
-    (package / "entry.py").write_text("from package import dependency\n", encoding="utf-8")
-    (package / "dependency.py").write_text("from package.transitive import VALUE\n", encoding="utf-8")
-    transitive = package / "transitive.py"
-    transitive.write_text("VALUE = 1\n", encoding="utf-8")
-    unrelated = package / "unrelated.py"
-    unrelated.write_text("VALUE = 1\n", encoding="utf-8")
+@pytest.mark.parametrize(
+    "mutation",
+    ["change", "add", "remove", "rename"],
+)
+def test_owned_source_fingerprint_observes_every_tree_mutation(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    owned = tmp_path / "owned"
+    owned.mkdir()
+    (owned / "entry.py").write_text("from owned import target\n", encoding="utf-8")
+    target = owned / "target.py"
+    target.write_text("VALUE = 1\n", encoding="utf-8")
+    before = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
 
-    before = build_python_dependency_fingerprint(root=tmp_path, entry_paths=["package/entry.py"])
-    unrelated.write_text("VALUE = 2\n", encoding="utf-8")
-    after_unrelated_change = build_python_dependency_fingerprint(
+    if mutation == "change":
+        target.write_text("VALUE = 2\n", encoding="utf-8")
+    elif mutation == "add":
+        (owned / "added.json").write_text('{"value": 2}\n', encoding="utf-8")
+    elif mutation == "remove":
+        target.unlink()
+    else:
+        target.rename(owned / "renamed.py")
+
+    after = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+
+    assert after != before
+
+
+def test_owned_source_fingerprint_ignores_outside_files_and_input_order(tmp_path: Path) -> None:
+    owned = tmp_path / "owned"
+    owned.mkdir()
+    (owned / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    config = tmp_path / "pyproject.toml"
+    config.write_text("[project]\nname = 'example'\n", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("before\n", encoding="utf-8")
+
+    before = build_source_tree_fingerprint(
         root=tmp_path,
-        entry_paths=["package/entry.py"],
+        relative_paths=["owned", "pyproject.toml"],
     )
-    transitive.write_text("VALUE = 2\n", encoding="utf-8")
-    after_transitive_change = build_python_dependency_fingerprint(
+    outside.write_text("after\n", encoding="utf-8")
+    after = build_source_tree_fingerprint(
         root=tmp_path,
-        entry_paths=["package/entry.py"],
+        relative_paths=["pyproject.toml", "owned", "owned"],
     )
 
-    assert after_unrelated_change == before
-    assert after_transitive_change != before
+    assert after == before
 
 
-def test_python_dependency_fingerprint_fails_closed_on_dynamic_import(tmp_path: Path) -> None:
-    package = tmp_path / "package"
-    package.mkdir()
-    (package / "__init__.py").write_text("", encoding="utf-8")
-    (package / "entry.py").write_text(
-        "import importlib\nMODULE = importlib.import_module('package.dependency')\n",
-        encoding="utf-8",
-    )
-    (package / "dependency.py").write_text("VALUE = 1\n", encoding="utf-8")
+def test_owned_source_fingerprint_has_an_independently_verified_canonical_digest(
+    tmp_path: Path,
+) -> None:
+    owned = tmp_path / "owned"
+    owned.mkdir()
+    files = {
+        "owned/a.bin": b"\x00\xff\n",
+        "owned/z.py": b"VALUE = 1\n",
+    }
+    for relative_path, content in files.items():
+        (tmp_path / relative_path).write_bytes(content)
 
-    with pytest.raises(ValueError, match="dynamic import cannot be fingerprinted"):
-        build_python_dependency_fingerprint(root=tmp_path, entry_paths=["package/entry.py"])
+    expected = hashlib.sha256()
+    expected.update(b"memorii-owned-source\0")
+    for relative_path, content in sorted(files.items()):
+        expected.update(relative_path.encode("utf-8"))
+        expected.update(b"\0")
+        expected.update(content)
+        expected.update(b"\0")
+
+    assert build_source_tree_fingerprint(
+        root=tmp_path,
+        relative_paths=["owned"],
+    ) == expected.hexdigest()
+
+
+def test_owned_source_fingerprint_excludes_generated_bytecode(tmp_path: Path) -> None:
+    owned = tmp_path / "owned"
+    cache = owned / "__pycache__"
+    cache.mkdir(parents=True)
+    (owned / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    bytecode = cache / "module.pyc"
+    bytecode.write_bytes(b"before")
+    optimized = owned / "module.pyo"
+    optimized.write_bytes(b"before")
+
+    before = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    bytecode.write_bytes(b"after")
+    optimized.write_bytes(b"after")
+    after = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+
+    assert after == before
 
 
 @pytest.mark.parametrize(
-    "source",
+    "relative_paths",
+    [[], [""], ["missing"], ["../outside"]],
+)
+def test_owned_source_fingerprint_fails_closed_on_invalid_ownership(
+    tmp_path: Path,
+    relative_paths: list[str],
+) -> None:
+    with pytest.raises(ValueError):
+        build_source_tree_fingerprint(root=tmp_path, relative_paths=relative_paths)
+
+
+def test_owned_source_fingerprint_fails_closed_on_absolute_paths(tmp_path: Path) -> None:
+    source = tmp_path / "source.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="escapes root"):
+        build_source_tree_fingerprint(root=tmp_path, relative_paths=[str(source)])
+
+
+def test_owned_source_fingerprint_fails_closed_on_empty_directories(tmp_path: Path) -> None:
+    (tmp_path / "owned").mkdir()
+
+    with pytest.raises(ValueError, match="contains no source files"):
+        build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+
+
+def test_owned_source_fingerprint_fails_closed_on_nested_symlinks(tmp_path: Path) -> None:
+    owned = tmp_path / "owned"
+    owned.mkdir()
+    target = tmp_path / "target.py"
+    target.write_text("VALUE = 1\n", encoding="utf-8")
+    (owned / "linked.py").symlink_to(target)
+
+    with pytest.raises(ValueError, match="cannot contain symlinks"):
+        build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+
+
+def test_owned_source_fingerprint_fails_closed_on_symlinked_root(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "source.py").write_text("VALUE = 1\n", encoding="utf-8")
+    linked_root = tmp_path / "linked-root"
+    linked_root.symlink_to(root, target_is_directory=True)
+
+    with pytest.raises(ValueError, match="root cannot be a symlink"):
+        build_source_tree_fingerprint(root=linked_root, relative_paths=["source.py"])
+
+
+def test_owned_source_fingerprint_propagates_read_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.py"
+    source.write_text("VALUE = 1\n", encoding="utf-8")
+    original_read_bytes = Path.read_bytes
+
+    def fail_for_owned_source(path: Path) -> bytes:
+        if path == source.resolve():
+            raise OSError("cannot read owned source")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_for_owned_source)
+
+    with pytest.raises(OSError, match="cannot read owned source"):
+        build_source_tree_fingerprint(root=tmp_path, relative_paths=["source.py"])
+
+
+@pytest.mark.parametrize(
+    "entry_source",
     [
-        "import importlib as loader\nMODULE = loader.import_module('package.dependency')\n",
-        "import importlib.util\nMODULE = importlib.import_module('package.dependency')\n",
-        "from importlib import import_module as load\nMODULE = load('package.dependency')\n",
-        "from builtins import __import__ as load\nMODULE = load('package.dependency')\n",
-        "import builtins as runtime\nMODULE = runtime.__import__('package.dependency')\n",
-        (
-            "from importlib import import_module as load\n"
-            "class Record:\n"
-            "    value: load('package.dependency').Value\n"
-        ),
         (
             "from importlib import import_module\n"
-            "load = import_module\n"
-            "MODULE = load('package.dependency')\n"
+            "(load,) = (import_module,)\n"
+            "MODULE = load('owned.dependency')\n"
+        ),
+        (
+            "import importlib\n"
+            "load = getattr(importlib, 'import_module')\n"
+            "MODULE = load('owned.dependency')\n"
         ),
     ],
 )
-def test_python_dependency_fingerprint_rejects_aliased_dynamic_local_imports(
+def test_owned_source_fingerprint_covers_adversarial_dynamic_import_targets(
     tmp_path: Path,
-    source: str,
+    entry_source: str,
 ) -> None:
-    _write_dynamic_import_package(tmp_path=tmp_path, source=source)
+    owned = tmp_path / "owned"
+    owned.mkdir()
+    (owned / "__init__.py").write_text("", encoding="utf-8")
+    (owned / "entry.py").write_text(entry_source, encoding="utf-8")
+    dependency = owned / "dependency.py"
+    dependency.write_text("VALUE = 1\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="dynamic import cannot be fingerprinted"):
-        build_python_dependency_fingerprint(root=tmp_path, entry_paths=["package/entry.py"])
+    before = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    dependency.write_text("VALUE = 2\n", encoding="utf-8")
+    after = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
 
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        "import importlib as loader\nMODULE = loader.import_module(MODULE_NAME)\n",
-        (
-            "from importlib import import_module as load\n"
-            "load = factory\n"
-            "MODULE = load('package.dependency')\n"
-        ),
-        "from importlib import import_module as load\nMODULE = load('.dependency', __package__)\n",
-        "MODULE = __import__('dependency', globals(), locals(), (), 1)\n",
-    ],
-)
-def test_python_dependency_fingerprint_fails_closed_on_ambiguous_dynamic_imports(
-    tmp_path: Path,
-    source: str,
-) -> None:
-    _write_dynamic_import_package(tmp_path=tmp_path, source=source)
-
-    with pytest.raises(ValueError, match="dynamic import cannot be fingerprinted"):
-        build_python_dependency_fingerprint(root=tmp_path, entry_paths=["package/entry.py"])
-
-
-@pytest.mark.parametrize(
-    "source",
-    [
-        (
-            "from importlib import import_module\n"
-            "def call_other(import_module):\n"
-            "    return import_module('package.dependency')\n"
-        ),
-        (
-            "class Loader:\n"
-            "    def import_module(self, name):\n"
-            "        return name\n"
-            "MODULE = Loader().import_module(MODULE_NAME)\n"
-        ),
-    ],
-)
-def test_python_dependency_fingerprint_ignores_unrelated_shadowed_callables(
-    tmp_path: Path,
-    source: str,
-) -> None:
-    _write_dynamic_import_package(tmp_path=tmp_path, source=source)
-
-    assert build_python_dependency_fingerprint(
-        root=tmp_path,
-        entry_paths=["package/entry.py"],
-    )
-
-
-def _write_dynamic_import_package(*, tmp_path: Path, source: str) -> None:
-    package = tmp_path / "package"
-    package.mkdir()
-    (package / "__init__.py").write_text("", encoding="utf-8")
-    (package / "entry.py").write_text(source, encoding="utf-8")
-    (package / "dependency.py").write_text("VALUE = 1\n", encoding="utf-8")
+    assert after != before
 
 
 def test_live_source_revision_fails_closed_without_revision_identity(

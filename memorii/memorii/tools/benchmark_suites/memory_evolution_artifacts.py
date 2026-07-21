@@ -49,7 +49,6 @@ from memorii.core.benchmark.memory_evolution_sim import (
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import (
     build_benchmark_fingerprint,
-    build_python_dependency_fingerprint,
     build_run_id,
     build_source_tree_fingerprint,
     resolve_source_revision,
@@ -191,6 +190,10 @@ def write_memory_evolution_artifacts(
         "oracle_checkpoints": hashlib.sha256(checkpoint_jsonl.encode("utf-8")).hexdigest(),
         "candidate_cards": hashlib.sha256(candidate_card_jsonl.encode("utf-8")).hexdigest(),
     }
+    source_tree_digest = build_source_tree_fingerprint(
+        root=_PROJECT_ROOT,
+        relative_paths=["memorii", "pyproject.toml"],
+    )
     fixture_fingerprint_config: dict[str, object] = {
         "profile": args.sim_profile,
         "scenario_count": args.sim_scenario_count,
@@ -202,48 +205,17 @@ def write_memory_evolution_artifacts(
         # generated fixture contents intentionally vary by seed, so they must
         # not participate in the seed-invariant gate configuration fingerprint.
         "fixture_contract": "memory_evolution_surface_contract_v1",
-        "source_hash": build_python_dependency_fingerprint(
-            root=_PROJECT_ROOT,
-            entry_paths=[
-                "memorii/core/benchmark/memory_evolution_sim/generation.py",
-                "memorii/core/benchmark/memory_evolution_sim/schemas.py",
-            ],
-        ),
+        "source_hash": source_tree_digest,
     }
     evaluation_fingerprint_config: dict[str, object] = {
         "suite": suite,
         "evaluation_contract": "memory_evolution_judges_v1",
         "failure_policy_contract": "fail_closed_v1",
         "artifact_contract": 1,
-        "source_hash": build_python_dependency_fingerprint(
-            root=_PROJECT_ROOT,
-            entry_paths=[
-                "memorii/core/benchmark/artifact_rows",
-                "memorii/core/benchmark/artifact_validation.py",
-                "memorii/core/benchmark/failure_policy.py",
-                "memorii/core/benchmark/memory_evolution_sim/diagnostics.py",
-                "memorii/core/benchmark/memory_evolution_sim/judges.py",
-                "memorii/core/benchmark/memory_evolution_sim/schemas.py",
-                "memorii/core/benchmark/memory_evolution_sim/utils.py",
-                "memorii/core/benchmark/calibration",
-                *(
-                    [
-                        "memorii/core/benchmark/memory_evolution_runtime/alignment.py",
-                        "memorii/core/benchmark/memory_evolution_runtime/artifacts.py",
-                        "memorii/core/benchmark/memory_evolution_runtime/checkpoint_projection.py",
-                    ]
-                    if runtime_report is not None
-                    else []
-                ),
-            ],
-        ),
+        "source_hash": source_tree_digest,
     }
     source_revision = resolve_source_revision(root=_PROJECT_ROOT, dry_run=args.dry_run)
     source_state = resolve_source_state(root=_PROJECT_ROOT)
-    source_tree_digest = build_source_tree_fingerprint(
-        root=_PROJECT_ROOT,
-        relative_paths=["memorii", "pyproject.toml"],
-    )
     system_fingerprint_config: dict[str, object] = {
         "mode": mode,
         "source_revision": source_revision,
