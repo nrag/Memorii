@@ -179,6 +179,13 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     assert concurrency["cancel-in-progress"] == "false"
     assert isinstance(jobs, dict)
     assert set(jobs) == {"fake-oracle-plumbing", "live-runtime-smoke", "live-runtime-gate"}
+    live_smoke = jobs["live-runtime-smoke"]
+    assert isinstance(live_smoke, dict)
+    live_environment = live_smoke["env"]
+    assert isinstance(live_environment, dict)
+    assert live_environment["MEMORII_LLM_PROVIDER"] == "openai"
+    assert live_environment["MEMORII_ENABLE_LIVE_LLM_TESTS"] == "true"
+    assert live_environment["OPENAI_API_KEY"] == "${{ secrets.OPENAI_API_KEY }}"
     live_gate = jobs["live-runtime-gate"]
     assert isinstance(live_gate, dict)
     assert live_gate["name"] == "Live Runtime Statistical Gate"
@@ -192,6 +199,10 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     assert "--minimum-scenarios-per-replicate" in workflow
     assert "--minimum-replicates-per-seed" in workflow
     assert "--allow-live" in workflow
+    assert "Verify live provider configuration" in workflow
+    assert "runtime.has_live_provider()" in workflow
+    assert "live.should_run_live_llm_tests(runtime)" in workflow
+    assert "LLMDecisionRuntimeConfig(mode='hybrid').resolve(runtime) == 'hybrid'" in workflow
     assert "ref: ${{ env.MEMORII_SOURCE_REVISION }}" in workflow
     assert 'test "$(git rev-parse HEAD)" = "$MEMORII_SOURCE_REVISION"' in workflow
     assert "Verify source-bound gate certificate" in workflow

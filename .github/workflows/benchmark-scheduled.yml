@@ -105,6 +105,8 @@ jobs:
         seed: [7, 11, 19, 23, 31, 37, 41, 43, 47, 53]
         replicate: [0, 1]
     env:
+      MEMORII_LLM_PROVIDER: openai
+      MEMORII_ENABLE_LIVE_LLM_TESTS: 'true'
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       MEMORII_LLM_MAX_RETRIES: '0'
 
@@ -129,6 +131,12 @@ jobs:
       - name: Install package + test deps
         working-directory: memorii
         run: pip install -e '.[local,dev]'
+
+      - name: Verify live provider configuration
+        working-directory: memorii
+        run: >-
+          python -c
+          "from memorii.core.llm_config import LLMLiveTestConfig, LLMDecisionRuntimeConfig, LLMRuntimeConfig; runtime=LLMRuntimeConfig.from_env(); live=LLMLiveTestConfig.from_env(); assert runtime.provider == 'openai'; assert runtime.has_live_provider(); assert live.should_run_live_llm_tests(runtime); assert LLMDecisionRuntimeConfig(mode='hybrid').resolve(runtime) == 'hybrid'"
 
       - name: Run live runtime smoke
         working-directory: memorii
