@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
+from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.fixtures import normalize_fixtures
 from memorii.core.benchmark.llm_adapters import LLMRetrievalRelevanceDecisionAdapter
 from memorii.core.benchmark.metrics import compute_metrics
@@ -91,7 +92,11 @@ def run_retrieval_relevance_decisions(
         if mode != "auto"
         else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     )
-    effective_mode = decision_config.resolve(runtime_config)
+    effective_mode = resolve_benchmark_decision_mode(
+        decision_config=decision_config,
+        runtime_config=runtime_config,
+        dry_run=dry_run,
+    )
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
         validate_live_safety(

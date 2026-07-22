@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,7 @@ from memorii.tools.benchmark_suites.runtime_dependencies import (
 )
 from memorii.tools.run_benchmark import main
 from tests.unit.core.benchmark.memory_evolution_test_helpers import generate_scenario_by_family
-from tests.unit.tools.run_benchmark_test_helpers import _clear_llm_env
+from tests.unit.tools.run_benchmark_test_helpers import _clear_llm_env, _latest_run_dir
 
 
 def test_runtime_benchmark_report_write_failure_is_not_swallowed(
@@ -124,6 +125,47 @@ def test_llm_client_binding_rejects_provider_identity_mismatch() -> None:
             backend=ExecutionBackend.FAKE_ORACLE,
             provider_name="not-the-client-provider",
         )
+
+
+def test_runtime_dry_run_hybrid_uses_fake_extractor_without_live_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _clear_llm_env(monkeypatch)
+
+    assert main(
+        [
+            "--suite",
+            "memory_evolution_runtime_v1",
+            "--mode",
+            "hybrid",
+            "--dry-run",
+            "--storage-root",
+            str(tmp_path),
+            "--sim-profile",
+            "long_horizon",
+            "--sim-scenario-count",
+            "1",
+            "--sim-min-events",
+            "5",
+            "--sim-max-events",
+            "10",
+            "--sim-noise-rate",
+            "0.35",
+            "--seed",
+            "7",
+        ]
+    ) == 0
+
+    run_dir = _latest_run_dir(tmp_path, "memory_evolution_runtime_v1", "hybrid")
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    runtime_health = report["runtime_provider_health"]
+
+    assert report["llm_calls"] == report["event_count"]
+    assert report["fake_calls"] == report["llm_calls"]
+    assert report["final_output_source_counts"] == {"fake_oracle": report["checkpoint_count"]}
+    assert runtime_health["fake_extractor_calls"] == report["checkpoint_count"]
+    assert runtime_health["effective_decision_mode"] == "hybrid"
 
 
 def test_non_hotpotqa_suite_does_not_resolve_hotpotqa_default_dataset(

@@ -7,6 +7,7 @@ from typing import cast
 
 from memorii.core.belief.models import BeliefUpdateContext
 from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
+from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.fixtures import normalize_fixtures
 from memorii.core.benchmark.lifecycle_decision import (
     lifecycle_assertion_passed,
@@ -326,7 +327,11 @@ def run_lifecycle_transitions(
     env_snapshot = load_memorii_environment()
     runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
     decision_config = LLMDecisionRuntimeConfig(mode=_decision_mode(mode)) if mode != "auto" else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
-    effective_mode = decision_config.resolve(runtime_config)
+    effective_mode = resolve_benchmark_decision_mode(
+        decision_config=decision_config,
+        runtime_config=runtime_config,
+        dry_run=dry_run,
+    )
     if effective_mode == "rule":
         return _run_rule_lifecycle_transitions(fixtures=fixtures, mode=mode), []
 

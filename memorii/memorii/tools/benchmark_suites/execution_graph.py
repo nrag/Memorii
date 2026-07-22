@@ -11,6 +11,7 @@ from datetime import (
 from pathlib import Path
 from typing import cast
 
+from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.execution_graph_decision import (
     ExecutionGraphScenario,
     execution_graph_assertion_passed,
@@ -35,7 +36,10 @@ from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.artifact_io import write_jsonl
-from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
+from memorii.tools.benchmark_suites.common import (
+    ALL_DECISION_MODES,
+    require_memorii_only,
+)
 from memorii.tools.benchmark_suites.fake_adapters import ExpectedExecutionGraphFakeAdapter
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
 from memorii.tools.run_live_llm_eval import validate_live_safety
@@ -73,7 +77,11 @@ def _run_execution_graph_transitions(
         if mode != "auto"
         else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     )
-    effective_mode = decision_config.resolve(runtime_config)
+    effective_mode = resolve_benchmark_decision_mode(
+        decision_config=decision_config,
+        runtime_config=runtime_config,
+        dry_run=dry_run,
+    )
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
         validate_live_safety(

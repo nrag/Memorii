@@ -217,6 +217,7 @@ def test_source_identity_certifies_only_clean_versioned_trees(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("MEMORII_SOURCE_REVISION", raising=False)
     monkeypatch.setattr(reproducibility, "_git_head_revision", lambda _root: "a" * 40)
     monkeypatch.setattr(reproducibility, "_git_status_porcelain", lambda _root: "")
     identity = resolve_source_identity(root=tmp_path, dry_run=False)

@@ -13,6 +13,7 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeGraphAlignmentRow,
     SimScenarioResultRow,
 )
+from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.memory_evolution_runtime.checkpoint_evaluation import runtime_failure_buckets
 from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import project_runtime_checkpoint
 from memorii.core.benchmark.memory_evolution_runtime.extractors import (
@@ -62,7 +63,11 @@ def validate_runtime_live_safety(
         if mode != "auto"
         else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     )
-    effective_mode = decision_config.resolve(runtime_config)
+    effective_mode: DecisionMode = resolve_benchmark_decision_mode(
+        decision_config=decision_config,
+        runtime_config=runtime_config,
+        dry_run=dry_run,
+    )
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
         validate_live_safety(

@@ -24,6 +24,7 @@ from memorii.core.benchmark.artifact_validation import (
     finalize_memory_evolution_run,
     validate_memory_evolution_run,
 )
+from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.llm_adapters import LLMMemoryEvolutionSimReconstructionAdapter
 from memorii.core.benchmark.memory_evolution_sim import (
     JudgeAggregate,
@@ -49,7 +50,10 @@ from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
-from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
+from memorii.tools.benchmark_suites.common import (
+    ALL_DECISION_MODES,
+    require_memorii_only,
+)
 from memorii.tools.benchmark_suites.fake_adapters import ExpectedMemoryEvolutionSimFakeAdapter
 from memorii.tools.benchmark_suites.memory_evolution_artifacts import (
     horizon_distance_bucket,
@@ -107,7 +111,11 @@ def _run_memory_evolution_sim_transitions(
     decision_config = (
         LLMDecisionRuntimeConfig(mode=mode) if mode != "auto" else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     )
-    effective_mode = decision_config.resolve(runtime_config)
+    effective_mode = resolve_benchmark_decision_mode(
+        decision_config=decision_config,
+        runtime_config=runtime_config,
+        dry_run=dry_run,
+    )
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
         validate_live_safety(

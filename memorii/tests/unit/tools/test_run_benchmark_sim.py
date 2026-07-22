@@ -168,6 +168,49 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     assert trace_payload["input_payload"]["provider"] == "fake"
 
 
+def test_memory_evolution_sim_dry_run_hybrid_does_not_require_live_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    _clear_llm_env(monkeypatch)
+
+    assert main(
+        [
+            "--suite",
+            "memory_evolution_sim_v1",
+            "--mode",
+            "hybrid",
+            "--dry-run",
+            "--fail-on-benchmark-failure",
+            "--storage-root",
+            str(tmp_path),
+            "--sim-profile",
+            "long_horizon",
+            "--sim-scenario-count",
+            "2",
+            "--sim-min-events",
+            "25",
+            "--sim-max-events",
+            "60",
+            "--sim-noise-rate",
+            "0.35",
+            "--seed",
+            "7",
+        ]
+    ) == 0
+
+    run_dir = _latest_run_dir(tmp_path, "memory_evolution_sim_v1", "hybrid")
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    fields = _summary_fields(capsys.readouterr().out)
+
+    assert report["failed"] == 0
+    assert report["llm_calls"] == report["checkpoint_count"]
+    assert report["fake_calls"] == report["checkpoint_count"]
+    assert report["final_output_source_counts"] == {"fake_oracle": report["checkpoint_count"]}
+    assert int(fields["llm_calls"]) == report["checkpoint_count"]
+
+
 def test_memory_evolution_sim_adversarial_artifacts_include_hidden_pressure_without_prompt_leak(
     tmp_path: Path,
 ) -> None:
