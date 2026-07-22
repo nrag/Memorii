@@ -46,4 +46,6 @@ evaluation-only rejection channels. Runtime semantic quality is enforced by the
 revision-bound live statistical gate. Live certification is an explicit pre-merge check launched
 against the committed PR SHA because a statistically meaningful run is costly and requires
 provider credentials; it must never execute unreviewed pull-request code with secrets or be
-inferred from a developer's dirty working tree.
+inferred from a developer's dirty working tree. Each live matrix job has a three-hour operational
+ceiling so provider latency cannot censor an otherwise valid replicate near its normal runtime;
+timeouts still fail closed as missing certification evidence.

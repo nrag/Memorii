@@ -181,6 +181,7 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     assert set(jobs) == {"fake-oracle-plumbing", "live-runtime-smoke", "live-runtime-gate"}
     live_smoke = jobs["live-runtime-smoke"]
     assert isinstance(live_smoke, dict)
+    assert live_smoke["timeout-minutes"] == "180"
     live_environment = live_smoke["env"]
     assert isinstance(live_environment, dict)
     assert live_environment["MEMORII_LLM_PROVIDER"] == "openai"

@@ -97,7 +97,7 @@ jobs:
     name: Live Runtime Smoke (seed ${{ matrix.seed }}, replicate ${{ matrix.replicate }})
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.MEMORII_RUN_LIVE_GATES == 'true') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       max-parallel: 2
