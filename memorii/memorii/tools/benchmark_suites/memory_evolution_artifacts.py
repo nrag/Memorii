@@ -66,6 +66,37 @@ def _mapping_has_values(value: object) -> bool:
     return any(bool(item) for item in value.values())
 
 
+def _system_fingerprint_config(
+    *,
+    mode: str,
+    source_revision: str,
+    source_tree_digest: str,
+    llm_rows: Sequence[LLMArtifactRow],
+    runtime_provider_metadata: Mapping[str, str] | None,
+) -> dict[str, object]:
+    config: dict[str, object] = {
+        "mode": mode,
+        "source_revision": source_revision,
+        "source_hash": source_tree_digest,
+    }
+    if runtime_provider_metadata is not None:
+        config["provider_metadata"] = dict(sorted(runtime_provider_metadata.items()))
+        return config
+
+    # Simulator traces retain rendered hashes as per-call evidence. Only
+    # stable prompt refs and provider identities enter configuration.
+    config["prompt_contract_refs"] = sorted(
+        {prompt_ref for row in llm_rows if (prompt_ref := _trace_prompt_ref(row)) is not None}
+    )
+    config["provider_models"] = sorted(
+        {model for row in llm_rows if (model := _trace_model(row)) is not None}
+    )
+    config["providers"] = sorted(
+        {provider for row in llm_rows if (provider := _trace_provider(row)) is not None}
+    )
+    return config
+
+
 def write_memory_evolution_artifacts(
     *,
     scenarios: list[LatentGraphScenario],
@@ -213,23 +244,17 @@ def write_memory_evolution_artifacts(
     }
     source_revision = resolve_source_revision(root=_PACKAGE_ROOT, dry_run=args.dry_run)
     source_state = resolve_source_state(root=_PACKAGE_ROOT)
-    system_fingerprint_config: dict[str, object] = {
-        "mode": mode,
-        "source_revision": source_revision,
-        "source_hash": source_tree_digest,
-        # Rendered hashes include seed-specific context. Prompt refs identify
-        # the stable system contract; per-call hashes remain in llm traces.
-        "prompt_contract_refs": sorted(
-            {prompt_ref for row in llm_rows if (prompt_ref := _trace_prompt_ref(row)) is not None}
+    system_fingerprint_config = _system_fingerprint_config(
+        mode=mode,
+        source_revision=source_revision,
+        source_tree_digest=source_tree_digest,
+        llm_rows=llm_rows,
+        runtime_provider_metadata=(
+            runtime_report.runtime_provider_health.provider_metadata
+            if runtime_report is not None
+            else None
         ),
-        "provider_models": sorted({model for row in llm_rows if (model := _trace_model(row)) is not None}),
-        "providers": sorted({provider for row in llm_rows if (provider := _trace_provider(row)) is not None}),
-    }
-    if runtime_report is not None:
-        metadata = runtime_report.runtime_provider_health.provider_metadata
-        system_fingerprint_config["provider_metadata"] = {
-            key: metadata[key] for key in ("provider", "model") if key in metadata
-        }
+    )
     final_output_source_counts = Counter(row.final_output_source for row in checkpoint_rows)
     llm_successes = sum(1 for row in llm_rows if row.success)
     provider_successes = (

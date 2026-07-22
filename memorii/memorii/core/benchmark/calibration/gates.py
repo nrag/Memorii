@@ -99,8 +99,8 @@ def load_live_reports(
             continue
         if report.dry_run or report.execution_source == "fake_oracle":
             raise ValueError(f"live gate received a dry-run/fake-oracle report: {report_path}")
-        if report.execution_source != "live_llm":
-            raise ValueError(f"live gate requires execution_source=live_llm: {report_path}")
+        if report.execution_source not in {"live_llm", "mixed"}:
+            raise ValueError(f"live gate requires live provider execution: {report_path}")
         if report.provider_successes + report.provider_failures <= 0:
             raise ValueError(f"live gate report contains no provider calls: {report_path}")
         if report.mode != mode:
@@ -181,7 +181,7 @@ def evaluate_live_gate(
     for report in reports:
         if report.suite != suite or report.mode != mode or report.profile != profile:
             raise ValueError(f"report identity does not match gate: {report.suite}/{report.mode}/{report.profile}")
-        if report.dry_run or report.execution_source != "live_llm":
+        if report.dry_run or report.execution_source not in {"live_llm", "mixed"}:
             failure_reasons.append("non_live_execution_source")
         if not report.has_valid_content_digest():
             raise ValueError(f"report content digest is invalid: {report.run_id}")

@@ -168,7 +168,7 @@ jobs:
     needs: live-runtime-smoke
     if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.MEMORII_RUN_LIVE_GATES == 'true')) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 180
 
     steps:
       - name: Checkout

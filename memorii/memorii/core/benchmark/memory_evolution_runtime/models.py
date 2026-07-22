@@ -138,6 +138,9 @@ RUNTIME_GRAPH_ITEM_TYPES = (
     RuntimeRelationGraphItemRow,
     RuntimeActionGraphItemRow,
 )
+_PROVIDER_METADATA_KEYS = frozenset(
+    {"backend", "provider", "model", "timeout_seconds", "max_retries"}
+)
 
 
 class GraphItemNormalizationResult(BaseModel):
@@ -161,6 +164,7 @@ class RuntimeSuiteRows:
     runtime_failures: list[RuntimeCheckpointResultRow] = field(default_factory=list)
     effective_mode: str | None = None
     dry_run: bool = False
+    provider_metadata: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_row_type("scenario_rows", self.scenario_rows, SimScenarioResultRow)
@@ -171,6 +175,11 @@ class RuntimeSuiteRows:
         _require_row_types("graph_items", self.graph_items, RUNTIME_GRAPH_ITEM_TYPES)
         _require_row_type("alignments", self.alignments, RuntimeGraphAlignmentRow)
         _require_row_type("runtime_failures", self.runtime_failures, RuntimeCheckpointResultRow)
+        if any(not key.strip() or not value.strip() for key, value in self.provider_metadata.items()):
+            raise ValueError("provider_metadata keys and values must be non-empty")
+        unknown_metadata = sorted(set(self.provider_metadata) - _PROVIDER_METADATA_KEYS)
+        if unknown_metadata:
+            raise ValueError(f"provider_metadata contains unsupported fields: {unknown_metadata}")
 
 
 def _require_row_type(field_name: str, rows: Sequence[object], row_type: type[T]) -> None:

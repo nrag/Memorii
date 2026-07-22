@@ -195,6 +195,7 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     assert isinstance(live_gate, dict)
     assert live_gate["name"] == "Live Runtime Statistical Gate"
     assert live_gate["needs"] == "live-runtime-smoke"
+    assert live_gate["timeout-minutes"] == "180"
 
     assert "MEMORII_RUN_LIVE_GATES" in workflow
     assert "github.event_name == 'schedule'" in workflow

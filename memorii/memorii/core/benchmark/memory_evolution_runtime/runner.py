@@ -326,4 +326,28 @@ def run_runtime_scenarios(
         runtime_failures=runtime_failures,
         effective_mode=effective_mode,
         dry_run=dry_run,
+        provider_metadata=_provider_metadata(
+            runtime_config=runtime_config,
+            effective_mode=effective_mode,
+            dry_run=dry_run,
+        ),
     )
+
+
+def _provider_metadata(
+    *,
+    runtime_config: LLMRuntimeConfig,
+    effective_mode: DecisionMode,
+    dry_run: bool,
+) -> dict[str, str]:
+    if dry_run and effective_mode in {"llm", "hybrid"}:
+        return {"backend": "fake_oracle", "provider": "fake"}
+    if effective_mode == "rule":
+        return {"backend": "rule", "provider": "none"}
+    return {
+        "backend": "live_provider",
+        "provider": runtime_config.provider,
+        "model": runtime_config.model or "provider_default",
+        "timeout_seconds": str(runtime_config.timeout_seconds),
+        "max_retries": str(runtime_config.max_retries),
+    }

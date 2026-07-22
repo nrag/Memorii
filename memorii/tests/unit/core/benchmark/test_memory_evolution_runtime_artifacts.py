@@ -422,6 +422,13 @@ def test_runtime_provider_health_fails_for_terminal_provider_errors_and_fallback
             ),
         ],
         effective_mode="hybrid",
+        provider_metadata={
+            "backend": "live_provider",
+            "provider": "openai",
+            "model": "provider_default",
+            "timeout_seconds": "60",
+            "max_retries": "0",
+        },
     )
 
     health = runtime_provider_health(rows)
@@ -434,6 +441,24 @@ def test_runtime_provider_health_fails_for_terminal_provider_errors_and_fallback
     assert health.provider_success_rate == 0.5
     assert health.failure_buckets == ["runtime_provider_failure", "runtime_provider_fallback"]
     assert health.failure_classification_counts == {"provider_request_error": 1}
+    assert health.provider_metadata == {
+        "backend": "live_provider",
+        "max_retries": "0",
+        "model": "provider_default",
+        "provider": "openai",
+        "timeout_seconds": "60",
+    }
+
+
+def test_runtime_provider_metadata_rejects_credentials() -> None:
+    with pytest.raises(ValueError, match="unsupported fields"):
+        RuntimeSuiteRows(
+            scenario_rows=[],
+            checkpoint_rows=[],
+            judge_rows=[],
+            llm_rows=[],
+            provider_metadata={"api_key": "must-not-be-recorded"},
+        )
 
 
 def test_runtime_provider_health_is_not_applicable_to_rule_mode() -> None:

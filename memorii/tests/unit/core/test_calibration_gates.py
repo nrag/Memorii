@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import pytest
 from memorii.core.benchmark.artifact_rows import BenchmarkReportSummary, SimScenarioResultRow
-from memorii.core.benchmark.calibration.gates import evaluate_live_gate
+from memorii.core.benchmark.calibration import gates
+from memorii.core.benchmark.calibration.gates import evaluate_live_gate, load_live_reports
 from memorii.core.benchmark.calibration.models import CalibrationReport, DecisionCostReport
 from memorii.core.benchmark.calibration.simulation_models import (
     calibrated_logistic_normal_parameters,
@@ -379,11 +382,32 @@ def test_live_gate_rejects_semantically_duplicated_worlds_across_seeds() -> None
     assert "duplicate_semantic_worlds" in summary.failure_reasons
 
 
+def test_live_gate_allows_mixed_live_provenance_within_declared_budgets() -> None:
+    mixed_live = _updated_report(
+        _report(seed=7),
+        execution_source="mixed",
+        final_output_source_counts={"live_llm": 2, "reused_runtime_state": 1},
+    )
+    summary = evaluate_live_gate(
+        [mixed_live],
+        suite="memory_evolution_sim_v1",
+        mode="hybrid",
+        profile="long_horizon",
+        minimum_seed_count=1,
+        minimum_scenarios_per_replicate=3,
+        minimum_replicates_per_seed=1,
+        minimum_pass_rate_lower_bound=0.0,
+        bootstrap_resamples=50,
+    )
+    assert summary.passed is True
+    assert "non_live_execution_source" not in summary.failure_reasons
+
+
 def test_live_gate_rejects_non_live_or_zero_call_reports() -> None:
     non_live = _updated_report(
         _report(seed=7),
-        execution_source="mixed",
-        final_output_source_counts={"live_llm": 2, "rule": 1},
+        execution_source="rule",
+        final_output_source_counts={"rule": 3},
     )
     summary = evaluate_live_gate(
         [non_live],
@@ -415,6 +439,58 @@ def test_live_gate_rejects_non_live_or_zero_call_reports() -> None:
     )
     assert summary.passed is False
     assert "no_live_provider_calls" in summary.failure_reasons
+
+
+def test_load_live_reports_accepts_mixed_provider_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = _updated_report(
+        _report(seed=7),
+        execution_source="mixed",
+        final_output_source_counts={"live_llm": 2, "reused_runtime_state": 1},
+    )
+    report_path = tmp_path / report.suite / report.mode / "run" / "report.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(gates, "validate_memory_evolution_run", lambda *_args, **_kwargs: report)
+
+    loaded = load_live_reports(
+        tmp_path,
+        suite=report.suite,
+        mode=report.mode,
+        profile=report.profile,
+    )
+
+    assert loaded == [report]
+
+
+@pytest.mark.parametrize(
+    ("execution_source", "dry_run"),
+    [("fake_oracle", True), ("rule", False)],
+)
+def test_load_live_reports_rejects_non_live_execution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    execution_source: str,
+    dry_run: bool,
+) -> None:
+    report = _updated_report(
+        _report(seed=7),
+        execution_source=execution_source,
+        dry_run=dry_run,
+    )
+    report_path = tmp_path / report.suite / report.mode / "run" / "report.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(gates, "validate_memory_evolution_run", lambda *_args, **_kwargs: report)
+
+    with pytest.raises(ValueError, match="live gate"):
+        load_live_reports(
+            tmp_path,
+            suite=report.suite,
+            mode=report.mode,
+            profile=report.profile,
+        )
 
 
 def test_live_gate_rejects_mixed_or_stale_source_provenance() -> None:

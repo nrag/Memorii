@@ -295,17 +295,6 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
         FinalOutputSource,
         next(iter(output_sources)) if len(output_sources) == 1 else "mixed",
     )
-    metadata: dict[str, str] = {}
-    for trace_row in rows.llm_rows:
-        for key, value in {
-            "provider": trace_row.trace.provider,
-            "model": trace_row.trace.model,
-            "prompt_hash": trace_row.trace.prompt_hash,
-        }.items():
-            if value is not None:
-                metadata[key] = str(value)
-        if metadata:
-            break
     return RuntimeProviderHealth(
         effective_decision_mode=effective_mode,
         attempted_calls=attempted_calls,
@@ -320,7 +309,7 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
         execution_source=execution_source,
         dry_run=rows.dry_run,
         fake_extractor_calls=sum(1 for row in rows.checkpoint_rows if row.final_output_source == "fake_oracle"),
-        provider_metadata=metadata,
+        provider_metadata=dict(sorted(rows.provider_metadata.items())),
         policy={
             "provider_failures": "fail_runtime_gate",
             "fallbacks": "fail_runtime_gate",
