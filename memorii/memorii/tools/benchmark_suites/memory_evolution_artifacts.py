@@ -49,14 +49,14 @@ from memorii.core.benchmark.memory_evolution_sim import (
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import (
     build_benchmark_fingerprint,
+    build_installable_package_fingerprint,
     build_run_id,
-    build_source_tree_fingerprint,
     resolve_source_revision,
     resolve_source_state,
 )
 from memorii.tools.benchmark_suites.artifact_io import write_jsonl
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 LLMArtifactRow = SimLLMTraceRow | RuntimeExtractorTraceRow
 
 
@@ -190,10 +190,7 @@ def write_memory_evolution_artifacts(
         "oracle_checkpoints": hashlib.sha256(checkpoint_jsonl.encode("utf-8")).hexdigest(),
         "candidate_cards": hashlib.sha256(candidate_card_jsonl.encode("utf-8")).hexdigest(),
     }
-    source_tree_digest = build_source_tree_fingerprint(
-        root=_PROJECT_ROOT,
-        relative_paths=["memorii", "pyproject.toml"],
-    )
+    source_tree_digest = build_installable_package_fingerprint(package_root=_PACKAGE_ROOT)
     fixture_fingerprint_config: dict[str, object] = {
         "profile": args.sim_profile,
         "scenario_count": args.sim_scenario_count,
@@ -214,8 +211,8 @@ def write_memory_evolution_artifacts(
         "artifact_contract": 1,
         "source_hash": source_tree_digest,
     }
-    source_revision = resolve_source_revision(root=_PROJECT_ROOT, dry_run=args.dry_run)
-    source_state = resolve_source_state(root=_PROJECT_ROOT)
+    source_revision = resolve_source_revision(root=_PACKAGE_ROOT, dry_run=args.dry_run)
+    source_state = resolve_source_state(root=_PACKAGE_ROOT)
     system_fingerprint_config: dict[str, object] = {
         "mode": mode,
         "source_revision": source_revision,

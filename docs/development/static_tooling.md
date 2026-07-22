@@ -40,6 +40,8 @@ python -m pip install --no-deps --target /tmp/memorii-wheel-site /tmp/memorii-wh
 cd /tmp
 PYTHONPATH=/tmp/memorii-wheel-site python -c "from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput; from memorii.core.prompts.runtime_manifest import PromptOwner; from memorii.core.prompts.registry import PromptRegistry; PromptRegistry().load('memory_extraction:v1', owner=PromptOwner.LLM_MEMORY_EXTRACTOR, output_model=MemoryExtractionOutput)"
 PYTHONPATH=/tmp/memorii-wheel-site python -c "from importlib.util import find_spec; removed=('memorii.core.promotion.models', 'memorii.core.promotion.legacy_models', 'memorii.core.promotion.lifecycle_models', 'memorii.core.prompts.manifest', 'memorii.core.prompts.schema_compatibility'); assert all(find_spec(module) is None for module in removed)"
+PYTHONPATH=/tmp/memorii-wheel-site python -m memorii.tools.run_eval --suite memory_evolution_sim_v1 --mode llm --dry-run --storage-root /tmp/memorii-wheel-benchmark --sim-profile long_horizon --sim-scenario-count 1 --sim-min-events 5 --sim-max-events 10 --sim-noise-rate 0.35 --seed 7
+PYTHONPATH=/tmp/memorii-wheel-site python -m memorii.tools.validate_benchmark_artifacts --root /tmp/memorii-wheel-benchmark/benchmark_runs --suite memory_evolution_sim_v1
 ```
 
 Move or remove any ignored in-tree `build/` directory before a local wheel
@@ -98,12 +100,19 @@ checks, installed-wheel prompt loading, and fake-oracle simulator/runtime artifa
 provider credits or treat fake-oracle output as live success.
 
 The scheduled workflow runs the same fake-oracle plumbing checks and has a separate
-manual live gate. The live gate is opt-in through the repository variable
-`MEMORII_RUN_LIVE_GATES=true`; it runs ten generator seeds with 25 scenarios per
+live gate. Manual dispatch runs the live matrix for a designated candidate; scheduled
+execution is independently opt-in through the repository variable
+`MEMORII_RUN_LIVE_GATES=true`. The gate runs ten generator seeds with 25 scenarios per
 seed and two inference replicates. It requires `execution_source=live_llm`,
 provider calls, one seed-invariant run configuration fingerprint, one source
 revision, and one clean source-tree digest. Dirty or mixed source states cannot
 produce a certification.
+
+Repository rules require the deterministic `Unit Tests` and `Benchmark Contracts`
+checks for normal pull requests. `Live Runtime Statistical Gate` is deliberately not
+a permanent required check because it is a manually dispatched, three-hour candidate
+acceptance run. A designated merge candidate is merge-ready only after that manual gate
+passes on the exact unchanged PR head SHA.
 
 The observed aggregate and family endpoints use exact one-sided beta-binomial
 seed-cluster bounds under the declared intraseed-correlation assumption. Their

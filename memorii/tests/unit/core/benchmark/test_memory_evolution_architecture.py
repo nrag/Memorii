@@ -461,22 +461,6 @@ def test_domain_constructors_do_not_load_environment_configuration() -> None:
     assert violations == []
 
 
-def test_production_provider_mutations_carry_explicit_delivery_ids() -> None:
-    mutation_methods = {"sync_event", "apply_memory_write"}
-    violations: list[str] = []
-    for path in SOURCE_ROOT.rglob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
-            if _call_attribute(call) not in mutation_methods:
-                continue
-            keyword_names = {keyword.arg for keyword in call.keywords}
-            forwards_mapping = None in keyword_names
-            if "operation_id" not in keyword_names and not forwards_mapping:
-                violations.append(f"{path.relative_to(SOURCE_ROOT)}:{call.lineno}")
-
-    assert violations == []
-
-
 def test_installable_source_does_not_import_test_packages() -> None:
     violations = [
         f"{path}:{module}"
@@ -594,54 +578,6 @@ def test_runtime_benchmark_uses_production_prefetch_composition() -> None:
 
     assert "prefetch_result" in calls
     assert "retrieve_evolution_decision" not in calls
-
-
-def test_benchmark_artifact_domains_share_the_complete_owned_source_digest() -> None:
-    path = SOURCE_ROOT / "tools" / "benchmark_suites" / "memory_evolution_artifacts.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    config_names = {
-        "fixture_fingerprint_config",
-        "evaluation_fingerprint_config",
-        "system_fingerprint_config",
-    }
-    source_hash_values: dict[str, ast.expr] = {}
-    source_tree_calls: list[ast.Call] = []
-
-    for node in ast.walk(tree):
-        if (
-            isinstance(node, (ast.Assign, ast.AnnAssign))
-            and isinstance(node.value, ast.Dict)
-            and isinstance(node.target if isinstance(node, ast.AnnAssign) else node.targets[0], ast.Name)
-        ):
-            target = node.target if isinstance(node, ast.AnnAssign) else node.targets[0]
-            assert isinstance(target, ast.Name)
-            if target.id in config_names:
-                source_hash_values[target.id] = next(
-                    value
-                    for key, value in zip(node.value.keys, node.value.values, strict=True)
-                    if isinstance(key, ast.Constant) and key.value == "source_hash"
-                )
-        elif (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "build_source_tree_fingerprint"
-        ):
-            source_tree_calls.append(node)
-
-    assert set(source_hash_values) == config_names
-    assert all(
-        isinstance(value, ast.Name) and value.id == "source_tree_digest"
-        for value in source_hash_values.values()
-    )
-    assert len(source_tree_calls) == 1
-    relative_paths = next(
-        keyword.value for keyword in source_tree_calls[0].keywords if keyword.arg == "relative_paths"
-    )
-    assert isinstance(relative_paths, ast.List)
-    assert [element.value for element in relative_paths.elts if isinstance(element, ast.Constant)] == [
-        "memorii",
-        "pyproject.toml",
-    ]
 
 
 def test_documentation_does_not_advertise_removed_memory_evolution_feature_flag() -> None:

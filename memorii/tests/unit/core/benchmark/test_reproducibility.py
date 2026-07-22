@@ -1,4 +1,3 @@
-import hashlib
 from pathlib import Path
 
 import pytest
@@ -7,187 +6,141 @@ from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import (
-    build_source_tree_fingerprint,
+    build_installable_package_fingerprint,
     resolve_source_identity,
     resolve_source_revision,
     resolve_source_state,
 )
 
 
-def test_source_tree_fingerprint_is_content_addressed(tmp_path: Path) -> None:
-    source = tmp_path / "owned"
-    source.mkdir()
-    module = source / "module.py"
+def test_installable_package_fingerprint_is_content_addressed(tmp_path: Path) -> None:
+    package = tmp_path / "memorii"
+    package.mkdir()
+    module = package / "module.py"
     module.write_text("VALUE = 1\n", encoding="utf-8")
 
-    before = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    before = build_installable_package_fingerprint(package_root=package)
     module.write_text("VALUE = 2\n", encoding="utf-8")
-    after = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    after = build_installable_package_fingerprint(package_root=package)
 
     assert before != after
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    ["change", "add", "remove", "rename"],
-)
-def test_owned_source_fingerprint_observes_every_tree_mutation(
+@pytest.mark.parametrize("mutation", ["change", "add", "remove", "rename"])
+def test_installable_package_fingerprint_observes_every_tree_mutation(
     tmp_path: Path,
     mutation: str,
 ) -> None:
-    owned = tmp_path / "owned"
-    owned.mkdir()
-    (owned / "entry.py").write_text("from owned import target\n", encoding="utf-8")
-    target = owned / "target.py"
+    package = tmp_path / "memorii"
+    package.mkdir()
+    (package / "entry.py").write_text("from memorii import target\n", encoding="utf-8")
+    target = package / "target.py"
     target.write_text("VALUE = 1\n", encoding="utf-8")
-    before = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    before = build_installable_package_fingerprint(package_root=package)
 
     if mutation == "change":
         target.write_text("VALUE = 2\n", encoding="utf-8")
     elif mutation == "add":
-        (owned / "added.json").write_text('{"value": 2}\n', encoding="utf-8")
+        (package / "added.json").write_text('{"value": 2}\n', encoding="utf-8")
     elif mutation == "remove":
         target.unlink()
     else:
-        target.rename(owned / "renamed.py")
+        target.rename(package / "renamed.py")
 
-    after = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
-
+    after = build_installable_package_fingerprint(package_root=package)
     assert after != before
 
 
-def test_owned_source_fingerprint_ignores_outside_files_and_input_order(tmp_path: Path) -> None:
-    owned = tmp_path / "owned"
-    owned.mkdir()
-    (owned / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
-    config = tmp_path / "pyproject.toml"
-    config.write_text("[project]\nname = 'example'\n", encoding="utf-8")
+def test_installable_package_fingerprint_ignores_outside_files(tmp_path: Path) -> None:
+    package = tmp_path / "memorii"
+    package.mkdir()
+    (package / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
     outside = tmp_path / "outside.txt"
     outside.write_text("before\n", encoding="utf-8")
 
-    before = build_source_tree_fingerprint(
-        root=tmp_path,
-        relative_paths=["owned", "pyproject.toml"],
-    )
+    before = build_installable_package_fingerprint(package_root=package)
     outside.write_text("after\n", encoding="utf-8")
-    after = build_source_tree_fingerprint(
-        root=tmp_path,
-        relative_paths=["pyproject.toml", "owned", "owned"],
-    )
+    after = build_installable_package_fingerprint(package_root=package)
 
     assert after == before
 
 
-def test_owned_source_fingerprint_has_an_independently_verified_canonical_digest(
-    tmp_path: Path,
-) -> None:
-    owned = tmp_path / "owned"
-    owned.mkdir()
-    files = {
-        "owned/a.bin": b"\x00\xff\n",
-        "owned/z.py": b"VALUE = 1\n",
-    }
-    for relative_path, content in files.items():
-        (tmp_path / relative_path).write_bytes(content)
+def test_installable_package_fingerprint_is_independent_of_creation_order(tmp_path: Path) -> None:
+    first = tmp_path / "first" / "memorii"
+    second = tmp_path / "second" / "memorii"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    contents = {"a.bin": b"\x00\xff\n", "z.py": b"VALUE = 1\n"}
+    for name, content in contents.items():
+        (first / name).write_bytes(content)
+    for name, content in reversed(tuple(contents.items())):
+        (second / name).write_bytes(content)
 
-    expected = hashlib.sha256()
-    expected.update(b"memorii-owned-source\0")
-    for relative_path, content in sorted(files.items()):
-        expected.update(relative_path.encode("utf-8"))
-        expected.update(b"\0")
-        expected.update(content)
-        expected.update(b"\0")
-
-    assert build_source_tree_fingerprint(
-        root=tmp_path,
-        relative_paths=["owned"],
-    ) == expected.hexdigest()
+    assert build_installable_package_fingerprint(
+        package_root=first
+    ) == build_installable_package_fingerprint(package_root=second)
 
 
-def test_owned_source_fingerprint_excludes_generated_bytecode(tmp_path: Path) -> None:
-    owned = tmp_path / "owned"
-    cache = owned / "__pycache__"
+def test_installable_package_fingerprint_excludes_generated_bytecode(tmp_path: Path) -> None:
+    package = tmp_path / "memorii"
+    cache = package / "__pycache__"
     cache.mkdir(parents=True)
-    (owned / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (package / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
     bytecode = cache / "module.pyc"
+    optimized = package / "module.pyo"
     bytecode.write_bytes(b"before")
-    optimized = owned / "module.pyo"
     optimized.write_bytes(b"before")
 
-    before = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    before = build_installable_package_fingerprint(package_root=package)
     bytecode.write_bytes(b"after")
     optimized.write_bytes(b"after")
-    after = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    after = build_installable_package_fingerprint(package_root=package)
 
     assert after == before
 
 
-@pytest.mark.parametrize(
-    "relative_paths",
-    [[], [""], ["missing"], ["../outside"]],
-)
-def test_owned_source_fingerprint_fails_closed_on_invalid_ownership(
-    tmp_path: Path,
-    relative_paths: list[str],
-) -> None:
-    with pytest.raises(ValueError):
-        build_source_tree_fingerprint(root=tmp_path, relative_paths=relative_paths)
-
-
-def test_owned_source_fingerprint_fails_closed_when_root_does_not_exist(
-    tmp_path: Path,
-) -> None:
-    missing_root = tmp_path / "missing-root"
-
+def test_installable_package_fingerprint_fails_closed_when_root_does_not_exist(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
-        build_source_tree_fingerprint(
-            root=missing_root,
-            relative_paths=["memorii"],
-        )
+        build_installable_package_fingerprint(package_root=tmp_path / "missing-root")
 
 
-def test_owned_source_fingerprint_fails_closed_on_absolute_paths(tmp_path: Path) -> None:
-    source = tmp_path / "source.py"
-    source.write_text("VALUE = 1\n", encoding="utf-8")
+def test_installable_package_fingerprint_fails_closed_on_empty_directories(tmp_path: Path) -> None:
+    package = tmp_path / "memorii"
+    package.mkdir()
 
-    with pytest.raises(ValueError, match="escapes root"):
-        build_source_tree_fingerprint(root=tmp_path, relative_paths=[str(source)])
-
-
-def test_owned_source_fingerprint_fails_closed_on_empty_directories(tmp_path: Path) -> None:
-    (tmp_path / "owned").mkdir()
-
-    with pytest.raises(ValueError, match="contains no source files"):
-        build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    with pytest.raises(ValueError, match="contains no owned source files"):
+        build_installable_package_fingerprint(package_root=package)
 
 
-def test_owned_source_fingerprint_fails_closed_on_nested_symlinks(tmp_path: Path) -> None:
-    owned = tmp_path / "owned"
-    owned.mkdir()
+def test_installable_package_fingerprint_fails_closed_on_nested_symlinks(tmp_path: Path) -> None:
+    package = tmp_path / "memorii"
+    package.mkdir()
     target = tmp_path / "target.py"
     target.write_text("VALUE = 1\n", encoding="utf-8")
-    (owned / "linked.py").symlink_to(target)
+    (package / "linked.py").symlink_to(target)
 
     with pytest.raises(ValueError, match="cannot contain symlinks"):
-        build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+        build_installable_package_fingerprint(package_root=package)
 
 
-def test_owned_source_fingerprint_fails_closed_on_symlinked_root(tmp_path: Path) -> None:
-    root = tmp_path / "root"
-    root.mkdir()
-    (root / "source.py").write_text("VALUE = 1\n", encoding="utf-8")
+def test_installable_package_fingerprint_fails_closed_on_symlinked_root(tmp_path: Path) -> None:
+    package = tmp_path / "memorii"
+    package.mkdir()
+    (package / "source.py").write_text("VALUE = 1\n", encoding="utf-8")
     linked_root = tmp_path / "linked-root"
-    linked_root.symlink_to(root, target_is_directory=True)
+    linked_root.symlink_to(package, target_is_directory=True)
 
     with pytest.raises(ValueError, match="root cannot be a symlink"):
-        build_source_tree_fingerprint(root=linked_root, relative_paths=["source.py"])
+        build_installable_package_fingerprint(package_root=linked_root)
 
 
-def test_owned_source_fingerprint_propagates_read_failures(
+def test_installable_package_fingerprint_propagates_read_failures(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = tmp_path / "source.py"
+    package = tmp_path / "memorii"
+    package.mkdir()
+    source = package / "source.py"
     source.write_text("VALUE = 1\n", encoding="utf-8")
     original_read_bytes = Path.read_bytes
 
@@ -199,38 +152,30 @@ def test_owned_source_fingerprint_propagates_read_failures(
     monkeypatch.setattr(Path, "read_bytes", fail_for_owned_source)
 
     with pytest.raises(OSError, match="cannot read owned source"):
-        build_source_tree_fingerprint(root=tmp_path, relative_paths=["source.py"])
+        build_installable_package_fingerprint(package_root=package)
 
 
 @pytest.mark.parametrize(
     "entry_source",
     [
-        (
-            "from importlib import import_module\n"
-            "(load,) = (import_module,)\n"
-            "MODULE = load('owned.dependency')\n"
-        ),
-        (
-            "import importlib\n"
-            "load = getattr(importlib, 'import_module')\n"
-            "MODULE = load('owned.dependency')\n"
-        ),
+        "from importlib import import_module\n(load,) = (import_module,)\nMODULE = load('memorii.dependency')\n",
+        "import importlib\nload = getattr(importlib, 'import_module')\nMODULE = load('memorii.dependency')\n",
     ],
 )
-def test_owned_source_fingerprint_covers_adversarial_dynamic_import_targets(
+def test_installable_package_fingerprint_covers_adversarial_dynamic_import_targets(
     tmp_path: Path,
     entry_source: str,
 ) -> None:
-    owned = tmp_path / "owned"
-    owned.mkdir()
-    (owned / "__init__.py").write_text("", encoding="utf-8")
-    (owned / "entry.py").write_text(entry_source, encoding="utf-8")
-    dependency = owned / "dependency.py"
+    package = tmp_path / "memorii"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "entry.py").write_text(entry_source, encoding="utf-8")
+    dependency = package / "dependency.py"
     dependency.write_text("VALUE = 1\n", encoding="utf-8")
 
-    before = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    before = build_installable_package_fingerprint(package_root=package)
     dependency.write_text("VALUE = 2\n", encoding="utf-8")
-    after = build_source_tree_fingerprint(root=tmp_path, relative_paths=["owned"])
+    after = build_installable_package_fingerprint(package_root=package)
 
     assert after != before
 

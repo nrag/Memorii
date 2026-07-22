@@ -9,14 +9,14 @@ import random
 import subprocess
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import Literal, Protocol, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from memorii.core.benchmark.models import BenchmarkRunConfig, BenchmarkScenarioFixture
 
 SourceState: TypeAlias = Literal["clean", "dirty", "unversioned"]
-_SOURCE_FINGERPRINT_DOMAIN = b"memorii-owned-source\0"
+_SOURCE_FINGERPRINT_DOMAIN = b"memorii-installable-package"
 _IGNORED_SOURCE_DIRECTORY_NAMES = frozenset({"__pycache__"})
 _IGNORED_SOURCE_SUFFIXES = frozenset({".pyc", ".pyo"})
 
@@ -36,6 +36,10 @@ class SourceIdentity(BaseModel):
         if self.certifiable != expected:
             raise ValueError("source identity certifiability must match revision and tree state")
         return self
+
+
+class _DigestWriter(Protocol):
+    def update(self, data: bytes, /) -> None: ...
 
 
 def apply_seed(seed: int) -> None:
@@ -173,65 +177,59 @@ def _git_head_revision(root: Path) -> str | None:
     return None
 
 
-def build_source_tree_fingerprint(*, root: Path, relative_paths: list[str]) -> str:
-    """Hash a complete, explicitly owned source tree with canonical ordering."""
+def build_installable_package_fingerprint(*, package_root: Path) -> str:
+    """Hash every owned installable package file using a canonical byte protocol.
 
-    if root.is_symlink():
-        raise ValueError(f"source fingerprint root cannot be a symlink: {root}")
-    resolved_root = root.resolve(strict=True)
+    Paths are UTF-8 encoded relative to ``package_root`` and ordered by their
+    POSIX spelling. File contents remain raw bytes. Every protocol element is
+    length-prefixed, so path/content boundaries are unambiguous. Only generated
+    Python bytecode and ``__pycache__`` directories are excluded. Missing,
+    empty, unreadable, symlinked, or non-regular ownership fails closed.
+    """
+
+    if package_root.is_symlink():
+        raise ValueError(f"installable package root cannot be a symlink: {package_root}")
+    resolved_root = package_root.resolve(strict=True)
     if not resolved_root.is_dir():
-        raise ValueError(f"source fingerprint root is not a directory: {root}")
-    if not relative_paths:
-        raise ValueError("source fingerprint requires at least one owned path")
+        raise ValueError(f"installable package root is not a directory: {package_root}")
 
-    files: set[Path] = set()
-    for relative_path in relative_paths:
-        requested_path = Path(relative_path)
-        if requested_path.is_absolute() or not requested_path.parts or ".." in requested_path.parts:
-            raise ValueError(f"source fingerprint path escapes root: {relative_path}")
-        candidate = resolved_root / requested_path
-        if candidate.is_symlink():
-            raise ValueError(f"source fingerprint path cannot be a symlink: {relative_path}")
-        if candidate.is_dir():
-            for path in candidate.rglob("*"):
-                if path.is_symlink():
-                    raise ValueError(
-                        f"source fingerprint tree cannot contain symlinks: "
-                        f"{path.relative_to(resolved_root).as_posix()}"
-                    )
-                if not path.is_file() or _is_ignored_source_path(path=path, root=resolved_root):
-                    continue
-                resolved_path = path.resolve(strict=True)
-                if not resolved_path.is_relative_to(resolved_root):
-                    raise ValueError(
-                        f"source fingerprint file escapes root: "
-                        f"{path.relative_to(resolved_root).as_posix()}"
-                    )
-                files.add(resolved_path)
-        elif candidate.is_file():
-            resolved_path = candidate.resolve(strict=True)
-            if not resolved_path.is_relative_to(resolved_root):
-                raise ValueError(f"source fingerprint path escapes root: {relative_path}")
-            if not _is_ignored_source_path(path=resolved_path, root=resolved_root):
-                files.add(resolved_path)
-        else:
-            raise ValueError(f"source fingerprint path does not exist: {relative_path}")
+    files = _installable_package_files(resolved_root)
     if not files:
-        raise ValueError("source fingerprint ownership contains no source files")
+        raise ValueError("installable package contains no owned source files")
 
     digest = hashlib.sha256()
-    digest.update(_SOURCE_FINGERPRINT_DOMAIN)
-    for path in sorted(files, key=lambda item: item.relative_to(resolved_root).as_posix()):
-        relative = path.relative_to(resolved_root).as_posix()
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(path.read_bytes())
-        digest.update(b"\0")
+    _update_fingerprint_frame(digest, _SOURCE_FINGERPRINT_DOMAIN)
+    _update_fingerprint_frame(digest, len(files).to_bytes(8, byteorder="big"))
+    for path in files:
+        relative_path = path.relative_to(resolved_root).as_posix().encode("utf-8")
+        _update_fingerprint_frame(digest, relative_path)
+        _update_fingerprint_frame(digest, path.read_bytes())
     return digest.hexdigest()
 
 
-def _is_ignored_source_path(*, path: Path, root: Path) -> bool:
-    relative = path.relative_to(root)
-    return bool(_IGNORED_SOURCE_DIRECTORY_NAMES.intersection(relative.parts)) or (
-        path.suffix in _IGNORED_SOURCE_SUFFIXES
-    )
+def _installable_package_files(package_root: Path) -> list[Path]:
+    pending = [package_root]
+    files: list[Path] = []
+    while pending:
+        directory = pending.pop()
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                path = Path(entry.path)
+                relative_path = path.relative_to(package_root).as_posix()
+                if entry.is_symlink():
+                    raise ValueError(f"installable package cannot contain symlinks: {relative_path}")
+                if entry.is_dir(follow_symlinks=False):
+                    if entry.name not in _IGNORED_SOURCE_DIRECTORY_NAMES:
+                        pending.append(path)
+                    continue
+                if entry.is_file(follow_symlinks=False):
+                    if path.suffix not in _IGNORED_SOURCE_SUFFIXES:
+                        files.append(path)
+                    continue
+                raise ValueError(f"installable package contains a non-regular path: {relative_path}")
+    return sorted(files, key=lambda path: path.relative_to(package_root).as_posix())
+
+
+def _update_fingerprint_frame(digest: _DigestWriter, payload: bytes) -> None:
+    digest.update(len(payload).to_bytes(8, byteorder="big"))
+    digest.update(payload)

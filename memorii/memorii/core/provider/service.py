@@ -165,7 +165,7 @@ class ProviderMemoryService:
         language: str = "en",
     ) -> ProviderSyncResult:
         event = make_event(
-            event_id=_required_operation_id(operation_id),
+            event_id=operation_id,
             operation=operation,
             content=content,
             role=role,
@@ -221,7 +221,7 @@ class ProviderMemoryService:
         language: str = "en",
     ) -> ProviderWriteDecision:
         event = make_event(
-            event_id=_required_operation_id(operation_id),
+            event_id=operation_id,
             operation=operation,
             content=content,
             action=action,
@@ -545,10 +545,3 @@ class ProviderMemoryService:
         if decision_summary.final_decision is not None:
             lines.extend(["  Final decision:", f"  {decision_summary.final_decision}"])
         return lines
-
-
-def _required_operation_id(value: str) -> str:
-    operation_id = value.strip()
-    if not operation_id:
-        raise ValueError("operation_id must be non-empty")
-    return operation_id

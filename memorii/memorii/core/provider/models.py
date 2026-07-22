@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Generic, Literal, TypeVar
+from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 
 from memorii.domain.enums import MemoryDomain
 
 PrefetchDecisionT = TypeVar("PrefetchDecisionT", bound=BaseModel)
+DeliveryId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+_DELIVERY_ID_ADAPTER = TypeAdapter(DeliveryId)
 ExtractionOutcomeStatus = Literal[
     "succeeded",
     "partial",
@@ -76,7 +78,7 @@ class ProviderEvolutionOutcome(BaseModel):
 
 
 class ProviderEvent(BaseModel):
-    event_id: str
+    event_id: DeliveryId
     operation: ProviderOperation
     content: str | None = None
     role: str | None = None
@@ -89,6 +91,12 @@ class ProviderEvent(BaseModel):
     timestamp: datetime | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+
+def normalize_delivery_id(value: str) -> str:
+    """Validate and normalize a caller-owned provider delivery identifier."""
+
+    return _DELIVERY_ID_ADAPTER.validate_python(value)
 
 
 class ProviderDomainPermission(BaseModel):

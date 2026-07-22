@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -9,10 +10,11 @@ from memorii.core.memory_evolution import (
 from memorii.core.memory_evolution.models import SourceObservation
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
+from memorii.core.provider.models import ProviderEvent, ProviderOperation, ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain
 from memorii.integrations.hermes_provider import HermesMemoryProvider
+from pydantic import ValidationError
 
 
 class _FailFirstTurnExtractor(EnglishRuleMemoryExtractor):
@@ -290,15 +292,62 @@ def test_sync_turn_recovers_after_only_the_first_child_event_was_committed() -> 
     ]
 
 
-def test_provider_mutations_reject_empty_operation_ids() -> None:
-    service = ProviderMemoryService()
+def test_provider_event_normalizes_delivery_identity() -> None:
+    event = ProviderEvent(
+        event_id="  delivery:normalized  ",
+        operation=ProviderOperation.CHAT_USER_TURN,
+    )
 
-    with pytest.raises(ValueError, match="operation_id must be non-empty"):
-        service.sync_event(
+    assert event.event_id == "delivery:normalized"
+
+
+def test_provider_event_rejects_empty_delivery_identity() -> None:
+    with pytest.raises(ValidationError):
+        ProviderEvent(event_id="   ", operation=ProviderOperation.CHAT_USER_TURN)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda service: service.sync_event(
             operation=ProviderOperation.CHAT_USER_TURN,
             content="hello",
             operation_id="   ",
-        )
+        ),
+        lambda service: service.apply_memory_write(
+            operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+            content="hello",
+            session_id=None,
+            task_id=None,
+            user_id=None,
+            action="upsert",
+            target="memory",
+            operation_id="   ",
+        ),
+    ],
+)
+def test_provider_service_mutations_reject_empty_delivery_identity(
+    mutation: Callable[[ProviderMemoryService], object],
+) -> None:
+    with pytest.raises(ValidationError):
+        mutation(ProviderMemoryService())
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda provider: provider.sync_turn("user", "assistant", operation_id="   "),
+        lambda provider: provider.on_session_end([], operation_id="   "),
+        lambda provider: provider.on_pre_compress([], operation_id="   "),
+        lambda provider: provider.on_memory_write("upsert", "memory", "value", operation_id="   "),
+        lambda provider: provider.on_delegation("task", "result", operation_id="   "),
+    ],
+)
+def test_provider_integration_mutations_reject_empty_delivery_identity(
+    mutation: Callable[[HermesMemoryProvider], object],
+) -> None:
+    with pytest.raises(ValidationError):
+        mutation(HermesMemoryProvider(ProviderMemoryService()))
 
 
 def test_prefetch_general_continuity_prefers_recent_transcript_over_old_semantic() -> None:

@@ -6,7 +6,12 @@ from datetime import datetime
 
 from memorii.core.provider.classifier import classify_memory_target
 from memorii.core.provider.factory import build_provider_memory_service_from_env
-from memorii.core.provider.models import ProviderOperation, ProviderSyncResult, ProviderWriteDecision
+from memorii.core.provider.models import (
+    ProviderOperation,
+    ProviderSyncResult,
+    ProviderWriteDecision,
+    normalize_delivery_id,
+)
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.integrations.provider_interface import MemoryProviderInterface
 
@@ -103,7 +108,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
-            operation_id=_operation_id(operation_id),
+            operation_id=operation_id,
         )
 
     def on_pre_compress(
@@ -122,7 +127,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
-            operation_id=_operation_id(operation_id),
+            operation_id=operation_id,
         )
 
     def on_memory_write(
@@ -144,7 +149,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
-            operation_id=_operation_id(operation_id),
+            operation_id=operation_id,
         )
 
     def on_delegation(
@@ -164,7 +169,7 @@ class HermesMemoryProvider(MemoryProviderInterface):
             session_id=session_id,
             task_id=task_id,
             user_id=user_id,
-            operation_id=_operation_id(operation_id),
+            operation_id=operation_id,
         )
 
 
@@ -180,12 +185,5 @@ def _messages_to_text(messages: list[dict[str, object]] | list[str]) -> str:
     return "\n".join(serialized)
 
 
-def _operation_id(value: str) -> str:
-    normalized = value.strip()
-    if not normalized:
-        raise ValueError("operation_id must be non-empty")
-    return normalized
-
-
 def _child_operation_id(parent: str, child: str) -> str:
-    return f"{_operation_id(parent)}:{child}"
+    return f"{normalize_delivery_id(parent)}:{child}"

@@ -120,6 +120,10 @@ def test_static_tooling_workflow_doc_lists_supported_commands() -> None:
     assert "pytest -W error tests/unit" in workflow
     assert "pytest -W error" in workflow
     assert "pip wheel . --no-deps" in workflow
+    assert "memorii-wheel-benchmark" in doc
+    assert "memorii-wheel-benchmark" in workflow
+    assert "validate_benchmark_artifacts" in doc
+    assert "validate_benchmark_artifacts" in workflow
     assert load_command in workflow
     assert "from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput" in workflow
     assert "from memorii.core.prompts.runtime_manifest import PromptOwner" in workflow
@@ -234,9 +238,23 @@ def test_pr_and_live_workflows_bind_reports_to_checked_out_revision() -> None:
     assert "github.event.inputs.source_revision" not in live_workflow
     assert "full commit SHA" in certification_doc
     assert "dirty working tree" in certification_doc
-    assert "required branch protection" in certification_doc
+    assert "`Unit Tests` and `Benchmark Contracts`" in certification_doc
+    assert "not a permanent" in certification_doc
     assert "pre-merge check" in certification_doc
     assert "gh workflow run benchmark-scheduled.yml --ref <pr-branch>" in certification_doc
+
+
+def test_candidate_live_gate_is_not_an_automatic_pr_or_merge_trigger() -> None:
+    certification_doc = (
+        REPO_ROOT / "docs" / "development" / "benchmark_certification.md"
+    ).read_text(encoding="utf-8")
+    live_config = _workflow_config("benchmark-scheduled.yml")
+    pr_config = _workflow_config("pr-gates.yml")
+
+    assert set(live_config["on"]) == {"schedule", "workflow_dispatch"}
+    assert set(pr_config["on"]) == {"pull_request", "merge_group"}
+    assert "candidate acceptance gate" in certification_doc
+    assert "`Unit Tests` and `Benchmark Contracts`" in certification_doc
 
 
 def _workflow_steps(path: Path) -> list[tuple[str, str]]:
