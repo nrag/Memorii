@@ -473,8 +473,8 @@ def test_memory_evolution_sim_graph_reconstruction_uses_graph_entity_role_policy
 
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
 
-    assert checkpoint.checkpoint_contract.selected_entity_role_policy == "active_graph_subjects"
-    assert "selected_entity_role_policy" not in context.model_dump_json()
+    assert checkpoint.task_contract.selected_entity_role_policy == "active_graph_subjects"
+    assert context.checkpoint.task_contract.selected_entity_role_policy == "active_graph_subjects"
     assert aggregate.verdict == JudgeVerdict.PASS
 
 
@@ -497,10 +497,38 @@ def test_memory_evolution_sim_graph_reconstruction_answer_is_optional_by_contrac
         aggregate=aggregate,
     )
 
-    assert checkpoint.checkpoint_contract.answer_required is False
-    assert "answer_required" not in context.model_dump_json()
+    assert checkpoint.task_contract.answer_required is False
+    assert context.checkpoint.task_contract.answer_required is False
     assert aggregate.verdict == JudgeVerdict.PASS
     assert diagnostics.answer_match_type == "optional_missing"
+
+
+def test_memory_evolution_sim_support_precision_failure_cannot_pass_with_review() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="entity_definition_before_role_claims",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "entity_reconstruction")
+    visible_claim_ids = sorted(
+        {claim_id for observation in scenario.observations for claim_id in observation.exposed_claim_ids}
+    )
+    output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
+        update={"supporting_claim_ids": visible_claim_ids}
+    )
+
+    aggregate = judge_sim_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        output=output,
+    )
+    support_vote = next(vote for vote in aggregate.votes if vote.judge_id == "supporting_evidence_precision_judge")
+
+    assert support_vote.verdict == JudgeVerdict.FAIL
+    assert support_vote.judge_id in aggregate.required_judge_ids
+    assert aggregate.verdict == JudgeVerdict.FAIL
+    assert aggregate.review_required is True
 
 
 def test_memory_evolution_sim_entity_reconstruction_requires_subject_definition_claims() -> None:

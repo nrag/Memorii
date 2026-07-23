@@ -29,21 +29,17 @@ def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSyste
         operation = "abstain"
     elif checkpoint.expected_next_action is not None:
         operation = "next_action"
-    elif "graph_reconstruction" in checkpoint.checkpoint_contract.allowed_operations:
+    elif "graph_reconstruction" in checkpoint.task_contract.allowed_operations:
         operation = "graph_reconstruction"
     else:
         operation = "answer"
     execution = checkpoint.checkpoint_type == "execution_continuation"
-    selected_claim_ids = list(
-        checkpoint.expected_execution_claim_ids if execution else checkpoint.expected_claim_ids
-    )
+    selected_claim_ids = list(checkpoint.expected_execution_claim_ids if execution else checkpoint.expected_claim_ids)
     selected_entity_ids = list(
         checkpoint.expected_execution_entity_ids if execution else checkpoint.expected_entity_ids
     )
     citations = list(
-        checkpoint.expected_execution_citation_event_ids
-        if execution
-        else checkpoint.expected_citation_event_ids
+        checkpoint.expected_execution_citation_event_ids if execution else checkpoint.expected_citation_event_ids
     )
     graph_checkpoint = checkpoint.checkpoint_type in {
         "entity_reconstruction",
@@ -62,7 +58,9 @@ def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSyste
         context_relation_ids = ordered_unique([*context_relation_ids, *checkpoint.expected_relation_ids])
     return SimSystemOutput(
         operation=operation,
-        belief_ranking_ids=(list(checkpoint.expected_claim_ids) if checkpoint.checkpoint_type == "belief_ranking" else []),
+        belief_ranking_ids=(
+            list(checkpoint.expected_claim_ids) if checkpoint.checkpoint_type == "belief_ranking" else []
+        ),
         selected_entity_ids=selected_entity_ids,
         selected_claim_ids=selected_claim_ids,
         selected_relation_ids=selected_relation_ids,
@@ -160,9 +158,7 @@ def memory_evolution_sim_engine_result_from_llm(
     return output, trace, True, None
 
 
-def rule_sim_output_for_checkpoint(
-    *, scenario: LatentGraphScenario, checkpoint: OracleCheckpoint
-) -> SimSystemOutput:
+def rule_sim_output_for_checkpoint(*, scenario: LatentGraphScenario, checkpoint: OracleCheckpoint) -> SimSystemOutput:
     tokens = set(normalize_sim_text(checkpoint.query_or_task).split())
     candidates = [event for event in scenario.observations if event.modality != "noise"]
     historical = bool(tokens & {"january", "historical", "before", "previously", "earlier"})

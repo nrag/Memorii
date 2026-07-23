@@ -54,6 +54,7 @@ from memorii.core.benchmark.reproducibility import (
     resolve_source_revision,
     resolve_source_state,
 )
+from memorii.core.memory_evolution.models import FallbackOutcome, ProviderAttemptStatus
 from memorii.tools.benchmark_suites.artifact_io import write_jsonl
 
 _PACKAGE_ROOT = Path(__file__).resolve().parents[2]
@@ -88,12 +89,8 @@ def _system_fingerprint_config(
     config["prompt_contract_refs"] = sorted(
         {prompt_ref for row in llm_rows if (prompt_ref := _trace_prompt_ref(row)) is not None}
     )
-    config["provider_models"] = sorted(
-        {model for row in llm_rows if (model := _trace_model(row)) is not None}
-    )
-    config["providers"] = sorted(
-        {provider for row in llm_rows if (provider := _trace_provider(row)) is not None}
-    )
+    config["provider_models"] = sorted({model for row in llm_rows if (model := _trace_model(row)) is not None})
+    config["providers"] = sorted({provider for row in llm_rows if (provider := _trace_provider(row)) is not None})
     return config
 
 
@@ -250,16 +247,17 @@ def write_memory_evolution_artifacts(
         source_tree_digest=source_tree_digest,
         llm_rows=llm_rows,
         runtime_provider_metadata=(
-            runtime_report.runtime_provider_health.provider_metadata
-            if runtime_report is not None
-            else None
+            runtime_report.runtime_provider_health.provider_metadata if runtime_report is not None else None
         ),
     )
     final_output_source_counts = Counter(row.final_output_source for row in checkpoint_rows)
     llm_successes = sum(
         1
         for row in llm_rows
-        if not isinstance(row, RuntimeExtractorTraceRow) and row.success
+        if (
+            not isinstance(row, RuntimeExtractorTraceRow)
+            and row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
+        )
     )
     provider_successes = (
         runtime_report.provider_successes if runtime_report is not None else 0 if args.dry_run else llm_successes
@@ -277,7 +275,11 @@ def write_memory_evolution_artifacts(
         if runtime_report is not None
         else 0
         if args.dry_run
-        else sum(1 for row in checkpoint_rows if row.fallback_used)
+        else sum(
+            1
+            for row in llm_rows
+            if (isinstance(row, SimLLMTraceRow) and row.fallback_outcome != FallbackOutcome.NOT_USED)
+        )
     )
     hidden_item_count = sum(
         1
@@ -320,10 +322,7 @@ def write_memory_evolution_artifacts(
             "fallbacks": runtime_report.fallbacks,
         }
     execution_source = execution_source_from_counts(final_output_source_counts)
-    if (
-        runtime_report is not None
-        and runtime_report.runtime_provider_health.execution_source != execution_source
-    ):
+    if runtime_report is not None and runtime_report.runtime_provider_health.execution_source != execution_source:
         raise ValueError("runtime provider health disagrees with checkpoint output sources")
     long_horizon_slices = (
         runtime_report.long_horizon_slice_counts
@@ -433,9 +432,7 @@ def write_memory_evolution_artifacts(
     write_json_atomic(run_dir / "calibration_report.json", calibration_report)
     write_json_atomic(run_dir / "slice_calibration_report.json", calibration_slices)
     write_json_atomic(run_dir / "decision_quality_report.json", decision_cost_report)
-    judge_vote_rows = [
-        JudgeVoteRow.from_vote(vote) for row in judge_rows for vote in row.votes
-    ]
+    judge_vote_rows = [JudgeVoteRow.from_vote(vote) for row in judge_rows for vote in row.votes]
     write_typed_jsonl(run_dir / "judge_votes.jsonl", judge_vote_rows, model_type=JudgeVoteRow)
     judge_rows_json = [row.model_dump(mode="json") for row in judge_rows]
     write_json_atomic(run_dir / "judge_aggregate.json", judge_rows_json)

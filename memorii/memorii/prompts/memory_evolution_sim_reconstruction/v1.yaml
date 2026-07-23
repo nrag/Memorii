@@ -60,6 +60,8 @@ system_template: |-
   Reconstruct the memory state needed to answer the query using only the supplied surface observations and visible candidate cards.
 
   Stable rules:
+  - Follow checkpoint.task_contract for the allowed operation, answer projection, selected entity endpoint role, definition placement, exclusion placement, and direct-support policy.
+  - The task contract contains no expected IDs or oracle answer. Derive all channel membership from the visible candidate cards.
   - Return only IDs from visible_entity_ids, visible_claim_ids, visible_relation_ids, or visible event IDs. Never invent IDs.
   - Treat selected channels as the answer-bearing truth or active action state.
   - Treat supporting channels as direct evidence for selected state. Every selected claim must also be supporting and must have its own direct evidence event in supporting_citation_event_ids.

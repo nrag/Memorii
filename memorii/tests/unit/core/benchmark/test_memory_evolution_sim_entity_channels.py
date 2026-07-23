@@ -281,9 +281,9 @@ def test_memory_evolution_sim_claim_rekey_passes_with_defining_claim_and_current
 
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
 
-    assert checkpoint.checkpoint_contract.allowed_operations == ["graph_reconstruction"]
-    assert checkpoint.checkpoint_contract.selected_entity_role_policy == "active_graph_subjects"
-    assert "allowed_operations" not in context.model_dump_json()
+    assert checkpoint.task_contract.allowed_operations == ["graph_reconstruction"]
+    assert checkpoint.task_contract.selected_entity_role_policy == "active_graph_subjects"
+    assert context.checkpoint.task_contract.allowed_operations == ["graph_reconstruction"]
     assert output.operation == "graph_reconstruction"
     assert aggregate.verdict == JudgeVerdict.PASS
 

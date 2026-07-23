@@ -48,6 +48,10 @@ def sim_output_allowed_id_errors(
         unknown_events = sorted(set(actual) - event_ids)
         if unknown_events:
             errors.append(f"invalid_{field_name}:{','.join(unknown_events)}")
+    all_visible_ids = visible_entities | visible_claims | visible_relations | event_ids
+    unknown_uncertain = sorted(set(output.uncertain_ids) - all_visible_ids)
+    if unknown_uncertain:
+        errors.append(f"invalid_uncertain_ids:{','.join(unknown_uncertain)}")
     hidden_ids = (
         {item.entity_id for item in scenario.entities if item.observability == ObservabilityLabel.HIDDEN}
         | {item.claim_id for item in scenario.claims if item.observability == ObservabilityLabel.HIDDEN}

@@ -62,6 +62,38 @@ def test_sim_output_rejects_removed_flat_channels() -> None:
         )
 
 
+def test_llm_engine_rejects_unknown_uncertain_id_without_repair() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="entity_split",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "entity_split_repair")
+    live_output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
+        update={"uncertain_ids": ["fabricated-composite-id"]}
+    )
+    result = fake_llm_result_for_memory_evolution_sim(
+        request=_request(),
+        decision=live_output,
+    )
+
+    output, trace, success, failure = memory_evolution_sim_engine_result_from_llm(
+        result=result,
+        mode=LLMDecisionMode.LLM,
+        scenario=scenario,
+        rule_output=rule_sim_output_for_checkpoint(
+            scenario=scenario,
+            checkpoint=checkpoint,
+        ).model_dump(mode="json"),
+    )
+
+    assert success is False
+    assert failure == "llm_output_referenced_invalid_ids"
+    assert output["uncertain_ids"] == ["fabricated-composite-id"]
+    assert trace.validation_errors == ["invalid_uncertain_ids:fabricated-composite-id"]
+
+
 def test_llm_engine_preserves_explicit_role_channels_without_evaluator_repair() -> None:
     scenario = generate_scenario_by_family(
         profile="long_horizon",

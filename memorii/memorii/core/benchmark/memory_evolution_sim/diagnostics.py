@@ -174,7 +174,7 @@ def sim_checkpoint_diagnostics(
             if item not in output.rejected_entity_ids and item not in output.context_entity_ids
         ],
     }
-    if not checkpoint.checkpoint_contract.excluded_ids_must_be_rejected_or_contextualized:
+    if not checkpoint.task_contract.excluded_ids_must_be_rejected_or_contextualized:
         missing_rejected_ids = {"claim_ids": [], "entity_ids": []}
     missing_rejected_claim_subject_entity_ids = [
         item
@@ -238,7 +238,7 @@ def sim_checkpoint_diagnostics(
         ]
     )
     missing_selected_subject_entity_ids = []
-    if checkpoint.checkpoint_contract.selected_entity_role_policy in {
+    if checkpoint.task_contract.selected_entity_role_policy in {
         "subject",
         "subject_and_object",
         "active_graph_subjects",
@@ -511,7 +511,7 @@ def _selected_nonrequired_graph_entity_ids(
     output: SimSystemOutput,
     required_selected_entity_ids: list[str],
 ) -> list[str]:
-    policy = checkpoint.checkpoint_contract.selected_entity_role_policy
+    policy = checkpoint.task_contract.selected_entity_role_policy
     if policy != "active_graph_subjects":
         return []
     required = set(required_selected_entity_ids)
@@ -527,7 +527,7 @@ def _answer_match_type(
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> str:
-    if not checkpoint.checkpoint_contract.answer_required:
+    if not checkpoint.task_contract.answer_required:
         expected = (
             checkpoint.expected_next_action
             if checkpoint.expected_next_action is not None

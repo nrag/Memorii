@@ -17,6 +17,10 @@ from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionDecisionContext,
     MemoryEvolutionDecisionOutput,
 )
+from memorii.core.benchmark.memory_evolution_sim.closed_world_schema import (
+    constrain_string_array_fields,
+    sim_output_id_constraints,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
     SimProviderOutput,
@@ -54,12 +58,18 @@ class _BenchmarkPromptAdapter:
         query: str,
         request_id: str,
         metadata: dict[str, object] | None,
+        output_id_constraints: dict[str, tuple[str, ...]] | None = None,
     ) -> LLMDecisionResult:
         contract = self._registry.load(
             self.prompt_ref,
             owner=self.owner,
             output_model=self.output_model,
         )
+        if output_id_constraints is not None:
+            contract = constrain_string_array_fields(
+                contract=contract,
+                allowed_values_by_field=output_id_constraints,
+            )
         return self._runner.run(
             contract=contract,
             variables={
@@ -159,6 +169,7 @@ class LLMMemoryEvolutionSimReconstructionAdapter(_BenchmarkPromptAdapter):
             query=context.checkpoint.query_or_task,
             request_id=request_id,
             metadata=metadata,
+            output_id_constraints=sim_output_id_constraints(context),
         )
 
 

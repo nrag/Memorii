@@ -138,16 +138,19 @@ class CheckpointResultRow(FlatArtifactModel):
         ]
         if inconsistent_fields:
             raise ValueError(
-                "checkpoint top-level diagnostics must match diagnostics payload: "
-                f"{sorted(inconsistent_fields)!r}"
+                f"checkpoint top-level diagnostics must match diagnostics payload: {sorted(inconsistent_fields)!r}"
             )
         return {**value, **flat_fields}
 
     @model_validator(mode="after")
     def validate_verdict_projection(self) -> CheckpointResultRow:
-        expected_passed = self.verdict == "pass"
+        expected_passed = self.verdict == "pass" and not self.review_required
         if self.passed != expected_passed:
-            raise ValueError("checkpoint passed must be true exactly when verdict is pass")
+            raise ValueError("checkpoint passed requires a pass verdict with no required review")
+        if self.success != self.passed:
+            raise ValueError("checkpoint success must match clean-pass acceptance")
+        if self.passed and self.failure_buckets:
+            raise ValueError("passing checkpoints cannot contain failure buckets")
         inconsistent_diagnostics = [
             field_name
             for field_name in CheckpointDiagnosticsSection.model_fields
@@ -155,8 +158,7 @@ class CheckpointResultRow(FlatArtifactModel):
         ]
         if inconsistent_diagnostics:
             raise ValueError(
-                "checkpoint top-level diagnostics must match diagnostics payload: "
-                f"{sorted(inconsistent_diagnostics)!r}"
+                f"checkpoint top-level diagnostics must match diagnostics payload: {sorted(inconsistent_diagnostics)!r}"
             )
         return self
 

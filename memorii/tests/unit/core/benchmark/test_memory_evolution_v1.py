@@ -3,18 +3,19 @@ from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_
 from memorii.core.benchmark.memory_evolution_decision import (
     MemoryEvolutionBeliefLifecyclePolicy,
     MemoryEvolutionDecision,
+    MemoryEvolutionDecisionDomain,
     MemoryEvolutionEvent,
     MemoryEvolutionEventRole,
     MemoryEvolutionFailureBucket,
     MemoryEvolutionScopeKind,
     MemoryEvolutionSourceType,
-    MemoryEvolutionTemporalKind,
+    MemoryEvolutionTemporalReference,
     MemoryEvolutionWarningBucket,
     expected_memory_evolution_decision_for_checkpoint,
     memory_evolution_assertion_passed,
-    memory_evolution_checkpoint_contract,
     memory_evolution_context_for_checkpoint,
     memory_evolution_decision_diagnostics,
+    memory_evolution_visible_decision_contract,
     rule_memory_evolution_decision_for_checkpoint,
 )
 from pydantic import ValidationError
@@ -206,11 +207,14 @@ def test_memory_evolution_assertion_requires_current_and_historical_truth() -> N
     output["answer_selection"]["citation_memory_ids"] = ["mem:atlas-owner-bob-current"]
     output["answer"] = "Bob"
 
-    assert memory_evolution_assertion_passed(
-        scenario=scenario,
-        checkpoint=historical,
-        decision=output,
-    ) is False
+    assert (
+        memory_evolution_assertion_passed(
+            scenario=scenario,
+            checkpoint=historical,
+            decision=output,
+        )
+        is False
+    )
 
 
 def test_memory_evolution_assertion_requires_wrong_entity_precision() -> None:
@@ -229,11 +233,14 @@ def test_memory_evolution_assertion_requires_wrong_entity_precision() -> None:
     output["answer_selection"]["citation_memory_ids"] = ["mem:orion-billing-approver-nikhil"]
     output["answer"] = "Nikhil"
 
-    assert memory_evolution_assertion_passed(
-        scenario=scenario,
-        checkpoint=checkpoint,
-        decision=output,
-    ) is False
+    assert (
+        memory_evolution_assertion_passed(
+            scenario=scenario,
+            checkpoint=checkpoint,
+            decision=output,
+        )
+        is False
+    )
 
 
 def test_memory_evolution_assertion_requires_belief_degradation() -> None:
@@ -253,11 +260,14 @@ def test_memory_evolution_assertion_requires_belief_degradation() -> None:
         {"memory_id": "belief:c-customer-latency-backed-by-b", "belief": 0.6},
     ]
 
-    assert memory_evolution_assertion_passed(
-        scenario=scenario,
-        checkpoint=checkpoint,
-        decision=output,
-    ) is False
+    assert (
+        memory_evolution_assertion_passed(
+            scenario=scenario,
+            checkpoint=checkpoint,
+            decision=output,
+        )
+        is False
+    )
 
 
 def test_memory_evolution_assertion_allows_top_selection_for_belief_ranking() -> None:
@@ -301,19 +311,13 @@ def test_memory_evolution_assertion_does_not_require_answer_text_for_graph_chann
 
 def test_memory_evolution_assertion_allows_non_checkpoint_active_lifecycle_equivalence_when_authored() -> None:
     scenario = _scenario_by_id("evolution_expired_fact_historical_query")
-    checkpoint = next(
-        item
-        for item in scenario.checkpoints
-        if item.checkpoint_id == "checkpoint:beta-flag-current"
-    )
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:beta-flag-current")
     output = expected_memory_evolution_decision_for_checkpoint(
         scenario=scenario,
         checkpoint=checkpoint,
     ).model_dump(mode="json")
     output["lifecycle_snapshot"]["checkpoint_retained_record_ids"] = []
-    output["lifecycle_snapshot"]["checkpoint_superseded_record_ids"] = [
-        "mem:beta-flag-active-release-week"
-    ]
+    output["lifecycle_snapshot"]["checkpoint_superseded_record_ids"] = ["mem:beta-flag-active-release-week"]
 
     diagnostics = memory_evolution_decision_diagnostics(
         scenario=scenario,
@@ -375,7 +379,7 @@ def test_memory_evolution_split_query_rejects_wrong_entity_scope_key() -> None:
     assert MemoryEvolutionFailureBucket.TEMPORAL_SCOPE_KEY_MISMATCH in diagnostics.failure_buckets
 
 
-def test_memory_evolution_execution_suppressed_branch_satisfies_retained_lifecycle() -> None:
+def test_memory_evolution_execution_rejects_suppressed_branch_as_active() -> None:
     scenario = _scenario_by_id("evolution_abandoned_then_resumed_work")
     checkpoint = scenario.checkpoints[0]
     output = expected_memory_evolution_decision_for_checkpoint(
@@ -398,9 +402,8 @@ def test_memory_evolution_execution_suppressed_branch_satisfies_retained_lifecyc
         decision=output,
     )
 
-    assert diagnostics.assertion_passed is True
-    assert MemoryEvolutionFailureBucket.EXPECTED_CHECKPOINT_RETAINED_RECORD_MISSING not in diagnostics.failure_buckets
-    assert MemoryEvolutionWarningBucket.EXTRA_CHECKPOINT_ACTIVE_RECORD_IDS in diagnostics.warning_buckets
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.SCHEMA_VALIDATION_FAILED in diagnostics.failure_buckets
 
 
 def test_memory_evolution_execution_retained_branch_requires_suppression_signal() -> None:
@@ -503,7 +506,7 @@ def test_memory_evolution_assertion_fails_unexpected_context_citation() -> None:
     )
 
     assert diagnostics.assertion_passed is False
-    assert MemoryEvolutionFailureBucket.CITATION_CHANNEL_POLLUTION in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.SCHEMA_VALIDATION_FAILED in diagnostics.failure_buckets
 
 
 def test_memory_evolution_context_declares_belief_channel_contract() -> None:
@@ -548,23 +551,22 @@ def test_memory_evolution_context_excludes_oracle_checkpoint_fields() -> None:
         "transliteration_policy": "allowed",
     }
     assert not _contains_key_prefix(context_payload["checkpoint"], "expected_")
+    assert context.decision_contract == checkpoint.contract
+    assert not _contains_key_prefix(
+        context_payload["decision_contract"],
+        "expected_",
+    )
 
 
-def test_memory_evolution_checkpoint_contract_is_fixture_authored_not_query_inferred() -> None:
+def test_memory_evolution_visible_decision_contract_is_fixture_authored_not_query_inferred() -> None:
     scenario = _scenario_by_id("evolution_current_vs_historical_truth")
-    historical = next(
-        item
-        for item in scenario.checkpoints
-        if item.checkpoint_id == "checkpoint:atlas-owner-january"
-    )
-    rewritten = historical.model_copy(
-        update={"query_or_task": "During January, name the Atlas owner."}
-    )
+    historical = next(item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january")
+    rewritten = historical.model_copy(update={"query_or_task": "During January, name the Atlas owner."})
 
-    contract = memory_evolution_checkpoint_contract(scenario=scenario, checkpoint=rewritten)
+    contract = memory_evolution_visible_decision_contract(scenario=scenario, checkpoint=rewritten)
 
     assert contract == historical.contract
-    assert contract.answer_temporal_mode == "historical"
+    assert contract.temporal_reference == "historical"
     assert contract.selected_memory_policy == "historical_truth"
 
 
@@ -664,7 +666,10 @@ def test_memory_evolution_diagnostics_fail_extra_citations_for_non_discriminativ
         scenario=scenario,
         checkpoint=checkpoint,
     ).model_dump(mode="json")
-    output["answer_selection"]["citation_memory_ids"] = [*checkpoint.expected_citation_ids, "mem:unrelated-extra-citation"]
+    output["answer_selection"]["citation_memory_ids"] = [
+        *checkpoint.expected_citation_ids,
+        "mem:unrelated-extra-citation",
+    ]
 
     diagnostics = memory_evolution_decision_diagnostics(
         scenario=scenario,
@@ -776,11 +781,14 @@ def test_memory_evolution_assertion_suppresses_abandoned_branch() -> None:
     output["execution_selection"]["active_work_state_memory_ids"] = ["exec:approach-a-started"]
     output["next_action"] = "continue approach A"
 
-    assert memory_evolution_assertion_passed(
-        scenario=scenario,
-        checkpoint=checkpoint,
-        decision=output,
-    ) is False
+    assert (
+        memory_evolution_assertion_passed(
+            scenario=scenario,
+            checkpoint=checkpoint,
+            decision=output,
+        )
+        is False
+    )
 
 
 def test_memory_evolution_belief_degradation_accepts_none_as_no_answer_equivalent() -> None:
@@ -849,7 +857,7 @@ def test_memory_evolution_belief_degradation_accepts_low_confidence_scores_witho
     assert MemoryEvolutionWarningBucket.BELIEF_SCORE_CALIBRATION_DRIFT in diagnostics.warning_buckets
 
 
-def test_memory_evolution_execution_uses_structured_branch_not_exact_next_action_text() -> None:
+def test_memory_evolution_execution_rejects_suppressed_branch_as_direct_citation() -> None:
     scenario = _scenario_by_id("evolution_abandoned_then_resumed_work")
     checkpoint = scenario.checkpoints[0]
     output = expected_memory_evolution_decision_for_checkpoint(
@@ -868,8 +876,8 @@ def test_memory_evolution_execution_uses_structured_branch_not_exact_next_action
         decision=output,
     )
 
-    assert diagnostics.assertion_passed is True
-    assert MemoryEvolutionWarningBucket.CONTEXT_CITATION_IN_DIRECT_CHANNEL in diagnostics.warning_buckets
+    assert diagnostics.assertion_passed is False
+    assert MemoryEvolutionFailureBucket.SCHEMA_VALIDATION_FAILED in diagnostics.failure_buckets
     assert MemoryEvolutionWarningBucket.LIFECYCLE_CHANNEL_DRIFT not in diagnostics.warning_buckets
 
 
@@ -907,7 +915,8 @@ def test_memory_evolution_historical_release_week_requires_temporal_anchor() -> 
         checkpoint=checkpoint,
     ).model_dump(mode="json")
     output["query_temporal_frame"] = {
-        "temporal_kind": "historical",
+        "temporal_reference": "historical",
+        "decision_domain": "fact",
         "scope_kind": "none",
         "scope_key": None,
         "anchor_id": None,
@@ -931,9 +940,7 @@ def test_memory_evolution_historical_release_week_requires_temporal_anchor() -> 
 
 def test_memory_evolution_historical_january_uses_query_interval_not_checkpoint_time() -> None:
     scenario = _scenario_by_id("evolution_current_vs_historical_truth")
-    checkpoint = next(
-        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january"
-    )
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january")
 
     output = expected_memory_evolution_decision_for_checkpoint(
         scenario=scenario,
@@ -948,7 +955,7 @@ def test_memory_evolution_historical_january_uses_query_interval_not_checkpoint_
 
     assert diagnostics.assertion_passed is True
     assert diagnostics.expected_temporal_frame is not None
-    assert diagnostics.expected_temporal_frame.temporal_kind == MemoryEvolutionTemporalKind.HISTORICAL
+    assert diagnostics.expected_temporal_frame.temporal_reference == MemoryEvolutionTemporalReference.HISTORICAL
     assert diagnostics.expected_temporal_frame.valid_to.isoformat() == "2026-01-31T23:59:59+00:00"
     assert output["query_temporal_frame"]["valid_to"] == "2026-01-31T23:59:59Z"
     assert "mode" not in output["query_temporal_frame"]
@@ -956,9 +963,7 @@ def test_memory_evolution_historical_january_uses_query_interval_not_checkpoint_
 
 def test_memory_evolution_historical_january_requires_start_bound() -> None:
     scenario = _scenario_by_id("evolution_current_vs_historical_truth")
-    checkpoint = next(
-        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january"
-    )
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january")
     output = expected_memory_evolution_decision_for_checkpoint(
         scenario=scenario,
         checkpoint=checkpoint,
@@ -1001,7 +1006,7 @@ def test_memory_evolution_execution_checkpoint_bounds_are_warning_only() -> None
 def test_memory_evolution_degraded_beliefs_can_be_retained_as_evaluated_state() -> None:
     scenario = _scenario_by_id("evolution_belief_dependency_degradation")
     checkpoint = scenario.checkpoints[0]
-    contract = memory_evolution_checkpoint_contract(scenario=scenario, checkpoint=checkpoint)
+    contract = memory_evolution_visible_decision_contract(scenario=scenario, checkpoint=checkpoint)
     output = expected_memory_evolution_decision_for_checkpoint(
         scenario=scenario,
         checkpoint=checkpoint,
@@ -1094,20 +1099,53 @@ def test_memory_evolution_current_query_uses_separate_scope_axis() -> None:
 
     assert diagnostics.assertion_passed is True
     assert diagnostics.expected_temporal_frame is not None
-    assert diagnostics.expected_temporal_frame.temporal_kind == MemoryEvolutionTemporalKind.CURRENT
+    assert diagnostics.expected_temporal_frame.temporal_reference == MemoryEvolutionTemporalReference.CURRENT
+    assert diagnostics.expected_temporal_frame.decision_domain == MemoryEvolutionDecisionDomain.FACT
     assert diagnostics.expected_temporal_frame.scope_kind == MemoryEvolutionScopeKind.GLOBAL
     assert diagnostics.expected_temporal_frame.scope_key is None
-    assert output["answer_selection"]["temporal_mode"] == "current"
+    assert output["answer_selection"]["temporal_reference"] == "current"
 
 
-def test_memory_evolution_answer_temporal_mode_rejects_scope_as_time() -> None:
+def test_memory_evolution_temporal_reference_is_orthogonal_to_decision_domain() -> None:
+    belief_scenario = _scenario_by_id("evolution_competing_belief_reranking")
+    belief_checkpoint = belief_scenario.checkpoints[0]
+    belief = expected_memory_evolution_decision_for_checkpoint(
+        scenario=belief_scenario,
+        checkpoint=belief_checkpoint,
+    )
+    execution_scenario = _scenario_by_id("evolution_abandoned_then_resumed_work")
+    execution_checkpoint = execution_scenario.checkpoints[0]
+    execution = expected_memory_evolution_decision_for_checkpoint(
+        scenario=execution_scenario,
+        checkpoint=execution_checkpoint,
+    )
+    historical_scenario = _scenario_by_id("evolution_current_vs_historical_truth")
+    historical_checkpoint = next(
+        checkpoint
+        for checkpoint in historical_scenario.checkpoints
+        if checkpoint.checkpoint_id == "checkpoint:atlas-owner-january"
+    )
+    historical = expected_memory_evolution_decision_for_checkpoint(
+        scenario=historical_scenario,
+        checkpoint=historical_checkpoint,
+    )
+
+    assert belief.query_temporal_frame.temporal_reference == "current"
+    assert belief.query_temporal_frame.decision_domain == "belief"
+    assert execution.query_temporal_frame.temporal_reference == "current"
+    assert execution.query_temporal_frame.decision_domain == "execution"
+    assert historical.query_temporal_frame.temporal_reference == "historical"
+    assert historical.query_temporal_frame.decision_domain == "fact"
+
+
+def test_memory_evolution_temporal_reference_rejects_scope_as_time() -> None:
     scenario = _scenario_by_id("evolution_task_preference_does_not_overwrite_global")
     checkpoint = scenario.checkpoints[0]
     output = expected_memory_evolution_decision_for_checkpoint(
         scenario=scenario,
         checkpoint=checkpoint,
     ).model_dump(mode="json")
-    output["answer_selection"]["temporal_mode"] = "scoped"
+    output["answer_selection"]["temporal_reference"] = "scoped"
 
     with pytest.raises(ValidationError):
         MemoryEvolutionDecision.model_validate(output)
@@ -1139,9 +1177,7 @@ def test_memory_evolution_context_exposes_temporal_entity_state_without_expected
 
 def test_memory_evolution_expected_historical_answer_is_not_rejected() -> None:
     scenario = _scenario_by_id("evolution_current_vs_historical_truth")
-    checkpoint = next(
-        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january"
-    )
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january")
 
     output = expected_memory_evolution_decision_for_checkpoint(
         scenario=scenario,
@@ -1159,9 +1195,7 @@ def test_memory_evolution_expected_historical_answer_is_not_rejected() -> None:
 
 def test_memory_evolution_fails_when_selected_answer_is_also_rejected() -> None:
     scenario = _scenario_by_id("evolution_current_vs_historical_truth")
-    checkpoint = next(
-        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january"
-    )
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:atlas-owner-january")
     output = expected_memory_evolution_decision_for_checkpoint(
         scenario=scenario,
         checkpoint=checkpoint,
@@ -1175,15 +1209,12 @@ def test_memory_evolution_fails_when_selected_answer_is_also_rejected() -> None:
     )
 
     assert diagnostics.assertion_passed is False
-    assert MemoryEvolutionFailureBucket.SELECTED_MEMORY_REJECTED in diagnostics.failure_buckets
-    assert MemoryEvolutionFailureBucket.QUERY_LIFECYCLE_CONFLATION in diagnostics.failure_buckets
+    assert MemoryEvolutionFailureBucket.SCHEMA_VALIDATION_FAILED in diagnostics.failure_buckets
 
 
 def test_memory_evolution_answer_alias_does_not_accept_negated_answer() -> None:
     scenario = _scenario_by_id("evolution_expired_fact_historical_query")
-    checkpoint = next(
-        item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:beta-flag-current"
-    )
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_id == "checkpoint:beta-flag-current")
     output = expected_memory_evolution_decision_for_checkpoint(
         scenario=scenario,
         checkpoint=checkpoint,
@@ -1270,24 +1301,17 @@ def test_memory_evolution_diagnostics_name_weakened_above_neutral_belief_order()
     assert diagnostics.assertion_passed is False
     assert MemoryEvolutionFailureBucket.BELIEF_RANKING_WRONG_ORDER in diagnostics.failure_buckets
     assert MemoryEvolutionFailureBucket.WEAKENED_BELIEF_RANKED_ABOVE_NEUTRAL in diagnostics.failure_buckets
-    assert diagnostics.belief_effect_order_errors == [
-        "belief:a-network-saturation>belief:c-database-locks"
-    ]
+    assert diagnostics.belief_effect_order_errors == ["belief:a-network-saturation>belief:c-database-locks"]
 
 
 def _scenario_by_id(scenario_id: str):
-    return next(
-        item
-        for item in load_memory_evolution_v1_fixture_set()
-        if item.scenario_id == scenario_id
-    )
+    return next(item for item in load_memory_evolution_v1_fixture_set() if item.scenario_id == scenario_id)
 
 
 def _contains_key_prefix(value: object, prefix: str) -> bool:
     if isinstance(value, dict):
         return any(
-            (isinstance(key, str) and key.startswith(prefix))
-            or _contains_key_prefix(nested, prefix)
+            (isinstance(key, str) and key.startswith(prefix)) or _contains_key_prefix(nested, prefix)
             for key, nested in value.items()
         )
     if isinstance(value, list):

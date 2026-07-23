@@ -77,7 +77,7 @@ def test_checkpoint_paraphrases_vary_without_changing_contracts() -> None:
         (
             scenario.family,
             checkpoint.checkpoint_type,
-            checkpoint.checkpoint_contract.model_dump(mode="json"),
+            checkpoint.task_contract.model_dump(mode="json"),
             checkpoint.difficulty_tags,
             checkpoint.severity,
         )
@@ -88,7 +88,7 @@ def test_checkpoint_paraphrases_vary_without_changing_contracts() -> None:
         (
             scenario.family,
             checkpoint.checkpoint_type,
-            checkpoint.checkpoint_contract.model_dump(mode="json"),
+            checkpoint.task_contract.model_dump(mode="json"),
             checkpoint.difficulty_tags,
             checkpoint.severity,
         )
@@ -116,7 +116,7 @@ def test_generated_semantic_worlds_are_unique_and_surface_id_independent() -> No
 
 @pytest.mark.parametrize("profile", ["smoke", "adversarial", "long_horizon"])
 @pytest.mark.parametrize("seed", [7, 11, 19])
-def test_every_generated_family_has_a_closed_visible_checkpoint_contract(
+def test_every_generated_family_has_a_closed_visible_task_contract(
     profile: str,
     seed: int,
 ) -> None:

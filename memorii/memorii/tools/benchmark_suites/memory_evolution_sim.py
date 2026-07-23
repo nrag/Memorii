@@ -47,7 +47,9 @@ from memorii.core.llm_config import (
     LLMRuntimeConfig,
 )
 from memorii.core.llm_decision.models import LLMDecisionMode
+from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
+from memorii.core.memory_evolution.models import FallbackOutcome, ProviderAttemptStatus
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.common import (
@@ -90,6 +92,16 @@ def _ordered_unique(values: Sequence[object]) -> list[str]:
         seen.add(text)
         unique.append(text)
     return unique
+
+
+def _provider_attempt_status(result: LLMDecisionResult) -> ProviderAttemptStatus:
+    if result.success:
+        return ProviderAttemptStatus.SUCCEEDED
+    return {
+        "provider_error": ProviderAttemptStatus.PROVIDER_ERROR,
+        "invalid_json": ProviderAttemptStatus.INVALID_JSON,
+        "schema_validation": ProviderAttemptStatus.SCHEMA_ERROR,
+    }.get(result.failure_mode or "", ProviderAttemptStatus.SCHEMA_ERROR)
 
 
 def _run_memory_evolution_sim_transitions(
@@ -198,8 +210,12 @@ def _run_memory_evolution_sim_transitions(
                         effective_decision_mode=effective_mode,
                         final_output_source=final_output_source,
                         trace=llm_trace,
-                        success=llm_success,
-                        fallback_used=fallback_used,
+                        provider_attempt_status=_provider_attempt_status(result),
+                        semantic_validation_status=(
+                            "failed" if invalid_reference_failure else "passed" if result.success else "not_evaluated"
+                        ),
+                        fallback_outcome=(FallbackOutcome.SUCCEEDED if fallback_used else FallbackOutcome.NOT_USED),
+                        primary_output_accepted=llm_success,
                         failure_mode=fallback_reason,
                         output=SimSystemOutput.model_validate(output_json),
                     )
@@ -224,6 +240,7 @@ def _run_memory_evolution_sim_transitions(
                 engine_failure_buckets.append(fallback_reason or "llm_provider_failure")
             success = (
                 aggregate.verdict.value == "pass"
+                and not aggregate.review_required
                 and (effective_mode != "llm" or llm_success or not llm_call_made)
                 and not invalid_reference_failure
             )

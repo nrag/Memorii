@@ -85,29 +85,35 @@ def test_validate_reports_rejects_inconsistent_checkpoint_totals(tmp_path) -> No
 
 
 def test_validate_reports_rejects_tampered_report_bytes(tmp_path: Path) -> None:
-    assert main(
-        [
-            "--suite",
-            "memory_evolution_sim_v1",
-            "--mode",
-            "llm",
-            "--dry-run",
-            "--storage-root",
-            str(tmp_path),
-            "--sim-profile",
-            "adversarial",
-            "--sim-scenario-count",
-            "10",
-            "--sim-noise-rate",
-            "0.35",
-            "--seed",
-            "7",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_sim_v1",
+                "--mode",
+                "llm",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+                "--sim-profile",
+                "adversarial",
+                "--sim-scenario-count",
+                "10",
+                "--sim-noise-rate",
+                "0.35",
+                "--seed",
+                "7",
+            ]
+        )
+        == 0
+    )
     report_path = next(tmp_path.glob("benchmark_runs/memory_evolution_sim_v1/llm/bench-*/report.json"))
     report = json.loads(report_path.read_text(encoding="utf-8"))
     report["checkpoint_results"][0]["verdict"] = "fail"
     report["checkpoint_results"][0]["passed"] = False
+    report["checkpoint_results"][0]["success"] = False
+    report["checkpoint_results"][0]["review_required"] = True
+    report["checkpoint_results"][0]["score"] = 0.0
     report_path.write_text(json.dumps(report), encoding="utf-8")
 
     errors = validate_reports(tmp_path / "benchmark_runs")
@@ -117,29 +123,35 @@ def test_validate_reports_rejects_tampered_report_bytes(tmp_path: Path) -> None:
 
 
 def test_validate_reports_reconciles_report_checkpoint_verdicts(tmp_path: Path) -> None:
-    assert main(
-        [
-            "--suite",
-            "memory_evolution_sim_v1",
-            "--mode",
-            "llm",
-            "--dry-run",
-            "--storage-root",
-            str(tmp_path),
-            "--sim-profile",
-            "adversarial",
-            "--sim-scenario-count",
-            "10",
-            "--sim-noise-rate",
-            "0.35",
-            "--seed",
-            "7",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_sim_v1",
+                "--mode",
+                "llm",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+                "--sim-profile",
+                "adversarial",
+                "--sim-scenario-count",
+                "10",
+                "--sim-noise-rate",
+                "0.35",
+                "--seed",
+                "7",
+            ]
+        )
+        == 0
+    )
     report_path = next(tmp_path.glob("benchmark_runs/memory_evolution_sim_v1/llm/bench-*/report.json"))
     payload = json.loads(report_path.read_text(encoding="utf-8"))
     payload["checkpoint_results"][0]["verdict"] = "fail"
     payload["checkpoint_results"][0]["passed"] = False
+    payload["checkpoint_results"][0]["success"] = False
+    payload["checkpoint_results"][0]["review_required"] = True
+    payload["checkpoint_results"][0]["score"] = 0.0
     report = BenchmarkReportSummary.model_validate(payload).with_content_digest()
     report_path.write_text(json.dumps(report.model_dump(mode="json")), encoding="utf-8")
 
@@ -150,25 +162,28 @@ def test_validate_reports_reconciles_report_checkpoint_verdicts(tmp_path: Path) 
 
 
 def test_validate_reports_enforces_exact_byte_manifest_coverage(tmp_path: Path) -> None:
-    assert main(
-        [
-            "--suite",
-            "memory_evolution_sim_v1",
-            "--mode",
-            "llm",
-            "--dry-run",
-            "--storage-root",
-            str(tmp_path),
-            "--sim-profile",
-            "adversarial",
-            "--sim-scenario-count",
-            "10",
-            "--sim-noise-rate",
-            "0.35",
-            "--seed",
-            "7",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_sim_v1",
+                "--mode",
+                "llm",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+                "--sim-profile",
+                "adversarial",
+                "--sim-scenario-count",
+                "10",
+                "--sim-noise-rate",
+                "0.35",
+                "--seed",
+                "7",
+            ]
+        )
+        == 0
+    )
     source_root = tmp_path / "benchmark_runs"
 
     tampered_root = tmp_path / "tampered-bytes"

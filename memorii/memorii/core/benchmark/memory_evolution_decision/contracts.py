@@ -68,20 +68,17 @@ class MemoryEvolutionBeliefScore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class MemoryEvolutionAnswerTemporalMode(StrEnum):
-    CURRENT = "current"
-    HISTORICAL = "historical"
-    EXECUTION = "execution"
-    BELIEF = "belief"
-
-
-class MemoryEvolutionTemporalKind(StrEnum):
+class MemoryEvolutionTemporalReference(StrEnum):
     CURRENT = "current"
     HISTORICAL = "historical"
     INTERVAL = "interval"
-    EXECUTION = "execution"
-    BELIEF = "belief"
     AMBIGUOUS = "ambiguous"
+
+
+class MemoryEvolutionDecisionDomain(StrEnum):
+    FACT = "fact"
+    BELIEF = "belief"
+    EXECUTION = "execution"
 
 
 class MemoryEvolutionScopeKind(StrEnum):
@@ -137,14 +134,15 @@ class MemoryEvolutionAnswerSelection(BaseModel):
     selected_memory_ids: list[str] = Field(default_factory=list)
     supporting_memory_ids: list[str] = Field(default_factory=list)
     citation_memory_ids: list[str] = Field(default_factory=list)
-    temporal_mode: MemoryEvolutionAnswerTemporalMode
+    temporal_reference: MemoryEvolutionTemporalReference
     rationale: str = ""
 
     model_config = ConfigDict(extra="forbid")
 
 
 class MemoryEvolutionTemporalFrame(BaseModel):
-    temporal_kind: MemoryEvolutionTemporalKind
+    temporal_reference: MemoryEvolutionTemporalReference
+    decision_domain: MemoryEvolutionDecisionDomain
     scope_kind: MemoryEvolutionScopeKind = MemoryEvolutionScopeKind.NONE
     scope_key: str | None = None
     anchor_id: str | None = None
@@ -252,9 +250,10 @@ class MemoryEvolutionNextActionPolicy(StrEnum):
     NONEMPTY_STRUCTURED = "nonempty_structured"
 
 
-class MemoryEvolutionCheckpointContract(BaseModel):
+class MemoryEvolutionVisibleDecisionContract(BaseModel):
     checkpoint_kind: MemoryEvolutionCheckpointKind
-    answer_temporal_mode: MemoryEvolutionAnswerTemporalMode
+    temporal_reference: MemoryEvolutionTemporalReference
+    decision_domain: MemoryEvolutionDecisionDomain
     selected_memory_policy: MemoryEvolutionSelectedMemoryPolicy
     answer_projection_policy: MemoryEvolutionAnswerProjectionPolicy = MemoryEvolutionAnswerProjectionPolicy.CLAIM_OBJECT
     citation_policy: MemoryEvolutionCitationPolicy = MemoryEvolutionCitationPolicy.DIRECT_ONLY
@@ -288,7 +287,7 @@ class MemoryEvolutionCheckpoint(BaseModel):
     checkpoint_id: str
     timestamp: datetime
     query_or_task: str
-    contract: MemoryEvolutionCheckpointContract
+    contract: MemoryEvolutionVisibleDecisionContract
     expected_answer: str | None = None
     expected_next_action: str | None = None
     expected_retrieval_ids: list[str] = Field(default_factory=list)
@@ -446,6 +445,7 @@ class MemoryEvolutionDecisionContext(BaseModel):
     family: str
     events: list[MemoryEvolutionEvent]
     checkpoint: MemoryEvolutionVisibleCheckpoint
+    decision_contract: MemoryEvolutionVisibleDecisionContract
     visible_memory_cards: list[MemoryEvolutionVisibleMemoryCard] = Field(default_factory=list)
     entity_resolution_cards: list[MemoryEvolutionEntityResolutionCard] = Field(default_factory=list)
     temporal_anchor_cards: list[MemoryEvolutionTemporalAnchorCard] = Field(default_factory=list)
@@ -480,6 +480,57 @@ class MemoryEvolutionDecision(BaseModel):
             raise ValueError("execution_selection is required when operation is next_action")
         if self.operation != MemoryEvolutionDecisionOperation.NEXT_ACTION and self.execution_selection is not None:
             raise ValueError("execution_selection is only allowed when operation is next_action")
+        if self.operation == MemoryEvolutionDecisionOperation.NEXT_ACTION:
+            if self.query_temporal_frame.decision_domain != MemoryEvolutionDecisionDomain.EXECUTION:
+                raise ValueError("next_action requires the execution decision domain")
+        elif self.query_temporal_frame.decision_domain == MemoryEvolutionDecisionDomain.EXECUTION:
+            raise ValueError("the execution decision domain requires next_action")
+        if self.answer_selection.temporal_reference != self.query_temporal_frame.temporal_reference:
+            raise ValueError("answer selection and query frame temporal references must agree")
+
+        selected = set(self.answer_selection.selected_memory_ids)
+        supporting = set(self.answer_selection.supporting_memory_ids)
+        citations = set(self.answer_selection.citation_memory_ids)
+        active = set(self.lifecycle_snapshot.checkpoint_active_record_ids)
+        superseded = set(self.lifecycle_snapshot.checkpoint_superseded_record_ids)
+        rejected = set(self.retrieval_context.rejected_memory_ids)
+        contextualized = (
+            rejected
+            | set(self.retrieval_context.query_context_memory_ids)
+            | set(self.retrieval_context.query_historical_memory_ids)
+        )
+        direct = selected | supporting | citations
+        contradictory_direct = direct & rejected
+        if contradictory_direct:
+            raise ValueError(f"rejected memories cannot be selected or direct support: {sorted(contradictory_direct)}")
+
+        falsified = {
+            score.memory_id
+            for score in self.belief_scores
+            if score.belief_state == MemoryEvolutionBeliefState.FALSIFIED
+        }
+        if falsified & active:
+            raise ValueError(f"falsified beliefs cannot be checkpoint-active: {sorted(falsified & active)}")
+        missing_superseded = falsified - superseded
+        if missing_superseded:
+            raise ValueError(f"falsified beliefs must be checkpoint-superseded: {sorted(missing_superseded)}")
+        missing_rejected = falsified - rejected
+        if missing_rejected:
+            raise ValueError(f"falsified beliefs must be rejected: {sorted(missing_rejected)}")
+
+        if self.execution_selection is not None:
+            suppressed = set(self.execution_selection.suppressed_branch_memory_ids)
+            suppressed_direct = suppressed & direct
+            if suppressed_direct:
+                raise ValueError(
+                    f"suppressed branches cannot be selected or direct support: {sorted(suppressed_direct)}"
+                )
+            suppressed_active = suppressed & active
+            if suppressed_active:
+                raise ValueError(f"suppressed branches cannot be checkpoint-active: {sorted(suppressed_active)}")
+            missing_context = suppressed - contextualized
+            if missing_context:
+                raise ValueError(f"suppressed branches must be rejected or contextualized: {sorted(missing_context)}")
         return self
 
 
@@ -564,7 +615,7 @@ class MemoryEvolutionFailureBucket(StrEnum):
     HISTORICAL_ANSWER_RECORD_MARKED_CHECKPOINT_ACTIVE = "historical_answer_record_marked_checkpoint_active"
     QUERY_LIFECYCLE_CONFLATION = "query_lifecycle_conflation"
     SELECTED_MEMORY_REJECTED = "selected_memory_rejected"
-    WRONG_TEMPORAL_MODE = "wrong_temporal_mode"
+    WRONG_TEMPORAL_REFERENCE = "wrong_temporal_reference"
     HISTORICAL_MEMORY_NOT_MARKED_QUERY_RELEVANT = "historical_memory_not_marked_query_relevant"
     CHECKPOINT_ACTIVE_RECORD_MISSING_FROM_LIFECYCLE_SNAPSHOT = (
         "checkpoint_active_record_missing_from_lifecycle_snapshot"
@@ -580,7 +631,8 @@ class MemoryEvolutionFailureBucket(StrEnum):
     BELIEF_SCORE_MISMATCH = "belief_score_mismatch"
     BELIEF_CONFIDENCE_NOT_DEGRADED = "belief_confidence_not_degraded"
     TEMPORAL_FRAME_MISMATCH = "temporal_frame_mismatch"
-    TEMPORAL_KIND_MISMATCH = "temporal_kind_mismatch"
+    TEMPORAL_REFERENCE_MISMATCH = "temporal_reference_mismatch"
+    DECISION_DOMAIN_MISMATCH = "decision_domain_mismatch"
     TEMPORAL_SCOPE_MISMATCH = "temporal_scope_mismatch"
     TEMPORAL_ANCHOR_MISMATCH = "temporal_anchor_mismatch"
     TEMPORAL_INTERVAL_MISMATCH = "temporal_interval_mismatch"
@@ -631,7 +683,8 @@ class MemoryEvolutionDecisionDiagnostics(BaseModel):
     missing_required_belief_score_ids: list[str] = Field(default_factory=list)
     belief_effect_order_errors: list[str] = Field(default_factory=list)
     temporal_frame_mismatch: bool = False
-    temporal_kind_mismatch: bool = False
+    temporal_reference_mismatch: bool = False
+    decision_domain_mismatch: bool = False
     temporal_scope_mismatch: bool = False
     temporal_anchor_mismatch: bool = False
     temporal_interval_mismatch: bool = False

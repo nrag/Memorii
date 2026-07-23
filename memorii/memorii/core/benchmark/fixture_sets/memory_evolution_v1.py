@@ -4,15 +4,14 @@ from datetime import UTC, datetime
 
 from memorii.core.benchmark.memory_evolution_decision import (
     MemoryEvolutionAnswerProjectionPolicy,
-    MemoryEvolutionAnswerTemporalMode,
     MemoryEvolutionBeliefLifecyclePolicy,
     MemoryEvolutionBeliefScorePolicy,
     MemoryEvolutionBeliefState,
     MemoryEvolutionBeliefStateExpectation,
     MemoryEvolutionCheckpoint,
-    MemoryEvolutionCheckpointContract,
     MemoryEvolutionCheckpointKind,
     MemoryEvolutionCitationPolicy,
+    MemoryEvolutionDecisionDomain,
     MemoryEvolutionEvent,
     MemoryEvolutionEventRole,
     MemoryEvolutionExcludedMemoryPolicy,
@@ -26,7 +25,8 @@ from memorii.core.benchmark.memory_evolution_decision import (
     MemoryEvolutionSourceType,
     MemoryEvolutionTemporalFrame,
     MemoryEvolutionTemporalIntervalPolicy,
-    MemoryEvolutionTemporalKind,
+    MemoryEvolutionTemporalReference,
+    MemoryEvolutionVisibleDecisionContract,
 )
 
 
@@ -35,8 +35,9 @@ def _ts(value: str) -> datetime:
 
 
 def _temporal_frame(
-    temporal_kind: MemoryEvolutionTemporalKind,
+    temporal_reference: MemoryEvolutionTemporalReference,
     *,
+    decision_domain: MemoryEvolutionDecisionDomain = MemoryEvolutionDecisionDomain.FACT,
     scope_kind: MemoryEvolutionScopeKind = MemoryEvolutionScopeKind.NONE,
     scope_key: str | None = None,
     anchor_id: str | None = None,
@@ -45,7 +46,8 @@ def _temporal_frame(
     rationale: str = "Authored fixture temporal frame.",
 ) -> MemoryEvolutionTemporalFrame:
     return MemoryEvolutionTemporalFrame(
-        temporal_kind=temporal_kind,
+        temporal_reference=temporal_reference,
+        decision_domain=decision_domain,
         scope_kind=scope_kind,
         scope_key=scope_key,
         anchor_id=anchor_id,
@@ -108,11 +110,12 @@ def _truth_contract(
     allow_extra_temporal_anchor: bool = False,
     allow_extra_temporal_bounds: bool | None = None,
     excluded_memory_policy: MemoryEvolutionExcludedMemoryPolicy = MemoryEvolutionExcludedMemoryPolicy.NONE,
-) -> MemoryEvolutionCheckpointContract:
+) -> MemoryEvolutionVisibleDecisionContract:
     if historical:
-        return MemoryEvolutionCheckpointContract(
+        return MemoryEvolutionVisibleDecisionContract(
             checkpoint_kind=MemoryEvolutionCheckpointKind.HISTORICAL_TRUTH,
-            answer_temporal_mode=MemoryEvolutionAnswerTemporalMode.HISTORICAL,
+            temporal_reference=MemoryEvolutionTemporalReference.HISTORICAL,
+            decision_domain=MemoryEvolutionDecisionDomain.FACT,
             selected_memory_policy=MemoryEvolutionSelectedMemoryPolicy.HISTORICAL_TRUTH,
             answer_projection_policy=MemoryEvolutionAnswerProjectionPolicy.CLAIM_OBJECT,
             citation_policy=citation_policy,
@@ -125,9 +128,10 @@ def _truth_contract(
             allow_historical_selected_memory=True,
             excluded_memory_policy=excluded_memory_policy,
         )
-    return MemoryEvolutionCheckpointContract(
+    return MemoryEvolutionVisibleDecisionContract(
         checkpoint_kind=MemoryEvolutionCheckpointKind.CURRENT_TRUTH,
-        answer_temporal_mode=MemoryEvolutionAnswerTemporalMode.CURRENT,
+        temporal_reference=MemoryEvolutionTemporalReference.CURRENT,
+        decision_domain=MemoryEvolutionDecisionDomain.FACT,
         selected_memory_policy=MemoryEvolutionSelectedMemoryPolicy.CURRENT_TRUTH,
         answer_projection_policy=MemoryEvolutionAnswerProjectionPolicy.CLAIM_OBJECT,
         citation_policy=citation_policy,
@@ -141,14 +145,15 @@ def _truth_contract(
     )
 
 
-def _belief_contract(*, degradation: bool = False) -> MemoryEvolutionCheckpointContract:
-    return MemoryEvolutionCheckpointContract(
+def _belief_contract(*, degradation: bool = False) -> MemoryEvolutionVisibleDecisionContract:
+    return MemoryEvolutionVisibleDecisionContract(
         checkpoint_kind=(
             MemoryEvolutionCheckpointKind.BELIEF_DEGRADATION
             if degradation
             else MemoryEvolutionCheckpointKind.BELIEF_RANKING
         ),
-        answer_temporal_mode=MemoryEvolutionAnswerTemporalMode.BELIEF,
+        temporal_reference=MemoryEvolutionTemporalReference.CURRENT,
+        decision_domain=MemoryEvolutionDecisionDomain.BELIEF,
         selected_memory_policy=MemoryEvolutionSelectedMemoryPolicy.BELIEF_ORDER,
         answer_projection_policy=MemoryEvolutionAnswerProjectionPolicy.GRAPH_CHANNELS_ONLY,
         citation_policy=(
@@ -157,9 +162,7 @@ def _belief_contract(*, degradation: bool = False) -> MemoryEvolutionCheckpointC
             else MemoryEvolutionCitationPolicy.DIRECT_ONLY
         ),
         lifecycle_policy=(
-            MemoryEvolutionLifecyclePolicy.EXACT
-            if degradation
-            else MemoryEvolutionLifecyclePolicy.WARNING
+            MemoryEvolutionLifecyclePolicy.EXACT if degradation else MemoryEvolutionLifecyclePolicy.WARNING
         ),
         scope_match_policy=MemoryEvolutionScopeMatchPolicy.NONE_OR_ENTITY,
         temporal_interval_policy=MemoryEvolutionTemporalIntervalPolicy.ALLOW_CHECKPOINT_BOUNDS,
@@ -177,10 +180,11 @@ def _belief_contract(*, degradation: bool = False) -> MemoryEvolutionCheckpointC
     )
 
 
-def _execution_contract() -> MemoryEvolutionCheckpointContract:
-    return MemoryEvolutionCheckpointContract(
+def _execution_contract() -> MemoryEvolutionVisibleDecisionContract:
+    return MemoryEvolutionVisibleDecisionContract(
         checkpoint_kind=MemoryEvolutionCheckpointKind.EXECUTION_CONTINUATION,
-        answer_temporal_mode=MemoryEvolutionAnswerTemporalMode.EXECUTION,
+        temporal_reference=MemoryEvolutionTemporalReference.CURRENT,
+        decision_domain=MemoryEvolutionDecisionDomain.EXECUTION,
         selected_memory_policy=MemoryEvolutionSelectedMemoryPolicy.ACTIVE_EXECUTION_STATE,
         answer_projection_policy=MemoryEvolutionAnswerProjectionPolicy.NEXT_ACTION,
         citation_policy=MemoryEvolutionCitationPolicy.DIRECT_WITH_CONTEXT_WARNING,
@@ -199,7 +203,7 @@ def _checkpoint(
     timestamp: str,
     query_or_task: str,
     *,
-    contract: MemoryEvolutionCheckpointContract,
+    contract: MemoryEvolutionVisibleDecisionContract,
     expected_answer: str | None = None,
     expected_next_action: str | None = None,
     expected_retrieval_ids: list[str] | None = None,
@@ -290,7 +294,7 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                     expected_checkpoint_active_record_ids=["mem:atlas-owner-bob-current"],
                     expected_checkpoint_superseded_record_ids=["mem:atlas-owner-alice-jan"],
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.HISTORICAL,
+                        MemoryEvolutionTemporalReference.HISTORICAL,
                         valid_from="2026-01-01T00:00:00",
                         valid_to="2026-01-31T23:59:59",
                         rationale="The query asks who owned Atlas during January.",
@@ -342,7 +346,7 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                     expected_citation_ids=["mem:normal-status-concise-reminder"],
                     expected_checkpoint_active_record_ids=["mem:normal-status-concise-reminder"],
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.CURRENT,
+                        MemoryEvolutionTemporalReference.CURRENT,
                         scope_kind=MemoryEvolutionScopeKind.GLOBAL,
                         rationale="The query asks for the checkpoint-current normal status style visible as a global preference.",
                     ),
@@ -359,7 +363,7 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                     expected_citation_ids=["mem:incident-review-detailed"],
                     expected_checkpoint_active_record_ids=["mem:incident-review-detailed"],
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.CURRENT,
+                        MemoryEvolutionTemporalReference.CURRENT,
                         scope_kind=MemoryEvolutionScopeKind.TASK,
                         scope_key="task:incident-review",
                         rationale="The query asks for the current style within the incident-review task scope.",
@@ -411,7 +415,7 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                     expected_citation_ids=["mem:outside-project-summary-concise"],
                     expected_checkpoint_active_record_ids=["mem:outside-project-summary-concise"],
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.CURRENT,
+                        MemoryEvolutionTemporalReference.CURRENT,
                         scope_kind=MemoryEvolutionScopeKind.GLOBAL,
                         rationale="The query asks for the checkpoint-current outside-project summary style visible as a global preference.",
                     ),
@@ -534,7 +538,7 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                     ],
                     expected_checkpoint_active_record_ids=["mem:orion-billing-owner-nadia"],
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.CURRENT,
+                        MemoryEvolutionTemporalReference.CURRENT,
                         scope_kind=MemoryEvolutionScopeKind.ENTITY,
                         rationale="The query asks for the checkpoint-current owner of the Orion billing entity.",
                     ),
@@ -683,7 +687,8 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                         "belief:a-network-saturation": 0.1,
                     },
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.BELIEF,
+                        MemoryEvolutionTemporalReference.CURRENT,
+                        decision_domain=MemoryEvolutionDecisionDomain.BELIEF,
                         scope_kind=MemoryEvolutionScopeKind.ENTITY,
                         rationale="The query asks for current root-cause beliefs for incident-18.",
                     ),
@@ -733,12 +738,11 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                     expected_citation_ids=["mem:atlas-identity-split"],
                     expected_checkpoint_active_record_ids=["mem:atlas-identity-split"],
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.CURRENT,
+                        MemoryEvolutionTemporalReference.CURRENT,
                         scope_kind=MemoryEvolutionScopeKind.ENTITY,
                         scope_key="atlas",
                         rationale=(
-                            "The query asks for the current state of the Atlas account entity after "
-                            "the API split."
+                            "The query asks for the current state of the Atlas account entity after the API split."
                         ),
                     ),
                 )
@@ -800,7 +804,8 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                     expected_checkpoint_retained_record_ids=["exec:approach-a-blocked"],
                     expected_excluded_memory_ids=["exec:approach-a-started", "exec:approach-a-blocked"],
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.EXECUTION,
+                        MemoryEvolutionTemporalReference.CURRENT,
+                        decision_domain=MemoryEvolutionDecisionDomain.EXECUTION,
                         scope_kind=MemoryEvolutionScopeKind.TASK,
                         scope_key="task:fix",
                         rationale="The query asks for the active continuation state within task:fix.",
@@ -857,7 +862,7 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                     expected_checkpoint_active_record_ids=["mem:beta-flag-archived-now"],
                     expected_checkpoint_superseded_record_ids=["mem:beta-flag-active-release-week"],
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.CURRENT,
+                        MemoryEvolutionTemporalReference.CURRENT,
                         rationale="The query asks for the checkpoint-current beta flag state.",
                     ),
                 ),
@@ -876,7 +881,7 @@ def load_memory_evolution_v1_fixture_set() -> list[MemoryEvolutionScenario]:
                     expected_checkpoint_active_record_ids=["mem:beta-flag-archived-now"],
                     expected_checkpoint_superseded_record_ids=["mem:beta-flag-active-release-week"],
                     expected_temporal_frame=_temporal_frame(
-                        MemoryEvolutionTemporalKind.HISTORICAL,
+                        MemoryEvolutionTemporalReference.HISTORICAL,
                         anchor_id="anchor:release-week-2026-06",
                         valid_from="2026-06-01T00:00:00Z",
                         valid_to="2026-06-08T00:00:00Z",

@@ -37,11 +37,14 @@ output_schema:
     query_temporal_frame:
       type: object
       additionalProperties: false
-      required: [temporal_kind, scope_kind, scope_key, anchor_id, valid_from, valid_to, confidence, rationale]
+      required: [temporal_reference, decision_domain, scope_kind, scope_key, anchor_id, valid_from, valid_to, confidence, rationale]
       properties:
-        temporal_kind:
+        temporal_reference:
           type: string
-          enum: [current, historical, interval, execution, belief, ambiguous]
+          enum: [current, historical, interval, ambiguous]
+        decision_domain:
+          type: string
+          enum: [fact, belief, execution]
         scope_kind:
           type: string
           enum: [none, global, task, entity, custom]
@@ -56,7 +59,7 @@ output_schema:
     answer_selection:
       type: object
       additionalProperties: false
-      required: [selected_memory_ids, supporting_memory_ids, citation_memory_ids, temporal_mode, rationale]
+      required: [selected_memory_ids, supporting_memory_ids, citation_memory_ids, temporal_reference, rationale]
       properties:
         selected_memory_ids:
           type: array
@@ -67,9 +70,9 @@ output_schema:
         citation_memory_ids:
           type: array
           items: {type: string}
-        temporal_mode:
+        temporal_reference:
           type: string
-          enum: [current, historical, execution, belief]
+          enum: [current, historical, interval, ambiguous]
         rationale: {type: string}
     lifecycle_snapshot:
       type: object
@@ -155,18 +158,19 @@ system_template: |-
 
   Temporal grounding rules:
   - Resolve the query temporal frame before selecting memories.
-  - temporal_kind answers when the query is asking about: current, historical, interval, execution, belief, or ambiguous.
+  - temporal_reference answers when the query is asking about: current, historical, interval, or ambiguous.
+  - decision_domain identifies what is being decided: fact, belief, or execution. Belief and execution are not temporal values.
   - scope_kind/scope_key answers which visible scope the query is asking within: global, task, entity, custom, or none. Use only scope keys present in visible cards or task ids; do not invent custom scope keys from wording alone.
-  - anchor_id identifies a named event/period such as "release week"; anchors are not a replacement for temporal_kind.
+  - anchor_id identifies a named event/period such as "release week"; anchors are not a replacement for temporal_reference.
   - Use temporal_anchor_cards when the query names an event-like period such as "release week".
   - Use entity_state_cards to identify which state claim was valid during that frame.
-  - If multiple temporal anchors plausibly match and context does not disambiguate, use temporal_kind=ambiguous and abstain or request review.
-  - Examples: "in January" is temporal_kind=historical with a January interval; "during release week" is temporal_kind=historical with the release-week anchor; "normal status update" is temporal_kind=current with global scope when the visible memory is global; "continue previous fix" is temporal_kind=execution with the relevant task scope when visible.
+  - If multiple temporal anchors plausibly match and context does not disambiguate, use temporal_reference=ambiguous and abstain or request review.
+  - Examples: "in January" is temporal_reference=historical and decision_domain=fact with a January interval; "during release week" is temporal_reference=historical and decision_domain=fact with the release-week anchor; "rank current beliefs" is temporal_reference=current and decision_domain=belief; "continue previous fix" is temporal_reference=current and decision_domain=execution with the relevant task scope.
 
   Answer selection rules:
   - answer_selection.selected_memory_ids contains final answer or decision memories only.
   - answer_selection.supporting_memory_ids and answer_selection.citation_memory_ids contain only direct support for that selected answer or next action.
-  - temporal_mode must be one of current, historical, execution, or belief. Do not use temporal_mode to express scope.
+  - answer_selection.temporal_reference must match query_temporal_frame.temporal_reference. Do not use temporal_reference to express scope or decision domain.
   - Historical facts may be selected only when the query asks about the past.
   - Current-truth queries must not select superseded historical facts.
   - Wrong-scope, wrong-entity, stale, lower-trust, or noisy memories must not be selected or direct support.
@@ -199,7 +203,8 @@ system_template: |-
     "next_action": null,
     "confidence": 0.9,
     "query_temporal_frame": {{
-      "temporal_kind": "historical",
+      "temporal_reference": "historical",
+      "decision_domain": "fact",
       "scope_kind": "none",
       "scope_key": null,
       "anchor_id": null,
@@ -212,7 +217,7 @@ system_template: |-
       "selected_memory_ids": ["mem:owner-alice-jan"],
       "supporting_memory_ids": ["mem:owner-alice-jan"],
       "citation_memory_ids": ["mem:owner-alice-jan"],
-      "temporal_mode": "historical",
+      "temporal_reference": "historical",
       "rationale": "The query asks who owned it in January."
     }},
     "lifecycle_snapshot": {{

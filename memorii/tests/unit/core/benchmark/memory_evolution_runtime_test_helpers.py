@@ -19,7 +19,7 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
     OracleCheckpoint,
-    SimCheckpointContract,
+    ReconstructionTaskContract,
     SimSystemOutput,
 )
 from pydantic import BaseModel, ConfigDict, Field
@@ -130,7 +130,7 @@ def runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
                 "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
                 "checkpoint_type": "current_truth",
                 "query_or_task": "",
-                "checkpoint_contract": SimCheckpointContract().model_dump(mode="json"),
+                "task_contract": ReconstructionTaskContract().model_dump(mode="json"),
                 **expected_payload,
             }
         ),
@@ -142,6 +142,7 @@ def runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
                     "checkpoint_id": "checkpoint_1",
                     "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
                     "query_or_task": "",
+                    "task_contract": ReconstructionTaskContract().model_dump(mode="json"),
                 },
                 **candidate_payload,
             }

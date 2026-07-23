@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionAnswerSelection,
-    MemoryEvolutionAnswerTemporalMode,
     MemoryEvolutionBeliefScore,
     MemoryEvolutionCheckpoint,
     MemoryEvolutionDecision,
@@ -15,16 +14,17 @@ from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionRecordLifecycleState,
     MemoryEvolutionRetrievalContext,
     MemoryEvolutionScenario,
+    MemoryEvolutionTemporalReference,
     MemoryEvolutionVisibleCheckpoint,
 )
 from memorii.core.benchmark.memory_evolution_decision.policies import (
-    checkpoint_contract,
     evidence_effect_policy,
     expected_belief_ids,
     expected_rejected_memory_ids,
     lifecycle_expected_ids,
     output_channel_contract,
     temporal_grounding_policy,
+    visible_decision_contract,
 )
 from memorii.core.benchmark.memory_evolution_decision.temporal_diagnostics import expected_temporal_frame
 from memorii.core.benchmark.memory_evolution_decision.utils import dedupe_string_ids, extract_shallow_answer
@@ -45,7 +45,7 @@ def memory_evolution_context_for_checkpoint(
     scenario: MemoryEvolutionScenario,
     checkpoint: MemoryEvolutionCheckpoint,
 ) -> MemoryEvolutionDecisionContext:
-    contract = checkpoint_contract(scenario=scenario, checkpoint=checkpoint)
+    contract = visible_decision_contract(scenario=scenario, checkpoint=checkpoint)
     visible_events = visible_events_for_checkpoint(scenario=scenario, checkpoint=checkpoint)
     visible_memory_cards = visible_memory_cards_for_events(visible_events)
     entity_resolution_cards = entity_resolution_cards_for_events(visible_events)
@@ -54,7 +54,6 @@ def memory_evolution_context_for_checkpoint(
     evidence_effect_cards = evidence_effect_cards_for_events(visible_events)
     metadata: dict[str, object] = {
         "discriminative": scenario.discriminative,
-        "checkpoint_contract": contract.model_dump(mode="json"),
         "output_channel_contract": output_channel_contract(contract),
         "evidence_effect_policy": evidence_effect_policy(contract),
         "temporal_grounding_policy": temporal_grounding_policy(),
@@ -73,6 +72,7 @@ def memory_evolution_context_for_checkpoint(
             cross_lingual=checkpoint.cross_lingual,
             transliteration_policy=checkpoint.transliteration_policy,
         ),
+        decision_contract=contract,
         visible_memory_cards=visible_memory_cards,
         entity_resolution_cards=entity_resolution_cards,
         temporal_anchor_cards=temporal_anchor_cards,
@@ -87,7 +87,7 @@ def expected_memory_evolution_decision_for_checkpoint(
     scenario: MemoryEvolutionScenario,
     checkpoint: MemoryEvolutionCheckpoint,
 ) -> MemoryEvolutionDecision:
-    contract = checkpoint_contract(scenario=scenario, checkpoint=checkpoint)
+    contract = visible_decision_contract(scenario=scenario, checkpoint=checkpoint)
     execution_selection = None
     if contract.requires_execution_selection:
         execution_selection = MemoryEvolutionExecutionSelection(
@@ -97,11 +97,13 @@ def expected_memory_evolution_decision_for_checkpoint(
                 lifecycle_kind="active",
             ),
             command_context_memory_ids=command_context_ids(scenario=scenario, checkpoint=checkpoint),
-            suppressed_branch_memory_ids=dedupe_string_ids([
-                *checkpoint.expected_excluded_memory_ids,
-                *checkpoint.expected_checkpoint_superseded_record_ids,
-                *checkpoint.expected_checkpoint_retained_record_ids,
-            ]),
+            suppressed_branch_memory_ids=dedupe_string_ids(
+                [
+                    *checkpoint.expected_excluded_memory_ids,
+                    *checkpoint.expected_checkpoint_superseded_record_ids,
+                    *checkpoint.expected_checkpoint_retained_record_ids,
+                ]
+            ),
             rationale="Expected active execution state and suppressed branch history.",
         )
     return MemoryEvolutionDecision(
@@ -118,7 +120,7 @@ def expected_memory_evolution_decision_for_checkpoint(
             selected_memory_ids=list(checkpoint.expected_retrieval_ids),
             supporting_memory_ids=list(checkpoint.expected_retrieval_ids),
             citation_memory_ids=list(checkpoint.expected_citation_ids),
-            temporal_mode=contract.answer_temporal_mode,
+            temporal_reference=contract.temporal_reference,
             rationale="Expected direct answer or action-support memories.",
         ),
         lifecycle_snapshot=MemoryEvolutionLifecycleSnapshot(
@@ -138,20 +140,31 @@ def expected_memory_evolution_decision_for_checkpoint(
             rationale="Expected checkpoint-current lifecycle state.",
         ),
         retrieval_context=MemoryEvolutionRetrievalContext(
-            query_relevant_memory_ids=dedupe_string_ids([
-                *checkpoint.expected_retrieval_ids,
-                *checkpoint.expected_citation_ids,
-            ]),
+            query_relevant_memory_ids=dedupe_string_ids(
+                [
+                    *checkpoint.expected_retrieval_ids,
+                    *checkpoint.expected_citation_ids,
+                ]
+            ),
             query_historical_memory_ids=(
                 list(checkpoint.expected_retrieval_ids)
-                if contract.answer_temporal_mode == MemoryEvolutionAnswerTemporalMode.HISTORICAL
+                if contract.temporal_reference == MemoryEvolutionTemporalReference.HISTORICAL
                 else []
             ),
-            query_context_memory_ids=dedupe_string_ids([
-                *([memory_id for memory_id in checkpoint.expected_checkpoint_active_record_ids if memory_id not in checkpoint.expected_retrieval_ids]
-                  if contract.answer_temporal_mode == MemoryEvolutionAnswerTemporalMode.HISTORICAL else []),
-                *checkpoint.expected_checkpoint_retained_record_ids,
-            ]),
+            query_context_memory_ids=dedupe_string_ids(
+                [
+                    *(
+                        [
+                            memory_id
+                            for memory_id in checkpoint.expected_checkpoint_active_record_ids
+                            if memory_id not in checkpoint.expected_retrieval_ids
+                        ]
+                        if contract.temporal_reference == MemoryEvolutionTemporalReference.HISTORICAL
+                        else []
+                    ),
+                    *checkpoint.expected_checkpoint_retained_record_ids,
+                ]
+            ),
             rejected_memory_ids=expected_rejected_memory_ids(
                 checkpoint=checkpoint,
                 contract=contract,
@@ -184,12 +197,13 @@ def expected_memory_evolution_decision_for_checkpoint(
         requires_judge_review=False,
     )
 
+
 def rule_memory_evolution_decision_for_checkpoint(
     *,
     scenario: MemoryEvolutionScenario,
     checkpoint: MemoryEvolutionCheckpoint,
 ) -> MemoryEvolutionDecision:
-    contract = checkpoint_contract(scenario=scenario, checkpoint=checkpoint)
+    contract = visible_decision_contract(scenario=scenario, checkpoint=checkpoint)
     ranked = rank_events_by_shallow_overlap(scenario=scenario, checkpoint=checkpoint)
     selected = [ranked[0].event_id] if ranked else []
     selected_event = ranked[0] if ranked else None
@@ -218,10 +232,7 @@ def rule_memory_evolution_decision_for_checkpoint(
         retained_ids = []
     answer = extract_shallow_answer(selected_event.content) if selected_event is not None else None
     next_action = f"continue {selected[0]}" if selected else None
-    belief_scores = [
-        MemoryEvolutionBeliefScore(memory_id=event.event_id, belief=0.5)
-        for event in ranked[:3]
-    ]
+    belief_scores = [MemoryEvolutionBeliefScore(memory_id=event.event_id, belief=0.5) for event in ranked[:3]]
     execution_selection = None
     if contract.requires_execution_selection:
         execution_selection = MemoryEvolutionExecutionSelection(
@@ -245,7 +256,7 @@ def rule_memory_evolution_decision_for_checkpoint(
             selected_memory_ids=selected,
             supporting_memory_ids=selected,
             citation_memory_ids=selected,
-            temporal_mode=contract.answer_temporal_mode,
+            temporal_reference=contract.temporal_reference,
             rationale="rule provider uses shallow token overlap",
         ),
         lifecycle_snapshot=MemoryEvolutionLifecycleSnapshot(
@@ -257,7 +268,9 @@ def rule_memory_evolution_decision_for_checkpoint(
         ),
         retrieval_context=MemoryEvolutionRetrievalContext(
             query_relevant_memory_ids=selected,
-            query_historical_memory_ids=selected if contract.answer_temporal_mode == MemoryEvolutionAnswerTemporalMode.HISTORICAL else [],
+            query_historical_memory_ids=selected
+            if contract.temporal_reference == MemoryEvolutionTemporalReference.HISTORICAL
+            else [],
             query_context_memory_ids=[],
             rejected_memory_ids=[],
             rationale="rule provider has no semantic rejection model",

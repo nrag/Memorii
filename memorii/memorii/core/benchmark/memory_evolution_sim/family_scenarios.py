@@ -592,7 +592,7 @@ def build_family_scenario(
                         "Before the directory correction, who was the Atlas migration owner in January?",
                     ]
                 ),
-                checkpoint_contract=truth_contract(historical=True),
+                task_contract=truth_contract(historical=True),
                 expected_entity_ids=[project],
                 expected_claim_ids=[claim_alice_owner],
                 expected_citation_event_ids=[event_2],
@@ -614,7 +614,7 @@ def build_family_scenario(
                         f"Which Atlas entity is owned by {service_owner_name}?",
                     ]
                 ),
-                checkpoint_contract=entity_split_contract(answer_projection_policy="claim_subject"),
+                task_contract=entity_split_contract(answer_projection_policy="claim_subject"),
                 expected_entity_ids=[service],
                 expected_claim_ids=[claim_carol_service],
                 expected_relation_ids=[relation_split],

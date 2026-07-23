@@ -326,7 +326,10 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             prompt_ref="lifecycle_decision:v1",
             owning_adapter=PromptOwner.LLM_LIFECYCLE_DECISION_ADAPTER,
             expected_input_variables=["context_json", "query"],
-            representative_variables={"context_json": {"query": "current owner", "memories": []}, "query": "current owner"},
+            representative_variables={
+                "context_json": {"query": "current owner", "memories": []},
+                "query": "current owner",
+            },
             output_schema_owner="lifecycle_decision:v1.output_schema",
             fake_valid_output={
                 "selected_retrieval_ids": ["mem_1"],
@@ -417,9 +420,7 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                             "belief_scores": "Rank belief ids with calibrated probabilities.",
                             "answer_selection.citation_memory_ids": "Only direct evidence/source ids, not ranked belief ids.",
                         },
-                        "evidence_effect_policy": {
-                            "ranking_order": "supported > neutral > weakened > falsified"
-                        },
+                        "evidence_effect_policy": {"ranking_order": "supported > neutral > weakened > falsified"},
                     },
                 },
                 "query": "Rank the current root-cause beliefs.",
@@ -431,7 +432,8 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "next_action": None,
                 "confidence": 0.9,
                 "query_temporal_frame": {
-                    "temporal_kind": "belief",
+                    "temporal_reference": "current",
+                    "decision_domain": "belief",
                     "scope_kind": "none",
                     "scope_key": None,
                     "anchor_id": None,
@@ -444,7 +446,7 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                     "selected_memory_ids": ["belief:b-worker-exhaustion"],
                     "supporting_memory_ids": ["belief:b-worker-exhaustion"],
                     "citation_memory_ids": ["evidence:workers-exhausted"],
-                    "temporal_mode": "belief",
+                    "temporal_reference": "current",
                     "rationale": "Worker exhaustion is the top supported belief.",
                 },
                 "lifecycle_snapshot": {
@@ -522,7 +524,9 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             prompt_ref="memory_extraction:v1",
             owning_adapter=PromptOwner.LLM_MEMORY_EXTRACTOR,
             expected_input_variables=["source_observations"],
-            representative_variables={"source_observations": [{"source_id": "event_1", "text": "Remember that Atlas owner is Bob."}]},
+            representative_variables={
+                "source_observations": [{"source_id": "event_1", "text": "Remember that Atlas owner is Bob."}]
+            },
             output_schema_owner="memory_extraction:v1.output_schema",
             fake_valid_output={"entities": [], "claims": [], "actions": []},
             forbidden_live_prompt_keys=_base_forbidden_keys(),
@@ -570,7 +574,10 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             prompt_ref="retrieval_relevance:v1",
             owning_adapter=PromptOwner.LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER,
             expected_input_variables=["context_json", "query"],
-            representative_variables={"context_json": {"candidates": [{"id": "mem_1", "text": "Atlas owner is Bob."}]}, "query": "Who owns Atlas?"},
+            representative_variables={
+                "context_json": {"candidates": [{"id": "mem_1", "text": "Atlas owner is Bob."}]},
+                "query": "Who owns Atlas?",
+            },
             output_schema_owner="retrieval_relevance:v1.output_schema",
             fake_valid_output={
                 "selected_ids": ["mem_1"],
@@ -595,9 +602,7 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                     "language": "en",
                     "reference_time": "2026-07-19T00:00:00Z",
                     "scope_kind": "task",
-                    "entities": [
-                        {"entity_id": "entity_1", "names": ["Atlas"], "entity_type": "project"}
-                    ],
+                    "entities": [{"entity_id": "entity_1", "names": ["Atlas"], "entity_type": "project"}],
                     "temporal_anchors": [],
                     "predicates": [
                         {

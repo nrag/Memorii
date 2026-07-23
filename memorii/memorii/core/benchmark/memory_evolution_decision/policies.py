@@ -6,28 +6,28 @@ from typing import Literal
 
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
     DEGRADED_BELIEF_SCORE_MAX,
-    MemoryEvolutionAnswerTemporalMode,
     MemoryEvolutionBeliefScorePolicy,
     MemoryEvolutionCheckpoint,
-    MemoryEvolutionCheckpointContract,
     MemoryEvolutionCheckpointKind,
     MemoryEvolutionScenario,
+    MemoryEvolutionTemporalReference,
+    MemoryEvolutionVisibleDecisionContract,
 )
 from memorii.core.benchmark.memory_evolution_decision.utils import dedupe_string_ids
 
 
-def checkpoint_contract(
+def visible_decision_contract(
     *,
     scenario: MemoryEvolutionScenario,
     checkpoint: MemoryEvolutionCheckpoint,
-) -> MemoryEvolutionCheckpointContract:
+) -> MemoryEvolutionVisibleDecisionContract:
     """Return the fixture-authored contract without inferring policy from query text."""
 
     del scenario
     return checkpoint.contract
 
 
-def evidence_effect_policy(contract: MemoryEvolutionCheckpointContract) -> dict[str, str]:
+def evidence_effect_policy(contract: MemoryEvolutionVisibleDecisionContract) -> dict[str, str]:
     if contract.checkpoint_kind != MemoryEvolutionCheckpointKind.BELIEF_RANKING:
         return {}
     return {
@@ -45,14 +45,14 @@ def temporal_grounding_policy() -> dict[str, str]:
     }
 
 
-def output_channel_contract(contract: MemoryEvolutionCheckpointContract) -> dict[str, str]:
+def output_channel_contract(contract: MemoryEvolutionVisibleDecisionContract) -> dict[str, str]:
     base = {
         "answer_projection_policy": f"Project answer text using {contract.answer_projection_policy.value}; do not infer projection from English query phrasing.",
         "query_temporal_frame": "Resolve query time and scope before selecting memories.",
         "answer_selection.selected_memory_ids": "Final answer or decision memories only.",
         "answer_selection.supporting_memory_ids": "Memories that directly support the selected answer or next action.",
         "answer_selection.citation_memory_ids": "Direct evidence/source memory ids only.",
-        "answer_selection.temporal_mode": "Query temporal mode; scope belongs only in query_temporal_frame.",
+        "answer_selection.temporal_reference": "Query temporal reference; scope and decision domain are separate fields.",
         "lifecycle_snapshot.checkpoint_active_record_ids": "Memory records asserted by the graph at checkpoint time, independent of query relevance.",
         "lifecycle_snapshot.checkpoint_superseded_record_ids": "Memory records superseded, invalidated, blocked, lower-trust, or no longer current.",
         "lifecycle_snapshot.checkpoint_retained_record_ids": "Memory records retained for audit/history only.",
@@ -76,7 +76,9 @@ def output_channel_contract(contract: MemoryEvolutionCheckpointContract) -> dict
     if contract.checkpoint_kind == MemoryEvolutionCheckpointKind.CURRENT_TRUTH:
         base["source_trust_conflict"] = "Select the highest-authority current claim and reject weaker contradictions."
     if contract.checkpoint_kind == MemoryEvolutionCheckpointKind.BELIEF_DEGRADATION:
-        base["answer_selection.selected_memory_ids"] = "Select falsifying/current evidence when no belief remains confident."
+        base["answer_selection.selected_memory_ids"] = (
+            "Select falsifying/current evidence when no belief remains confident."
+        )
     if contract.checkpoint_kind == MemoryEvolutionCheckpointKind.EXECUTION_CONTINUATION:
         base.update(
             {
@@ -124,13 +126,13 @@ def expected_belief_ids(checkpoint: MemoryEvolutionCheckpoint) -> list[str]:
 def expected_rejected_memory_ids(
     *,
     checkpoint: MemoryEvolutionCheckpoint,
-    contract: MemoryEvolutionCheckpointContract,
+    contract: MemoryEvolutionVisibleDecisionContract,
 ) -> list[str]:
     candidates = [
         *checkpoint.expected_excluded_memory_ids,
         *checkpoint.expected_checkpoint_superseded_record_ids,
     ]
-    if contract.answer_temporal_mode == MemoryEvolutionAnswerTemporalMode.HISTORICAL:
+    if contract.temporal_reference == MemoryEvolutionTemporalReference.HISTORICAL:
         historical_answer_ids = set(checkpoint.expected_retrieval_ids)
         candidates = [memory_id for memory_id in candidates if memory_id not in historical_answer_ids]
     return dedupe_string_ids(candidates)

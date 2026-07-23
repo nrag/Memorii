@@ -56,7 +56,7 @@ def checkpoint_for_family(
                     "Build the ownership graph for the Atlas project and the Atlas service.",
                 ]
             ),
-            checkpoint_contract=graph_contract(definition_claims_required_in_selected=True),
+            task_contract=graph_contract(definition_claims_required_in_selected=True),
             expected_entity_ids=[project, service],
             expected_claim_ids=[claim_type_project, claim_type_service, claim_bob_owner, claim_carol_service],
             expected_relation_ids=[relation_contradicts],
@@ -77,7 +77,7 @@ def checkpoint_for_family(
                     "Who is the current owner of the Atlas billing migration?",
                 ]
             ),
-            checkpoint_contract=truth_contract(),
+            task_contract=truth_contract(),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_citation_event_ids=[event_5],
@@ -98,7 +98,7 @@ def checkpoint_for_family(
                     "Who is the trusted current owner for the Atlas migration?",
                 ]
             ),
-            checkpoint_contract=source_trust_contract(),
+            task_contract=source_trust_contract(),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_relation_ids=[relation_contradicts],
@@ -119,7 +119,7 @@ def checkpoint_for_family(
                     "Does the stale pasted note change the current Atlas migration owner to Alice?",
                 ]
             ),
-            checkpoint_contract=modality_suppression_contract(),
+            task_contract=modality_suppression_contract(),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_citation_event_ids=[event_5],
@@ -139,7 +139,7 @@ def checkpoint_for_family(
                     "At global scope, who should be treated as the Atlas migration owner?",
                 ]
             ),
-            checkpoint_contract=truth_contract().model_copy(
+            task_contract=truth_contract().model_copy(
                 update={"excluded_ids_must_be_rejected_or_contextualized": False}
             ),
             expected_entity_ids=[project],
@@ -162,7 +162,7 @@ def checkpoint_for_family(
                     "After confirming the alias, reconstruct the Atlas migration owner.",
                 ]
             ),
-            checkpoint_contract=graph_contract(definition_claims_required_in_selected=True),
+            task_contract=graph_contract(definition_claims_required_in_selected=True),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_type_project, claim_bob_owner],
             expected_citation_event_ids=[event_1, event_5],
@@ -181,7 +181,7 @@ def checkpoint_for_family(
                     "Identify the current owner of the Atlas project rather than the Atlas service.",
                 ]
             ),
-            checkpoint_contract=entity_split_contract(),
+            task_contract=entity_split_contract(),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_relation_ids=[relation_split],
@@ -203,7 +203,7 @@ def checkpoint_for_family(
                     "Rank the competing Atlas migration owner claims and select the strongest.",
                 ]
             ),
-            checkpoint_contract=graph_contract(requires_belief_ranking_ids=True),
+            task_contract=graph_contract(requires_belief_ranking_ids=True),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_relation_ids=[relation_contradicts],
@@ -236,7 +236,7 @@ def checkpoint_for_family(
                     "Resume the active branch of the Atlas owner cleanup.",
                 ]
             ),
-            checkpoint_contract=execution_contract(),
+            task_contract=execution_contract(),
             expected_entity_ids=[],
             expected_claim_ids=[],
             expected_action_ids=expected_action_ids,
@@ -260,7 +260,7 @@ def checkpoint_for_family(
                 "Who is the current owner of the Atlas billing migration?",
             ]
         ),
-        checkpoint_contract=truth_contract(),
+        task_contract=truth_contract(),
         expected_entity_ids=[project],
         expected_claim_ids=[claim_bob_owner],
         expected_citation_event_ids=[event_5],

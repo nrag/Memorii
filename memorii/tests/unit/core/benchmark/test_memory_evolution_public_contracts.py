@@ -38,7 +38,7 @@ from memorii.core.benchmark.memory_evolution_sim import (
     JudgeVerdict,
     MemoryEvolutionSimReconstructionContext,
     OracleCheckpoint,
-    SimCheckpointContract,
+    ReconstructionTaskContract,
     SimSystemOutput,
     expected_sim_output_for_checkpoint,
     generate_memory_evolution_sim_scenarios,
@@ -314,7 +314,7 @@ def _runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
                 "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
                 "checkpoint_type": "current_truth",
                 "query_or_task": "",
-                "checkpoint_contract": SimCheckpointContract().model_dump(mode="json"),
+                "task_contract": ReconstructionTaskContract().model_dump(mode="json"),
                 **expected_payload,
             }
         ),
@@ -326,6 +326,7 @@ def _runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
                     "checkpoint_id": "checkpoint_1",
                     "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
                     "query_or_task": "",
+                    "task_contract": ReconstructionTaskContract().model_dump(mode="json"),
                 },
                 **candidate_payload,
             }
@@ -373,7 +374,7 @@ def test_artifact_row_models_are_strict_and_serialize_flat_json() -> None:
                 "timestamp": "2026-01-01T00:00:00Z",
                 "checkpoint_type": "current_truth",
                 "query_or_task": "",
-                "checkpoint_contract": {},
+                "task_contract": {},
             },
             "candidate_cards": {
                 "scenario_id": "scenario_1",
@@ -382,6 +383,7 @@ def test_artifact_row_models_are_strict_and_serialize_flat_json() -> None:
                     "checkpoint_id": "checkpoint_1",
                     "timestamp": "2026-01-01T00:00:00Z",
                     "query_or_task": "",
+                    "task_contract": {},
                 },
             },
             "judge_aggregate": {
@@ -650,7 +652,7 @@ def test_memory_evolution_owned_submodule_imports_resolve() -> None:
         assert hasattr(module, symbol_name), f"{module_name} must export {symbol_name}"
 
 
-def test_memory_evolution_sim_public_checkpoint_contract() -> None:
+def test_memory_evolution_sim_public_task_contract() -> None:
     scenario = generate_memory_evolution_sim_scenarios(
         profile="adversarial",
         scenario_count=1,
@@ -664,13 +666,23 @@ def test_memory_evolution_sim_public_checkpoint_contract() -> None:
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=expected)
 
     assert context.checkpoint.checkpoint_id == checkpoint.checkpoint_id
-    assert context.checkpoint.answer_projection_policy == checkpoint.answer_projection_policy
+    assert context.checkpoint.task_contract == checkpoint.task_contract
     assert "expected_claim_ids" not in context.model_dump(mode="json")
     assert aggregate.verdict.value == "pass"
     assert aggregate.score >= 0.99
 
 
-def test_memory_evolution_sim_checkpoint_contract_is_single_source_for_all_generated_profiles() -> None:
+def test_checkpoint_result_rejects_review_required_green_status() -> None:
+    with pytest.raises(ValidationError, match="pass verdict with no required review"):
+        _runtime_checkpoint_row(
+            success=True,
+            passed=True,
+            verdict="pass",
+            review_required=True,
+        )
+
+
+def test_memory_evolution_sim_task_contract_is_single_source_for_all_generated_profiles() -> None:
     scenarios = [
         *generate_memory_evolution_sim_scenarios(
             profile="adversarial",
@@ -692,9 +704,9 @@ def test_memory_evolution_sim_checkpoint_contract_is_single_source_for_all_gener
                 scenario=scenario,
                 checkpoint=checkpoint,
             )
-            contract = checkpoint.checkpoint_contract.model_dump(mode="json")
+            contract = checkpoint.task_contract.model_dump(mode="json")
 
-            assert context.checkpoint.answer_projection_policy == contract["answer_projection_policy"]
+            assert context.checkpoint.task_contract.model_dump(mode="json") == contract
             rendered_context = context.model_dump(mode="json")
             assert "allowed_operations" not in rendered_context
             assert "required_judge_ids" not in rendered_context

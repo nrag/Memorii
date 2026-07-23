@@ -384,7 +384,7 @@ class WorldTransition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SimCheckpointContract(BaseModel):
+class ReconstructionTaskContract(BaseModel):
     allowed_operations: list[Literal["answer", "next_action", "graph_reconstruction", "abstain"]] = Field(
         default_factory=lambda: ["answer"]
     )
@@ -434,7 +434,7 @@ class OracleCheckpoint(BaseModel):
         "abstention",
     ]
     query_or_task: str
-    checkpoint_contract: SimCheckpointContract
+    task_contract: ReconstructionTaskContract
     query_language: str = "en"
     # Caller context is separate from oracle expectations.  It is allowed to
     # reach the runtime request, but never the rendered model prompt.
@@ -472,8 +472,14 @@ class OracleCheckpoint(BaseModel):
     horizon_distance: int = 0
     interference_count: int = 0
     source_event_age_days: float = 0.0
-    required_retrieval_view: Literal["current", "historical_at", "all_versions", "conflicts", "evidence_only"] = "current"
-    expected_stage_path: list[Literal["extraction", "validation", "lifecycle_evolution", "graph_projection", "alignment", "retrieval_decision"]] = Field(
+    required_retrieval_view: Literal["current", "historical_at", "all_versions", "conflicts", "evidence_only"] = (
+        "current"
+    )
+    expected_stage_path: list[
+        Literal[
+            "extraction", "validation", "lifecycle_evolution", "graph_projection", "alignment", "retrieval_decision"
+        ]
+    ] = Field(
         default_factory=lambda: [
             "extraction",
             "validation",
@@ -488,7 +494,7 @@ class OracleCheckpoint(BaseModel):
 
     @property
     def answer_projection_policy(self) -> str:
-        return self.checkpoint_contract.answer_projection_policy
+        return self.task_contract.answer_projection_policy
 
 
 class SimSystemOutput(BaseModel):
@@ -613,7 +619,7 @@ class VisibleCheckpointCandidate(BaseModel):
     checkpoint_id: str
     timestamp: datetime
     query_or_task: str
-    answer_projection_policy: str = "claim_object"
+    task_contract: ReconstructionTaskContract
     query_language: str = "en"
     evidence_languages: list[str] = Field(default_factory=lambda: ["en"])
     answer_language_policy: str = "match_query"
@@ -702,9 +708,7 @@ class LatentGraphScenario(BaseModel):
             exposed_events = exposed_claims_by_event.get(claim.claim_id, set())
             evidence_events = set(claim.evidence.source_event_ids)
             if exposed_events and not (evidence_events & exposed_events):
-                raise ValueError(
-                    f"claim {claim.claim_id} evidence does not reference an observation that exposes it"
-                )
+                raise ValueError(f"claim {claim.claim_id} evidence does not reference an observation that exposes it")
         for relation in self.relations:
             if relation.observability == ObservabilityLabel.HIDDEN:
                 continue
@@ -737,9 +741,7 @@ class LatentGraphScenario(BaseModel):
                 *checkpoint.expected_execution_claim_ids,
             ]
             hidden_required = [
-                item_id
-                for item_id in required_ids
-                if self._observability_for(item_id) == ObservabilityLabel.HIDDEN
+                item_id for item_id in required_ids if self._observability_for(item_id) == ObservabilityLabel.HIDDEN
             ]
             if hidden_required:
                 raise ValueError(f"checkpoint {checkpoint.checkpoint_id} requires hidden ids: {hidden_required}")
