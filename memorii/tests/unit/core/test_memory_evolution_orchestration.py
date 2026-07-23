@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier, Lock
-from time import sleep
 
 from memorii.core.memory_evolution import (
     EnglishRuleMemoryExtractor,
@@ -201,6 +201,32 @@ class _BlockingGraphProjector(MemoryGraphProjector):
         self.entered.wait(timeout=5)
         self.release.wait(timeout=5)
         return super().project_evolution_result(result=result, existing_snapshot=existing_snapshot)
+
+
+class _ManualHeartbeat:
+    def __init__(self, *, renew: Callable[[], bool], now: list[datetime], advance: timedelta) -> None:
+        self._renew = renew
+        self._now = now
+        self._advance = advance
+
+    def start(self) -> None:
+        self._now[0] += self._advance
+        assert self._renew() is True
+
+    def stop(self) -> None:
+        pass
+
+
+def _manual_heartbeat_factory(
+    now: list[datetime],
+    *,
+    advance: timedelta,
+) -> Callable[..., _ManualHeartbeat]:
+    def build(*, renew: Callable[[], bool], interval: timedelta) -> _ManualHeartbeat:
+        assert interval > timedelta(0)
+        return _ManualHeartbeat(renew=renew, now=now, advance=advance)
+
+    return build
 
 
 def _is_committed_operation(record: CanonicalMemoryRecord) -> bool:
@@ -554,6 +580,8 @@ def test_concurrent_delivery_claims_one_evolution_execution() -> None:
 
 
 def test_active_lease_is_renewed_during_slow_extraction() -> None:
+    now = [datetime(2026, 1, 1, tzinfo=UTC)]
+    lease_duration = timedelta(seconds=3)
     plane = MemoryPlaneService()
     extractor = _BlockingCountingExtractor()
     evolution_service = MemoryEvolutionService(memory_plane=plane, extractor=extractor)
@@ -561,15 +589,18 @@ def test_active_lease_is_renewed_during_slow_extraction() -> None:
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
+        heartbeat_factory=_manual_heartbeat_factory(now, advance=lease_duration + timedelta(seconds=1)),
         operation_repository=operations,
     )
     contender = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
         operation_repository=operations,
     )
     source = _source("tx:renewed-lease")
@@ -583,7 +614,6 @@ def test_active_lease_is_renewed_during_slow_extraction() -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(coordinator.execute, operation)
         extractor.entered.wait(timeout=5)
-        sleep(0.25)
         observed, result = contender.execute(operation)
         extractor.release.wait(timeout=5)
         committed, _ = future.result(timeout=5)
@@ -596,6 +626,8 @@ def test_active_lease_is_renewed_during_slow_extraction() -> None:
 
 
 def test_active_lease_is_renewed_during_slow_projection() -> None:
+    now = [datetime(2026, 1, 1, tzinfo=UTC)]
+    lease_duration = timedelta(seconds=3)
     plane = MemoryPlaneService()
     projector = _BlockingGraphProjector()
     evolution_service = MemoryEvolutionService(memory_plane=plane, graph_projector=projector)
@@ -603,15 +635,18 @@ def test_active_lease_is_renewed_during_slow_projection() -> None:
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
+        heartbeat_factory=_manual_heartbeat_factory(now, advance=lease_duration + timedelta(seconds=1)),
         operation_repository=operations,
     )
     contender = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
         operation_repository=operations,
     )
     source = _source("tx:slow-projection")
@@ -625,7 +660,6 @@ def test_active_lease_is_renewed_during_slow_projection() -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(coordinator.execute, operation)
         projector.entered.wait(timeout=5)
-        sleep(0.25)
         observed, result = contender.execute(operation)
         projector.release.wait(timeout=5)
         committed, _ = future.result(timeout=5)
@@ -637,6 +671,8 @@ def test_active_lease_is_renewed_during_slow_projection() -> None:
 
 
 def test_active_lease_is_renewed_during_slow_commit() -> None:
+    now = [datetime(2026, 1, 1, tzinfo=UTC)]
+    lease_duration = timedelta(seconds=3)
     store = _BlockingCompletionStore()
     plane = MemoryPlaneService(record_store=store)
     evolution_service = MemoryEvolutionService(memory_plane=plane)
@@ -644,15 +680,18 @@ def test_active_lease_is_renewed_during_slow_commit() -> None:
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
+        heartbeat_factory=_manual_heartbeat_factory(now, advance=lease_duration + timedelta(seconds=1)),
         operation_repository=operations,
     )
     contender = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
         operation_repository=operations,
     )
     source = _source("tx:slow-commit")
@@ -666,7 +705,6 @@ def test_active_lease_is_renewed_during_slow_commit() -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(coordinator.execute, operation)
         store.completion_started.wait(timeout=5)
-        sleep(0.25)
         observed, result = contender.execute(operation)
         store.completion_release.wait(timeout=5)
         committed, _ = future.result(timeout=5)

@@ -7,7 +7,7 @@ import json
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
 from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionRunError
@@ -40,6 +40,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class LeaseHeartbeatFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        renew: Callable[[], bool],
+        interval: timedelta,
+    ) -> EvolutionLeaseHeartbeat: ...
+
+
 class EvolutionCoordinator:
     """Coordinates durable operation state around deterministic projection commits."""
 
@@ -52,6 +61,7 @@ class EvolutionCoordinator:
         max_attempts: int = 3,
         lease_duration: timedelta = timedelta(minutes=5),
         heartbeat_interval: timedelta | None = None,
+        heartbeat_factory: LeaseHeartbeatFactory = EvolutionLeaseHeartbeat,
         max_lease_recoveries: int = 3,
         operation_repository: EvolutionOperationRepository,
     ) -> None:
@@ -72,6 +82,7 @@ class EvolutionCoordinator:
         self._max_attempts = max_attempts
         self._lease_duration = lease_duration
         self._heartbeat_interval = resolved_heartbeat_interval
+        self._heartbeat_factory = heartbeat_factory
         self._max_lease_recoveries = max_lease_recoveries
         self._operations = operation_repository
 
@@ -146,7 +157,7 @@ class EvolutionCoordinator:
         execution_token = running.execution_token
         if execution_token is None:
             raise AssertionError("acquired evolution operation has no execution token")
-        heartbeat = EvolutionLeaseHeartbeat(
+        heartbeat = self._heartbeat_factory(
             renew=lambda: self._renew_claim(
                 operation_id=running.operation_id,
                 execution_token=execution_token,
