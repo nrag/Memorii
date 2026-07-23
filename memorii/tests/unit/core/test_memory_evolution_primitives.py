@@ -264,6 +264,77 @@ def test_entity_resolution_persists_same_entity_independently_by_scope() -> None
     )
 
 
+def test_entity_resolution_reuses_unique_typed_alias_across_request_local_mentions() -> None:
+    now = datetime(2026, 2, 1, tzinfo=UTC)
+    resolver = EntityResolutionService(now_provider=lambda: now)
+    first = EntityMention(
+        entity_id="mention:request-1:atlas",
+        mention_text="Atlas billing migration",
+        normalized_name="atlas billing migration",
+        entity_type=EntityType.PROJECT,
+        confidence=0.8,
+    )
+    existing = resolver.resolve_mentions([first], []).links
+    second = EntityMention(
+        entity_id="mention:request-2:atlas",
+        mention_text="Atlas Billing Migration",
+        normalized_name="atlas billing migration",
+        entity_type=EntityType.PROJECT,
+        aliases=["Atlas billing migration"],
+        confidence=0.9,
+    )
+
+    outcome = resolver.resolve_mentions([second], existing)
+
+    assert len(outcome.links) == 1
+    assert outcome.links[0].canonical_entity_id == first.entity_id
+    assert outcome.decisions[0].decision_type == EntityIdentityDecisionType.REUSE_EXISTING
+    assert outcome.decisions[0].resolved_entity_id == first.entity_id
+
+
+def test_entity_resolution_abstains_when_typed_alias_is_not_unique() -> None:
+    resolver = EntityResolutionService(now_provider=lambda: datetime(2026, 2, 1, tzinfo=UTC))
+    existing = [
+        resolver.resolve_mentions(
+            [
+                EntityMention(
+                    entity_id="ent:sam-1",
+                    mention_text="Sam",
+                    normalized_name="sam",
+                    entity_type=EntityType.PERSON,
+                    confidence=0.9,
+                )
+            ],
+            [],
+        ).links[0],
+        resolver.resolve_mentions(
+            [
+                EntityMention(
+                    entity_id="ent:sam-2",
+                    mention_text="Sam",
+                    normalized_name="sam",
+                    entity_type=EntityType.PERSON,
+                    confidence=0.9,
+                )
+            ],
+            [],
+        ).links[0],
+    ]
+    ambiguous = EntityMention(
+        entity_id="mention:request-3:sam",
+        mention_text="Sam",
+        normalized_name="sam",
+        entity_type=EntityType.PERSON,
+        confidence=0.9,
+    )
+
+    outcome = resolver.resolve_mentions([ambiguous], existing)
+
+    assert outcome.links == []
+    assert outcome.decisions[0].decision_type == EntityIdentityDecisionType.ABSTAIN
+    assert outcome.decisions[0].resolved_entity_id is None
+
+
 def test_entity_resolution_rejects_cross_scope_merge_and_preserves_split_scope() -> None:
     resolver = EntityResolutionService(now_provider=lambda: datetime(2026, 2, 1, tzinfo=UTC))
     global_link, task_link = resolver.resolve_mentions(
