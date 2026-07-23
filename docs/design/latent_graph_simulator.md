@@ -64,6 +64,14 @@ Hidden items must not appear in:
 - expected selected/supporting/rejected/context IDs
 - dry-run oracle output
 
+Generated machine identifiers are deterministically permuted into opaque
+labels before either suite consumes a scenario. The permutation is
+referentially consistent across observations, graph items, checkpoints, and
+judges, but the map is never exposed to the system under test. Metamorphic
+tests verify that changing every identifier leaves surface evidence and judge
+semantics unchanged, preventing answer-bearing fixture names from becoming a
+side channel.
+
 ## Surface Observations
 
 Surface observations are the only records exposed to the system under test.
@@ -103,6 +111,10 @@ Visible relation cards include relation type, endpoints, endpoint types, directi
 
 Candidate cards are not oracle answers. They are a model-facing structured view of the exposed observation stream.
 
+Checkpoint wording also varies deterministically across seeds while the typed
+checkpoint contract, family, severity, and oracle roles remain invariant. This
+tests semantic reconstruction rather than memorization of one query template.
+
 ## Role-Aware Output Channels
 
 The canonical reconstruction contract uses role-aware channels:
@@ -112,7 +124,8 @@ The canonical reconstruction contract uses role-aware channels:
 - `rejected_*`: stale, superseded, lower-trust, wrong-entity, ambiguous, or pasted evidence considered and ruled out
 - `context_*`: useful graph/audit evidence that is neither direct answer support nor explicit rejection
 
-Legacy flattened fields may be kept in artifacts, but judges use role-aware channels for semantic correctness.
+Typed checkpoint artifacts expose these channels directly, and judges use the
+same role-aware fields for semantic correctness.
 
 ## Checkpoint Contracts
 
@@ -177,7 +190,8 @@ Reports include hidden item counts and hidden hallucination rates.
 
 The simulator writes calibration events and reports for decision quality analysis.
 
-Calibration is report-only in v1. It should not change pass/fail unless a canary or explicit benchmark-fail policy is configured.
+Calibration is report-only. It does not change pass/fail unless an explicit
+benchmark-fail policy is configured.
 
 Current known reporting nuance:
 
@@ -202,6 +216,29 @@ Key artifacts include:
 - `slice_calibration_report.json`
 - `decision_quality_report.json`
 
+## Semantic Worlds And Live-Gate Estimand
+
+A generator seed is not itself an independent statistical observation. Every
+generated scenario carries a `semantic_world_fingerprint` derived from its
+latent world parameters, excluding presentation IDs. A live gate rejects
+duplicate semantic worlds across seeds so relabeled copies cannot inflate the
+sample size.
+
+The authoritative live-gate unit is one unique `seed:scenario` world. Repeated
+inference calls measure stability; they do not add scenario units. A scenario
+passes only when every declared inference replicate passes. The aggregate and
+family gates use exact one-sided beta-binomial seed-cluster lower bounds over
+those collapsed binary outcomes under a declared intraseed correlation. A
+simultaneous confidence level covers the aggregate plus every declared family.
+The gate additionally reports per-seed and leave-one-seed-out sensitivity.
+Paired baseline comparisons collapse replicates with the same rule before
+performing the seed/scenario bootstrap.
+
+Metamorphic tests cover every family and profile. They verify that opaque-ID
+permutation and unrelated observation ordering preserve oracle judgments, and
+that every required checkpoint item remains visible or inferable without
+exposing hidden graph items.
+
 ## Current Validation Status
 
 The suite now validates that live hybrid reconstruction can pass multi-seed adversarial runs while preserving:
@@ -215,6 +252,20 @@ The suite now validates that live hybrid reconstruction can pass multi-seed adve
 
 ## What The Simulator Does Not Prove
 
-The simulator does not prove that the production runtime evolution service reconstructs the graph from provider events.
+The simulator does not prove that the production runtime evolution service
+reconstructs the graph from provider events. That is the separate responsibility
+of `memory_evolution_runtime_v1`, which consumes the same generated scenarios
+through production ingestion and retrieval.
 
-That requires the future `memory_evolution_runtime_v1` suite.
+## Statistical Gate Certificate
+
+Live-gate interval coverage is certified over a predeclared reliability grid
+under beta-binomial seed effects, logistic-normal seed effects, and heterogeneous
+scenario-family mixtures. The production interval is the exact beta-binomial
+seed-cluster interval. Wilson is used only to lower-bound the finite-Monte-Carlo
+coverage estimate at each predeclared design point. The certificate takes the
+minimum simultaneous coverage bound across the grid, not the most favorable
+point estimate. It is valid only for reports from one clean source tree and
+records the source digest, input report digests, version, data-generating
+processes, reliability points, trials, seeds, and every design-point result so
+changes to code or statistical assumptions remain reviewable.

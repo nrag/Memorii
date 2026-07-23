@@ -14,6 +14,7 @@ from memorii.core.llm_decision import (
     JsonlLLMDecisionTraceStore,
 )
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
+from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.work_state import JsonlWorkStateStore, WorkStateService
 
@@ -64,7 +65,7 @@ class FilesystemStorageBundle:
         return DecisionStateService(store=self.decision_state_store)
 
     def build_provider_memory_service(self) -> ProviderMemoryService:
-        return ProviderMemoryService(
+        return build_provider_memory_service_from_env(
             memory_plane=self.build_memory_plane_service(),
             work_state_service=self.build_work_state_service(),
             decision_state_service=self.build_decision_state_service(),

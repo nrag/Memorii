@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 from memorii.core.execution import RuntimeStepService
-from memorii.core.execution.service import InMemoryMemoryPlane
 from memorii.core.memory_plane import MemoryPlaneService, from_memory_object, from_provider_stored_record
 from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
@@ -50,7 +49,7 @@ def _build_runtime(shared_plane: MemoryPlaneService) -> RuntimeStepService:
         solver_store=InMemorySolverGraphStore(),
         overlay_store=InMemoryOverlayStore(),
         event_log_store=InMemoryEventLogStore(),
-        memory_plane=InMemoryMemoryPlane(shared_plane),
+        memory_plane=shared_plane,
     )
 
 
@@ -98,7 +97,7 @@ def test_provider_stored_record_to_canonical_conversion() -> None:
     assert canonical.status == CommitStatus.COMMITTED
 
 
-def test_provider_and_runtime_compat_write_share_blocking_and_candidate_staging() -> None:
+def test_provider_and_runtime_writes_share_blocking_and_candidate_staging() -> None:
     shared_plane = MemoryPlaneService()
     provider = ProviderMemoryService(memory_plane=shared_plane)
     runtime = _build_runtime(shared_plane)
@@ -111,8 +110,9 @@ def test_provider_and_runtime_compat_write_share_blocking_and_candidate_staging(
         task_id="task:compat",
         session_id="session:compat",
         user_id="user:compat",
+        operation_id="test:convergence:provider-write",
     )
-    runtime_result = runtime.apply_provider_compat_write(
+    runtime_result = runtime.apply_provider_write(
         operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
         content="timeout is 30s",
         action="upsert",

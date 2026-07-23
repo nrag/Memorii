@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from memorii.core.llm_config import LLMRuntimeConfig
+from memorii.core.llm_provider.base import LLMStructuredClient
+from memorii.tools.benchmark_suites.runtime_dependencies import (
+    BenchmarkRuntimeDependencies,
+    DryRunDecisionStrategy,
+    ExecutionBackend,
+    LLMClientBinding,
+)
+from memorii.tools.run_benchmark import BenchmarkApplication
 
 
 def _clear_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,3 +47,38 @@ def _summary_fields(output: str) -> dict[str, str]:
 def _jsonl_count(path: Path) -> int:
     text = path.read_text(encoding="utf-8")
     return len(text.splitlines()) if text else 0
+
+
+def _application_with_fake_client(
+    client_factory: Callable[[], LLMStructuredClient],
+) -> BenchmarkApplication:
+    def factory() -> LLMClientBinding:
+        client = client_factory()
+        return LLMClientBinding(
+            client=client,
+            backend=ExecutionBackend.FAKE_ORACLE,
+            provider_name=client.provider_name,
+        )
+
+    return BenchmarkApplication(
+        dependencies=BenchmarkRuntimeDependencies(
+            fake_client_binding_factory=factory,
+            dry_run_decision_strategy=DryRunDecisionStrategy.CLIENT_ADAPTERS,
+        )
+    )
+
+
+def _application_with_live_client(
+    client_factory: Callable[[], LLMStructuredClient],
+) -> BenchmarkApplication:
+    def factory(_config: LLMRuntimeConfig) -> LLMClientBinding:
+        client = client_factory()
+        return LLMClientBinding(
+            client=client,
+            backend=ExecutionBackend.LIVE_PROVIDER,
+            provider_name=client.provider_name,
+        )
+
+    return BenchmarkApplication(
+        dependencies=BenchmarkRuntimeDependencies(live_client_binding_factory=factory)
+    )

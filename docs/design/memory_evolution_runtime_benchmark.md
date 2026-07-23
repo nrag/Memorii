@@ -1,10 +1,10 @@
 # Memory Evolution Runtime Benchmark
 
-`memory_evolution_runtime_v1` validates Memorii's real opt-in memory evolution path against the latent-graph simulator.
+`memory_evolution_runtime_v1` validates Memorii's production memory evolution path against the latent-graph simulator.
 
 ```text
 latent simulator surface observations
-  -> ProviderMemoryService(memory_evolution_enabled=True)
+  -> ProviderMemoryService standard composition
   -> MemoryEvolutionService extraction, validation, lifecycle, graph projection
   -> runtime graph snapshot
   -> graph-to-oracle alignment
@@ -51,4 +51,4 @@ These files are intended to support stage attribution: extraction, validation, e
 
 Passing this suite is the gate before treating Memorii as a default memory substrate for Hermes/OpenClaw-style agents. Early live adversarial runs are expected to expose classified runtime failures. The first goal is auditable failure, then smoke stability, then adversarial robustness.
 
-Production defaults are not changed by this suite. Runtime memory evolution remains opt-in.
+The suite does not change production defaults. Runtime memory evolution is already part of standard provider ingestion; benchmark-only graph-audit retrieval is selected explicitly and never inferred from oracle expectations.

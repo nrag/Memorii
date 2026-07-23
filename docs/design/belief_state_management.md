@@ -704,9 +704,11 @@ Implemented state layers include:
 
 ### Current runtime evolution behavior
 
-`ProviderMemoryService` supports runtime memory evolution through `memory_evolution_enabled=True`.
-
-This path is currently opt-in. When enabled, provider transcript/source IDs are passed into `MemoryEvolutionService`, which can extract entities, claims, and actions, validate claims, update claim lifecycle state, resolve contradictions, and project graph records.
+`ProviderMemoryService` includes runtime memory evolution in its normal
+composition. Provider transcript/source IDs are passed into
+`MemoryEvolutionService`, which can extract entities, claims, and actions,
+validate claims, update claim lifecycle state, resolve contradictions, and
+project graph records.
 
 Provider prefetch currently returns memory context plus work-state summaries. It does not yet fully use the runtime graph as the default current-truth retrieval mechanism.
 
@@ -714,7 +716,9 @@ Provider prefetch currently returns memory context plus work-state summaries. It
 
 `memorii_get_next_step` is no longer only a placeholder. It can use solver frontier planning when solver stores and planner are configured. If no solver run is resolved, it falls back to work-state-based recommendations.
 
-This means next-step behavior is useful for a pilot, but not yet a fully graph-driven decision-state planner.
+This means next-step behavior is useful for isolated component validation, but
+not yet a fully graph-driven decision-state planner or evidence for an agent
+integration pilot.
 
 ### Current benchmark evidence
 
@@ -728,13 +732,15 @@ Recent benchmark work validates:
 - latent graph simulator reconstruction behavior
 - report-only calibration and decision quality
 
-The key remaining gap is runtime-backed graph validation. The latent graph simulator currently validates a benchmark reconstruction adapter, not the full provider-event-to-runtime-graph loop.
+The runtime-backed suite validates the provider-event-to-runtime-graph loop on
+generated observations. It does not validate an agent's policy, tool use,
+recovery behavior, or end-to-end task outcomes.
 
 ### Updated readiness position
 
-Memorii is ready for controlled agent integration pilots with runtime evolution behind a feature flag.
-
-Memorii should not yet enable runtime memory evolution by default for all agent traffic. The gate for that is a passing `memory_evolution_runtime_v1` suite that validates:
+Memorii is not yet ready for agent integration. Runtime evolution is default-on
+inside the memory component and remains under isolated validation; passing
+`memory_evolution_runtime_v1` establishes the following component path only:
 
 ```text
 agent/provider events
@@ -743,3 +749,6 @@ agent/provider events
   -> graph-to-oracle alignment
   -> recall / next-step behavior
 ```
+
+Agent integration remains deferred until a separately designed agent-system
+evaluation can test policy interaction, task outcomes, rollback, and safety.

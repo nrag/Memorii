@@ -5,12 +5,16 @@ from __future__ import annotations
 from typing import Protocol
 
 from memorii.core.llm_decision.models import LLMDecisionTrace
-from memorii.core.promotion.models import PromotionContext, PromotionDecision
+from memorii.core.promotion.assessment import PromotionAssessment, PromotionAssessmentContext
 
 
-class PromotionDecisionProvider(Protocol):
+class PromotionAssessmentProviderError(RuntimeError):
+    """Expected operational failure from a promotion provider."""
+
+
+class PromotionAssessmentProvider(Protocol):
     def decide(
         self,
         *,
-        context: PromotionContext,
-    ) -> tuple[PromotionDecision, LLMDecisionTrace]: ...
+        context: PromotionAssessmentContext,
+    ) -> tuple[PromotionAssessment, LLMDecisionTrace]: ...

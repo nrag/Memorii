@@ -1,963 +1,313 @@
 # AGENTS.md
-## Project identity
-Memorii is a framework-neutral memory plane for agents.
-Memorii is **not**:
-- a single vector memory store
-- a generic chat history wrapper
-- a replacement for an agent harness
-- a single graph for everything
-Memorii **is**:
-- a typed multi-memory system
-- a routing and retrieval layer across memory domains
-- a persistent execution memory plus solver/search memory architecture
-- a framework-neutral service with adapters for agent harnesses
-Before making any changes, read:
-1. `docs/memorii_spec.md`
-2. `docs/implementation_rules.md`
-3. `PLANS.md`
-If these files disagree, use this priority:
-1. `docs/memorii_spec.md`
-2. `docs/memorii_storage_details.md`
-3. `docs/event_model.md`
-4. `docs/implementation_rules.md`
-5. `AGENTS.md`
-6. `docs/plans/initial.md`
----
-## Non-negotiable architecture rules
-Do not redesign the system.
-Do not collapse multiple memory domains into one generic store.
-Do not remove:
-- candidate vs committed state
-- event-sourced history
-- versioned belief/status overlays
-- execution graph vs solver graph separation
-- explicit memory routing
-- retrieval planning
-- consolidation and writeback gating
-- framework-neutral adapters
-Do not:
-- store beliefs directly on structural graph nodes
-- write speculative content into semantic or user memory
-- let adapters bypass validators
-- let model output directly mutate committed state
-- replace explicit typed schemas with untyped dict blobs
-- couple core logic to a specific framework like OpenClaw, Hermes, LangGraph, AutoGen, or OpenAI Agents
-Unknown and insufficient evidence are valid states.
-The system must never require the model to guess.
----
-## Language and runtime
-Primary language: Python 3.11+
-Use:
-- Python type hints everywhere
-- `pydantic` models for schemas and API contracts
-- `dataclasses` only for small internal immutable helpers when appropriate
-- `pytest` for tests
-- explicit interfaces / protocols for pluggable components
-Avoid:
-- hidden dynamic typing
-- passing around raw nested dictionaries as core domain objects
-- magic global registries
-- framework-heavy base classes unless justified
-- metaclass-heavy abstractions
-- implicit serialization behavior
-All core objects must be JSON serializable or have an explicit serialization adapter.
----
-## Required memory domains
-Memorii must support these first-class memory domains:
-1. Raw Transcript Memory
-2. Semantic Memory
-3. Episodic Memory
-4. User Preference / User Context Memory
-5. Execution Plan Memory
-6. Solver / State-Space Search Memory
-These are separate logical domains even if some share physical storage backends.
-Do not merge them conceptually.
----
-## Core system model
-The architecture has these major parts:
-### 1. Memory Plane
-The top-level memory operating model across domains.
-### 2. Memory Router
-Classifies events into memory objects and routes them to one or more memory domains.
-### 3. Retrieval Planner
-Selects which memory domains to query for a given step.
-### 4. Memory Directory
-Maps relationships across memories, tasks, execution nodes, solver runs, and references.
-### 5. Consolidator
-Compresses task-local or solver-local state into episodic, semantic, user, or skill writeback candidates.
-### 6. Execution Graph
-Persistent graph of work, dependencies, invariants, artifacts, tests, decisions, and statuses.
-### 7. Solver Graph
-Task-local reasoning/search graph attached to an execution node or subproblem when deeper reasoning is needed.
-### 8. Event Log
-Immutable event history for all structural and belief/status changes.
-### 9. Belief / Status Overlay
-Versioned task-local overlay storing dynamic reasoning state.
-### 10. Adapter Layer
-Framework-specific integrations built on canonical Memorii contracts.
----
-## Core architectural distinctions
-### Execution Graph
-This is the graph of work to be done.
-It tracks:
-- missions
-- work items
-- components
-- interfaces
-- invariants
-- tests
-- artifacts
-- milestones
-- blockers
-- dependencies
-- decisions
-- defects
-- statuses
-It is persistent and resumable across runs.
-### Solver Graph
-This is one capability used to solve a local subproblem.
-It tracks:
-- hypotheses
-- observations
-- actions
-- assumptions
-- constraints
-- justifications
-- belief/status state
-- active frontier
-- revisions
-- reopen conditions
-- unresolved questions
-It is local to an execution node or subproblem.
-### Memory Router
-This decides where a new memory object belongs.
-One event may write to multiple memory domains.
-### Retrieval Planner
-This chooses which memory domains are relevant for the current step.
-Retrieval must be typed and intentional.
----
-## Python package structure
-Use this exact package layout unless explicitly instructed otherwise:
-```text
-memorii/
-  memorii/
-    __init__.py
-    domain/
-      __init__.py
-      ids.py
-      enums.py
-      common.py
-      memory_object.py
-      transcript.py
-      semantic.py
-      episodic.py
-      user_memory.py
-      execution_graph/
-        __init__.py
-        nodes.py
-        edges.py
-        events.py
-        state.py
-      solver_graph/
-        __init__.py
-        nodes.py
-        edges.py
-        justifications.py
-        overlays.py
-        events.py
-        decisions.py
-      adapters/
-        __init__.py
-        contracts.py
-        events.py
-        memory_provider.py
-        writebacks.py
-    core/
-      __init__.py
-      router/
-        __init__.py
-        classifier.py
-        routing_policy.py
-        router.py
-      retrieval/
-        __init__.py
-        intents.py
-        planner.py
-        query_plans.py
-      consolidation/
-        __init__.py
-        consolidator.py
-        policies.py
-      directory/
-        __init__.py
-        directory.py
-        indexes.py
-      validation/
-        __init__.py
-        schemas.py
-        candidate_commit.py
-        provenance.py
-        invariants.py
-      execution/
-        __init__.py
-        service.py
-        state_machine.py
-      solver/
-        __init__.py
-        service.py
-        update_engine.py
-        verifier.py
-        abstention.py
-    stores/
-      __init__.py
-      base/
-        __init__.py
-        interfaces.py
-      transcript/
-        __init__.py
-        store.py
-      semantic/
-        __init__.py
-        store.py
-      episodic/
-        __init__.py
-        store.py
-      user/
-        __init__.py
-        store.py
-      execution_graph/
-        __init__.py
-        store.py
-      solver_graph/
-        __init__.py
-        store.py
-      event_log/
-        __init__.py
-        store.py
-      overlays/
-        __init__.py
-        store.py
-    api/
-      __init__.py
-      models.py
-      service.py
-    sdk/
-      __init__.py
-      python_client.py
-    utils/
-      __init__.py
-      time.py
-      json.py
-      hashing.py
-  tests/
-    unit/
-    integration/
-    conformance/
-    replay/
-    adapters/
-  docs/
-    memorii_spec.md
-    implementation_rules.md
-  PLANS.md
-  AGENTS.md
-  pyproject.toml
-  README.md
 
-All application code must live under the memorii/ package.
-
-Do not create business logic in scripts.
-
-⸻
-
-Module responsibilities
-
-memorii.domain
-
-Contains canonical schemas and enums.
-No IO logic.
-No persistence logic.
-No framework-specific code.
-
-memorii.core
-
-Contains routing, retrieval planning, validation, solver update logic, execution orchestration, and consolidation.
-
-memorii.stores
-
-Contains persistence-layer interfaces and implementations.
-
-memorii.api
-
-Contains framework-neutral service contracts.
-
-memorii.sdk
-
-Contains the Python SDK.
-
-memorii.adapters
-
-Contains only adapter contracts in core package.
-Framework-specific adapters should live in separate packages or adapter modules later.
-
-⸻
-
-Strong typing rules
-
-Use pydantic models for:
-
-* public APIs
-* persisted domain records
-* memory objects
-* graph nodes and edges
-* event records
-* writeback candidates
-* adapter payloads
-
-Use enums instead of free-form strings for:
-
-* memory domains
-* node types
-* edge types
-* statuses
-* confidence classes
-* decision classes
-* writeback types
-* retrieval intents
-
-Use stable IDs for all major entities:
-
-* task_id
-* session_id
-* thread_id
-* execution_node_id
-* solver_run_id
-* observation_id
-* action_id
-* node_id
-* edge_id
-* event_id
-* justification_id
-* version_id
-
-Do not rely on in-memory object identity.
-
-Graph edges must refer to node IDs, not object pointers.
-
-⸻
-
-Serialization rules
-
-Every persisted object must support:
-
-* model_dump()
-* model_validate()
-* JSON serialization
-* deterministic reconstruction
-
-Never put non-serializable Python objects in domain models.
-
-Keep storage records and domain records explicit.
-If they differ, create separate schema models.
-
-⸻
-
-Persistence rules
-
-Always persistent
-
-* transcript memory
-* semantic memory
-* episodic memory
-* user memory
-* execution graph
-* event log
-* belief/status overlays
-
-Conditionally persistent
-
-* solver graph
-* candidate solver state
-* unresolved solver frontier
-* suspended and reopenable branches
-
-Persist solver state if:
-
-* unresolved
-* attached to an open execution node
-* needed for future resume
-* likely useful for recovery
-
-Resume guarantees
-
-Resuming a task must reconstruct:
-
-* execution graph state
-* current task status
-* active and blocked work items
-* current solver runs
-* frontier state
-* unresolved questions
-* unexplained observations
-* belief/status overlay
-* reopenable branches
-
-⸻
-
-Candidate vs committed rules
-
-Model-generated content is candidate first unless explicitly grounded and validated.
-
-This applies to:
-
-* hypotheses
-* support/contradiction edges
-* writebacks
-* semantic abstractions
-* user preference extraction
-* branch conclusions
-
-A candidate item may become committed only after:
-
-1. schema validation
-2. provenance validation
-3. type-specific consistency checks
-4. candidate/committed transition checks
-5. evidence sufficiency checks if model-derived
-
-Speculative content must never directly:
-
-* falsify committed branches strongly
-* write into semantic memory
-* write into user memory
-* become execution truth
-* become final solver truth
-
-⸻
-
-Event sourcing rules
-
-All structural and dynamic changes must be recorded as immutable events.
-
-Examples:
-
-* memory object created
-* memory object routed
-* node added
-* edge added
-* candidate committed
-* belief updated
-* status updated
-* branch suspended
-* branch reopened
-* node merged
-* solver resolved
-* consolidation emitted
-
-Do not delete history during normal operation.
-
-Backtracking means revision through new events, not deletion.
-
-⸻
-
-Belief and status overlay rules
-
-Dynamic reasoning state belongs in overlays, not structural nodes.
-
-The overlay must store:
-
-* belief
-* status
-* frontier priority
-* active justifications
-* inactive justifications
-* last update timestamp
-
-Structural graph nodes must remain stable and replayable.
-
-⸻
-
-Execution graph rules
-
-Execution graph is the top-level work graph.
-
-Required node classes include:
-
-* mission
-* work item
-* component
-* interface
-* invariant
-* test case
-* test suite
-* artifact
-* decision
-* risk
-* question
-* defect
-* milestone
-
-Required edge classes include:
-
-* decomposes_into
-* depends_on
-* blocks
-* implements
-* verified_by
-* produces
-* consumes
-* constrained_by
-* resolves
-* supersedes
-
-Execution graph is the source of truth for:
-
-* what work exists
-* what depends on what
-* what state work is in
-* what invariants/tests define correctness
-
-⸻
-
-Solver graph rules
-
-Solver graph is a task-local reasoning/search graph attached to an execution node or subproblem.
-
-Required node classes include:
-
-* goal
-* hypothesis
-* composite_hypothesis
-* explanation_factor
-* observation
-* action
-* assumption
-* constraint
-* scenario
-* question
-* synthesis
-* semantic_ref
-* episodic_ref
-* user_ref
-* environment_ref
-* skill_ref
-
-Required edge classes include:
-
-* supports
-* contradicts
-* tested_by
-* produces
-* refines
-* depends_on
-* contributes_to
-* synthesizes_from
-* valid_under
-* blocks
-* resolves
-* reopens
-* equivalent_to
-* references
-
-The full solver graph is not globally required to be acyclic.
-However, structural edges such as refines, derived_from, depends_on, and decomposes_into must remain acyclic where specified by the validator.
-
-⸻
-
-Abstention and uncertainty rules
-
-Unknown must be representable in system state.
-
-Solver outputs must support these decision classes:
-
-* SUPPORTED
-* REFUTED
-* INSUFFICIENT_EVIDENCE
-* NEEDS_TEST
-* MULTIPLE_PLAUSIBLE_OPTIONS
-
-For parameter-sensitive or branch-evaluation tasks, stronger classes may be used:
-
-* PROVEN_WORKS
-* PROVEN_FAILS
-* UNTESTED_PLAUSIBLE
-* INSUFFICIENT_INFORMATION
-* NEEDS_EXPERIMENT
-
-The model must not be prompted as an oracle.
-It must be prompted as a branch evaluator using explicit evidence.
-
-Any unsupported commitment must be downgraded to:
-
-* candidate only
-* insufficient evidence
-* or needs test
-
-⸻
-
-Prompting and verification rules
-
-Prompts for solver updates must:
-
-* be evidence-bounded
-* include explicit abstention options
-* require structured output
-* require cited evidence IDs
-* require missing-evidence reporting when unresolved
-* require next-best-test when unresolved
-
-The runtime must not trust the model’s self-report of compliance.
-
-Every model-derived solver decision must pass:
-
-1. schema validation
-2. structural validation
-3. evidence coverage validation
-4. entailment-style verification when applicable
-5. optional consistency checks for high-risk steps
-
-Do not directly commit solver state from a single fluent model answer.
-
-⸻
-
-Memory routing rules
-
-Every inbound event must first become one or more typed memory objects.
-
-The router must decide:
-
-* memory domain(s)
-* scope
-* durability
-* candidate vs committed state
-* primary store
-* secondary stores
-* whether a writeback candidate should be created
-
-One event may write to multiple memory domains.
-
-Examples:
-
-* a user message always goes to transcript memory
-* a stable user preference may also create a user-memory candidate
-* a failing test may update transcript memory, execution memory, and solver memory
-* a resolved solver may produce episodic and skill writeback candidates
-
-Do not hardcode memory routing into adapters.
-
-⸻
-
-Retrieval planning rules
-
-Retrieval must be typed and intention-driven.
-
-The retrieval planner must choose memory domains based on task step.
-
-Examples:
-
-* continuing work → execution graph + relevant artifacts + constraints
-* debugging → solver graph + transcript evidence + episodic analogies + semantic facts
-* user-personalized answer → user memory + semantic memory + transcript context
-* resume after pause → execution graph + active solver runs + overlays + unresolved items
-
-Do not do one generic retrieval against all memory stores by default.
-
-⸻
-
-Consolidation rules
-
-Consolidation turns local or transient state into durable reusable memory.
-
-Examples:
-
-* solver run → episodic summary
-* repeated successful pattern → skill candidate
-* validated reusable abstraction → semantic candidate
-* durable user preference revealed → user memory candidate
-
-Consolidation must be explicit and policy-driven.
+## Purpose
+
+This file is the operating guide for contributors and coding agents working on
+Memorii. It records repository-wide invariants and workflow rules. Detailed
+behavior belongs in the design documents and tests linked below; do not copy
+large specifications into this file.
+
+Memorii is a framework-neutral memory plane for agents. It is a typed,
+multi-memory system with explicit routing, retrieval, persistence, execution
+memory, solver/search memory, and conservative memory evolution. It is not a
+generic chat-history wrapper, a single vector store, a single graph for every
+kind of state, or a replacement for an agent harness.
+
+## Sources Of Truth
+
+Before changing a subsystem, read the documents that govern it. Use this
+precedence when requirements conflict:
+
+1. `docs/design/memorii_spec.md`
+2. `docs/design/memorii_storage_details.md`
+3. `docs/design/event_model.md`
+4. `docs/IMPLEMENTATION_RULES.md`
+5. The relevant current document under `docs/design/`
+6. `docs/plans/engineering_hardening_closure_matrix.md` for the current
+   hardening acceptance contract
+7. `docs/plans/agent_integration_readiness.md` for integration scope and
+   readiness claims
+8. This file
+9. `docs/plans/initial.md`, which is historical context rather than a statement
+   of current implementation status
+
+For benchmark, prompt, runtime-memory-evolution, or CI work, also read:
+
+- `docs/design/memory_evolution_runtime.md`
+- `docs/design/memory_evolution_runtime_benchmark.md`
+- `docs/design/latent_graph_simulator.md`
+- `docs/design/prompt_contracts.md`
+- `docs/design/semantic_temporal_retrieval.md`
+- `docs/development/benchmark_certification.md`
+- `docs/development/static_tooling.md`
+
+Do not claim that a planned behavior exists merely because it appears in a
+plan. Confirm it in production code and tests. Conversely, update current-state
+documentation when an implementation change makes it stale.
+
+## Non-Negotiable Architecture
+
+Preserve all of the following distinctions:
+
+- raw transcript, semantic, episodic, user-context, execution-plan, and
+  solver/search memory are separate logical domains
+- candidate state is distinct from committed state
+- structural graph state is distinct from versioned belief/status overlays
+- the persistent execution graph is distinct from task-local solver graphs
+- memory routing is distinct from retrieval planning
+- raw observations are distinct from derived memory-evolution projections
+- provider transport validation is distinct from domain-semantic validation
+- production retrieval is isolated from benchmark oracle data
+- framework-neutral contracts are isolated from host-specific integrations
 
 Do not:
 
-* dump raw full solver graphs into long-term memory by default
-* write speculative content into semantic memory
-* write transient constraints into durable user memory
-
-⸻
-
-Adapter rules
-
-Memorii core must remain framework-neutral.
-
-Adapters are responsible only for translation between framework-native concepts and Memorii canonical contracts.
-
-Adapters may:
-
-* map framework lifecycle events to Memorii events
-* map framework message formats to transcript memory objects
-* map framework tool results to observations
-* call Memorii retrieval APIs
-* return writeback candidates to the host framework
-
-Adapters may not:
-
-* bypass validators
-* write directly into stores
-* change core semantics
-* collapse candidate/committed behavior
-* invent framework-specific core behavior
-
-Framework support targets include:
-
-* OpenClaw
-* Hermes
-* LangGraph
-* AutoGen
-* OpenAI Agents
-
-Core package must not import framework internals.
-
-⸻
-
-Public contracts and interfaces
-
-Use explicit protocols or abstract base classes for:
-
-* transcript store
-* semantic store
-* episodic store
-* user store
-* execution graph store
-* solver graph store
-* event log store
-* overlay store
-* memory provider
-* adapter interface
-* retrieval planner
-* consolidator
-* verifier
-
-Do not use duck typing without explicit contracts.
-
-All interfaces must be small and testable.
-
-⸻
-
-Dependency policy
-
-Preferred dependencies:
-
-* pydantic
-* pytest
-* typing_extensions
-* sqlalchemy if relational persistence is added
-* fastapi only if/when API service is built
-* lightweight graph utilities only if justified
-
-Avoid:
-
-* large hidden frameworks
-* unnecessary orchestration frameworks inside core
-* framework-specific SDK dependencies in core package
-* complex dependency injection libraries unless truly necessary
-
-Use the standard library when possible.
-
-Every dependency must have a clear reason.
-
-⸻
-
-Database and backend policy
-
-Do not hardwire the logical model to one physical backend.
-
-The logical model must remain valid whether stores are implemented on:
-
-* PostgreSQL
-* document store
-* graph store
-* hybrid store
-
-Persistence logic must sit behind explicit store interfaces.
-
-The source of truth is the domain model, not the database schema.
-
-⸻
-
-Testing rules
-
-Use pytest.
-
-Every new subsystem must include tests.
-
-Required test categories
-
-Unit tests
-
-For:
-
-* schema validation
-* enums and status transitions
-* router classification
-* retrieval planning
-* candidate/committed rules
-* event serialization
-
-Integration tests
-
-For:
-
-* memory routing end to end
-* execution graph persistence/resume
-* solver graph persistence/resume
-* event replay
-* writeback generation
-* adapter translation
-
-Conformance tests
-
-For:
-
-* store interfaces
-* adapter interfaces
-* retrieval contracts
-* candidate/committed invariants
-
-Replay tests
-
-For:
-
-* event-sourced rebuild
-* branch reopen behavior
-* local recomputation after invalidation
-
-Critical invariants to test
-
-You must test:
-
-* no duplicate committed IDs on idempotent replay
-* candidate state cannot strongly falsify committed state
-* beliefs are not stored on structural nodes
-* resuming a task restores frontier and unresolved state
-* one observation can support one branch and contradict another
-* solver graph and execution graph remain distinct
-* speculative semantic writeback is rejected
-* user memory only accepts durable, policy-approved writes
-
-⸻
-
-Commands
-
-Assume these commands unless the repo says otherwise:
-
-Install:
-
-pip install -e ".[local]"
-
-Run tests:
-
-pytest
-
-Run a subset:
-
-pytest tests/unit
-pytest tests/integration
-
-Lint:
-
-ruff check .
-
-Format:
-
-black .
-
-Type check if configured:
-
-mypy memorii
-
-Do not add tools without updating repo docs.
-
-⸻
-
-Workflow for Codex
-
-Before editing code:
-
-1. Read docs/memorii_spec.md, docs/memorii_storage_details.md and docs/event_model.md
-2. Read docs/implementation_rules.md
-3. Read docs/plans/initial.md
-4. Restate the exact task being implemented
-5. Identify impacted packages and tests
-
-When implementing:
-
-1. start with schemas and contracts
-2. then validators and store interfaces
-3. then business logic
-4. then tests
-5. then docs updates if required
-
-Prefer small safe commits in this order:
-
-* domain models
-* interfaces
-* storage contracts
-* service logic
-* adapters
-* tests
-
-When asked to implement a feature, do not opportunistically redesign nearby modules.
-
-⸻
-
-If the spec feels underspecified
-
-Do not invent major architecture.
-
-Instead:
-
-1. implement the narrowest interpretation consistent with the spec
-2. leave clear TODO markers only where the spec explicitly leaves room
-3. document assumptions in code comments or implementation notes
-4. keep extension points explicit and typed
-
-If a choice affects core semantics, stop and surface the ambiguity instead of improvising.
-
-⸻
-
-Success criteria for any implementation step
-
-A step is complete only if:
-
-* code matches spec
-* types are explicit
-* validators are present where needed
-* tests cover invariants
-* no architecture shortcuts were introduced
-* resume and provenance semantics are preserved if affected
-
-⸻
-
-Final reminder
-
-Memorii is a memory operating model, not a single storage plugin.
-
-The most important things to preserve are:
-
-* typed memory domains
-* execution graph vs solver graph separation
-* candidate vs committed lifecycle
-* event-sourced revision
-* abstention-aware solver updates
-* framework-neutral adapter model
-* persistence and resume across runs
-* explicit routing, retrieval, and consolidation
-
-A few optional companion files will make this work even better:
-- `docs/implementation_rules.md`
-- `docs/plans/initial.md`
-- `skills/execution-graph/SKILL.md`
-- `skills/solver-graph/SKILL.md`
-- `skills/adapters/SKILL.md`
-My recommendation is to add this `AGENTS.md` first, then ask Codex to do only one narrow task:
-> Read `AGENTS.md`, `docs/memorii_spec.md`, and `PLANS.md`. Implement only the Python package skeleton, core enums, IDs, and Pydantic schemas. Then stop.
-That will keep the first Codex run under control.
+- store dynamic beliefs directly on structural graph nodes
+- let model output mutate committed truth without explicit validation
+- write speculative content directly into semantic or user memory
+- let adapters or integrations bypass validators or store contracts
+- replace typed public or persisted schemas with untyped dictionary blobs
+- delete event history to represent revision or backtracking
+- collapse execution and solver graphs into one generic graph
+- import simulator oracle state into production extraction or retrieval
+- couple core logic to Hermes, OpenClaw, LangGraph, AutoGen, OpenAI Agents, or
+  another particular harness
+
+Unknown, ambiguous, insufficient-evidence, and needs-test outcomes are valid.
+The system must fail closed rather than require a model to guess.
+
+## Package Ownership
+
+Application code lives under `memorii/memorii/`. Follow the current repository
+layout and existing ownership boundaries; do not enforce a historical exact
+file tree.
+
+- `memorii.domain`: canonical domain schemas, enums, stable IDs, and graph
+  records; no persistence or framework-specific behavior
+- `memorii.core.memory_plane`: canonical storage model, transactions, atomic
+  filesystem persistence, visibility, and unit-of-work behavior
+- `memorii.core.memory_evolution`: extraction, validation, entity resolution,
+  claim lifecycle, temporal semantics, graph projection, retrieval, and durable
+  evolution operations
+- `memorii.core.provider`: production-facing composition for ingestion,
+  retrieval, prefetch, tool dispatch, and work-state projection
+- `memorii.core.benchmark`: benchmark contracts, fixtures, metrics, artifacts,
+  calibration, reproducibility, simulator logic, and runtime evaluation
+- `memorii.core.prompts`: prompt registry, ownership, schema parity, semantic
+  validation, and runtime manifests
+- `memorii.core.promotion`: distinct promotion assessment and execution
+  contracts
+- `memorii.core.execution`, `memorii.core.solver`, `memorii.core.retrieval`,
+  `memorii.core.consolidation`, `memorii.core.belief`, and neighboring packages:
+  their named orchestration responsibilities
+- `memorii.stores`: persistence interfaces and implementations for the legacy
+  domain stores
+- `memorii.adapters`: framework-neutral adapter contracts and translations
+- `memorii.integrations`: host-facing integrations built only on canonical
+  Memorii contracts
+- `memorii.api`: framework-neutral API models and service boundaries
+- `memorii.tools`: thin command-line entry points and benchmark-suite
+  composition; reusable business logic belongs in `memorii.core`
+- `memorii.prompts`: package-owned, versioned prompt assets
+
+Prefer cohesive modules with explicit owners. Before adding a helper, search for
+an existing contract or implementation. Avoid relocation facades, circular
+imports, monolithic services, magic registries, and framework-heavy base
+classes.
+
+## Types And Serialization
+
+Use Python 3.11+ syntax, explicit type hints, Pydantic models for public and
+persisted contracts, enums for closed vocabularies, and protocols for pluggable
+components. Small immutable internal values may use dataclasses when that is
+clearer.
+
+Persisted and public objects must have:
+
+- explicit schemas and deterministic reconstruction
+- JSON serialization or an explicit serialization adapter
+- stable IDs rather than reliance on Python object identity
+- graph references by ID rather than object pointer
+- fail-closed parsing for unknown enum and lifecycle values
+
+Keep typed models intact until the serialization boundary. If storage and
+domain representations differ, define both explicitly. Do not use casts or raw
+nested dictionaries to avoid modeling a contract.
+
+## Memory Evolution And Provider Contracts
+
+`ProviderMemoryService` is the production-facing memory composition boundary.
+`build_provider_memory_service_from_env(...)` is the environment-aware
+composition root; direct construction must remain deterministic and must not
+read process configuration implicitly.
+
+All public provider mutations require a non-empty, caller-supplied stable
+`operation_id`. Retries must reuse the same ID. Turn synchronization derives
+stable child IDs from its parent delivery ID. Replay must remain idempotent
+across process restarts and partial-turn recovery.
+
+Evolution operations must preserve:
+
+- durable operation state when a persistent memory-plane store is configured
+- transactional source-event and projection commits
+- process-safe, crash-atomic filesystem updates
+- checksum and incomplete-batch validation that fails closed
+- fenced leases with renewal during active work
+- bounded stale recovery and an explicit terminal exhaustion state
+- token fencing so an expired worker cannot commit after ownership is lost
+- sanitized persisted failures while full exceptions remain in operational logs
+
+Extraction outcomes must distinguish success, partial output, abstention,
+provider failure, schema failure, and hybrid fallback. Failed extraction must
+never commit memory. Deferred or ineligible modalities may remain audit
+evidence but cannot become active truth.
+
+Model-produced extraction or decisions pass through separate stages:
+
+1. prompt output-schema validation
+2. provider transport parsing
+3. typed domain-semantic validation
+4. provenance and evidence validation
+5. lifecycle or candidate/commit policy
+6. transactional persistence
+
+Prompt schemas and provider transport models must accept the same JSON value
+space. Cross-field semantics belong in the explicit post-transport validation
+stage rather than being hidden in one transport model.
+
+## Retrieval And Oracle Isolation
+
+Retrieval must be typed, scoped, temporal, lifecycle-aware, and intentional.
+Natural-language analyzers propose typed constraints; server-owned state
+resolves them. Ambiguous entity, scope, temporal, or graph constraints must
+abstain or fail closed rather than broaden silently.
+
+Use half-open validity intervals, `[valid_from, valid_to)`, consistently. Keep
+query-time temporal relevance separate from stored lifecycle state. Production
+code may not import benchmark simulator/oracle modules or use expected IDs,
+hidden graph items, or judge votes to affect extraction, retrieval, or output.
+Runtime benchmark alignment may use oracle data only after the production
+decision and graph projection have completed.
+
+## Prompts And Model Output
+
+Prompts that can affect memory or solver state must be evidence-bounded,
+versioned, package-owned, registered to an explicit owner, structured, and
+abstention-aware. Require evidence identifiers or spans where applicable and
+represent missing evidence explicitly.
+
+Never trust a model's self-report of compliance. Validate schema, structure,
+provenance, evidence coverage, allowed identifiers, and domain semantics in
+code. Do not make a single fluent model answer committed solver or memory truth.
+
+Prompt conformance fixtures belong in tests, not in `memorii.core`. Changing a
+prompt, output schema, generation setting, retry policy, or gate threshold
+changes evaluation identity and requires the corresponding contract and
+artifact updates.
+
+## Benchmark Evidence
+
+Keep these evidence classes distinct:
+
+- deterministic unit and contract tests establish code-level invariants
+- fake-oracle dry runs validate plumbing, artifacts, alignment, judges, and
+  calibration without measuring provider quality
+- live runtime evaluation measures the memory component for an exact clean
+  revision under declared seeds, replicates, families, and statistical policy
+- no current benchmark establishes agent policy quality, tool-use strategy,
+  recovery behavior, or end-to-end task improvement
+
+Never report fake-oracle execution as provider success. Runtime reports must
+preserve execution source, provider health, source revision, source-tree
+fingerprint, prompt hash, model identity, generation settings, attempt count,
+and retry budget where the artifact schema requires them.
+
+The engineering-hardening change is complete only when every row in
+`docs/plans/engineering_hardening_closure_matrix.md` has implementation
+coverage and the exact reviewed revision passes every declared deterministic
+gate plus the revision-bound live statistical gate. A live result from another
+commit, a dirty tree, mixed run identities, or post-run threshold/prompt tuning
+is not certification.
+
+Runtime memory evolution being default-on inside provider ingestion does not
+mean Memorii is ready for agent-system integration. Agent integration remains
+out of scope until a separate agent-level evaluation and operational rollback
+design are approved, as specified in
+`docs/plans/agent_integration_readiness.md`.
+
+## Testing And Required Checks
+
+Tests should be proportional to the changed contract and must cover failure
+modes, not only successful examples. Preserve tests for idempotent replay,
+atomic visibility, process contention, corruption, lease fencing, stale
+recovery, scope isolation, prompt parity, oracle isolation, lifecycle behavior,
+temporal retrieval, artifact validation, and deterministic reconstruction when
+touching those areas.
+
+From `memorii/`, install development dependencies with:
+
+```bash
+python -m pip install -e '.[dev]'
+```
+
+Run the normal local gates:
+
+```bash
+python -W error -m pytest tests/unit -p no:cacheprovider
+python -m ruff check memorii tests
+pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
+```
+
+Follow `docs/development/static_tooling.md` for wheel/package verification and
+deterministic benchmark smoke commands. Follow
+`docs/development/benchmark_certification.md` for exact-revision live
+certification. Do not run live provider gates casually: they consume credentials
+and are meaningful only with the declared source and run identity.
+
+The normal PR checks are `Unit Tests` and `Benchmark Contracts`. The unit job
+also runs Ruff, scoped Pyright, and wheel smoke verification. The live runtime
+statistical gate is an explicit candidate-acceptance check for the exact PR head,
+not a substitute for deterministic PR checks.
+
+Do not weaken warnings, test selection, schema validation, family coverage,
+sample-size requirements, retry accounting, or statistical thresholds merely
+to make a gate pass. Fix the implementation or document and approve an actual
+contract change.
+
+## Change Workflow
+
+Before editing:
+
+1. Read the controlling documents and nearby tests.
+2. Identify the production composition root and every affected public,
+   persistence, prompt, artifact, and CLI boundary.
+3. Search for existing types and helpers before adding new ones.
+4. Inspect the working tree and preserve unrelated user changes.
+
+While implementing:
+
+1. Change canonical schemas and contracts first when the behavior requires it.
+2. Update validators, orchestration, and persistence without bypass paths.
+3. Keep adapters and CLI modules thin.
+4. Add adversarial and failure-mode tests alongside happy-path tests.
+5. Update current-state documentation in the same change.
+6. Run the relevant deterministic gates and report anything that could not be
+   verified.
+
+Do not opportunistically redesign adjacent systems. If a choice would alter a
+core semantic contract and the controlling documents do not resolve it, stop
+and surface the ambiguity. Otherwise implement the narrowest complete behavior
+consistent with the architecture.
+
+## Completion Standard
+
+A change is complete only when:
+
+- implementation, types, tests, prompts, artifacts, and current-state docs
+  agree
+- invalid input and unsupported states fail explicitly and safely
+- provenance, scope, replay, transaction, and lifecycle invariants remain intact
+- deterministic reconstruction and serialization remain stable where required
+- relevant local and CI-equivalent checks pass
+- any required external or live certification is identified separately and is
+  bound to the exact reviewed revision

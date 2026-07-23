@@ -9,6 +9,7 @@ from memorii.core.filesystem_storage import (
     collect_storage_status,
     ensure_within_soft_limits,
 )
+from memorii.core.memory_evolution.operation_store import MemoryPlaneEvolutionOperationRepository
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.service import ProviderMemoryService
@@ -95,12 +96,15 @@ def test_build_memory_plane_service_persists_across_fresh_bundles(tmp_path) -> N
 
 
 def test_build_provider_memory_service_wires_services_together(tmp_path) -> None:
-    provider = FilesystemStorageBundle.from_root(tmp_path / "storage").build_provider_memory_service()
+    bundle = FilesystemStorageBundle.from_root(tmp_path / "storage")
+    provider = bundle.build_provider_memory_service()
 
     assert isinstance(provider._memory_plane, MemoryPlaneService)
     assert isinstance(provider._work_state_service, WorkStateService)
     assert isinstance(provider._decision_state_service, DecisionStateService)
     assert provider._llm_decision_trace_store is not None
+    assert isinstance(provider._evolution_coordinator._operations, MemoryPlaneEvolutionOperationRepository)
+    assert provider._evolution_coordinator._operations._memory_plane is provider._memory_plane
 
 
 def test_provider_record_progress_writes_work_state_event_and_memory_candidate(tmp_path) -> None:
@@ -123,9 +127,7 @@ def test_provider_record_progress_writes_work_state_event_and_memory_candidate(t
     assert progress_result.ok is True
 
     reopened = FilesystemStorageBundle.from_root(tmp_path / "storage")
-    work_events = reopened.build_work_state_service().list_work_state_events(
-        progress_result.result["work_state_id"]
-    )
+    work_events = reopened.build_work_state_service().list_work_state_events(progress_result.result["work_state_id"])
     assert any(event.event_id == progress_result.result["event_id"] for event in work_events)
 
     candidate_id = progress_result.result["memory_candidate_id"]

@@ -10,22 +10,7 @@ from memorii.core.llm_decision.models import (
     LLMDecisionTrace,
 )
 from memorii.core.llm_provider.models import LLMDecisionResult
-
-_SECRET_KEYS = {"api_key", "apikey", "token", "password", "secret", "authorization", "cookie"}
-
-
-def _redact(value: object) -> object:
-    if isinstance(value, dict):
-        out: dict[str, object] = {}
-        for key, inner in value.items():
-            if key.lower() in _SECRET_KEYS:
-                out[key] = "[REDACTED]"
-            else:
-                out[key] = _redact(inner)
-        return out
-    if isinstance(value, list):
-        return [_redact(v) for v in value]
-    return value
+from memorii.core.prompts.sensitivity import redact_sensitive_value
 
 
 def _sanitize_id(value: str) -> str:
@@ -34,9 +19,17 @@ def _sanitize_id(value: str) -> str:
 
 def build_llm_decision_trace_from_result(*, decision_point: LLMDecisionPoint, mode: LLMDecisionMode, result: LLMDecisionResult, final_output: dict[str, object] | None, fallback_used: bool, metadata: dict[str, object] | None = None, status: LLMDecisionStatus | None = None) -> LLMDecisionTrace:
     resolved_status = status or (LLMDecisionStatus.SUCCEEDED if result.success else LLMDecisionStatus.PROVIDER_ERROR)
-    response_meta = _redact({
+    response_meta = redact_sensitive_value({
         "provider": result.response.provider,
-        "model": result.response.model,
+        "requested_model": result.response.requested_model,
+        "actual_model": result.response.actual_model,
+        "provider_request_id": result.response.provider_request_id,
+        "response_status": result.response.response_status,
+        "finish_reason": result.response.finish_reason,
+        "sdk_version": result.response.sdk_version,
+        "effective_settings": result.response.effective_settings,
+        "attempt_count": result.response.attempt_count,
+        "sdk_max_retries": result.response.sdk_max_retries,
         "valid_json": result.response.valid_json,
         "schema_valid": result.response.schema_valid,
         "refusal": result.response.refusal,
@@ -50,8 +43,9 @@ def build_llm_decision_trace_from_result(*, decision_point: LLMDecisionPoint, mo
         "prompt_hash": result.request.prompt_hash,
         "request_id": result.request.request_id,
         "provider": result.response.provider,
-        "model": result.response.model,
-        "metadata": _redact(metadata or result.request.metadata),
+        "requested_model": result.response.requested_model,
+        "actual_model": result.response.actual_model,
+        "metadata": redact_sensitive_value(metadata or result.request.metadata),
         "response_meta": response_meta,
     }
     return LLMDecisionTrace(
@@ -59,7 +53,7 @@ def build_llm_decision_trace_from_result(*, decision_point: LLMDecisionPoint, mo
         decision_point=decision_point,
         mode=mode,
         prompt_version=result.request.prompt_ref,
-        model_name=result.response.model,
+        model_name=result.response.actual_model or result.response.requested_model,
         input_payload=input_payload,
         raw_output=None,
         parsed_output=result.output or {},

@@ -592,7 +592,7 @@ def _read_git_commit() -> str | None:
             capture_output=True,
             text=True,
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return None
     commit = completed.stdout.strip()
     return commit or None

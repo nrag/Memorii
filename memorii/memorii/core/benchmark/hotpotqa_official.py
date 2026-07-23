@@ -54,7 +54,7 @@ class HotpotQAAnswerContext(BaseModel):
 
 class HotpotQASupportingFact(BaseModel):
     title: str
-    sentence_index: int
+    sentence_index: int = Field(ge=0)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -66,6 +66,12 @@ class HotpotQAAnswerDecision(BaseModel):
     rationale: str
 
     model_config = ConfigDict(extra="forbid")
+
+
+class HotpotQAAnswerOutput(HotpotQAAnswerDecision):
+    """Strict provider response for HotpotQA answering."""
+
+    supporting_facts: list[HotpotQASupportingFact]
 
 
 class HotpotQAPrediction(BaseModel):

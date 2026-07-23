@@ -8,6 +8,7 @@ from memorii.core.llm_judge.calibration import (
 )
 from memorii.core.llm_judge.judge import (
     FakeSingleDimensionJudge,
+    JudgeExecutionError,
     SingleDimensionJudge,
     validate_single_dimension_judge,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "JudgeCalibrationReport",
     "JudgeCalibrator",
     "JudgeDimension",
+    "JudgeExecutionError",
     "JudgeRubric",
     "JudgeRunCaseResult",
     "JudgeRunReport",

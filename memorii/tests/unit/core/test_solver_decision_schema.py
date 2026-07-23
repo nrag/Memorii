@@ -1,5 +1,5 @@
 import pytest
-from memorii.core.solver import SolverDecisionOutput
+from memorii.core.solver.update_engine import SolverDecisionOutput
 from pydantic import ValidationError
 
 
@@ -9,7 +9,6 @@ def test_confidence_band_is_enum() -> None:
             "decision": "SUPPORTED",
             "evidence_ids": ["ev-1"],
             "missing_evidence": [],
-            "next_best_test": None,
             "rationale_short": "grounded",
             "confidence_band": "high",
         }
@@ -25,7 +24,6 @@ def test_supported_requires_evidence_ids() -> None:
                 "decision": "SUPPORTED",
                 "evidence_ids": [],
                 "missing_evidence": [],
-                "next_best_test": None,
                 "rationale_short": "unsupported",
                 "confidence_band": "medium",
             }
@@ -39,21 +37,19 @@ def test_insufficient_evidence_requires_missing_evidence() -> None:
                 "decision": "INSUFFICIENT_EVIDENCE",
                 "evidence_ids": [],
                 "missing_evidence": [],
-                "next_best_test": None,
                 "rationale_short": "no gap list",
                 "confidence_band": "low",
             }
         )
 
 
-def test_needs_test_requires_next_best_test_or_next_test_action() -> None:
+def test_needs_test_requires_structured_next_test_action() -> None:
     with pytest.raises(ValidationError):
         SolverDecisionOutput.model_validate(
             {
                 "decision": "NEEDS_TEST",
                 "evidence_ids": [],
                 "missing_evidence": ["traceback"],
-                "next_best_test": None,
                 "rationale_short": "must provide next test",
                 "confidence_band": "low",
             }
@@ -76,7 +72,6 @@ def test_needs_test_with_structured_next_test_action_is_valid() -> None:
         }
     )
 
-    assert parsed.next_best_test is None
     assert parsed.next_test_action is not None
     assert parsed.next_test_action.action_type == "run_command"
 

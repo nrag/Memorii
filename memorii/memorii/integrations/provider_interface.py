@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from memorii.core.provider.models import ProviderSyncResult, ProviderWriteDecision
@@ -15,6 +16,8 @@ class MemoryProviderInterface(Protocol):
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
+        query_language: str = "en",
+        reference_time: datetime | None = None,
     ) -> str: ...
 
     def sync_turn(
@@ -22,6 +25,7 @@ class MemoryProviderInterface(Protocol):
         user_content: str,
         assistant_content: str,
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
@@ -31,6 +35,7 @@ class MemoryProviderInterface(Protocol):
         self,
         messages: list[dict[str, object]] | list[str],
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
@@ -40,6 +45,7 @@ class MemoryProviderInterface(Protocol):
         self,
         messages: list[dict[str, object]] | list[str],
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
@@ -51,6 +57,7 @@ class MemoryProviderInterface(Protocol):
         target: str,
         content: str,
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,
@@ -61,6 +68,7 @@ class MemoryProviderInterface(Protocol):
         task: str,
         result: str,
         *,
+        operation_id: str,
         session_id: str | None = None,
         task_id: str | None = None,
         user_id: str | None = None,

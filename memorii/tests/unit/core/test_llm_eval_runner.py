@@ -8,9 +8,42 @@ from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore
 from memorii.core.llm_eval.models import EvalCaseResult
 from memorii.core.llm_eval.report import summarize_eval_report
 from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
-from memorii.core.promotion.models import PromotionCandidateType
+from memorii.core.llm_provider.models import (
+    LLMDecisionResult,
+    LLMStructuredRequest,
+    LLMStructuredResponse,
+)
+from memorii.core.promotion.assessment import PromotionCandidateType
 from memorii.core.solver.abstention import SolverDecision
 from pydantic import ValidationError
+
+
+def _llm_result(*, success: bool, output: dict[str, object] | None = None) -> LLMDecisionResult:
+    request = LLMStructuredRequest(
+        request_id="request:test",
+        prompt_ref="promotion_decision:v1",
+        prompt_hash="prompt-hash",
+        system="system",
+        user="user",
+        output_schema={},
+        model_defaults={},
+    )
+    response = LLMStructuredResponse(
+        request_id=request.request_id,
+        provider="test",
+        raw_text="{}" if output is not None else "",
+        parsed_json=output,
+        valid_json=output is not None,
+        schema_valid=success,
+        error=None if success else "provider_error",
+    )
+    return LLMDecisionResult(
+        request=request,
+        response=response,
+        output=output if success else None,
+        success=success,
+        failure_mode=None if success else "provider_error",
+    )
 
 
 def _snapshot(
@@ -303,11 +336,9 @@ def test_trace_store_rule_mode_appends_one_trace() -> None:
 
 
 def test_trace_store_llm_failure_fallback_appends_rule_trace() -> None:
-    from types import SimpleNamespace
-
     class _FailAdapter:
         def decide(self, *, context, request_id, metadata=None):
-            return SimpleNamespace(success=False, output={})
+            return _llm_result(success=False)
 
     trace_store = InMemoryLLMDecisionTraceStore()
     snapshot = _snapshot(snapshot_id="snap:trace:fallback", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_input(), expected_output=None)
@@ -317,11 +348,12 @@ def test_trace_store_llm_failure_fallback_appends_rule_trace() -> None:
 
 
 def test_trace_store_hybrid_appends_rule_trace() -> None:
-    from types import SimpleNamespace
-
     class _OkAdapter:
         def decide(self, *, context, request_id, metadata=None):
-            return SimpleNamespace(success=True, output={"promote": True, "target_plane": "semantic", "confidence": 0.9, "rationale": "ok"})
+            return _llm_result(
+                success=True,
+                output={"promote": True, "target_plane": "semantic", "confidence": 0.9, "rationale": "ok"},
+            )
 
     trace_store = InMemoryLLMDecisionTraceStore()
     snapshot = _snapshot(snapshot_id="snap:trace:hybrid", decision_point=LLMDecisionPoint.PROMOTION, input_payload=_promotion_input(), expected_output=None)
@@ -329,18 +361,19 @@ def test_trace_store_hybrid_appends_rule_trace() -> None:
     assert len(trace_store.list_traces()) == 1
 
 
-def test_trace_store_llm_success_does_not_append_rule_trace_and_trace_id_is_none() -> None:
-    from types import SimpleNamespace
-
+def test_trace_policy_omits_unremarkable_successful_llm_calls() -> None:
     class _OkAdapter:
         def decide(self, *, context, request_id, metadata=None):
-            return SimpleNamespace(
+            return _llm_result(
                 success=True,
                 output={
                     "promote": True,
                     "target_plane": "semantic",
                     "confidence": 0.9,
+                    "reason_code": "decision_finalized",
                     "rationale": "ok",
+                    "failure_mode": None,
+                    "requires_judge_review": False,
                 },
             )
 
@@ -356,5 +389,6 @@ def test_trace_store_llm_success_does_not_append_rule_trace_and_trace_id_is_none
         promotion_llm_adapter=_OkAdapter(),
         trace_store=trace_store,
     ).run_snapshots([snapshot])
-    assert len(trace_store.list_traces()) == 0
+    assert trace_store.list_traces() == []
+    assert report.results[0].fallback_used is False
     assert report.results[0].trace_id is None

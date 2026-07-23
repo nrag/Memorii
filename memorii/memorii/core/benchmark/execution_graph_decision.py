@@ -77,6 +77,19 @@ class ExecutionGraphDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ExecutionGraphDecisionOutput(ExecutionGraphDecision):
+    """Strict provider response for execution-graph decisions."""
+
+    selected_node_ids: list[str]
+    active_frontier_node_ids: list[str]
+    blocked_node_ids: list[str]
+    abandoned_node_ids: list[str]
+    stale_node_ids: list[str]
+    resumed_node_id: str | None
+    failure_mode: str | None
+    requires_judge_review: bool
+
+
 def execution_graph_context_for_scenario(
     scenario: ExecutionGraphScenario,
 ) -> ExecutionGraphDecisionContext:

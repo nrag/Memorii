@@ -11,6 +11,10 @@ from typing import Protocol
 from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric, JudgeVerdict
 
 
+class JudgeExecutionError(RuntimeError):
+    """Expected operational failure while executing an offline judge."""
+
+
 class SingleDimensionJudge(Protocol):
     judge_id: str
     dimension: JudgeDimension

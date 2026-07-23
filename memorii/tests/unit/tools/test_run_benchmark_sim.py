@@ -83,6 +83,8 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
             "--mode",
             "llm",
             "--dry-run",
+            "--inference-replicate",
+            "3",
             "--storage-root",
             str(tmp_path),
         ]
@@ -93,14 +95,18 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
     fields = _summary_fields(output)
 
+    assert payload["inference_replicate"] == 3
+    assert payload["run_id"] == f"{payload['benchmark_key']}-rep3"
     assert int(fields["failed"]) == payload["failed"] == 0
     assert int(fields["llm_calls"]) == payload["checkpoint_count"]
     assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
     assert payload["llm_calls"] == payload["checkpoint_count"]
-    assert payload["provider_successes"] == payload["checkpoint_count"]
+    assert payload["provider_successes"] == 0
+    assert payload["fake_calls"] == payload["checkpoint_count"]
     assert payload["final_output_source_counts"] == {"fake_oracle": payload["checkpoint_count"]}
     assert "critical_failure_bucket_counts" in payload
     assert "warning_bucket_counts" in payload
+    assert payload["warning_policy"]["role_channel_context_overlap"]["level"] == "warning_only"
     assert "review_bucket_counts" in payload
     for metric_name in [
         "graph_answer_optional_missing_count",
@@ -133,10 +139,20 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     for field_name in [
         "selected_excluded_ids",
         "supporting_excluded_ids",
+        "allowed_definition_selected_ids",
+        "allowed_context_selected_ids",
+        "forbidden_selected_ids",
         "rejected_expected_ids",
         "missing_rejected_ids",
         "selected_noncurrent_claim_ids",
         "supporting_noisy_citation_event_ids",
+        "supporting_wrong_subject_claim_ids",
+        "supporting_wrong_subject_entity_ids",
+        "supporting_disambiguation_claim_ids",
+        "missing_wrong_entity_rejection_claim_ids",
+        "missing_wrong_entity_rejection_subject_ids",
+        "supporting_role_violations",
+        "supporting_rejection_provenance_overlap",
         "context_only_noise_event_ids",
         "required_definition_claim_ids",
         "missing_definition_claim_ids",
@@ -150,6 +166,49 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     trace_payload = first_trace["trace"]
     assert trace_payload["prompt_version"] == "memory_evolution_sim_reconstruction:v1"
     assert trace_payload["input_payload"]["provider"] == "fake"
+
+
+def test_memory_evolution_sim_dry_run_hybrid_does_not_require_live_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    _clear_llm_env(monkeypatch)
+
+    assert main(
+        [
+            "--suite",
+            "memory_evolution_sim_v1",
+            "--mode",
+            "hybrid",
+            "--dry-run",
+            "--fail-on-benchmark-failure",
+            "--storage-root",
+            str(tmp_path),
+            "--sim-profile",
+            "long_horizon",
+            "--sim-scenario-count",
+            "2",
+            "--sim-min-events",
+            "25",
+            "--sim-max-events",
+            "60",
+            "--sim-noise-rate",
+            "0.35",
+            "--seed",
+            "7",
+        ]
+    ) == 0
+
+    run_dir = _latest_run_dir(tmp_path, "memory_evolution_sim_v1", "hybrid")
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    fields = _summary_fields(capsys.readouterr().out)
+
+    assert report["failed"] == 0
+    assert report["llm_calls"] == report["checkpoint_count"]
+    assert report["fake_calls"] == report["checkpoint_count"]
+    assert report["final_output_source_counts"] == {"fake_oracle": report["checkpoint_count"]}
+    assert int(fields["llm_calls"]) == report["checkpoint_count"]
 
 
 def test_memory_evolution_sim_adversarial_artifacts_include_hidden_pressure_without_prompt_leak(
@@ -208,6 +267,9 @@ def test_memory_evolution_sim_adversarial_artifacts_include_hidden_pressure_with
     assert payload["metrics"]["hidden_pressure_checkpoint_count"] == payload["checkpoint_count"]
     assert payload["metrics"]["hidden_hallucination_rate"] == 0.0
     assert payload["metrics"]["hidden_answer_leak_rate"] == 0.0
+    assert payload["hidden_item_count"] == payload["metrics"]["hidden_item_count"]
+    assert payload["hidden_hallucination_rate"] == payload["metrics"]["hidden_hallucination_rate"]
+    assert payload["hidden_answer_leak_rate"] == payload["metrics"]["hidden_answer_leak_rate"]
     assert hidden_ids
     assert "hidden_distractor_ids" not in candidate_cards
     assert not any(hidden_id in candidate_cards for hidden_id in hidden_ids)
@@ -219,4 +281,3 @@ def test_memory_evolution_sim_adversarial_artifacts_include_hidden_pressure_with
 def test_memory_evolution_sim_benchmark_rejects_all_systems() -> None:
     with pytest.raises(SystemExit, match="memorii only"):
         main(["--suite", "memory_evolution_sim_v1", "--systems", "all"])
-

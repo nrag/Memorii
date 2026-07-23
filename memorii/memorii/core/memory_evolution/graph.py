@@ -2,10 +2,26 @@
 
 from __future__ import annotations
 
-from uuid import NAMESPACE_URL, uuid5
-
+from memorii.core.memory_evolution.execution import normalize_work_state_status
+from memorii.core.memory_evolution.graph_ids import (
+    action_node_id,
+    candidate_entity_node_id,
+    claim_node_id,
+    contradiction_node_id,
+    edge_id,
+    entity_node_id,
+    literal_node_id,
+    normalize_value,
+    scope_node_id,
+    source_node_id,
+    stable_graph_id,
+    task_node_id,
+)
 from memorii.core.memory_evolution.models import (
+    ClaimLifecycleState,
+    ClaimLifecycleTransition,
     ClaimState,
+    ClaimTransitionType,
     ContradictionSet,
     EntityLinkLifecycleState,
     EntityLinkState,
@@ -17,64 +33,11 @@ from memorii.core.memory_evolution.models import (
     MemoryGraphNode,
     MemoryGraphNodeType,
     MemoryGraphSnapshot,
+    MemoryScope,
+    RecordLifecycleState,
     SourceObservation,
 )
-from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
-from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
-
-
-def stable_graph_id(prefix: str, value: str) -> str:
-    return f"{prefix}:{uuid5(NAMESPACE_URL, value)}"
-
-
-def source_node_id(source_id: str) -> str:
-    return f"graph:node:source:{source_id}"
-
-
-def entity_node_id(link_id: str) -> str:
-    return f"graph:node:entity:{link_id}"
-
-
-def candidate_entity_node_id(entity_id: str) -> str:
-    return f"graph:node:entity:candidate:{entity_id}"
-
-
-def claim_node_id(claim_id: str) -> str:
-    return f"graph:node:claim:{claim_id}"
-
-
-def action_node_id(action_id: str) -> str:
-    return f"graph:node:action:{action_id}"
-
-
-def literal_node_id(value: str) -> str:
-    return stable_graph_id("graph:node:literal", normalize_value(value))
-
-
-def scope_node_id(scope_key: str) -> str:
-    return f"graph:node:scope:{normalize_value(scope_key)}"
-
-
-def task_node_id(task_id: str) -> str:
-    return f"graph:node:task:{task_id}"
-
-
-def contradiction_node_id(contradiction_set_id: str) -> str:
-    return f"graph:node:contradiction:{contradiction_set_id}"
-
-
-def edge_id(
-    edge_type: MemoryGraphEdgeType,
-    source_node_id: str,
-    target_node_id: str,
-    qualifier: str = "default",
-) -> str:
-    return stable_graph_id("graph:edge", f"{edge_type.value}|{source_node_id}|{target_node_id}|{qualifier}")
-
-
-def normalize_value(value: str) -> str:
-    return " ".join(value.strip().lower().split())
 
 
 class MemoryGraphProjector:
@@ -100,6 +63,8 @@ class MemoryGraphProjector:
             self._add_action(node_by_id, edge_by_id, action, source_by_id)
         for contradiction_set in result.contradiction_sets:
             self._add_contradiction_set(node_by_id, edge_by_id, contradiction_set)
+        for transition in result.transitions:
+            self._add_lifecycle_transition(node_by_id, edge_by_id, transition)
 
         nodes = sorted(node_by_id.values(), key=lambda item: item.node_id)
         edges = sorted(edge_by_id.values(), key=lambda item: item.edge_id)
@@ -114,7 +79,34 @@ class MemoryGraphProjector:
             source_run_id=result.extraction_run.extraction_run_id,
         )
 
+    def _add_lifecycle_transition(
+        self,
+        node_by_id: dict[str, MemoryGraphNode],
+        edge_by_id: dict[str, MemoryGraphEdge],
+        transition: ClaimLifecycleTransition,
+    ) -> None:
+        # Entity split lineage is projected from the persisted child
+        # EntityLinkState. Emitting a second transition edge would create two
+        # runtime relations for one semantic split and break one-to-one audit
+        # alignment after the transition event has passed.
+        if transition.transition_type == ClaimTransitionType.ENTITY_SPLIT:
+            return
+        if transition.transition_type == ClaimTransitionType.CLAIM_REKEY and transition.related_claim_ids:
+            source = claim_node_id(transition.claim_id)
+            target = claim_node_id(transition.related_claim_ids[0])
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.REKEYED_FROM,
+                source,
+                target,
+                lifecycle_state=RecordLifecycleState.ACTIVE,
+                confidence=0.8,
+                properties={"transition_id": transition.transition_id},
+            )
+
     def project_from_memory_plane(self, *, memory_plane: MemoryPlaneService) -> MemoryGraphSnapshot:
+        from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore
+
         return MemoryGraphStore(memory_plane=memory_plane).snapshot()
 
     def nodes_and_edges_for_source_observation(
@@ -172,7 +164,7 @@ class MemoryGraphProjector:
             node_type=MemoryGraphNodeType.SOURCE_OBSERVATION,
             label=observation.text[:80],
             canonical_id=observation.source_id,
-            lifecycle_state="active",
+            lifecycle_state=RecordLifecycleState.ACTIVE,
             confidence=1.0,
             source_record_ids=[observation.source_id],
             payload_ref=observation.source_id,
@@ -200,14 +192,14 @@ class MemoryGraphProjector:
         node = _node_from_entity_link(link)
         node_by_id[node.node_id] = node
         for alias in link.aliases:
-            alias_node = _literal_node(alias, lifecycle_state=link.lifecycle_state.value, confidence=link.confidence)
+            alias_node = _literal_node(alias, lifecycle_state=link.lifecycle_state, confidence=link.confidence)
             node_by_id.setdefault(alias_node.node_id, alias_node)
             self._add_edge(
                 edge_by_id,
                 MemoryGraphEdgeType.ALIAS_OF,
                 node.node_id,
                 alias_node.node_id,
-                lifecycle_state=link.lifecycle_state.value,
+                lifecycle_state=link.lifecycle_state,
                 confidence=link.confidence,
             )
         if link.lifecycle_state == EntityLinkLifecycleState.MERGED and link.superseded_by_entity_id:
@@ -218,7 +210,18 @@ class MemoryGraphProjector:
                 MemoryGraphEdgeType.MERGED_INTO,
                 node.node_id,
                 target_node.node_id,
-                lifecycle_state="active",
+                lifecycle_state=RecordLifecycleState.ACTIVE,
+                confidence=link.confidence,
+            )
+        if link.lineage_parent_entity_id:
+            parent_node = _candidate_entity_node(link.lineage_parent_entity_id)
+            node_by_id.setdefault(parent_node.node_id, parent_node)
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.SPLIT_FROM,
+                node.node_id,
+                parent_node.node_id,
+                lifecycle_state=link.lifecycle_state,
                 confidence=link.confidence,
             )
         return node
@@ -240,7 +243,7 @@ class MemoryGraphProjector:
             MemoryGraphEdgeType.HAS_SUBJECT,
             claim_node.node_id,
             subject_node.node_id,
-            lifecycle_state=state.lifecycle_state.value,
+            lifecycle_state=state.lifecycle_state,
             confidence=state.confidence.calibrated,
         )
 
@@ -252,29 +255,31 @@ class MemoryGraphProjector:
                 MemoryGraphEdgeType.HAS_OBJECT,
                 claim_node.node_id,
                 object_node.node_id,
-                lifecycle_state=state.lifecycle_state.value,
+                lifecycle_state=state.lifecycle_state,
                 confidence=state.confidence.calibrated,
             )
         else:
-            literal_node = _literal_node(state.object_value, lifecycle_state=state.lifecycle_state.value, confidence=state.confidence.calibrated)
+            literal_node = _literal_node(
+                state.object_value, lifecycle_state=state.lifecycle_state, confidence=state.confidence.calibrated
+            )
             node_by_id.setdefault(literal_node.node_id, literal_node)
             self._add_edge(
                 edge_by_id,
                 MemoryGraphEdgeType.HAS_LITERAL_OBJECT,
                 claim_node.node_id,
                 literal_node.node_id,
-                lifecycle_state=state.lifecycle_state.value,
+                lifecycle_state=state.lifecycle_state,
                 confidence=state.confidence.calibrated,
             )
 
-        scope_node = _scope_node(state.claim_key.scope_key)
+        scope_node = _scope_node(state.claim_key.scope)
         node_by_id.setdefault(scope_node.node_id, scope_node)
         self._add_edge(
             edge_by_id,
             MemoryGraphEdgeType.HAS_SCOPE,
             claim_node.node_id,
             scope_node.node_id,
-            lifecycle_state=state.lifecycle_state.value,
+            lifecycle_state=state.lifecycle_state,
             confidence=state.confidence.calibrated,
         )
 
@@ -287,7 +292,7 @@ class MemoryGraphProjector:
                 MemoryGraphEdgeType.OBSERVED_IN,
                 claim_node.node_id,
                 source_node.node_id,
-                lifecycle_state=state.lifecycle_state.value,
+                lifecycle_state=state.lifecycle_state,
                 confidence=state.confidence.evidence,
                 evidence_span_ids=[span_id],
                 source_record_ids=[span.source_id],
@@ -297,7 +302,7 @@ class MemoryGraphProjector:
                 MemoryGraphEdgeType.MENTIONS,
                 source_node.node_id,
                 subject_node.node_id,
-                lifecycle_state=state.lifecycle_state.value,
+                lifecycle_state=state.lifecycle_state,
                 confidence=state.confidence.evidence,
                 evidence_span_ids=[span_id],
                 source_record_ids=[span.source_id],
@@ -310,7 +315,7 @@ class MemoryGraphProjector:
                 MemoryGraphEdgeType.SUPERSEDES,
                 claim_node.node_id,
                 claim_node_id(old_claim_id),
-                lifecycle_state="active",
+                lifecycle_state=RecordLifecycleState.ACTIVE,
                 confidence=state.confidence.calibrated,
             )
         if state.superseded_by_claim_id:
@@ -320,7 +325,7 @@ class MemoryGraphProjector:
                 MemoryGraphEdgeType.SUPERSEDES,
                 claim_node_id(state.superseded_by_claim_id),
                 claim_node.node_id,
-                lifecycle_state="active",
+                lifecycle_state=RecordLifecycleState.ACTIVE,
                 confidence=state.confidence.calibrated,
             )
         for conflict_claim_id in state.conflict_with_claim_ids:
@@ -330,7 +335,7 @@ class MemoryGraphProjector:
                 MemoryGraphEdgeType.CONFLICTS_WITH,
                 claim_node.node_id,
                 claim_node_id(conflict_claim_id),
-                lifecycle_state="active",
+                lifecycle_state=RecordLifecycleState.ACTIVE,
                 confidence=state.confidence.calibrated,
             )
         return claim_node
@@ -342,12 +347,13 @@ class MemoryGraphProjector:
         action: ExtractedAction,
         source_by_id: dict[str, SourceObservation],
     ) -> MemoryGraphNode:
+        execution_status = normalize_work_state_status(action.status)
         node = MemoryGraphNode(
             node_id=action_node_id(action.action_id),
             node_type=MemoryGraphNodeType.ACTION,
             label=f"{action.action_type} {action.status}",
             canonical_id=action.action_id,
-            lifecycle_state="active",
+            lifecycle_state=RecordLifecycleState.ACTIVE,
             confidence=0.8,
             source_record_ids=[span.source_id for span in action.evidence_spans],
             payload_ref=f"mem:evolution:action:{action.action_id}",
@@ -355,9 +361,14 @@ class MemoryGraphProjector:
                 "action_id": action.action_id,
                 "action_type": action.action_type,
                 "status": action.status,
+                "execution_status": execution_status.value,
                 "timestamp": action.timestamp.isoformat(),
                 "actor_entity_id": action.actor_entity_id or "",
                 "target_entity_ids": "|".join(action.target_entity_ids),
+                "task_id": action.task_id or "",
+                "session_id": action.session_id or "",
+                "user_id": action.user_id or "",
+                "scope_key": action.scope_key,
             },
             created_at=action.timestamp,
             updated_at=action.timestamp,
@@ -366,15 +377,36 @@ class MemoryGraphProjector:
         for target_id in action.target_entity_ids:
             target_node = _candidate_entity_node(target_id)
             node_by_id.setdefault(target_node.node_id, target_node)
-            self._add_edge(edge_by_id, MemoryGraphEdgeType.HAS_OBJECT, node.node_id, target_node.node_id, lifecycle_state="active", confidence=0.8)
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.HAS_OBJECT,
+                node.node_id,
+                target_node.node_id,
+                lifecycle_state=RecordLifecycleState.ACTIVE,
+                confidence=0.8,
+            )
         for dep_id in action.dependency_ids:
             dep_node = _task_node(dep_id)
             node_by_id.setdefault(dep_node.node_id, dep_node)
-            self._add_edge(edge_by_id, MemoryGraphEdgeType.DEPENDS_ON, node.node_id, dep_node.node_id, lifecycle_state="active", confidence=0.8)
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.DEPENDS_ON,
+                node.node_id,
+                dep_node.node_id,
+                lifecycle_state=RecordLifecycleState.ACTIVE,
+                confidence=0.8,
+            )
         for blocking_id in action.blocking_ids:
             blocking_node = _task_node(blocking_id)
             node_by_id.setdefault(blocking_node.node_id, blocking_node)
-            self._add_edge(edge_by_id, MemoryGraphEdgeType.BLOCKS, node.node_id, blocking_node.node_id, lifecycle_state="active", confidence=0.8)
+            self._add_edge(
+                edge_by_id,
+                MemoryGraphEdgeType.BLOCKS,
+                node.node_id,
+                blocking_node.node_id,
+                lifecycle_state=RecordLifecycleState.ACTIVE,
+                confidence=0.8,
+            )
         for span in action.evidence_spans:
             source_node = _source_node_from_span(span, source_by_id)
             node_by_id.setdefault(source_node.node_id, source_node)
@@ -383,7 +415,7 @@ class MemoryGraphProjector:
                 MemoryGraphEdgeType.OBSERVED_IN,
                 node.node_id,
                 source_node.node_id,
-                lifecycle_state="active",
+                lifecycle_state=RecordLifecycleState.ACTIVE,
                 confidence=0.8,
                 evidence_span_ids=[_span_id(span)],
                 source_record_ids=[span.source_id],
@@ -401,7 +433,7 @@ class MemoryGraphProjector:
             node_type=MemoryGraphNodeType.CONTRADICTION_SET,
             label=f"Contradiction for {contradiction_set.claim_key.stable_id()}",
             canonical_id=contradiction_set.contradiction_set_id,
-            lifecycle_state="active",
+            lifecycle_state=RecordLifecycleState.ACTIVE,
             confidence=0.8,
             source_record_ids=[],
             payload_ref=f"mem:evolution:contradiction:{contradiction_set.contradiction_set_id}",
@@ -426,7 +458,7 @@ class MemoryGraphProjector:
                 MemoryGraphEdgeType.MEMBER_OF_CONTRADICTION_SET,
                 claim_node_id(member_id),
                 node.node_id,
-                lifecycle_state="active",
+                lifecycle_state=RecordLifecycleState.ACTIVE,
                 confidence=0.8,
             )
         if contradiction_set.active_claim_id:
@@ -436,7 +468,7 @@ class MemoryGraphProjector:
                     MemoryGraphEdgeType.CONTRADICTS,
                     claim_node_id(contradiction_set.active_claim_id),
                     claim_node_id(conflict_id),
-                    lifecycle_state="active",
+                    lifecycle_state=RecordLifecycleState.ACTIVE,
                     confidence=0.8,
                 )
         return node
@@ -449,7 +481,7 @@ class MemoryGraphProjector:
                 node_type=MemoryGraphNodeType.CLAIM,
                 label=claim_id,
                 canonical_id=claim_id,
-                lifecycle_state="candidate",
+                lifecycle_state=RecordLifecycleState.CANDIDATE,
                 confidence=0.4,
                 payload_ref=f"mem:evolution:claim:{claim_id}",
                 properties={"claim_id": claim_id},
@@ -463,7 +495,7 @@ class MemoryGraphProjector:
         source_id: str,
         target_id: str,
         *,
-        lifecycle_state: str,
+        lifecycle_state: RecordLifecycleState | ClaimLifecycleState | EntityLinkLifecycleState,
         confidence: float,
         evidence_span_ids: list[str] | None = None,
         source_record_ids: list[str] | None = None,
@@ -477,7 +509,7 @@ class MemoryGraphProjector:
             source_node_id=source_id,
             target_node_id=target_id,
             directed=directed,
-            lifecycle_state=lifecycle_state,
+            lifecycle_state=_graph_lifecycle_state(lifecycle_state),
             confidence=confidence,
             evidence_span_ids=evidence_span_ids or [],
             source_record_ids=source_record_ids or [],
@@ -485,116 +517,6 @@ class MemoryGraphProjector:
         )
         edge_by_id[edge.edge_id] = edge
         return edge
-
-
-class MemoryGraphStore:
-    def __init__(self, *, memory_plane: MemoryPlaneService) -> None:
-        self._memory_plane = memory_plane
-
-    def upsert_snapshot(self, snapshot: MemoryGraphSnapshot) -> list[str]:
-        written: list[str] = []
-        for node in snapshot.nodes:
-            record = _record_from_graph_node(node)
-            self._memory_plane.upsert_record(record)
-            written.append(record.memory_id)
-        for edge in snapshot.edges:
-            record = _record_from_graph_edge(edge)
-            self._memory_plane.upsert_record(record)
-            written.append(record.memory_id)
-        return written
-
-    def list_nodes(self, *, node_type: MemoryGraphNodeType | None = None) -> list[MemoryGraphNode]:
-        nodes: list[MemoryGraphNode] = []
-        for record in self._memory_plane.list_records(domains=[MemoryDomain.SEMANTIC, MemoryDomain.USER, MemoryDomain.EXECUTION]):
-            if record.content.get("memory_evolution_kind") != "graph_node":
-                continue
-            try:
-                node = MemoryGraphNode.model_validate(record.content["graph_node"])
-            except Exception:
-                continue
-            if node_type is not None and node.node_type != node_type:
-                continue
-            nodes.append(node)
-        return sorted(nodes, key=lambda item: item.node_id)
-
-    def list_edges(self, *, edge_type: MemoryGraphEdgeType | None = None) -> list[MemoryGraphEdge]:
-        edges: list[MemoryGraphEdge] = []
-        for record in self._memory_plane.list_records(domains=[MemoryDomain.SEMANTIC, MemoryDomain.USER, MemoryDomain.EXECUTION]):
-            if record.content.get("memory_evolution_kind") != "graph_edge":
-                continue
-            try:
-                edge = MemoryGraphEdge.model_validate(record.content["graph_edge"])
-            except Exception:
-                continue
-            if edge_type is not None and edge.edge_type != edge_type:
-                continue
-            edges.append(edge)
-        return sorted(edges, key=lambda item: item.edge_id)
-
-    def snapshot(self) -> MemoryGraphSnapshot:
-        nodes = self.list_nodes()
-        edges = self.list_edges()
-        return MemoryGraphSnapshot(
-            snapshot_id=stable_graph_id(
-                "graph:snapshot",
-                "|".join([*(node.node_id for node in nodes), *(edge.edge_id for edge in edges)]),
-            ),
-            nodes=nodes,
-            edges=edges,
-        )
-
-
-class MemoryGraphValidator:
-    def validate_snapshot(self, snapshot: MemoryGraphSnapshot) -> list[str]:
-        node_by_id = {node.node_id: node for node in snapshot.nodes}
-        errors: list[str] = []
-        for edge in snapshot.edges:
-            if edge.source_node_id not in node_by_id:
-                errors.append(f"missing_endpoint:{edge.edge_id}:{edge.source_node_id}")
-            if edge.target_node_id not in node_by_id:
-                errors.append(f"missing_endpoint:{edge.edge_id}:{edge.target_node_id}")
-            if edge.edge_type == MemoryGraphEdgeType.OBSERVED_IN:
-                target = node_by_id.get(edge.target_node_id)
-                if target is not None and target.node_type != MemoryGraphNodeType.SOURCE_OBSERVATION:
-                    errors.append(f"invalid_observed_in_target:{edge.edge_id}")
-            if edge.edge_type in {MemoryGraphEdgeType.SUPERSEDES, MemoryGraphEdgeType.CONFLICTS_WITH, MemoryGraphEdgeType.CONTRADICTS}:
-                source = node_by_id.get(edge.source_node_id)
-                target = node_by_id.get(edge.target_node_id)
-                if source is not None and source.node_type != MemoryGraphNodeType.CLAIM:
-                    errors.append(_invalid_edge_error(edge))
-                if target is not None and target.node_type != MemoryGraphNodeType.CLAIM:
-                    errors.append(_invalid_edge_error(edge))
-            if edge.edge_type in {MemoryGraphEdgeType.MERGED_INTO, MemoryGraphEdgeType.SPLIT_FROM}:
-                source = node_by_id.get(edge.source_node_id)
-                target = node_by_id.get(edge.target_node_id)
-                if source is not None and source.node_type != MemoryGraphNodeType.ENTITY:
-                    errors.append(_invalid_edge_error(edge))
-                if target is not None and target.node_type != MemoryGraphNodeType.ENTITY:
-                    errors.append(_invalid_edge_error(edge))
-            if edge.edge_type == MemoryGraphEdgeType.REKEYED_FROM:
-                source = node_by_id.get(edge.source_node_id)
-                target = node_by_id.get(edge.target_node_id)
-                if source is not None and source.node_type != MemoryGraphNodeType.CLAIM:
-                    errors.append(f"invalid_rekey_endpoint:{edge.edge_id}")
-                if target is not None and target.node_type != MemoryGraphNodeType.CLAIM:
-                    errors.append(f"invalid_rekey_endpoint:{edge.edge_id}")
-        edges_by_source: dict[str, list[MemoryGraphEdge]] = {}
-        for edge in snapshot.edges:
-            edges_by_source.setdefault(edge.source_node_id, []).append(edge)
-        for node in snapshot.nodes:
-            if node.node_type != MemoryGraphNodeType.CLAIM or node.lifecycle_state == "candidate":
-                continue
-            outgoing = edges_by_source.get(node.node_id, [])
-            edge_types = {edge.edge_type for edge in outgoing}
-            if MemoryGraphEdgeType.HAS_SUBJECT not in edge_types:
-                errors.append(f"claim_missing_subject:{node.node_id}")
-            if MemoryGraphEdgeType.HAS_SCOPE not in edge_types:
-                errors.append(f"claim_missing_scope:{node.node_id}")
-            if not ({MemoryGraphEdgeType.HAS_OBJECT, MemoryGraphEdgeType.HAS_LITERAL_OBJECT} & edge_types):
-                errors.append(f"claim_missing_object:{node.node_id}")
-            if MemoryGraphEdgeType.OBSERVED_IN not in edge_types:
-                errors.append(f"claim_missing_observed_in:{node.node_id}")
-        return sorted(set(errors))
 
 
 def subgraph_from_ids(
@@ -625,7 +547,7 @@ def _node_from_entity_link(link: EntityLinkState) -> MemoryGraphNode:
         node_type=MemoryGraphNodeType.ENTITY,
         label=link.canonical_entity_id,
         canonical_id=link.canonical_entity_id,
-        lifecycle_state=link.lifecycle_state.value,
+        lifecycle_state=RecordLifecycleState(link.lifecycle_state.value),
         confidence=link.confidence,
         source_record_ids=[span.source_id for span in link.evidence_spans],
         payload_ref=f"mem:evolution:entity-link:{link.link_id}",
@@ -647,7 +569,7 @@ def _node_from_claim_state(state: ClaimState) -> MemoryGraphNode:
         node_type=MemoryGraphNodeType.CLAIM,
         label=f"{state.claim_key.subject_entity_id} {state.claim_key.predicate_id} {state.object_value}",
         canonical_id=state.claim_id,
-        lifecycle_state=state.lifecycle_state.value,
+        lifecycle_state=RecordLifecycleState(state.lifecycle_state.value),
         confidence=state.confidence.calibrated,
         source_record_ids=[span.source_id for span in state.evidence_spans],
         payload_ref=f"mem:evolution:claim:{state.claim_id}",
@@ -655,8 +577,14 @@ def _node_from_claim_state(state: ClaimState) -> MemoryGraphNode:
             "claim_id": state.claim_id,
             "predicate_id": state.claim_key.predicate_id,
             "subject_entity_id": state.claim_key.subject_entity_id,
+            "object_entity_id": state.object_link_id or "",
+            "object_link_id": state.object_link_id or "",
             "object_value": state.object_value,
             "scope_key": state.claim_key.scope_key,
+            "scope_user_id": state.claim_key.scope.user_id or "",
+            "scope_session_id": state.claim_key.scope.session_id or "",
+            "scope_task_id": state.claim_key.scope.task_id or "",
+            "scope_id": state.claim_key.scope.stable_id(),
             "qualifier_key": state.claim_key.qualifier_key,
             "valid_from": state.valid_from.isoformat() if state.valid_from else "",
             "valid_to": state.valid_to.isoformat() if state.valid_to else "",
@@ -682,7 +610,7 @@ def _candidate_entity_node(entity_id: str) -> MemoryGraphNode:
         node_type=MemoryGraphNodeType.ENTITY,
         label=entity_id,
         canonical_id=entity_id,
-        lifecycle_state="candidate",
+        lifecycle_state=RecordLifecycleState.CANDIDATE,
         confidence=0.4,
         payload_ref=f"candidate:{entity_id}",
         properties={
@@ -695,30 +623,44 @@ def _candidate_entity_node(entity_id: str) -> MemoryGraphNode:
     )
 
 
-def _literal_node(value: str, *, lifecycle_state: str = "active", confidence: float = 0.8) -> MemoryGraphNode:
+def _literal_node(
+    value: str,
+    *,
+    lifecycle_state: RecordLifecycleState | ClaimLifecycleState | EntityLinkLifecycleState = (
+        RecordLifecycleState.ACTIVE
+    ),
+    confidence: float = 0.8,
+) -> MemoryGraphNode:
     return MemoryGraphNode(
         node_id=literal_node_id(value),
         node_type=MemoryGraphNodeType.LITERAL,
         label=value,
         canonical_id=normalize_value(value),
-        lifecycle_state=lifecycle_state,
+        lifecycle_state=_graph_lifecycle_state(lifecycle_state),
         confidence=confidence,
         payload_ref=f"literal:{normalize_value(value)}",
         properties={"value": value, "normalized_value": normalize_value(value)},
     )
 
 
-def _scope_node(scope_key: str) -> MemoryGraphNode:
+def _scope_node(scope: MemoryScope) -> MemoryGraphNode:
+    scope_key = scope.scope_key
     scope_type = "task" if scope_key.startswith("task:") else "global" if scope_key == "global" else "custom"
     return MemoryGraphNode(
-        node_id=scope_node_id(scope_key),
+        node_id=scope_node_id(scope),
         node_type=MemoryGraphNodeType.SCOPE,
         label=scope_key,
-        canonical_id=scope_key,
-        lifecycle_state="active",
+        canonical_id=scope.stable_id(),
+        lifecycle_state=RecordLifecycleState.ACTIVE,
         confidence=1.0,
         payload_ref=f"scope:{scope_key}",
-        properties={"scope_key": scope_key, "scope_type": scope_type},
+        properties={
+            "scope_key": scope_key,
+            "scope_type": scope_type,
+            "user_id": scope.user_id or "",
+            "session_id": scope.session_id or "",
+            "task_id": scope.task_id or "",
+        },
     )
 
 
@@ -728,7 +670,7 @@ def _task_node(task_id: str) -> MemoryGraphNode:
         node_type=MemoryGraphNodeType.TASK,
         label=task_id,
         canonical_id=task_id,
-        lifecycle_state="active",
+        lifecycle_state=RecordLifecycleState.ACTIVE,
         confidence=0.7,
         payload_ref=f"task:{task_id}",
         properties={"task_id": task_id},
@@ -747,7 +689,7 @@ def _source_node_from_span(
         node_type=MemoryGraphNodeType.SOURCE_OBSERVATION,
         label=span.quote[:80],
         canonical_id=span.source_id,
-        lifecycle_state="active",
+        lifecycle_state=RecordLifecycleState.ACTIVE,
         confidence=1.0,
         source_record_ids=[span.source_id],
         payload_ref=span.source_id,
@@ -769,64 +711,9 @@ def _span_id(span: EvidenceSpan) -> str:
     return stable_graph_id("graph:span", f"{span.source_id}|{span.quote}|{span.char_start}|{span.char_end}")
 
 
-def _record_from_graph_node(node: MemoryGraphNode) -> CanonicalMemoryRecord:
-    return CanonicalMemoryRecord(
-        memory_id=f"mem:evolution:graph-node:{node.node_id}",
-        domain=_domain_for_graph_node(node),
-        text=f"{node.node_type.value}: {node.label}",
-        content={"memory_evolution_kind": "graph_node", "graph_node": node.model_dump(mode="json")},
-        status=CommitStatus.COMMITTED,
-        validity_status=_validity_for_lifecycle(node.lifecycle_state),
-        source_kind="memory_evolution_graph",
-        timestamp=node.updated_at,
-        is_raw_event=False,
-        source_candidate_id=node.payload_ref,
-    )
-
-
-def _record_from_graph_edge(edge: MemoryGraphEdge) -> CanonicalMemoryRecord:
-    return CanonicalMemoryRecord(
-        memory_id=f"mem:evolution:graph-edge:{edge.edge_id}",
-        domain=MemoryDomain.SEMANTIC,
-        text=f"{edge.source_node_id} {edge.edge_type.value} {edge.target_node_id}",
-        content={"memory_evolution_kind": "graph_edge", "graph_edge": edge.model_dump(mode="json")},
-        status=CommitStatus.COMMITTED,
-        validity_status=_validity_for_lifecycle(edge.lifecycle_state),
-        source_kind="memory_evolution_graph",
-        timestamp=edge.updated_at,
-        is_raw_event=False,
-        source_candidate_id=edge.source_record_ids[0] if edge.source_record_ids else None,
-    )
-
-
-def _domain_for_graph_node(node: MemoryGraphNode) -> MemoryDomain:
-    if node.node_type in {MemoryGraphNodeType.ACTION, MemoryGraphNodeType.TASK}:
-        return MemoryDomain.EXECUTION
-    if node.node_type == MemoryGraphNodeType.CLAIM and node.properties.get("predicate_id") == "preference":
-        return MemoryDomain.USER
-    return MemoryDomain.SEMANTIC
-
-
-def _validity_for_lifecycle(lifecycle_state: str) -> TemporalValidityStatus:
-    return {
-        "active": TemporalValidityStatus.ACTIVE,
-        "candidate": TemporalValidityStatus.UNKNOWN,
-        "superseded": TemporalValidityStatus.INVALIDATED,
-        "invalidated": TemporalValidityStatus.INVALIDATED,
-        "archived": TemporalValidityStatus.INVALIDATED,
-        "expired": TemporalValidityStatus.EXPIRED,
-    }.get(lifecycle_state, TemporalValidityStatus.UNKNOWN)
-
-
-def _invalid_edge_error(edge: MemoryGraphEdge) -> str:
-    if edge.edge_type == MemoryGraphEdgeType.SUPERSEDES:
-        return f"invalid_supersedes_endpoint:{edge.edge_id}"
-    if edge.edge_type == MemoryGraphEdgeType.CONFLICTS_WITH:
-        return f"invalid_conflict_endpoint:{edge.edge_id}"
-    if edge.edge_type == MemoryGraphEdgeType.CONTRADICTS:
-        return f"invalid_contradicts_endpoint:{edge.edge_id}"
-    if edge.edge_type == MemoryGraphEdgeType.MERGED_INTO:
-        return f"invalid_merge_endpoint:{edge.edge_id}"
-    if edge.edge_type == MemoryGraphEdgeType.SPLIT_FROM:
-        return f"invalid_split_endpoint:{edge.edge_id}"
-    return f"invalid_rekey_endpoint:{edge.edge_id}"
+def _graph_lifecycle_state(
+    lifecycle_state: RecordLifecycleState | ClaimLifecycleState | EntityLinkLifecycleState,
+) -> RecordLifecycleState:
+    if isinstance(lifecycle_state, RecordLifecycleState):
+        return lifecycle_state
+    return RecordLifecycleState(lifecycle_state.value)

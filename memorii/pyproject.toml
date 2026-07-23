@@ -25,9 +25,11 @@ live = [
   "pytest>=8.0",
 ]
 dev = [
+  "numpy>=1.26,<3",
   "openai>=1.0",
   "pytest>=8.0",
   "ruff>=0.8,<1",
+  "scipy>=1.13,<2",
   "pyright>=1.1,<2",
 ]
 prod = [
@@ -40,7 +42,7 @@ prod = [
 include-package-data = true
 
 [tool.setuptools.package-data]
-memorii = ["core/benchmark/fixture_sets/*.json"]
+memorii = ["core/benchmark/fixture_sets/*.json", "prompts/**/*.yaml"]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -49,6 +51,9 @@ include = ["memorii*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+  "integration: tests that cross component boundaries and may require an explicitly enabled external provider",
+]
 
 [tool.ruff]
 target-version = "py311"
@@ -68,11 +73,20 @@ ignore = [
 pythonVersion = "3.11"
 typeCheckingMode = "basic"
 include = [
+  "memorii/core/belief",
+  "memorii/core/benchmark/artifact_rows",
+  "memorii/core/benchmark/artifact_validation.py",
+  "memorii/core/benchmark/reproducibility.py",
   "memorii/core/memory_evolution",
+  "memorii/core/memory_plane",
+  "memorii/core/provider",
+  "memorii/core/promotion",
   "memorii/core/benchmark/memory_evolution_sim",
   "memorii/core/benchmark/memory_evolution_runtime",
-  "memorii/core/calibration",
+  "memorii/core/benchmark/calibration",
   "memorii/core/prompts",
+  "memorii/core/llm_decision",
+  "memorii/integrations",
   "memorii/tools/benchmark_suites",
 ]
 exclude = [

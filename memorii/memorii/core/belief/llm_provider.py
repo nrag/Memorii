@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from memorii.core.belief.models import BeliefUpdateContext, BeliefUpdateDecision
 from memorii.core.belief.provider import BeliefUpdateProvider
 from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
 from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
-from memorii.core.llm_decision.provider import LLMDecisionProvider
+from memorii.core.llm_decision.provider import LLMDecisionProvider, LLMDecisionProviderError
 
 
 class LLMBeliefUpdateProvider:
@@ -20,14 +22,14 @@ class LLMBeliefUpdateProvider:
         self._fallback_provider = fallback_provider or RuleBasedBeliefUpdateProvider()
 
     def update(self, *, context: BeliefUpdateContext) -> tuple[BeliefUpdateDecision, LLMDecisionTrace]:
-        input_payload = context.model_dump(mode="json")
+        input_payload = context.prompt_payload()
 
         try:
             trace = self._llm_provider.decide(
                 decision_point=LLMDecisionPoint.BELIEF_UPDATE,
                 input_payload=input_payload,
             )
-        except Exception as exc:
+        except LLMDecisionProviderError as exc:
             fallback_decision, fallback_trace = self._fallback_provider.update(context=context)
             return fallback_decision.model_copy(update={"fallback_used": True}), fallback_trace.model_copy(
                 update={
@@ -54,7 +56,7 @@ class LLMBeliefUpdateProvider:
 
         try:
             parsed = BeliefUpdateDecision.model_validate(trace.final_output)
-        except Exception as exc:
+        except ValidationError as exc:
             return fallback_decision.model_copy(update={"fallback_used": True}), trace.model_copy(
                 update={
                     "fallback_used": True,
@@ -65,12 +67,6 @@ class LLMBeliefUpdateProvider:
                 }
             )
 
-        clamped = parsed.model_copy(
-            update={
-                "belief": max(0.0, min(1.0, parsed.belief)),
-                "confidence": max(0.0, min(1.0, parsed.confidence)),
-                "trace_id": trace.trace_id,
-            }
-        )
+        decision = parsed.model_copy(update={"trace_id": trace.trace_id})
 
-        return clamped, trace.model_copy(update={"parsed_output": clamped.model_dump(mode="json")})
+        return decision, trace.model_copy(update={"parsed_output": decision.model_dump(mode="json")})
