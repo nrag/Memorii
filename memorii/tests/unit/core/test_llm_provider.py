@@ -150,6 +150,23 @@ def test_domain_output_validation_rejects_semantically_invalid_schema_valid_json
     assert result.success is False
     assert result.failure_mode == "semantic_validation"
     assert result.output is None
+    assert result.rejected_output == payload
+    assert [
+        (
+            issue.stage.value,
+            issue.code,
+            issue.location,
+            issue.message,
+        )
+        for issue in result.validation_issues
+    ] == [
+        (
+            "semantic",
+            "value_error",
+            ("proof_steps", 0),
+            "Value error, citations must role-label every candidate_id",
+        )
+    ]
     assert result.response.schema_valid is True
     assert result.response.semantic_valid is False
     assert result.response.error == "Semantic output validation failed: PromptSemanticValidationError"

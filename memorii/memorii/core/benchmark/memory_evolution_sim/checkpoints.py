@@ -56,7 +56,9 @@ def checkpoint_for_family(
                     "Build the ownership graph for the Atlas project and the Atlas service.",
                 ]
             ),
-            task_contract=graph_contract(definition_claims_required_in_selected=True),
+            task_contract=graph_contract(
+                definition_claim_placement="selected_and_supporting_required"
+            ),
             expected_entity_ids=[project, service],
             expected_claim_ids=[claim_type_project, claim_type_service, claim_bob_owner, claim_carol_service],
             expected_relation_ids=[relation_contradicts],
@@ -162,7 +164,9 @@ def checkpoint_for_family(
                     "After confirming the alias, reconstruct the Atlas migration owner.",
                 ]
             ),
-            task_contract=graph_contract(definition_claims_required_in_selected=True),
+            task_contract=graph_contract(
+                definition_claim_placement="selected_and_supporting_required"
+            ),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_type_project, claim_bob_owner],
             expected_citation_event_ids=[event_1, event_5],
@@ -203,7 +207,7 @@ def checkpoint_for_family(
                     "Rank the competing Atlas migration owner claims and select the strongest.",
                 ]
             ),
-            task_contract=graph_contract(requires_belief_ranking_ids=True),
+            task_contract=graph_contract(belief_ranking_policy="required"),
             expected_entity_ids=[project],
             expected_claim_ids=[claim_bob_owner],
             expected_relation_ids=[relation_contradicts],

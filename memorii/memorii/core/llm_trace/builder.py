@@ -17,8 +17,26 @@ def _sanitize_id(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.:-]", "_", value)
 
 
+def _sanitize_structured_output(value: dict[str, object] | None) -> dict[str, object] | None:
+    if value is None:
+        return None
+    redacted = redact_sensitive_value(value)
+    if not isinstance(redacted, dict):
+        raise TypeError("redacted structured output must remain a mapping")
+    return redacted
+
+
 def build_llm_decision_trace_from_result(*, decision_point: LLMDecisionPoint, mode: LLMDecisionMode, result: LLMDecisionResult, final_output: dict[str, object] | None, fallback_used: bool, metadata: dict[str, object] | None = None, status: LLMDecisionStatus | None = None) -> LLMDecisionTrace:
-    resolved_status = status or (LLMDecisionStatus.SUCCEEDED if result.success else LLMDecisionStatus.PROVIDER_ERROR)
+    if status is not None:
+        resolved_status = status
+    elif fallback_used:
+        resolved_status = LLMDecisionStatus.FALLBACK_USED
+    elif result.success:
+        resolved_status = LLMDecisionStatus.SUCCEEDED
+    elif result.failure_mode == "provider_error":
+        resolved_status = LLMDecisionStatus.PROVIDER_ERROR
+    else:
+        resolved_status = LLMDecisionStatus.VALIDATION_FAILED
     response_meta = redact_sensitive_value({
         "provider": result.response.provider,
         "requested_model": result.response.requested_model,
@@ -32,6 +50,7 @@ def build_llm_decision_trace_from_result(*, decision_point: LLMDecisionPoint, mo
         "sdk_max_retries": result.response.sdk_max_retries,
         "valid_json": result.response.valid_json,
         "schema_valid": result.response.schema_valid,
+        "semantic_valid": result.response.semantic_valid,
         "refusal": result.response.refusal,
         "error": result.response.error,
         "usage": result.response.usage,
@@ -56,8 +75,9 @@ def build_llm_decision_trace_from_result(*, decision_point: LLMDecisionPoint, mo
         model_name=result.response.actual_model or result.response.requested_model,
         input_payload=input_payload,
         raw_output=None,
-        parsed_output=result.output or {},
-        validation_errors=[result.failure_mode] if result.failure_mode else [],
+        parsed_output=result.output,
+        rejected_output=_sanitize_structured_output(result.rejected_output),
+        validation_issues=result.validation_issues,
         fallback_used=fallback_used,
         final_output=final_output or result.output or {},
         status=resolved_status,

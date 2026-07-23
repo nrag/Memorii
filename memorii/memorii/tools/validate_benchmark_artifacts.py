@@ -6,9 +6,13 @@ import argparse
 import json
 from pathlib import Path
 
-from memorii.core.benchmark.artifact_validation import ArtifactValidationError, validate_memory_evolution_run
+from memorii.core.benchmark.artifact_validation import (
+    ArtifactValidationError,
+    validate_curated_memory_evolution_run,
+    validate_memory_evolution_run,
+)
 
-_SUITES = {"memory_evolution_sim_v1", "memory_evolution_runtime_v1"}
+_SUITES = {"memory_evolution_v1", "memory_evolution_sim_v1", "memory_evolution_runtime_v1"}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -28,7 +32,10 @@ def validate_reports(root: Path, *, suite: str | None = None) -> list[str]:
     errors: list[str] = []
     for run_dir, suite_name in reports:
         try:
-            validate_memory_evolution_run(run_dir, suite=suite_name)
+            if suite_name == "memory_evolution_v1":
+                validate_curated_memory_evolution_run(run_dir)
+            else:
+                validate_memory_evolution_run(run_dir, suite=suite_name)
         except (OSError, json.JSONDecodeError, ArtifactValidationError, ValueError) as exc:
             errors.append(f"{run_dir}: {exc}")
     if not reports:

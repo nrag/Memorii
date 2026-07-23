@@ -95,7 +95,7 @@ def _ordered_unique(values: Sequence[object]) -> list[str]:
 
 
 def _provider_attempt_status(result: LLMDecisionResult) -> ProviderAttemptStatus:
-    if result.success:
+    if result.success or result.failure_mode == "semantic_validation":
         return ProviderAttemptStatus.SUCCEEDED
     return {
         "provider_error": ProviderAttemptStatus.PROVIDER_ERROR,
@@ -193,14 +193,17 @@ def _run_memory_evolution_sim_transitions(
                     scenario=scenario,
                     rule_output=rule_output_json,
                 )
-                invalid_reference_failure = fallback_reason == "llm_output_referenced_invalid_ids"
-                if llm_success or invalid_reference_failure:
+                semantic_validation_failure = fallback_reason in {
+                    "llm_output_referenced_invalid_ids",
+                    "semantic_validation",
+                }
+                if llm_success or semantic_validation_failure:
                     if llm_binding is None:
                         raise RuntimeError("LLM result is missing execution provenance")
                     final_output_source = llm_binding.final_output_source
                 else:
                     final_output_source = "rule"
-                fallback_used = not llm_success and not invalid_reference_failure
+                fallback_used = not llm_success and not semantic_validation_failure
                 llm_rows.append(
                     SimLLMTraceRow(
                         scenario_id=scenario.scenario_id,
@@ -212,7 +215,11 @@ def _run_memory_evolution_sim_transitions(
                         trace=llm_trace,
                         provider_attempt_status=_provider_attempt_status(result),
                         semantic_validation_status=(
-                            "failed" if invalid_reference_failure else "passed" if result.success else "not_evaluated"
+                            "failed"
+                            if semantic_validation_failure
+                            else "passed"
+                            if result.success
+                            else "not_evaluated"
                         ),
                         fallback_outcome=(FallbackOutcome.SUCCEEDED if fallback_used else FallbackOutcome.NOT_USED),
                         primary_output_accepted=llm_success,
@@ -228,21 +235,30 @@ def _run_memory_evolution_sim_transitions(
                 checkpoint=checkpoint,
                 output=output,
             )
-            invalid_reference_failure = fallback_reason == "llm_output_referenced_invalid_ids"
+            semantic_validation_failure = fallback_reason in {
+                "llm_output_referenced_invalid_ids",
+                "semantic_validation",
+            }
             diagnostics = sim_checkpoint_diagnostics(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 output=output,
                 aggregate=aggregate,
             )
-            engine_failure_buckets = [_INVALID_REFERENCE_ID_BUCKET] if invalid_reference_failure else []
-            if effective_mode == "llm" and llm_call_made and not llm_success:
+            engine_failure_buckets = (
+                [_INVALID_REFERENCE_ID_BUCKET]
+                if fallback_reason == "llm_output_referenced_invalid_ids"
+                else ["visible_semantic_validation_failed"]
+                if fallback_reason == "semantic_validation"
+                else []
+            )
+            if effective_mode in {"llm", "hybrid"} and llm_call_made and not llm_success:
                 engine_failure_buckets.append(fallback_reason or "llm_provider_failure")
             success = (
                 aggregate.verdict.value == "pass"
                 and not aggregate.review_required
-                and (effective_mode != "llm" or llm_success or not llm_call_made)
-                and not invalid_reference_failure
+                and (not llm_call_made or llm_success)
+                and not semantic_validation_failure
             )
             warning_buckets = checkpoint_warning_buckets(
                 answer_match_type=diagnostics.answer_match_type,

@@ -405,11 +405,14 @@ class ReconstructionTaskContract(BaseModel):
     ] = "subject"
     allow_stale_selected_claims: bool = False
     excluded_ids_must_be_rejected_or_contextualized: bool = True
-    definition_claims_required_in_selected: bool = False
+    definition_claim_placement: Literal[
+        "selected_and_supporting_required",
+        "context_or_support",
+    ] = "context_or_support"
     supporting_citations_must_be_direct_current_evidence: bool = True
     conflict_relation_ids_belong_in: list[str] = Field(default_factory=lambda: ["context_relation_ids"])
     wrong_entity_claims_belong_in: list[str] = Field(default_factory=list)
-    requires_belief_ranking_ids: bool = False
+    belief_ranking_policy: Literal["required", "forbidden"] = "forbidden"
     requires_next_action: bool = False
 
     model_config = ConfigDict(extra="forbid")

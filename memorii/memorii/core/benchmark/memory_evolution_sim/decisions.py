@@ -21,6 +21,7 @@ from memorii.core.benchmark.memory_evolution_sim.utils import extract_rule_answe
 from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
 from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
+from memorii.core.llm_validation import domain_validation_issue
 
 
 def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSystemOutput:
@@ -120,13 +121,33 @@ def memory_evolution_sim_engine_result_from_llm(
     rule_output: dict[str, object],
 ) -> tuple[dict[str, object], LLMDecisionTrace, bool, str | None]:
     if not result.success:
+        if (
+            result.failure_mode == "semantic_validation"
+            and result.rejected_output is not None
+        ):
+            rejected = SimSystemOutput.model_validate(result.rejected_output)
+            rejected_output = rejected.model_dump(mode="json")
+            trace = build_llm_decision_trace_from_result(
+                decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
+                mode=mode,
+                result=result,
+                final_output=rejected_output,
+                fallback_used=False,
+                status=LLMDecisionStatus.VALIDATION_FAILED,
+            )
+            return rejected_output, trace, False, "semantic_validation"
+        failure_status = (
+            LLMDecisionStatus.PROVIDER_ERROR
+            if result.failure_mode == "provider_error"
+            else LLMDecisionStatus.VALIDATION_FAILED
+        )
         trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
             mode=mode,
             result=result,
             final_output=rule_output,
             fallback_used=True,
-            status=LLMDecisionStatus.PROVIDER_ERROR,
+            status=failure_status,
         )
         return rule_output, trace, False, result.failure_mode or "llm_decision_failed"
     try:
@@ -153,7 +174,13 @@ def memory_evolution_sim_engine_result_from_llm(
         status=status,
     )
     if id_errors:
-        trace.validation_errors.extend(id_errors)
+        trace.validation_issues.extend(
+            domain_validation_issue(
+                error,
+                code=error.partition(":")[0],
+            )
+            for error in id_errors
+        )
         return output, trace, False, "llm_output_referenced_invalid_ids"
     return output, trace, True, None
 

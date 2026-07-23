@@ -23,6 +23,7 @@ from memorii.core.benchmark.artifact_rows.common import (
     execution_source_from_counts,
 )
 from memorii.core.benchmark.calibration.models import CalibrationReport, DecisionCostReport
+from memorii.core.benchmark.memory_evolution_decision.contracts import MemoryEvolutionDecision
 from memorii.core.benchmark.memory_evolution_sim.schemas import SimSystemOutput
 from memorii.core.benchmark.reproducibility import SourceState, canonical_json_digest
 from memorii.core.llm_decision.models import LLMDecisionTrace
@@ -304,6 +305,45 @@ class SimScenarioResultRow(FlatArtifactModel):
         return self
 
 
+class CuratedMemoryEvolutionLLMTraceRow(FlatArtifactModel):
+    """Typed primary-attempt outcome for one curated memory-evolution checkpoint."""
+
+    scenario_id: str
+    checkpoint_id: str
+    transition_type: Literal["memory_evolution_decision"]
+    decision_mode: DecisionMode
+    effective_decision_mode: DecisionMode
+    final_output_source: FinalOutputSource
+    trace: LLMDecisionTrace
+    provider_attempt_status: ProviderAttemptStatus
+    semantic_validation_status: Literal["not_evaluated", "passed", "failed"]
+    fallback_outcome: FallbackOutcome
+    primary_output_accepted: bool
+    failure_mode: str | None = None
+    output: MemoryEvolutionDecision
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> CuratedMemoryEvolutionLLMTraceRow:
+        provider_succeeded = self.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
+        fallback_used = self.fallback_outcome != FallbackOutcome.NOT_USED
+        if provider_succeeded != (self.semantic_validation_status in {"passed", "failed"}):
+            raise ValueError("semantic validation must be evaluated exactly when provider transport succeeds")
+        if self.primary_output_accepted and (
+            not provider_succeeded
+            or self.semantic_validation_status != "passed"
+            or fallback_used
+            or self.failure_mode is not None
+        ):
+            raise ValueError("accepted outputs require clean provider and semantic success")
+        if not self.primary_output_accepted and not self.failure_mode:
+            raise ValueError("rejected outputs require a failure_mode")
+        if fallback_used and self.final_output_source != "rule":
+            raise ValueError("fallback traces must identify rule as the final output source")
+        if not fallback_used and not self.primary_output_accepted:
+            raise ValueError("rejected curated outputs require an explicit fallback outcome")
+        return self
+
+
 class SimLLMTraceRow(FlatArtifactModel):
     """Typed simulator decision trace retained until JSONL serialization."""
 
@@ -337,7 +377,7 @@ class SimLLMTraceRow(FlatArtifactModel):
         if not self.primary_output_accepted and not self.failure_mode:
             raise ValueError("rejected outputs require a failure_mode")
         if self.semantic_validation_status == "failed" and fallback_used:
-            raise ValueError("semantic ID failures must remain visible instead of falling back")
+            raise ValueError("semantic failures must remain visible instead of falling back")
         if fallback_used and self.final_output_source != "rule":
             raise ValueError("fallback traces must identify rule as the final output source")
         if self.fallback_outcome == FallbackOutcome.FAILED and self.final_output_source == "rule":

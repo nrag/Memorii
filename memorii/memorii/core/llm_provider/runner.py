@@ -125,6 +125,8 @@ class PromptLLMRunner:
             parsed_response.valid_json and parsed_response.schema_valid and parsed_response.parsed_json is not None
         )
         parsed_output = parsed_response.parsed_json
+        rejected_output: dict[str, object] | None = None
+        validation_issues = []
         failure_mode: str | None = None
         if success and output_model is not None:
             try:
@@ -147,6 +149,13 @@ class PromptLLMRunner:
                         semantic_model=semantic_model,
                     )
                 except PromptSemanticValidationError as exc:
+                    redacted_output = redact_sensitive_value(parsed_output)
+                    if not isinstance(redacted_output, dict):
+                        raise TypeError(
+                            "redacted structured output must remain a mapping"
+                        ) from exc
+                    rejected_output = redacted_output
+                    validation_issues = list(exc.issues)
                     parsed_response = parsed_response.model_copy(
                         update={
                             "semantic_valid": False,
@@ -164,6 +173,8 @@ class PromptLLMRunner:
             request=request,
             response=parsed_response,
             output=parsed_output if success else None,
+            rejected_output=rejected_output,
+            validation_issues=validation_issues,
             success=success,
             failure_mode=failure_mode,
         )

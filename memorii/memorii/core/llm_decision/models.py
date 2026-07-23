@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from memorii.core.llm_validation import LLMValidationIssue
 
 
 class LLMDecisionPoint(StrEnum):
@@ -48,13 +50,25 @@ class LLMDecisionTrace(BaseModel):
     input_payload: dict[str, object]
     raw_output: str | None = None
     parsed_output: dict[str, object] | None = None
-    validation_errors: list[str] = Field(default_factory=list)
+    rejected_output: dict[str, object] | None = None
+    validation_issues: list[LLMValidationIssue] = Field(default_factory=list)
     fallback_used: bool = False
     final_output: dict[str, object]
     status: LLMDecisionStatus
     created_at: datetime
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_rejected_output_evidence(self) -> LLMDecisionTrace:
+        if self.rejected_output is not None:
+            if self.parsed_output is not None:
+                raise ValueError("rejected output cannot also be accepted parsed output")
+            if not self.validation_issues:
+                raise ValueError("rejected output requires validation issues")
+            if self.status == LLMDecisionStatus.SUCCEEDED:
+                raise ValueError("successful trace cannot contain rejected output")
+        return self
 
 
 class EvalSnapshot(BaseModel):

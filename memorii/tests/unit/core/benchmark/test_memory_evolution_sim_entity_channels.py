@@ -190,9 +190,23 @@ def test_memory_evolution_sim_inverse_ownership_requires_owned_subject_entity() 
     )
 
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
+    diagnostics = sim_checkpoint_diagnostics(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        output=output,
+        aggregate=aggregate,
+    )
 
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "entity_role_mismatch" in aggregate.critical_failure_buckets
+    assert "supporting_role_violation" not in aggregate.critical_failure_buckets
+    assert "wrong_entity_support_used" not in aggregate.critical_failure_buckets
+    assert (
+        "disambiguation_evidence_used_as_support"
+        not in aggregate.critical_failure_buckets
+    )
+    assert diagnostics.supporting_wrong_subject_claim_ids == []
+    assert diagnostics.supporting_disambiguation_claim_ids == []
 
 
 def test_memory_evolution_sim_inverse_ownership_passes_with_owned_subject_entity() -> None:

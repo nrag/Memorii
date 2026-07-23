@@ -24,6 +24,10 @@ from memorii.core.benchmark.memory_evolution_sim.closed_world_schema import (
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
     SimProviderOutput,
+    SimSystemOutput,
+)
+from memorii.core.benchmark.memory_evolution_sim.visible_output_validation import (
+    validate_visible_sim_output,
 )
 from memorii.core.benchmark.retrieval_relevance_decision import (
     RetrievalRelevanceContext,
@@ -33,6 +37,7 @@ from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.runtime_manifest import PromptOwner
+from memorii.core.prompts.sensitivity import redact_sensitive_value
 
 
 class _BenchmarkPromptAdapter:
@@ -163,13 +168,43 @@ class LLMMemoryEvolutionSimReconstructionAdapter(_BenchmarkPromptAdapter):
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
         context = MemoryEvolutionSimReconstructionContext.model_validate(context)
-        return self._run(
+        result = self._run(
             context=context,
             query_variable="query",
             query=context.checkpoint.query_or_task,
             request_id=request_id,
             metadata=metadata,
             output_id_constraints=sim_output_id_constraints(context),
+        )
+        if not result.success:
+            return result
+        output = SimSystemOutput.model_validate(result.output)
+        issues = validate_visible_sim_output(context=context, output=output)
+        if not issues:
+            return result.model_copy(
+                update={
+                    "response": result.response.model_copy(
+                        update={"semantic_valid": True}
+                    )
+                }
+            )
+        rejected_output = redact_sensitive_value(output.model_dump(mode="json"))
+        if not isinstance(rejected_output, dict):
+            raise TypeError("redacted simulator output must remain a mapping")
+        return result.model_copy(
+            update={
+                "response": result.response.model_copy(
+                    update={
+                        "semantic_valid": False,
+                        "error": "Visible simulator semantic validation failed",
+                    }
+                ),
+                "output": None,
+                "rejected_output": rejected_output,
+                "validation_issues": list(issues),
+                "success": False,
+                "failure_mode": "semantic_validation",
+            }
         )
 
 

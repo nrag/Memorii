@@ -494,11 +494,6 @@ class MemoryEvolutionDecision(BaseModel):
         active = set(self.lifecycle_snapshot.checkpoint_active_record_ids)
         superseded = set(self.lifecycle_snapshot.checkpoint_superseded_record_ids)
         rejected = set(self.retrieval_context.rejected_memory_ids)
-        contextualized = (
-            rejected
-            | set(self.retrieval_context.query_context_memory_ids)
-            | set(self.retrieval_context.query_historical_memory_ids)
-        )
         direct = selected | supporting | citations
         contradictory_direct = direct & rejected
         if contradictory_direct:
@@ -528,9 +523,6 @@ class MemoryEvolutionDecision(BaseModel):
             suppressed_active = suppressed & active
             if suppressed_active:
                 raise ValueError(f"suppressed branches cannot be checkpoint-active: {sorted(suppressed_active)}")
-            missing_context = suppressed - contextualized
-            if missing_context:
-                raise ValueError(f"suppressed branches must be rejected or contextualized: {sorted(missing_context)}")
         return self
 
 

@@ -50,13 +50,18 @@ def memory_evolution_engine_result_from_llm(
     rule_output: dict[str, object],
 ) -> tuple[dict[str, object], LLMDecisionTrace, bool, str | None]:
     if not result.success:
+        failure_status = (
+            LLMDecisionStatus.PROVIDER_ERROR
+            if result.failure_mode == "provider_error"
+            else LLMDecisionStatus.VALIDATION_FAILED
+        )
         trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_DECISION,
             mode=mode,
             result=result,
             final_output=rule_output,
             fallback_used=True,
-            status=LLMDecisionStatus.PROVIDER_ERROR,
+            status=failure_status,
         )
         return rule_output, trace, False, result.failure_mode or "llm_decision_failed"
     try:

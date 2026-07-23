@@ -418,9 +418,11 @@ def test_memory_evolution_sim_prompt_distinguishes_subject_and_answer_object_ent
 
     assert "subject entity" in system
     assert "object entity" in system
-    assert "selected_entity_role_policy" not in system
-    assert "selected_entity_ids contains the subject entity" in system
-    assert "visible entity definition/type claim" in system
+    assert "selected_entity_role_policy" in system
+    assert "Query wording does not reverse graph endpoints" in system
+    assert "definition_claim_placement" in system
+    assert "belief_ranking_policy" in system
+    assert "active visible definition/type claims" in system
     assert "operation=next_action" in system
     assert "conflict/correction relations" in system
     assert "latest eligible active action-state branch" in system

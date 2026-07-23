@@ -652,7 +652,10 @@ def _definition_coverage_judge(
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
-    if not checkpoint.task_contract.definition_claims_required_in_selected:
+    if (
+        checkpoint.task_contract.definition_claim_placement
+        != "selected_and_supporting_required"
+    ):
         return JudgeVote(
             judge_id="definition_coverage_judge",
             checkpoint_id=checkpoint.checkpoint_id,

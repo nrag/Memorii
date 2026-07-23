@@ -13,7 +13,7 @@ import tempfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Literal, TypeAlias, TypeVar
+from typing import Literal, TypeAlias, TypeVar, cast
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
@@ -23,6 +23,7 @@ from memorii.core.benchmark.artifact_rows import (
     ArtifactManifest,
     ArtifactManifestEntry,
     BenchmarkReportSummary,
+    CuratedMemoryEvolutionLLMTraceRow,
     JudgeVoteRow,
     RuntimeCheckpointResultRow,
     RuntimeGraphAlignmentRow,
@@ -34,6 +35,7 @@ from memorii.core.benchmark.calibration.models import CalibrationEvent, Calibrat
 from memorii.core.benchmark.reproducibility import file_sha256
 
 T = TypeVar("T", bound=BaseModel)
+U = TypeVar("U")
 CheckpointArtifactRow: TypeAlias = SimCheckpointResultRow | RuntimeCheckpointResultRow
 ArtifactMediaType: TypeAlias = Literal[
     "application/json",
@@ -269,6 +271,264 @@ def _checkpoint_keys(rows: Sequence[BaseModel]) -> list[tuple[str, str]]:
         (str(values.get("scenario_id", "")), str(values.get("checkpoint_id", "")))
         for values in (row.model_dump(mode="python") for row in rows)
     ]
+
+
+def _required_value(row: Mapping[str, object], field: str, expected_type: type[U], *, location: str) -> U:
+    value = row.get(field)
+    if expected_type is int and type(value) is not int:
+        raise ArtifactValidationError(f"{location}.{field} must be int")
+    if not isinstance(value, expected_type):
+        raise ArtifactValidationError(f"{location}.{field} must be {expected_type.__name__}")
+    return cast(U, value)
+
+
+def _required_bool(row: Mapping[str, object], field: str, *, location: str) -> bool:
+    value = row.get(field)
+    if type(value) is not bool:
+        raise ArtifactValidationError(f"{location}.{field} must be bool")
+    return value
+
+
+def _required_count(report: Mapping[str, object], field: str) -> int:
+    value = report.get(field)
+    if type(value) is not int or value < 0:
+        raise ArtifactValidationError(f"report.json.{field} must be a non-negative integer")
+    return value
+
+
+def _required_count_map(report: Mapping[str, object], field: str) -> dict[str, int]:
+    value = report.get(field)
+    if not isinstance(value, dict) or any(
+        not isinstance(key, str) or type(count) is not int or count < 0
+        for key, count in value.items()
+    ):
+        raise ArtifactValidationError(f"report.json.{field} must be a string-to-count object")
+    return dict(value)
+
+
+def _assert_count(report: Mapping[str, object], field: str, actual: int) -> None:
+    expected = _required_count(report, field)
+    if expected != actual:
+        raise ArtifactValidationError(f"report.json.{field}={expected} does not match artifact rows ({actual})")
+
+
+def _assert_count_map(report: Mapping[str, object], field: str, actual: Counter[str]) -> None:
+    expected = _required_count_map(report, field)
+    normalized = dict(sorted(actual.items()))
+    if expected != normalized:
+        raise ArtifactValidationError(f"report.json.{field} does not match artifact rows")
+
+
+def _load_curated_report(run_dir: Path) -> dict[str, object]:
+    report_path = run_dir / "report.json"
+    duplicate_path = run_dir / "memory_evolution_report.json"
+    if not report_path.exists():
+        raise ArtifactValidationError(f"required artifact is missing: {report_path}")
+    if not duplicate_path.exists():
+        raise ArtifactValidationError(f"required artifact is missing: {duplicate_path}")
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        duplicate = json.loads(duplicate_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ArtifactValidationError(f"curated report is not valid JSON: {exc}") from exc
+    if not isinstance(report, dict) or not isinstance(duplicate, dict):
+        raise ArtifactValidationError("curated reports must contain JSON objects")
+    if report != duplicate:
+        raise ArtifactValidationError("memory_evolution_report.json disagrees with report.json")
+    if report.get("suite") != "memory_evolution_v1":
+        raise ArtifactValidationError("report.json does not describe memory_evolution_v1")
+    if report.get("artifact_version") != "memory_evolution_v1_artifacts:3":
+        raise ArtifactValidationError("unsupported curated memory-evolution artifact version")
+    return report
+
+
+def validate_curated_memory_evolution_run(run_dir: Path) -> dict[str, object]:
+    """Validate curated memory-evolution artifacts by recomputing report evidence."""
+
+    report = _load_curated_report(run_dir)
+    required_jsonl = (
+        "memory_evolution_traces.jsonl",
+        "memory_evolution_checkpoint_traces.jsonl",
+        "llm_traces.jsonl",
+        "failures.jsonl",
+    )
+    for name in required_jsonl:
+        if not (run_dir / name).exists():
+            raise ArtifactValidationError(f"required artifact is missing: {name}")
+    scenario_rows = _read_jsonl(run_dir / "memory_evolution_traces.jsonl")
+    checkpoint_rows = _read_jsonl(run_dir / "memory_evolution_checkpoint_traces.jsonl")
+    failure_rows = _read_jsonl(run_dir / "failures.jsonl")
+    trace_rows = _validate_jsonl(
+        run_dir / "llm_traces.jsonl",
+        CuratedMemoryEvolutionLLMTraceRow,
+        required=True,
+    )
+
+    report_scenarios = report.get("scenario_results")
+    report_checkpoints = report.get("checkpoint_results")
+    if report_scenarios != scenario_rows:
+        raise ArtifactValidationError("report scenario_results disagree with memory_evolution_traces.jsonl")
+    if report_checkpoints != checkpoint_rows:
+        raise ArtifactValidationError(
+            "report checkpoint_results disagree with memory_evolution_checkpoint_traces.jsonl"
+        )
+
+    scenario_ids: list[str] = []
+    scenario_by_id: dict[str, dict[str, object]] = {}
+    for index, row in enumerate(scenario_rows):
+        location = f"memory_evolution_traces.jsonl[{index}]"
+        scenario_id = _required_value(row, "scenario_id", str, location=location)
+        scenario_ids.append(scenario_id)
+        scenario_by_id[scenario_id] = row
+        _required_bool(row, "success", location=location)
+        _required_bool(row, "functional_success", location=location)
+    if len(scenario_ids) != len(set(scenario_ids)):
+        raise ArtifactValidationError("memory_evolution_traces.jsonl contains duplicate scenario IDs")
+
+    checkpoint_keys: list[tuple[str, str]] = []
+    checkpoint_by_key: dict[tuple[str, str], dict[str, object]] = {}
+    for index, row in enumerate(checkpoint_rows):
+        location = f"memory_evolution_checkpoint_traces.jsonl[{index}]"
+        scenario_id = _required_value(row, "scenario_id", str, location=location)
+        checkpoint_id = _required_value(row, "checkpoint_id", str, location=location)
+        if scenario_id not in scenario_by_id:
+            raise ArtifactValidationError(f"{location} references unknown scenario {scenario_id!r}")
+        key = (scenario_id, checkpoint_id)
+        checkpoint_keys.append(key)
+        checkpoint_by_key[key] = row
+        success = _required_bool(row, "success", location=location)
+        primary_success = _required_bool(row, "primary_model_success", location=location)
+        functional_success = _required_bool(row, "functional_success", location=location)
+        fallback_used = _required_bool(row, "fallback_used", location=location)
+        fallback_assisted = _required_bool(row, "fallback_assisted_success", location=location)
+        if success != primary_success:
+            raise ArtifactValidationError(f"{location}.success must equal primary_model_success")
+        primary_accepted = row.get("primary_output_accepted")
+        if primary_accepted is not None and type(primary_accepted) is not bool:
+            raise ArtifactValidationError(f"{location}.primary_output_accepted must be bool or null")
+        expected_assisted = bool(functional_success and fallback_used and primary_accepted is False)
+        if fallback_assisted != expected_assisted:
+            raise ArtifactValidationError(
+                f"{location}.fallback_assisted_success is inconsistent with checkpoint provenance"
+            )
+    if len(checkpoint_keys) != len(set(checkpoint_keys)):
+        raise ArtifactValidationError(
+            "memory_evolution_checkpoint_traces.jsonl contains duplicate scenario/checkpoint identities"
+        )
+
+    for scenario_id, scenario in scenario_by_id.items():
+        rows = [row for key, row in checkpoint_by_key.items() if key[0] == scenario_id]
+        location = f"scenario {scenario_id!r}"
+        checkpoint_count = _required_value(scenario, "checkpoint_count", int, location=location)
+        if checkpoint_count != len(rows):
+            raise ArtifactValidationError(f"{location} checkpoint_count does not match checkpoint rows")
+        successes = sum(_required_bool(row, "success", location=location) for row in rows)
+        functional_successes = sum(
+            _required_bool(row, "functional_success", location=location) for row in rows
+        )
+        if scenario.get("checkpoints_passed") != successes:
+            raise ArtifactValidationError(f"{location} checkpoints_passed does not match checkpoint rows")
+        if scenario.get("checkpoints_failed") != len(rows) - successes:
+            raise ArtifactValidationError(f"{location} checkpoints_failed does not match checkpoint rows")
+        if scenario.get("success") != (successes == len(rows)):
+            raise ArtifactValidationError(f"{location} success does not match checkpoint rows")
+        if scenario.get("functional_success") != (functional_successes == len(rows)):
+            raise ArtifactValidationError(f"{location} functional_success does not match checkpoint rows")
+
+    trace_by_key = {(row.scenario_id, row.checkpoint_id): row for row in trace_rows}
+    if len(trace_by_key) != len(trace_rows):
+        raise ArtifactValidationError("llm_traces.jsonl contains duplicate scenario/checkpoint identities")
+    llm_checkpoint_keys = {
+        key
+        for key, row in checkpoint_by_key.items()
+        if _required_bool(row, "llm_call_made", location=f"checkpoint {key!r}")
+    }
+    if set(trace_by_key) != llm_checkpoint_keys:
+        raise ArtifactValidationError("llm_traces.jsonl identities do not match checkpoints with LLM calls")
+    for key, trace_row in trace_by_key.items():
+        checkpoint = checkpoint_by_key[key]
+        location = f"checkpoint {key!r}"
+        if checkpoint.get("primary_output_accepted") != trace_row.primary_output_accepted:
+            raise ArtifactValidationError(f"{location} primary-output provenance disagrees with LLM trace")
+        if checkpoint.get("final_output_source") != trace_row.final_output_source:
+            raise ArtifactValidationError(f"{location} final-output source disagrees with LLM trace")
+        fallback_used = trace_row.fallback_outcome.value != "not_used"
+        if checkpoint.get("fallback_used") != fallback_used:
+            raise ArtifactValidationError(f"{location} fallback provenance disagrees with LLM trace")
+
+    failure_by_key = {
+        (
+            _required_value(row, "scenario_id", str, location=f"failures.jsonl[{index}]"),
+            _required_value(row, "checkpoint_id", str, location=f"failures.jsonl[{index}]"),
+        ): row
+        for index, row in enumerate(failure_rows)
+    }
+    expected_failure_keys = {
+        key
+        for key, row in checkpoint_by_key.items()
+        if not _required_bool(row, "success", location=f"checkpoint {key!r}")
+    }
+    if len(failure_by_key) != len(failure_rows) or set(failure_by_key) != expected_failure_keys:
+        raise ArtifactValidationError("failures.jsonl identities do not match unsuccessful checkpoints")
+    if any(failure_by_key[key] != checkpoint_by_key[key] for key in expected_failure_keys):
+        raise ArtifactValidationError("failures.jsonl rows disagree with checkpoint artifacts")
+
+    _assert_count(report, "scenarios", len(scenario_rows))
+    _assert_count(report, "checkpoints", len(checkpoint_rows))
+    _assert_count(report, "passed", sum(row["success"] is True for row in scenario_rows))
+    _assert_count(report, "failed", sum(row["success"] is False for row in scenario_rows))
+    _assert_count(report, "functional_passed", sum(row["functional_success"] is True for row in scenario_rows))
+    _assert_count(report, "functional_failed", sum(row["functional_success"] is False for row in scenario_rows))
+    _assert_count(
+        report,
+        "functional_checkpoints_passed",
+        sum(row["functional_success"] is True for row in checkpoint_rows),
+    )
+    _assert_count(
+        report,
+        "functional_checkpoints_failed",
+        sum(row["functional_success"] is False for row in checkpoint_rows),
+    )
+    _assert_count(report, "llm_calls", len(trace_rows))
+    _assert_count(report, "primary_outputs_accepted", sum(row.primary_output_accepted for row in trace_rows))
+    _assert_count(report, "primary_outputs_rejected", sum(not row.primary_output_accepted for row in trace_rows))
+    _assert_count(
+        report,
+        "fallback_assisted_passes",
+        sum(row["fallback_assisted_success"] is True for row in checkpoint_rows),
+    )
+    _assert_count_map(
+        report,
+        "provider_attempt_counts",
+        Counter(row.provider_attempt_status.value for row in trace_rows),
+    )
+    _assert_count_map(
+        report,
+        "semantic_validation_counts",
+        Counter(row.semantic_validation_status for row in trace_rows),
+    )
+    _assert_count_map(
+        report,
+        "fallback_outcome_counts",
+        Counter(row.fallback_outcome.value for row in trace_rows),
+    )
+    _assert_count_map(
+        report,
+        "final_output_source_counts",
+        Counter(row.final_output_source for row in trace_rows),
+    )
+    local_certification_passed = (
+        None
+        if not trace_rows
+        else bool(
+            all(row["success"] is True for row in checkpoint_rows)
+            and all(row.primary_output_accepted for row in trace_rows)
+            and not any(row["fallback_assisted_success"] is True for row in checkpoint_rows)
+        )
+    )
+    if report.get("local_certification_passed") is not local_certification_passed:
+        raise ArtifactValidationError("report.json.local_certification_passed does not match artifact rows")
+    return report
 
 
 def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkReportSummary:

@@ -24,16 +24,19 @@ def truth_contract(
 def graph_contract(
     *,
     selected_entity_role_policy: Literal["active_graph_subjects", "audit_graph_entities"] = "active_graph_subjects",
-    definition_claims_required_in_selected: bool = False,
-    requires_belief_ranking_ids: bool = False,
+    definition_claim_placement: Literal[
+        "selected_and_supporting_required",
+        "context_or_support",
+    ] = "context_or_support",
+    belief_ranking_policy: Literal["required", "forbidden"] = "forbidden",
 ) -> ReconstructionTaskContract:
     return ReconstructionTaskContract(
         allowed_operations=["graph_reconstruction"],
         answer_required=False,
         answer_projection_policy="graph_channels_only",
         selected_entity_role_policy=selected_entity_role_policy,
-        definition_claims_required_in_selected=definition_claims_required_in_selected,
-        requires_belief_ranking_ids=requires_belief_ranking_ids,
+        definition_claim_placement=definition_claim_placement,
+        belief_ranking_policy=belief_ranking_policy,
     )
 
 

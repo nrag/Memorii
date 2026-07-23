@@ -124,7 +124,7 @@ def test_out_of_range_llm_output_fails_validation_and_falls_back() -> None:
     assert decision.fallback_used is True
     assert decision.rationale == "rule_based_belief_update"
     assert trace.status == LLMDecisionStatus.VALIDATION_FAILED
-    assert trace.validation_errors
+    assert trace.validation_issues
 
 
 def test_hybrid_skips_llm_for_simple_low_risk_context() -> None:

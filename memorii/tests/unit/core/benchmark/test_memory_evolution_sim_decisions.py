@@ -91,7 +91,9 @@ def test_llm_engine_rejects_unknown_uncertain_id_without_repair() -> None:
     assert success is False
     assert failure == "llm_output_referenced_invalid_ids"
     assert output["uncertain_ids"] == ["fabricated-composite-id"]
-    assert trace.validation_errors == ["invalid_uncertain_ids:fabricated-composite-id"]
+    assert [(issue.code, issue.message) for issue in trace.validation_issues] == [
+        ("invalid_uncertain_ids", "invalid_uncertain_ids:fabricated-composite-id")
+    ]
 
 
 def test_llm_engine_preserves_explicit_role_channels_without_evaluator_repair() -> None:
@@ -146,4 +148,9 @@ def test_llm_engine_reports_invalid_role_channel_ids_without_fallback_rewrite() 
     assert success is False
     assert failure == "llm_output_referenced_invalid_ids"
     assert output == live_output.model_dump(mode="json")
-    assert trace.validation_errors == ["invalid_rejection_citation_event_ids:event:not-visible"]
+    assert [(issue.code, issue.message) for issue in trace.validation_issues] == [
+        (
+            "invalid_rejection_citation_event_ids",
+            "invalid_rejection_citation_event_ids:event:not-visible",
+        )
+    ]

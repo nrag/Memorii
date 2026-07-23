@@ -208,3 +208,98 @@ def test_validate_reports_enforces_exact_byte_manifest_coverage(tmp_path: Path) 
     errors = validate_reports(injected_root)
     assert errors
     assert "manifest does not exactly cover the run directory" in errors[0]
+
+
+def test_validate_reports_accepts_curated_memory_evolution_dry_run(tmp_path: Path) -> None:
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_v1",
+                "--mode",
+                "hybrid",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
+
+    assert validate_reports(
+        tmp_path / "benchmark_runs",
+        suite="memory_evolution_v1",
+    ) == []
+
+
+def test_validate_reports_rejects_curated_primary_acceptance_tampering(tmp_path: Path) -> None:
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_v1",
+                "--mode",
+                "hybrid",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
+    root = tmp_path / "benchmark_runs"
+    report_path = next(root.glob("memory_evolution_v1/hybrid/bench-*/report.json"))
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["primary_outputs_accepted"] -= 1
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    (report_path.parent / "memory_evolution_report.json").write_text(
+        json.dumps(report),
+        encoding="utf-8",
+    )
+
+    errors = validate_reports(root, suite="memory_evolution_v1")
+
+    assert errors
+    assert "primary_outputs_accepted" in errors[0]
+
+
+def test_validate_reports_rejects_curated_checkpoint_trace_disagreement(tmp_path: Path) -> None:
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_v1",
+                "--mode",
+                "hybrid",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
+    root = tmp_path / "benchmark_runs"
+    run_dir = next(root.glob("memory_evolution_v1/hybrid/bench-*"))
+    checkpoint_path = run_dir / "memory_evolution_checkpoint_traces.jsonl"
+    checkpoint_rows = [
+        json.loads(line)
+        for line in checkpoint_path.read_text(encoding="utf-8").splitlines()
+    ]
+    checkpoint_rows[0]["primary_output_accepted"] = False
+    checkpoint_path.write_text(
+        "".join(f"{json.dumps(row)}\n" for row in checkpoint_rows),
+        encoding="utf-8",
+    )
+    report_path = run_dir / "report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["checkpoint_results"] = checkpoint_rows
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    (run_dir / "memory_evolution_report.json").write_text(
+        json.dumps(report),
+        encoding="utf-8",
+    )
+
+    errors = validate_reports(root, suite="memory_evolution_v1")
+
+    assert errors
+    assert "primary-output provenance disagrees" in errors[0]

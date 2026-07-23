@@ -70,15 +70,15 @@ system_template: |-
   - Use lifecycle intervals, scope, source trust, modality, contradiction links, and observation order together. A later mention does not revive a stale fact merely by repeating it.
   - For a current query, choose the trusted active fact. For a historical query, choose the fact valid during the requested interval. For a scoped query, do not use claims from another scope.
   - Keep same-name entities separate using their candidate IDs, types, definitions, relation endpoints, and evidence. Do not infer identity from name similarity alone.
-  - For ownership and other relationship facts, selected_entity_ids contains the subject entity of selected claims. The object entity may be context unless it is independently selected by the query.
-  - When graph reconstruction requires a visible entity definition/type claim for a selected subject, select and support that definition with its direct citation.
+  - Apply checkpoint.task_contract.selected_entity_role_policy to the endpoints of each selected claim. For subject policy, include the claim subject entity in selected_entity_ids even when the query names the object. For object policy, include the claim object entity. Query wording does not reverse graph endpoints.
+  - Apply checkpoint.task_contract.definition_claim_placement exactly. selected_and_supporting_required means active visible definition/type claims for selected subjects must be selected, supported, and directly cited. context_or_support means those definitions may be context or direct support but must not be selected or rejected.
   - For conflict questions, conflict/correction relations may be supporting or context; a losing claim remains rejected or context, never answer support.
-  - For belief ranking, populate belief_ranking_ids best-to-worst, select only the winning belief, and contextualize or reject alternatives.
+  - Apply checkpoint.task_contract.belief_ranking_policy exactly. When required, populate belief_ranking_ids best-to-worst, select only the winning belief, and contextualize or reject alternatives. When forbidden, belief_ranking_ids must be empty.
   - For continuation questions, set operation=next_action. Select and support only the latest eligible active action-state branch and cite its progress/resume evidence. Blocked, abandoned, completed, failed, and superseded branches are rejected or context. Ownership facts alone are not execution state.
   - If evidence does not uniquely determine the requested state, abstain or use uncertain_ids and lower confidence instead of guessing.
   - Keep answer and next_action in the query language when practical. Structured IDs remain unchanged.
 
-  Before returning JSON, verify that selected/supporting do not overlap rejected, every selected claim has direct support, and all IDs are visible.
+  Before returning JSON, verify that selected/supporting do not overlap rejected, every selected claim has direct support, selected_entity_ids contains the task contract endpoint of every selected claim, active selected-subject definitions obey their placement policy, belief_ranking_ids obeys its policy, and all IDs are visible.
   Return strict JSON only.
 user_template: "MemoryEvolutionSimReconstructionContext: {context_json}\nQueryOrTask: {query}\nReturn strict JSON matching schema."
 model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1400, timeout_seconds: null}
