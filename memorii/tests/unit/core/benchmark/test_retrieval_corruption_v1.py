@@ -1,5 +1,6 @@
-from memorii.core.benchmark.harness import BenchmarkHarness
+from memorii.core.benchmark.fixture_sets.retrieval_corruption_v1 import load_retrieval_corruption_v1_fixture_set
 from memorii.core.benchmark.fixtures import normalize_fixtures
+from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.metrics import aggregate_metrics, compute_metrics
 from memorii.core.benchmark.models import BenchmarkSystem
 from memorii.core.benchmark.retrieval_relevance_decision import (
@@ -8,7 +9,6 @@ from memorii.core.benchmark.retrieval_relevance_decision import (
     rule_retrieval_relevance_decision_for_fixture,
 )
 from memorii.core.benchmark.scenarios import ScenarioExecutor
-from memorii.core.benchmark.fixture_sets.retrieval_corruption_v1 import load_retrieval_corruption_v1_fixture_set
 
 
 def test_retrieval_corruption_v1_has_focused_hard_distractor_cases() -> None:

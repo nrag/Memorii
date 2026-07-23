@@ -1,9 +1,9 @@
 """Canonical enums for Memorii v1 foundation."""
 
-from enum import Enum
+from enum import StrEnum
 
 
-class MemoryDomain(str, Enum):
+class MemoryDomain(StrEnum):
     TRANSCRIPT = "transcript"
     SEMANTIC = "semantic"
     EPISODIC = "episodic"
@@ -12,7 +12,7 @@ class MemoryDomain(str, Enum):
     SOLVER = "solver"
 
 
-class MemoryScope(str, Enum):
+class MemoryScope(StrEnum):
     GLOBAL = "global"
     USER = "user"
     TASK = "task"
@@ -20,20 +20,25 @@ class MemoryScope(str, Enum):
     STEP = "step"
 
 
-class Durability(str, Enum):
+class Durability(StrEnum):
     EPHEMERAL = "ephemeral"
     SESSION = "session"
     TASK_PERSISTENT = "task_persistent"
     LONG_TERM = "long_term"
 
 
-class CommitStatus(str, Enum):
+class CommitStatus(StrEnum):
     CANDIDATE = "candidate"
     COMMITTED = "committed"
     ARCHIVED = "archived"
 
 
-class SourceType(str, Enum):
+class MemoryRecordVisibility(StrEnum):
+    RUNTIME_CONTEXT = "runtime_context"
+    INTERNAL_CONTROL = "internal_control"
+
+
+class SourceType(StrEnum):
     USER = "user"
     AGENT = "agent"
     TOOL = "tool"
@@ -42,7 +47,42 @@ class SourceType(str, Enum):
     DERIVED = "derived"
 
 
-class ExecutionNodeType(str, Enum):
+class ExtractionRunStatus(StrEnum):
+    SUCCEEDED = "succeeded"
+    PARTIAL = "partial"
+    ABSTAINED = "abstained"
+    FAILED = "failed"
+
+
+class ProviderAttemptStatus(StrEnum):
+    NOT_ATTEMPTED = "not_attempted"
+    SUCCEEDED = "succeeded"
+    PROVIDER_ERROR = "provider_error"
+    INVALID_JSON = "invalid_json"
+    SCHEMA_ERROR = "schema_error"
+
+
+class FallbackOutcome(StrEnum):
+    NOT_USED = "not_used"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class FinalExtractionSource(StrEnum):
+    PRIMARY = "primary"
+    FALLBACK = "fallback"
+    NONE = "none"
+
+
+class ExtractionFailureCode(StrEnum):
+    PROVIDER_ERROR = "provider_error"
+    INVALID_JSON = "invalid_json"
+    SCHEMA_VALIDATION = "schema_validation"
+    OUTPUT_VALIDATION = "output_validation"
+    UNSUPPORTED_LANGUAGE = "unsupported_language"
+
+
+class ExecutionNodeType(StrEnum):
     MISSION = "MISSION"
     WORK_ITEM = "WORK_ITEM"
     COMPONENT = "COMPONENT"
@@ -59,7 +99,7 @@ class ExecutionNodeType(str, Enum):
     CONSTRAINT = "CONSTRAINT"
 
 
-class ExecutionEdgeType(str, Enum):
+class ExecutionEdgeType(StrEnum):
     DECOMPOSES_INTO = "DECOMPOSES_INTO"
     DEPENDS_ON = "DEPENDS_ON"
     BLOCKS = "BLOCKS"
@@ -75,7 +115,7 @@ class ExecutionEdgeType(str, Enum):
     AFFECTS = "AFFECTS"
 
 
-class ExecutionNodeStatus(str, Enum):
+class ExecutionNodeStatus(StrEnum):
     NOT_STARTED = "NOT_STARTED"
     READY = "READY"
     RUNNING = "RUNNING"
@@ -86,7 +126,7 @@ class ExecutionNodeStatus(str, Enum):
     ARCHIVED = "ARCHIVED"
 
 
-class SolverNodeType(str, Enum):
+class SolverNodeType(StrEnum):
     GOAL = "GOAL"
     HYPOTHESIS = "HYPOTHESIS"
     COMPOSITE_HYPOTHESIS = "COMPOSITE_HYPOTHESIS"
@@ -105,7 +145,7 @@ class SolverNodeType(str, Enum):
     SYNTHESIS = "SYNTHESIS"
 
 
-class SolverEdgeType(str, Enum):
+class SolverEdgeType(StrEnum):
     HAS_GOAL = "HAS_GOAL"
     SUPPORTS = "SUPPORTS"
     CONTRADICTS = "CONTRADICTS"
@@ -124,7 +164,7 @@ class SolverEdgeType(str, Enum):
     EQUIVALENT_TO = "EQUIVALENT_TO"
 
 
-class SolverNodeStatus(str, Enum):
+class SolverNodeStatus(StrEnum):
     ACTIVE = "ACTIVE"
     PROMISING = "PROMISING"
     WEAKENED = "WEAKENED"
@@ -140,28 +180,28 @@ class SolverNodeStatus(str, Enum):
     MULTIPLE_PLAUSIBLE_OPTIONS = "MULTIPLE_PLAUSIBLE_OPTIONS"
 
 
-class SolverCreatedBy(str, Enum):
+class SolverCreatedBy(StrEnum):
     MODEL = "model"
     TOOL = "tool"
     USER = "user"
     SYSTEM = "system"
 
 
-class ConfidenceClass(str, Enum):
+class ConfidenceClass(StrEnum):
     OBSERVED = "observed"
     INFERRED = "inferred"
     SPECULATIVE = "speculative"
     RETRACTED = "retracted"
 
 
-class TemporalValidityStatus(str, Enum):
+class TemporalValidityStatus(StrEnum):
     ACTIVE = "active"
     EXPIRED = "expired"
     INVALIDATED = "invalidated"
     UNKNOWN = "unknown"
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     TASK_STARTED = "TASK_STARTED"
     TASK_RESUMED = "TASK_RESUMED"
     TASK_PAUSED = "TASK_PAUSED"

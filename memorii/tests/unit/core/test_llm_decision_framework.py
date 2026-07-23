@@ -1,8 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.llm_decision.evals import (
     InMemoryEvalSnapshotStore,
     JsonlEvalSnapshotStore,
@@ -20,6 +18,7 @@ from memorii.core.llm_decision.models import (
 )
 from memorii.core.llm_decision.provider import DisabledLLMDecisionProvider
 from memorii.core.llm_decision.trace import InMemoryLLMDecisionTraceStore, JsonlLLMDecisionTraceStore
+from pydantic import ValidationError
 
 
 def _trace(

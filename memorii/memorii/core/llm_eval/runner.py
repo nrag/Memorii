@@ -22,20 +22,18 @@ from memorii.core.llm_eval.engine_result import DecisionEngineResult
 from memorii.core.llm_eval.models import EvalCaseResult, EvalRunReport
 from memorii.core.llm_provider.models import (
     LLMDecisionResult,
-    LLMStructuredRequest,
-    LLMStructuredResponse,
 )
 from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
 from memorii.core.llm_trace.policy import LLMTracePolicy
-from memorii.core.promotion.models import PromotionContext, PromotionDecision
-from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from memorii.core.promotion.assessment import PromotionAssessment, PromotionAssessmentContext
+from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
 
 
 class PromotionLLMAdapter(Protocol):
     def decide(
         self,
         *,
-        context: PromotionContext,
+        context: PromotionAssessmentContext,
         request_id: str,
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult: ...
@@ -50,42 +48,6 @@ class BeliefLLMAdapter(Protocol):
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult: ...
 
-
-
-
-def _ensure_llm_result(result: object, *, request_id: str, decision_point: LLMDecisionPoint) -> LLMDecisionResult:
-    if isinstance(result, LLMDecisionResult):
-        return result
-    success = bool(getattr(result, "success", False))
-    output = getattr(result, "output", None)
-    request = LLMStructuredRequest(
-        request_id=request_id,
-        prompt_ref=f"{decision_point.value}:v1",
-        prompt_hash="unknown",
-        system="",
-        user="",
-        output_schema={},
-        model_defaults={},
-        metadata={},
-    )
-    response = LLMStructuredResponse(
-        request_id=request_id,
-        provider="adapter_stub",
-        raw_text="",
-        parsed_json=output if isinstance(output, dict) else None,
-        valid_json=isinstance(output, dict),
-        schema_valid=success and isinstance(output, dict),
-        error=None if success else "adapter_error",
-    )
-    return LLMDecisionResult(
-        request=request,
-        response=response,
-        output=output if isinstance(output, dict) else None,
-        success=success,
-        failure_mode=None if success else "adapter_error",
-    )
-
-
 def _normalize_llm_output(
     result: LLMDecisionResult,
     *,
@@ -96,7 +58,7 @@ def _normalize_llm_output(
         return result, {}
 
     output = dict(result.output)
-    if model is PromotionDecision and "reason_code" in output:
+    if model is PromotionAssessment and "reason_code" in output:
         tags = list(output.get("tags") or [])
         reason_code = output["reason_code"]
         if isinstance(reason_code, str) and reason_code not in tags:
@@ -113,11 +75,11 @@ def _normalize_llm_output(
     normalized = result.model_copy(update={"output": runtime_output})
     return normalized, {"llm_extra_output": extra_output} if extra_output else {}
 
-class PromotionDecisionEngine:
+class PromotionAssessmentEngine:
     def __init__(
         self,
         *,
-        rule_engine: RuleBasedPromotionDecisionProvider,
+        rule_engine: RuleBasedPromotionAssessmentProvider,
         llm_adapter: PromotionLLMAdapter | None,
         mode: LLMDecisionMode,
     ) -> None:
@@ -125,7 +87,7 @@ class PromotionDecisionEngine:
         self._llm_adapter = llm_adapter
         self._mode = mode
 
-    def decide(self, context: PromotionContext, request_id: str) -> DecisionEngineResult:
+    def decide(self, context: PromotionAssessmentContext, request_id: str) -> DecisionEngineResult:
         rule_decision, rule_trace = self._rule_engine.decide(context=context)
         rule_output = rule_decision.model_dump(mode="json")
 
@@ -141,14 +103,10 @@ class PromotionDecisionEngine:
                 errors=["llm_adapter_missing"],
             )
 
-        llm_result = _ensure_llm_result(
-            self._llm_adapter.decide(context=context, request_id=request_id),
-            request_id=request_id,
-            decision_point=LLMDecisionPoint.PROMOTION,
-        )
+        llm_result = self._llm_adapter.decide(context=context, request_id=request_id)
         normalized_llm_result, llm_metadata = _normalize_llm_output(
             llm_result,
-            model=PromotionDecision,
+            model=PromotionAssessment,
         )
 
         if not llm_result.success:
@@ -171,7 +129,7 @@ class PromotionDecisionEngine:
             )
 
         try:
-            llm_decision = PromotionDecision.model_validate(normalized_llm_result.output)
+            llm_decision = PromotionAssessment.model_validate(normalized_llm_result.output)
         except ValidationError:
             llm_trace = build_llm_decision_trace_from_result(
                 decision_point=LLMDecisionPoint.PROMOTION,
@@ -252,11 +210,7 @@ class BeliefUpdateEngine:
                 errors=["llm_adapter_missing"],
             )
 
-        llm_result = _ensure_llm_result(
-            self._llm_adapter.update(context=context, request_id=request_id),
-            request_id=request_id,
-            decision_point=LLMDecisionPoint.BELIEF_UPDATE,
-        )
+        llm_result = self._llm_adapter.update(context=context, request_id=request_id)
         normalized_llm_result, llm_metadata = _normalize_llm_output(
             llm_result,
             model=BeliefUpdateDecision,
@@ -369,7 +323,7 @@ class OfflineLLMEvalRunner:
     def __init__(
         self,
         *,
-        promotion_provider: RuleBasedPromotionDecisionProvider | None = None,
+        promotion_provider: RuleBasedPromotionAssessmentProvider | None = None,
         belief_update_provider: RuleBasedBeliefUpdateProvider | None = None,
         promotion_llm_adapter: PromotionLLMAdapter | None = None,
         belief_llm_adapter: BeliefLLMAdapter | None = None,
@@ -377,7 +331,7 @@ class OfflineLLMEvalRunner:
         trace_store: LLMDecisionTraceStore | None = None,
         trace_policy: LLMTracePolicy | None = None,
     ) -> None:
-        self._promotion_provider = promotion_provider or RuleBasedPromotionDecisionProvider()
+        self._promotion_provider = promotion_provider or RuleBasedPromotionAssessmentProvider()
         self._belief_update_provider = (
             belief_update_provider or RuleBasedBeliefUpdateProvider()
         )
@@ -488,13 +442,13 @@ class OfflineLLMEvalRunner:
         persisted_llm_trace = None
 
         should_persist_rule_trace = False
-        if engine_result.rule_trace is not None:
-            if mode == LLMDecisionMode.RULE:
-                should_persist_rule_trace = True
-            elif mode == LLMDecisionMode.HYBRID:
-                should_persist_rule_trace = True
-            elif mode == LLMDecisionMode.LLM and engine_result.fallback_used:
-                should_persist_rule_trace = True
+        if engine_result.rule_trace is not None and (
+            mode == LLMDecisionMode.RULE
+            or mode == LLMDecisionMode.HYBRID
+            or mode == LLMDecisionMode.LLM
+            and engine_result.fallback_used
+        ):
+            should_persist_rule_trace = True
         if should_persist_rule_trace:
             self._trace_store.append_trace(engine_result.rule_trace)
             persisted_rule_trace = engine_result.rule_trace
@@ -528,7 +482,7 @@ class OfflineLLMEvalRunner:
         mode: LLMDecisionMode,
     ) -> EvalCaseResult:
         try:
-            context = PromotionContext.model_validate(snapshot.input_payload)
+            context = PromotionAssessmentContext.model_validate(snapshot.input_payload)
         except ValidationError as exc:
             return EvalCaseResult(
                 snapshot_id=snapshot.snapshot_id,
@@ -544,14 +498,14 @@ class OfflineLLMEvalRunner:
                 decision_mode=mode.value,
             )
 
-        engine_result = PromotionDecisionEngine(
+        engine_result = PromotionAssessmentEngine(
             rule_engine=self._promotion_provider,
             llm_adapter=self._promotion_llm_adapter,
             mode=mode,
         ).decide(context=context, request_id=f"eval:{snapshot.snapshot_id}")
 
         comparison = compare_promotion(
-            actual=PromotionDecision.model_validate(engine_result.decision),
+            actual=PromotionAssessment.model_validate(engine_result.decision),
             expected_output=snapshot.expected_output,
         )
 

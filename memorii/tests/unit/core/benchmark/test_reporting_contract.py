@@ -4,12 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
-
+from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkSystem, CanonicalBenchmarkReport, ScenarioVerdict
 from memorii.core.benchmark.reporting import to_canonical_report, to_markdown, write_artifacts
 from memorii.core.benchmark.validation import validate_canonical_report
-from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 
 
 def test_canonical_report_has_required_top_level_sections() -> None:

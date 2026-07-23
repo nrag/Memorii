@@ -65,6 +65,17 @@ class RetrievalRelevanceDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class RetrievalRelevanceOutput(RetrievalRelevanceDecision):
+    """Strict provider response for retrieval relevance decisions."""
+
+    selected_ids: list[str]
+    excluded_ids: list[str]
+    ranking: list[str]
+    abstain: bool
+    failure_mode: str | None
+    requires_judge_review: bool
+
+
 def retrieval_relevance_context_for_fixture(fixture: BenchmarkScenarioFixture) -> RetrievalRelevanceContext:
     if fixture.retrieval is None:
         raise ValueError("retrieval fixture is required")
@@ -76,13 +87,7 @@ def retrieval_relevance_context_for_fixture(fixture: BenchmarkScenarioFixture) -
         scope=retrieval.scope.model_dump(mode="json"),
         temporal_target=getattr(retrieval, "temporal_target", None),
         candidates=[_candidate_for_item(item) for item in retrieval.corpus],
-        metadata={
-            "category": fixture.category.value,
-            "expected_relevant_ids": list(retrieval.expected_relevant_ids),
-            "expected_hard_distractor_ids": list(retrieval.expected_hard_distractor_ids),
-            "expected_excluded_ids": list(retrieval.expected_excluded_ids),
-            "expected_domain_priority": list(retrieval.expected_domain_priority),
-        },
+        metadata={"category": fixture.category.value},
     )
 
 

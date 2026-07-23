@@ -1,8 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.llm_judge.calibration import (
     JudgeCalibrator,
     build_golden_candidate_reason_from_jury,
@@ -17,6 +15,7 @@ from memorii.core.llm_judge.models import (
     JudgeVerdict,
     JuryVerdict,
 )
+from pydantic import ValidationError
 
 
 def _rubric(*, judge_id: str = "judge:test", dimension: JudgeDimension = JudgeDimension.ATTRIBUTION) -> JudgeRubric:

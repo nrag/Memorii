@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
-from typing import Literal
+from enum import StrEnum
+from typing import Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-class ObservabilityLabel(str, Enum):
+
+class ObservabilityLabel(StrEnum):
     OBSERVED = "observed"
     INFERABLE = "inferable"
     AMBIGUOUS = "ambiguous"
     HIDDEN = "hidden"
 
 
-class SimLifecycleState(str, Enum):
+class SimLifecycleState(StrEnum):
     CANDIDATE = "candidate"
     ACTIVE = "active"
     SUPERSEDED = "superseded"
@@ -25,10 +26,23 @@ class SimLifecycleState(str, Enum):
     EVIDENCE_ONLY = "evidence_only"
 
 
-class JudgeVerdict(str, Enum):
+class JudgeVerdict(StrEnum):
     PASS = "pass"
     FAIL = "fail"
     ABSTAIN = "abstain"
+
+
+EvidenceSupportType: TypeAlias = Literal[
+    "direct_mention",
+    "subject_support",
+    "predicate_support",
+    "object_support",
+    "relation_support",
+    "temporal_support",
+    "scope_support",
+    "contradiction_support",
+    "inference_support",
+]
 
 
 class LatentEvidenceSpan(BaseModel):
@@ -36,22 +50,12 @@ class LatentEvidenceSpan(BaseModel):
     quote: str
     char_start: int | None = None
     char_end: int | None = None
-    support_type: Literal[
-        "direct_mention",
-        "subject_support",
-        "predicate_support",
-        "object_support",
-        "relation_support",
-        "temporal_support",
-        "scope_support",
-        "contradiction_support",
-        "inference_support",
-    ]
+    support_type: EvidenceSupportType
 
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_span(self) -> "LatentEvidenceSpan":
+    def validate_span(self) -> LatentEvidenceSpan:
         if not self.quote:
             raise ValueError("evidence quote must be non-empty")
         if (self.char_start is None) != (self.char_end is None):
@@ -76,7 +80,7 @@ class LatentConfidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_band(self) -> "LatentConfidence":
+    def validate_band(self) -> LatentConfidence:
         expected = "low" if self.calibrated < 0.40 else "medium" if self.calibrated < 0.75 else "high"
         if self.band != expected:
             raise ValueError(f"confidence band {self.band!r} does not match calibrated score")
@@ -133,7 +137,7 @@ class LatentEntity(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_entity_support(self) -> "LatentEntity":
+    def validate_entity_support(self) -> LatentEntity:
         if self.observability != ObservabilityLabel.HIDDEN and not (
             self.evidence_spans or self.defining_claim_ids or self.relation_ids
         ):
@@ -179,6 +183,13 @@ class ClaimScope(BaseModel):
     organization_unit: str | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_scope_identity(self) -> ClaimScope:
+        expected_scope_key = self.task_id or self.session_id or "global"
+        if self.scope_key != expected_scope_key:
+            raise ValueError("claim scope_key must identify its task, session, or global scope")
+        return self
 
 
 class ClaimLifecycle(BaseModel):
@@ -241,7 +252,7 @@ class LatentClaim(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_claim_support(self) -> "LatentClaim":
+    def validate_claim_support(self) -> LatentClaim:
         if self.observability == ObservabilityLabel.OBSERVED:
             support_types = {span.support_type for span in self.evidence.spans}
             required = {"subject_support", "predicate_support", "object_support"}
@@ -312,7 +323,7 @@ class LatentRelation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_relation_support(self) -> "LatentRelation":
+    def validate_relation_support(self) -> LatentRelation:
         if self.observability == ObservabilityLabel.OBSERVED and not self.evidence_spans:
             raise ValueError("observed relations require evidence")
         if self.relation_type in {"supports", "contradicts"}:
@@ -331,6 +342,9 @@ class SurfaceObservation(BaseModel):
     phase: Literal["setup", "interference", "evolution", "dormancy", "checkpoint"] = "setup"
     trust_level: int = Field(ge=0, le=5)
     text: str
+    task_id: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
     exposed_entity_ids: list[str] = Field(default_factory=list)
     exposed_claim_ids: list[str] = Field(default_factory=list)
     exposed_relation_ids: list[str] = Field(default_factory=list)
@@ -348,6 +362,9 @@ class VisibleSurfaceObservation(BaseModel):
     phase: Literal["setup", "interference", "evolution", "dormancy", "checkpoint"] = "setup"
     trust_level: int = Field(ge=0, le=5)
     text: str
+    task_id: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
     exposed_entity_ids: list[str] = Field(default_factory=list)
     exposed_claim_ids: list[str] = Field(default_factory=list)
     exposed_relation_ids: list[str] = Field(default_factory=list)
@@ -363,6 +380,37 @@ class WorldTransition(BaseModel):
     affected_claim_ids: list[str] = Field(default_factory=list)
     affected_relation_ids: list[str] = Field(default_factory=list)
     rationale: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SimCheckpointContract(BaseModel):
+    allowed_operations: list[Literal["answer", "next_action", "graph_reconstruction", "abstain"]] = Field(
+        default_factory=lambda: ["answer"]
+    )
+    answer_required: bool = True
+    answer_projection_policy: Literal[
+        "claim_object",
+        "claim_subject",
+        "none",
+        "next_action",
+        "graph_channels_only",
+    ] = "claim_object"
+    selected_entity_role_policy: Literal[
+        "subject",
+        "object",
+        "subject_and_object",
+        "active_graph_subjects",
+        "audit_graph_entities",
+    ] = "subject"
+    allow_stale_selected_claims: bool = False
+    excluded_ids_must_be_rejected_or_contextualized: bool = True
+    definition_claims_required_in_selected: bool = False
+    supporting_citations_must_be_direct_current_evidence: bool = True
+    conflict_relation_ids_belong_in: list[str] = Field(default_factory=lambda: ["context_relation_ids"])
+    wrong_entity_claims_belong_in: list[str] = Field(default_factory=list)
+    requires_belief_ranking_ids: bool = False
+    requires_next_action: bool = False
 
     model_config = ConfigDict(extra="forbid")
 
@@ -386,11 +434,32 @@ class OracleCheckpoint(BaseModel):
         "abstention",
     ]
     query_or_task: str
+    checkpoint_contract: SimCheckpointContract
+    query_language: str = "en"
+    # Caller context is separate from oracle expectations.  It is allowed to
+    # reach the runtime request, but never the rendered model prompt.
+    request_scope_key: str | None = None
+    request_task_id: str | None = None
+    request_session_id: str | None = None
+    request_user_id: str | None = None
+    request_subject_entity_id: str | None = None
+    evidence_languages: list[str] = Field(default_factory=lambda: ["en"])
+    answer_language_policy: Literal[
+        "match_query",
+        "match_evidence",
+        "english_ok",
+        "structured_only",
+    ] = "match_query"
+    cross_lingual: bool = False
+    transliteration_policy: Literal["allowed", "required", "forbidden"] = "allowed"
     expected_entity_ids: list[str] = Field(default_factory=list)
     expected_claim_ids: list[str] = Field(default_factory=list)
     expected_relation_ids: list[str] = Field(default_factory=list)
     expected_action_ids: list[str] = Field(default_factory=list)
     expected_citation_event_ids: list[str] = Field(default_factory=list)
+    expected_execution_entity_ids: list[str] = Field(default_factory=list)
+    expected_execution_claim_ids: list[str] = Field(default_factory=list)
+    expected_execution_citation_event_ids: list[str] = Field(default_factory=list)
     expected_excluded_entity_ids: list[str] = Field(default_factory=list)
     expected_excluded_claim_ids: list[str] = Field(default_factory=list)
     expected_uncertain_ids: list[str] = Field(default_factory=list)
@@ -417,39 +486,13 @@ class OracleCheckpoint(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-
-class SimOutputNormalization(BaseModel):
-    normalization_applied: bool = False
-    auto_closed_selected_entity_ids: list[str] = Field(default_factory=list)
-    auto_closed_rejected_entity_ids: list[str] = Field(default_factory=list)
-    auto_closed_context_entity_ids: list[str] = Field(default_factory=list)
-    auto_closed_context_relation_ids: list[str] = Field(default_factory=list)
-    auto_promoted_selected_claim_ids: list[str] = Field(default_factory=list)
-    auto_promoted_supporting_claim_ids: list[str] = Field(default_factory=list)
-    auto_promoted_supporting_citation_event_ids: list[str] = Field(default_factory=list)
-    auto_rejected_claim_ids: list[str] = Field(default_factory=list)
-    normalization_reason_codes: list[str] = Field(default_factory=list)
-
-    model_config = ConfigDict(extra="forbid")
-
-
-def _ordered_unique(items: list[str]) -> list[str]:
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for item in items:
-        if item in seen:
-            continue
-        seen.add(item)
-        ordered.append(item)
-    return ordered
+    @property
+    def answer_projection_policy(self) -> str:
+        return self.checkpoint_contract.answer_projection_policy
 
 
 class SimSystemOutput(BaseModel):
     operation: Literal["answer", "next_action", "graph_reconstruction", "abstain"] = "answer"
-    entity_ids: list[str] = Field(default_factory=list)
-    claim_ids: list[str] = Field(default_factory=list)
-    relation_ids: list[str] = Field(default_factory=list)
-    citation_event_ids: list[str] = Field(default_factory=list)
     belief_ranking_ids: list[str] = Field(default_factory=list)
     selected_entity_ids: list[str] = Field(default_factory=list)
     selected_claim_ids: list[str] = Field(default_factory=list)
@@ -473,57 +516,33 @@ class SimSystemOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="after")
-    def populate_legacy_and_role_views(self) -> "SimSystemOutput":
-        role_channels_empty = not any(
-            [
-                self.selected_entity_ids,
-                self.selected_claim_ids,
-                self.selected_relation_ids,
-                self.supporting_claim_ids,
-                self.supporting_relation_ids,
-                self.supporting_citation_event_ids,
-                self.rejected_entity_ids,
-                self.rejected_claim_ids,
-                self.rejected_relation_ids,
-                self.rejection_citation_event_ids,
-                self.context_entity_ids,
-                self.context_claim_ids,
-                self.context_relation_ids,
-                self.context_citation_event_ids,
-            ]
-        )
-        if role_channels_empty and not self.selected_entity_ids and self.entity_ids:
-            self.selected_entity_ids = list(self.entity_ids)
-        if role_channels_empty and not self.selected_claim_ids and self.claim_ids:
-            self.selected_claim_ids = list(self.claim_ids)
-        if role_channels_empty and not self.selected_relation_ids and self.relation_ids:
-            self.selected_relation_ids = list(self.relation_ids)
-        if role_channels_empty and not self.supporting_citation_event_ids and self.citation_event_ids:
-            self.supporting_citation_event_ids = list(self.citation_event_ids)
-        self.entity_ids = _ordered_unique([
-            *self.selected_entity_ids,
-            *self.context_entity_ids,
-            *self.rejected_entity_ids,
-        ])
-        self.claim_ids = _ordered_unique([
-            *self.selected_claim_ids,
-            *self.supporting_claim_ids,
-            *self.context_claim_ids,
-            *self.rejected_claim_ids,
-        ])
-        self.relation_ids = _ordered_unique([
-            *self.selected_relation_ids,
-            *self.supporting_relation_ids,
-            *self.context_relation_ids,
-            *self.rejected_relation_ids,
-        ])
-        self.citation_event_ids = _ordered_unique([
-            *self.supporting_citation_event_ids,
-            *self.context_citation_event_ids,
-            *self.rejection_citation_event_ids,
-        ])
-        return self
+
+class SimProviderOutput(BaseModel):
+    """Strict model transport for simulated memory reconstruction."""
+
+    operation: Literal["answer", "next_action", "graph_reconstruction", "abstain"] = Field()
+    belief_ranking_ids: list[str] = Field()
+    selected_entity_ids: list[str] = Field()
+    selected_claim_ids: list[str] = Field()
+    selected_relation_ids: list[str] = Field()
+    supporting_claim_ids: list[str] = Field()
+    supporting_relation_ids: list[str] = Field()
+    supporting_citation_event_ids: list[str] = Field()
+    rejected_entity_ids: list[str] = Field()
+    rejected_claim_ids: list[str] = Field()
+    rejected_relation_ids: list[str] = Field()
+    rejection_citation_event_ids: list[str] = Field()
+    context_entity_ids: list[str] = Field()
+    context_claim_ids: list[str] = Field()
+    context_relation_ids: list[str] = Field()
+    context_citation_event_ids: list[str] = Field()
+    answer: str | None = Field()
+    next_action: str | None = Field()
+    uncertain_ids: list[str] = Field()
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: str
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class VisibleEventCandidate(BaseModel):
@@ -534,6 +553,9 @@ class VisibleEventCandidate(BaseModel):
     phase: str = "setup"
     trust_level: int
     text: str
+    task_id: str | None = None
+    session_id: str | None = None
+    user_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -553,9 +575,11 @@ class VisibleClaimCandidate(BaseModel):
     claim_id: str
     subject_entity_id: str
     subject_name: str
+    subject_entity_type: str
     predicate_id: str
     object_value: str
     object_entity_id: str | None = None
+    object_entity_type: str | None = None
     scope_key: str
     lifecycle_state: str
     valid_from: datetime | None = None
@@ -565,7 +589,6 @@ class VisibleClaimCandidate(BaseModel):
     evidence_event_ids: list[str] = Field(default_factory=list)
     evidence_quote: str
     contradicts_claim_ids: list[str] = Field(default_factory=list)
-
     model_config = ConfigDict(extra="forbid")
 
 
@@ -589,26 +612,21 @@ class VisibleRelationCandidate(BaseModel):
 class VisibleCheckpointCandidate(BaseModel):
     checkpoint_id: str
     timestamp: datetime
-    checkpoint_type: str
     query_or_task: str
-    difficulty_tags: list[str] = Field(default_factory=list)
-    severity: str
-    horizon_distance: int = 0
-    interference_count: int = 0
-    source_event_age_days: float = 0.0
-    required_retrieval_view: str = "current"
-    stage_path: list[str] = Field(default_factory=list)
+    answer_projection_policy: str = "claim_object"
+    query_language: str = "en"
+    evidence_languages: list[str] = Field(default_factory=lambda: ["en"])
+    answer_language_policy: str = "match_query"
+    cross_lingual: bool = False
+    transliteration_policy: str = "allowed"
 
     model_config = ConfigDict(extra="forbid")
 
 
 class MemoryEvolutionSimReconstructionContext(BaseModel):
     scenario_id: str
-    family: str
-    profile: str
     surface_observations: list[VisibleSurfaceObservation]
     checkpoint: VisibleCheckpointCandidate
-    difficulty_tags: list[str] = Field(default_factory=list)
     visible_entity_ids: list[str] = Field(default_factory=list)
     visible_claim_ids: list[str] = Field(default_factory=list)
     visible_relation_ids: list[str] = Field(default_factory=list)
@@ -616,8 +634,6 @@ class MemoryEvolutionSimReconstructionContext(BaseModel):
     visible_entities: list[VisibleEntityCandidate] = Field(default_factory=list)
     visible_claims: list[VisibleClaimCandidate] = Field(default_factory=list)
     visible_relations: list[VisibleRelationCandidate] = Field(default_factory=list)
-    metadata: dict[str, object] = Field(default_factory=dict)
-
     model_config = ConfigDict(extra="forbid")
 
 
@@ -652,6 +668,8 @@ class JudgeAggregate(BaseModel):
 
 class LatentGraphScenario(BaseModel):
     scenario_id: str
+    semantic_world_fingerprint: str = Field(min_length=16)
+    world_parameters: dict[str, str | int]
     family: str
     profile: str
     seed: int
@@ -666,7 +684,7 @@ class LatentGraphScenario(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def validate_references(self) -> "LatentGraphScenario":
+    def validate_references(self) -> LatentGraphScenario:
         entity_ids = {item.entity_id for item in self.entities}
         claim_ids = {item.claim_id for item in self.claims}
         relation_ids = {item.relation_id for item in self.relations}
@@ -705,10 +723,18 @@ class LatentGraphScenario(BaseModel):
                 raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown relations")
             if set(checkpoint.expected_citation_event_ids) - event_ids:
                 raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown observations")
+            if set(checkpoint.expected_execution_entity_ids) - entity_ids:
+                raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown execution entities")
+            if set(checkpoint.expected_execution_claim_ids) - claim_ids:
+                raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown execution claims")
+            if set(checkpoint.expected_execution_citation_event_ids) - event_ids:
+                raise ValueError(f"checkpoint {checkpoint.checkpoint_id} references unknown execution observations")
             required_ids = [
                 *checkpoint.expected_entity_ids,
                 *checkpoint.expected_claim_ids,
                 *checkpoint.expected_relation_ids,
+                *checkpoint.expected_execution_entity_ids,
+                *checkpoint.expected_execution_claim_ids,
             ]
             hidden_required = [
                 item_id

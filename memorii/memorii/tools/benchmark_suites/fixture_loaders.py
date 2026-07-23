@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 
-from memorii.core.benchmark.hotpotqa import build_hotpotqa_benchmark_fixtures
-from memorii.core.benchmark.models import BenchmarkScenarioFixture
 from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 from memorii.core.benchmark.fixture_sets.memory_lifecycle_v1 import load_memory_lifecycle_v1_fixture_set
 from memorii.core.benchmark.fixture_sets.retrieval_corruption_v1 import load_retrieval_corruption_v1_fixture_set
+from memorii.core.benchmark.hotpotqa import build_hotpotqa_benchmark_fixtures
+from memorii.core.benchmark.models import BenchmarkScenarioFixture
 
 
 def load_memory_lifecycle_fixture_set(

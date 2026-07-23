@@ -1,6 +1,6 @@
 """Deterministic frontier planner over persisted solver overlays."""
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,18 +10,16 @@ from memorii.domain.solver_graph.overlays import SolverNodeOverlay
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
 
 
-class FrontierSelectionReason(str, Enum):
+class FrontierSelectionReason(StrEnum):
     HIGHEST_PRIORITY_FRONTIER = "highest_priority_frontier"
     NO_FRONTIER_FOUND = "no_frontier_found"
     FRONTIER_WITH_STRUCTURED_ACTION = "frontier_with_structured_action"
-    FRONTIER_WITH_LEGACY_ACTION = "frontier_with_legacy_action"
 
 
 class FrontierPlan(BaseModel):
     solver_run_id: str
     selected_node_id: str | None = None
     next_test_action: NextTestAction | None = None
-    next_best_test: str | None = None
     reason: FrontierSelectionReason
     candidate_frontier_node_ids: list[str] = Field(default_factory=list)
 
@@ -72,20 +70,14 @@ class SolverFrontierPlanner:
         elif isinstance(raw_action, dict):
             parsed_action = NextTestAction.model_validate(raw_action)
 
-        next_best_test = node_content.get("next_best_test")
-        next_best_test_text = next_best_test if isinstance(next_best_test, str) else None
-
         reason = FrontierSelectionReason.HIGHEST_PRIORITY_FRONTIER
         if parsed_action is not None:
             reason = FrontierSelectionReason.FRONTIER_WITH_STRUCTURED_ACTION
-        elif next_best_test_text:
-            reason = FrontierSelectionReason.FRONTIER_WITH_LEGACY_ACTION
 
         return FrontierPlan(
             solver_run_id=solver_run_id,
             selected_node_id=selected_overlay.node_id,
             next_test_action=parsed_action,
-            next_best_test=next_best_test_text,
             reason=reason,
             candidate_frontier_node_ids=[candidate.node_id for candidate in ordered_candidates],
         )

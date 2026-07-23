@@ -1,8 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.decision_state.models import (
     DecisionEvidencePolarity,
     DecisionState,
@@ -10,6 +8,7 @@ from memorii.core.decision_state.models import (
 )
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.store import InMemoryDecisionStateStore
+from pydantic import ValidationError
 
 
 def _decision(

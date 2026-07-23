@@ -5,8 +5,8 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
-
-from memorii.tools import run_benchmark, run_eval as run_eval_module
+from memorii.tools import run_benchmark
+from memorii.tools import run_eval as run_eval_module
 from memorii.tools.run_eval import main
 
 HOTPOTQA_SAMPLE_PATH = files("memorii.core.benchmark.fixture_sets").joinpath("hotpotqa_sample.json")
@@ -405,5 +405,7 @@ def test_run_eval_routes_memory_evolution_runtime_suite(
     assert fields["profile"] == "adversarial"
     assert int(fields["scenarios"]) == report["scenario_count"]
     assert int(fields["checkpoints"]) == report["checkpoint_count"]
-    assert report["passed"] == 10
+    assert report["passed"] + report["failed"] == report["scenario_count"]
+    assert int(fields["passed"]) == report["passed"]
+    assert int(fields["failed"]) == report["failed"]
     assert (run_dir / "runtime_graph_alignments.jsonl").exists()

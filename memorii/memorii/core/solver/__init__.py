@@ -1,37 +1,6 @@
-"""Solver runtime services."""
+"""Solver components.
 
-from memorii.core.solver.abstention import ConfidenceBand, SolverDecision
-from memorii.core.solver.belief import update_solver_belief
-from memorii.core.solver.frontier import FrontierPlan, SolverFrontierPlanner
-from memorii.core.solver.models import NextTestAction
-from memorii.core.solver.model_integration import (
-    OpenAIStyleCompletionClient,
-    OpenAIStyleSolverModelProvider,
-    SolverContextItem,
-    SolverModelInput,
-    SolverModelProvider,
-    StaticSolverModelProvider,
-)
-from memorii.core.solver.update_engine import SolverDecisionOutput, SolverUpdateEngine, SolverUpdateInput, SolverUpdateResult
-from memorii.core.solver.verifier import SolverDecisionVerifier, VerificationOutcome
-
-__all__ = [
-    "SolverDecision",
-    "ConfidenceBand",
-    "SolverDecisionOutput",
-    "SolverDecisionVerifier",
-    "SolverUpdateEngine",
-    "SolverUpdateInput",
-    "SolverUpdateResult",
-    "VerificationOutcome",
-    "SolverModelProvider",
-    "SolverModelInput",
-    "SolverContextItem",
-    "StaticSolverModelProvider",
-    "OpenAIStyleCompletionClient",
-    "OpenAIStyleSolverModelProvider",
-    "NextTestAction",
-    "FrontierPlan",
-    "SolverFrontierPlanner",
-    "update_solver_belief",
-]
+Import concrete components from their owning modules. Keeping this package initializer
+side-effect free prevents model modules from pulling the complete runtime graph into
+otherwise independent schema imports.
+"""

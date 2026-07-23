@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import re
 import shutil
-from datetime import date, datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Callable
 
 from pydantic import BaseModel, ConfigDict
 
@@ -49,8 +49,8 @@ class JudgeArtifactWriter:
     ) -> None:
         self._storage_root = Path(storage_root)
         self._policy = policy or JudgeArtifactPolicy()
-        self._date_provider = date_provider or (lambda: datetime.now(timezone.utc).date())
-        self._datetime_provider = datetime_provider or (lambda: datetime.now(timezone.utc))
+        self._date_provider = date_provider or (lambda: datetime.now(UTC).date())
+        self._datetime_provider = datetime_provider or (lambda: datetime.now(UTC))
 
     def write_run_artifacts(
         self,

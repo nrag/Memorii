@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 from memorii.core.belief.models import BeliefUpdateContext
 from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
+from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.fixtures import normalize_fixtures
 from memorii.core.benchmark.lifecycle_decision import (
     lifecycle_assertion_passed,
@@ -15,32 +17,35 @@ from memorii.core.benchmark.lifecycle_decision import (
     lifecycle_trace_for_rule,
     rule_lifecycle_decision_for_fixture,
 )
+from memorii.core.benchmark.llm_adapters import LLMLifecycleDecisionAdapter
 from memorii.core.benchmark.metrics import compute_metrics
 from memorii.core.benchmark.models import (
     BenchmarkRunReport,
     BenchmarkScenarioFixture,
-    BenchmarkSystem,
     MemoryLifecycleFamily,
     ScenarioResult,
 )
-from memorii.core.llm_config import LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
-from memorii.core.llm_decision.adapters import (
-    LLMBeliefUpdateAdapter,
-    LLMLifecycleDecisionAdapter,
-    LLMPromotionDecisionAdapter,
+from memorii.core.env_config import load_memorii_environment
+from memorii.core.evidence_quality import (
+    EntityAttribution,
+    EvidenceFreshness,
+    EvidenceIndependence,
+    EvidenceObservability,
+    EvidenceQualitySignals,
 )
+from memorii.core.llm_config import DecisionModeName, LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
+from memorii.core.llm_decision.adapters import LLMBeliefUpdateAdapter, LLMPromotionAssessmentAdapter
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_eval.engine_result import DecisionEngineResult
-from memorii.core.llm_eval.runner import BeliefUpdateEngine, PromotionDecisionEngine
+from memorii.core.llm_eval.runner import BeliefUpdateEngine, PromotionAssessmentEngine
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
-from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from memorii.core.promotion.assessment import PromotionAssessmentContext, PromotionCandidateType
+from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.solver.abstention import SolverDecision
-from memorii.core.env_config import load_memorii_environment
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES
-from memorii.tools.benchmark_suites.fake_adapters import _ExpectedLifecycleFakeAdapter
+from memorii.tools.benchmark_suites.fake_adapters import ExpectedLifecycleFakeAdapter
 from memorii.tools.benchmark_suites.fixture_harness import (
     FixtureBackedBenchmarkSuiteRunner,
     aggregate_by_category,
@@ -48,9 +53,15 @@ from memorii.tools.benchmark_suites.fixture_harness import (
 )
 from memorii.tools.benchmark_suites.fixture_loaders import load_memory_lifecycle_fixture_set
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
-from memorii.tools.run_live_llm_eval import _validate_live_safety
+from memorii.tools.run_live_llm_eval import validate_live_safety
 
 SUITE_NAME = "memory_lifecycle_v1"
+
+
+def _decision_mode(mode: str) -> DecisionModeName:
+    if mode in {"auto", "rule", "llm", "hybrid"}:
+        return cast(DecisionModeName, mode)
+    raise ValueError(f"Unsupported memory lifecycle mode: {mode}")
 
 
 def transition_kind(fixture: BenchmarkScenarioFixture) -> str:
@@ -72,7 +83,7 @@ def transition_kind(fixture: BenchmarkScenarioFixture) -> str:
     return "belief_update"
 
 
-def _promotion_context_for_fixture(fixture: BenchmarkScenarioFixture) -> PromotionContext:
+def _promotion_context_for_fixture(fixture: BenchmarkScenarioFixture) -> PromotionAssessmentContext:
     family = fixture.lifecycle.family if fixture.lifecycle is not None else None
     explicit_user_memory_request = family == MemoryLifecycleFamily.CREATE_AND_REUSE_USER_PREFERENCE
     repeated_across_episodes = 3 if family == MemoryLifecycleFamily.PROMOTE_REPEATED_PROJECT_FACT else 0
@@ -108,7 +119,7 @@ def _promotion_context_for_fixture(fixture: BenchmarkScenarioFixture) -> Promoti
     } and fixture.lifecycle is not None:
         related_memory_ids = list(fixture.lifecycle.expected_active_memory_ids)
 
-    return PromotionContext(
+    return PromotionAssessmentContext(
         candidate_id=f"lifecycle:{fixture.scenario_id}:promotion",
         candidate_type=candidate_type,
         content=content,
@@ -145,6 +156,19 @@ def _belief_context_for_fixture(fixture: BenchmarkScenarioFixture) -> BeliefUpda
     evidence_count = 2 if decision == SolverDecision.SUPPORTED else 0
     if family == MemoryLifecycleFamily.BELIEF_DEPENDENCY_INVALIDATION:
         evidence_count = 2
+    attribution = (
+        EntityAttribution.MISALIGNED
+        if family == MemoryLifecycleFamily.AVOID_WRONG_ENTITY_CARRYOVER
+        else EntityAttribution.ALIGNED
+    )
+    freshness = (
+        EvidenceFreshness.SUPERSEDED
+        if family in {
+            MemoryLifecycleFamily.SUPERSEDE_CORRECTED_PREFERENCE,
+            MemoryLifecycleFamily.SUPERSEDE_STALE_PROJECT_FACT,
+        }
+        else EvidenceFreshness.CURRENT
+    )
     return BeliefUpdateContext(
         prior_belief=0.8 if family == MemoryLifecycleFamily.BELIEF_DEPENDENCY_INVALIDATION else 0.5,
         decision=decision,
@@ -152,12 +176,24 @@ def _belief_context_for_fixture(fixture: BenchmarkScenarioFixture) -> BeliefUpda
         missing_evidence_count=1 if decision == SolverDecision.INSUFFICIENT_EVIDENCE else 0,
         conflict_count=conflict_count,
         evidence_ids=[fixture.scenario_id],
+        evidence_quality=EvidenceQualitySignals(
+            entity_attribution=attribution,
+            independence=(
+                EvidenceIndependence.INDEPENDENT
+                if evidence_count >= 2
+                else EvidenceIndependence.UNKNOWN
+            ),
+            freshness=freshness,
+            observability=(
+                EvidenceObservability.PARTIAL
+                if decision == SolverDecision.INSUFFICIENT_EVIDENCE
+                else EvidenceObservability.COMPLETE
+            ),
+            source_count=evidence_count,
+        ),
         node_id=f"lifecycle:{fixture.scenario_id}:belief",
         solver_run_id="solver:lifecycle:v1",
-        metadata={
-            "scenario_id": fixture.scenario_id,
-            "lifecycle_family": family.value if family is not None else None,
-        },
+        metadata={},
     )
 
 
@@ -238,7 +274,7 @@ def _run_rule_lifecycle_transitions(
     fixtures: list[BenchmarkScenarioFixture],
     mode: str,
 ) -> list[dict[str, object]]:
-    promotion_rule = RuleBasedPromotionDecisionProvider()
+    promotion_rule = RuleBasedPromotionAssessmentProvider()
     belief_rule = RuleBasedBeliefUpdateProvider()
     lifecycle_rows: list[dict[str, object]] = []
     for fixture in normalize_fixtures(fixtures):
@@ -290,14 +326,18 @@ def run_lifecycle_transitions(
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     env_snapshot = load_memorii_environment()
     runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
-    decision_config = LLMDecisionRuntimeConfig(mode=mode) if mode != "auto" else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
-    effective_mode = decision_config.resolve(runtime_config)
+    decision_config = LLMDecisionRuntimeConfig(mode=_decision_mode(mode)) if mode != "auto" else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
+    effective_mode = resolve_benchmark_decision_mode(
+        decision_config=decision_config,
+        runtime_config=runtime_config,
+        dry_run=dry_run,
+    )
     if effective_mode == "rule":
         return _run_rule_lifecycle_transitions(fixtures=fixtures, mode=mode), []
 
     live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
     if effective_mode in {"llm", "hybrid"}:
-        _validate_live_safety(
+        validate_live_safety(
             modes=[effective_mode],
             dry_run=dry_run,
             allow_live=allow_live,
@@ -305,18 +345,18 @@ def run_lifecycle_transitions(
             live_config=live_config,
         )
 
-    client = dependencies.eval_fake_client_cls() if dry_run else dependencies.llm_client_factory.from_config(runtime_config)
-    runner = PromptLLMRunner(client=client, config=runtime_config)
+    llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
+    runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
     registry = PromptRegistry(prompt_root=prompt_root)
-    promotion_adapter = LLMPromotionDecisionAdapter(runner=runner, registry=registry)
+    promotion_adapter = LLMPromotionAssessmentAdapter(runner=runner, registry=registry)
     belief_adapter = LLMBeliefUpdateAdapter(runner=runner, registry=registry)
     lifecycle_adapter = (
-        _ExpectedLifecycleFakeAdapter(fixtures=fixtures, registry=registry)
-        if dry_run and dependencies.is_default_fake_client()
+        ExpectedLifecycleFakeAdapter(fixtures=fixtures, registry=registry)
+        if dependencies.use_oracle_adapters(dry_run=dry_run)
         else LLMLifecycleDecisionAdapter(runner=runner, registry=registry)
     )
-    promotion_engine = PromotionDecisionEngine(
-        rule_engine=RuleBasedPromotionDecisionProvider(),
+    promotion_engine = PromotionAssessmentEngine(
+        rule_engine=RuleBasedPromotionAssessmentProvider(),
         llm_adapter=promotion_adapter,
         mode=LLMDecisionMode(effective_mode),
     )
@@ -331,7 +371,7 @@ def run_lifecycle_transitions(
     for fixture in normalize_fixtures(fixtures):
         kind = transition_kind(fixture)
         request_id = f"lifecycle:{mode}:{fixture.scenario_id}:{kind}"
-        metadata = {
+        metadata: dict[str, object] = {
             "suite": SUITE_NAME,
             "scenario_id": fixture.scenario_id,
             "decision_mode": mode,
@@ -393,7 +433,9 @@ def run_lifecycle_transitions(
                 "llm_call_made": engine_result.llm_used,
                 "fallback_used": engine_result.fallback_used,
                 "fallback_reason": fallback_reason,
-                "final_output_source": "rule" if engine_result.fallback_used else "llm",
+                "final_output_source": (
+                    "rule" if engine_result.fallback_used else llm_binding.final_output_source
+                ),
                 "request_id": request_id,
                 "success": transition_success,
                 "failure_mode": fallback_reason,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -51,7 +51,7 @@ class OpenOrResumeWorkInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class WorkOutcome(str, Enum):
+class WorkOutcome(StrEnum):
     COMPLETED = "completed"
     BLOCKED = "blocked"
     ABANDONED = "abandoned"

@@ -2,7 +2,6 @@
 
 from memorii.core.benchmark.models import BenchmarkSystem
 
-
 BASELINE_SYSTEMS: tuple[BenchmarkSystem, ...] = (
     BenchmarkSystem.TRANSCRIPT_ONLY_BASELINE,
     BenchmarkSystem.FLAT_RETRIEVAL_BASELINE,

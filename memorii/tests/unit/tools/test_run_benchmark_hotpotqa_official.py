@@ -5,11 +5,11 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
-
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.tools.run_benchmark import main
 from tests.unit.tools.run_benchmark_test_helpers import (
+    _application_with_fake_client,
     _jsonl_count,
     _latest_run_dir,
     _summary_fields,
@@ -270,9 +270,9 @@ def test_hotpotqa_official_llm_fails_traceably_on_invalid_llm_output(
                 schema_valid=False,
             )
 
-    monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", InvalidFakeClient)
+    app = _application_with_fake_client(InvalidFakeClient)
 
-    assert main(
+    assert app.run(
         [
             "--suite",
             "hotpotqa_official_v1",

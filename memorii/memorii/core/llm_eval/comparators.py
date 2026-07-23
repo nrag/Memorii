@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from memorii.core.belief.models import BeliefUpdateContext, BeliefUpdateDecision
-from memorii.core.promotion.models import PromotionDecision
+from memorii.core.promotion.assessment import PromotionAssessment
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ _SUPPORTED_BELIEF_FIELDS = {
 
 def compare_promotion(
     *,
-    actual: PromotionDecision,
+    actual: PromotionAssessment,
     expected_output: dict[str, object] | None,
 ) -> ComparatorResult:
     if expected_output is None:
@@ -168,11 +168,7 @@ def compare_belief_update(
             errors.append("ambiguous_direction_without_prior")
         else:
             checks += 1
-            if direction == "increase" and actual.belief > context.prior_belief:
-                passed_checks += 1
-            elif direction == "decrease" and actual.belief < context.prior_belief:
-                passed_checks += 1
-            elif direction == "unchanged" and actual.belief == context.prior_belief:
+            if direction == "increase" and actual.belief > context.prior_belief or direction == "decrease" and actual.belief < context.prior_belief or direction == "unchanged" and actual.belief == context.prior_belief:
                 passed_checks += 1
             else:
                 errors.append("direction_mismatch")

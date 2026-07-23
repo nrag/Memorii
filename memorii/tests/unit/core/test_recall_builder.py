@@ -1,7 +1,13 @@
 from datetime import UTC, datetime, timedelta
 
 from memorii.core.recall.builder import summarize_work_states
-from memorii.core.work_state.models import WorkStateEvent, WorkStateEventType, WorkStateKind, WorkStateRecord, WorkStateStatus
+from memorii.core.work_state.models import (
+    WorkStateEvent,
+    WorkStateEventType,
+    WorkStateKind,
+    WorkStateRecord,
+    WorkStateStatus,
+)
 
 
 def _state(work_state_id: str) -> WorkStateRecord:
@@ -20,7 +26,7 @@ def _state(work_state_id: str) -> WorkStateRecord:
     )
 
 
-def test_summarize_work_states_backward_compatible_without_events() -> None:
+def test_summarize_work_states_without_events() -> None:
     summaries = summarize_work_states([_state("ws:no-events")])
 
     assert len(summaries) == 1

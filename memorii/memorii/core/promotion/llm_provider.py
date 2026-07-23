@@ -2,25 +2,27 @@
 
 from __future__ import annotations
 
+from pydantic import ValidationError
+
 from memorii.core.llm_decision.models import LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
-from memorii.core.llm_decision.provider import LLMDecisionProvider
-from memorii.core.promotion.models import PromotionContext, PromotionDecision
-from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from memorii.core.llm_decision.provider import LLMDecisionProvider, LLMDecisionProviderError
+from memorii.core.promotion.assessment import PromotionAssessment, PromotionAssessmentContext
+from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
 
 
-class LLMPromotionDecisionProvider:
+class LLMPromotionAssessmentProvider:
     def __init__(self, *, llm_provider: LLMDecisionProvider) -> None:
         self._llm_provider = llm_provider
-        self._rule_provider = RuleBasedPromotionDecisionProvider()
+        self._rule_provider = RuleBasedPromotionAssessmentProvider()
 
-    def decide(self, *, context: PromotionContext) -> tuple[PromotionDecision, LLMDecisionTrace]:
-        input_payload = context.model_dump(mode="json")
+    def decide(self, *, context: PromotionAssessmentContext) -> tuple[PromotionAssessment, LLMDecisionTrace]:
+        input_payload = context.prompt_payload()
         try:
             trace = self._llm_provider.decide(
                 decision_point=LLMDecisionPoint.PROMOTION,
                 input_payload=input_payload,
             )
-        except Exception as exc:
+        except LLMDecisionProviderError as exc:
             fallback_decision, fallback_trace = self._rule_provider.decide(context=context)
             return fallback_decision, fallback_trace.model_copy(
                 update={
@@ -46,8 +48,8 @@ class LLMPromotionDecisionProvider:
             )
 
         try:
-            decision = PromotionDecision.model_validate(trace.final_output)
-        except Exception as exc:
+            decision = PromotionAssessment.model_validate(trace.final_output)
+        except ValidationError as exc:
             return fallback_decision, trace.model_copy(
                 update={
                     "fallback_used": True,

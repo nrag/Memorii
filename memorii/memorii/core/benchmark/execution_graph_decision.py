@@ -77,6 +77,19 @@ class ExecutionGraphDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ExecutionGraphDecisionOutput(ExecutionGraphDecision):
+    """Strict provider response for execution-graph decisions."""
+
+    selected_node_ids: list[str]
+    active_frontier_node_ids: list[str]
+    blocked_node_ids: list[str]
+    abandoned_node_ids: list[str]
+    stale_node_ids: list[str]
+    resumed_node_id: str | None
+    failure_mode: str | None
+    requires_judge_review: bool
+
+
 def execution_graph_context_for_scenario(
     scenario: ExecutionGraphScenario,
 ) -> ExecutionGraphDecisionContext:
@@ -172,11 +185,10 @@ def execution_graph_assertion_passed(
     if expected.require_resumed_node and parsed.resumed_node_id != expected.resumed_node_id:
         return False
     action = f"{parsed.next_action} {' '.join(parsed.selected_node_ids)}".lower()
-    if expected.require_next_action_tokens and not all(
-        token.lower() in action for token in expected.next_action_tokens
-    ):
-        return False
-    return True
+    return not (
+        expected.require_next_action_tokens
+        and not all(token.lower() in action for token in expected.next_action_tokens)
+    )
 
 
 def execution_graph_trace_for_rule(

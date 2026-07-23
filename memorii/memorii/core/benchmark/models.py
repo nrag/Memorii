@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.core.promotion.models import PromotionAction, PromotionReasonCode
+from memorii.core.promotion.execution_contracts import PromotionAction, PromotionReasonCode
+from memorii.core.solver.models import NextTestAction
 from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
 from memorii.domain.routing import InboundEvent
 
 
-class BenchmarkScenarioType(str, Enum):
+class BenchmarkScenarioType(StrEnum):
     TRANSCRIPT_RETRIEVAL = "transcript_retrieval"
     SEMANTIC_RETRIEVAL = "semantic_retrieval"
     EPISODIC_RETRIEVAL = "episodic_retrieval"
@@ -29,32 +30,32 @@ class BenchmarkScenarioType(str, Enum):
     IMPLICIT_RECALL = "implicit_recall"
 
 
-class BenchmarkSystem(str, Enum):
+class BenchmarkSystem(StrEnum):
     MEMORII = "memorii"
     TRANSCRIPT_ONLY_BASELINE = "transcript_only_baseline"
     FLAT_RETRIEVAL_BASELINE = "flat_retrieval_baseline"
     NO_SOLVER_GRAPH_BASELINE = "no_solver_graph_baseline"
 
 
-class ScenarioExecutionLevel(str, Enum):
+class ScenarioExecutionLevel(StrEnum):
     SYSTEM_LEVEL = "system_level"
     PROVIDER_SYSTEM = "provider_system"
     COMPONENT_LEVEL = "component_level"
 
 
-class ScenarioOutcomeStatus(str, Enum):
+class ScenarioOutcomeStatus(StrEnum):
     PASSED = "passed"
     FAILED = "failed"
     UNSUPPORTED = "unsupported"
 
 
-class ScenarioVerdict(str, Enum):
+class ScenarioVerdict(StrEnum):
     PASSED = "passed"
     MEMORII_FAILED = "memorii_failed"
     MEMORII_PASSED_BUT_WORSE_THAN_BASELINE = "memorii_passed_but_worse_than_baseline"
 
 
-class MemoryLifecycleFamily(str, Enum):
+class MemoryLifecycleFamily(StrEnum):
     CREATE_AND_REUSE_USER_PREFERENCE = "create_and_reuse_user_preference"
     BLOCK_INFERRED_USER_PREFERENCE = "block_inferred_user_preference"
     MERGE_NEAR_DUPLICATE_PREFERENCE = "merge_near_duplicate_preference"
@@ -81,14 +82,14 @@ class MemoryLifecycleFamily(str, Enum):
     HIGH_SIMILARITY_ACTIVE_DISTRACTOR = "high_similarity_active_distractor"
 
 
-class WorkspaceLifecycleStage(str, Enum):
+class WorkspaceLifecycleStage(StrEnum):
     PROJECT = "project"
     AREA = "area"
     RESOURCE = "resource"
     ARCHIVE = "archive"
 
 
-class BaselinePolicy(str, Enum):
+class BaselinePolicy(StrEnum):
     RUN = "run"
     SKIP = "skip"
 
@@ -169,7 +170,7 @@ class SolverValidationFixture(BaseModel):
     decision: str
     evidence_ids: list[str] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
-    next_best_test: str | None = None
+    next_test_action: NextTestAction | None = None
     available_evidence_ids: set[str] = Field(default_factory=set)
     expect_downgrade: bool = False
     expect_invalid_rejection: bool = False
@@ -213,7 +214,7 @@ class LearningAcrossEpisodesFixture(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def _validate_expected_writeback(self) -> "LearningAcrossEpisodesFixture":
+    def _validate_expected_writeback(self) -> LearningAcrossEpisodesFixture:
         if not self.expected_writeback_domains:
             self.expected_writeback_domains = [self.expected_writeback_domain]
         return self
@@ -241,7 +242,7 @@ class ConflictCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def _validate_temporal_semantics(self) -> "ConflictCandidate":
+    def _validate_temporal_semantics(self) -> ConflictCandidate:
         has_timestamp_or_version = self.timestamp is not None or self.version is not None
         has_validity_window = self.valid_from is not None or self.valid_to is not None
         if not has_timestamp_or_version and not has_validity_window:
@@ -272,7 +273,7 @@ class ImplicitRecallFixture(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def _validate_lexical_overlap(self) -> "ImplicitRecallFixture":
+    def _validate_lexical_overlap(self) -> ImplicitRecallFixture:
         if self.lexical_overlap_score > self.max_lexical_overlap:
             raise ValueError(
                 f"implicit recall lexical overlap {self.lexical_overlap_score} exceeds "
@@ -322,7 +323,7 @@ class BenchmarkScenarioFixture(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @model_validator(mode="after")
-    def _validate_category_fixture_contract(self) -> "BenchmarkScenarioFixture":
+    def _validate_category_fixture_contract(self) -> BenchmarkScenarioFixture:
         fixture_fields = {
             "retrieval": self.retrieval is not None,
             "routing": self.routing is not None,

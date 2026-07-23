@@ -17,7 +17,10 @@ from typing import Protocol
 class BenchmarkSuiteRunner(Protocol):
     """Minimal contract for a benchmark suite CLI runner."""
 
-    suite_name: str
+    @property
+    def suite_name(self) -> str:
+        """Stable public suite name used by the CLI registry."""
+        ...
 
     def supports_mode(self, mode: str) -> bool:
         """Return whether this suite accepts the requested mode value."""

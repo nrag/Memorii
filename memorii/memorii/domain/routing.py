@@ -1,7 +1,7 @@
 """Routing domain schemas for cross-memory control plane."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -10,7 +10,7 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryScope
 from memorii.domain.memory_object import MemoryObject
 
 
-class InboundEventClass(str, Enum):
+class InboundEventClass(StrEnum):
     USER_MESSAGE = "user_message"
     AGENT_MESSAGE = "agent_message"
     TOOL_RESULT = "tool_result"
@@ -77,14 +77,14 @@ class RoutingDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class WritebackEligibilityReason(str, Enum):
+class WritebackEligibilityReason(StrEnum):
     SOLVER_RESOLVED = "solver_resolved"
     VALIDATED_ABSTRACTION = "validated_abstraction"
     DURABLE_USER_SIGNAL = "durable_user_signal"
     CHECKPOINT_SUMMARY = "checkpoint_summary"
 
 
-class ValidationState(str, Enum):
+class ValidationState(StrEnum):
     UNVALIDATED = "unvalidated"
     VALIDATED = "validated"
     REJECTED = "rejected"

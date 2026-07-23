@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Protocol
-from uuid import uuid5, NAMESPACE_URL
 
 from memorii.core.llm_provider.runner import PromptLLMRunner
+from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput, MemoryExtractor
+from memorii.core.memory_evolution.extraction_identity import normalize_extracted_name as _normalize_name
+from memorii.core.memory_evolution.extraction_identity import stable_entity_id as _entity_id
+from memorii.core.memory_evolution.extraction_identity import stable_extraction_id as _stable_id
+from memorii.core.memory_evolution.language import supports_english_rules
 from memorii.core.memory_evolution.models import (
     ClaimKey,
     ConfidenceComponents,
@@ -17,61 +20,84 @@ from memorii.core.memory_evolution.models import (
     EvidenceSpan,
     ExtractedAction,
     ExtractedClaim,
+    ExtractionFailureCode,
     ExtractionRun,
+    ExtractionRunStatus,
+    FallbackOutcome,
+    FinalExtractionSource,
+    ProviderAttemptStatus,
     SourceObservation,
+    memory_scope_from_observation,
 )
-from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
+from memorii.core.prompts.runtime_manifest import PromptOwner
 
 
-class MemoryExtractor(Protocol):
-    provider: str
-    model: str | None
-    prompt_hash: str | None
-
-    def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]: ...
-
-
-class RuleMemoryExtractor:
-    """Fallback extractor for simple facts/actions.
+class EnglishRuleMemoryExtractor:
+    """English-only fallback extractor for simple facts/actions.
 
     The production path can swap in an LLM extractor later; this provider gives
     deterministic coverage for source-linked facts and safe fallback behavior.
     """
 
-    provider = "rule"
-    model = None
-    prompt_hash = None
+    provider: str = "english_rule"
+    model: str | None = None
+    prompt_hash: str | None = None
 
-    def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    def extract(
+        self, observations: list[SourceObservation]
+    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
-        entities: dict[str, EntityMention] = {}
+        entities: dict[tuple[str, str, str], EntityMention] = {}
         claims: list[ExtractedClaim] = []
         actions: list[ExtractedAction] = []
         errors: list[str] = []
 
         for observation in observations:
+            if not supports_english_rules(observation.language):
+                errors.append(f"{observation.source_id}: unsupported_language:{observation.language}")
+                continue
             try:
-                obs_entities, obs_claims, obs_actions = self._extract_observation(run_id=run_id, observation=observation)
+                obs_entities, obs_claims, obs_actions = self._extract_observation(
+                    run_id=run_id, observation=observation
+                )
             except ValueError as exc:
                 errors.append(f"{observation.source_id}: {exc}")
                 continue
             for entity in obs_entities:
-                entities.setdefault(entity.entity_id, entity)
+                key = (entity.entity_id, entity.normalized_name, entity.scope.stable_id())
+                entities.setdefault(key, entity)
             claims.extend(obs_claims)
             actions.extend(obs_actions)
 
         entity_list = list(entities.values())
         claims = _canonicalize_claim_arguments(claims, entity_list)
+        if errors:
+            status = (
+                ExtractionRunStatus.PARTIAL
+                if entity_list or claims or actions
+                else ExtractionRunStatus.ABSTAINED
+            )
+            failure_code = (
+                ExtractionFailureCode.UNSUPPORTED_LANGUAGE
+                if all("unsupported_language:" in error for error in errors)
+                else ExtractionFailureCode.OUTPUT_VALIDATION
+            )
+        else:
+            status = ExtractionRunStatus.SUCCEEDED
+            failure_code = None
         run = ExtractionRun(
             extraction_run_id=run_id,
             provider=self.provider,
             model=self.model,
             prompt_hash=self.prompt_hash,
             input_source_ids=[obs.source_id for obs in observations],
-            entity_ids=sorted(entities),
+            entity_ids=sorted({entity.entity_id for entity in entity_list}),
             claim_ids=[claim.claim_id for claim in claims],
             action_ids=[action.action_id for action in actions],
             validation_summary={},
+            status=status,
+            failure_code=failure_code,
             errors=errors,
         )
         return run, entity_list, claims, actions
@@ -86,6 +112,7 @@ class RuleMemoryExtractor:
         entities: list[EntityMention] = []
         claims: list[ExtractedClaim] = []
         actions: list[ExtractedAction] = []
+        observation_scope = memory_scope_from_observation(observation)
 
         for predicate, subject, value, quote in _extract_fact_matches(text):
             subject_entity_id = _entity_id(subject)
@@ -99,6 +126,7 @@ class RuleMemoryExtractor:
                     entity_type=EntityType.UNKNOWN,
                     evidence_spans=[span],
                     confidence=0.7,
+                    scope=observation_scope,
                 )
             )
             if value_entity_id is not None:
@@ -110,6 +138,7 @@ class RuleMemoryExtractor:
                         entity_type=EntityType.PERSON,
                         evidence_spans=[span],
                         confidence=0.7,
+                        scope=observation_scope,
                     )
                 )
             claims.append(
@@ -118,7 +147,7 @@ class RuleMemoryExtractor:
                     claim_key=ClaimKey(
                         subject_entity_id=subject_entity_id,
                         predicate_id=predicate,
-                        scope_key=observation.task_id or "global",
+                        scope=observation_scope,
                         qualifier_key="default",
                     ),
                     object_value=value,
@@ -130,7 +159,11 @@ class RuleMemoryExtractor:
                 )
             )
 
-        action_match = re.search(r"\b(?P<target>[A-Z][A-Za-z0-9 _:-]+?)\s+(?P<status>started|blocked|resumed|abandoned|completed|failed|succeeded)\b", text, re.IGNORECASE)
+        action_match = re.search(
+            r"\b(?P<target>[A-Z][A-Za-z0-9 _:-]+?)\s+(?P<status>started|blocked|resumed|abandoned|completed|failed|succeeded)\b",
+            text,
+            re.IGNORECASE,
+        )
         if action_match:
             target = action_match.group("target").strip()
             status = action_match.group("status").lower()
@@ -142,6 +175,7 @@ class RuleMemoryExtractor:
                     target_entity_ids=[_entity_id(target)],
                     status=status,
                     timestamp=observation.timestamp,
+                    scope=observation_scope,
                     evidence_spans=[span],
                     extraction_run_id=run_id,
                 )
@@ -151,8 +185,9 @@ class RuleMemoryExtractor:
 
 
 class LLMMemoryExtractor:
-    provider = "llm"
+    provider: str = "llm"
     prompt_ref = "memory_extraction:v1"
+    output_model = MemoryExtractionOutput
 
     def __init__(
         self,
@@ -160,15 +195,21 @@ class LLMMemoryExtractor:
         runner: PromptLLMRunner,
         prompt_root: Path | None = None,
     ) -> None:
-        root = prompt_root or Path(__file__).resolve().parents[2] / "prompts"
+        root = prompt_root or default_prompt_root()
         self._runner = runner
         self._registry = PromptRegistry(prompt_root=root)
         self.model: str | None = None
         self.prompt_hash: str | None = None
 
-    def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    def extract(
+        self, observations: list[SourceObservation]
+    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
-        contract = self._registry.load(self.prompt_ref)
+        contract = self._registry.load(
+            self.prompt_ref,
+            owner=PromptOwner.LLM_MEMORY_EXTRACTOR,
+            output_model=self.output_model,
+        )
         result = self._runner.run(
             contract=contract,
             variables={
@@ -179,26 +220,42 @@ class LLMMemoryExtractor:
                 "decision_point": "memory_extraction",
                 "source_ids": [obs.source_id for obs in observations],
             },
+            output_model=self.output_model,
         )
-        self.model = result.response.model
+        self.model = result.response.actual_model or result.response.requested_model
         self.prompt_hash = result.request.prompt_hash
         if not result.success or result.output is None:
-            errors = [result.failure_mode or "llm_extraction_failed"]
+            failure_mode = result.failure_mode or "output_validation"
+            failure_code = {
+                "provider_error": ExtractionFailureCode.PROVIDER_ERROR,
+                "invalid_json": ExtractionFailureCode.INVALID_JSON,
+                "schema_validation": ExtractionFailureCode.SCHEMA_VALIDATION,
+            }.get(failure_mode, ExtractionFailureCode.OUTPUT_VALIDATION)
+            errors = [failure_mode]
             if result.response.error:
                 errors.append(result.response.error)
             run = ExtractionRun(
                 extraction_run_id=run_id,
                 provider=self.provider,
-                model=result.response.model,
+                model=result.response.actual_model or result.response.requested_model,
                 prompt_hash=result.request.prompt_hash,
                 input_source_ids=[obs.source_id for obs in observations],
+                status=ExtractionRunStatus.FAILED,
+                provider_attempt_status={
+                    ExtractionFailureCode.PROVIDER_ERROR: ProviderAttemptStatus.PROVIDER_ERROR,
+                    ExtractionFailureCode.INVALID_JSON: ProviderAttemptStatus.INVALID_JSON,
+                    ExtractionFailureCode.SCHEMA_VALIDATION: ProviderAttemptStatus.SCHEMA_ERROR,
+                }.get(failure_code, ProviderAttemptStatus.SUCCEEDED),
+                final_output_source=FinalExtractionSource.NONE,
+                failure_code=failure_code,
+                primary_failure_code=failure_code,
                 errors=errors,
             )
             return run, [], [], []
-        return _models_from_llm_output(
+        return models_from_llm_output(
             run_id=run_id,
             provider=self.provider,
-            model=result.response.model,
+            model=result.response.actual_model or result.response.requested_model,
             prompt_hash=result.request.prompt_hash,
             observations=observations,
             output=result.output,
@@ -206,29 +263,56 @@ class LLMMemoryExtractor:
 
 
 class HybridMemoryExtractor:
-    provider = "hybrid"
+    provider: str = "hybrid"
 
     def __init__(
         self,
         *,
         llm_extractor: MemoryExtractor,
-        rule_extractor: RuleMemoryExtractor | None = None,
+        rule_extractor: EnglishRuleMemoryExtractor | None = None,
     ) -> None:
         self._llm_extractor = llm_extractor
-        self._rule_extractor = rule_extractor or RuleMemoryExtractor()
+        self._rule_extractor = rule_extractor or EnglishRuleMemoryExtractor()
         self.model: str | None = None
         self.prompt_hash: str | None = None
 
-    def extract(self, observations: list[SourceObservation]) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    def extract(
+        self, observations: list[SourceObservation]
+    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         run, entities, claims, actions = self._llm_extractor.extract(observations)
         self.model = run.model
         self.prompt_hash = run.prompt_hash
-        if run.errors:
-            fallback_run, fallback_entities, fallback_claims, fallback_actions = self._rule_extractor.extract(observations)
+        if run.status == ExtractionRunStatus.FAILED:
+            fallback_run, fallback_entities, fallback_claims, fallback_actions = self._rule_extractor.extract(
+                observations
+            )
+            if fallback_run.status not in {
+                ExtractionRunStatus.SUCCEEDED,
+                ExtractionRunStatus.PARTIAL,
+            }:
+                failed_run = run.model_copy(
+                    update={
+                        "fallback_outcome": FallbackOutcome.FAILED,
+                        "fallback_provider": self._rule_extractor.provider,
+                        "final_output_source": FinalExtractionSource.NONE,
+                        "failure_code": fallback_run.failure_code or run.failure_code,
+                        "errors": [
+                            *run.errors,
+                            *fallback_run.errors,
+                            f"fallback_failed:{fallback_run.status.value}",
+                        ]
+                    }
+                )
+                return failed_run, [], [], []
             fallback_run = fallback_run.model_copy(
                 update={
                     "provider": self.provider,
-                    "errors": [*run.errors, "fallback_used:rule"],
+                    "provider_attempt_status": run.provider_attempt_status,
+                    "primary_failure_code": run.failure_code,
+                    "fallback_outcome": FallbackOutcome.SUCCEEDED,
+                    "final_output_source": FinalExtractionSource.FALLBACK,
+                    "fallback_provider": self._rule_extractor.provider,
+                    "errors": [*run.errors, "fallback_used:english_rule"],
                 }
             )
             return fallback_run, fallback_entities, fallback_claims, fallback_actions
@@ -237,14 +321,32 @@ class HybridMemoryExtractor:
 
 def _extract_fact_matches(text: str) -> list[tuple[str, str, str, str]]:
     patterns: list[tuple[str, str]] = [
-        ("api_owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:API\s+owner|api\s+owner)\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
+        (
+            "api_owner",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:API\s+owner|api\s+owner)\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)",
+        ),
         ("approver", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+approver\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
         ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+owner\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+ownership\s+(?:in\s+\w+\s+)?(?:belonged to|belongs to)\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("owner", r"(?P<value>[A-Z][A-Za-z0-9 _:-]+?)\s+owns\s+(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)(?=\s+for now|\s+currently|[.,;]|$)"),
-        ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?:project|service|task|workstream)\b\s+owned\s+by\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("entity_type", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?P<value>project|service|task|incident|document|preference)\b"),
-        ("status", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:state|status)\s*(?:is|:|=)\s*(?P<value>failed|succeeded|blocked|running|done|active|inactive)"),
+        (
+            "owner",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+ownership\s+(?:in\s+\w+\s+)?(?:belonged to|belongs to)\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)",
+        ),
+        (
+            "owner",
+            r"(?P<value>[A-Z][A-Za-z0-9 _:-]+?)\s+owns\s+(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)(?=\s+for now|\s+currently|[.,;]|$)",
+        ),
+        (
+            "owner",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?:project|service|task|workstream)\b\s+owned\s+by\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)",
+        ),
+        (
+            "entity_type",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?P<value>project|service|task|incident|document|preference)\b",
+        ),
+        (
+            "status",
+            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:state|status)\s*(?:is|:|=)\s*(?P<value>failed|succeeded|blocked|running|done|active|inactive)",
+        ),
         ("status", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:deploy|deployment)\s+(?P<value>failed|succeeded)"),
         ("preference", r"(?:prefers|preference is|style is)\s+(?P<value>[a-z][A-Za-z0-9 _:-]+)"),
     ]
@@ -270,7 +372,7 @@ def _clean_extracted_value(value: str) -> str:
     return re.sub(r"\s+", " ", cleaned).strip(" .:")
 
 
-def _models_from_llm_output(
+def models_from_llm_output(
     *,
     run_id: str,
     provider: str,
@@ -284,23 +386,56 @@ def _models_from_llm_output(
     entities: list[EntityMention] = []
     claims: list[ExtractedClaim] = []
     actions: list[ExtractedAction] = []
+    if len(observation_by_id) != len(observations):
+        run = ExtractionRun(
+            extraction_run_id=run_id,
+            provider=provider,
+            model=model,
+            prompt_hash=prompt_hash,
+            input_source_ids=[obs.source_id for obs in observations],
+            status=ExtractionRunStatus.FAILED,
+            provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
+            final_output_source=FinalExtractionSource.NONE,
+            failure_code=ExtractionFailureCode.OUTPUT_VALIDATION,
+            validation_summary={
+                "input_validation_errors": 1,
+                "entity_binding_errors": 0,
+                "claim_binding_errors": 0,
+                "action_binding_errors": 0,
+            },
+            errors=["input: ValueError:source observation IDs must be unique"],
+        )
+        return run, [], [], []
 
-    for idx, item in enumerate(_list_output(output, "entities")):
+    entity_items = _list_output(output, "entities")
+    entity_id_by_ref: dict[str, str] = {}
+    for idx, item in enumerate(entity_items):
         try:
             source_id = str(item.get("source_id") or "")
             observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
-            span = _span(observation=observation, quote=str(item.get("quote") or item.get("mention_text") or ""))
+            span = _span(observation=observation, quote=str(item.get("quote") or ""))
+            observation_scope = memory_scope_from_observation(observation)
+            entity_ref = str(item["entity_ref"]).strip()
+            if entity_ref in entity_id_by_ref:
+                raise ValueError(f"duplicate entity_ref:{entity_ref!r}")
+            entity_id = _stable_id(
+                "mention",
+                "|".join([run_id, observation.source_id, entity_ref]),
+            )
+            entity_id_by_ref[entity_ref] = entity_id
             entities.append(
                 EntityMention(
-                    entity_id=str(item["entity_id"]),
+                    entity_id=entity_id,
                     mention_text=str(item["mention_text"]),
-                    normalized_name=str(item.get("normalized_name") or item["mention_text"]).strip().lower(),
+                    normalized_name=_normalize_name(str(item["mention_text"])),
+                    aliases=[str(alias) for alias in _sequence_output(item.get("aliases"))],
                     entity_type=_entity_type(str(item.get("entity_type") or "unknown")),
                     evidence_spans=[span],
-                    confidence=float(item.get("confidence", 0.5)),
+                    confidence=_float_output(item.get("confidence"), default=0.5),
+                    scope=observation_scope,
                 )
             )
-        except Exception as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             errors.append(f"entity[{idx}]: {type(exc).__name__}:{exc}")
 
     for idx, item in enumerate(_list_output(output, "claims")):
@@ -308,29 +443,26 @@ def _models_from_llm_output(
             source_id = str(item.get("source_id") or "")
             observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
             predicate_id = str(item["predicate_id"])
-            subject_entity_id = str(item["subject_entity_id"])
+            subject_entity_ref = str(item["subject_entity_ref"]).strip()
+            subject_entity_id = entity_id_by_ref[subject_entity_ref]
             object_value = str(item["object_value"]).strip()
-            span = _span(observation=observation, quote=str(item.get("quote") or object_value))
+            span = _span(observation=observation, quote=str(item.get("quote") or ""))
+            observation_scope = memory_scope_from_observation(observation)
             claim_key = ClaimKey(
                 subject_entity_id=subject_entity_id,
                 predicate_id=predicate_id,
-                scope_key=str(item.get("scope_key") or observation.task_id or "global"),
-                qualifier_key=str(item.get("qualifier_key") or "default"),
+                scope=observation_scope,
+                qualifier_key="default",
             )
-            confidence = float(item.get("confidence", 0.6))
-            object_entity_id = str(item["object_entity_id"]) if item.get("object_entity_id") else None
-            raw_claim_id = str(item.get("claim_id") or "").strip()
-            qualifiers = {str(key): str(value) for key, value in dict(item.get("qualifiers") or {}).items()}
-            valid_from, valid_from_normalization = _parse_dt_with_normalization(item.get("valid_from"))
-            valid_to, valid_to_normalization = _parse_dt_with_normalization(item.get("valid_to"))
-            if valid_from_normalization:
-                qualifiers.setdefault("valid_from_date_normalization", valid_from_normalization)
-                qualifiers.setdefault("date_normalization", valid_from_normalization)
-            if valid_to_normalization:
-                qualifiers.setdefault("valid_to_date_normalization", valid_to_normalization)
-                qualifiers.setdefault("date_normalization", valid_to_normalization)
-            if raw_claim_id:
-                qualifiers.setdefault("model_claim_id", raw_claim_id)
+            confidence = _float_output(item.get("confidence"), default=0.6)
+            object_entity_ref = (
+                str(item["object_entity_ref"]).strip()
+                if item.get("object_entity_ref")
+                else None
+            )
+            object_entity_id = (
+                entity_id_by_ref[object_entity_ref] if object_entity_ref is not None else None
+            )
             claim_id = _stable_id(
                 "claim",
                 "|".join(
@@ -341,8 +473,8 @@ def _models_from_llm_output(
                         subject_entity_id,
                         object_value,
                         object_entity_id or "",
-                        claim_key.scope_key,
-                        claim_key.qualifier_key,
+                        claim_key.scope.stable_id(),
+                        "default",
                     ]
                 ),
             )
@@ -352,53 +484,100 @@ def _models_from_llm_output(
                     claim_key=claim_key,
                     object_value=object_value,
                     object_entity_id=object_entity_id,
-                    qualifiers=qualifiers,
-                    valid_from=valid_from or observation.timestamp,
-                    valid_to=valid_to,
+                    valid_from=observation.timestamp,
+                    valid_to=None,
                     evidence_spans=[span],
                     confidence=ConfidenceComponents(
                         extraction=confidence,
                         evidence=0.8 if span.char_start is not None else 0.4,
                         source_trust=_confidence_for_source(observation).source_trust,
-                        calibrated=min(1.0, max(0.0, confidence * 0.5 + _confidence_for_source(observation).source_trust * 0.3 + 0.16)),
+                        calibrated=min(
+                            1.0,
+                            max(0.0, confidence * 0.5 + _confidence_for_source(observation).source_trust * 0.3 + 0.16),
+                        ),
                     ),
                     extraction_run_id=run_id,
                 )
             )
-        except Exception as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             errors.append(f"claim[{idx}]: {type(exc).__name__}:{exc}")
 
-    for idx, item in enumerate(_list_output(output, "actions")):
+    action_items = _list_output(output, "actions")
+    action_id_by_ref: dict[str, str] = {}
+    duplicate_action_refs: set[str] = set()
+    for item in action_items:
+        action_ref = str(item.get("action_ref") or "").strip()
+        source_id = str(item.get("source_id") or "")
+        if action_ref in action_id_by_ref:
+            duplicate_action_refs.add(action_ref)
+            continue
+        if not action_ref:
+            continue
+        action_id_by_ref[action_ref] = _stable_id(
+            "action",
+            "|".join([run_id, source_id, action_ref]),
+        )
+    for idx, item in enumerate(action_items):
         try:
             source_id = str(item.get("source_id") or "")
             observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
-            quote = str(item.get("quote") or item.get("status") or item.get("action_type") or "")
+            quote = str(item.get("quote") or "")
             span = _span(observation=observation, quote=quote)
+            action_ref = str(item["action_ref"]).strip()
+            if action_ref in duplicate_action_refs:
+                raise ValueError(f"duplicate action_ref:{action_ref!r}")
+            action_id = action_id_by_ref[action_ref]
             action_type = str(item["action_type"])
-            target_entity_ids = [str(value) for value in item.get("target_entity_ids", [])]
+            target_entity_ids = [
+                entity_id_by_ref[str(value)]
+                for value in _sequence_output(item.get("target_entity_refs"))
+            ]
             status = str(item["status"])
-            action_id = _stable_id(
-                "action",
-                "|".join([run_id, observation.source_id, action_type, "|".join(target_entity_ids), status]),
+            observation_scope = memory_scope_from_observation(observation)
+            actor_entity_ref = (
+                str(item["actor_entity_ref"]).strip()
+                if item.get("actor_entity_ref")
+                else None
             )
             actions.append(
                 ExtractedAction(
                     action_id=action_id,
-                    actor_entity_id=str(item["actor_entity_id"]) if item.get("actor_entity_id") else None,
+                    actor_entity_id=(
+                        entity_id_by_ref[actor_entity_ref]
+                        if actor_entity_ref is not None
+                        else None
+                    ),
                     action_type=action_type,
                     target_entity_ids=target_entity_ids,
                     status=status,
-                    dependency_ids=[str(value) for value in item.get("dependency_ids", [])],
-                    blocking_ids=[str(value) for value in item.get("blocking_ids", [])],
-                    timestamp=_parse_dt(item.get("timestamp")) or observation.timestamp,
+                    dependency_ids=[
+                        action_id_by_ref[str(value)]
+                        for value in _sequence_output(item.get("dependency_action_refs"))
+                    ],
+                    blocking_ids=[
+                        action_id_by_ref[str(value)]
+                        for value in _sequence_output(item.get("blocking_action_refs"))
+                    ],
+                    timestamp=observation.timestamp,
+                    scope=observation_scope,
                     evidence_spans=[span],
                     extraction_run_id=run_id,
                 )
             )
-        except Exception as exc:
+        except (KeyError, TypeError, ValueError) as exc:
             errors.append(f"action[{idx}]: {type(exc).__name__}:{exc}")
 
     claims = _canonicalize_claim_arguments(claims, entities)
+    extracted_anything = bool(entities or claims or actions)
+    if errors:
+        status = ExtractionRunStatus.PARTIAL if extracted_anything else ExtractionRunStatus.FAILED
+        failure_code = ExtractionFailureCode.OUTPUT_VALIDATION
+    elif extracted_anything:
+        status = ExtractionRunStatus.SUCCEEDED
+        failure_code = None
+    else:
+        status = ExtractionRunStatus.ABSTAINED
+        failure_code = None
     run = ExtractionRun(
         extraction_run_id=run_id,
         provider=provider,
@@ -408,6 +587,23 @@ def _models_from_llm_output(
         entity_ids=[entity.entity_id for entity in entities],
         claim_ids=[claim.claim_id for claim in claims],
         action_ids=[action.action_id for action in actions],
+        status=status,
+        provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
+        final_output_source=(
+            FinalExtractionSource.NONE
+            if status == ExtractionRunStatus.FAILED
+            else FinalExtractionSource.PRIMARY
+        ),
+        failure_code=failure_code,
+        validation_summary={
+            "input_validation_errors": 0,
+            "entity_binding_errors": sum(error.startswith("entity[") for error in errors),
+            "claim_binding_errors": sum(error.startswith("claim[") for error in errors),
+            "action_binding_errors": sum(error.startswith("action[") for error in errors),
+            "accepted_entities": len(entities),
+            "accepted_claims": len(claims),
+            "accepted_actions": len(actions),
+        },
         errors=errors,
     )
     return run, entities, claims, actions
@@ -450,7 +646,7 @@ def _canonicalize_claim_argument(claim: ExtractedClaim, entities_by_id: dict[str
                 new_claim_key.subject_entity_id,
                 object_value,
                 original_subject_id,
-                new_claim_key.scope_key,
+                new_claim_key.scope.stable_id(),
                 new_claim_key.qualifier_key,
             ]
         ),
@@ -484,9 +680,7 @@ def _resolve_observation(*, source_id: str, observation_by_id: dict[str, SourceO
     observation = observation_by_id.get(source_id)
     if observation is not None:
         return observation
-    if len(observation_by_id) == 1:
-        return next(iter(observation_by_id.values()))
-    raise KeyError(source_id)
+    raise KeyError(f"unknown source_id:{source_id!r}")
 
 
 def _list_output(output: dict[str, object], key: str) -> list[dict[str, object]]:
@@ -496,6 +690,16 @@ def _list_output(output: dict[str, object], key: str) -> list[dict[str, object]]
     return [item for item in value if isinstance(item, dict)]
 
 
+def _sequence_output(value: object) -> Sequence[object]:
+    return value if isinstance(value, Sequence) and not isinstance(value, str) else ()
+
+
+def _float_output(value: object, *, default: float) -> float:
+    if isinstance(value, (int, float, str)):
+        return float(value)
+    return default
+
+
 def _entity_type(value: str) -> EntityType:
     try:
         return EntityType(value)
@@ -503,35 +707,17 @@ def _entity_type(value: str) -> EntityType:
         return EntityType.UNKNOWN
 
 
-def _parse_dt(value: object) -> datetime | None:
-    parsed, _ = _parse_dt_with_normalization(value)
-    return parsed
-
-
-def _parse_dt_with_normalization(value: object) -> tuple[datetime | None, str | None]:
-    if value in {None, ""}:
-        return None, None
-    if isinstance(value, datetime):
-        return (value if value.tzinfo is not None else value.replace(tzinfo=UTC)), None
-    if isinstance(value, str):
-        stripped = value.strip()
-        quarter_match = re.fullmatch(r"(\d{4})-Q([1-4])", stripped, flags=re.IGNORECASE)
-        if quarter_match:
-            year = int(quarter_match.group(1))
-            month = {"1": 1, "2": 4, "3": 7, "4": 10}[quarter_match.group(2)]
-            return datetime(year, month, 1, tzinfo=UTC), "quarter_start"
-        parsed = datetime.fromisoformat(stripped.replace("Z", "+00:00"))
-        return (parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)), None
-    return None, None
-
-
 def _span(*, observation: SourceObservation, quote: str) -> EvidenceSpan:
-    start = observation.text.lower().find(quote.lower())
-    end = start + len(quote) if start >= 0 else None
+    if not quote:
+        raise ValueError("evidence quote must be non-empty")
+    start = observation.text.find(quote)
+    if start < 0:
+        raise ValueError(f"evidence quote is not verbatim in source {observation.source_id!r}")
+    end = start + len(quote)
     return EvidenceSpan(
         source_id=observation.source_id,
         quote=quote,
-        char_start=start if start >= 0 else None,
+        char_start=start,
         char_end=end,
         source_type=observation.source_type,
         timestamp=observation.timestamp,
@@ -558,15 +744,3 @@ def _confidence_for_source(observation: SourceObservation) -> ConfidenceComponen
         contradiction=0.0,
         calibrated=calibrated,
     )
-
-
-def _entity_id(value: str) -> str:
-    return f"ent:{_normalize_name(value).replace(' ', '-')}"
-
-
-def _normalize_name(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip(" .:")).lower()
-
-
-def _stable_id(prefix: str, value: str) -> str:
-    return f"{prefix}:{uuid5(NAMESPACE_URL, value)}"

@@ -5,8 +5,8 @@ from __future__ import annotations
 from memorii.tools.benchmark_registry import BenchmarkSuiteRegistry
 from memorii.tools.benchmark_suites import (
     execution_graph,
-    hotpotqa_v1,
     hotpotqa_official,
+    hotpotqa_v1,
     memory_evolution,
     memory_evolution_runtime,
     memory_evolution_sim,

@@ -16,15 +16,17 @@ from memorii.core.benchmark.models import (
     BenchmarkRunConfig,
     BenchmarkRunReport,
     BenchmarkScenarioFixture,
+    BenchmarkScenarioType,
     BenchmarkSystem,
+    ScenarioMetrics,
+    ScenarioObservation,
     ScenarioResult,
 )
 from memorii.core.benchmark.reporting import write_artifacts
 from memorii.core.benchmark.reproducibility import apply_seed, build_run_id
 from memorii.core.benchmark.scenarios import ScenarioExecutor
 from memorii.core.benchmark.validation import validate_preflight, validate_report
-from memorii.tools.benchmark_registry import BenchmarkSuiteRunner
-from memorii.tools.benchmark_suites.artifact_io import _write_jsonl
+from memorii.tools.benchmark_suites.artifact_io import write_jsonl
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
 
 FixtureLoader = Callable[[argparse.Namespace], tuple[list[BenchmarkScenarioFixture], str, dict[str, object] | None]]
@@ -35,15 +37,15 @@ TraceRunner = Callable[
 ReportMutator = Callable[[BenchmarkRunReport, list[dict[str, object]]], BenchmarkRunReport]
 
 
-def aggregate_by_system(results: list[ScenarioResult]) -> dict[BenchmarkSystem, object]:
-    grouped: dict[BenchmarkSystem, list[object]] = {}
+def aggregate_by_system(results: list[ScenarioResult]) -> dict[BenchmarkSystem, ScenarioMetrics]:
+    grouped: dict[BenchmarkSystem, list[ScenarioObservation]] = {}
     for result in results:
         grouped.setdefault(result.system, []).append(result.observation)
     return {system: aggregate_metrics(observations) for system, observations in grouped.items()}
 
 
-def aggregate_by_category(results: list[ScenarioResult]) -> dict[object, dict[BenchmarkSystem, object]]:
-    grouped: dict[object, dict[BenchmarkSystem, list[object]]] = {}
+def aggregate_by_category(results: list[ScenarioResult]) -> dict[BenchmarkScenarioType, dict[BenchmarkSystem, ScenarioMetrics]]:
+    grouped: dict[BenchmarkScenarioType, dict[BenchmarkSystem, list[ScenarioObservation]]] = {}
     for result in results:
         grouped.setdefault(result.category, {})
         grouped[result.category].setdefault(result.system, []).append(result.observation)
@@ -197,14 +199,14 @@ class FixtureBackedBenchmarkSuiteRunner:
                 root_dir=str(root_dir),
             )
             if trace_rows and self.trace_artifact_name is not None:
-                _write_jsonl(run_dir / self.trace_artifact_name, trace_rows)
+                write_jsonl(run_dir / self.trace_artifact_name, trace_rows)
             if metadata is not None:
                 (run_dir / "hotpotqa_metadata.json").write_text(
                     json.dumps(metadata, indent=2, sort_keys=True),
                     encoding="utf-8",
                 )
-            _write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
-            _write_jsonl(run_dir / "failures.jsonl", [row for row in trace_rows if row.get("success") is False])
+            write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
+            write_jsonl(run_dir / "failures.jsonl", [row for row in trace_rows if row.get("success") is False])
             print_fixture_summary(
                 suite=self.suite_name,
                 systems=args.systems,

@@ -4,11 +4,13 @@ import json
 from pathlib import Path
 
 import pytest
-
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
-from memorii.tools.run_benchmark import main
-from tests.unit.tools.run_benchmark_test_helpers import _latest_run_dir
+from tests.unit.tools.run_benchmark_test_helpers import (
+    _application_with_fake_client,
+    _application_with_live_client,
+    _latest_run_dir,
+)
 
 
 def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
@@ -22,10 +24,6 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
             del config
             output = {
                 "operation": "answer",
-                "entity_ids": [],
-                "claim_ids": [],
-                "relation_ids": [],
-                "citation_event_ids": [],
                 "belief_ranking_ids": [],
                 "selected_entity_ids": [],
                 "selected_claim_ids": [],
@@ -50,7 +48,8 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
             return LLMStructuredResponse(
                 request_id=request.request_id,
                 provider=self.provider_name,
-                model="stub-model",
+                requested_model="stub-model",
+                actual_model="stub-model",
                 raw_text=json.dumps(output),
                 parsed_json=output,
                 valid_json=True,
@@ -60,9 +59,9 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
     monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("MEMORII_ENABLE_LIVE_LLM_TESTS", "true")
-    monkeypatch.setattr("memorii.tools.run_benchmark.LLMClientFactory.from_config", lambda config: StubLiveClient())
+    app = _application_with_live_client(StubLiveClient)
 
-    assert main(
+    assert app.run(
         [
             "--suite",
             "memory_evolution_sim_v1",
@@ -101,11 +100,26 @@ def test_memory_evolution_sim_hybrid_falls_back_to_rule_on_invalid_llm_output(
     class InvalidFakeClient:
         provider_name = "fake-invalid"
 
-    monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", InvalidFakeClient)
+        def complete_structured(
+            self,
+            request: LLMStructuredRequest,
+            *,
+            config: LLMRuntimeConfig,
+        ) -> LLMStructuredResponse:
+            del config
+            return LLMStructuredResponse(
+                request_id=request.request_id,
+                provider=self.provider_name,
+                raw_text="not-json",
+                valid_json=False,
+                schema_valid=False,
+            )
+
+    app = _application_with_fake_client(InvalidFakeClient)
     monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    assert main(
+    assert app.run(
         [
             "--suite",
             "memory_evolution_sim_v1",

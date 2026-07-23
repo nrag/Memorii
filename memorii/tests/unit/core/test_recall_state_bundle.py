@@ -1,8 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
+from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
 from memorii.core.work_state.service import WorkStateService
 from memorii.core.work_state.store import InMemoryWorkStateStore
@@ -37,7 +37,7 @@ def _state(
     )
 
 
-def test_prefetch_without_work_state_service_remains_backward_compatible() -> None:
+def test_prefetch_without_work_state_service_uses_empty_work_state() -> None:
     provider = ProviderMemoryService()
     context = provider.prefetch("what changed", task_id="task:none")
 
@@ -54,6 +54,7 @@ def test_prefetch_with_work_state_service_and_no_matching_states_has_no_section(
     provider.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="please implement parser changes",
+        operation_id="test:recall:no-match",
         session_id="session:other",
         task_id="task:other",
         user_id="user:other",
@@ -73,6 +74,7 @@ def test_prefetch_includes_matching_candidate_task_state() -> None:
     provider.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="please implement parser updates and write tests",
+        operation_id="test:recall:matching-state",
         session_id="session:2",
         task_id="task:2",
         user_id="user:2",
@@ -202,6 +204,7 @@ def test_last_recall_bundle_trace_is_populated() -> None:
     provider.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="please implement and update parser",
+        operation_id="test:recall:trace",
         session_id="session:5",
         task_id="task:5",
         user_id="user:5",

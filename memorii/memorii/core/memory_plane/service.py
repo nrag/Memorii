@@ -1,9 +1,13 @@
-"""Canonical shared memory-plane behavior used by provider and runtime compatibility layers."""
+"""Canonical shared memory-plane behavior used by provider and runtime services."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Protocol
 
 from memorii.core.memory_plane.models import (
     CanonicalMemoryRecord,
@@ -12,7 +16,12 @@ from memorii.core.memory_plane.models import (
     to_memory_object,
     to_provider_stored_record,
 )
-from memorii.core.memory_plane.store import InMemoryMemoryPlaneStore, MemoryPlaneStore
+from memorii.core.memory_plane.store import (
+    InMemoryMemoryPlaneStore,
+    MemoryPlanePrecondition,
+    MemoryPlaneStore,
+)
+from memorii.core.memory_plane.unit_of_work import MemoryPlaneUnitOfWork
 from memorii.core.provider.blocking_policy import evaluate_operation_policy
 from memorii.core.provider.models import (
     ProviderEvent,
@@ -25,9 +34,15 @@ from memorii.core.provider.models import (
 from memorii.core.provider.prefetch import classify_prefetch_query, format_prefetch_context
 from memorii.core.provider.reranking import ProviderReranker
 from memorii.core.retrieval.planner import RetrievalPlanner
-from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.domain.memory_object import MemoryObject
-from memorii.domain.retrieval import DomainRetrievalQuery, RetrievalIntent, RetrievalPlan, RetrievalScope
+from memorii.domain.retrieval import (
+    DomainRetrievalQuery,
+    FreshnessPolicy,
+    RetrievalIntent,
+    RetrievalPlan,
+    RetrievalScope,
+)
 from memorii.domain.routing import InboundEvent, RoutingDecision
 
 
@@ -39,6 +54,10 @@ class RuntimeRetrievalTrace:
     retrieved_ids_deduped: list[str]
 
 
+class RuntimeEventRouter(Protocol):
+    def route_event(self, event: InboundEvent) -> RoutingDecision: ...
+
+
 class MemoryPlaneService:
     """Canonical behavior engine for ingestion, staging, and retrieval/reranking."""
 
@@ -46,18 +65,40 @@ class MemoryPlaneService:
         self._planner = RetrievalPlanner()
         self._reranker = ProviderReranker()
         self._records = record_store if record_store is not None else InMemoryMemoryPlaneStore()
+        self._active_unit_of_work: ContextVar[MemoryPlaneUnitOfWork | None] = ContextVar(
+            f"memory_plane_unit_of_work_{id(self)}",
+            default=None,
+        )
         self._last_prefetch_trace: ProviderPrefetchTrace | None = None
+
+    @contextmanager
+    def unit_of_work(self) -> Iterator[MemoryPlaneUnitOfWork]:
+        """Provide an isolated view whose caller explicitly commits once."""
+
+        if self._active_unit_of_work.get() is not None:
+            raise RuntimeError("nested memory-plane units of work are not supported")
+        unit_of_work = MemoryPlaneUnitOfWork(self._records)
+        token = self._active_unit_of_work.set(unit_of_work)
+        try:
+            yield unit_of_work
+        finally:
+            self._active_unit_of_work.reset(token)
+
+    def _record_store(self) -> MemoryPlaneStore:
+        return self._active_unit_of_work.get() or self._records
 
     # Runtime-facing canonical methods
     def seed_runtime_memory_object(self, memory_object: MemoryObject) -> None:
-        self._records.stage_record(from_memory_object(memory_object))
+        self._record_store().stage_record(from_memory_object(memory_object))
 
     def query_runtime_memory(self, query: DomainRetrievalQuery) -> list[MemoryObject]:
-        records = self._records.list_records(domains=[query.domain])
+        records = self._record_store().list_records(domains=[query.domain])
         return [
             to_memory_object(item)
             for item in records
-            if self._matches_scope(item, query.scope) and self._matches_semantics(item, include_candidates=query.include_candidates, freshness=query.freshness)
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and self._matches_scope(item, query.scope)
+            and self._matches_semantics(item, include_candidates=query.include_candidates, freshness=query.freshness)
         ]
 
     def list_records(
@@ -65,17 +106,39 @@ class MemoryPlaneService:
         *,
         status: CommitStatus | None = None,
         domains: list[MemoryDomain] | None = None,
+        source_kind: str | None = None,
     ) -> list[CanonicalMemoryRecord]:
-        return self._records.list_records(status=status, domains=domains)
+        return self._record_store().list_records(
+            status=status,
+            domains=domains,
+            source_kind=source_kind,
+        )
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
-        return self._records.get_record(memory_id)
+        return self._record_store().get_record(memory_id)
 
     def stage_record(self, record: CanonicalMemoryRecord) -> None:
-        self._records.stage_record(record)
+        self._record_store().stage_record(record)
+
+    def write_records(self, records: tuple[CanonicalMemoryRecord, ...]) -> int:
+        return self._record_store().write_records(records)
+
+    def conditionally_write_records(
+        self,
+        records: tuple[CanonicalMemoryRecord, ...],
+        *,
+        preconditions: tuple[MemoryPlanePrecondition, ...],
+    ) -> int:
+        if self._active_unit_of_work.get() is not None:
+            raise RuntimeError("conditional control writes cannot be nested in a memory-plane unit of work")
+        return self._records.apply_batch(
+            records,
+            expected_revision=None,
+            preconditions=preconditions,
+        )
 
     def upsert_record(self, record: CanonicalMemoryRecord) -> None:
-        self._records.upsert_record(record)
+        self._record_store().upsert_record(record)
 
     def update_candidate_lifecycle(
         self,
@@ -87,10 +150,10 @@ class MemoryPlaneService:
         conflict_with_memory_ids: list[str],
         supersedes_memory_ids: list[str],
     ) -> None:
-        candidate = self._records.get_record(candidate_id)
+        candidate = self._record_store().get_record(candidate_id)
         if candidate is None:
             return
-        self._records.upsert_record(
+        self._record_store().upsert_record(
             candidate.model_copy(
                 update={
                     "promotion_state": promotion_state,
@@ -116,8 +179,10 @@ class MemoryPlaneService:
 
         existing = [
             item
-            for item in self._records.list_records(status=CommitStatus.COMMITTED)
-            if item.source_candidate_id == source_candidate_id and item.status == CommitStatus.COMMITTED
+            for item in self._record_store().list_records(status=CommitStatus.COMMITTED)
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and item.source_candidate_id == source_candidate_id
+            and item.status == CommitStatus.COMMITTED
         ]
         if existing:
             return existing[0].memory_id
@@ -134,10 +199,10 @@ class MemoryPlaneService:
                 "timestamp": datetime.now(UTC),
             }
         )
-        self._records.stage_record(committed)
+        self._record_store().stage_record(committed)
         return committed_memory_id
 
-    def ingest_runtime_observation(self, *, router: object, inbound: InboundEvent) -> RoutingDecision:
+    def ingest_runtime_observation(self, *, router: RuntimeEventRouter, inbound: InboundEvent) -> RoutingDecision:
         decision = router.route_event(inbound)
         for routed in decision.routed_objects:
             self.seed_runtime_memory_object(routed.memory_object)
@@ -169,23 +234,39 @@ class MemoryPlaneService:
 
     # Provider-facing canonical methods
     def ingest_provider_event(self, event: ProviderEvent) -> ProviderSyncResult:
+        result, records = self.prepare_provider_event(event)
+        self.write_records(records)
+        return result
+
+    def prepare_provider_event(
+        self,
+        event: ProviderEvent,
+    ) -> tuple[ProviderSyncResult, tuple[CanonicalMemoryRecord, ...]]:
         policy = evaluate_operation_policy(operation=event.operation)
         transcript_ids: list[str] = []
+        records: list[CanonicalMemoryRecord] = []
         if MemoryDomain.TRANSCRIPT in policy.allowed_raw_append_domains:
-            transcript_ids.append(self._store_transcript(event))
+            transcript = self._transcript_record(event)
+            transcript_ids.append(transcript.memory_id)
+            records.append(transcript)
 
         candidate_ids: list[str] = []
         for domain in policy.allowed_candidate_domains:
-            candidate_ids.append(self._store_candidate(event=event, domain=domain))
+            candidate = self._candidate_record(event=event, domain=domain)
+            candidate_ids.append(candidate.memory_id)
+            records.append(candidate)
 
-        return ProviderSyncResult(
-            transcript_ids=transcript_ids,
-            candidate_ids=candidate_ids,
-            blocked_domains=policy.blocked_commit_domains,
-            blocked_reasons=policy.blocked_reasons,
-            allowed_candidate_domains=policy.allowed_candidate_domains,
-            raw_append_domains=policy.allowed_raw_append_domains,
-            blocked_commit_domains=policy.blocked_commit_domains,
+        return (
+            ProviderSyncResult(
+                transcript_ids=transcript_ids,
+                candidate_ids=candidate_ids,
+                blocked_domains=policy.blocked_commit_domains,
+                blocked_reasons=policy.blocked_reasons,
+                allowed_candidate_domains=policy.allowed_candidate_domains,
+                raw_append_domains=policy.allowed_raw_append_domains,
+                blocked_commit_domains=policy.blocked_commit_domains,
+            ),
+            tuple(records),
         )
 
     def apply_provider_memory_write(
@@ -215,12 +296,16 @@ class MemoryPlaneService:
     ) -> str:
         query_class = classify_prefetch_query(query)
         intent = _intent_for_query_class(query_class)
-        plan = self._planner.build_plan(intent=intent, scope=RetrievalScope(task_id=task_id), include_raw_transcript=True)
+        plan = self._planner.build_plan(
+            intent=intent, scope=RetrievalScope(task_id=task_id), include_raw_transcript=True
+        )
         planned_domains = {query_spec.domain for query_spec in plan.queries}
         pool = {
             item.memory_id: item
-            for item in self._records.list_records(status=CommitStatus.COMMITTED)
-            if item.domain in planned_domains
+            for item in self._record_store().list_records(status=CommitStatus.COMMITTED)
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and item.domain in planned_domains
+            and not item.source_kind.startswith("memory_evolution")
             and self._matches_scope(item, RetrievalScope(session_id=session_id, task_id=task_id, user_id=user_id))
         }
         provider_candidates = [to_provider_stored_record(item) for item in pool.values()]
@@ -255,69 +340,71 @@ class MemoryPlaneService:
         return format_prefetch_context(ranked_records[:top_k])
 
     def seed_provider_committed_record(self, record: ProviderStoredRecord) -> None:
-        self._records.stage_record(from_provider_stored_record(record, source_kind="provider_seed"))
+        self._record_store().stage_record(from_provider_stored_record(record, source_kind="provider_seed"))
 
     def provider_candidate_records(self) -> list[ProviderStoredRecord]:
         return [
             to_provider_stored_record(item)
-            for item in self._records.list_records(status=CommitStatus.CANDIDATE)
-            if item.status == CommitStatus.CANDIDATE and item.source_kind.startswith("provider")
+            for item in self._record_store().list_records(status=CommitStatus.CANDIDATE)
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and item.status == CommitStatus.CANDIDATE
+            and item.source_kind.startswith("provider")
         ]
 
     def provider_transcript_records(self) -> list[ProviderStoredRecord]:
         return [
             to_provider_stored_record(item)
-            for item in self._records.list_records(domains=[MemoryDomain.TRANSCRIPT])
-            if item.domain == MemoryDomain.TRANSCRIPT and item.is_raw_event
+            for item in self._record_store().list_records(domains=[MemoryDomain.TRANSCRIPT])
+            if item.visibility == MemoryRecordVisibility.RUNTIME_CONTEXT
+            and item.domain == MemoryDomain.TRANSCRIPT
+            and item.is_raw_event
         ]
 
     def last_provider_prefetch_trace(self) -> ProviderPrefetchTrace | None:
         return self._last_prefetch_trace
 
-    def _store_transcript(self, event: ProviderEvent) -> str:
+    def _transcript_record(self, event: ProviderEvent) -> CanonicalMemoryRecord:
         memory_id = f"tx:{event.event_id}"
-        self._records.stage_record(
-            CanonicalMemoryRecord(
-                memory_id=memory_id,
-                domain=MemoryDomain.TRANSCRIPT,
-                text=event.content or "",
-                content={
-                    "text": event.content or "",
-                    "operation": event.operation.value,
-                    "role": event.role,
-                    "action": event.action,
-                    "target": event.target,
-                },
-                status=CommitStatus.COMMITTED,
-                source_kind="provider",
-                timestamp=event.timestamp or datetime.now(UTC),
-                session_id=event.session_id,
-                task_id=event.task_id,
-                user_id=event.user_id,
-                is_raw_event=True,
-            )
+        return CanonicalMemoryRecord(
+            memory_id=memory_id,
+            domain=MemoryDomain.TRANSCRIPT,
+            text=event.content or "",
+            content={
+                "text": event.content or "",
+                "operation": event.operation.value,
+                "role": event.role,
+                "action": event.action,
+                "target": event.target,
+            },
+            status=CommitStatus.COMMITTED,
+            source_kind="provider",
+            timestamp=event.timestamp or datetime.now(UTC),
+            session_id=event.session_id,
+            task_id=event.task_id,
+            user_id=event.user_id,
+            language=event.language,
+            is_raw_event=True,
         )
-        return memory_id
 
-    def _store_candidate(self, *, event: ProviderEvent, domain: MemoryDomain) -> str:
+    def _candidate_record(self, *, event: ProviderEvent, domain: MemoryDomain) -> CanonicalMemoryRecord:
         memory_id = f"cand:{domain.value}:{event.event_id}"
-        self._records.stage_record(
-            CanonicalMemoryRecord(
-                memory_id=memory_id,
-                domain=domain,
-                text=event.content or "",
-                content={"text": event.content or ""},
-                status=CommitStatus.CANDIDATE,
-                source_kind=f"provider:{event.operation.value}",
-                timestamp=event.timestamp or datetime.now(UTC),
-                session_id=event.session_id,
-                task_id=event.task_id,
-                user_id=event.user_id,
-                is_raw_event=False,
-                promotion_state="staged",
-            )
+        source_record_id = f"tx:{event.event_id}"
+        return CanonicalMemoryRecord(
+            memory_id=memory_id,
+            domain=domain,
+            text=event.content or "",
+            content={"text": event.content or ""},
+            status=CommitStatus.CANDIDATE,
+            source_kind=f"provider:{event.operation.value}",
+            timestamp=event.timestamp or datetime.now(UTC),
+            session_id=event.session_id,
+            task_id=event.task_id,
+            user_id=event.user_id,
+            language=event.language,
+            is_raw_event=False,
+            source_record_ids=[source_record_id],
+            promotion_state="staged",
         )
-        return memory_id
 
     def _matches_scope(self, item: CanonicalMemoryRecord, scope: RetrievalScope) -> bool:
         if scope.session_id is not None and item.session_id not in {None, scope.session_id}:
@@ -330,14 +417,18 @@ class MemoryPlaneService:
             return False
         if scope.agent_id is not None and item.agent_id not in {None, scope.agent_id}:
             return False
-        if scope.user_id is not None and item.user_id not in {None, scope.user_id}:
-            return False
-        return True
+        return not (scope.user_id is not None and item.user_id not in {None, scope.user_id})
 
-    def _matches_semantics(self, item: CanonicalMemoryRecord, *, include_candidates: bool, freshness: object) -> bool:
+    def _matches_semantics(
+        self,
+        item: CanonicalMemoryRecord,
+        *,
+        include_candidates: bool,
+        freshness: FreshnessPolicy | None,
+    ) -> bool:
         if not include_candidates and item.status == CommitStatus.CANDIDATE:
             return False
-        if freshness is None or getattr(freshness, "required_validity", None) is None:
+        if freshness is None or freshness.required_validity is None:
             return True
 
         required = freshness.required_validity.value

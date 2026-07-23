@@ -1,5 +1,4 @@
 import pytest
-
 from memorii.core.benchmark.fixtures import normalize_fixtures
 from memorii.core.benchmark.models import (
     BenchmarkScenarioFixture,
@@ -94,7 +93,7 @@ def test_conflict_fixture_requires_temporal_or_validity_window() -> None:
         )
 
 
-def test_long_horizon_backward_compat_without_multilingual_metadata() -> None:
+def test_long_horizon_defaults_without_multilingual_metadata() -> None:
     fixture = BenchmarkScenarioFixture(
         scenario_id="long_horizon_backward_compat",
         category=BenchmarkScenarioType.LONG_HORIZON_DEGRADATION,

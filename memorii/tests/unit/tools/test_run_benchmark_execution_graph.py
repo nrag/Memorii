@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
-
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.tools.run_benchmark import main
 from tests.unit.tools.run_benchmark_test_helpers import (
+    _application_with_fake_client,
     _clear_llm_env,
     _jsonl_count,
     _latest_run_dir,
@@ -96,11 +96,11 @@ def test_execution_graph_hybrid_falls_back_to_rule_on_invalid_llm_output(
                 schema_valid=False,
             )
 
-    monkeypatch.setattr("memorii.tools.run_benchmark.EvalFakeClient", InvalidFakeClient)
+    app = _application_with_fake_client(InvalidFakeClient)
     monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
 
-    assert main(
+    assert app.run(
         [
             "--suite",
             "execution_graph_v1",
@@ -124,5 +124,4 @@ def test_execution_graph_hybrid_falls_back_to_rule_on_invalid_llm_output(
 def test_execution_graph_benchmark_rejects_all_systems() -> None:
     with pytest.raises(SystemExit, match="memorii only"):
         main(["--suite", "execution_graph_v1", "--systems", "all"])
-
 

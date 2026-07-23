@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 
-class JudgeDimension(str, Enum):
+class JudgeDimension(StrEnum):
     PROMOTION_PRECISION = "promotion_precision"
     TEMPORAL_VALIDITY = "temporal_validity"
     ATTRIBUTION = "attribution"
@@ -47,6 +47,18 @@ class JudgeVerdict(BaseModel):
         if not 0.0 <= value <= 1.0:
             raise ValueError("score must be between 0.0 and 1.0")
         return value
+
+
+class JudgeDecisionOutput(BaseModel):
+    """Provider-facing judge result shared by all single-dimension prompts."""
+
+    passed: bool
+    score: float = Field(ge=0.0, le=1.0)
+    rationale: str
+    failure_mode: str | None
+    needs_human_review: bool
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class JuryVerdict(BaseModel):

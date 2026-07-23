@@ -14,6 +14,8 @@ jobs:
     name: Unit Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      MEMORII_SOURCE_REVISION: ${{ github.sha }}
 
     steps:
       - name: Checkout
@@ -28,8 +30,207 @@ jobs:
 
       - name: Install package + test deps
         working-directory: memorii
-        run: pip install -e '.[local]'
+        run: pip install -e '.[local,dev]'
+
+      - name: Run Ruff
+        working-directory: memorii
+        run: ruff check memorii tests
+
+      - name: Run Pyright
+        working-directory: memorii
+        run: pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
+
+      - name: Build and smoke-test wheel
+        working-directory: memorii
+        run: |
+          python -m pip wheel . --no-deps --wheel-dir "${RUNNER_TEMP}/memorii-wheel"
+          python -m pip install --no-deps --target "${RUNNER_TEMP}/memorii-wheel-site" "${RUNNER_TEMP}"/memorii-wheel/*.whl
+          cd "${RUNNER_TEMP}"
+          PYTHONPATH="${RUNNER_TEMP}/memorii-wheel-site" python -c "from pathlib import Path; import memorii; root=Path('${RUNNER_TEMP}/memorii-wheel-site').resolve(); assert Path(memorii.__file__).resolve().is_relative_to(root); from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput; from memorii.core.prompts.runtime_manifest import PromptOwner; from memorii.core.prompts.registry import PromptRegistry; PromptRegistry().load('memory_extraction:v1', owner=PromptOwner.LLM_MEMORY_EXTRACTOR, output_model=MemoryExtractionOutput)"
+          PYTHONPATH="${RUNNER_TEMP}/memorii-wheel-site" python -c "from pathlib import Path; import memorii.core.benchmark.memory_evolution_sim as sim, memorii.core.benchmark.memory_evolution_runtime as runtime, memorii.tools.run_benchmark as runner; root=Path('${RUNNER_TEMP}/memorii-wheel-site').resolve(); assert all(Path(module.__file__).resolve().is_relative_to(root) for module in (sim, runtime, runner))"
+          PYTHONPATH="${RUNNER_TEMP}/memorii-wheel-site" python -c "from importlib.util import find_spec; removed=('memorii.core.promotion.models', 'memorii.core.promotion.legacy_models', 'memorii.core.promotion.lifecycle_models', 'memorii.core.prompts.manifest', 'memorii.core.prompts.schema_compatibility'); assert all(find_spec(module) is None for module in removed)"
+          PYTHONPATH="${RUNNER_TEMP}/memorii-wheel-site" python -m memorii.tools.run_eval --suite memory_evolution_sim_v1 --mode llm --dry-run --storage-root "${RUNNER_TEMP}/memorii-wheel-benchmark" --sim-profile long_horizon --sim-scenario-count 1 --sim-min-events 5 --sim-max-events 10 --sim-noise-rate 0.35 --seed 7
+          PYTHONPATH="${RUNNER_TEMP}/memorii-wheel-site" python -m memorii.tools.validate_benchmark_artifacts --root "${RUNNER_TEMP}/memorii-wheel-benchmark/benchmark_runs" --suite memory_evolution_sim_v1
 
       - name: Run unit tests
         working-directory: memorii
-        run: pytest tests/unit
+        run: pytest -W error tests/unit -p no:cacheprovider
+
+  benchmark-contracts:
+    name: Benchmark Contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      MEMORII_SOURCE_REVISION: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run benchmark contract tests
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/unit/core/benchmark/test_memory_evolution_public_contracts.py
+          tests/unit/core/benchmark/test_memory_evolution_architecture.py
+          tests/unit/core/benchmark/test_memory_evolution_oracle.py
+          tests/unit/core/benchmark/test_memory_evolution_runtime_alignment.py
+          tests/unit/core/benchmark/test_memory_evolution_runtime_execution_state.py
+          tests/unit/core/benchmark/test_memory_evolution_sim_leakage_contracts.py
+          tests/unit/core/benchmark/test_memory_evolution_sim_judge_contracts.py
+          tests/unit/core/test_memory_evolution_temporal.py
+          tests/unit/core/test_memory_evolution_execution.py
+          tests/unit/core/test_memory_evolution_retrieval.py
+          tests/unit/core/test_calibration_gates.py
+          tests/unit/core/test_calibration.py
+          tests/unit/tools/test_validate_benchmark_artifacts.py
+          -p no:cacheprovider
+
+      - name: Verify installable source fingerprint behavior
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/integration/test_benchmark_source_fingerprint.py
+          -p no:cacheprovider
+
+      - name: Build fake-oracle simulator plumbing artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_sim_v1
+          --mode llm
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile long_horizon
+          --sim-scenario-count 10
+          --sim-min-events 25
+          --sim-max-events 60
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Build deterministic runtime semantic artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_runtime_v1
+          --mode llm
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile long_horizon
+          --sim-scenario-count 10
+          --sim-min-events 25
+          --sim-max-events 60
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Build fake-oracle hybrid simulator plumbing artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_sim_v1
+          --mode hybrid
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile long_horizon
+          --sim-scenario-count 10
+          --sim-min-events 25
+          --sim-max-events 60
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Build deterministic hybrid runtime semantic artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_runtime_v1
+          --mode hybrid
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile long_horizon
+          --sim-scenario-count 25
+          --sim-min-events 25
+          --sim-max-events 60
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Build fake-oracle adversarial simulator plumbing artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_sim_v1
+          --mode llm
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile adversarial
+          --sim-scenario-count 10
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Build deterministic adversarial runtime semantic artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_runtime_v1
+          --mode llm
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile adversarial
+          --sim-scenario-count 10
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Build fake-oracle adversarial hybrid simulator plumbing artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_sim_v1
+          --mode hybrid
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile adversarial
+          --sim-scenario-count 10
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Build deterministic adversarial hybrid runtime semantic artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_runtime_v1
+          --mode hybrid
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile adversarial
+          --sim-scenario-count 10
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Validate deterministic plumbing reports
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.validate_benchmark_artifacts
+          --root .memorii/benchmark_runs
+          --suite memory_evolution_sim_v1
+          &&
+          python -m memorii.tools.validate_benchmark_artifacts
+          --root .memorii/benchmark_runs
+          --suite memory_evolution_runtime_v1

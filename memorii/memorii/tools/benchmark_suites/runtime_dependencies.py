@@ -1,32 +1,76 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import StrEnum
 from importlib.resources import as_file, files
 from pathlib import Path
-from typing import Protocol
 
+from memorii.core.benchmark.artifact_rows import FinalOutputSource
 from memorii.core.llm_config import LLMRuntimeConfig
+from memorii.core.llm_eval.fake_client import EvalFakeClient
 from memorii.core.llm_provider.base import LLMStructuredClient
 from memorii.core.llm_provider.factory import LLMClientFactory
-from memorii.tools.run_live_llm_eval import EvalFakeClient
 
-_DEFAULT_EVAL_FAKE_CLIENT = EvalFakeClient
 _DEFAULT_HOTPOTQA_DATASET = files("memorii.core.benchmark.fixture_sets").joinpath("hotpotqa_sample.json")
 
 
-class LLMClientFactoryProtocol(Protocol):
-    """Factory interface used by benchmark runners to create live LLM clients."""
+class ExecutionBackend(StrEnum):
+    FAKE_ORACLE = "fake_oracle"
+    LIVE_PROVIDER = "live_provider"
 
-    @staticmethod
-    def from_config(config: LLMRuntimeConfig) -> LLMStructuredClient:
-        ...
+
+class DryRunDecisionStrategy(StrEnum):
+    ORACLE_ADAPTERS = "oracle_adapters"
+    CLIENT_ADAPTERS = "client_adapters"
+
+
+@dataclass(frozen=True)
+class LLMClientBinding:
+    """A client and its authoritative execution provenance."""
+
+    client: LLMStructuredClient
+    backend: ExecutionBackend
+    provider_name: str
+
+    def __post_init__(self) -> None:
+        if not self.provider_name.strip():
+            raise ValueError("provider_name must not be empty")
+        actual_provider = getattr(self.client, "provider_name", "")
+        if actual_provider and actual_provider != self.provider_name:
+            raise ValueError("binding provider_name does not match the client")
+
+    @property
+    def final_output_source(self) -> FinalOutputSource:
+        return "fake_oracle" if self.backend == ExecutionBackend.FAKE_ORACLE else "live_llm"
+
+
+FakeClientBindingFactory = Callable[[], LLMClientBinding]
+LiveClientBindingFactory = Callable[[LLMRuntimeConfig], LLMClientBinding]
+
+
+def default_fake_client_binding() -> LLMClientBinding:
+    client = EvalFakeClient()
+    return LLMClientBinding(
+        client=client,
+        backend=ExecutionBackend.FAKE_ORACLE,
+        provider_name=client.provider_name,
+    )
+
+
+def default_live_client_binding(config: LLMRuntimeConfig) -> LLMClientBinding:
+    client = LLMClientFactory.from_config(config)
+    return LLMClientBinding(
+        client=client,
+        backend=ExecutionBackend.LIVE_PROVIDER,
+        provider_name=client.provider_name,
+    )
 
 
 @contextmanager
 def hotpotqa_default_dataset_path() -> Iterator[Path]:
-    """Yield the package-owned HotpotQA sample as a real filesystem path."""
+    """Yield the package-owned HotPotQA sample as a real filesystem path."""
 
     with as_file(_DEFAULT_HOTPOTQA_DATASET) as dataset_path:
         yield dataset_path
@@ -34,16 +78,35 @@ def hotpotqa_default_dataset_path() -> Iterator[Path]:
 
 @dataclass(frozen=True)
 class BenchmarkRuntimeDependencies:
-    """Runtime dependency seams for benchmark suite runners.
+    """Explicit composition-root dependencies for benchmark execution."""
 
-    Tests historically patched ``memorii.tools.run_benchmark.EvalFakeClient``
-    and ``LLMClientFactory``. The CLI still exposes those patch points, but the
-    registry now passes them explicitly instead of mutating suite module globals.
-    """
+    fake_client_binding_factory: FakeClientBindingFactory = default_fake_client_binding
+    live_client_binding_factory: LiveClientBindingFactory = default_live_client_binding
+    dry_run_decision_strategy: DryRunDecisionStrategy = DryRunDecisionStrategy.ORACLE_ADAPTERS
 
-    eval_fake_client_cls: type[LLMStructuredClient] = EvalFakeClient
-    llm_client_factory: LLMClientFactoryProtocol = LLMClientFactory
-    default_eval_fake_client_cls: type[LLMStructuredClient] = _DEFAULT_EVAL_FAKE_CLIENT
+    def bind_llm_client(
+        self,
+        *,
+        dry_run: bool,
+        config: LLMRuntimeConfig,
+    ) -> LLMClientBinding:
+        binding = (
+            self.fake_client_binding_factory()
+            if dry_run
+            else self.live_client_binding_factory(config)
+        )
+        expected_backend = (
+            ExecutionBackend.FAKE_ORACLE if dry_run else ExecutionBackend.LIVE_PROVIDER
+        )
+        if binding.backend != expected_backend:
+            raise ValueError(
+                f"{'dry' if dry_run else 'live'} execution requires "
+                f"{expected_backend.value} provenance"
+            )
+        return binding
 
-    def is_default_fake_client(self) -> bool:
-        return self.eval_fake_client_cls is self.default_eval_fake_client_cls
+    def use_oracle_adapters(self, *, dry_run: bool) -> bool:
+        return dry_run and self.dry_run_decision_strategy == DryRunDecisionStrategy.ORACLE_ADAPTERS
+
+    def create_live_client(self, config: LLMRuntimeConfig) -> LLMStructuredClient:
+        return self.bind_llm_client(dry_run=False, config=config).client

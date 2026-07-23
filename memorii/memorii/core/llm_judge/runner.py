@@ -13,7 +13,7 @@ from memorii.core.llm_judge.calibration import (
     build_golden_candidate_reason_from_jury,
     should_promote_to_golden_candidate_from_jury,
 )
-from memorii.core.llm_judge.judge import SingleDimensionJudge, validate_single_dimension_judge
+from memorii.core.llm_judge.judge import JudgeExecutionError, SingleDimensionJudge, validate_single_dimension_judge
 from memorii.core.llm_judge.judges import (
     AttributionJudge,
     BeliefDirectionJudge,
@@ -86,6 +86,15 @@ class OfflineJudgeRunner:
 
         self._jury_aggregator = jury_aggregator or JuryAggregator()
         self._judge_all_cases = judge_all_cases
+
+    def registered_judge_ids(self, decision_point: str) -> tuple[str, ...]:
+        """Return the validated judge registration for a supported decision point."""
+
+        if decision_point == "promotion":
+            return tuple(judge.judge_id for judge in self._promotion_judges)
+        if decision_point == "belief_update":
+            return tuple(judge.judge_id for judge in self._belief_judges)
+        raise ValueError(f"unsupported decision point: {decision_point}")
 
     def run_eval_report(self, report: EvalRunReport, snapshots_by_id: dict[str, EvalSnapshot]) -> JudgeRunReport:
         return self.run_cases(cases=report.results, snapshots_by_id=snapshots_by_id)
@@ -202,7 +211,7 @@ class OfflineJudgeRunner:
                 jury_verdict=jury,
                 golden_candidate_reason=reason,
             )
-        except Exception:
+        except JudgeExecutionError:
             return self._build_human_review_case_result(case=case, reason="judge_execution_error")
 
     def _judges_for_case(

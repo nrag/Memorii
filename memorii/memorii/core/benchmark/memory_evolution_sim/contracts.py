@@ -1,0 +1,66 @@
+"""Scenario generation for the memory evolution simulator."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from memorii.core.benchmark.memory_evolution_sim.schemas import (
+    SimCheckpointContract,
+)
+
+
+def truth_contract(
+    *,
+    historical: bool = False,
+    answer_projection_policy: Literal["claim_object", "claim_subject", "none"] = "claim_object",
+) -> SimCheckpointContract:
+    return SimCheckpointContract(
+        answer_projection_policy=answer_projection_policy,
+        allow_stale_selected_claims=historical,
+        supporting_citations_must_be_direct_current_evidence=not historical,
+    )
+
+
+def graph_contract(
+    *,
+    selected_entity_role_policy: Literal["active_graph_subjects", "audit_graph_entities"] = "active_graph_subjects",
+    definition_claims_required_in_selected: bool = False,
+    requires_belief_ranking_ids: bool = False,
+) -> SimCheckpointContract:
+    return SimCheckpointContract(
+        allowed_operations=["graph_reconstruction"],
+        answer_required=False,
+        answer_projection_policy="graph_channels_only",
+        selected_entity_role_policy=selected_entity_role_policy,
+        definition_claims_required_in_selected=definition_claims_required_in_selected,
+        requires_belief_ranking_ids=requires_belief_ranking_ids,
+    )
+
+
+def source_trust_contract() -> SimCheckpointContract:
+    return SimCheckpointContract(
+        conflict_relation_ids_belong_in=["context_relation_ids", "supporting_relation_ids"],
+    )
+
+
+def modality_suppression_contract() -> SimCheckpointContract:
+    return SimCheckpointContract(answer_required=False, answer_projection_policy="none")
+
+
+def entity_split_contract(
+    *,
+    answer_projection_policy: Literal["claim_object", "claim_subject"] = "claim_object",
+) -> SimCheckpointContract:
+    return SimCheckpointContract(
+        answer_projection_policy=answer_projection_policy,
+        wrong_entity_claims_belong_in=["rejected", "context"],
+    )
+
+
+def execution_contract() -> SimCheckpointContract:
+    return SimCheckpointContract(
+        allowed_operations=["next_action"],
+        answer_required=False,
+        answer_projection_policy="next_action",
+        requires_next_action=True,
+    )

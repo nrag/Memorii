@@ -1,7 +1,7 @@
 """Typed writeback candidate models for consolidation outputs."""
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -11,7 +11,7 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValiditySta
 from memorii.domain.routing import ValidationState
 
 
-class WritebackType(str, Enum):
+class WritebackType(StrEnum):
     EPISODIC = "episodic"
     SEMANTIC = "semantic"
     USER = "user"

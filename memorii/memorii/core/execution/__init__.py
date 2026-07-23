@@ -1,5 +1,5 @@
 """Execution runtime services."""
 
-from memorii.core.execution.service import InMemoryMemoryPlane, RuntimeObservationInput, RuntimeStepResult, RuntimeStepService
+from memorii.core.execution.service import RuntimeObservationInput, RuntimeStepResult, RuntimeStepService
 
-__all__ = ["InMemoryMemoryPlane", "RuntimeObservationInput", "RuntimeStepResult", "RuntimeStepService"]
+__all__ = ["RuntimeObservationInput", "RuntimeStepResult", "RuntimeStepService"]

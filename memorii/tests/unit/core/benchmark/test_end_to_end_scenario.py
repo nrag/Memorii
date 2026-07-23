@@ -1,6 +1,7 @@
-import pytest
 from datetime import UTC, datetime, timedelta
 
+import pytest
+from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import (
     BenchmarkScenarioFixture,
@@ -12,12 +13,11 @@ from memorii.core.benchmark.models import (
     RoutingFixture,
     ScenarioExecutionLevel,
 )
-from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 from memorii.core.benchmark.scenarios import ScenarioExecutor
 from memorii.core.provider.models import ProviderStoredRecord
+from memorii.domain.enums import CommitStatus, MemoryDomain, TemporalValidityStatus
 from memorii.domain.retrieval import RetrievalIntent, RetrievalScope
 from memorii.domain.routing import InboundEvent, InboundEventClass
-from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 
 
 def test_end_to_end_scenario_success_and_pollution_signals() -> None:
@@ -103,14 +103,15 @@ def test_end_to_end_requires_retrieval_fixture_for_storage_semantics() -> None:
 
 def test_end_to_end_seeding_preserves_item_namespace_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
     captured_seeded: list[object] = []
+    from datetime import UTC, datetime
+
     from memorii.core.execution import RuntimeStepResult
     from memorii.core.solver.abstention import SolverDecision
-    from memorii.domain.retrieval import RetrievalPlan
-    from memorii.domain.writebacks import WritebackCandidate, WritebackType
     from memorii.domain.common import Provenance
     from memorii.domain.enums import CommitStatus, SourceType
+    from memorii.domain.retrieval import RetrievalPlan
     from memorii.domain.routing import ValidationState
-    from datetime import UTC, datetime
+    from memorii.domain.writebacks import WritebackCandidate, WritebackType
 
     class FakeRuntimeStepService:
         def __init__(self, **kwargs):

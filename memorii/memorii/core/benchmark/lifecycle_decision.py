@@ -21,7 +21,6 @@ from memorii.core.llm_provider.models import (
 )
 from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
 
-
 DISCRIMINATIVE_LIFECYCLE_FAMILIES = {
     MemoryLifecycleFamily.HISTORICAL_TRUTH_RETRIEVAL,
     MemoryLifecycleFamily.CURRENT_TRUTH_RETRIEVAL,
@@ -68,12 +67,25 @@ class LifecycleDecision(BaseModel):
     archived_memory_ids: list[str] = Field(default_factory=list)
     belief_scores: list[LifecycleBeliefScore] = Field(default_factory=list)
     merged_summary: str | None = None
-    confidence: float
+    confidence: float = Field(ge=0.0, le=1.0)
     rationale: str
     failure_mode: str | None = None
     requires_judge_review: bool = False
 
     model_config = ConfigDict(extra="forbid")
+
+
+class LifecycleDecisionOutput(LifecycleDecision):
+    """Strict provider response for the lifecycle benchmark adapter."""
+
+    selected_retrieval_ids: list[str]
+    active_memory_ids: list[str]
+    inactive_memory_ids: list[str]
+    archived_memory_ids: list[str]
+    belief_scores: list[LifecycleBeliefScore]
+    merged_summary: str | None
+    failure_mode: str | None
+    requires_judge_review: bool
 
 
 def lifecycle_family_requires_decision(family: MemoryLifecycleFamily | None) -> bool:
@@ -215,10 +227,7 @@ def lifecycle_assertion_passed(
         inactive = set(parsed.inactive_memory_ids) | set(parsed.archived_memory_ids)
         if not set(lifecycle.expected_inactive_memory_ids).issubset(inactive):
             return False
-    if lifecycle.expect_temporal_addressability and expected_retrieval:
-        if selected_ids != expected_retrieval:
-            return False
-    return True
+    return not (lifecycle.expect_temporal_addressability and expected_retrieval and selected_ids != expected_retrieval)
 
 
 def lifecycle_trace_for_rule(

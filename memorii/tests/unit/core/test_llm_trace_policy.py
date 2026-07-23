@@ -1,7 +1,6 @@
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.llm_trace.policy import LLMTracePolicy
+from pydantic import ValidationError
 
 
 def test_default_does_not_persist_clean_success() -> None:

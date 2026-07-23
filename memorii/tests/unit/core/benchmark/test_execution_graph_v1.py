@@ -1,4 +1,3 @@
-import pytest
 
 from memorii.core.benchmark.execution_graph_decision import (
     execution_graph_assertion_passed,

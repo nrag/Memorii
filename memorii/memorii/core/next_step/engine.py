@@ -4,7 +4,7 @@ from memorii.core.decision_state.models import DecisionState, DecisionStatus
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.next_step.models import NextStepRequest, NextStepResult
 from memorii.core.recall import summarize_work_states
-from memorii.core.solver import SolverFrontierPlanner
+from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateEvent, WorkStateKind
 from memorii.core.work_state.selector import WorkStateSelector
 from memorii.core.work_state.service import WorkStateService
@@ -99,14 +99,6 @@ class NextStepEngine:
                     "failure_condition": frontier_plan.next_test_action.failure_condition,
                     "required_tool": frontier_plan.next_test_action.required_tool,
                     "target_ref": frontier_plan.next_test_action.target_ref,
-                }
-            elif frontier_plan.next_best_test:
-                next_step = {
-                    "action_type": "run_test",
-                    "description": frontier_plan.next_best_test,
-                    "confidence": 0.55,
-                    "reason": frontier_plan.reason.value,
-                    "evidence_ids": [],
                 }
             else:
                 next_step = {

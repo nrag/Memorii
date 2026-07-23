@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from uuid import NAMESPACE_URL, uuid5
 
-from memorii.core.memory_evolution.models import ClaimState, ConfidenceComponents, ConfidenceUpdate, ExtractedClaim, SourceModality
+from memorii.core.memory_evolution.models import (
+    ClaimState,
+    ConfidenceComponents,
+    ConfidenceUpdate,
+    ExtractedClaim,
+    SourceModality,
+)
 
 
 class ConfidenceAggregator:

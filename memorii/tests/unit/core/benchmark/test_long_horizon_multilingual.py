@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
+from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import BenchmarkScenarioFixture, BenchmarkSystem
-from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 from tests.fixtures.benchmarks.long_horizon_templates import render_fact_statement
 
 

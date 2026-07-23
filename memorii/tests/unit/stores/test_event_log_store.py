@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 import pytest
-
 from memorii.domain.enums import EventType
 from memorii.domain.events import EventRecord
 from memorii.stores.event_log import InMemoryEventLogStore
@@ -43,21 +42,17 @@ def test_event_idempotency_and_collision() -> None:
         store.append(mutated)
 
 
-def test_event_record_accepts_legacy_solver_graph_id_alias() -> None:
-    event = EventRecord.model_validate(
-        {
-            "event_id": "legacy-1",
-            "event_type": "NODE_ADDED",
-            "timestamp": datetime.now(UTC),
-            "task_id": "t1",
-            "solver_graph_id": "solver-legacy",
-            "actor_id": "system",
-            "payload": {"graph_type": "solver", "entity": {"id": "n1"}},
-            "dedupe_key": "legacy-1",
-        }
-    )
-
-    dumped = event.model_dump(mode="json")
-    assert event.solver_run_id == "solver-legacy"
-    assert dumped["solver_run_id"] == "solver-legacy"
-    assert "solver_graph_id" not in dumped
+def test_event_record_rejects_unknown_solver_identifier_fields() -> None:
+    with pytest.raises(ValueError, match="solver_graph_id"):
+        EventRecord.model_validate(
+            {
+                "event_id": "event:1",
+                "event_type": "NODE_ADDED",
+                "timestamp": datetime.now(UTC),
+                "task_id": "t1",
+                "solver_graph_id": "solver:1",
+                "actor_id": "system",
+                "payload": {"graph_type": "solver", "entity": {"id": "n1"}},
+                "dedupe_key": "event:1",
+            }
+        )

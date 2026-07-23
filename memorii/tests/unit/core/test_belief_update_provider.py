@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
-
 from memorii.core.belief.hybrid_provider import HybridBeliefUpdateProvider
 from memorii.core.belief.llm_provider import LLMBeliefUpdateProvider
 from memorii.core.belief.models import BeliefUpdateContext
@@ -15,9 +13,10 @@ from memorii.core.llm_decision.models import (
     LLMDecisionStatus,
     LLMDecisionTrace,
 )
-from memorii.core.llm_decision.provider import DisabledLLMDecisionProvider
+from memorii.core.llm_decision.provider import DisabledLLMDecisionProvider, LLMDecisionProviderError
 from memorii.core.solver.abstention import SolverDecision
 from memorii.core.solver.belief import update_solver_belief
+from pydantic import ValidationError
 
 
 class FakeLLMProvider:
@@ -42,7 +41,7 @@ class FakeLLMProvider:
     ) -> LLMDecisionTrace:
         self.calls += 1
         if self._raise_error:
-            raise RuntimeError("provider exploded")
+            raise LLMDecisionProviderError("provider exploded")
         return LLMDecisionTrace(
             trace_id=f"trace:belief:{self.calls}",
             decision_point=decision_point,
@@ -114,7 +113,7 @@ def test_malformed_llm_output_falls_back_to_rule_provider() -> None:
     assert trace.status == LLMDecisionStatus.VALIDATION_FAILED
 
 
-def test_llm_output_clamps_belief_and_confidence() -> None:
+def test_out_of_range_llm_output_fails_validation_and_falls_back() -> None:
     provider = LLMBeliefUpdateProvider(
         llm_provider=FakeLLMProvider(
             final_output={"belief": 1.9, "confidence": -0.4, "rationale": "needs-clamp"}
@@ -122,9 +121,10 @@ def test_llm_output_clamps_belief_and_confidence() -> None:
     )
 
     decision, trace = provider.update(context=_context())
-    assert decision.belief == 1.0
-    assert decision.confidence == 0.0
-    assert trace.decision_point == LLMDecisionPoint.BELIEF_UPDATE
+    assert decision.fallback_used is True
+    assert decision.rationale == "rule_based_belief_update"
+    assert trace.status == LLMDecisionStatus.VALIDATION_FAILED
+    assert trace.validation_errors
 
 
 def test_hybrid_skips_llm_for_simple_low_risk_context() -> None:
@@ -136,7 +136,15 @@ def test_hybrid_skips_llm_for_simple_low_risk_context() -> None:
 
 
 def test_hybrid_calls_llm_for_verifier_downgrade() -> None:
-    fake_llm = FakeLLMProvider(final_output={"belief": 0.3, "confidence": 0.7, "rationale": "llm"})
+    fake_llm = FakeLLMProvider(
+        final_output={
+            "belief": 0.3,
+            "confidence": 0.7,
+            "rationale": "llm",
+            "failure_mode": "verifier_downgrade",
+            "requires_judge_review": True,
+        }
+    )
     hybrid = HybridBeliefUpdateProvider(llm_provider=LLMBeliefUpdateProvider(llm_provider=fake_llm))
 
     decision, trace = hybrid.update(context=_context(verifier_downgraded=True))
@@ -146,12 +154,41 @@ def test_hybrid_calls_llm_for_verifier_downgrade() -> None:
 
 
 def test_hybrid_calls_llm_for_conflicts() -> None:
-    fake_llm = FakeLLMProvider(final_output={"belief": 0.4, "confidence": 0.7, "rationale": "llm-conflict"})
+    fake_llm = FakeLLMProvider(
+        final_output={
+            "belief": 0.4,
+            "confidence": 0.7,
+            "rationale": "llm-conflict",
+            "failure_mode": "conflict_present",
+            "requires_judge_review": True,
+        }
+    )
     hybrid = HybridBeliefUpdateProvider(llm_provider=LLMBeliefUpdateProvider(llm_provider=fake_llm))
 
     decision, _ = hybrid.update(context=_context(conflict_count=2))
     assert fake_llm.calls == 1
     assert decision.rationale == "llm-conflict"
+
+
+def test_schema_complete_llm_output_reaches_domain_without_fallback() -> None:
+    output = {
+        "belief": 0.61,
+        "confidence": 0.52,
+        "rationale": "Partial evidence warrants review.",
+        "failure_mode": "missing_evidence",
+        "requires_judge_review": True,
+    }
+    decision, trace = LLMBeliefUpdateProvider(
+        llm_provider=FakeLLMProvider(final_output=output)
+    ).update(context=_context(missing_evidence_count=1))
+
+    assert trace.status == LLMDecisionStatus.SUCCEEDED
+    assert trace.fallback_used is False
+    assert decision.fallback_used is False
+    assert decision.model_dump(
+        mode="json", exclude={"trace_id", "fallback_used"}
+    ) == output
+    assert decision.failure_mode == "missing_evidence"
 
 
 def test_trace_always_returned() -> None:

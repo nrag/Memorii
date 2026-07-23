@@ -1,14 +1,12 @@
 from datetime import UTC, datetime
 
-from memorii.core.solver import SolverFrontierPlanner
-from memorii.core.solver.frontier import FrontierSelectionReason
+from memorii.core.solver.frontier import FrontierSelectionReason, SolverFrontierPlanner
 from memorii.domain.common import SolverNodeMetadata
 from memorii.domain.enums import CommitStatus, SolverCreatedBy, SolverNodeStatus, SolverNodeType
 from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
 from memorii.stores.overlays import InMemoryOverlayStore
 from memorii.stores.solver_graph import InMemorySolverGraphStore
-
 
 NOW = datetime.now(UTC)
 
@@ -72,14 +70,14 @@ def test_no_overlay_returns_no_frontier() -> None:
     assert plan.reason == FrontierSelectionReason.NO_FRONTIER_FOUND
 
 
-def test_needs_test_frontier_selected_with_legacy_next_best_test() -> None:
+def test_needs_test_frontier_selects_structured_action() -> None:
     solver_run_id = "solver:needs-test"
     solver_store = InMemorySolverGraphStore()
     overlay_store = InMemoryOverlayStore()
     planner = SolverFrontierPlanner()
 
     solver_store.create_solver_run(solver_run_id, "exec-1")
-    solver_store.upsert_node(solver_run_id, _make_node("node-1", content={"next_best_test": "rerun_targeted_test"}))
+    solver_store.upsert_node(solver_run_id, _make_node("node-1", content={"next_test_action": {"action_type": "run_command", "description": "rerun_targeted_test"}}))
     _append_overlay(
         overlay_store,
         solver_run_id,
@@ -93,9 +91,9 @@ def test_needs_test_frontier_selected_with_legacy_next_best_test() -> None:
     )
 
     assert plan.selected_node_id == "node-1"
-    assert plan.next_best_test == "rerun_targeted_test"
-    assert plan.next_test_action is None
-    assert plan.reason == FrontierSelectionReason.FRONTIER_WITH_LEGACY_ACTION
+    assert plan.next_test_action is not None
+    assert plan.next_test_action.description == "rerun_targeted_test"
+    assert plan.reason == FrontierSelectionReason.FRONTIER_WITH_STRUCTURED_ACTION
 
 
 def test_structured_next_test_action_is_extracted() -> None:
@@ -250,7 +248,7 @@ def test_reopenable_node_can_be_selected_even_if_resolved() -> None:
     planner = SolverFrontierPlanner()
 
     solver_store.create_solver_run(solver_run_id, "exec-1")
-    solver_store.upsert_node(solver_run_id, _make_node("node-resolved", content={"next_best_test": "recheck_input"}))
+    solver_store.upsert_node(solver_run_id, _make_node("node-resolved", content={"next_test_action": {"action_type": "run_command", "description": "recheck_input"}}))
     solver_store.upsert_node(solver_run_id, _make_node("node-other", content={}))
     _append_overlay(
         overlay_store,
@@ -268,4 +266,5 @@ def test_reopenable_node_can_be_selected_even_if_resolved() -> None:
     )
 
     assert plan.selected_node_id == "node-resolved"
-    assert plan.next_best_test == "recheck_input"
+    assert plan.next_test_action is not None
+    assert plan.next_test_action.description == "recheck_input"

@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from memorii.core.grounding.models import (
     AlternativeAnswerCheck,
     AnswerRequirement,
@@ -124,6 +123,71 @@ def _coverage(requirement_id: str, candidate_ids: list[str], *, satisfied: bool 
     )
 
 
+def _proof_step(
+    *,
+    step_id: str,
+    description: str,
+    candidate_ids: list[str],
+    rationale: str,
+    required_candidate_ids: list[str] | None = None,
+    final_support_ids: list[str] | None = None,
+) -> ProofStep:
+    unique_ids = list(dict.fromkeys(candidate_ids))
+    required_ids = unique_ids if required_candidate_ids is None else required_candidate_ids
+    final_ids = set(unique_ids if final_support_ids is None else final_support_ids)
+    return ProofStep(
+        step_id=step_id,
+        description=description,
+        candidate_ids=candidate_ids,
+        required_candidate_ids=required_ids,
+        citations=[
+            ProofStepCitation(
+                candidate_id=candidate_id,
+                role="direct_answer",
+                required_for_final_support=candidate_id in final_ids,
+                claim_supported=description,
+                rationale=rationale,
+            )
+            for candidate_id in unique_ids
+        ],
+        rationale=rationale,
+    )
+
+
+def _grounded_answer(
+    *,
+    answer: str = "Ada Lovelace",
+    citation_candidate_ids: list[str],
+    answer_span_candidate_id: str | None = None,
+    rationale: str,
+) -> GroundedAnswerDecision:
+    requirement = _requirement("requirement:direct-answer", citation_candidate_ids)
+    return GroundedAnswerDecision(
+        answer=answer,
+        citation_candidate_ids=citation_candidate_ids,
+        answer_requirements=[requirement],
+        candidate_answers_considered=[
+            CandidateAnswerConsidered(
+                answer=answer,
+                candidate_ids=citation_candidate_ids,
+                selected=True,
+                answer_type="entity",
+                requirement_coverage=[_coverage(requirement.requirement_id, citation_candidate_ids)],
+                satisfied_requirement_ids=[requirement.requirement_id],
+                missing_requirement_ids=[],
+                rationale=rationale,
+            )
+        ],
+        answer_type="entity",
+        answer_span_candidate_id=answer_span_candidate_id or citation_candidate_ids[0],
+        answer_span_text=answer,
+        confidence=0.9,
+        rationale=rationale,
+        failure_mode=None,
+        requires_judge_review=False,
+    )
+
+
 class _EvidenceAdapter:
     def decide(self, context: EvidenceSelectionContext, *, request_id: str, metadata: dict[str, object] | None = None) -> LLMDecisionResult:
         assert [candidate.candidate_id for candidate in context.candidates] == ["e1", "e2"]
@@ -136,7 +200,7 @@ class _EvidenceAdapter:
                 excluded_candidate_ids=["e2"],
                 ranking=["e1", "e2"],
                 proof_steps=[
-                    ProofStep(
+                    _proof_step(
                         step_id="step:1",
                         description="Find the direct author evidence.",
                         candidate_ids=["e1"],
@@ -167,7 +231,7 @@ class _LongIdEvidenceAdapter:
                 excluded_candidate_ids=["e2"],
                 ranking=["e1", "e2"],
                 proof_steps=[
-                    ProofStep(
+                    _proof_step(
                         step_id="step:1",
                         description="Find the direct author evidence.",
                         candidate_ids=["e1"],
@@ -194,10 +258,11 @@ class _TwoEvidenceAdapter:
                 excluded_candidate_ids=[],
                 ranking=["e1", "e2"],
                 proof_steps=[
-                    ProofStep(
+                    _proof_step(
                         step_id="step:1",
                         description="Identify the note author.",
                         candidate_ids=["e1", "e2", "e1"],
+                        final_support_ids=[],
                         rationale="Both candidates are part of the proof; duplicates should be flattened.",
                     )
                 ],
@@ -216,14 +281,7 @@ class _AnswerAdapter:
         assert "candidate_id_aliases" in metadata
         return fake_llm_result_for_grounded_answer(
             request=_request(request_id, "grounded_answer:v1", metadata=metadata),
-            decision=GroundedAnswerDecision(
-                answer="Ada Lovelace",
-                citation_candidate_ids=["e1"],
-                confidence=0.9,
-                rationale="supported",
-                failure_mode=None,
-                requires_judge_review=False,
-            ),
+            decision=_grounded_answer(citation_candidate_ids=["e1"], rationale="supported"),
         )
 
 
@@ -232,16 +290,10 @@ class _InvalidAnswerSpanAdapter:
         del context
         return fake_llm_result_for_grounded_answer(
             request=_request(request_id, "grounded_answer:v1", metadata=metadata),
-            decision=GroundedAnswerDecision(
-                answer="Ada Lovelace",
+            decision=_grounded_answer(
                 citation_candidate_ids=["e1"],
-                answer_type="entity",
                 answer_span_candidate_id="e9",
-                answer_span_text="Ada Lovelace",
-                confidence=0.9,
                 rationale="invalid span candidate id",
-                failure_mode=None,
-                requires_judge_review=False,
             ),
         )
 
@@ -253,13 +305,9 @@ class _AnswerSecondEvidenceAdapter:
         assert metadata["candidate_id_aliases"] == {"e1": "ev1", "e2": "ev2"}
         return fake_llm_result_for_grounded_answer(
             request=_request(request_id, "grounded_answer:v1", metadata=metadata),
-            decision=GroundedAnswerDecision(
-                answer="Ada Lovelace",
+            decision=_grounded_answer(
                 citation_candidate_ids=["e2"],
-                confidence=0.9,
                 rationale="answerer cited a related evidence item",
-                failure_mode=None,
-                requires_judge_review=False,
             ),
         )
 
@@ -647,6 +695,7 @@ def test_proof_step_rejects_required_candidates_that_are_not_cited() -> None:
             description="bad proof step",
             candidate_ids=["ev1"],
             required_candidate_ids=["ev2"],
+            citations=[],
             rationale="required candidate is absent from candidate_ids",
         )
 
@@ -671,18 +720,16 @@ def test_proof_step_rejects_citation_candidates_that_are_not_in_step() -> None:
         )
 
 
-def test_proof_step_backfills_citations_for_legacy_output() -> None:
-    step = ProofStep(
-        step_id="step:legacy",
-        description="legacy proof step",
-        candidate_ids=["ev1"],
-        required_candidate_ids=["ev1"],
-        citations=[],
-        rationale="legacy proof output did not include citation roles",
-    )
-
-    assert step.citations[0].candidate_id == "ev1"
-    assert step.citations[0].required_for_final_support is True
+def test_proof_step_rejects_candidates_without_citation_roles() -> None:
+    with pytest.raises(ValueError, match="citations must role-label"):
+        ProofStep(
+            step_id="step:missing-citations",
+            description="proof step without citation roles",
+            candidate_ids=["ev1"],
+            required_candidate_ids=["ev1"],
+            citations=[],
+            rationale="invalid structured output",
+        )
 
 
 def test_proof_step_allows_proof_required_context_that_is_not_final_support() -> None:
@@ -798,13 +845,13 @@ def test_provenance_reconciliation_preserves_steps_without_stronger_citations() 
         excluded_candidate_ids=[],
         ranking=["ev3", "ev1", "ev2"],
         proof_steps=[
-            ProofStep(
+            _proof_step(
                 step_id="step:bridge",
                 description="Bridge evidence that answer/verifier did not cite.",
                 candidate_ids=["ev2", "ev1", "ev2"],
                 rationale="Both bridge candidates are retained because no stronger citation covers the step.",
             ),
-            ProofStep(
+            _proof_step(
                 step_id="step:answer",
                 description="Direct answer evidence.",
                 candidate_ids=["ev3"],
@@ -837,11 +884,10 @@ def test_provenance_reconciliation_preserves_required_proof_citations_when_verif
         excluded_candidate_ids=[],
         ranking=["ev1", "ev2"],
         proof_steps=[
-            ProofStep(
+            _proof_step(
                 step_id="step:required-bridge",
                 description="Both proof candidates are required.",
                 candidate_ids=["ev1", "ev2"],
-                required_candidate_ids=["ev1", "ev2"],
                 rationale="The answer needs both candidates.",
             )
         ],

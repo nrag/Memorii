@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from memorii.core.benchmark.models import (
-    BenchmarkSystem,
-    BenchmarkScenarioFixture,
-    BenchmarkScenarioType,
     BaselineApplicability,
     BaselinePolicy,
+    BenchmarkScenarioFixture,
+    BenchmarkScenarioType,
+    BenchmarkSystem,
     ConflictCandidate,
     ConflictResolutionFixture,
     EndToEndFixture,

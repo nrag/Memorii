@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
     claim_by_role,

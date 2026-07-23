@@ -1,5 +1,5 @@
 import pytest
-
+from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 from memorii.core.benchmark.harness import BenchmarkHarness
 from memorii.core.benchmark.models import (
     BaselineApplicability,
@@ -9,7 +9,6 @@ from memorii.core.benchmark.models import (
     BenchmarkSystem,
 )
 from memorii.core.benchmark.validation import validate_report
-from memorii.core.benchmark.fixture_sets.benchmark_minimal import load_benchmark_fixture_set
 
 
 def test_preflight_rejects_baseline_skip_without_reason() -> None:
