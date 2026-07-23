@@ -93,15 +93,15 @@ class EntityResolutionService:
                 and link.canonical_entity_id != mention.entity_id
                 and _scope_identity(link.scope) == scope_identity
             ]
-            compatible_aliases = [
+            type_consistent_aliases = [
                 link
                 for link in same_name
                 if mention.entity_type == EntityType.UNKNOWN
                 or link.entity_type == EntityType.UNKNOWN
                 or link.entity_type == mention.entity_type
             ]
-            if len(compatible_aliases) == 1:
-                existing = compatible_aliases[0]
+            if len(type_consistent_aliases) == 1:
+                existing = type_consistent_aliases[0]
                 updated = self._reinforce_link(existing=existing, mention=mention, now=now)
                 links_by_key.pop((existing.normalized_name, existing.canonical_entity_id, scope_identity))
                 links_by_key[(mention.normalized_name, existing.canonical_entity_id, scope_identity)] = updated
@@ -111,7 +111,7 @@ class EntityResolutionService:
                         mention=mention,
                         decision_type=EntityIdentityDecisionType.REUSE_EXISTING,
                         resolved_entity_id=existing.canonical_entity_id,
-                        candidates=compatible_aliases,
+                        candidates=type_consistent_aliases,
                         confidence=updated.confidence,
                         rationale="one scoped alias candidate has a compatible grounded entity type",
                     )
