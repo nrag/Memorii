@@ -21,11 +21,10 @@ output_schema:
       items:
         type: object
         additionalProperties: false
-        required: [entity_id, mention_text, normalized_name, aliases, entity_type, source_id, quote, confidence]
+        required: [entity_ref, mention_text, aliases, entity_type, source_id, quote, confidence]
         properties:
-          entity_id: {type: string}
+          entity_ref: {type: string, minLength: 1}
           mention_text: {type: string}
-          normalized_name: {type: string}
           aliases:
             type: array
             items: {type: string}
@@ -38,23 +37,14 @@ output_schema:
       items:
         type: object
         additionalProperties: false
-        required: [claim_id, subject_entity_id, predicate_id, object_value, object_entity_id, scope_key, qualifier_key, qualifiers, valid_from, valid_to, source_id, quote, confidence]
+        required: [subject_entity_ref, predicate_id, object_value, object_entity_ref, source_id, quote, confidence]
         properties:
-          claim_id: {type: string}
-          subject_entity_id: {type: string}
+          subject_entity_ref: {type: string, minLength: 1}
           predicate_id:
             type: string
             enum: [owner, approver, api_owner, status, preference, dependency, action_state, belief, correction, entity_type, semantic_fact]
           object_value: {type: string}
-          object_entity_id: {type: [string, 'null']}
-          scope_key: {type: string}
-          qualifier_key: {type: string}
-          qualifiers:
-            type: object
-            additionalProperties: false
-            properties: {}
-          valid_from: {type: [string, 'null']}
-          valid_to: {type: [string, 'null']}
+          object_entity_ref: {type: [string, 'null']}
           source_id: {type: string}
           quote: {type: string}
           confidence: {type: number, minimum: 0.0, maximum: 1.0}
@@ -63,22 +53,21 @@ output_schema:
       items:
         type: object
         additionalProperties: false
-        required: [action_id, actor_entity_id, action_type, target_entity_ids, status, dependency_ids, blocking_ids, timestamp, source_id, quote]
+        required: [action_ref, actor_entity_ref, action_type, target_entity_refs, status, dependency_action_refs, blocking_action_refs, source_id, quote]
         properties:
-          action_id: {type: string}
-          actor_entity_id: {type: [string, 'null']}
+          action_ref: {type: string, minLength: 1}
+          actor_entity_ref: {type: [string, 'null']}
           action_type: {type: string}
-          target_entity_ids:
+          target_entity_refs:
             type: array
             items: {type: string}
           status: {type: string}
-          dependency_ids:
+          dependency_action_refs:
             type: array
             items: {type: string}
-          blocking_ids:
+          blocking_action_refs:
             type: array
             items: {type: string}
-          timestamp: {type: [string, 'null']}
           source_id: {type: string}
           quote: {type: string}
 system_template: |-
@@ -102,7 +91,7 @@ system_template: |-
   - approver: approver/reviewer role
   - api_owner: owner of an API surface
   - status: current status/state of an entity
-  - preference: user preference, preserving scope in scope_key
+  - preference: an explicitly stated user preference; runtime derives its scope from the observation
   - dependency: dependency/support relationship
   - action_state: state of a task/action
   - belief: hypothesis or candidate explanation
@@ -110,19 +99,9 @@ system_template: |-
   - entity_type: type/classification of an entity, e.g. project, service, person, task
   - semantic_fact: generic factual relationship when no product-specific predicate fits
 
-  Direct extraction examples:
-  - "Atlas billing migration owner = Nadia" -> owner claim with subject Atlas billing migration and object Nadia.
-  - "Atlas service is the internal platform service" -> entity_type claim with object service.
-  - "Atlas workstream is the Q2 billing migration project" -> entity_type claim with object project.
-  - "Marta owns Atlas" -> owner claim where Atlas is the owned subject and Marta is the owner object.
-  - "Iris owns Atlas Service" -> owner claim with subject Atlas Service and object Iris; do not make Iris the subject.
-  - "Branch A started: re-open old owner notes" -> task entity Branch A, action_state claim with object started, and an action with status started.
-  - "Branch A blocked on stale notes" -> task entity Branch A, action_state claim with object blocked, and an action with status blocked.
-  - "Branch B in_progress: continue the owner cleanup" -> task entity Branch B, action_state claim with object in_progress, and an action with status in_progress.
-
   For each entity, emit aliases that are explicitly supported by the source text. Preserve a
-  shared ambiguous name (for example, "Atlas") for each distinct typed entity when the text
-  uses that name, so deterministic entity resolution can preserve split lineage. Do not invent
+  shared ambiguous name for each distinct typed entity when the text uses that name, so
+  deterministic entity resolution can preserve split lineage. Do not invent
   translations, abbreviations, or aliases that do not occur in the observation.
 
   For explicit task, branch, workflow, or execution-state observations, emit both:
@@ -133,8 +112,9 @@ system_template: |-
 
   For each observation, copy the exact source_id from that observation. If there is one source observation, every extracted item must use that source_id.
 
-  Keep entity IDs stable and simple: lowercase, hyphenated, prefixed with ent:.
-  Use scope_key from task_id when task scoped; otherwise use global.
+  Use request-local references to connect entities, claims, and actions within this response.
+  References are not persistent IDs. Do not emit scope, timestamps, or persistent identifiers;
+  the runtime derives them from the source observations.
   Return strict JSON only.
 user_template: |-
   Source observations:

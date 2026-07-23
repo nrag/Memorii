@@ -209,7 +209,11 @@ class GatePowerEstimate(BaseModel):
     seed_count: int = Field(ge=1)
     scenarios_per_seed: int = Field(ge=1)
     replicates_per_scenario: int = Field(ge=1)
-    intraseed_correlation: float = Field(ge=0.0, lt=1.0)
+    interval_intraseed_correlation: float = Field(ge=0.0, lt=1.0)
+    target_simulation_intraseed_correlation: float = Field(ge=0.0, lt=1.0)
+    realized_simulation_intraseed_correlation: float | None = Field(default=None, ge=0.0, le=1.0)
+    realized_marginal_reliability: float = Field(ge=0.0, le=1.0)
+    dependence_parameterization: GateDependenceParameterization
     simulation_model: GateSimulationModel
     accepted_trials: int = Field(ge=0)
     estimated_acceptance_probability: float = Field(ge=0.0, le=1.0)
@@ -238,6 +242,15 @@ class GatePowerEstimate(BaseModel):
             <= self.acceptance_probability_upper_bound
         ):
             raise ValueError("acceptance estimate must lie inside its decision interval")
+        expected_parameterization = {
+            GateSimulationModel.BETA_BINOMIAL: GateDependenceParameterization.BETA_BINOMIAL_EXCHANGEABLE,
+            GateSimulationModel.LOGISTIC_NORMAL: GateDependenceParameterization.CALIBRATED_LOGISTIC_NORMAL,
+            GateSimulationModel.FAMILY_MIXTURE: GateDependenceParameterization.FAMILY_MIXTURE_NONEXCHANGEABLE,
+        }[self.simulation_model]
+        if self.dependence_parameterization != expected_parameterization:
+            raise ValueError("dependence parameterization does not match simulation model")
+        if abs(self.realized_marginal_reliability - self.true_scenario_reliability) > 1e-6:
+            raise ValueError("realized marginal reliability does not match the declared estimand")
         return self
 
 
@@ -294,6 +307,7 @@ class GateCoverageConfiguration(BaseModel):
     source_tree_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_state: Literal["clean"]
     input_report_content_digests: list[str] = Field(min_length=1)
+    policy_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     seed: int = Field(ge=0)
     seed_count: int = Field(ge=1)
     scenarios_per_seed: int = Field(ge=1)

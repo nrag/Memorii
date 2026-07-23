@@ -11,11 +11,14 @@ from memorii.core.memory_evolution import (
     ExtractionFailureCode,
     ExtractionRun,
     ExtractionRunStatus,
+    FallbackOutcome,
+    FinalExtractionSource,
     HybridMemoryExtractor,
     MemoryEvolutionResult,
     MemoryEvolutionService,
     MemoryGraphProjector,
     MemoryGraphSnapshot,
+    ProviderAttemptStatus,
     RetrievalView,
 )
 from memorii.core.memory_evolution.models import SourceObservation
@@ -79,7 +82,10 @@ class _FailedExtractionProvider:
                 prompt_hash=self.prompt_hash,
                 input_source_ids=[observation.source_id for observation in observations],
                 status=ExtractionRunStatus.FAILED,
+                provider_attempt_status=ProviderAttemptStatus.PROVIDER_ERROR,
+                final_output_source=FinalExtractionSource.NONE,
                 failure_code=ExtractionFailureCode.PROVIDER_ERROR,
+                primary_failure_code=ExtractionFailureCode.PROVIDER_ERROR,
                 errors=["provider_error"],
             ),
             [],
@@ -266,7 +272,7 @@ def test_provider_failure_is_durable_truthful_and_reconcilable() -> None:
     assert failing_extractor.calls == 2
 
 
-def test_failed_extraction_is_not_reported_as_live_success() -> None:
+def test_failed_extraction_records_terminal_provider_failure_without_committing() -> None:
     provider = ProviderMemoryService(memory_evolution_extractor=_FailedExtractionProvider())
 
     result = provider.sync_event(
@@ -281,12 +287,13 @@ def test_failed_extraction_is_not_reported_as_live_success() -> None:
     assert outcome.failure_code == "provider_error"
     assert outcome.retryable is True
     assert outcome.extraction_status == ExtractionRunStatus.FAILED
-    assert outcome.live_success is False
-    assert outcome.fallback_used is False
+    assert outcome.provider_attempt_status == ProviderAttemptStatus.PROVIDER_ERROR
+    assert outcome.fallback_outcome == FallbackOutcome.NOT_USED
+    assert outcome.final_extraction_source == FinalExtractionSource.NONE
     assert provider.memory_evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
 
 
-def test_hybrid_fallback_is_committed_but_not_reported_as_live_success() -> None:
+def test_hybrid_fallback_records_recovery_without_masking_primary_failure() -> None:
     provider = ProviderMemoryService(
         memory_evolution_extractor=HybridMemoryExtractor(
             llm_extractor=_FailedExtractionProvider(),
@@ -302,9 +309,10 @@ def test_hybrid_fallback_is_committed_but_not_reported_as_live_success() -> None
     outcome = result.evolution_outcomes[0]
     assert outcome.status == "evolution_committed"
     assert outcome.failure_code is None
-    assert outcome.extraction_status == ExtractionRunStatus.FALLBACK_SUCCEEDED
-    assert outcome.live_success is False
-    assert outcome.fallback_used is True
+    assert outcome.extraction_status == ExtractionRunStatus.SUCCEEDED
+    assert outcome.provider_attempt_status == ProviderAttemptStatus.PROVIDER_ERROR
+    assert outcome.fallback_outcome == FallbackOutcome.SUCCEEDED
+    assert outcome.final_extraction_source == FinalExtractionSource.FALLBACK
     assert outcome.fallback_provider == "english_rule"
 
 
@@ -324,9 +332,10 @@ def test_hybrid_does_not_report_an_abstaining_fallback_as_success() -> None:
 
     outcome = result.evolution_outcomes[0]
     assert outcome.status == "evolution_failed"
-    assert outcome.failure_code == "provider_error"
-    assert outcome.live_success is False
-    assert outcome.fallback_used is False
+    assert outcome.failure_code == "extraction_output_error"
+    assert outcome.provider_attempt_status == ProviderAttemptStatus.PROVIDER_ERROR
+    assert outcome.fallback_outcome == FallbackOutcome.FAILED
+    assert outcome.final_extraction_source == FinalExtractionSource.NONE
 
 
 def test_failed_evolution_reconciles_after_persistent_store_reopen(tmp_path: Path) -> None:

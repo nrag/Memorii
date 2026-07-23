@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable, Mapping, Sequence
+from functools import lru_cache
 from math import comb, exp, lgamma, sqrt
 from statistics import NormalDist
 from typing import TypeVar
@@ -244,22 +245,23 @@ def estimate_scenario_interval_coverage(
         raise ValueError("coverage_confidence_level must be between 0 and 1")
     rng = random.Random(seed)
     covered = 0
+    first_noncovering_success_count = _minimum_success_count_for_lower_bound(
+        cluster_sizes=(scenarios_per_seed,) * seed_count,
+        confidence_level=interval_confidence_level,
+        intraseed_correlation=interval_intraseed_correlation,
+        threshold=true_scenario_reliability,
+        strict=True,
+    )
     for _ in range(trials):
-        values = _simulate_gate_outcomes(
+        success_count = _simulate_gate_success_count(
             rng,
             true_scenario_reliability=true_scenario_reliability,
             seed_count=seed_count,
             scenarios_per_seed=scenarios_per_seed,
-            replicates_per_scenario=replicates_per_scenario,
             intraseed_correlation=simulation_intraseed_correlation,
             simulation_model=simulation_model,
         )
-        interval = seed_cluster_scenario_pass_interval(
-            values,
-            confidence_level=interval_confidence_level,
-            intraseed_correlation=interval_intraseed_correlation,
-        )
-        if interval is not None and interval.lower <= true_scenario_reliability:
+        if first_noncovering_success_count is None or success_count < first_noncovering_success_count:
             covered += 1
     probability = covered / trials
     coverage_lower = _wilson_one_sided_lower_bound(
@@ -310,6 +312,7 @@ def certify_scenario_interval_coverage(
     source_tree_digest: str,
     source_state: str,
     input_report_content_digests: Sequence[str],
+    policy_digest: str | None = None,
 ) -> GateCoverageCertificate:
     """Certify coverage over a predeclared reliability-by-DGP grid."""
 
@@ -369,6 +372,7 @@ def certify_scenario_interval_coverage(
         source_tree_digest=source_tree_digest,
         source_state="clean",
         input_report_content_digests=report_digests,
+        policy_digest=policy_digest,
         seed=seed,
         seed_count=seed_count,
         scenarios_per_seed=scenarios_per_seed,
@@ -399,7 +403,8 @@ def estimate_live_gate_power(
     seed_count: int,
     scenarios_per_seed: int,
     replicates_per_scenario: int = 2,
-    intraseed_correlation: float = 0.05,
+    interval_intraseed_correlation: float = 0.30,
+    simulation_intraseed_correlation: float = 0.05,
     trials: int = 500,
     confidence_level: float = 0.95,
     decision_confidence_level: float = 0.95,
@@ -418,7 +423,7 @@ def estimate_live_gate_power(
         seed_count=seed_count,
         scenarios_per_seed=scenarios_per_seed,
         replicates_per_scenario=replicates_per_scenario,
-        intraseed_correlation=intraseed_correlation,
+        intraseed_correlation=interval_intraseed_correlation,
         trials=trials,
         confidence_level=confidence_level,
     )
@@ -426,33 +431,46 @@ def estimate_live_gate_power(
         raise ValueError("minimum_pass_rate_lower_bound must be between 0 and 1")
     if not 0.0 < decision_confidence_level < 1.0:
         raise ValueError("decision_confidence_level must be between 0 and 1")
+    if not 0.0 <= simulation_intraseed_correlation < 1.0:
+        raise ValueError("simulation_intraseed_correlation must be in [0, 1)")
 
     rng = random.Random(seed)
     accepted = 0
+    cluster_sizes = (scenarios_per_seed,) * seed_count
+    critical_success_count = _minimum_success_count_for_lower_bound(
+        cluster_sizes=cluster_sizes,
+        confidence_level=confidence_level,
+        intraseed_correlation=interval_intraseed_correlation,
+        threshold=minimum_pass_rate_lower_bound,
+        strict=False,
+    )
     for _ in range(trials):
-        values_by_seed = _simulate_gate_outcomes(
+        success_count = _simulate_gate_success_count(
             rng,
             true_scenario_reliability=true_scenario_reliability,
             seed_count=seed_count,
             scenarios_per_seed=scenarios_per_seed,
-            replicates_per_scenario=replicates_per_scenario,
-            intraseed_correlation=intraseed_correlation,
+            intraseed_correlation=simulation_intraseed_correlation,
             simulation_model=simulation_model,
         )
-        interval = seed_cluster_scenario_pass_interval(
-            values_by_seed,
-            confidence_level=confidence_level,
-            intraseed_correlation=intraseed_correlation,
-        )
-        if interval is not None and interval.lower >= minimum_pass_rate_lower_bound:
+        if critical_success_count is not None and success_count >= critical_success_count:
             accepted += 1
 
     probability = accepted / trials
-    decision_lower, decision_upper = _beta_binomial_cluster_interval(
-        cluster_success_counts=[accepted],
-        cluster_sizes=[trials],
+    decision_lower = _wilson_one_sided_lower_bound(
+        accepted,
+        trials,
         confidence_level=decision_confidence_level,
-        intraseed_correlation=0.0,
+    )
+    decision_upper = 1.0 - _wilson_one_sided_lower_bound(
+        trials - accepted,
+        trials,
+        confidence_level=decision_confidence_level,
+    )
+    moments = simulation_model_moments(
+        mean=true_scenario_reliability,
+        correlation=simulation_intraseed_correlation,
+        simulation_model=simulation_model,
     )
     return GatePowerEstimate(
         true_scenario_reliability=true_scenario_reliability,
@@ -460,7 +478,11 @@ def estimate_live_gate_power(
         seed_count=seed_count,
         scenarios_per_seed=scenarios_per_seed,
         replicates_per_scenario=replicates_per_scenario,
-        intraseed_correlation=intraseed_correlation,
+        interval_intraseed_correlation=interval_intraseed_correlation,
+        target_simulation_intraseed_correlation=simulation_intraseed_correlation,
+        realized_simulation_intraseed_correlation=moments.intraseed_correlation,
+        realized_marginal_reliability=moments.marginal_reliability,
+        dependence_parameterization=moments.dependence_parameterization,
         simulation_model=simulation_model,
         accepted_trials=accepted,
         estimated_acceptance_probability=probability,
@@ -527,6 +549,66 @@ def _simulate_gate_outcomes(
             scenarios[f"scenario_{scenario_index}"] = [scenario_passed] * replicates_per_scenario
         values_by_seed[run_seed] = scenarios
     return values_by_seed
+
+
+def _simulate_gate_success_count(
+    rng: random.Random,
+    *,
+    true_scenario_reliability: float,
+    seed_count: int,
+    scenarios_per_seed: int,
+    intraseed_correlation: float,
+    simulation_model: GateSimulationModel,
+) -> int:
+    successes = 0
+    for _run_seed in range(seed_count):
+        seed_pass_rate = sample_seed_rate(
+            rng,
+            mean=true_scenario_reliability,
+            correlation=intraseed_correlation,
+            simulation_model=simulation_model,
+        )
+        for scenario_index in range(scenarios_per_seed):
+            scenario_rate = seed_pass_rate
+            if simulation_model == GateSimulationModel.FAMILY_MIXTURE:
+                scenario_rate = family_mixture_rate(
+                    seed_pass_rate,
+                    scenario_index=scenario_index,
+                    scenario_count=scenarios_per_seed,
+                )
+            successes += rng.random() < scenario_rate
+    return successes
+
+
+@lru_cache(maxsize=512)
+def _minimum_success_count_for_lower_bound(
+    *,
+    cluster_sizes: tuple[int, ...],
+    confidence_level: float,
+    intraseed_correlation: float,
+    threshold: float,
+    strict: bool,
+) -> int | None:
+    """Find the exact interval decision boundary once for a fixed design."""
+
+    low = 0
+    high = sum(cluster_sizes)
+    qualifying: int | None = None
+    while low <= high:
+        observed = (low + high) // 2
+        lower, _upper = _beta_binomial_cluster_interval(
+            cluster_success_counts=(observed,),
+            cluster_sizes=cluster_sizes,
+            confidence_level=confidence_level,
+            intraseed_correlation=intraseed_correlation,
+        )
+        passes = lower > threshold if strict else lower >= threshold
+        if passes:
+            qualifying = observed
+            high = observed - 1
+        else:
+            low = observed + 1
+    return qualifying
 
 
 def _wilson_one_sided_lower_bound(

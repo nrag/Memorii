@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from memorii.core.memory_evolution.models import ExtractionRunStatus, MemoryEvolutionResult
+from memorii.core.memory_evolution.models import MemoryEvolutionResult
 from memorii.core.memory_evolution.operation_models import EvolutionOperation
 from memorii.core.memory_evolution.operations import EvolutionCoordinator
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -48,18 +48,17 @@ class ProviderIngestionCoordinator:
 
 
 def _provider_outcome(operation: EvolutionOperation) -> ProviderEvolutionOutcome:
-    live_success = (
-        operation.status.value == "evolution_committed" and operation.extraction_status == ExtractionRunStatus.SUCCEEDED
-    )
-    fallback_used = operation.extraction_status == ExtractionRunStatus.FALLBACK_SUCCEEDED
     return ProviderEvolutionOutcome(
         operation_id=operation.operation_id,
         status=operation.status.value,
         attempt_count=operation.attempt_count,
         failure_code=operation.failure.category.value if operation.failure is not None else None,
         retryable=operation.failure.retryable if operation.failure is not None else False,
-        extraction_status=(operation.extraction_status.value if operation.extraction_status is not None else None),
-        live_success=live_success,
-        fallback_used=fallback_used,
+        extraction_status=operation.extraction_status,
+        provider_attempt_status=operation.provider_attempt_status,
+        fallback_outcome=operation.fallback_outcome,
+        final_extraction_source=operation.final_extraction_source,
+        extraction_failure_code=operation.extraction_failure_code,
+        primary_failure_code=operation.primary_failure_code,
         fallback_provider=operation.fallback_provider,
     )

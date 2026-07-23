@@ -26,6 +26,7 @@ from memorii.core.memory_evolution import (
     build_memory_extractor_from_env,
 )
 from memorii.core.memory_evolution.extraction import models_from_llm_output
+from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput
 from memorii.core.memory_evolution.models import ConfidenceComponents
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -545,7 +546,7 @@ def test_rule_extractor_handles_runtime_fact_phrasings() -> None:
     }
 
 
-def test_llm_extraction_rekeys_model_local_claim_and_action_ids() -> None:
+def test_llm_extraction_binds_request_local_references_to_deterministic_runtime_ids() -> None:
     observations = [
         validator_source_from_dict(
             {
@@ -565,34 +566,41 @@ def test_llm_extraction_rekeys_model_local_claim_and_action_ids() -> None:
         ),
     ]
     output = {
-        "entities": [],
+        "entities": [
+            {
+                "entity_ref": "atlas",
+                "mention_text": "Atlas",
+                "source_id": "tx:one",
+                "quote": "Atlas",
+            },
+            {
+                "entity_ref": "alice",
+                "mention_text": "Alice",
+                "source_id": "tx:one",
+                "quote": "Alice",
+            },
+            {
+                "entity_ref": "bob",
+                "mention_text": "Bob",
+                "source_id": "tx:two",
+                "quote": "Bob",
+            },
+        ],
         "claims": [
             {
-                "claim_id": "claim1",
-                "subject_entity_id": "ent:atlas",
+                "subject_entity_ref": "atlas",
                 "predicate_id": "owner",
                 "object_value": "Alice",
-                "object_entity_id": "ent:alice",
-                "scope_key": "global",
-                "qualifier_key": "default",
-                "qualifiers": {},
-                "valid_from": None,
-                "valid_to": None,
+                "object_entity_ref": "alice",
                 "source_id": "tx:one",
                 "quote": "Atlas owner is Alice",
                 "confidence": 0.8,
             },
             {
-                "claim_id": "claim1",
-                "subject_entity_id": "ent:atlas",
+                "subject_entity_ref": "atlas",
                 "predicate_id": "owner",
                 "object_value": "Bob",
-                "object_entity_id": "ent:bob",
-                "scope_key": "global",
-                "qualifier_key": "default",
-                "qualifiers": {},
-                "valid_from": None,
-                "valid_to": None,
+                "object_entity_ref": "bob",
                 "source_id": "tx:two",
                 "quote": "Atlas owner is Bob",
                 "confidence": 0.8,
@@ -600,33 +608,31 @@ def test_llm_extraction_rekeys_model_local_claim_and_action_ids() -> None:
         ],
         "actions": [
             {
-                "action_id": "action1",
-                "actor_entity_id": None,
+                "action_ref": "blocked",
+                "actor_entity_ref": None,
                 "action_type": "work_state",
-                "target_entity_ids": ["ent:atlas"],
+                "target_entity_refs": ["atlas"],
                 "status": "blocked",
-                "dependency_ids": [],
-                "blocking_ids": [],
-                "timestamp": None,
+                "dependency_action_refs": [],
+                "blocking_action_refs": [],
                 "source_id": "tx:one",
                 "quote": "Atlas",
             },
             {
-                "action_id": "action1",
-                "actor_entity_id": None,
+                "action_ref": "resumed",
+                "actor_entity_ref": None,
                 "action_type": "work_state",
-                "target_entity_ids": ["ent:atlas"],
+                "target_entity_refs": ["atlas"],
                 "status": "resumed",
-                "dependency_ids": [],
-                "blocking_ids": [],
-                "timestamp": None,
+                "dependency_action_refs": [],
+                "blocking_action_refs": [],
                 "source_id": "tx:two",
                 "quote": "Atlas",
             },
         ],
     }
 
-    run, _, claims, actions = models_from_llm_output(
+    run, entities, claims, actions = models_from_llm_output(
         run_id="run:llm-local-ids",
         provider="llm",
         model="test-model",
@@ -636,11 +642,20 @@ def test_llm_extraction_rekeys_model_local_claim_and_action_ids() -> None:
     )
 
     assert run.errors == []
+    assert len({entity.entity_id for entity in entities}) == 3
     assert len({claim.claim_id for claim in claims}) == 2
-    assert all(claim.claim_id != "claim1" for claim in claims)
-    assert {claim.qualifiers["model_claim_id"] for claim in claims} == {"claim1"}
     assert len({action.action_id for action in actions}) == 2
-    assert all(action.action_id != "action1" for action in actions)
+    repeated = models_from_llm_output(
+        run_id="run:llm-local-ids",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=observations,
+        output=output,
+    )
+    assert [entity.entity_id for entity in repeated[1]] == [entity.entity_id for entity in entities]
+    assert [claim.claim_id for claim in repeated[2]] == [claim.claim_id for claim in claims]
+    assert [action.action_id for action in repeated[3]] == [action.action_id for action in actions]
 
 
 def test_llm_action_extraction_preserves_observation_execution_context() -> None:
@@ -662,13 +677,23 @@ def test_llm_action_extraction_preserves_observation_execution_context() -> None
         prompt_hash="prompt-hash",
         observations=[observation],
         output={
-            "entities": [],
+            "entities": [
+                {
+                    "entity_ref": "atlas-cleanup",
+                    "mention_text": "Atlas cleanup",
+                    "source_id": observation.source_id,
+                    "quote": "Atlas cleanup",
+                }
+            ],
             "claims": [],
             "actions": [
                 {
+                    "action_ref": "progress",
                     "action_type": "progress",
-                    "target_entity_ids": ["ent:atlas-cleanup"],
+                    "target_entity_refs": ["atlas-cleanup"],
                     "status": "in_progress",
+                    "dependency_action_refs": [],
+                    "blocking_action_refs": [],
                     "source_id": observation.source_id,
                     "quote": "Atlas cleanup is in progress",
                 }
@@ -703,7 +728,7 @@ def test_llm_extraction_rejects_unknown_source_even_with_one_observation() -> No
         output={
             "entities": [
                 {
-                    "entity_id": "ent:atlas",
+                    "entity_ref": "atlas",
                     "mention_text": "Atlas",
                     "source_id": "tx:hallucinated",
                     "quote": "Atlas",
@@ -741,13 +766,13 @@ def test_llm_extraction_preserves_valid_items_and_marks_mixed_provenance_partial
         output={
             "entities": [
                 {
-                    "entity_id": "ent:atlas",
+                    "entity_ref": "atlas",
                     "mention_text": "Atlas",
                     "source_id": observation.source_id,
                     "quote": "Atlas",
                 },
                 {
-                    "entity_id": "ent:alice",
+                    "entity_ref": "alice",
                     "mention_text": "Alice",
                     "source_id": "tx:hallucinated",
                     "quote": "Alice",
@@ -759,7 +784,8 @@ def test_llm_extraction_preserves_valid_items_and_marks_mixed_provenance_partial
     )
 
     assert run.status == ExtractionRunStatus.PARTIAL
-    assert [entity.entity_id for entity in entities] == ["ent:atlas"]
+    assert len(entities) == 1
+    assert entities[0].mention_text == "Atlas"
     assert len(run.errors) == 1
 
 
@@ -791,7 +817,7 @@ def test_llm_extraction_distinguishes_explicit_abstention_from_invalid_output() 
         output={
             "entities": [
                 {
-                    "entity_id": "ent:tokyo",
+                    "entity_ref": "tokyo-project",
                     "mention_text": "東京プロジェクト",
                     "source_id": observation.source_id,
                     "quote": "東京プロジェクト",
@@ -820,7 +846,7 @@ def test_llm_extraction_rejects_nonverbatim_evidence_and_duplicate_source_ids() 
     output = {
         "entities": [
             {
-                "entity_id": "ent:atlas",
+                "entity_ref": "atlas",
                 "mention_text": "Atlas",
                 "source_id": observation.source_id,
                 "quote": "atlas",
@@ -885,98 +911,66 @@ def test_rule_extraction_inherits_session_scope_from_source_observation() -> Non
         ("task_id", "task:other"),
         ("session_id", "session:other"),
         ("user_id", "user:other"),
+        ("entity_id", "ent:persistent"),
+        ("claim_id", "claim:persistent"),
+        ("action_id", "action:persistent"),
+        ("timestamp", "2026-01-01T00:00:00Z"),
+        ("valid_from", "2026-01-01T00:00:00Z"),
+        ("valid_to", "2026-02-01T00:00:00Z"),
     ],
 )
-def test_llm_extraction_rejects_model_scope_escalation(
+def test_memory_extraction_transport_rejects_runtime_owned_metadata(
     field_name: str,
     outside_value: str,
 ) -> None:
-    observation = validator_source_from_dict(
-        {
-            "source_id": "tx:scoped",
-            "text": "Atlas owner is Alice. Atlas cleanup started.",
-            "source_type": SourceType.USER,
-            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
-            "task_id": "task:incident",
-            "session_id": "session:incident",
-            "user_id": "user:one",
-        }
-    )
-    claim = {
-        "subject_entity_id": "ent:atlas",
-        "predicate_id": "owner",
-        "object_value": "Alice",
-        "source_id": observation.source_id,
-        "quote": "Atlas owner is Alice",
-        field_name: outside_value,
+    payload = {
+        "entities": [
+            {
+                "entity_ref": "atlas",
+                "mention_text": "Atlas",
+                "aliases": [],
+                "entity_type": "project",
+                "source_id": "tx:scoped",
+                "quote": "Atlas",
+                "confidence": 0.9,
+            }
+        ],
+        "claims": [
+            {
+                "subject_entity_ref": "atlas",
+                "predicate_id": "owner",
+                "object_value": "Alice",
+                "object_entity_ref": None,
+                "source_id": "tx:scoped",
+                "quote": "Atlas owner is Alice",
+                "confidence": 0.9,
+            }
+        ],
+        "actions": [
+            {
+                "action_ref": "cleanup",
+                "actor_entity_ref": None,
+                "action_type": "work_state",
+                "target_entity_refs": ["atlas"],
+                "status": "started",
+                "dependency_action_refs": [],
+                "blocking_action_refs": [],
+                "source_id": "tx:scoped",
+                "quote": "Atlas cleanup started",
+            }
+        ],
     }
-    entity = {
-        "entity_id": "ent:atlas",
-        "mention_text": "Atlas",
-        "source_id": observation.source_id,
-        "quote": "Atlas",
-        field_name: outside_value,
-    }
-    action = {
-        "action_type": "work_state",
-        "target_entity_ids": ["ent:atlas-cleanup"],
-        "status": "started",
-        "source_id": observation.source_id,
-        "quote": "Atlas cleanup started",
-        field_name: outside_value,
-    }
-
-    run, _, claims, actions = models_from_llm_output(
-        run_id="run:scope-escalation",
-        provider="llm",
-        model="test-model",
-        prompt_hash="prompt-hash",
-        observations=[observation],
-        output={"entities": [entity], "claims": [claim], "actions": [action]},
+    target = (
+        payload["entities"][0]
+        if field_name == "entity_id"
+        else payload["actions"][0]
+        if field_name in {"action_id", "timestamp"}
+        else payload["claims"][0]
     )
+    target[field_name] = outside_value
 
-    assert run.entity_ids == []
-    assert claims == []
-    assert actions == []
-    assert len(run.errors) == 3
-    assert all(f"model supplied {field_name}" in error for error in run.errors)
-
-
-def test_llm_extraction_rejects_string_none_as_missing_source_scope() -> None:
-    observation = validator_source_from_dict(
-        {
-            "source_id": "tx:global",
-            "text": "Atlas owner is Alice.",
-            "source_type": SourceType.USER,
-            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
-        }
-    )
-
-    run, _, claims, _ = models_from_llm_output(
-        run_id="run:none-scope-injection",
-        provider="llm",
-        model="test-model",
-        prompt_hash="prompt-hash",
-        observations=[observation],
-        output={
-            "entities": [],
-            "claims": [
-                {
-                    "subject_entity_id": "ent:atlas",
-                    "predicate_id": "owner",
-                    "object_value": "Alice",
-                    "source_id": observation.source_id,
-                    "quote": "Atlas owner is Alice",
-                    "task_id": "None",
-                }
-            ],
-            "actions": [],
-        },
-    )
-
-    assert claims == []
-    assert len(run.errors) == 1
-    assert "model supplied task_id" in run.errors[0]
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        MemoryExtractionOutput.model_validate(payload)
 
 
 def test_llm_extraction_canonicalizes_inverse_owner_claim_arguments() -> None:
@@ -993,18 +987,16 @@ def test_llm_extraction_canonicalizes_inverse_owner_claim_arguments() -> None:
     output = {
         "entities": [
             {
-                "entity_id": "ent:iris",
+                "entity_ref": "iris",
                 "mention_text": "Iris",
-                "normalized_name": "iris",
                 "entity_type": "person",
                 "source_id": "tx:owns",
                 "quote": "Iris",
                 "confidence": 0.8,
             },
             {
-                "entity_id": "ent:atlas-service",
+                "entity_ref": "atlas-service",
                 "mention_text": "Atlas Service",
-                "normalized_name": "atlas service",
                 "entity_type": "service",
                 "source_id": "tx:owns",
                 "quote": "Atlas Service",
@@ -1013,16 +1005,10 @@ def test_llm_extraction_canonicalizes_inverse_owner_claim_arguments() -> None:
         ],
         "claims": [
             {
-                "claim_id": "claim_inverse_owner",
-                "subject_entity_id": "ent:iris",
+                "subject_entity_ref": "iris",
                 "predicate_id": "owner",
                 "object_value": "Atlas Service",
-                "object_entity_id": "ent:atlas-service",
-                "scope_key": "global",
-                "qualifier_key": "default",
-                "qualifiers": {},
-                "valid_from": None,
-                "valid_to": None,
+                "object_entity_ref": "atlas-service",
                 "source_id": "tx:owns",
                 "quote": "Iris owns Atlas Service",
                 "confidence": 0.8,
@@ -1031,7 +1017,7 @@ def test_llm_extraction_canonicalizes_inverse_owner_claim_arguments() -> None:
         "actions": [],
     }
 
-    run, _, claims, _ = models_from_llm_output(
+    run, entities, claims, _ = models_from_llm_output(
         run_id="run:inverse-owner",
         provider="llm",
         model="test-model",
@@ -1043,13 +1029,14 @@ def test_llm_extraction_canonicalizes_inverse_owner_claim_arguments() -> None:
     assert run.errors == []
     assert len(claims) == 1
     claim = claims[0]
-    assert claim.claim_key.subject_entity_id == "ent:atlas-service"
-    assert claim.object_entity_id == "ent:iris"
+    ids_by_name = {entity.mention_text: entity.entity_id for entity in entities}
+    assert claim.claim_key.subject_entity_id == ids_by_name["Atlas Service"]
+    assert claim.object_entity_id == ids_by_name["Iris"]
     assert claim.object_value == "Iris"
     assert claim.qualifiers["argument_normalization"] == "owner_inverse_subject_object_swap"
 
 
-def test_llm_extraction_normalizes_quarter_valid_from() -> None:
+def test_llm_extraction_derives_temporal_metadata_from_source_observation() -> None:
     observations = [
         validator_source_from_dict(
             {
@@ -1061,19 +1048,26 @@ def test_llm_extraction_normalizes_quarter_valid_from() -> None:
         )
     ]
     output = {
-        "entities": [],
+        "entities": [
+            {
+                "entity_ref": "atlas",
+                "mention_text": "Atlas",
+                "source_id": "tx:quarter",
+                "quote": "Atlas",
+            },
+            {
+                "entity_ref": "bob",
+                "mention_text": "Bob",
+                "source_id": "tx:quarter",
+                "quote": "Bob",
+            },
+        ],
         "claims": [
             {
-                "claim_id": "claim_quarter",
-                "subject_entity_id": "ent:atlas",
+                "subject_entity_ref": "atlas",
                 "predicate_id": "owner",
                 "object_value": "Bob",
-                "object_entity_id": "ent:bob",
-                "scope_key": "global",
-                "qualifier_key": "default",
-                "qualifiers": {},
-                "valid_from": "2026-Q2",
-                "valid_to": None,
+                "object_entity_ref": "bob",
                 "source_id": "tx:quarter",
                 "quote": "Atlas owner is Bob",
                 "confidence": 0.8,
@@ -1093,36 +1087,37 @@ def test_llm_extraction_normalizes_quarter_valid_from() -> None:
 
     assert run.errors == []
     assert len(claims) == 1
-    assert claims[0].valid_from == datetime(2026, 4, 1, tzinfo=UTC)
-    assert claims[0].qualifiers["date_normalization"] == "quarter_start"
-    assert claims[0].qualifiers["valid_from_date_normalization"] == "quarter_start"
+    assert claims[0].valid_from == observations[0].timestamp
+    assert claims[0].valid_to is None
+    assert claims[0].qualifiers == {}
 
 
-def test_llm_extraction_invalid_date_still_fails_claim() -> None:
+def test_llm_extraction_rejects_unknown_request_local_entity_reference() -> None:
     observations = [
         validator_source_from_dict(
             {
                 "source_id": "tx:bad-date",
-                "text": "Atlas owner is Bob sometime later.",
+                "text": "Atlas owner is Bob.",
                 "source_type": SourceType.USER,
                 "timestamp": datetime(2026, 5, 1, tzinfo=UTC),
             }
         )
     ]
     output = {
-        "entities": [],
+        "entities": [
+            {
+                "entity_ref": "atlas",
+                "mention_text": "Atlas",
+                "source_id": "tx:bad-date",
+                "quote": "Atlas",
+            }
+        ],
         "claims": [
             {
-                "claim_id": "claim_bad_date",
-                "subject_entity_id": "ent:atlas",
+                "subject_entity_ref": "atlas",
                 "predicate_id": "owner",
                 "object_value": "Bob",
-                "object_entity_id": "ent:bob",
-                "scope_key": "global",
-                "qualifier_key": "default",
-                "qualifiers": {},
-                "valid_from": "Q2 2026-ish",
-                "valid_to": None,
+                "object_entity_ref": "missing-bob",
                 "source_id": "tx:bad-date",
                 "quote": "Atlas owner is Bob",
                 "confidence": 0.8,
@@ -1141,8 +1136,11 @@ def test_llm_extraction_invalid_date_still_fails_claim() -> None:
     )
 
     assert claims == []
-    assert run.errors
-    assert "Invalid isoformat" in run.errors[0]
+    assert run.status == ExtractionRunStatus.PARTIAL
+    assert run.failure_code == ExtractionFailureCode.OUTPUT_VALIDATION
+    assert "missing-bob" in run.errors[0]
+    assert run.validation_summary["claim_binding_errors"] == 1
+    assert run.validation_summary["accepted_entities"] == 1
 
 
 def test_current_and_historical_truth_are_both_addressable() -> None:

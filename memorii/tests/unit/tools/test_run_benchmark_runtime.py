@@ -177,10 +177,12 @@ def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
         ]:
             assert row.get(field_name) is not None
         assert row["provider_count_scope"] == "scenario_extractor_calls"
-    failed_checkpoint_rows = [row for row in runtime_checkpoint_rows if row["passed"] is False]
-    assert failed_checkpoint_rows
-    assert all(row["runtime_failure_buckets"] for row in failed_checkpoint_rows)
-    assert all(row["runtime_failure_classification"] for row in failed_checkpoint_rows)
+    for row in runtime_checkpoint_rows:
+        if row["passed"]:
+            assert not row["runtime_failure_buckets"]
+        else:
+            assert row["runtime_failure_buckets"]
+            assert row["runtime_failure_classification"]
     warning_rows = [
         json.loads(line)
         for line in (run_dir / "sim_warning_examples.jsonl").read_text(encoding="utf-8").splitlines()

@@ -256,7 +256,11 @@ def write_memory_evolution_artifacts(
         ),
     )
     final_output_source_counts = Counter(row.final_output_source for row in checkpoint_rows)
-    llm_successes = sum(1 for row in llm_rows if row.success)
+    llm_successes = sum(
+        1
+        for row in llm_rows
+        if not isinstance(row, RuntimeExtractorTraceRow) and row.success
+    )
     provider_successes = (
         runtime_report.provider_successes if runtime_report is not None else 0 if args.dry_run else llm_successes
     )

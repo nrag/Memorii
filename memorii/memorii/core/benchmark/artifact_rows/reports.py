@@ -26,6 +26,15 @@ from memorii.core.benchmark.calibration.models import CalibrationReport, Decisio
 from memorii.core.benchmark.memory_evolution_sim.schemas import SimSystemOutput
 from memorii.core.benchmark.reproducibility import SourceState, canonical_json_digest
 from memorii.core.llm_decision.models import LLMDecisionTrace
+from memorii.core.memory_evolution.models import (
+    ExtractionFailureCode,
+    ExtractionRunStatus,
+    FallbackOutcome,
+    ProviderAttemptStatus,
+)
+from memorii.core.memory_evolution.models import (
+    FinalExtractionSource as MemoryFinalExtractionSource,
+)
 
 _CALIBRATION_REQUIRED_SUITES = {"memory_evolution_sim_v1", "memory_evolution_runtime_v1"}
 
@@ -118,6 +127,12 @@ class RuntimeProviderHealth(FlatArtifactModel):
     clean_runtime_gate: bool
     failure_buckets: list[str] = Field(default_factory=list)
     failure_classification_counts: CountMap = Field(default_factory=dict)
+    provider_attempt_status_counts: CountMap = Field(default_factory=dict)
+    extraction_status_counts: CountMap = Field(default_factory=dict)
+    fallback_outcome_counts: CountMap = Field(default_factory=dict)
+    output_validation_failures: int = Field(default=0, ge=0)
+    abstentions: int = Field(default=0, ge=0)
+    partial_extractions: int = Field(default=0, ge=0)
     execution_source: FinalOutputSource
     dry_run: bool
     fake_extractor_calls: int = Field(default=0, ge=0)
@@ -128,6 +143,8 @@ class RuntimeProviderHealth(FlatArtifactModel):
     def validate_provider_accounting(self) -> RuntimeProviderHealth:
         if self.attempted_calls != self.provider_successes + self.provider_failures:
             raise ValueError("attempted provider calls must equal successes plus failures")
+        if sum(self.provider_attempt_status_counts.values()) < self.attempted_calls:
+            raise ValueError("provider status counts cannot underreport attempted calls")
         if self.dry_run:
             if any((self.attempted_calls, self.provider_successes, self.provider_failures, self.fallbacks)):
                 raise ValueError("dry runtime health cannot contain provider accounting")
@@ -320,7 +337,6 @@ class RuntimeExtractorTracePayload(FlatArtifactModel):
     scenario_id: str
     call_index: int = Field(ge=0)
     input_source_ids: list[str] = Field(default_factory=list)
-    failure_classification: str | None = None
     errors: list[str] = Field(default_factory=list)
     entity_count: int = Field(ge=0)
     claim_count: int = Field(ge=0)
@@ -344,17 +360,29 @@ class RuntimeExtractorTraceRow(FlatArtifactModel):
     effective_decision_mode: DecisionMode
     final_output_source: FinalOutputSource
     trace: RuntimeExtractorTracePayload
-    success: bool
-    fallback_used: bool
-    failure_mode: str | None = None
+    extraction_status: ExtractionRunStatus
+    provider_attempt_status: ProviderAttemptStatus
+    fallback_outcome: FallbackOutcome
+    final_extraction_source: MemoryFinalExtractionSource
+    failure_code: ExtractionFailureCode | None = None
+    primary_failure_code: ExtractionFailureCode | None = None
+    fallback_provider: str | None = None
     output: RuntimeExtractorOutput
 
     @model_validator(mode="after")
     def validate_outcome(self) -> RuntimeExtractorTraceRow:
-        if self.success and (self.fallback_used or self.failure_mode is not None):
-            raise ValueError("successful extractor traces cannot report fallback or failure")
-        if not self.success and not self.failure_mode:
-            raise ValueError("failed extractor traces require a failure_mode")
+        if self.extraction_status == ExtractionRunStatus.SUCCEEDED and self.failure_code is not None:
+            raise ValueError("successful extractor trace cannot report a terminal failure")
+        if self.extraction_status == ExtractionRunStatus.FAILED and self.failure_code is None:
+            raise ValueError("failed extractor trace requires a failure code")
+        fallback_used = self.fallback_outcome != FallbackOutcome.NOT_USED
+        if fallback_used != bool(self.fallback_provider):
+            raise ValueError("fallback outcome and provider provenance disagree")
+        if self.fallback_outcome == FallbackOutcome.SUCCEEDED:
+            if self.final_extraction_source != MemoryFinalExtractionSource.FALLBACK:
+                raise ValueError("successful fallback must identify fallback output")
+        elif self.final_extraction_source == MemoryFinalExtractionSource.FALLBACK:
+            raise ValueError("fallback output requires a successful fallback")
         return self
 
 

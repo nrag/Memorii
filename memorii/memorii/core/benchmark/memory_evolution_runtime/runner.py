@@ -47,7 +47,7 @@ from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import DecisionModeName, LLMDecisionRuntimeConfig, LLMLiveTestConfig, LLMRuntimeConfig
 from memorii.core.llm_provider.base import LLMStructuredClient
 from memorii.core.llm_provider.factory import LLMClientFactory
-from memorii.core.memory_evolution import RetrievalPurpose
+from memorii.core.memory_evolution import FallbackOutcome, ProviderAttemptStatus, RetrievalPurpose
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.tools.run_live_llm_eval import validate_live_safety
@@ -226,9 +226,21 @@ def run_runtime_scenarios(
             )
             graph_items.extend(runtime_graph_items)
             recorded_runs = recorded_extraction_runs(extractor)
-            extractor_provider_successes = sum(run.success for run in recorded_runs)
-            extractor_provider_failures = sum(not run.success for run in recorded_runs)
-            extractor_fallbacks = sum(run.fallback_used for run in recorded_runs)
+            extractor_provider_successes = sum(
+                run.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED for run in recorded_runs
+            )
+            extractor_provider_failures = sum(
+                run.provider_attempt_status
+                in {
+                    ProviderAttemptStatus.PROVIDER_ERROR,
+                    ProviderAttemptStatus.INVALID_JSON,
+                    ProviderAttemptStatus.SCHEMA_ERROR,
+                }
+                for run in recorded_runs
+            )
+            extractor_fallbacks = sum(
+                run.fallback_outcome != FallbackOutcome.NOT_USED for run in recorded_runs
+            )
             projection = project_runtime_checkpoint(
                 scenario=scenario,
                 checkpoint=checkpoint,
@@ -285,7 +297,9 @@ def run_runtime_scenarios(
                 provider_successes=extractor_provider_successes,
                 provider_failures=extractor_provider_failures,
                 fallbacks=extractor_fallbacks,
-                fallback_used=any(run.fallback_used for run in checkpoint_runs),
+                fallback_used=any(
+                    run.fallback_outcome != FallbackOutcome.NOT_USED for run in checkpoint_runs
+                ),
             )
             checkpoint_rows.append(row)
             scenario_checkpoint_rows.append(row)

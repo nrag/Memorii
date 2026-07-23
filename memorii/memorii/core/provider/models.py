@@ -8,18 +8,18 @@ from typing import Annotated, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 
-from memorii.domain.enums import MemoryDomain
+from memorii.domain.enums import (
+    ExtractionFailureCode,
+    ExtractionRunStatus,
+    FallbackOutcome,
+    FinalExtractionSource,
+    MemoryDomain,
+    ProviderAttemptStatus,
+)
 
 PrefetchDecisionT = TypeVar("PrefetchDecisionT", bound=BaseModel)
 DeliveryId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 _DELIVERY_ID_ADAPTER = TypeAdapter(DeliveryId)
-ExtractionOutcomeStatus = Literal[
-    "succeeded",
-    "partial",
-    "abstained",
-    "failed",
-    "fallback_succeeded",
-]
 
 
 class ProviderOperation(StrEnum):
@@ -52,9 +52,12 @@ class ProviderEvolutionOutcome(BaseModel):
     attempt_count: int = Field(ge=0)
     failure_code: str | None = None
     retryable: bool = False
-    extraction_status: ExtractionOutcomeStatus | None = None
-    live_success: bool = False
-    fallback_used: bool = False
+    extraction_status: ExtractionRunStatus | None = None
+    provider_attempt_status: ProviderAttemptStatus | None = None
+    fallback_outcome: FallbackOutcome = FallbackOutcome.NOT_USED
+    final_extraction_source: FinalExtractionSource | None = None
+    extraction_failure_code: ExtractionFailureCode | None = None
+    primary_failure_code: ExtractionFailureCode | None = None
     fallback_provider: str | None = None
 
     model_config = ConfigDict(extra="forbid")
@@ -62,14 +65,19 @@ class ProviderEvolutionOutcome(BaseModel):
     @model_validator(mode="after")
     def validate_outcome(self) -> ProviderEvolutionOutcome:
         committed = self.status == "evolution_committed"
-        if self.live_success != (committed and self.extraction_status == "succeeded"):
-            raise ValueError("live_success must identify a committed primary extraction")
-        if self.fallback_used != (
-            committed and self.extraction_status == "fallback_succeeded"
+        if committed and (
+            self.extraction_status in {None, ExtractionRunStatus.FAILED}
+            or self.final_extraction_source in {None, FinalExtractionSource.NONE}
         ):
-            raise ValueError("fallback_used must identify a committed fallback extraction")
-        if self.fallback_used != bool(self.fallback_provider):
-            raise ValueError("fallback_provider is required exactly when fallback_used is true")
+            raise ValueError("committed outcome requires a usable extraction result")
+        if self.fallback_outcome == FallbackOutcome.SUCCEEDED:
+            if not self.fallback_provider or self.final_extraction_source != FinalExtractionSource.FALLBACK:
+                raise ValueError("successful fallback requires fallback provenance")
+        elif self.fallback_outcome == FallbackOutcome.FAILED:
+            if not self.fallback_provider or self.final_extraction_source != FinalExtractionSource.NONE:
+                raise ValueError("failed fallback requires terminal fallback provenance")
+        elif self.fallback_provider is not None:
+            raise ValueError("unused fallback cannot identify a fallback provider")
         if committed and self.failure_code is not None:
             raise ValueError("committed outcome cannot contain an operation failure")
         if self.status == "evolution_failed" and self.failure_code is None:

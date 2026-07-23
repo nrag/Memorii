@@ -44,7 +44,12 @@ from memorii.core.benchmark.memory_evolution_sim import (
     SimSystemOutput,
     sim_reconstruction_context_for_checkpoint,
 )
-from memorii.core.memory_evolution import MemoryGraphSnapshot
+from memorii.core.memory_evolution import (
+    FinalExtractionSource as MemoryFinalExtractionSource,
+)
+from memorii.core.memory_evolution import (
+    MemoryGraphSnapshot,
+)
 
 
 def build_runtime_checkpoint_result_row(
@@ -195,16 +200,19 @@ def extractor_trace_rows(
                     scenario_id=scenario.scenario_id,
                     call_index=index,
                     input_source_ids=run.input_source_ids,
-                    failure_classification=run.failure_classification,
                     errors=run.errors,
                     entity_count=run.entity_count,
                     claim_count=run.claim_count,
                     action_count=run.action_count,
                     validation_summary=run.validation_summary,
                 ),
-                success=run.success,
-                fallback_used=run.fallback_used,
-                failure_mode=None if run.success else "runtime_extractor_failure",
+                extraction_status=run.extraction_status,
+                provider_attempt_status=run.provider_attempt_status,
+                fallback_outcome=run.fallback_outcome,
+                final_extraction_source=run.final_output_source,
+                failure_code=run.failure_code,
+                primary_failure_code=run.primary_failure_code,
+                fallback_provider=run.fallback_provider,
                 output=RuntimeExtractorOutput(
                     entity_ids=run.entity_ids,
                     claim_ids=run.claim_ids,
@@ -240,7 +248,7 @@ def run_output_source(*, effective_mode: str, dry_run: bool, run: RecordedExtrac
         return "rule"
     if dry_run:
         return "fake_oracle"
-    return "rule" if run.fallback_used else "live_llm"
+    return "rule" if run.final_output_source == MemoryFinalExtractionSource.FALLBACK else "live_llm"
 
 
 def runtime_failure_classification(runtime_buckets: list[str], diagnostics: CheckpointDiagnosticsSection) -> list[str]:

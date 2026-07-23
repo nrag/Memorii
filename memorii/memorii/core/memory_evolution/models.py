@@ -7,7 +7,15 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.domain.enums import MemoryDomain, SourceType
+from memorii.domain.enums import (
+    ExtractionFailureCode,
+    ExtractionRunStatus,
+    FallbackOutcome,
+    FinalExtractionSource,
+    MemoryDomain,
+    ProviderAttemptStatus,
+    SourceType,
+)
 
 
 def _validate_optional_half_open_interval(
@@ -555,22 +563,6 @@ class MemoryGraphSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ExtractionRunStatus(StrEnum):
-    SUCCEEDED = "succeeded"
-    PARTIAL = "partial"
-    ABSTAINED = "abstained"
-    FAILED = "failed"
-    FALLBACK_SUCCEEDED = "fallback_succeeded"
-
-
-class ExtractionFailureCode(StrEnum):
-    PROVIDER_ERROR = "provider_error"
-    INVALID_JSON = "invalid_json"
-    SCHEMA_VALIDATION = "schema_validation"
-    OUTPUT_VALIDATION = "output_validation"
-    UNSUPPORTED_LANGUAGE = "unsupported_language"
-
-
 class ExtractionRun(BaseModel):
     extraction_run_id: str
     provider: str
@@ -582,7 +574,11 @@ class ExtractionRun(BaseModel):
     action_ids: list[str] = Field(default_factory=list)
     validation_summary: dict[str, int] = Field(default_factory=dict)
     status: ExtractionRunStatus = ExtractionRunStatus.SUCCEEDED
+    provider_attempt_status: ProviderAttemptStatus = ProviderAttemptStatus.NOT_ATTEMPTED
+    fallback_outcome: FallbackOutcome = FallbackOutcome.NOT_USED
+    final_output_source: FinalExtractionSource = FinalExtractionSource.PRIMARY
     failure_code: ExtractionFailureCode | None = None
+    primary_failure_code: ExtractionFailureCode | None = None
     fallback_provider: str | None = None
     errors: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -592,24 +588,44 @@ class ExtractionRun(BaseModel):
     @model_validator(mode="after")
     def validate_outcome(self) -> ExtractionRun:
         if self.status == ExtractionRunStatus.SUCCEEDED:
-            if self.failure_code is not None or self.fallback_provider is not None:
-                raise ValueError("successful extraction cannot contain failure or fallback metadata")
-        elif self.status == ExtractionRunStatus.FALLBACK_SUCCEEDED:
-            if self.failure_code is None or not self.fallback_provider:
-                raise ValueError("fallback extraction requires the triggering failure and fallback provider")
+            if self.failure_code is not None:
+                raise ValueError("successful extraction cannot contain a terminal failure")
         elif self.status != ExtractionRunStatus.ABSTAINED and self.failure_code is None:
             raise ValueError("non-successful extraction requires a failure code")
-        if self.status != ExtractionRunStatus.FALLBACK_SUCCEEDED and self.fallback_provider is not None:
-            raise ValueError("only fallback extraction may identify a fallback provider")
+        provider_failure_code = {
+            ProviderAttemptStatus.PROVIDER_ERROR: ExtractionFailureCode.PROVIDER_ERROR,
+            ProviderAttemptStatus.INVALID_JSON: ExtractionFailureCode.INVALID_JSON,
+            ProviderAttemptStatus.SCHEMA_ERROR: ExtractionFailureCode.SCHEMA_VALIDATION,
+        }.get(self.provider_attempt_status)
+        if provider_failure_code is not None and self.primary_failure_code != provider_failure_code:
+            raise ValueError("failed provider attempt requires its typed primary failure code")
+        if self.provider_attempt_status in {
+            ProviderAttemptStatus.NOT_ATTEMPTED,
+            ProviderAttemptStatus.SUCCEEDED,
+        } and self.primary_failure_code in {
+            ExtractionFailureCode.PROVIDER_ERROR,
+            ExtractionFailureCode.INVALID_JSON,
+            ExtractionFailureCode.SCHEMA_VALIDATION,
+        }:
+            raise ValueError("successful or absent provider attempt cannot contain a provider failure")
+        if self.fallback_outcome == FallbackOutcome.NOT_USED:
+            if self.fallback_provider is not None or self.final_output_source == FinalExtractionSource.FALLBACK:
+                raise ValueError("unused fallback cannot identify a fallback provider or output")
+        else:
+            if not self.fallback_provider:
+                raise ValueError("fallback outcome requires a fallback provider")
+            expected_source = (
+                FinalExtractionSource.FALLBACK
+                if self.fallback_outcome == FallbackOutcome.SUCCEEDED
+                else FinalExtractionSource.NONE
+            )
+            if self.final_output_source != expected_source:
+                raise ValueError("fallback outcome and final output source disagree")
+        if self.status == ExtractionRunStatus.FAILED and self.final_output_source != FinalExtractionSource.NONE:
+            raise ValueError("failed extraction cannot identify a final output source")
+        if self.status != ExtractionRunStatus.FAILED and self.final_output_source == FinalExtractionSource.NONE:
+            raise ValueError("non-failed extraction requires a final output source")
         return self
-
-    @property
-    def live_success(self) -> bool:
-        return self.status == ExtractionRunStatus.SUCCEEDED
-
-    @property
-    def fallback_used(self) -> bool:
-        return self.status == ExtractionRunStatus.FALLBACK_SUCCEEDED
 
 
 class MemoryEvolutionResult(BaseModel):

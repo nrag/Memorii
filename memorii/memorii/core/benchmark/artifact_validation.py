@@ -378,6 +378,9 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
                 )
     if isinstance(report.runtime_graph_alignments_summary, AlignmentSummary):
         summary = report.runtime_graph_alignments_summary
+        actual_verdict_counts = Counter(
+            {"pass": actual_verdict_counts["pass"], "fail": actual_verdict_counts["fail"]}
+        )
         if dict(sorted(summary.checkpoint_scored_verdict_counts.items())) != dict(
             sorted(actual_verdict_counts.items())
         ):

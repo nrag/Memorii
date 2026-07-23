@@ -388,12 +388,28 @@ def test_grounding_prompt_schemas_expose_required_proof_and_answer_span_diagnost
 
 def test_memory_extraction_prompt_schema_is_strict_for_openai() -> None:
     contract = _load("memory_extraction:v1")
+    entity_schema = contract.output_schema["properties"]["entities"]["items"]
     claim_schema = contract.output_schema["properties"]["claims"]["items"]
-    qualifiers_schema = claim_schema["properties"]["qualifiers"]
+    action_schema = contract.output_schema["properties"]["actions"]["items"]
 
-    assert qualifiers_schema["type"] == "object"
-    assert qualifiers_schema["additionalProperties"] is False
-    assert qualifiers_schema["properties"] == {}
+    assert entity_schema["properties"]["entity_ref"]["minLength"] == 1
+    assert claim_schema["properties"]["subject_entity_ref"]["minLength"] == 1
+    assert action_schema["properties"]["action_ref"]["minLength"] == 1
+    runtime_owned = {
+        "entity_id",
+        "claim_id",
+        "action_id",
+        "scope_key",
+        "task_id",
+        "session_id",
+        "user_id",
+        "timestamp",
+        "valid_from",
+        "valid_to",
+    }
+    assert runtime_owned.isdisjoint(entity_schema["properties"])
+    assert runtime_owned.isdisjoint(claim_schema["properties"])
+    assert runtime_owned.isdisjoint(action_schema["properties"])
 
 
 def test_memory_evolution_sim_prompt_distinguishes_subject_and_answer_object_entities() -> None:

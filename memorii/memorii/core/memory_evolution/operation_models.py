@@ -7,7 +7,13 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from memorii.core.memory_evolution.models import ExtractionRunStatus
+from memorii.core.memory_evolution.models import (
+    ExtractionFailureCode,
+    ExtractionRunStatus,
+    FallbackOutcome,
+    FinalExtractionSource,
+    ProviderAttemptStatus,
+)
 
 
 class EvolutionOperationStatus(StrEnum):
@@ -51,6 +57,11 @@ class EvolutionOperation(BaseModel):
     completed_fence_epoch: int | None = Field(default=None, ge=1)
     extraction_run_id: str | None = None
     extraction_status: ExtractionRunStatus | None = None
+    provider_attempt_status: ProviderAttemptStatus | None = None
+    fallback_outcome: FallbackOutcome = FallbackOutcome.NOT_USED
+    final_extraction_source: FinalExtractionSource | None = None
+    extraction_failure_code: ExtractionFailureCode | None = None
+    primary_failure_code: ExtractionFailureCode | None = None
     fallback_provider: str | None = None
     projection_record_ids: list[str] = Field(default_factory=list)
     execution_token: str | None = None
@@ -87,19 +98,51 @@ class EvolutionOperation(BaseModel):
                 raise ValueError("committed operation requires extraction identity and status")
             if self.extraction_status == ExtractionRunStatus.FAILED:
                 raise ValueError("failed extraction cannot be committed")
-            if self.extraction_status == ExtractionRunStatus.FALLBACK_SUCCEEDED and not self.fallback_provider:
-                raise ValueError("committed fallback extraction requires fallback provider")
+            if self.fallback_outcome == FallbackOutcome.SUCCEEDED:
+                if not self.fallback_provider or self.final_extraction_source != FinalExtractionSource.FALLBACK:
+                    raise ValueError("committed fallback extraction requires fallback provenance")
+            elif self.fallback_provider is not None:
+                raise ValueError("non-fallback committed extraction cannot identify a fallback provider")
+            if self.final_extraction_source is None or self.final_extraction_source == FinalExtractionSource.NONE:
+                raise ValueError("committed extraction requires a final output source")
+            if self.provider_attempt_status is None:
+                raise ValueError("committed extraction requires provider-attempt provenance")
             if self.completed_fence_epoch != self.ownership_epoch or self.ownership_epoch < 1:
                 raise ValueError("committed operation requires its completing ownership epoch")
-        elif self.extraction_run_id is not None or self.projection_record_ids or self.fallback_provider is not None:
-            raise ValueError("only committed operations may identify projection results")
-        elif self.completed_fence_epoch is not None:
-            raise ValueError("only committed operations may identify a completion fence")
-        if self.status == EvolutionOperationStatus.FAILED and self.extraction_status not in {
-            None,
-            ExtractionRunStatus.FAILED,
-        }:
-            raise ValueError("failed operation may only identify a failed extraction")
+        elif self.status == EvolutionOperationStatus.FAILED:
+            if self.projection_record_ids or self.completed_fence_epoch is not None:
+                raise ValueError("failed operations cannot identify committed projection results")
+            if self.extraction_status is not None:
+                if (
+                    self.extraction_status != ExtractionRunStatus.FAILED
+                    or self.extraction_run_id is None
+                    or self.provider_attempt_status is None
+                    or self.final_extraction_source != FinalExtractionSource.NONE
+                ):
+                    raise ValueError("failed extraction telemetry must be complete and terminal")
+            elif (
+                self.extraction_run_id is not None
+                or self.provider_attempt_status is not None
+                or self.fallback_provider is not None
+                or self.fallback_outcome != FallbackOutcome.NOT_USED
+                or self.final_extraction_source is not None
+                or self.extraction_failure_code is not None
+                or self.primary_failure_code is not None
+            ):
+                raise ValueError("operation failure without an extraction cannot contain extraction telemetry")
+        elif (
+            self.extraction_run_id is not None
+            or self.extraction_status is not None
+            or self.projection_record_ids
+            or self.fallback_provider is not None
+            or self.fallback_outcome != FallbackOutcome.NOT_USED
+            or self.final_extraction_source is not None
+            or self.provider_attempt_status is not None
+            or self.extraction_failure_code is not None
+            or self.primary_failure_code is not None
+            or self.completed_fence_epoch is not None
+        ):
+            raise ValueError("pending and running operations cannot identify extraction results")
         if self.status == EvolutionOperationStatus.FAILED:
             if self.failure is None:
                 raise ValueError("failed operation requires failure details")

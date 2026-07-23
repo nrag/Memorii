@@ -7,14 +7,18 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Annotated, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.benchmark.artifact_rows import BenchmarkReportSummary, SimScenarioResultRow
 from memorii.core.benchmark.artifact_validation import validate_memory_evolution_run
+from memorii.core.benchmark.calibration.gate_validation import (
+    resolve_live_gate_source_binding,
+    validate_live_gate_configuration,
+)
 from memorii.core.benchmark.calibration.models import GateCoverageCertificate, GatePowerEstimate, ScenarioPassInterval
+from memorii.core.benchmark.calibration.policy import LiveCertificationPolicy
 from memorii.core.benchmark.calibration.simulation_models import GateSimulationModel
 from memorii.core.benchmark.calibration.statistics import (
-    DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS,
     certify_scenario_interval_coverage,
     estimate_live_gate_power,
     seed_cluster_scenario_pass_interval,
@@ -63,6 +67,8 @@ class LiveGateSummary(BaseModel):
     minimum_seed_pass_rate: float = Field(ge=0.0, le=1.0)
     confidence_level: float = Field(gt=0.0, lt=1.0)
     intraseed_correlation: float = Field(ge=0.0, lt=1.0)
+    expected_seeds: list[int] = Field(default_factory=list)
+    expected_replicates: list[int] = Field(default_factory=list)
     seed_pass_rates: dict[str, float] = Field(default_factory=dict)
     leave_one_seed_out_lower_bounds: dict[str, float] = Field(default_factory=dict)
     design_power_estimates: list[GatePowerEstimate] = Field(default_factory=list)
@@ -71,6 +77,8 @@ class LiveGateSummary(BaseModel):
     source_revision: str | None = None
     source_tree_digest: str | None = None
     source_state: Literal["clean"] | None = None
+    policy_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    input_report_content_digests: list[str] = Field(default_factory=list)
     minimum_design_power: float = Field(ge=0.0, le=1.0)
     maximum_null_acceptance_probability: float = Field(ge=0.0, le=1.0)
     minimum_interval_coverage: float = Field(ge=0.0, le=1.0)
@@ -83,6 +91,22 @@ class LiveGateSummary(BaseModel):
     passed: bool
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_bound_certificate(self) -> LiveGateSummary:
+        certificate = self.interval_coverage_certificate
+        if certificate is None:
+            return self
+        configuration = certificate.configuration
+        if configuration.source_revision != self.source_revision:
+            raise ValueError("coverage certificate source revision does not match summary")
+        if configuration.source_tree_digest != self.source_tree_digest:
+            raise ValueError("coverage certificate source digest does not match summary")
+        if configuration.input_report_content_digests != self.input_report_content_digests:
+            raise ValueError("coverage certificate report digests do not match summary")
+        if configuration.policy_digest != self.policy_digest:
+            raise ValueError("coverage certificate policy digest does not match summary")
+        return self
 
 
 def load_live_reports(
@@ -134,34 +158,35 @@ def evaluate_live_gate(
     minimum_interval_coverage: float = 0.0,
     design_trials: int = 200,
     intraseed_correlation: float = 0.05,
+    simulation_intraseed_correlation_points: Sequence[float] = (0.05,),
+    simulation_models: Sequence[GateSimulationModel] = tuple(GateSimulationModel),
+    coverage_reliability_points: Sequence[float] = (0.50, 0.90, 0.98),
     required_families: Sequence[str] = (),
+    expected_seeds: Sequence[int] = (),
+    expected_replicates: Sequence[int] = (),
     source_revision: str | None = None,
+    policy_digest: str | None = None,
 ) -> LiveGateSummary:
-    if not 0.0 <= minimum_pass_rate_lower_bound <= 1.0:
-        raise ValueError("minimum_pass_rate_lower_bound must be between 0 and 1")
-    if not 0.0 < confidence_level < 1.0:
-        raise ValueError("confidence_level must be between 0 and 1")
-    for name, value in (
-        ("minimum_seed_pass_rate", minimum_seed_pass_rate),
-        ("design_target_scenario_reliability", design_target_scenario_reliability),
-        ("minimum_design_power", minimum_design_power),
-        ("maximum_null_acceptance_probability", maximum_null_acceptance_probability),
-        ("minimum_interval_coverage", minimum_interval_coverage),
-    ):
-        if not 0.0 <= value <= 1.0:
-            raise ValueError(f"{name} must be between 0 and 1")
-    if not 0.0 <= intraseed_correlation < 1.0:
-        raise ValueError("intraseed_correlation must be in [0, 1)")
-    if not 0.0 <= minimum_family_pass_rate_lower_bound <= 1.0:
-        raise ValueError("minimum_family_pass_rate_lower_bound must be between 0 and 1")
-    if minimum_family_scenarios_per_seed < 1:
-        raise ValueError("minimum_family_scenarios_per_seed must be positive")
-    if not 0.0 <= maximum_provider_failure_rate <= 1.0:
-        raise ValueError("maximum_provider_failure_rate must be between 0 and 1")
-    if not 0.0 <= maximum_fallback_rate <= 1.0:
-        raise ValueError("maximum_fallback_rate must be between 0 and 1")
-    if minimum_seed_count < 1 or minimum_scenarios_per_replicate < 1 or minimum_replicates_per_seed < 1:
-        raise ValueError("minimum seed, replicate, and scenario counts must be positive")
+    correlation_points, declared_models, reliability_points = validate_live_gate_configuration(
+        minimum_seed_count=minimum_seed_count,
+        minimum_scenarios_per_replicate=minimum_scenarios_per_replicate,
+        minimum_replicates_per_seed=minimum_replicates_per_seed,
+        minimum_pass_rate_lower_bound=minimum_pass_rate_lower_bound,
+        minimum_family_pass_rate_lower_bound=minimum_family_pass_rate_lower_bound,
+        minimum_family_scenarios_per_seed=minimum_family_scenarios_per_seed,
+        minimum_seed_pass_rate=minimum_seed_pass_rate,
+        maximum_provider_failure_rate=maximum_provider_failure_rate,
+        maximum_fallback_rate=maximum_fallback_rate,
+        confidence_level=confidence_level,
+        design_target_scenario_reliability=design_target_scenario_reliability,
+        minimum_design_power=minimum_design_power,
+        maximum_null_acceptance_probability=maximum_null_acceptance_probability,
+        minimum_interval_coverage=minimum_interval_coverage,
+        intraseed_correlation=intraseed_correlation,
+        simulation_intraseed_correlation_points=simulation_intraseed_correlation_points,
+        simulation_models=simulation_models,
+        coverage_reliability_points=coverage_reliability_points,
+    )
     by_run: dict[str, list[SimScenarioResultRow]] = {}
     runs_by_seed: dict[int, set[int]] = {}
     failure_counts: dict[str, int] = {}
@@ -210,25 +235,14 @@ def evaluate_live_gate(
         provider_failures += report.provider_failures
         provider_calls += report.provider_successes + report.provider_failures
         fallbacks += report.fallbacks
-    if len(report_source_revisions) > 1:
-        raise ValueError(f"live gate input reports contain mixed source revisions: {sorted(report_source_revisions)!r}")
-    report_source_revision = next(iter(report_source_revisions), None)
-    if source_revision is not None and report_source_revision is not None and source_revision != report_source_revision:
-        raise ValueError(
-            "live gate source revision does not match input reports: "
-            f"requested={source_revision!r} report={report_source_revision!r}"
-        )
-    bound_source_revision = source_revision or report_source_revision
-    if report_source_states != {"clean"}:
-        failure_reasons.append(
-            "non_certifying_source_state:" + ",".join(sorted(report_source_states))
-        )
-    if len(report_source_tree_digests) != 1:
-        raise ValueError(
-            "live gate input reports contain mixed source-tree digests: "
-            f"{sorted(report_source_tree_digests)!r}"
-        )
-    bound_source_tree_digest = next(iter(report_source_tree_digests), None)
+    bound_source_revision, bound_source_tree_digest, source_is_clean = resolve_live_gate_source_binding(
+        report_revisions=report_source_revisions,
+        report_tree_digests=report_source_tree_digests,
+        report_states=report_source_states,
+        requested_revision=source_revision,
+    )
+    if not source_is_clean:
+        failure_reasons.append("non_certifying_source_state:" + ",".join(sorted(report_source_states)))
 
     values_by_seed_scenario: dict[int, dict[str, list[float]]] = {}
     family_values: dict[str, dict[int, dict[str, list[float]]]] = {}
@@ -330,6 +344,33 @@ def evaluate_live_gate(
             )
     if len(runs_by_seed) < minimum_seed_count:
         failure_reasons.append(f"insufficient_seed_count:{len(runs_by_seed)}<{minimum_seed_count}")
+    if expected_seeds and set(runs_by_seed) != set(expected_seeds):
+        missing = sorted(set(expected_seeds) - set(runs_by_seed))
+        unexpected = sorted(set(runs_by_seed) - set(expected_seeds))
+        failure_reasons.append(
+            "seed_matrix_mismatch:"
+            f"missing={','.join(str(seed) for seed in missing)}:"
+            f"unexpected={','.join(str(seed) for seed in unexpected)}"
+        )
+    if expected_replicates:
+        expected_replicate_set = set(expected_replicates)
+        mismatched = {
+            seed: (
+                sorted(expected_replicate_set - replicates),
+                sorted(replicates - expected_replicate_set),
+            )
+            for seed, replicates in runs_by_seed.items()
+            if replicates != expected_replicate_set
+        }
+        if mismatched:
+            failure_reasons.append(
+                "replicate_matrix_mismatch:"
+                + ";".join(
+                    f"{seed}:missing={','.join(str(value) for value in missing)}:"
+                    f"unexpected={','.join(str(value) for value in unexpected)}"
+                    for seed, (missing, unexpected) in sorted(mismatched.items())
+                )
+            )
     under_replicated_seeds = sorted(
         seed for seed, replicates in runs_by_seed.items() if len(replicates) < minimum_replicates_per_seed
     )
@@ -408,60 +449,63 @@ def evaluate_live_gate(
         planned_seed_count = minimum_seed_count
         scenarios_per_seed = minimum_scenarios_per_replicate
         replicates_per_scenario = minimum_replicates_per_seed
-        simulation_models = sorted(GateSimulationModel, key=lambda item: item.value)
-        decision_point_count = len(simulation_models) * 2
+        decision_point_count = len(declared_models) * len(correlation_points) * 2
         decision_confidence_level = 1.0 - ((1.0 - confidence_level) / decision_point_count)
         power_args = {
             "minimum_pass_rate_lower_bound": minimum_pass_rate_lower_bound,
             "seed_count": planned_seed_count,
             "scenarios_per_seed": scenarios_per_seed,
             "replicates_per_scenario": replicates_per_scenario,
-            "intraseed_correlation": intraseed_correlation,
+            "interval_intraseed_correlation": intraseed_correlation,
             "trials": design_trials,
-            "confidence_level": confidence_level,
+            "confidence_level": simultaneous_confidence,
             "decision_confidence_level": decision_confidence_level,
         }
         design_power_estimates = [
             estimate_live_gate_power(
                 true_scenario_reliability=design_target_scenario_reliability,
+                simulation_intraseed_correlation=simulation_correlation,
                 simulation_model=simulation_model,
                 seed=bootstrap_seed + index,
                 **power_args,
             )
-            for index, simulation_model in enumerate(simulation_models)
+            for index, (simulation_correlation, simulation_model) in enumerate(
+                (correlation, model)
+                for correlation in correlation_points
+                for model in declared_models
+            )
         ]
         null_acceptance_estimates = [
             estimate_live_gate_power(
                 true_scenario_reliability=minimum_pass_rate_lower_bound,
+                simulation_intraseed_correlation=simulation_correlation,
                 simulation_model=simulation_model,
-                seed=bootstrap_seed + len(simulation_models) + index,
+                seed=bootstrap_seed + len(design_power_estimates) + index,
                 **power_args,
             )
-            for index, simulation_model in enumerate(simulation_models)
+            for index, (simulation_correlation, simulation_model) in enumerate(
+                (correlation, model)
+                for correlation in correlation_points
+                for model in declared_models
+            )
         ]
         interval_coverage_certificate = certify_scenario_interval_coverage(
-            reliability_points=sorted(
-                {
-                    0.50,
-                    minimum_pass_rate_lower_bound,
-                    design_target_scenario_reliability,
-                }
-            ),
+            reliability_points=reliability_points,
             seed_count=planned_seed_count,
             scenarios_per_seed=scenarios_per_seed,
             replicates_per_scenario=replicates_per_scenario,
             interval_intraseed_correlation=intraseed_correlation,
-            simulation_intraseed_correlation_points=sorted(
-                {*DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS, intraseed_correlation}
-            ),
+            simulation_intraseed_correlation_points=correlation_points,
             trials=design_trials,
-            interval_confidence_level=confidence_level,
+            interval_confidence_level=simultaneous_confidence,
             certificate_confidence_level=confidence_level,
             seed=bootstrap_seed,
             source_revision=bound_source_revision,
             source_tree_digest=bound_source_tree_digest or "",
             source_state="clean" if report_source_states == {"clean"} else "dirty",
             input_report_content_digests=sorted(report_content_digests),
+            simulation_models=declared_models,
+            policy_digest=policy_digest,
         )
         minimum_power_lower_bound = min(
             estimate.acceptance_probability_lower_bound for estimate in design_power_estimates
@@ -512,6 +556,8 @@ def evaluate_live_gate(
         minimum_seed_pass_rate=minimum_seed_pass_rate,
         confidence_level=confidence_level,
         intraseed_correlation=intraseed_correlation,
+        expected_seeds=sorted(expected_seeds),
+        expected_replicates=sorted(expected_replicates),
         seed_pass_rates=seed_pass_rates,
         leave_one_seed_out_lower_bounds=leave_one_seed_out_lower_bounds,
         design_power_estimates=design_power_estimates,
@@ -520,6 +566,8 @@ def evaluate_live_gate(
         source_revision=bound_source_revision,
         source_tree_digest=bound_source_tree_digest,
         source_state="clean" if report_source_states == {"clean"} else None,
+        policy_digest=policy_digest,
+        input_report_content_digests=sorted(report_content_digests),
         minimum_design_power=minimum_design_power,
         maximum_null_acceptance_probability=maximum_null_acceptance_probability,
         minimum_interval_coverage=minimum_interval_coverage,
@@ -530,6 +578,50 @@ def evaluate_live_gate(
         critical_failure_bucket_counts=dict(sorted(failure_counts.items())),
         failure_reasons=failure_reasons,
         passed=not failure_reasons,
+    )
+
+
+def evaluate_live_gate_with_policy(
+    reports: Sequence[BenchmarkReportSummary],
+    *,
+    policy: LiveCertificationPolicy,
+    source_revision: str,
+    baseline_reports: Sequence[BenchmarkReportSummary] = (),
+) -> LiveGateSummary:
+    """Evaluate reports using the immutable repository-owned certification policy."""
+
+    return evaluate_live_gate(
+        reports,
+        suite=policy.suite,
+        mode=policy.mode,
+        profile=policy.profile,
+        minimum_seed_count=len(policy.seeds),
+        minimum_scenarios_per_replicate=policy.scenarios_per_replicate,
+        minimum_replicates_per_seed=len(policy.replicates),
+        minimum_pass_rate_lower_bound=policy.minimum_pass_rate_lower_bound,
+        minimum_family_pass_rate_lower_bound=policy.minimum_family_pass_rate_lower_bound,
+        minimum_family_scenarios_per_seed=policy.minimum_family_scenarios_per_seed,
+        minimum_seed_pass_rate=policy.minimum_seed_pass_rate,
+        maximum_provider_failure_rate=policy.maximum_provider_failure_rate,
+        maximum_fallback_rate=policy.maximum_fallback_rate,
+        baseline_reports=baseline_reports,
+        bootstrap_seed=policy.bootstrap_seed,
+        bootstrap_resamples=policy.bootstrap_resamples,
+        confidence_level=policy.confidence_level,
+        design_target_scenario_reliability=policy.design_target_scenario_reliability,
+        minimum_design_power=policy.minimum_design_power,
+        maximum_null_acceptance_probability=policy.maximum_null_acceptance_probability,
+        minimum_interval_coverage=policy.minimum_interval_coverage,
+        design_trials=policy.monte_carlo_trials,
+        intraseed_correlation=policy.interval_intraseed_correlation,
+        simulation_intraseed_correlation_points=policy.simulation_intraseed_correlation_points,
+        simulation_models=policy.simulation_models,
+        coverage_reliability_points=policy.coverage_reliability_points,
+        required_families=policy.required_families,
+        expected_seeds=policy.seeds,
+        expected_replicates=policy.replicates,
+        source_revision=source_revision,
+        policy_digest=policy.digest(),
     )
 
 

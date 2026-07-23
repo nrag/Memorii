@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionRunError
-from memorii.core.memory_evolution.models import MemoryEvolutionResult
+from memorii.core.memory_evolution.models import FallbackOutcome, MemoryEvolutionResult
 from memorii.core.memory_evolution.mutations import MemoryEvolutionMutationValidationError
 from memorii.core.memory_evolution.operation_lease import EvolutionLeaseHeartbeat
 from memorii.core.memory_evolution.operation_models import (
@@ -303,7 +303,7 @@ class EvolutionCoordinator:
         exc: Exception,
     ) -> EvolutionOperation:
         failure = _classify_failure(exc)
-        extraction_status = exc.run.status if isinstance(exc, MemoryExtractionRunError) else None
+        extraction_run = exc.run if isinstance(exc, MemoryExtractionRunError) else None
         for _attempt in range(self._max_attempts):
             current = self._read(operation_id)
             if current is None:
@@ -316,7 +316,30 @@ class EvolutionCoordinator:
                 current,
                 status=EvolutionOperationStatus.FAILED,
                 failure=failure,
-                extraction_status=extraction_status,
+                extraction_run_id=(
+                    extraction_run.extraction_run_id if extraction_run is not None else None
+                ),
+                extraction_status=extraction_run.status if extraction_run is not None else None,
+                provider_attempt_status=(
+                    extraction_run.provider_attempt_status if extraction_run is not None else None
+                ),
+                fallback_outcome=(
+                    extraction_run.fallback_outcome
+                    if extraction_run is not None
+                    else FallbackOutcome.NOT_USED
+                ),
+                final_extraction_source=(
+                    extraction_run.final_output_source if extraction_run is not None else None
+                ),
+                extraction_failure_code=(
+                    extraction_run.failure_code if extraction_run is not None else None
+                ),
+                primary_failure_code=(
+                    extraction_run.primary_failure_code if extraction_run is not None else None
+                ),
+                fallback_provider=(
+                    extraction_run.fallback_provider if extraction_run is not None else None
+                ),
                 execution_token=None,
                 lease_expires_at=None,
                 updated_at=self._now_provider(),
@@ -399,6 +422,11 @@ def _committed_operation(
         status=EvolutionOperationStatus.COMMITTED,
         extraction_run_id=result.extraction_run.extraction_run_id,
         extraction_status=result.extraction_run.status,
+        provider_attempt_status=result.extraction_run.provider_attempt_status,
+        fallback_outcome=result.extraction_run.fallback_outcome,
+        final_extraction_source=result.extraction_run.final_output_source,
+        extraction_failure_code=result.extraction_run.failure_code,
+        primary_failure_code=result.extraction_run.primary_failure_code,
         fallback_provider=result.extraction_run.fallback_provider,
         projection_record_ids=list(result.written_record_ids),
         completed_fence_epoch=operation.ownership_epoch,

@@ -26,7 +26,15 @@ from memorii.core.benchmark.memory_evolution_runtime.models import (
     RuntimeGraphSnapshotRow,
     RuntimeSuiteRows,
 )
-from memorii.core.memory_evolution import MemoryGraphEdgeType, MemoryGraphNodeType, RecordLifecycleState
+from memorii.core.memory_evolution import (
+    ExtractionFailureCode,
+    ExtractionRunStatus,
+    FallbackOutcome,
+    MemoryGraphEdgeType,
+    MemoryGraphNodeType,
+    ProviderAttemptStatus,
+    RecordLifecycleState,
+)
 
 
 def write_runtime_artifacts(*, run_dir: Path, rows: RuntimeSuiteRows) -> None:
@@ -226,9 +234,20 @@ def runtime_summary_metrics(rows: RuntimeSuiteRows) -> RuntimeReportSummary:
     checkpoint_count = len(checkpoint_rows)
     bucket_counts = Counter(bucket for row in checkpoint_rows for bucket in row.runtime_failure_buckets)
     final_output_source_counts = Counter(row.final_output_source for row in checkpoint_rows)
-    provider_successes = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.success)
-    provider_failures = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if not row.success)
-    fallbacks = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.fallback_used)
+    provider_successes = (
+        0
+        if rows.dry_run
+        else sum(
+            row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
+            for row in rows.llm_rows
+        )
+    )
+    provider_failures = 0 if rows.dry_run else _provider_failure_count(rows)
+    fallbacks = (
+        0
+        if rows.dry_run
+        else sum(row.fallback_outcome != FallbackOutcome.NOT_USED for row in rows.llm_rows)
+    )
     graph_summary = runtime_graph_completeness_metrics(rows)
     alignment_summary = runtime_alignment_summary(rows)
     return RuntimeReportSummary(
@@ -268,26 +287,58 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
             next(iter(effective_modes), None) if len(effective_modes) == 1 else None,
         )
     provider_backed = effective_mode in {"llm", "hybrid"} and not rows.dry_run
-    provider_successes = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.success)
-    provider_failures = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if not row.success)
-    fallbacks = 0 if rows.dry_run else sum(1 for row in rows.llm_rows if row.fallback_used)
-    attempted_calls = provider_successes + provider_failures
-    failure_classifications = Counter(
-        str(row.trace.failure_classification)
-        for row in rows.llm_rows
-        if not row.success and row.trace.failure_classification
+    provider_successes = (
+        0
+        if rows.dry_run
+        else sum(
+            row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
+            for row in rows.llm_rows
+        )
     )
+    provider_failures = 0 if rows.dry_run else _provider_failure_count(rows)
+    fallbacks = (
+        0
+        if rows.dry_run
+        else sum(row.fallback_outcome != FallbackOutcome.NOT_USED for row in rows.llm_rows)
+    )
+    attempted_calls = provider_successes + provider_failures
+    provider_attempt_status_counts = Counter(row.provider_attempt_status.value for row in rows.llm_rows)
+    extraction_status_counts = Counter(row.extraction_status.value for row in rows.llm_rows)
+    fallback_outcome_counts = Counter(row.fallback_outcome.value for row in rows.llm_rows)
+    failure_classifications = Counter(
+        failure.value
+        for row in rows.llm_rows
+        for failure in (row.primary_failure_code, row.failure_code)
+        if failure is not None
+    )
+    output_validation_failures = sum(
+        row.failure_code == ExtractionFailureCode.OUTPUT_VALIDATION for row in rows.llm_rows
+    )
+    abstentions = sum(row.extraction_status == ExtractionRunStatus.ABSTAINED for row in rows.llm_rows)
+    partial_extractions = sum(row.extraction_status == ExtractionRunStatus.PARTIAL for row in rows.llm_rows)
     failure_buckets: list[str] = []
     if provider_failures:
         failure_buckets.append("runtime_provider_failure")
     if fallbacks:
         failure_buckets.append("runtime_provider_fallback")
+    if output_validation_failures:
+        failure_buckets.append("runtime_output_validation_failure")
+    if partial_extractions:
+        failure_buckets.append("runtime_partial_extraction")
     if not provider_backed:
         status: ProviderHealthStatus = "not_applicable"
         clean_runtime_gate = True
         success_rate = None
     else:
-        status = "pass" if attempted_calls > 0 and not provider_failures and not fallbacks else "fail"
+        status = (
+            "pass"
+            if attempted_calls > 0
+            and not provider_failures
+            and not fallbacks
+            and not output_validation_failures
+            and not partial_extractions
+            else "fail"
+        )
         clean_runtime_gate = status == "pass"
         success_rate = provider_successes / attempted_calls if attempted_calls else 0.0
     output_sources = {str(row.final_output_source) for row in rows.checkpoint_rows if row.final_output_source}
@@ -306,6 +357,12 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
         clean_runtime_gate=clean_runtime_gate,
         failure_buckets=failure_buckets,
         failure_classification_counts=dict(sorted(failure_classifications.items())),
+        provider_attempt_status_counts=dict(sorted(provider_attempt_status_counts.items())),
+        extraction_status_counts=dict(sorted(extraction_status_counts.items())),
+        fallback_outcome_counts=dict(sorted(fallback_outcome_counts.items())),
+        output_validation_failures=output_validation_failures,
+        abstentions=abstentions,
+        partial_extractions=partial_extractions,
         execution_source=execution_source,
         dry_run=rows.dry_run,
         fake_extractor_calls=sum(1 for row in rows.checkpoint_rows if row.final_output_source == "fake_oracle"),
@@ -319,6 +376,15 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
             "fake_oracle": "never_provider_success",
         },
     )
+
+
+def _provider_failure_count(rows: RuntimeSuiteRows) -> int:
+    failure_statuses = {
+        ProviderAttemptStatus.PROVIDER_ERROR,
+        ProviderAttemptStatus.INVALID_JSON,
+        ProviderAttemptStatus.SCHEMA_ERROR,
+    }
+    return sum(row.provider_attempt_status in failure_statuses for row in rows.llm_rows)
 
 
 def runtime_alignment_summary(rows: RuntimeSuiteRows) -> AlignmentSummary:
@@ -356,6 +422,9 @@ def runtime_alignment_summary(rows: RuntimeSuiteRows) -> AlignmentSummary:
             required_counts[verdict] += 1
             required_item_counts[f"{item_type}:{verdict}"] += 1
     scored_verdict_counts = Counter(row.verdict for row in rows.checkpoint_rows)
+    scored_verdict_counts = Counter(
+        {"pass": scored_verdict_counts["pass"], "fail": scored_verdict_counts["fail"]}
+    )
     scored_failure_bucket_counts = Counter(bucket for row in rows.checkpoint_rows for bucket in row.failure_buckets)
     return AlignmentSummary(
         alignment_summary_policy={

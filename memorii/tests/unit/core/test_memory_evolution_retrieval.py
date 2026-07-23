@@ -63,12 +63,17 @@ def test_production_retrieval_separates_current_and_historical_truth() -> None:
         MemoryQueryRequest(
             query="Who owns the Atlas migration now?",
             reference_time=datetime(2026, 3, 20, tzinfo=UTC),
-            include_conflicts=True,
         )
     )
     historical = service.retrieve(
         MemoryQueryRequest(
             query="Who owned the Atlas migration in January?",
+            reference_time=datetime(2026, 3, 20, tzinfo=UTC),
+        )
+    )
+    current_with_conflicts = service.retrieve(
+        MemoryQueryRequest(
+            query="Who owns the Atlas migration now?",
             reference_time=datetime(2026, 3, 20, tzinfo=UTC),
             include_conflicts=True,
         )
@@ -78,6 +83,8 @@ def test_production_retrieval_separates_current_and_historical_truth() -> None:
     assert historical.selected_record_ids
     assert current.selected_record_ids != historical.selected_record_ids
     assert set(current.rejected_record_ids)
+    assert current_with_conflicts.selected_record_ids == current.selected_record_ids
+    assert current_with_conflicts.rejected_record_ids == current.rejected_record_ids
     assert current.context_items
     assert any(item.channel == "selected" for item in current.context_items)
     assert current.evidence

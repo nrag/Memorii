@@ -120,13 +120,14 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Build deterministic runtime plumbing artifact
+      - name: Build deterministic runtime semantic artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
           --suite memory_evolution_runtime_v1
           --mode llm
           --dry-run
+          --fail-on-benchmark-failure
           --storage-root .memorii
           --sim-profile long_horizon
           --sim-scenario-count 10
@@ -151,16 +152,17 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Build deterministic hybrid runtime plumbing artifact
+      - name: Build deterministic hybrid runtime semantic artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
           --suite memory_evolution_runtime_v1
           --mode hybrid
           --dry-run
+          --fail-on-benchmark-failure
           --storage-root .memorii
           --sim-profile long_horizon
-          --sim-scenario-count 10
+          --sim-scenario-count 25
           --sim-min-events 25
           --sim-max-events 60
           --sim-noise-rate 0.35
@@ -180,13 +182,14 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Build deterministic adversarial runtime plumbing artifact
+      - name: Build deterministic adversarial runtime semantic artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
           --suite memory_evolution_runtime_v1
           --mode llm
           --dry-run
+          --fail-on-benchmark-failure
           --storage-root .memorii
           --sim-profile adversarial
           --sim-scenario-count 10
@@ -207,13 +210,14 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Build deterministic adversarial hybrid runtime plumbing artifact
+      - name: Build deterministic adversarial hybrid runtime semantic artifact
         working-directory: memorii
         run: >-
           python -m memorii.tools.run_eval
           --suite memory_evolution_runtime_v1
           --mode hybrid
           --dry-run
+          --fail-on-benchmark-failure
           --storage-root .memorii
           --sim-profile adversarial
           --sim-scenario-count 10

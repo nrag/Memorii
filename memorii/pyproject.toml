@@ -25,9 +25,11 @@ live = [
   "pytest>=8.0",
 ]
 dev = [
+  "numpy>=1.26,<3",
   "openai>=1.0",
   "pytest>=8.0",
   "ruff>=0.8,<1",
+  "scipy>=1.13,<2",
   "pyright>=1.1,<2",
 ]
 prod = [

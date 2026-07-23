@@ -39,6 +39,9 @@ class QueryRequestOptions(BaseModel):
     scope: MemoryScope = Field(default_factory=MemoryScope)
     top_k: int = Field(default=8, ge=1, le=100)
     include_context: bool = True
+    # Lifecycle arbitration always considers query-relevant versions.
+    # This option controls disclosure of the broader conflict neighborhood,
+    # not whether stale competitors can be classified as rejected.
     include_conflicts: bool = False
     purpose: RetrievalPurpose = RetrievalPurpose.ANSWER
 

@@ -4,6 +4,13 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeExtractorTraceRow,
 )
 from memorii.core.benchmark.reproducibility import build_benchmark_fingerprint
+from memorii.core.memory_evolution import (
+    ExtractionFailureCode,
+    ExtractionRunStatus,
+    FallbackOutcome,
+    FinalExtractionSource,
+    ProviderAttemptStatus,
+)
 from memorii.tools.benchmark_suites.memory_evolution_artifacts import (
     _system_fingerprint_config,
 )
@@ -26,9 +33,20 @@ def _trace(*, success: bool) -> RuntimeExtractorTraceRow:
             claim_count=0,
             action_count=0,
         ),
-        success=success,
-        fallback_used=not success,
-        failure_mode=None if success else "runtime_extractor_failure",
+        extraction_status=ExtractionRunStatus.SUCCEEDED,
+        provider_attempt_status=(
+            ProviderAttemptStatus.SUCCEEDED
+            if success
+            else ProviderAttemptStatus.PROVIDER_ERROR
+        ),
+        fallback_outcome=(
+            FallbackOutcome.NOT_USED if success else FallbackOutcome.SUCCEEDED
+        ),
+        final_extraction_source=(
+            FinalExtractionSource.PRIMARY if success else FinalExtractionSource.FALLBACK
+        ),
+        primary_failure_code=None if success else ExtractionFailureCode.PROVIDER_ERROR,
+        fallback_provider=None if success else "english_rule",
         output=RuntimeExtractorOutput(),
     )
 

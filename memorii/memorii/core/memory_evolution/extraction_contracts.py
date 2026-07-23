@@ -49,9 +49,8 @@ class MemoryExtractionRunError(RuntimeError):
 
 
 class ExtractedEntityOutput(BaseModel):
-    entity_id: str
+    entity_ref: str = Field(min_length=1)
     mention_text: str
-    normalized_name: str
     aliases: list[str]
     entity_type: EntityType
     source_id: str
@@ -61,13 +60,8 @@ class ExtractedEntityOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class EmptyQualifiersOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
 class ExtractedClaimOutput(BaseModel):
-    claim_id: str
-    subject_entity_id: str
+    subject_entity_ref: str = Field(min_length=1)
     predicate_id: Literal[
         "owner",
         "approver",
@@ -82,12 +76,7 @@ class ExtractedClaimOutput(BaseModel):
         "semantic_fact",
     ]
     object_value: str
-    object_entity_id: str | None
-    scope_key: str
-    qualifier_key: str
-    qualifiers: EmptyQualifiersOutput
-    valid_from: str | None
-    valid_to: str | None
+    object_entity_ref: str | None
     source_id: str
     quote: str
     confidence: float = Field(ge=0.0, le=1.0)
@@ -96,14 +85,13 @@ class ExtractedClaimOutput(BaseModel):
 
 
 class ExtractedActionOutput(BaseModel):
-    action_id: str
-    actor_entity_id: str | None
+    action_ref: str = Field(min_length=1)
+    actor_entity_ref: str | None
     action_type: str
-    target_entity_ids: list[str]
+    target_entity_refs: list[str]
     status: str
-    dependency_ids: list[str]
-    blocking_ids: list[str]
-    timestamp: str | None
+    dependency_action_refs: list[str]
+    blocking_action_refs: list[str]
     source_id: str
     quote: str
 

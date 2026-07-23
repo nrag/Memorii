@@ -596,6 +596,8 @@ def test_live_gate_certifies_every_predeclared_simulation_model() -> None:
         maximum_null_acceptance_probability=0.99,
         minimum_interval_coverage=0.01,
         design_trials=12,
+        intraseed_correlation=0.30,
+        simulation_intraseed_correlation_points=DEFAULT_SIMULATION_INTRASEED_CORRELATION_POINTS,
         source_revision="revision:test",
     )
 
@@ -668,7 +670,8 @@ def test_hierarchical_gate_power_tracks_true_performance() -> None:
         "seed_count": 5,
         "scenarios_per_seed": 10,
         "replicates_per_scenario": 2,
-        "intraseed_correlation": 0.05,
+        "interval_intraseed_correlation": 0.05,
+        "simulation_intraseed_correlation": 0.05,
         "trials": 40,
         "seed": 7,
     }

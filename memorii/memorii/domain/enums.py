@@ -47,6 +47,41 @@ class SourceType(StrEnum):
     DERIVED = "derived"
 
 
+class ExtractionRunStatus(StrEnum):
+    SUCCEEDED = "succeeded"
+    PARTIAL = "partial"
+    ABSTAINED = "abstained"
+    FAILED = "failed"
+
+
+class ProviderAttemptStatus(StrEnum):
+    NOT_ATTEMPTED = "not_attempted"
+    SUCCEEDED = "succeeded"
+    PROVIDER_ERROR = "provider_error"
+    INVALID_JSON = "invalid_json"
+    SCHEMA_ERROR = "schema_error"
+
+
+class FallbackOutcome(StrEnum):
+    NOT_USED = "not_used"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class FinalExtractionSource(StrEnum):
+    PRIMARY = "primary"
+    FALLBACK = "fallback"
+    NONE = "none"
+
+
+class ExtractionFailureCode(StrEnum):
+    PROVIDER_ERROR = "provider_error"
+    INVALID_JSON = "invalid_json"
+    SCHEMA_VALIDATION = "schema_validation"
+    OUTPUT_VALIDATION = "output_validation"
+    UNSUPPORTED_LANGUAGE = "unsupported_language"
+
+
 class ExecutionNodeType(StrEnum):
     MISSION = "MISSION"
     WORK_ITEM = "WORK_ITEM"

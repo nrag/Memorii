@@ -45,6 +45,12 @@ from memorii.core.benchmark.memory_evolution_sim import (
     judge_sim_checkpoint,
     sim_reconstruction_context_for_checkpoint,
 )
+from memorii.core.memory_evolution import (
+    ExtractionRunStatus,
+    FallbackOutcome,
+    FinalExtractionSource,
+    ProviderAttemptStatus,
+)
 from memorii.tools.run_benchmark import main
 from pydantic import ValidationError
 from tests.unit.core.benchmark.checkpoint_artifact_test_helpers import checkpoint_diagnostics_payload
@@ -188,6 +194,12 @@ def _benchmark_report_payload() -> dict[str, object]:
         "clean_runtime_gate": True,
         "failure_buckets": [],
         "failure_classification_counts": {},
+        "provider_attempt_status_counts": {"succeeded": 10},
+        "extraction_status_counts": {"succeeded": 10},
+        "fallback_outcome_counts": {"not_used": 10},
+        "output_validation_failures": 0,
+        "abstentions": 0,
+        "partial_extractions": 0,
         "execution_source": "live_llm",
         "dry_run": False,
         "fake_extractor_calls": 0,
@@ -716,8 +728,10 @@ def test_memory_evolution_runtime_public_summary_contract() -> None:
                     claim_count=0,
                     action_count=0,
                 ),
-                success=True,
-                fallback_used=False,
+                extraction_status=ExtractionRunStatus.SUCCEEDED,
+                provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+                fallback_outcome=FallbackOutcome.NOT_USED,
+                final_extraction_source=FinalExtractionSource.PRIMARY,
                 output=RuntimeExtractorOutput(),
             )
         ],
@@ -733,7 +747,7 @@ def test_memory_evolution_runtime_public_summary_contract() -> None:
     assert metrics.fallbacks == 0
     assert metrics.final_output_source_counts == {"fake_oracle": 1}
     assert alignment_summary.checkpoint_expected_alignment_audit_count == 0
-    assert alignment_summary.checkpoint_scored_verdict_counts == {"pass": 1}
+    assert alignment_summary.checkpoint_scored_verdict_counts == {"fail": 0, "pass": 1}
     assert "checkpoint_required_alignment_count" not in type(alignment_summary).model_fields
 
     canonical_alignment_rows = RuntimeSuiteRows(
@@ -795,7 +809,7 @@ def test_runtime_suite_rows_reject_untyped_artifact_rows(
 
 
 def test_runtime_extractor_trace_cannot_masquerade_fallback_as_success() -> None:
-    with pytest.raises(ValidationError, match="cannot report fallback"):
+    with pytest.raises(ValidationError, match="fallback output requires"):
         RuntimeExtractorTraceRow(
             scenario_id="scenario:test",
             transition_type="runtime_memory_extraction",
@@ -810,8 +824,10 @@ def test_runtime_extractor_trace_cannot_masquerade_fallback_as_success() -> None
                 claim_count=0,
                 action_count=0,
             ),
-            success=True,
-            fallback_used=True,
+            extraction_status=ExtractionRunStatus.SUCCEEDED,
+            provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
+            fallback_outcome=FallbackOutcome.NOT_USED,
+            final_extraction_source=FinalExtractionSource.FALLBACK,
             output=RuntimeExtractorOutput(),
         )
 

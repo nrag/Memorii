@@ -156,7 +156,7 @@ def test_hardening_closure_matrix_covers_every_declared_contract() -> None:
 
     assert contract_ids == [f"C{index}" for index in range(1, 15)]
     for required_outcome in (
-        "Extraction outcomes distinguish live success",
+        "Orthogonal provider-call, extraction, fallback, and final-source outcomes",
         "caller delivery ID",
         "process-safe and crash-atomic",
         "bounded stale recovery",
@@ -182,9 +182,19 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     assert concurrency["group"] == "benchmark-certification-${{ github.sha }}"
     assert concurrency["cancel-in-progress"] == "false"
     assert isinstance(jobs, dict)
-    assert set(jobs) == {"fake-oracle-plumbing", "live-runtime-smoke", "live-runtime-gate"}
+    assert set(jobs) == {
+        "live-certification-policy",
+        "fake-oracle-plumbing",
+        "live-runtime-smoke",
+        "live-runtime-gate",
+    }
+    policy_job = jobs["live-certification-policy"]
+    assert isinstance(policy_job, dict)
+    assert policy_job["name"] == "Resolve Live Certification Policy"
+    assert policy_job["outputs"]["matrix"] == "${{ steps.policy.outputs.matrix }}"
     live_smoke = jobs["live-runtime-smoke"]
     assert isinstance(live_smoke, dict)
+    assert live_smoke["needs"] == "live-certification-policy"
     assert live_smoke["timeout-minutes"] == "180"
     live_environment = live_smoke["env"]
     assert isinstance(live_environment, dict)
@@ -194,17 +204,18 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     live_gate = jobs["live-runtime-gate"]
     assert isinstance(live_gate, dict)
     assert live_gate["name"] == "Live Runtime Statistical Gate"
-    assert live_gate["needs"] == "live-runtime-smoke"
+    assert live_gate["needs"] == ["live-certification-policy", "live-runtime-smoke"]
     assert live_gate["timeout-minutes"] == "180"
 
     assert "MEMORII_RUN_LIVE_GATES" in workflow
     assert "github.event_name == 'schedule'" in workflow
     assert "github.event_name == 'workflow_dispatch' ||" in workflow
-    assert "replicate: [0, 1]" in workflow
-    assert "--minimum-seed-count" in workflow
-    assert "--minimum-scenarios-per-replicate" in workflow
-    assert "--minimum-replicates-per-seed" in workflow
-    assert "--allow-live" in workflow
+    assert "live_certification_policy github-matrix" in workflow
+    assert "live_certification_policy preflight" in workflow
+    assert "live_certification_policy run-replicate" in workflow
+    assert "--minimum-seed-count" not in workflow
+    assert "--minimum-scenarios-per-replicate" not in workflow
+    assert "--minimum-replicates-per-seed" not in workflow
     assert "Verify live provider configuration" in workflow
     assert "runtime.has_live_provider()" in workflow
     assert "live.should_run_live_llm_tests(runtime)" in workflow
@@ -266,18 +277,20 @@ def _workflow_steps(path: Path) -> list[tuple[str, str]]:
     )
 
 
-def test_runtime_dry_runs_are_plumbing_gates_not_semantic_quality_gates() -> None:
+def test_runtime_dry_runs_separate_plumbing_from_semantic_quality_gates() -> None:
     pr_steps = _workflow_steps(REPO_ROOT / ".github" / "workflows" / "pr-gates.yml")
     scheduled_steps = _workflow_steps(REPO_ROOT / ".github" / "workflows" / "benchmark-scheduled.yml")
     runtime_steps = [body for name, body in pr_steps if "runtime plumbing artifact" in name]
+    semantic_runtime_steps = [body for name, body in pr_steps if "runtime semantic artifact" in name]
     simulator_steps = [body for name, body in pr_steps if "simulator plumbing artifact" in name]
-    scheduled_runtime_steps = [
-        body for name, body in scheduled_steps if "runtime plumbing artifact" in name
+    scheduled_semantic_runtime_steps = [
+        body for name, body in scheduled_steps if "runtime semantic artifact" in name
     ]
 
-    assert len(runtime_steps) == 4
+    assert len(runtime_steps) == 0
+    assert len(semantic_runtime_steps) == 4
     assert len(simulator_steps) == 4
-    assert len(scheduled_runtime_steps) == 1
-    assert all("--fail-on-benchmark-failure" not in body for body in runtime_steps)
-    assert all("--fail-on-benchmark-failure" not in body for body in scheduled_runtime_steps)
+    assert len(scheduled_semantic_runtime_steps) == 1
+    assert all("--fail-on-benchmark-failure" in body for body in semantic_runtime_steps)
+    assert all("--fail-on-benchmark-failure" in body for body in scheduled_semantic_runtime_steps)
     assert all("--fail-on-benchmark-failure" in body for body in simulator_steps)

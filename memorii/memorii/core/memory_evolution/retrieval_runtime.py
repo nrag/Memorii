@@ -173,17 +173,14 @@ class MemoryEvolutionRetrievalRuntime:
                 frame=resolution.frame,
                 resolution_status=resolution.status,
             )
+        # Selection and rejection are two outputs of the same lifecycle
+        # arbitration. Reading only CURRENT here makes the answer look right
+        # while erasing the superseded candidates that explain the decision.
+        # The reader still applies predicate and scope prefilters; rank_claims
+        # performs entity and temporal relevance checks before disclosure.
         states = self._claim_reader(
-            view=(
-                RetrievalView.ALL_VERSIONS
-                if resolved_request.include_conflicts or resolved_request.purpose == RetrievalPurpose.GRAPH_AUDIT
-                else RetrievalView.CURRENT
-            ),
-            temporal_frame=(
-                None
-                if resolved_request.include_conflicts or resolved_request.purpose == RetrievalPurpose.GRAPH_AUDIT
-                else frame.model_copy(update={"resolved_entity_ids": []})
-            ),
+            view=RetrievalView.ALL_VERSIONS,
+            temporal_frame=None,
             predicate_id=resolved_request.predicate_id,
             subject_entity_id=None,
             request_scope=resolved_request.scope,

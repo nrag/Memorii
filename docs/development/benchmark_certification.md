@@ -30,7 +30,18 @@ The matrix jobs upload source-bound reports. The aggregation job rejects mixed r
 dirty or unversioned source states, insufficient seeds or replicates, provider/fallback
 rates above policy, weak confidence bounds, and inadequate simulated interval coverage.
 It then validates `live_runtime_gate_summary.json` as `LiveGateSummary` and requires both
-the gate summary and its coverage certificate to name the requested commit.
+the gate summary and its coverage certificate to name the requested commit. The immutable
+`LiveCertificationPolicy` is the only owner of workflow dimensions and gate settings. The
+workflow derives its 40-seed by two-replicate matrix from that policy, runs a 2,500-trial
+offline design audit before provider work, and binds the policy digest, input report digests,
+source revision, and source-tree digest into the final coverage certificate. The interval uses
+the conservative maximum declared within-seed correlation of 0.30 while the audit spans every
+declared model and correlation point from 0.00 through 0.30.
+
+Provider telemetry is orthogonal: provider-call status, extraction status, fallback outcome,
+and final extraction source are recorded separately. A schema-valid empty response is a
+successful provider call and an extraction abstention. A recovered fallback remains visible as
+a fallback and does not turn the primary provider attempt into a second terminal runtime failure.
 
 Every fixture, evaluation, and system fingerprint uses the same content digest of the complete
 installable `memorii` package tree. Files are ordered by canonical package-relative path and
@@ -40,11 +51,10 @@ closed. This conservative ownership boundary intentionally invalidates all bench
 after any installable package change, including code reached through dynamic imports.
 
 Pull-request-triggered gates remain deterministic and credential-free. They run unit, static, packaging, prompt,
-and benchmark artifact-contract checks against `${{ github.sha }}`. Simulator fake-oracle
-runs are semantic gates. Runtime dry runs are plumbing gates: they exercise production
-retrieval defaults and validate complete artifacts, but do not require every deterministic
-checkpoint to pass because doing so would either alter production defaults or manufacture
-evaluation-only rejection channels. Runtime semantic quality is enforced by the
+and benchmark artifact-contract checks against `${{ github.sha }}`. Simulator and runtime
+fake-oracle runs are semantic gates. The runtime control uses production retrieval defaults
+and requires every deterministic checkpoint to pass; a complete artifact containing semantic
+failures is not acceptance evidence. Runtime provider quality is enforced separately by the
 revision-bound live statistical gate. Live certification is an explicit pre-merge check launched
 against the committed PR SHA because a statistically meaningful run is costly and requires
 provider credentials; it must never execute unreviewed pull-request code with secrets or be

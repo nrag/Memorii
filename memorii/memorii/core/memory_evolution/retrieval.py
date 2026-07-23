@@ -335,14 +335,23 @@ def rank_claims(
         context.extend(candidate.claim_id for candidate in discarded)
     selected = selected[:limit]
     selected_ids = [candidate.claim_id for candidate in selected]
-    if request.include_conflicts:
-        rejected.extend(
-            state.claim_id
-            for state in states
-            if state.lifecycle_state
-            in {ClaimLifecycleState.SUPERSEDED, ClaimLifecycleState.INVALIDATED, ClaimLifecycleState.EXPIRED}
-            and state.claim_id not in selected_ids
+    selected_states = [state for state in states if state.claim_id in selected_ids]
+    rejected.extend(
+        state.claim_id
+        for state in states
+        if state.claim_id not in selected_ids
+        and _is_query_relevant_rejection(
+            state,
+            request=request,
+            frame=frame,
+            selected_states=selected_states,
+            entity_names_by_id=entity_names_by_id,
+            subject_entity_by_claim=subject_entity_by_claim,
+            object_entity_by_claim=object_entity_by_claim,
+            effective_predicate_id=effective_predicate_id,
+            query_tokens=query_tokens,
         )
+    )
     result = ProductionRetrievalDecision(
         query=request.query,
         semantic_frame_status=SemanticFrameStatus.MATCHED,
@@ -391,6 +400,49 @@ def rank_claims(
         for span in state.evidence_spans
     ]
     return result.model_copy(update={"context_items": context_items, "evidence": evidence})
+
+
+def _is_query_relevant_rejection(
+    state: ClaimState,
+    *,
+    request: ResolvedMemoryQuery,
+    frame: QueryTemporalFrame,
+    selected_states: list[ClaimState],
+    entity_names_by_id: dict[str, set[str]],
+    subject_entity_by_claim: dict[str, str],
+    object_entity_by_claim: dict[str, str],
+    effective_predicate_id: str | None,
+    query_tokens: set[str],
+) -> bool:
+    """Return whether a non-selected claim competed for the same answer slot."""
+
+    if not request.scope.can_read(state.claim_key.scope):
+        return False
+    if effective_predicate_id and state.claim_key.predicate_id != effective_predicate_id:
+        return False
+
+    resolved_subject = subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id)
+    resolved_object = object_entity_by_claim.get(state.claim_id)
+    resolved_entities = set(frame.resolved_entity_ids)
+    selected_identities = {_claim_scope_identity(candidate) for candidate in selected_states}
+    if _claim_scope_identity(state) in selected_identities:
+        return True
+
+    entity_terms = _tokens(
+        " ".join(
+            [
+                *entity_names_by_id.get(resolved_subject, set()),
+                *entity_names_by_id.get(resolved_object or "", set()),
+            ]
+        )
+    )
+    if not query_tokens.intersection(entity_terms):
+        return False
+    if resolved_entities.intersection({resolved_subject, resolved_object}):
+        return True
+    if request.subject_entity_id is not None and resolved_subject == request.subject_entity_id:
+        return True
+    return bool(selected_states)
 
 
 def _frame_matches(

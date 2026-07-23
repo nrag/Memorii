@@ -47,7 +47,10 @@ from memorii.core.memory_evolution.models import (
     ConfidenceComponents,
     ExtractionFailureCode,
     ExtractionRunStatus,
+    FallbackOutcome,
+    FinalExtractionSource,
     MemoryScope,
+    ProviderAttemptStatus,
     memory_scope_from_observation,
 )
 
@@ -61,9 +64,13 @@ class RecordedExtractionRun(BaseModel):
     provider: str
     model: str | None
     prompt_hash: str | None
-    success: bool
-    fallback_used: bool
-    failure_classification: str | None
+    extraction_status: ExtractionRunStatus
+    provider_attempt_status: ProviderAttemptStatus
+    fallback_outcome: FallbackOutcome
+    final_output_source: FinalExtractionSource
+    failure_code: ExtractionFailureCode | None
+    primary_failure_code: ExtractionFailureCode | None
+    fallback_provider: str | None
     errors: list[str]
     entity_count: int = Field(ge=0)
     claim_count: int = Field(ge=0)
@@ -253,9 +260,13 @@ class RecordingMemoryExtractor:
                 provider=run.provider,
                 model=run.model,
                 prompt_hash=run.prompt_hash,
-                success=run.live_success,
-                fallback_used=run.fallback_used,
-                failure_classification=_failure_classification(run),
+                extraction_status=run.status,
+                provider_attempt_status=run.provider_attempt_status,
+                fallback_outcome=run.fallback_outcome,
+                final_output_source=run.final_output_source,
+                failure_code=run.failure_code,
+                primary_failure_code=run.primary_failure_code,
+                fallback_provider=run.fallback_provider,
                 errors=list(run.errors),
                 entity_count=len(entities),
                 claim_count=len(claims),
@@ -267,21 +278,6 @@ class RecordingMemoryExtractor:
             )
         )
         return run, entities, claims, actions
-
-
-def _failure_classification(run: ExtractionRun) -> str | None:
-    """Map typed extraction state to stable benchmark telemetry."""
-
-    if run.fallback_used:
-        return "runtime_extractor_fallback"
-    return {
-        None: None,
-        ExtractionFailureCode.PROVIDER_ERROR: "provider_request_error",
-        ExtractionFailureCode.INVALID_JSON: "provider_invalid_json",
-        ExtractionFailureCode.SCHEMA_VALIDATION: "provider_schema_validation",
-        ExtractionFailureCode.OUTPUT_VALIDATION: "runtime_extractor_failure",
-        ExtractionFailureCode.UNSUPPORTED_LANGUAGE: "unsupported_language",
-    }[run.failure_code]
 
 
 def build_runtime_extractor(
@@ -314,4 +310,4 @@ def recorded_extraction_runs(extractor: RecordingMemoryExtractor) -> list[Record
 
 
 def extractor_fallback_count(extractor: RecordingMemoryExtractor) -> int:
-    return sum(run.fallback_used for run in extractor.recorded_runs)
+    return sum(run.fallback_outcome != FallbackOutcome.NOT_USED for run in extractor.recorded_runs)

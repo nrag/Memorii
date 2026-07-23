@@ -26,7 +26,16 @@ from memorii.core.benchmark.memory_evolution_runtime.result_rows import (
     runtime_failure_classification,
     runtime_final_output_source,
 )
-from memorii.core.memory_evolution import EnglishRuleMemoryExtractor
+from memorii.core.memory_evolution import (
+    EnglishRuleMemoryExtractor,
+    ExtractionFailureCode,
+    ExtractionRunStatus,
+    FallbackOutcome,
+    ProviderAttemptStatus,
+)
+from memorii.core.memory_evolution import (
+    FinalExtractionSource as MemoryFinalExtractionSource,
+)
 from memorii.core.memory_evolution.execution import (
     ContinuationDecision,
     ContinuationResolutionStatus,
@@ -75,11 +84,16 @@ def runtime_graph_item(**overrides: object) -> RuntimeGraphItem:
 
 def runtime_extractor_trace(
     *,
-    success: bool,
-    fallback_used: bool = False,
-    failure_classification: str | None = None,
+    extraction_status: ExtractionRunStatus = ExtractionRunStatus.SUCCEEDED,
+    provider_attempt_status: ProviderAttemptStatus = ProviderAttemptStatus.SUCCEEDED,
+    fallback_outcome: FallbackOutcome = FallbackOutcome.NOT_USED,
     final_output_source: FinalOutputSource = "live_llm",
 ) -> RuntimeExtractorTraceRow:
+    fallback_used = fallback_outcome != FallbackOutcome.NOT_USED
+    provider_failed = provider_attempt_status not in {
+        ProviderAttemptStatus.NOT_ATTEMPTED,
+        ProviderAttemptStatus.SUCCEEDED,
+    }
     return RuntimeExtractorTraceRow.model_validate(
         {
             "scenario_id": "scenario_1",
@@ -91,14 +105,17 @@ def runtime_extractor_trace(
                 provider="test",
                 scenario_id="scenario_1",
                 call_index=0,
-                failure_classification=failure_classification,
                 entity_count=0,
                 claim_count=0,
                 action_count=0,
             ),
-            "success": success,
-            "fallback_used": fallback_used,
-            "failure_mode": None if success else "runtime_extractor_failure",
+            "extraction_status": extraction_status,
+            "provider_attempt_status": provider_attempt_status,
+            "fallback_outcome": fallback_outcome,
+            "final_extraction_source": "fallback" if fallback_used else "primary",
+            "failure_code": None,
+            "primary_failure_code": "provider_error" if provider_failed else None,
+            "fallback_provider": "english_rule" if fallback_used else None,
             "output": RuntimeExtractorOutput(),
         }
     )
@@ -215,7 +232,10 @@ def test_runtime_summary_reports_long_horizon_slice_counts() -> None:
 
     assert summary.long_horizon_slice_counts["horizon_distance_bucket"] == {"long": 1}
     assert summary.long_horizon_slice_counts["interference_count_bucket"] == {"medium": 1}
-    assert summary.runtime_graph_alignments_summary.checkpoint_scored_verdict_counts == {"pass": 1}
+    assert summary.runtime_graph_alignments_summary.checkpoint_scored_verdict_counts == {
+        "fail": 0,
+        "pass": 1,
+    }
 
 
 def test_runtime_graph_completeness_metrics_report_claim_provenance_and_edge_counts() -> None:
@@ -413,11 +433,10 @@ def test_runtime_provider_health_fails_for_terminal_provider_errors_and_fallback
         ],
         judge_rows=[],
         llm_rows=[
-            runtime_extractor_trace(success=True),
+            runtime_extractor_trace(),
             runtime_extractor_trace(
-                success=False,
-                fallback_used=True,
-                failure_classification="provider_request_error",
+                provider_attempt_status=ProviderAttemptStatus.PROVIDER_ERROR,
+                fallback_outcome=FallbackOutcome.SUCCEEDED,
                 final_output_source="mixed",
             ),
         ],
@@ -440,7 +459,7 @@ def test_runtime_provider_health_fails_for_terminal_provider_errors_and_fallback
     assert health.fallbacks == 1
     assert health.provider_success_rate == 0.5
     assert health.failure_buckets == ["runtime_provider_failure", "runtime_provider_fallback"]
-    assert health.failure_classification_counts == {"provider_request_error": 1}
+    assert health.failure_classification_counts == {"provider_error": 1}
     assert health.provider_metadata == {
         "backend": "live_provider",
         "max_retries": "0",
@@ -448,6 +467,34 @@ def test_runtime_provider_health_fails_for_terminal_provider_errors_and_fallback
         "provider": "openai",
         "timeout_seconds": "60",
     }
+
+
+def test_runtime_provider_health_counts_valid_abstention_as_provider_success() -> None:
+    rows = RuntimeSuiteRows(
+        scenario_rows=[],
+        checkpoint_rows=[
+            runtime_checkpoint_row(
+                effective_decision_mode="llm",
+                final_output_source="live_llm",
+            )
+        ],
+        judge_rows=[],
+        llm_rows=[
+            runtime_extractor_trace(
+                extraction_status=ExtractionRunStatus.ABSTAINED,
+                final_output_source="live_llm",
+            )
+        ],
+        effective_mode="llm",
+        provider_metadata={"backend": "live_provider"},
+    )
+
+    health = runtime_provider_health(rows)
+
+    assert health.provider_successes == 1
+    assert health.provider_failures == 0
+    assert health.abstentions == 1
+    assert health.failure_classification_counts == {}
 
 
 def test_runtime_provider_metadata_rejects_credentials() -> None:
@@ -482,7 +529,12 @@ def test_runtime_provider_health_does_not_count_fake_extraction_as_provider_succ
         scenario_rows=[],
         checkpoint_rows=[runtime_checkpoint_row(effective_decision_mode="llm", final_output_source="fake_oracle")],
         judge_rows=[],
-        llm_rows=[runtime_extractor_trace(success=True, final_output_source="fake_oracle")],
+        llm_rows=[
+            runtime_extractor_trace(
+                provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+                final_output_source="fake_oracle",
+            )
+        ],
         effective_mode="llm",
         dry_run=True,
     )
@@ -497,16 +549,32 @@ def test_runtime_provider_health_does_not_count_fake_extraction_as_provider_succ
 
 
 def test_runtime_output_source_is_scoped_to_the_current_checkpoint_runs() -> None:
-    def recorded_run(*, success: bool, fallback_used: bool) -> RecordedExtractionRun:
+    def recorded_run(*, fallback_used: bool) -> RecordedExtractionRun:
         return RecordedExtractionRun(
             input_source_ids=["source:1"],
             provider="hybrid",
             model="test-model",
             prompt_hash="prompt-hash",
-            success=success,
-            fallback_used=fallback_used,
-            failure_classification=None if success else "runtime_extractor_fallback",
-            errors=[] if success else ["fallback_used:provider_failure"],
+            extraction_status=ExtractionRunStatus.SUCCEEDED,
+            provider_attempt_status=(
+                ProviderAttemptStatus.PROVIDER_ERROR
+                if fallback_used
+                else ProviderAttemptStatus.SUCCEEDED
+            ),
+            fallback_outcome=(
+                FallbackOutcome.SUCCEEDED if fallback_used else FallbackOutcome.NOT_USED
+            ),
+            final_output_source=(
+                MemoryFinalExtractionSource.FALLBACK
+                if fallback_used
+                else MemoryFinalExtractionSource.PRIMARY
+            ),
+            failure_code=None,
+            primary_failure_code=(
+                ExtractionFailureCode.PROVIDER_ERROR if fallback_used else None
+            ),
+            fallback_provider="english_rule" if fallback_used else None,
+            errors=["fallback_used:provider_failure"] if fallback_used else [],
             entity_count=0,
             claim_count=0,
             action_count=0,
@@ -518,8 +586,8 @@ def test_runtime_output_source_is_scoped_to_the_current_checkpoint_runs() -> Non
 
     extractor = RecordingMemoryExtractor(delegate=EnglishRuleMemoryExtractor())
     extractor.recorded_runs = [
-        recorded_run(success=False, fallback_used=True),
-        recorded_run(success=True, fallback_used=False),
+        recorded_run(fallback_used=True),
+        recorded_run(fallback_used=False),
     ]
     assert (
         runtime_final_output_source(
