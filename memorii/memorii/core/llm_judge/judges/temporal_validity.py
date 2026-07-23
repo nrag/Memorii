@@ -8,7 +8,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from memorii.core.llm_judge.models import CalibrationExample, JudgeDimension, JudgeRubric, JudgeVerdict
-from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
+from memorii.core.promotion.assessment import PromotionAssessmentContext, PromotionCandidateType
 
 _TIME_BOUND_MARKERS = (
     "next week",
@@ -100,11 +100,11 @@ class TemporalValidityJudge:
             created_at=self.created_at_factory(),
         )
 
-    def _extract_context(self, *, input_payload: dict[str, object]) -> PromotionContext:
+    def _extract_context(self, *, input_payload: dict[str, object]) -> PromotionAssessmentContext:
         candidate = input_payload.get("input_payload") if isinstance(input_payload.get("input_payload"), dict) else input_payload
-        return PromotionContext.model_validate(candidate)
+        return PromotionAssessmentContext.model_validate(candidate)
 
-    def _score_context(self, *, context: PromotionContext) -> tuple[float, str, str | None]:
+    def _score_context(self, *, context: PromotionAssessmentContext) -> tuple[float, str, str | None]:
         content = context.content.lower()
 
         expired_hit = next((marker for marker in _EXPIRED_MARKERS if marker in content), None)

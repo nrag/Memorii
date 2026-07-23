@@ -4,7 +4,7 @@ from memorii.core.decision_state.models import DecisionEvidencePolarity, Decisio
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.next_step import NextStepEngine, NextStepRequest
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.core.solver import SolverFrontierPlanner
+from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind
 from memorii.core.work_state.service import WorkStateService
 from memorii.domain.common import SolverNodeMetadata
@@ -78,7 +78,7 @@ def test_explicit_solver_run_id_uses_frontier_planner() -> None:
     solver_store = InMemorySolverGraphStore()
     overlay_store = InMemoryOverlayStore()
     solver_store.create_solver_run("solver:explicit", "exec-1")
-    solver_store.upsert_node("solver:explicit", _make_node("node-1", content={"next_best_test": "run it"}))
+    solver_store.upsert_node("solver:explicit", _make_node("node-1", content={"next_test_action": {"action_type": "run_command", "description": "run it"}}))
     _append_overlay(overlay_store, "solver:explicit", [_overlay("node-1")])
     result = NextStepEngine(
         solver_frontier_planner=SolverFrontierPlanner(),
@@ -159,18 +159,18 @@ def test_structured_frontier_action_maps_all_fields() -> None:
     assert result.next_step["target_ref"] == "task:1"
 
 
-def test_legacy_frontier_action_maps_run_test() -> None:
+def test_structured_frontier_action_maps_directly() -> None:
     solver_store = InMemorySolverGraphStore()
     overlay_store = InMemoryOverlayStore()
-    solver_store.create_solver_run("solver:legacy", "exec-1")
-    solver_store.upsert_node("solver:legacy", _make_node("node:legacy", content={"next_best_test": "rerun tests"}))
-    _append_overlay(overlay_store, "solver:legacy", [_overlay("node:legacy")])
+    solver_store.create_solver_run("solver:action", "exec-1")
+    solver_store.upsert_node("solver:action", _make_node("node:action", content={"next_test_action": {"action_type": "run_command", "description": "rerun tests"}}))
+    _append_overlay(overlay_store, "solver:action", [_overlay("node:action")])
     result = NextStepEngine(
         solver_frontier_planner=SolverFrontierPlanner(),
         solver_store=solver_store,
         overlay_store=overlay_store,
-    ).get_next_step(NextStepRequest(solver_run_id="solver:legacy"))
-    assert result.next_step["action_type"] == "run_test"
+    ).get_next_step(NextStepRequest(solver_run_id="solver:action"))
+    assert result.next_step["action_type"] == "run_command"
     assert result.next_step["description"] == "rerun tests"
 
 

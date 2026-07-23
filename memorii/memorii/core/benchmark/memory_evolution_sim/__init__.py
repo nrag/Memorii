@@ -1,21 +1,22 @@
 """Public facade for memory evolution simulator helpers."""
 
 from memorii.core.benchmark.memory_evolution_sim.candidate_cards import sim_reconstruction_context_for_checkpoint
-from memorii.core.benchmark.memory_evolution_sim.diagnostics import (
-    sim_checkpoint_diagnostics,
-    sim_output_allowed_id_errors,
-)
-from memorii.core.benchmark.memory_evolution_sim.generation import generate_memory_evolution_sim_scenarios
-from memorii.core.benchmark.memory_evolution_sim.judges import judge_sim_checkpoint
-from memorii.core.benchmark.memory_evolution_sim.metrics import sim_metrics_from_rows
-from memorii.core.benchmark.memory_evolution_sim.normalization import (
+from memorii.core.benchmark.memory_evolution_sim.decisions import (
     expected_sim_output_for_checkpoint,
     fake_llm_result_for_memory_evolution_sim,
     memory_evolution_sim_engine_result_from_llm,
     memory_evolution_sim_trace_for_rule,
-    normalize_sim_system_output_for_checkpoint,
     rule_sim_output_for_checkpoint,
 )
+from memorii.core.benchmark.memory_evolution_sim.diagnostics import sim_checkpoint_diagnostics
+from memorii.core.benchmark.memory_evolution_sim.generation import (
+    MEMORY_EVOLUTION_SCENARIO_FAMILIES,
+    generate_memory_evolution_sim_scenarios,
+)
+from memorii.core.benchmark.memory_evolution_sim.judges import judge_sim_checkpoint
+from memorii.core.benchmark.memory_evolution_sim.metrics import sim_metrics_from_rows
+from memorii.core.benchmark.memory_evolution_sim.opaque_ids import remap_scenario_ids
+from memorii.core.benchmark.memory_evolution_sim.output_validation import sim_output_allowed_id_errors
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     ClaimArgument,
     ClaimEvidence,
@@ -40,8 +41,9 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     RelationEndpoint,
     RelationProvenance,
     RelationTemporal,
+    SimCheckpointContract,
     SimLifecycleState,
-    SimOutputNormalization,
+    SimProviderOutput,
     SimSystemOutput,
     SurfaceObservation,
     VisibleCheckpointCandidate,
@@ -72,13 +74,15 @@ __all__ = [
     "LatentGraphScenario",
     "LatentRelation",
     "MemoryEvolutionSimReconstructionContext",
+    "MEMORY_EVOLUTION_SCENARIO_FAMILIES",
     "ObservabilityLabel",
     "OracleCheckpoint",
     "RelationEndpoint",
     "RelationProvenance",
     "RelationTemporal",
+    "SimCheckpointContract",
     "SimLifecycleState",
-    "SimOutputNormalization",
+    "SimProviderOutput",
     "SimSystemOutput",
     "SurfaceObservation",
     "VisibleCheckpointCandidate",
@@ -93,8 +97,8 @@ __all__ = [
     "generate_memory_evolution_sim_scenarios",
     "judge_sim_checkpoint",
     "memory_evolution_sim_engine_result_from_llm",
+    "remap_scenario_ids",
     "memory_evolution_sim_trace_for_rule",
-    "normalize_sim_system_output_for_checkpoint",
     "rule_sim_output_for_checkpoint",
     "sim_checkpoint_diagnostics",
     "sim_metrics_from_rows",

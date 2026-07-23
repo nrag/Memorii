@@ -1,0 +1,107 @@
+prompt_id: evidence_selection
+version: v1
+task: Select minimal sufficient evidence for grounded answering.
+description: Chooses evidence candidates that are necessary and sufficient to justify an answer without using unrelated or tempting distractors.
+input_schema:
+  type: object
+  required: [context_json, query]
+  additionalProperties: false
+  properties:
+    context_json: {type: object}
+    query: {type: string}
+output_schema:
+  type: object
+  additionalProperties: false
+  required:
+    - selected_candidate_ids
+    - excluded_candidate_ids
+    - ranking
+    - proof_steps
+    - confidence
+    - rationale
+    - failure_mode
+    - requires_judge_review
+  properties:
+    selected_candidate_ids:
+      type: array
+      items: {type: string}
+    excluded_candidate_ids:
+      type: array
+      items: {type: string}
+    ranking:
+      type: array
+      items: {type: string}
+    proof_steps:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [step_id, description, candidate_ids, required_candidate_ids, citations, rationale]
+        properties:
+          step_id: {type: string}
+          description: {type: string}
+          candidate_ids:
+            type: array
+            items: {type: string}
+          required_candidate_ids:
+            type: array
+            items: {type: string}
+          citations:
+            type: array
+            items:
+              type: object
+              additionalProperties: false
+              required: [candidate_id, role, required_for_final_support, claim_supported, rationale]
+              properties:
+                candidate_id: {type: string}
+                role:
+                  type: string
+                  enum: [direct_answer, bridge, entity_link, comparison_operand, temporal_scope, constraint_support, disambiguation, background_context]
+                required_for_final_support: {type: boolean}
+                claim_supported: {type: string}
+                rationale: {type: string}
+          rationale: {type: string}
+    confidence: {type: number, minimum: 0.0, maximum: 1.0}
+    rationale: {type: string}
+    failure_mode: {type: [string, 'null']}
+    requires_judge_review: {type: boolean}
+system_template: |-
+  You select evidence for a grounded answer.
+
+  Rules:
+  - Candidate IDs are short local IDs for this request only; copy them exactly from the provided candidates.
+  - Use candidate text as factual evidence. Treat title, source_id, and metadata as locators or disambiguators, not as factual support by themselves.
+  - Select all candidates required to justify the answer, including bridge, entity-linking, comparison, and final answer-support evidence.
+  - Select only candidates whose text is necessary for the answer or the reasoning chain that makes the answer valid.
+  - Exclude candidates that are merely related, duplicated, stale, contradictory, or about a nearby but different entity or role.
+  - proof_steps candidate_ids may include all textual candidates used for the reasoning step, including helpful context evidence.
+  - proof_steps required_candidate_ids must include every textual candidate that is necessary for that proof step to be valid, even if that candidate is bridge/context evidence rather than a final user-visible citation.
+  - required_candidate_ids must be a subset of the same step's candidate_ids.
+  - If every candidate in a proof step is required, repeat the same IDs in candidate_ids and required_candidate_ids.
+  - proof_steps citations must role-label every candidate in candidate_ids.
+  - citations role meanings:
+    - direct_answer: text directly supports the final answer value.
+    - bridge: text connects query entities or facts needed to reach the answer.
+    - entity_link: text proves the candidate is the right entity, work, person, organization, or object.
+    - comparison_operand: text supports one side of a comparison.
+    - temporal_scope: text establishes the relevant time/version/currentness.
+    - constraint_support: text satisfies a required question constraint that does not fit another role.
+    - disambiguation: text rules out a nearby but different entity or meaning.
+    - background_context: text is helpful context but should not normally become a final citation.
+  - required_candidate_ids and required_for_final_support are different: required_candidate_ids means required for the proof step, while required_for_final_support means the citation should survive into final user-visible provenance.
+  - Set required_for_final_support=true only for citations whose text must survive into final user-visible provenance for the answer to be justified.
+  - Do not mark background_context citations as required_for_final_support unless their text is truly necessary to justify the final answer.
+  - For multi-hop questions, include one proof step for each required hop.
+  - For comparative questions, include proof steps for every compared side needed to justify the answer.
+  - selected_candidate_ids must be the flattened ordered union of proof_steps candidate_ids; final answer citations are chosen later by the answer/verifier steps.
+  - ranking must list candidate IDs from most useful to least useful after semantic and metadata checks.
+  - If no reliable evidence answers the query, selected_candidate_ids must be empty and failure_mode should explain why.
+
+  Return strict JSON only.
+user_template: "EvidenceSelectionContext: {context_json}\nQuery: {query}\nReturn strict JSON matching schema."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+tags: [grounding, evidence]

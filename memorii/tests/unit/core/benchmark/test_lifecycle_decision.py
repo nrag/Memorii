@@ -10,10 +10,12 @@ from memorii.core.benchmark.lifecycle_decision import (
     lifecycle_assertion_passed,
     rule_lifecycle_decision_for_fixture,
 )
+from memorii.core.llm_config import LLMRuntimeConfig
+from memorii.core.llm_eval.fake_client import EvalFakeClient
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from memorii.tools.benchmark_suites.memory_lifecycle_fixture import transition_kind
 from memorii.tools.run_benchmark import main
-from memorii.tools.run_live_llm_eval import EvalFakeClient
+from tests.unit.tools.run_benchmark_test_helpers import _application_with_live_client
 
 
 def _discriminative_fixtures():
@@ -199,8 +201,6 @@ def test_lifecycle_decision_uses_live_code_path_with_configured_provider(
         for fixture in _discriminative_fixtures()
     }
     seen_prompt_refs: list[str] = []
-    factory_called = False
-
     class LocalLiveClient(EvalFakeClient):
         provider_name = "openai"
 
@@ -208,12 +208,11 @@ def test_lifecycle_decision_uses_live_code_path_with_configured_provider(
             self,
             request: LLMStructuredRequest,
             *,
-            config: object,
+            config: LLMRuntimeConfig,
         ) -> LLMStructuredResponse:
-            del config
             seen_prompt_refs.append(request.prompt_ref)
             if request.prompt_ref != "lifecycle_decision:v1":
-                return super().complete_structured(request, config=None)  # type: ignore[arg-type]
+                return super().complete_structured(request, config=config)
 
             scenario_id = str(request.metadata["scenario_id"])
             output = expected_by_scenario[scenario_id].model_dump(mode="json")
@@ -225,18 +224,12 @@ def test_lifecycle_decision_uses_live_code_path_with_configured_provider(
                 schema_valid=False,
             )
 
-    def _factory(config: object) -> LocalLiveClient:
-        del config
-        nonlocal factory_called
-        factory_called = True
-        return LocalLiveClient()
-
     monkeypatch.setenv("MEMORII_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setenv("MEMORII_ENABLE_LIVE_LLM_TESTS", "true")
-    monkeypatch.setattr("memorii.tools.run_benchmark.LLMClientFactory.from_config", _factory)
+    app = _application_with_live_client(LocalLiveClient)
 
-    assert main(
+    assert app.run(
         [
             "--suite",
             "memory_lifecycle_v1",
@@ -248,5 +241,4 @@ def test_lifecycle_decision_uses_live_code_path_with_configured_provider(
         ]
     ) == 0
 
-    assert factory_called is True
     assert seen_prompt_refs.count("lifecycle_decision:v1") == 5

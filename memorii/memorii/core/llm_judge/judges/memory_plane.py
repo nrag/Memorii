@@ -8,7 +8,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from memorii.core.llm_judge.models import CalibrationExample, JudgeDimension, JudgeRubric, JudgeVerdict
-from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
+from memorii.core.promotion.assessment import PromotionAssessmentContext, PromotionCandidateType
 
 _VALID_PLANES = {"episodic", "semantic", "user_memory", "project_fact"}
 
@@ -75,20 +75,20 @@ class MemoryPlaneJudge:
             created_at=self.created_at_factory(),
         )
 
-    def _extract_context_and_output(self, *, input_payload: dict[str, object]) -> tuple[PromotionContext, dict[str, object] | None]:
+    def _extract_context_and_output(self, *, input_payload: dict[str, object]) -> tuple[PromotionAssessmentContext, dict[str, object] | None]:
         if isinstance(input_payload.get("input_payload"), dict):
-            context = PromotionContext.model_validate(input_payload["input_payload"])
+            context = PromotionAssessmentContext.model_validate(input_payload["input_payload"])
             actual = input_payload.get("actual_output")
         elif isinstance(input_payload.get("context"), dict):
-            context = PromotionContext.model_validate(input_payload["context"])
+            context = PromotionAssessmentContext.model_validate(input_payload["context"])
             actual = input_payload.get("actual_output")
         else:
-            context = PromotionContext.model_validate(input_payload)
+            context = PromotionAssessmentContext.model_validate(input_payload)
             actual = input_payload.get("actual_output") if isinstance(input_payload.get("actual_output"), dict) else None
 
         return context, actual if isinstance(actual, dict) else None
 
-    def _expected_plane(self, context: PromotionContext) -> str:
+    def _expected_plane(self, context: PromotionAssessmentContext) -> str:
         content = context.content.lower()
         if bool(context.metadata.get("inferred_user_preference", False)) or context.related_memory_ids:
             return "ambiguous"
@@ -102,7 +102,7 @@ class MemoryPlaneJudge:
             return "project_fact"
         return "ambiguous"
 
-    def _score(self, *, context: PromotionContext, actual_output: dict[str, object] | None) -> tuple[float, str, str | None]:
+    def _score(self, *, context: PromotionAssessmentContext, actual_output: dict[str, object] | None) -> tuple[float, str, str | None]:
         expected = self._expected_plane(context)
         actual_plane = str(actual_output.get("target_plane", "")) if actual_output else ""
 

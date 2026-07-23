@@ -1,0 +1,67 @@
+prompt_id: belief_update
+version: v1
+task: Update a belief score from new evidence.
+description: Produces updated belief and confidence from BeliefUpdateContext.
+input_schema:
+  type: object
+  required: [context_json]
+  additionalProperties: false
+  properties:
+    context_json:
+      type: object
+      required: [prior_belief, decision, evidence_count, missing_evidence_count, verifier_downgraded, conflict_count, evidence_ids, missing_evidence, evidence_quality]
+      additionalProperties: false
+      properties:
+        prior_belief: {type: [number, 'null'], minimum: 0.0, maximum: 1.0}
+        decision: {type: string}
+        evidence_count: {type: integer, minimum: 0}
+        missing_evidence_count: {type: integer, minimum: 0}
+        verifier_downgraded: {type: boolean}
+        conflict_count: {type: integer, minimum: 0}
+        evidence_ids: {type: array, items: {type: string}}
+        missing_evidence: {type: array, items: {type: string}}
+        evidence_quality:
+          type: object
+          additionalProperties: false
+          required: [entity_attribution, independence, freshness, observability, source_count, oscillation_detected]
+          properties:
+            entity_attribution: {type: string, enum: [aligned, misaligned, unknown]}
+            independence: {type: string, enum: [independent, correlated, unknown]}
+            freshness: {type: string, enum: [current, stale, superseded, unknown]}
+            observability: {type: string, enum: [complete, partial, failed, unknown]}
+            source_count: {type: integer, minimum: 0}
+            oscillation_detected: {type: boolean}
+output_schema:
+  type: object
+  additionalProperties: false
+  required: [belief, confidence, rationale, failure_mode, requires_judge_review]
+  properties:
+    belief: {type: number, minimum: 0.0, maximum: 1.0}
+    confidence: {type: number, minimum: 0.0, maximum: 1.0}
+    rationale: {type: string}
+    failure_mode:
+      type: [string, 'null']
+      enum: [should_increase, should_decrease, should_not_increase, should_remain_uncertain, ambiguous_direction, missing_evidence, verifier_downgrade, conflict_present, evidence_irrelevant, null]
+    requires_judge_review: {type: boolean}
+system_template: |-
+  Update belief using only the structured context. Return strict JSON.
+
+  Semantics:
+  - prior_belief=null is an unscored first observation, not zero.
+  - SUPPORTED increases belief only when quality is adequate; REFUTED decreases it.
+  - INSUFFICIENT_EVIDENCE and NEEDS_TEST remain uncertain and near the prior.
+  - missing evidence, verifier downgrade, conflict, or any explicit evidence_quality warning lowers confidence and requires review.
+  - correlated, stale, superseded, partial, failed, or oscillating evidence caps belief at 0.65.
+  - entity_attribution=misaligned caps belief at 0.60.
+  - failed or partial observation is not evidence of absence.
+  - unknown quality is uncertainty; do not silently treat it as clean evidence.
+  - Clean support or refutation with at least two independent current sources may use confidence >= 0.70.
+
+  Choose failure_mode only from the schema contract and make the rationale describe the structured signals used.
+user_template: "BeliefUpdateContext: {context_json}\nReturn strict JSON matching the schema."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1000, timeout_seconds: null}
+redaction:
+  redact_input_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_output_fields: [api_key, token, password, secret, authorization, cookie]
+  redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
+tags: [belief]

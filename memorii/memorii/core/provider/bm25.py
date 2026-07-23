@@ -5,17 +5,43 @@ from __future__ import annotations
 import string
 import unicodedata
 from collections import Counter
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from importlib import import_module
 from math import log
+from typing import Protocol, cast
 
-try:
-    from icu import BreakIterator, Locale
 
-    _ICU_AVAILABLE = True
-except ModuleNotFoundError:  # pragma: no cover - exercised in environments without PyICU
-    BreakIterator = None  # type: ignore[assignment]
-    Locale = None  # type: ignore[assignment]
-    _ICU_AVAILABLE = False
+class _WordBreakIterator(Protocol):
+    def setText(self, text: str) -> None: ...
+
+    def first(self) -> int: ...
+
+    def __iter__(self) -> Iterator[int]: ...
+
+
+class _BreakIteratorFactory(Protocol):
+    def createWordInstance(self, locale: object) -> _WordBreakIterator: ...
+
+
+@dataclass(frozen=True)
+class _IcuRuntime:
+    locale: Callable[[str], object]
+    break_iterator: _BreakIteratorFactory
+
+
+def _load_icu_runtime() -> _IcuRuntime | None:
+    try:
+        module = import_module("icu")
+    except ModuleNotFoundError:  # pragma: no cover - exercised in environments without PyICU
+        return None
+    return _IcuRuntime(
+        locale=cast(Callable[[str], object], module.Locale),
+        break_iterator=cast(_BreakIteratorFactory, module.BreakIterator),
+    )
+
+
+_ICU_RUNTIME = _load_icu_runtime()
 
 _PUNCT_CHARS = set(string.punctuation)
 
@@ -109,11 +135,12 @@ def _bm25_score(
 
 def _tokens(text: str, *, language: str) -> list[str]:
     normalized = _normalize_text(text)
-    if not _ICU_AVAILABLE:
+    runtime = _ICU_RUNTIME
+    if runtime is None:
         return _fallback_tokens(normalized)
 
-    locale = Locale(language or "und")
-    iterator = BreakIterator.createWordInstance(locale)
+    locale = runtime.locale(language or "und")
+    iterator = runtime.break_iterator.createWordInstance(locale)
     iterator.setText(normalized)
     tokens: list[str] = []
     start = iterator.first()

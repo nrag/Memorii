@@ -93,6 +93,7 @@ def test_provider_integration_without_work_state_service_is_optional() -> None:
     result = provider_service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="hello there",
+        operation_id="test:work-state:optional",
         session_id="s:3",
         task_id="task:3",
         user_id="u:3",
@@ -107,6 +108,7 @@ def test_provider_integration_records_state_when_service_supplied() -> None:
     provider_service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="please implement parser updates and write tests",
+        operation_id="test:work-state:ingestion",
         session_id="s:4",
         task_id="task:4",
         user_id="u:4",

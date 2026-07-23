@@ -4,7 +4,19 @@
 
 This document describes the runtime memory evolution implementation as it exists now. It is not a future-only architecture note.
 
-Runtime memory evolution is implemented as an opt-in layer inside `ProviderMemoryService` and `MemoryEvolutionService`. It is not enabled by default for provider integrations yet.
+Runtime memory evolution is part of the standard `ProviderMemoryService` composition. Provider ingestion durably records an evolution operation and projects eligible source observations without requiring an enablement flag.
+
+`build_provider_memory_service_from_env(...)` is the production composition root. It
+selects extraction and promotion providers from one environment snapshot, constructs
+the dependency-injected service, and reconciles recoverable evolution operations.
+Direct `ProviderMemoryService(...)` construction remains deterministic for explicit
+embedding and tests; it does not read process configuration.
+
+The production composition runs one recovery cycle at startup. Hosts with long-lived
+shared stores should also schedule `reconcile_memory_evolution()` periodically; active
+leased operations are skipped, while expired leases and retryable failures are reclaimed.
+Durable operation records contain bounded failure categories and sanitized messages.
+Full exception details remain operational logs and are not written into canonical memory.
 
 ## Purpose
 
@@ -28,13 +40,14 @@ Raw observations remain the source of truth. Derived graph state is a projection
 
 ## Current Entry Points
 
-Runtime evolution is reached through `ProviderMemoryService` when constructed with `memory_evolution_enabled=True`.
+Runtime evolution is part of the standard `ProviderMemoryService` composition.
 
 Current provider entry points:
 
-- `sync_event(...)`
-- `apply_memory_write(...)`
+- `sync_event(..., operation_id=...)`
+- `apply_memory_write(..., operation_id=...)`
 - `prefetch(...)`
+- `retrieve_evolution_decision(...)`
 - `handle_tool_call(...)`
 - `last_memory_evolution_result()`
 
@@ -49,8 +62,13 @@ Current provider entry points:
 
 Important current behavior:
 
-- Runtime memory evolution is disabled by default.
-- When enabled, provider transcript/source IDs are passed to `MemoryEvolutionService.evolve_source_ids(...)`.
+- Mutating provider entry points require a stable caller-supplied operation ID. Replayed
+  deliveries reuse their durable operation result instead of duplicating source events or
+  projections.
+- Provider transcript/source IDs are passed through the recoverable evolution coordinator to
+  `MemoryEvolutionService.evolve_source_ids(...)` by default. Operations and projections are
+  committed transactionally to the configured memory-plane store. They survive a process restart
+  only when that store is persistent; the default standalone composition remains in-memory.
 - The latest evolution result is available through `ProviderMemoryService.last_memory_evolution_result()`.
 - Provider prefetch currently returns memory context plus work-state summaries. It does not yet default to graph-grounded current truth retrieval.
 
@@ -60,7 +78,9 @@ Important current behavior:
 
 1. Convert raw `CanonicalMemoryRecord` transcript records into `SourceObservation`.
 2. Classify modality and trigger mode.
-3. Extract entities, claims, and actions from immediate observations.
+3. Extract entities, claims, and actions from observations eligible for an
+   extraction attempt. Deferred observations are still validated and retained
+   as audit evidence, but their claims cannot become active truth.
 4. Validate extracted claims.
 5. Resolve entity mentions into entity links.
 6. Apply accepted claims into claim lifecycle state.
@@ -91,7 +111,7 @@ Runtime extraction is provider-backed through `MemoryExtractor`.
 
 Implemented extractors:
 
-- `RuleMemoryExtractor`
+- `EnglishRuleMemoryExtractor`
 - `LLMMemoryExtractor`
 - `HybridMemoryExtractor`
 
@@ -99,8 +119,11 @@ Implemented extractors:
 
 Current limits:
 
-- The rule extractor is intentionally simple and pattern based.
-- The LLM extractor can produce entities, claims, and actions from `memory_extraction:v1`, but the runtime-backed benchmark is not yet the main acceptance gate.
+- The English rule extractor is intentionally simple, pattern based, and
+  fail-closed for unsupported languages.
+- The LLM extractor can produce entities, claims, and actions from
+  `memory_extraction:v1`; the runtime-backed benchmark is the memory-component
+  acceptance gate, not an agent-system acceptance gate.
 - Hybrid falls back to rule extraction when the LLM extraction run reports errors.
 
 ## Validation
@@ -186,6 +209,14 @@ Graph records are written as `CanonicalMemoryRecord` objects with `memory_evolut
 
 Graph records are retained rather than physically deleted. Stale state is represented through lifecycle state and validity status.
 
+Entity splits require grounded identity evidence rather than same-name text
+alone. A split is eligible only when an extracted mention and an existing link
+share an explicit normalized alias, have distinct known entity types, and the
+new mention carries evidence. The child link persists its lineage parent, and
+graph projection emits exactly one `split_from` edge from that persisted state.
+The benchmark may align the native child and parent IDs to oracle labels after
+projection, but it does not create or duplicate lineage edges.
+
 ## Runtime Graph Retrieval APIs
 
 `MemoryEvolutionService` currently exposes:
@@ -196,7 +227,11 @@ Graph records are retained rather than physically deleted. Stale state is repres
 - `retrieve_claim_lineage(claim_id)`
 - `retrieve_conflict_graph()`
 
-These are graph-level APIs. Provider prefetch does not yet automatically use these APIs as its default answer-selection mechanism.
+These are graph-level APIs. Current-truth and entity-subgraph retrieval accept
+an evaluation time or temporal frame and apply validity intervals consistently
+with claim retrieval. A point-in-time current view may return a claim that is
+now superseded if it was valid at the requested time; it does not promote that
+claim to present-day truth.
 
 ## Reference Knowledge
 
@@ -227,6 +262,59 @@ Current limit:
 - The next-step engine can use solver frontier state when configured, but often falls back to work-state summaries.
 - Graph-derived current truth is not yet fully integrated into next-step selection.
 
+## Query-Temporal Retrieval Boundary
+
+Production retrieval keeps two decisions separate:
+
+1. `QueryTemporalFrame` describes what time, scope, entity, and purpose the
+   query asks about.
+2. `ClaimLifecycleState` and validity intervals determine which claim states
+   are eligible for that frame.
+
+`MemoryQueryRequest` can carry a structured `QueryAnalysis` from an upstream
+query analyzer. Its entity and predicate constraints are applied by the
+production retriever, not by benchmark alignment code. English fallback
+parsing is intentionally conservative; non-English or ambiguous queries must
+provide a structured frame or the retriever abstains.
+
+The production query boundary also owns a configurable `LexicalQueryAnalyzer`,
+an explicit `EnglishLexicalQueryAnalyzer` fallback, and an evidence-backed
+`TemporalAnchorCatalog`. Named periods such as "release week" resolve only when
+a caller has registered an anchor with an interval and source evidence. The
+runtime never assigns dates from the phrase alone. Colliding anchors produce an
+explicit abstention rather than an identifier tie-break.
+
+Provider adapters may pass `query_language` and structured `QueryAnalysis`
+through `prefetch`; the runtime benchmark passes each checkpoint language to
+the same production request path. Simulator oracle labels never populate the
+production frame.
+
+The retriever returns a `ProductionRetrievalDecision` containing native record
+ids, selected/supporting/context/rejected channels, temporal resolution, and
+an explicit abstention status. Benchmarks may map those native ids to oracle
+labels after the decision, but cannot use oracle labels to change selection.
+
+## Execution-State Boundary
+
+Action events are immutable history. `MemoryEvolutionService.derive_work_state`
+reduces them into a `WorkStateSnapshot`, and execution retrieval resolves a
+`ContinuationDecision` using scope, target entities, lifecycle status, and
+progress. Ambiguous peer branches abstain instead of being chosen by a stable
+identifier. Runtime benchmark execution checkpoints consume this production
+decision and require selected/supporting action evidence; the benchmark does
+not reconstruct the active branch independently.
+
+## Artifact And Report Boundary
+
+Runtime graph snapshots and normalized graph items are validated through
+typed benchmark row models before they are written. The report separates
+final-snapshot completeness from cumulative observation diagnostics, and
+separates checkpoint-scored verdicts from broader graph-alignment audits.
+Partial or ambiguous audit rows are therefore visible without being silently
+counted as checkpoint failures. Dry-run extraction is labeled `fake_oracle`
+and its provider-health status is `not_applicable`; it never contributes to
+live provider success counts.
+
 ## What This Implementation Proves
 
 The current runtime implementation proves that Memorii can:
@@ -241,9 +329,7 @@ The current runtime implementation proves that Memorii can:
 
 ## What It Does Not Yet Prove
 
-The current implementation does not yet prove that real provider ingestion can reconstruct the same kind of latent graph that `memory_evolution_sim_v1` tests through its reconstruction adapter.
-
-The missing acceptance suite is `memory_evolution_runtime_v1`:
+The runtime-backed acceptance suite is `memory_evolution_runtime_v1`:
 
 ```text
 latent simulator surface observations
@@ -254,10 +340,22 @@ latent simulator surface observations
   -> programmatic judges and calibration reports
 ```
 
-Until that suite is implemented and green, runtime evolution should remain opt-in for agent integrations.
+The suite validates runtime graph construction and decision projection on
+surface-only observations. Its deterministic dry-run gates are green for the
+adversarial and long-horizon profiles. Live provider runs remain a separate
+system-under-test gate and do not change production defaults.
+
+Checkpoint provenance is scoped to the extraction attempts that produced that
+checkpoint. Scenario-level provider counters remain aggregate diagnostics, and
+mixed live/rule output is reported as `mixed` rather than attributed to one
+provider.
 
 ## Readiness Position
 
-Runtime evolution is ready for controlled integration pilots behind a feature flag.
-
-It is not yet ready to be the default always-on durable agent memory path.
+Runtime evolution is not yet ready for agent integration. Pull-request gates
+validate deterministic contracts, schema integrity, no-leakage, and
+fake-oracle plumbing; scheduled live gates validate the component across seeds,
+replicates, and scenario families using provider-observable metadata and
+hierarchical confidence bounds. Neither gate measures agent policy interaction
+or end-to-end task outcomes. An agent-system evaluation must be designed and
+approved separately before any integration or default enablement work begins.

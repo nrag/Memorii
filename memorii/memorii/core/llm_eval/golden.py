@@ -5,8 +5,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from memorii.core.belief.models import BeliefUpdateContext
+from memorii.core.evidence_quality import (
+    EntityAttribution,
+    EvidenceFreshness,
+    EvidenceIndependence,
+    EvidenceObservability,
+    EvidenceQualitySignals,
+)
 from memorii.core.llm_decision.models import EvalSnapshot, LLMDecisionPoint
-from memorii.core.promotion.models import PromotionCandidateType
+from memorii.core.promotion.assessment import PromotionCandidateType
 from memorii.core.solver.abstention import SolverDecision
 
 _GOLDEN_CREATED_AT = datetime(2026, 1, 1, tzinfo=UTC)
@@ -26,6 +33,7 @@ def _promotion_snapshot(
     related_memory_ids: list[str] | None = None,
     source_ids: list[str] | None = None,
     metadata: dict[str, object] | None = None,
+    evidence_quality: EvidenceQualitySignals | None = None,
 ) -> EvalSnapshot:
     return EvalSnapshot(
         snapshot_id=snapshot_id,
@@ -45,6 +53,16 @@ def _promotion_snapshot(
                 "curation_tier": "reviewed",
                 "llm_followup_expected": bool(expected_output.get("requires_judge_review") is True),
             },
+            "evidence_quality": (
+                evidence_quality
+                or EvidenceQualitySignals(
+                    entity_attribution=EntityAttribution.ALIGNED,
+                    independence=EvidenceIndependence.INDEPENDENT,
+                    freshness=EvidenceFreshness.CURRENT,
+                    observability=EvidenceObservability.COMPLETE,
+                    source_count=len(source_ids or [f"src:{snapshot_id}"]),
+                )
+            ).model_dump(mode="json"),
         },
         expected_output=expected_output,
         source="offline_golden",
@@ -69,6 +87,7 @@ def _belief_snapshot(
     evidence_summary: str,
     missing_evidence_summary: str,
     metadata_extra: dict[str, object] | None = None,
+    evidence_quality: EvidenceQualitySignals | None = None,
 ) -> EvalSnapshot:
     evidence_ids = [f"ev:{snapshot_id}:{idx + 1}" for idx in range(evidence_count)] if evidence_count > 0 else []
     missing_evidence = (
@@ -95,6 +114,22 @@ def _belief_snapshot(
         conflict_count=conflict_count,
         evidence_ids=evidence_ids,
         missing_evidence=missing_evidence,
+        evidence_quality=evidence_quality
+        or EvidenceQualitySignals(
+            entity_attribution=EntityAttribution.ALIGNED,
+            independence=(
+                EvidenceIndependence.INDEPENDENT
+                if evidence_count >= 2
+                else EvidenceIndependence.UNKNOWN
+            ),
+            freshness=EvidenceFreshness.CURRENT,
+            observability=(
+                EvidenceObservability.PARTIAL
+                if missing_evidence_count or verifier_downgraded
+                else EvidenceObservability.COMPLETE
+            ),
+            source_count=evidence_count,
+        ),
         metadata=metadata,
     )
 
@@ -875,6 +910,14 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             evidence_summary="Three support observations exist, but they are non-independent repeats of the same flaky test path after prior oscillation.",
             missing_evidence_summary="Need independent retry telemetry or a soak run before treating the fix as stable.",
             metadata_extra={"expected_rule_failure": True},
+            evidence_quality=EvidenceQualitySignals(
+                entity_attribution=EntityAttribution.ALIGNED,
+                independence=EvidenceIndependence.CORRELATED,
+                freshness=EvidenceFreshness.CURRENT,
+                observability=EvidenceObservability.COMPLETE,
+                source_count=1,
+                oscillation_detected=True,
+            ),
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:adversarial-soft-falsification-cache-theory",
@@ -928,6 +971,13 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             evidence_summary="The support count is high, but all evidence comes from one partial tool failure and is not independently corroborated.",
             missing_evidence_summary="Index health, fallback query, and complete tool logs are needed before committing to an outage diagnosis.",
             metadata_extra={"expected_rule_failure": True},
+            evidence_quality=EvidenceQualitySignals(
+                entity_attribution=EntityAttribution.ALIGNED,
+                independence=EvidenceIndependence.CORRELATED,
+                freshness=EvidenceFreshness.CURRENT,
+                observability=EvidenceObservability.PARTIAL,
+                source_count=1,
+            ),
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:adversarial-out-of-order-correction-overrides-support",
@@ -941,6 +991,13 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             evidence_summary="The structured support count comes from older notes that arrived before the corrected postmortem.",
             missing_evidence_summary="Need reconciliation against the later correction before trusting the earlier support.",
             metadata_extra={"expected_rule_failure": True},
+            evidence_quality=EvidenceQualitySignals(
+                entity_attribution=EntityAttribution.ALIGNED,
+                independence=EvidenceIndependence.CORRELATED,
+                freshness=EvidenceFreshness.SUPERSEDED,
+                observability=EvidenceObservability.COMPLETE,
+                source_count=3,
+            ),
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:adversarial-stale-evidence-after-rewrite",
@@ -954,6 +1011,13 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             evidence_summary="Evidence count is inflated by pre-rewrite observations that may no longer apply to the current parser.",
             missing_evidence_summary="Need current parser fixtures and post-rewrite regression results before raising belief.",
             metadata_extra={"expected_rule_failure": True},
+            evidence_quality=EvidenceQualitySignals(
+                entity_attribution=EntityAttribution.ALIGNED,
+                independence=EvidenceIndependence.UNKNOWN,
+                freshness=EvidenceFreshness.STALE,
+                observability=EvidenceObservability.PARTIAL,
+                source_count=1,
+            ),
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:adversarial-duplicate-evidence-inflation",
@@ -967,6 +1031,13 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             evidence_summary="The support count is three, but all entries duplicate one log line and should count as a single weak signal.",
             missing_evidence_summary="Need independent retry counters or timing traces before treating retry backoff as likely.",
             metadata_extra={"expected_rule_failure": True},
+            evidence_quality=EvidenceQualitySignals(
+                entity_attribution=EntityAttribution.ALIGNED,
+                independence=EvidenceIndependence.CORRELATED,
+                freshness=EvidenceFreshness.CURRENT,
+                observability=EvidenceObservability.COMPLETE,
+                source_count=1,
+            ),
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:adversarial-failed-tool-absence-not-refutation",
@@ -981,6 +1052,13 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             evidence_summary="There is no clean absence evidence because the search tool failed before returning complete results.",
             missing_evidence_summary="Need a successful full-index search or fallback query before lowering belief from absence.",
             metadata_extra={"expected_rule_failure": True},
+            evidence_quality=EvidenceQualitySignals(
+                entity_attribution=EntityAttribution.ALIGNED,
+                independence=EvidenceIndependence.UNKNOWN,
+                freshness=EvidenceFreshness.UNKNOWN,
+                observability=EvidenceObservability.FAILED,
+                source_count=0,
+            ),
         ),
         _belief_snapshot(
             snapshot_id="belief:v1:adversarial-ambiguous-entity-support",
@@ -994,5 +1072,12 @@ def belief_golden_v1() -> list[EvalSnapshot]:
             evidence_summary="Support evidence appears to link the wrong customer entity to the rollout blocker.",
             missing_evidence_summary="Need Apex-specific source ticket confirmation before increasing belief.",
             metadata_extra={"expected_rule_failure": True},
+            evidence_quality=EvidenceQualitySignals(
+                entity_attribution=EntityAttribution.MISALIGNED,
+                independence=EvidenceIndependence.UNKNOWN,
+                freshness=EvidenceFreshness.UNKNOWN,
+                observability=EvidenceObservability.COMPLETE,
+                source_count=1,
+            ),
         ),
     ]

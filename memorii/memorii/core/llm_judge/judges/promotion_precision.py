@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from memorii.core.llm_decision.models import EvalSnapshot
 from memorii.core.llm_judge.models import CalibrationExample, JudgeDimension, JudgeRubric, JudgeVerdict
-from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
+from memorii.core.promotion.assessment import PromotionAssessmentContext, PromotionCandidateType
 
 _TIME_BOUND_MARKERS = (
     "next week",
@@ -109,16 +109,16 @@ class PromotionPrecisionJudge:
             created_at=self.created_at_factory(),
         )
 
-    def _extract_context(self, *, input_payload: dict[str, object]) -> PromotionContext:
+    def _extract_context(self, *, input_payload: dict[str, object]) -> PromotionAssessmentContext:
         if isinstance(input_payload.get("input_payload"), dict):
             try:
-                return PromotionContext.model_validate(input_payload["input_payload"])
+                return PromotionAssessmentContext.model_validate(input_payload["input_payload"])
             except ValidationError:
                 snapshot = EvalSnapshot.model_validate(input_payload)
-                return PromotionContext.model_validate(snapshot.input_payload)
-        return PromotionContext.model_validate(input_payload)
+                return PromotionAssessmentContext.model_validate(snapshot.input_payload)
+        return PromotionAssessmentContext.model_validate(input_payload)
 
-    def _score_context(self, *, context: PromotionContext) -> tuple[float, str, str | None]:
+    def _score_context(self, *, context: PromotionAssessmentContext) -> tuple[float, str, str | None]:
         content = context.content.lower()
         marker_hit = next((marker for marker in _TIME_BOUND_MARKERS if marker in content), None)
         low_value_hit = next((marker for marker in _LOW_VALUE_MARKERS if marker in content), None)

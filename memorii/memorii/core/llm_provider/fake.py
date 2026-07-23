@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from memorii.core.llm_config import LLMRuntimeConfig
+from memorii.core.llm_provider.base import LLMProviderError
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 
 
@@ -25,16 +26,23 @@ class FakeLLMStructuredClient:
         *,
         config: LLMRuntimeConfig,
     ) -> LLMStructuredResponse:
-        del config
         self.last_request = request
         if self._raise_on_request:
-            raise RuntimeError("fake provider configured to fail")
+            raise LLMProviderError("fake provider configured to fail")
 
         raw_text = self._responses_by_request_id.get(request.request_id, self._default_response or "{}")
         return LLMStructuredResponse(
             request_id=request.request_id,
             provider=self.provider_name,
-            model=request.model_defaults.model,
+            requested_model=request.model_defaults.model or config.model,
+            actual_model=request.model_defaults.model or config.model,
+            effective_settings={
+                "temperature": request.model_defaults.temperature,
+                "max_output_tokens": request.model_defaults.max_tokens,
+                "timeout_seconds": request.model_defaults.timeout_seconds or config.timeout_seconds,
+            },
+            attempt_count=1,
+            sdk_max_retries=config.max_retries,
             raw_text=raw_text,
             valid_json=False,
             schema_valid=False,

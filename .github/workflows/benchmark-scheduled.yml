@@ -2,14 +2,254 @@ name: Scheduled Benchmark Reports
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
 
 permissions:
   contents: read
 
+concurrency:
+  group: benchmark-certification-${{ github.sha }}
+  cancel-in-progress: false
+
+env:
+  MEMORII_SOURCE_REVISION: ${{ github.sha }}
+
 jobs:
-  workflow-identity-bootstrap:
-    name: Workflow Identity Bootstrap
+  live-certification-policy:
+    name: Resolve Live Certification Policy
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.MEMORII_RUN_LIVE_GATES == 'true') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.policy.outputs.matrix }}
+
     steps:
-      - name: Confirm bootstrap installation
-        run: echo "Live benchmark implementation is supplied by the reviewed candidate branch."
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MEMORII_SOURCE_REVISION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package
+        working-directory: memorii
+        run: pip install -e .
+
+      - name: Resolve policy matrix
+        id: policy
+        working-directory: memorii
+        run: echo "matrix=$(python -m memorii.tools.live_certification_policy github-matrix)" >> "$GITHUB_OUTPUT"
+
+      - name: Pre-certify live gate design
+        working-directory: memorii
+        run: python -m memorii.tools.live_certification_policy preflight > live_certification_design_audit.json
+
+      - name: Upload live gate design audit
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-certification-design-audit
+          path: memorii/live_certification_design_audit.json
+          if-no-files-found: error
+
+  fake-oracle-plumbing:
+    name: Fake-Oracle Plumbing Reports
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MEMORII_SOURCE_REVISION }}
+
+      - name: Verify exact clean source revision
+        run: |
+          test "$(git rev-parse HEAD)" = "$MEMORII_SOURCE_REVISION"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Build fake-oracle simulator plumbing artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_sim_v1
+          --mode llm
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile long_horizon
+          --sim-scenario-count 10
+          --sim-min-events 25
+          --sim-max-events 60
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Build fake-oracle runtime semantic artifact
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.run_eval
+          --suite memory_evolution_runtime_v1
+          --mode hybrid
+          --dry-run
+          --fail-on-benchmark-failure
+          --storage-root .memorii
+          --sim-profile long_horizon
+          --sim-scenario-count 25
+          --sim-min-events 25
+          --sim-max-events 60
+          --sim-noise-rate 0.35
+          --seed 7
+
+      - name: Validate fake-oracle plumbing artifacts
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.validate_benchmark_artifacts
+          --root .memorii/benchmark_runs
+          --suite memory_evolution_sim_v1
+          &&
+          python -m memorii.tools.validate_benchmark_artifacts
+          --root .memorii/benchmark_runs
+          --suite memory_evolution_runtime_v1
+
+      - name: Upload benchmark artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fake-oracle-plumbing-reports
+          path: memorii/.memorii/benchmark_runs
+          if-no-files-found: warn
+
+  live-runtime-smoke:
+    name: Live Runtime Smoke (seed ${{ matrix.seed }}, replicate ${{ matrix.replicate }})
+    needs: live-certification-policy
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.MEMORII_RUN_LIVE_GATES == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix: ${{ fromJSON(needs.live-certification-policy.outputs.matrix) }}
+    env:
+      MEMORII_LLM_PROVIDER: openai
+      MEMORII_ENABLE_LIVE_LLM_TESTS: 'true'
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      MEMORII_LLM_MAX_RETRIES: '0'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MEMORII_SOURCE_REVISION }}
+
+      - name: Verify exact clean source revision
+        run: |
+          test "$(git rev-parse HEAD)" = "$MEMORII_SOURCE_REVISION"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Verify live provider configuration
+        working-directory: memorii
+        run: >-
+          python -c
+          "from memorii.core.llm_config import LLMLiveTestConfig, LLMDecisionRuntimeConfig, LLMRuntimeConfig; runtime=LLMRuntimeConfig.from_env(); live=LLMLiveTestConfig.from_env(); assert runtime.provider == 'openai'; assert runtime.has_live_provider(); assert live.should_run_live_llm_tests(runtime); assert LLMDecisionRuntimeConfig(mode='hybrid').resolve(runtime) == 'hybrid'"
+
+      - name: Run live runtime smoke
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.live_certification_policy run-replicate
+          --storage-root .memorii
+          --seed ${{ matrix.seed }}
+          --replicate ${{ matrix.replicate }}
+
+      - name: Upload live artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-runtime-smoke-reports-${{ matrix.seed }}-${{ matrix.replicate }}
+          path: memorii/.memorii/benchmark_runs
+          if-no-files-found: warn
+
+  live-runtime-gate:
+    name: Live Runtime Statistical Gate
+    needs: [live-certification-policy, live-runtime-smoke]
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && vars.MEMORII_RUN_LIVE_GATES == 'true')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.MEMORII_SOURCE_REVISION }}
+
+      - name: Verify exact clean source revision
+        run: |
+          test "$(git rev-parse HEAD)" = "$MEMORII_SOURCE_REVISION"
+          test -z "$(git status --porcelain=v1 --untracked-files=all)"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Download live reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: live-runtime-smoke-reports-*
+          path: memorii/.memorii/benchmark_runs
+          merge-multiple: true
+
+      - name: Evaluate live statistical gate
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.validate_live_benchmark_gate
+          --root .memorii/benchmark_runs
+          --source-revision "$MEMORII_SOURCE_REVISION"
+          --output .memorii/benchmark_runs/live_runtime_gate_summary.json
+
+      - name: Verify source-bound gate certificate
+        working-directory: memorii
+        run: >-
+          python -c
+          "import json, os; from pathlib import Path; from memorii.core.benchmark.calibration.gates import LiveGateSummary; from memorii.core.benchmark.calibration.policy import DEFAULT_LIVE_CERTIFICATION_POLICY; summary=LiveGateSummary.model_validate(json.loads(Path('.memorii/benchmark_runs/live_runtime_gate_summary.json').read_text())); assert summary.passed; assert summary.source_revision == os.environ['MEMORII_SOURCE_REVISION']; assert summary.policy_digest == DEFAULT_LIVE_CERTIFICATION_POLICY.digest(); assert summary.interval_coverage_certificate is not None; assert summary.interval_coverage_certificate.configuration.source_revision == os.environ['MEMORII_SOURCE_REVISION']; assert summary.interval_coverage_certificate.configuration.input_report_content_digests == summary.input_report_content_digests"
+
+      - name: Upload live gate summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-runtime-gate-summary
+          path: memorii/.memorii/benchmark_runs/live_runtime_gate_summary.json
+          if-no-files-found: warn

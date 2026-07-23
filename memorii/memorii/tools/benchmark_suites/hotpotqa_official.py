@@ -11,6 +11,7 @@ from datetime import (
 from pathlib import Path
 from typing import cast
 
+from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.hotpotqa import (
     HotpotQAExample,
     load_hotpotqa_examples,
@@ -47,15 +48,18 @@ from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
-from memorii.tools.benchmark_suites.artifact_io import _write_jsonl
-from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
+from memorii.tools.benchmark_suites.artifact_io import write_jsonl
+from memorii.tools.benchmark_suites.common import (
+    ALL_DECISION_MODES,
+    require_memorii_only,
+)
 from memorii.tools.benchmark_suites.fake_adapters import (
-    _ExpectedHotpotQAAnswerVerificationFakeAdapter,
-    _ExpectedHotpotQAEvidenceSelectionFakeAdapter,
-    _ExpectedHotpotQAGroundedAnswerFakeAdapter,
+    ExpectedHotpotQAAnswerVerificationFakeAdapter,
+    ExpectedHotpotQAEvidenceSelectionFakeAdapter,
+    ExpectedHotpotQAGroundedAnswerFakeAdapter,
 )
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
-from memorii.tools.run_live_llm_eval import _validate_live_safety
+from memorii.tools.run_live_llm_eval import validate_live_safety
 
 SUITE_NAME = "hotpotqa_official_v1"
 
@@ -126,10 +130,14 @@ def _run_hotpotqa_answer_decisions(
         if mode != "auto"
         else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     )
-    effective_mode = decision_config.resolve(runtime_config)
+    effective_mode = resolve_benchmark_decision_mode(
+        decision_config=decision_config,
+        runtime_config=runtime_config,
+        dry_run=dry_run,
+    )
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
-        _validate_live_safety(
+        validate_live_safety(
             modes=[effective_mode],
             dry_run=dry_run,
             allow_live=allow_live,
@@ -141,19 +149,20 @@ def _run_hotpotqa_answer_decisions(
     evidence_selector = None
     answer_generator = None
     verifier = None
+    llm_binding = None
     if effective_mode in {"llm", "hybrid"}:
-        client = dependencies.eval_fake_client_cls() if dry_run else dependencies.llm_client_factory.from_config(runtime_config)
-        runner = PromptLLMRunner(client=client, config=runtime_config)
-        if dry_run and dependencies.is_default_fake_client():
-            evidence_selector = _ExpectedHotpotQAEvidenceSelectionFakeAdapter(examples=examples, registry=registry)
-            answer_generator = _ExpectedHotpotQAGroundedAnswerFakeAdapter(examples=examples, registry=registry)
-            verifier = _ExpectedHotpotQAAnswerVerificationFakeAdapter(examples=examples, registry=registry)
+        llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
+        runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
+        if dependencies.use_oracle_adapters(dry_run=dry_run):
+            evidence_selector = ExpectedHotpotQAEvidenceSelectionFakeAdapter(examples=examples, registry=registry)
+            answer_generator = ExpectedHotpotQAGroundedAnswerFakeAdapter(examples=examples, registry=registry)
+            verifier = ExpectedHotpotQAAnswerVerificationFakeAdapter(examples=examples, registry=registry)
         else:
             evidence_selector = LLMEvidenceSelectionAdapter(runner=runner, registry=registry)
             answer_generator = LLMGroundedAnswerAdapter(runner=runner, registry=registry)
             verifier = LLMAnswerVerificationAdapter(runner=runner, registry=registry)
         if force_gold_evidence:
-            evidence_selector = _ExpectedHotpotQAEvidenceSelectionFakeAdapter(examples=examples, registry=registry)
+            evidence_selector = ExpectedHotpotQAEvidenceSelectionFakeAdapter(examples=examples, registry=registry)
 
     pipeline = GroundedAnswerPipeline(
         mode=LLMDecisionMode(effective_mode),
@@ -244,6 +253,12 @@ def _run_hotpotqa_answer_decisions(
         )
         prediction.answer[example.example_id] = exported_answer
         prediction.sp[example.example_id] = predicted_supporting_facts
+        if result.fallback_used or effective_mode == "rule":
+            final_output_source = "rule"
+        elif llm_binding is None:
+            raise RuntimeError("LLM execution completed without an execution binding")
+        else:
+            final_output_source = llm_binding.final_output_source
         answer_rows.append(
             {
                 "example_id": example.example_id,
@@ -252,7 +267,7 @@ def _run_hotpotqa_answer_decisions(
                 "llm_call_made": llm_used,
                 "fallback_used": result.fallback_used,
                 "fallback_reason": result.failure_mode if result.fallback_used else None,
-                "final_output_source": "rule" if result.fallback_used or effective_mode == "rule" else "llm",
+                "final_output_source": final_output_source,
                 "request_id": request_id,
                 "question": example.question,
                 "question_type": example.question_type,
@@ -414,11 +429,11 @@ def _write_hotpotqa_official_artifacts(
         encoding="utf-8",
     )
     (run_dir / "hotpotqa_metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
-    _write_jsonl(run_dir / "hotpotqa_answer_traces.jsonl", answer_rows)
+    write_jsonl(run_dir / "hotpotqa_answer_traces.jsonl", answer_rows)
     stage_rows = stage_diagnostics.get("rows", [])
-    _write_jsonl(run_dir / "hotpotqa_stage_diagnostics.jsonl", stage_rows if isinstance(stage_rows, list) else [])
-    _write_jsonl(run_dir / "hotpotqa_retrieval_traces.jsonl", retrieval_rows)
-    _write_jsonl(
+    write_jsonl(run_dir / "hotpotqa_stage_diagnostics.jsonl", stage_rows if isinstance(stage_rows, list) else [])
+    write_jsonl(run_dir / "hotpotqa_retrieval_traces.jsonl", retrieval_rows)
+    write_jsonl(
         run_dir / "evidence_selection_traces.jsonl",
         [
             {
@@ -431,7 +446,7 @@ def _write_hotpotqa_official_artifacts(
             for row in answer_rows
         ],
     )
-    _write_jsonl(
+    write_jsonl(
         run_dir / "grounded_answer_traces.jsonl",
         [
             {
@@ -444,7 +459,7 @@ def _write_hotpotqa_official_artifacts(
             for row in answer_rows
         ],
     )
-    _write_jsonl(
+    write_jsonl(
         run_dir / "answer_verification_traces.jsonl",
         [
             {
@@ -457,8 +472,8 @@ def _write_hotpotqa_official_artifacts(
             for row in answer_rows
         ],
     )
-    _write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
-    _write_jsonl(run_dir / "failures.jsonl", [row for row in answer_rows if row["success"] is False])
+    write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
+    write_jsonl(run_dir / "failures.jsonl", [row for row in answer_rows if row["success"] is False])
     return run_dir
 
 def _write_hotpotqa_oracle_diagnostics(
@@ -526,8 +541,8 @@ def _write_hotpotqa_oracle_diagnostics(
         json.dumps(diagnostics, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    _write_jsonl(run_dir / "hotpotqa_oracle_gold_evidence_answer_traces.jsonl", gold_evidence_rows)
-    _write_jsonl(run_dir / "hotpotqa_oracle_llm_traces.jsonl", gold_evidence_llm_rows)
+    write_jsonl(run_dir / "hotpotqa_oracle_gold_evidence_answer_traces.jsonl", gold_evidence_rows)
+    write_jsonl(run_dir / "hotpotqa_oracle_llm_traces.jsonl", gold_evidence_llm_rows)
 
 def _pairs_from_jsonable(value: object) -> list[tuple[str, int]]:
     if not isinstance(value, list):

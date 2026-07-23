@@ -21,18 +21,19 @@ from memorii.core.execution import RuntimeObservationInput, RuntimeStepService
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.persistence.resume import ResumeService
 from memorii.core.promotion import (
-    PromotionContextBuilder,
+    PromotionExecutionContextBuilder,
+    PromotionExecutionResult,
     PromotionExecutor,
-    PromotionResult,
     PromotionService,
-    RuleBasedPromotionDecider,
+    RuleBasedPromotionExecutionPolicy,
 )
 from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.retrieval.planner import RetrievalPlanner
 from memorii.core.router.router import MemoryRouter
-from memorii.core.solver import SolverDecisionOutput, StaticSolverModelProvider
 from memorii.core.solver.abstention import SolverDecision
+from memorii.core.solver.model_integration import StaticSolverModelProvider
+from memorii.core.solver.update_engine import SolverDecisionOutput
 from memorii.core.solver.verifier import SolverDecisionVerifier
 from memorii.domain.common import Provenance, RoutingInfo, SolverNodeMetadata
 from memorii.domain.enums import (
@@ -334,7 +335,7 @@ class ScenarioExecutor:
         self,
         *,
         fixture: BenchmarkScenarioFixture,
-    ) -> tuple[list[RetrievalFixtureMemoryItem], float, PromotionResult]:
+    ) -> tuple[list[RetrievalFixtureMemoryItem], float, PromotionExecutionResult]:
         if fixture.learning_across_episodes is None:
             raise ValueError("learning across episodes fixture is required")
         fx = fixture.learning_across_episodes
@@ -350,6 +351,7 @@ class ScenarioExecutor:
             session_id="session:learning",
             task_id=expected.task_id,
             user_id="user:learning",
+            operation_id=f"benchmark:{fixture.scenario_id}:learning-write",
         )
         if not stage_result.candidate_ids:
             raise ValueError("learning benchmark expected a staged candidate via provider path")
@@ -371,8 +373,8 @@ class ScenarioExecutor:
             )
 
         promotion = PromotionService(
-            context_builder=PromotionContextBuilder(memory_plane=plane),
-            decider=RuleBasedPromotionDecider(),
+            context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+            execution_policy=RuleBasedPromotionExecutionPolicy(),
             executor=PromotionExecutor(memory_plane=plane),
         )
         result = promotion.promote_candidate(candidate_id)
@@ -717,8 +719,7 @@ class ScenarioExecutor:
                 decision=decision,
                 evidence_ids=list(fx.evidence_ids),
                 missing_evidence=list(fx.missing_evidence),
-                next_best_test=fx.next_best_test,
-                next_test_action=None,
+                next_test_action=fx.next_test_action,
                 available_evidence_ids=set(fx.available_evidence_ids),
             )
             downgraded = outcome.downgraded
@@ -785,11 +786,13 @@ class ScenarioExecutor:
                         )
                     )
             retrieved_context = "No durable memory context available."
-            for operation in fx.provider_operations:
+            for operation_index, operation in enumerate(fx.provider_operations):
+                operation_id = f"benchmark:{fixture.scenario_id}:{operation_index}:{operation}"
                 if operation == "sync_turn":
                     sync_result = provider.sync_turn(
                         user_content=str(event.payload),
                         assistant_content="Acknowledged update.",
+                        operation_id=operation_id,
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
@@ -816,6 +819,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(write_result.blocked_domains)
                     blocked_reasons.update(write_result.blocked_reasons)
@@ -829,6 +833,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(write_result.blocked_domains)
                     blocked_reasons.update(write_result.blocked_reasons)
@@ -840,6 +845,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(sync_result.blocked_domains)
                     blocked_reasons.update(sync_result.blocked_reasons)
@@ -851,6 +857,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(sync_result.blocked_domains)
                     blocked_reasons.update(sync_result.blocked_reasons)
@@ -863,6 +870,7 @@ class ScenarioExecutor:
                         session_id="session:benchmark",
                         task_id=fx.task_id,
                         user_id="user:benchmark",
+                        operation_id=operation_id,
                     )
                     blocked_domain_set.update(sync_result.blocked_domains)
                     blocked_reasons.update(sync_result.blocked_reasons)
@@ -916,7 +924,6 @@ class ScenarioExecutor:
                         decision="SUPPORTED",
                         evidence_ids=[f"{event.event_id}:transcript"],
                         missing_evidence=[],
-                        next_best_test=None,
                         rationale_short="validated resolution path",
                         confidence_band="high",
                     )

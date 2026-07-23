@@ -24,7 +24,10 @@ def test_memory_evolution_sim_long_horizon_profile_has_phase_pressure() -> None:
     for scenario in scenarios:
         phases = {observation.phase for observation in scenario.observations}
         assert {"setup", "interference", "evolution", "dormancy"} <= phases
-        assert any("late_stale_resurface" in observation.event_id for observation in scenario.observations)
+        assert any(
+            observation.phase == "dormancy" and "resurfaced" in observation.text.casefold()
+            for observation in scenario.observations
+        )
         assert all(checkpoint.horizon_distance >= 10 for checkpoint in scenario.checkpoints)
         assert all(checkpoint.interference_count >= 10 for checkpoint in scenario.checkpoints)
         assert all(checkpoint.source_event_age_days > 0 for checkpoint in scenario.checkpoints)
@@ -43,23 +46,24 @@ def test_memory_evolution_sim_long_horizon_execution_has_action_state_pressure()
     )
     checkpoint = checkpoint_by_type(scenario, "execution_continuation")
     action_claims = [claim for claim in scenario.claims if claim.claim_kind == "action_state"]
+    progress = next(claim for claim in action_claims if claim.object.normalized_value == "in_progress")
+    blocked = next(claim for claim in action_claims if claim.object.normalized_value == "blocked")
 
     assert checkpoint.expected_action_ids
-    assert any(claim.claim_id.endswith("branch_b_progress") for claim in action_claims)
-    assert any(claim.claim_id.endswith("branch_a_blocked") for claim in action_claims)
+    assert checkpoint.expected_claim_ids == []
+    assert checkpoint.expected_entity_ids == []
+    assert checkpoint.expected_citation_event_ids == []
+    assert checkpoint.expected_execution_claim_ids == [progress.claim_id]
+    assert checkpoint.expected_execution_entity_ids == [progress.subject.entity_id]
+    assert checkpoint.expected_execution_citation_event_ids == progress.evidence.source_event_ids
+    assert blocked.claim_id in checkpoint.expected_excluded_claim_ids
     assert any(
-        claim.claim_id.endswith("branch_b_progress")
-        for claim in scenario.claims
-        if claim.claim_id in checkpoint.expected_claim_ids
-    )
-    assert any(claim_id.endswith("branch_a_blocked") for claim_id in checkpoint.expected_excluded_claim_ids)
-    assert any(
-        observation.event_id.endswith("branch_b_progress") and observation.phase == "evolution"
+        observation.event_id in progress.evidence.source_event_ids and observation.phase == "evolution"
         for observation in scenario.observations
     )
 
 
-def test_memory_evolution_sim_long_horizon_context_has_sanitized_stage_metadata() -> None:
+def test_memory_evolution_sim_long_horizon_context_exposes_observed_phases_not_oracle_horizon_metadata() -> None:
     scenario = generate_scenario_by_family(
         profile="long_horizon",
         family="entity_definition_before_role_claims",
@@ -76,8 +80,7 @@ def test_memory_evolution_sim_long_horizon_context_has_sanitized_stage_metadata(
     payload = context.model_dump(mode="json")
 
     assert {event["phase"] for event in payload["visible_events"]} >= {"setup", "interference", "evolution", "dormancy"}
-    assert payload["checkpoint"]["horizon_distance"] >= 10
-    assert payload["checkpoint"]["stage_path"]
     assert not any(key.startswith("expected_") for key in payload["checkpoint"])
-    assert "stage_path" in payload["metadata"]["long_horizon"]
-    assert "expected_stage_path" not in payload["metadata"]["long_horizon"]
+    assert "horizon_distance" not in payload["checkpoint"]
+    assert "stage_path" not in payload["checkpoint"]
+    assert "metadata" not in payload

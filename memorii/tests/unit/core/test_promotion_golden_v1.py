@@ -3,7 +3,7 @@ from __future__ import annotations
 from memorii.core.llm_decision.models import EvalSnapshot
 from memorii.core.llm_eval.golden import promotion_golden_v1
 from memorii.core.llm_eval.runner import OfflineLLMEvalRunner
-from memorii.core.promotion.models import PromotionContext
+from memorii.core.promotion.assessment import PromotionAssessmentContext
 
 
 def _judge_review_snapshots() -> list[EvalSnapshot]:
@@ -61,14 +61,14 @@ def test_promotion_golden_v1_snapshots_validate() -> None:
 def test_promotion_golden_v1_inputs_validate_as_promotion_context() -> None:
     snapshots = promotion_golden_v1()
     for snapshot in snapshots:
-        context = PromotionContext.model_validate(snapshot.input_payload)
+        context = PromotionAssessmentContext.model_validate(snapshot.input_payload)
         assert context.candidate_id.startswith("cand:")
 
 
 def test_promotion_golden_v1_every_snapshot_has_source_ids_and_metadata() -> None:
     snapshots = promotion_golden_v1()
     for snapshot in snapshots:
-        context = PromotionContext.model_validate(snapshot.input_payload)
+        context = PromotionAssessmentContext.model_validate(snapshot.input_payload)
         assert len(context.source_ids) >= 1
         assert bool(context.metadata)
 

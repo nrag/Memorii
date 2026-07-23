@@ -14,6 +14,10 @@ from memorii.core.llm_decision.models import (
 )
 
 
+class LLMDecisionProviderError(RuntimeError):
+    """Expected operational failure from an LLM decision provider."""
+
+
 class LLMDecisionProvider(Protocol):
     def decide(
         self,

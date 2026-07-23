@@ -75,6 +75,8 @@ def _run_benchmark_suite(args: argparse.Namespace) -> int:
             args.storage_root,
             "--seed",
             str(args.seed),
+            "--inference-replicate",
+            str(args.inference_replicate),
         ]
         if args.prompt_root is not None:
             argv.extend(["--prompt-root", args.prompt_root])
@@ -117,6 +119,8 @@ def _run_benchmark_suite(args: argparse.Namespace) -> int:
             _add_bool_flag(argv, enabled=args.sim_freeze_output, flag="--sim-freeze-output")
         _add_bool_flag(argv, enabled=args.dry_run, flag="--dry-run")
         _add_bool_flag(argv, enabled=args.allow_live, flag="--allow-live")
+        _add_bool_flag(argv, enabled=args.defer_live_gate, flag="--defer-live-gate")
+        _add_bool_flag(argv, enabled=args.fail_on_benchmark_failure, flag="--fail-on-benchmark-failure")
         return run_benchmark.main(argv)
 
 
@@ -160,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prompt-root", default=None)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--allow-live", action="store_true")
+    parser.add_argument("--defer-live-gate", action="store_true")
+    parser.add_argument("--fail-on-benchmark-failure", action="store_true")
     parser.add_argument("--trace-successes", action="store_true")
     parser.add_argument("--no-trace-failures", action="store_true")
     parser.add_argument("--no-trace-fallbacks", action="store_true")
@@ -169,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.add_argument("--systems", choices=["memorii", "all"], default="memorii")
     parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--inference-replicate", type=int, default=0)
     parser.add_argument("--run-label", default=None)
     parser.add_argument("--hotpotqa-dataset", default=None)
     parser.add_argument("--hotpotqa-split", default="validation")

@@ -2,30 +2,57 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import memorii.core.promotion as promotion
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.promotion import (
     PromotionAction,
-    PromotionContext,
-    PromotionContextBuilder,
-    PromotionDecision,
+    PromotionExecutionContext,
+    PromotionExecutionContextBuilder,
+    PromotionExecutionPlan,
     PromotionExecutor,
     PromotionReasonCode,
     PromotionService,
-    RuleBasedPromotionDecider,
-    build_promotion_decider,
+    RuleBasedPromotionExecutionPolicy,
+    build_promotion_execution_policy,
 )
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain
 
 
-class FakePromotionDecider:
-    def evaluate(self, *, candidate: CanonicalMemoryRecord, context: PromotionContext) -> PromotionDecision:
-        return PromotionDecision(
+def test_public_api_distinguishes_assessment_from_execution_contracts() -> None:
+    public_names = set(promotion.__all__)
+    assert {
+        "PromotionAssessment",
+        "PromotionAssessmentContext",
+        "PromotionAssessmentProvider",
+        "PromotionExecutionContext",
+        "PromotionExecutionPlan",
+        "PromotionExecutionPolicy",
+        "PromotionExecutionResult",
+    } <= public_names
+    assert {
+        "PromotionContext",
+        "PromotionDecision",
+        "PromotionDecider",
+        "PromotionEvaluationContext",
+        "PromotionPlan",
+        "PromotionResult",
+    }.isdisjoint(public_names)
+
+
+class FakePromotionExecutionPolicy:
+    def evaluate(
+        self,
+        *,
+        candidate: CanonicalMemoryRecord,
+        context: PromotionExecutionContext,
+    ) -> PromotionExecutionPlan:
+        return PromotionExecutionPlan(
             action=PromotionAction.KEEP_STAGED,
             target_domain=candidate.domain,
-            reason_codes=[PromotionReasonCode.FAKE_DECIDER],
+            reason_codes=[PromotionReasonCode.FAKE_EXECUTION_POLICY],
             decided_by="fake",
         )
 
@@ -51,7 +78,7 @@ def _candidate(
     )
 
 
-def test_promotion_service_accepts_swappable_decider() -> None:
+def test_promotion_service_accepts_swappable_execution_policy() -> None:
     plane = MemoryPlaneService()
     candidate = _candidate(
         memory_id="cand:episodic:1",
@@ -62,18 +89,18 @@ def test_promotion_service_accepts_swappable_decider() -> None:
     plane.stage_record(candidate)
 
     service = PromotionService(
-        context_builder=PromotionContextBuilder(memory_plane=plane),
-        decider=FakePromotionDecider(),
+        context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+        execution_policy=FakePromotionExecutionPolicy(),
         executor=PromotionExecutor(memory_plane=plane),
     )
     result = service.promote_candidate(candidate.memory_id)
 
     assert result.action == PromotionAction.KEEP_STAGED
     assert result.decided_by == "fake"
-    assert result.reason_codes == [PromotionReasonCode.FAKE_DECIDER]
+    assert result.reason_codes == [PromotionReasonCode.FAKE_EXECUTION_POLICY]
 
 
-def test_rule_based_decider_commits_safe_explicit_semantic_candidate() -> None:
+def test_rule_based_execution_policy_commits_safe_explicit_semantic_candidate() -> None:
     plane = MemoryPlaneService()
     candidate = _candidate(
         memory_id="cand:semantic:1",
@@ -84,8 +111,8 @@ def test_rule_based_decider_commits_safe_explicit_semantic_candidate() -> None:
     plane.stage_record(candidate)
 
     service = PromotionService(
-        context_builder=PromotionContextBuilder(memory_plane=plane),
-        decider=RuleBasedPromotionDecider(),
+        context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+        execution_policy=RuleBasedPromotionExecutionPolicy(),
         executor=PromotionExecutor(memory_plane=plane),
     )
     result = service.promote_candidate(candidate.memory_id)
@@ -119,8 +146,8 @@ def test_duplicate_candidate_does_not_create_duplicate_commit() -> None:
     plane.stage_record(candidate)
 
     service = PromotionService(
-        context_builder=PromotionContextBuilder(memory_plane=plane),
-        decider=RuleBasedPromotionDecider(),
+        context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+        execution_policy=RuleBasedPromotionExecutionPolicy(),
         executor=PromotionExecutor(memory_plane=plane),
     )
     result = service.promote_candidate(candidate.memory_id)
@@ -153,8 +180,8 @@ def test_conflicting_user_candidate_is_not_blindly_committed() -> None:
     plane.stage_record(candidate)
 
     service = PromotionService(
-        context_builder=PromotionContextBuilder(memory_plane=plane),
-        decider=RuleBasedPromotionDecider(),
+        context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+        execution_policy=RuleBasedPromotionExecutionPolicy(),
         executor=PromotionExecutor(memory_plane=plane),
     )
     result = service.promote_candidate(candidate.memory_id)
@@ -162,6 +189,42 @@ def test_conflicting_user_candidate_is_not_blindly_committed() -> None:
     assert result.action in {PromotionAction.KEEP_STAGED, PromotionAction.REJECT}
     assert result.conflict_with_memory_ids == ["mem:user:1"]
     assert result.reason_codes == [PromotionReasonCode.POSSIBLE_CONFLICT_WITH_COMMITTED_MEMORY]
+
+
+def test_projection_from_same_source_is_not_independent_conflict_evidence() -> None:
+    plane = MemoryPlaneService()
+    source_record_id = "tx:write:user-preference"
+    plane.stage_record(
+        CanonicalMemoryRecord(
+            memory_id="mem:evolution:claim:user-preference",
+            domain=MemoryDomain.USER,
+            text="ent:user preference is concise bullet points",
+            content={"memory_evolution_kind": "claim_state"},
+            status=CommitStatus.COMMITTED,
+            source_kind="memory_evolution",
+            task_id="task:1",
+            source_record_ids=[source_record_id],
+        )
+    )
+    candidate = _candidate(
+        memory_id="cand:user:preference",
+        domain=MemoryDomain.USER,
+        text="user prefers concise bullet points",
+        source_kind="provider:memory_write_user",
+    ).model_copy(update={"source_record_ids": [source_record_id]})
+    plane.stage_record(candidate)
+
+    service = PromotionService(
+        context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+        execution_policy=RuleBasedPromotionExecutionPolicy(),
+        executor=PromotionExecutor(memory_plane=plane),
+    )
+
+    result = service.promote_candidate(candidate.memory_id)
+
+    assert result.action == PromotionAction.COMMIT
+    assert result.conflict_with_memory_ids == []
+    assert result.reason_codes == [PromotionReasonCode.USER_EXPLICIT_WRITE_SAFE]
 
 
 def test_promoted_memory_is_visible_through_provider_prefetch_trace() -> None:
@@ -187,8 +250,8 @@ def test_promoted_memory_is_visible_through_provider_prefetch_trace() -> None:
     )
 
     promotion = PromotionService(
-        context_builder=PromotionContextBuilder(memory_plane=plane),
-        decider=RuleBasedPromotionDecider(),
+        context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+        execution_policy=RuleBasedPromotionExecutionPolicy(),
         executor=PromotionExecutor(memory_plane=plane),
     )
     result = promotion.promote_candidate(candidate.memory_id)
@@ -219,6 +282,7 @@ def test_provider_staged_learning_candidate_uses_natural_source_kind_for_promoti
         user_id="user:learning",
         action="upsert",
         target="user",
+        operation_id="test:promotion:natural-source-kind",
     )
     assert staged.candidate_ids
     candidate_id = staged.candidate_ids[0]
@@ -227,8 +291,8 @@ def test_provider_staged_learning_candidate_uses_natural_source_kind_for_promoti
     assert candidate.source_kind == "provider:memory_write_user"
 
     promotion = PromotionService(
-        context_builder=PromotionContextBuilder(memory_plane=plane),
-        decider=RuleBasedPromotionDecider(),
+        context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+        execution_policy=RuleBasedPromotionExecutionPolicy(),
         executor=PromotionExecutor(memory_plane=plane),
     )
     result = promotion.promote_candidate(candidate_id)
@@ -236,18 +300,18 @@ def test_provider_staged_learning_candidate_uses_natural_source_kind_for_promoti
 
 
 def test_promotion_decider_factory_builds_rule_based_v1() -> None:
-    decider = build_promotion_decider("rule_based_v1")
-    assert isinstance(decider, RuleBasedPromotionDecider)
+    decider = build_promotion_execution_policy("rule_based_v1")
+    assert isinstance(decider, RuleBasedPromotionExecutionPolicy)
 
 
-def test_promotion_decider_factory_rejects_unsupported_kind() -> None:
+def test_promotion_execution_policy_factory_rejects_unsupported_kind() -> None:
     try:
-        build_promotion_decider("unknown_v99")
+        build_promotion_execution_policy("unknown_v99")
     except ValueError as exc:
         message = str(exc)
     else:
-        raise AssertionError("expected unsupported decider kind to raise ValueError")
-    assert "unsupported promotion decider kind" in message
+        raise AssertionError("expected unsupported execution policy to raise ValueError")
+    assert "unsupported promotion execution policy" in message
     assert "rule_based_v1" in message
 
 
@@ -268,8 +332,8 @@ def test_promote_candidates_exposes_structured_observability_counts() -> None:
     plane.stage_record(semantic_candidate)
     plane.stage_record(episodic_candidate)
     service = PromotionService(
-        context_builder=PromotionContextBuilder(memory_plane=plane),
-        decider=RuleBasedPromotionDecider(),
+        context_builder=PromotionExecutionContextBuilder(memory_plane=plane),
+        execution_policy=RuleBasedPromotionExecutionPolicy(),
         executor=PromotionExecutor(memory_plane=plane),
     )
 

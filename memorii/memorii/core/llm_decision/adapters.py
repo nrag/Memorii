@@ -1,16 +1,22 @@
 from __future__ import annotations
 
-from memorii.core.belief.models import BeliefUpdateContext
+from memorii.core.belief.models import BeliefUpdateContext, BeliefUpdateOutput
 from memorii.core.grounding.models import (
     AnswerVerificationContext,
+    AnswerVerificationOutput,
     EvidenceSelectionContext,
+    EvidenceSelectionDecision,
+    EvidenceSelectionOutput,
     GroundedAnswerContext,
+    GroundedAnswerDecision,
+    GroundedAnswerOutput,
 )
-from memorii.core.llm_judge.models import JudgeDimension, JudgeRubric
+from memorii.core.llm_judge.models import JudgeDecisionOutput, JudgeDimension, JudgeRubric
 from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.promotion.models import PromotionContext
+from memorii.core.promotion.assessment import PromotionAssessmentContext, PromotionAssessmentOutput
 from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.runtime_manifest import PromptOwner
 
 _DEFAULT_JUDGE_PROMPTS: dict[JudgeDimension, str] = {
     JudgeDimension.PROMOTION_PRECISION: "judges/promotion_precision:v1",
@@ -25,7 +31,9 @@ def default_judge_prompt_refs() -> dict[JudgeDimension, str]:
     return dict(_DEFAULT_JUDGE_PROMPTS)
 
 
-class LLMPromotionDecisionAdapter:
+class LLMPromotionAssessmentAdapter:
+    output_model = PromotionAssessmentOutput
+
     def __init__(
         self,
         *,
@@ -39,17 +47,29 @@ class LLMPromotionDecisionAdapter:
 
     def decide(
         self,
-        context: PromotionContext,
+        context: PromotionAssessmentContext,
         *,
         request_id: str,
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
-        variables = {"context_json": context.model_dump(mode="json"), "candidate_summary": context.content}
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+        contract = self._registry.load(
+            self._prompt_ref,
+            owner=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
+            output_model=self.output_model,
+        )
+        variables = {"context_json": context.prompt_payload(), "candidate_summary": context.content}
+        return self._runner.run(
+            contract=contract,
+            variables=variables,
+            request_id=request_id,
+            metadata=metadata,
+            output_model=self.output_model,
+        )
 
 
 class LLMBeliefUpdateAdapter:
+    output_model = BeliefUpdateOutput
+
     def __init__(
         self,
         *,
@@ -68,153 +88,25 @@ class LLMBeliefUpdateAdapter:
         request_id: str,
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
-        variables = {"context_json": context.model_dump(mode="json"), "prior_belief": context.prior_belief}
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
-
-
-class LLMLifecycleDecisionAdapter:
-    def __init__(
-        self,
-        *,
-        runner: PromptLLMRunner,
-        registry: PromptRegistry,
-        prompt_ref: str = "lifecycle_decision:v1",
-    ) -> None:
-        self._runner = runner
-        self._registry = registry
-        self._prompt_ref = prompt_ref
-
-    def decide(
-        self,
-        context: object,
-        *,
-        request_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
-        context_json = context.model_dump(mode="json")  # type: ignore[attr-defined]
-        variables = {"context_json": context_json, "query": str(context_json.get("query", ""))}
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
-
-
-class LLMExecutionGraphDecisionAdapter:
-    def __init__(
-        self,
-        *,
-        runner: PromptLLMRunner,
-        registry: PromptRegistry,
-        prompt_ref: str = "execution_graph_decision:v1",
-    ) -> None:
-        self._runner = runner
-        self._registry = registry
-        self._prompt_ref = prompt_ref
-
-    def decide(
-        self,
-        context: object,
-        *,
-        request_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
-        context_json = context.model_dump(mode="json")  # type: ignore[attr-defined]
-        variables = {
-            "context_json": context_json,
-            "task": str(context_json.get("task", "")),
-        }
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
-
-
-class LLMMemoryEvolutionDecisionAdapter:
-    def __init__(
-        self,
-        *,
-        runner: PromptLLMRunner,
-        registry: PromptRegistry,
-        prompt_ref: str = "memory_evolution_decision:v1",
-    ) -> None:
-        self._runner = runner
-        self._registry = registry
-        self._prompt_ref = prompt_ref
-
-    def decide(
-        self,
-        context: object,
-        *,
-        request_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
-        context_json = context.model_dump(mode="json")  # type: ignore[attr-defined]
-        checkpoint = context_json.get("checkpoint", {})
-        query = str(checkpoint.get("query_or_task", "")) if isinstance(checkpoint, dict) else ""
-        variables = {
-            "context_json": context_json,
-            "query": query,
-        }
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
-
-
-class LLMMemoryEvolutionSimReconstructionAdapter:
-    def __init__(
-        self,
-        *,
-        runner: PromptLLMRunner,
-        registry: PromptRegistry,
-        prompt_ref: str = "memory_evolution_sim_reconstruction:v1",
-    ) -> None:
-        self._runner = runner
-        self._registry = registry
-        self._prompt_ref = prompt_ref
-
-    def decide(
-        self,
-        context: object,
-        *,
-        request_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
-        context_json = context.model_dump(mode="json")  # type: ignore[attr-defined]
-        checkpoint = context_json.get("checkpoint", {})
-        query = str(checkpoint.get("query_or_task", "")) if isinstance(checkpoint, dict) else ""
-        variables = {
-            "context_json": context_json,
-            "query": query,
-        }
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
-
-
-class LLMRetrievalRelevanceDecisionAdapter:
-    def __init__(
-        self,
-        *,
-        runner: PromptLLMRunner,
-        registry: PromptRegistry,
-        prompt_ref: str = "retrieval_relevance:v1",
-    ) -> None:
-        self._runner = runner
-        self._registry = registry
-        self._prompt_ref = prompt_ref
-
-    def decide(
-        self,
-        context: object,
-        *,
-        request_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
-        context_json = context.model_dump(mode="json")  # type: ignore[attr-defined]
-        variables = {
-            "context_json": context_json,
-            "query": str(context_json.get("query", "")),
-        }
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+        contract = self._registry.load(
+            self._prompt_ref,
+            owner=PromptOwner.LLM_BELIEF_UPDATE_ADAPTER,
+            output_model=self.output_model,
+        )
+        variables: dict[str, object] = {"context_json": context.prompt_payload()}
+        return self._runner.run(
+            contract=contract,
+            variables=variables,
+            request_id=request_id,
+            metadata=metadata,
+            output_model=self.output_model,
+        )
 
 
 class LLMEvidenceSelectionAdapter:
+    output_model = EvidenceSelectionOutput
+    semantic_model = EvidenceSelectionDecision
+
     def __init__(
         self,
         *,
@@ -233,15 +125,29 @@ class LLMEvidenceSelectionAdapter:
         request_id: str,
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
+        contract = self._registry.load(
+            self._prompt_ref,
+            owner=PromptOwner.LLM_EVIDENCE_SELECTION_ADAPTER,
+            output_model=self.output_model,
+        )
         variables = {
             "context_json": context.model_dump(mode="json"),
             "query": context.query,
         }
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+        return self._runner.run(
+            contract=contract,
+            variables=variables,
+            request_id=request_id,
+            metadata=metadata,
+            output_model=self.output_model,
+            semantic_model=self.semantic_model,
+        )
 
 
 class LLMGroundedAnswerAdapter:
+    output_model = GroundedAnswerOutput
+    semantic_model = GroundedAnswerDecision
+
     def __init__(
         self,
         *,
@@ -260,15 +166,28 @@ class LLMGroundedAnswerAdapter:
         request_id: str,
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
+        contract = self._registry.load(
+            self._prompt_ref,
+            owner=PromptOwner.LLM_GROUNDED_ANSWER_ADAPTER,
+            output_model=self.output_model,
+        )
         variables = {
             "context_json": context.model_dump(mode="json"),
             "query": context.query,
         }
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+        return self._runner.run(
+            contract=contract,
+            variables=variables,
+            request_id=request_id,
+            metadata=metadata,
+            output_model=self.output_model,
+            semantic_model=self.semantic_model,
+        )
 
 
 class LLMAnswerVerificationAdapter:
+    output_model = AnswerVerificationOutput
+
     def __init__(
         self,
         *,
@@ -287,43 +206,27 @@ class LLMAnswerVerificationAdapter:
         request_id: str,
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
+        contract = self._registry.load(
+            self._prompt_ref,
+            owner=PromptOwner.LLM_ANSWER_VERIFICATION_ADAPTER,
+            output_model=self.output_model,
+        )
         variables = {
             "context_json": context.model_dump(mode="json"),
             "query": context.query,
         }
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
-
-
-class LLMHotpotQAAnswerAdapter:
-    def __init__(
-        self,
-        *,
-        runner: PromptLLMRunner,
-        registry: PromptRegistry,
-        prompt_ref: str = "hotpotqa_answer:v1",
-    ) -> None:
-        self._runner = runner
-        self._registry = registry
-        self._prompt_ref = prompt_ref
-
-    def decide(
-        self,
-        context: object,
-        *,
-        request_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> LLMDecisionResult:
-        contract = self._registry.load(self._prompt_ref)
-        context_json = context.model_dump(mode="json")  # type: ignore[attr-defined]
-        variables = {
-            "context_json": context_json,
-            "question": str(context_json.get("question", "")),
-        }
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+        return self._runner.run(
+            contract=contract,
+            variables=variables,
+            request_id=request_id,
+            metadata=metadata,
+            output_model=self.output_model,
+        )
 
 
 class LLMJudgeDecisionAdapter:
+    output_model = JudgeDecisionOutput
+
     def __init__(
         self,
         *,
@@ -346,6 +249,16 @@ class LLMJudgeDecisionAdapter:
         prompt_ref = self._prompt_ref_by_dimension.get(rubric.dimension)
         if prompt_ref is None:
             raise ValueError(f"Unsupported judge dimension mapping: {rubric.dimension.value}")
-        contract = self._registry.load(prompt_ref)
+        contract = self._registry.load(
+            prompt_ref,
+            owner=PromptOwner.LLM_JUDGE_DECISION_ADAPTER,
+            output_model=self.output_model,
+        )
         variables = {"rubric_json": rubric.model_dump(mode="json"), "input_payload": input_payload}
-        return self._runner.run(contract=contract, variables=variables, request_id=request_id, metadata=metadata)
+        return self._runner.run(
+            contract=contract,
+            variables=variables,
+            request_id=request_id,
+            metadata=metadata,
+            output_model=self.output_model,
+        )

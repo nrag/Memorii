@@ -11,6 +11,7 @@ from datetime import (
 from pathlib import Path
 from typing import cast
 
+from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.execution_graph_decision import (
     ExecutionGraphScenario,
     execution_graph_assertion_passed,
@@ -20,6 +21,7 @@ from memorii.core.benchmark.execution_graph_decision import (
     rule_execution_graph_decision_for_scenario,
 )
 from memorii.core.benchmark.fixture_sets.execution_graph_v1 import load_execution_graph_v1_fixture_set
+from memorii.core.benchmark.llm_adapters import LLMExecutionGraphDecisionAdapter
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import build_run_id
 from memorii.core.env_config import load_memorii_environment
@@ -29,16 +31,18 @@ from memorii.core.llm_config import (
     LLMLiveTestConfig,
     LLMRuntimeConfig,
 )
-from memorii.core.llm_decision.adapters import LLMExecutionGraphDecisionAdapter
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
-from memorii.tools.benchmark_suites.artifact_io import _write_jsonl
-from memorii.tools.benchmark_suites.common import ALL_DECISION_MODES, require_memorii_only
-from memorii.tools.benchmark_suites.fake_adapters import _ExpectedExecutionGraphFakeAdapter
+from memorii.tools.benchmark_suites.artifact_io import write_jsonl
+from memorii.tools.benchmark_suites.common import (
+    ALL_DECISION_MODES,
+    require_memorii_only,
+)
+from memorii.tools.benchmark_suites.fake_adapters import ExpectedExecutionGraphFakeAdapter
 from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
-from memorii.tools.run_live_llm_eval import _validate_live_safety
+from memorii.tools.run_live_llm_eval import validate_live_safety
 
 SUITE_NAME = "execution_graph_v1"
 
@@ -73,10 +77,14 @@ def _run_execution_graph_transitions(
         if mode != "auto"
         else LLMDecisionRuntimeConfig.from_env(env_snapshot.env)
     )
-    effective_mode = decision_config.resolve(runtime_config)
+    effective_mode = resolve_benchmark_decision_mode(
+        decision_config=decision_config,
+        runtime_config=runtime_config,
+        dry_run=dry_run,
+    )
     if effective_mode in {"llm", "hybrid"}:
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
-        _validate_live_safety(
+        validate_live_safety(
             modes=[effective_mode],
             dry_run=dry_run,
             allow_live=allow_live,
@@ -86,12 +94,13 @@ def _run_execution_graph_transitions(
 
     registry = PromptRegistry(prompt_root=prompt_root)
     adapter = None
+    llm_binding = None
     if effective_mode in {"llm", "hybrid"}:
-        client = dependencies.eval_fake_client_cls() if dry_run else dependencies.llm_client_factory.from_config(runtime_config)
-        runner = PromptLLMRunner(client=client, config=runtime_config)
+        llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
+        runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
         adapter = (
-            _ExpectedExecutionGraphFakeAdapter(scenarios=scenarios, registry=registry)
-            if dry_run and dependencies.is_default_fake_client()
+            ExpectedExecutionGraphFakeAdapter(scenarios=scenarios, registry=registry)
+            if dependencies.use_oracle_adapters(dry_run=dry_run)
             else LLMExecutionGraphDecisionAdapter(runner=runner, registry=registry)
         )
 
@@ -132,10 +141,12 @@ def _run_execution_graph_transitions(
                 mode=LLMDecisionMode(effective_mode),
                 rule_output=rule_output,
             )
-            if effective_mode == "llm" and not llm_success:
-                final_output_source = "llm"
+            if llm_success:
+                if llm_binding is None:
+                    raise RuntimeError("LLM result is missing execution provenance")
+                final_output_source = llm_binding.final_output_source
             else:
-                final_output_source = "rule" if not llm_success else "llm"
+                final_output_source = "rule"
             llm_rows.append(
                 {
                     "scenario_id": scenario.scenario_id,
@@ -218,9 +229,9 @@ def _write_execution_graph_artifacts(
         json.dumps({"suite": suite, "mode": mode, "baseline": "memorii"}, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    _write_jsonl(run_dir / "execution_graph_traces.jsonl", rows)
-    _write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
-    _write_jsonl(run_dir / "failures.jsonl", [row for row in rows if row["success"] is False])
+    write_jsonl(run_dir / "execution_graph_traces.jsonl", rows)
+    write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
+    write_jsonl(run_dir / "failures.jsonl", [row for row in rows if row["success"] is False])
     return run_dir
 
 def _print_execution_graph_summary(

@@ -10,10 +10,10 @@ from memorii.core.llm_decision.models import (
     LLMDecisionTrace,
 )
 from memorii.core.llm_decision.provider import DisabledLLMDecisionProvider
-from memorii.core.promotion.hybrid_provider import HybridPromotionDecisionProvider
-from memorii.core.promotion.llm_provider import LLMPromotionDecisionProvider
-from memorii.core.promotion.models import PromotionCandidateType, PromotionContext
-from memorii.core.promotion.rule_provider import RuleBasedPromotionDecisionProvider
+from memorii.core.promotion.assessment import PromotionAssessmentContext, PromotionCandidateType
+from memorii.core.promotion.hybrid_provider import HybridPromotionAssessmentProvider
+from memorii.core.promotion.llm_provider import LLMPromotionAssessmentProvider
+from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
 from pydantic import ValidationError
 
 
@@ -42,7 +42,7 @@ class FakeLLMProvider:
         )
 
 
-def _context(**overrides: object) -> PromotionContext:
+def _context(**overrides: object) -> PromotionAssessmentContext:
     base: dict[str, object] = {
         "candidate_id": "cand:1",
         "candidate_type": PromotionCandidateType.EPISODIC,
@@ -50,24 +50,24 @@ def _context(**overrides: object) -> PromotionContext:
         "created_from": "observation",
     }
     base.update(overrides)
-    return PromotionContext.model_validate(base)
+    return PromotionAssessmentContext.model_validate(base)
 
 
 def test_decision_finalized_always_promotes() -> None:
-    provider = RuleBasedPromotionDecisionProvider()
+    provider = RuleBasedPromotionAssessmentProvider()
     decision, _ = provider.decide(context=_context(created_from="decision_finalized"))
     assert decision.promote is True
     assert decision.rationale == "decision_finalized"
 
 
 def test_task_outcome_promotes() -> None:
-    provider = RuleBasedPromotionDecisionProvider()
+    provider = RuleBasedPromotionAssessmentProvider()
     decision, _ = provider.decide(context=_context(created_from="task_outcome"))
     assert decision.promote is True
 
 
 def test_explicit_user_memory_promotes() -> None:
-    provider = RuleBasedPromotionDecisionProvider()
+    provider = RuleBasedPromotionAssessmentProvider()
     decision, _ = provider.decide(
         context=_context(
             candidate_type=PromotionCandidateType.USER_MEMORY,
@@ -79,7 +79,7 @@ def test_explicit_user_memory_promotes() -> None:
 
 
 def test_repeated_across_episodes_promotes() -> None:
-    provider = RuleBasedPromotionDecisionProvider()
+    provider = RuleBasedPromotionAssessmentProvider()
     decision, _ = provider.decide(
         context=_context(
             candidate_type=PromotionCandidateType.SEMANTIC,
@@ -91,21 +91,21 @@ def test_repeated_across_episodes_promotes() -> None:
 
 
 def test_observation_alone_not_promoted() -> None:
-    provider = RuleBasedPromotionDecisionProvider()
+    provider = RuleBasedPromotionAssessmentProvider()
     decision, _ = provider.decide(context=_context(created_from="observation"))
     assert decision.promote is False
     assert decision.rationale == "observation_not_promoted"
 
 
 def test_llm_provider_with_disabled_provider_falls_back_safely() -> None:
-    provider = LLMPromotionDecisionProvider(llm_provider=DisabledLLMDecisionProvider())
+    provider = LLMPromotionAssessmentProvider(llm_provider=DisabledLLMDecisionProvider())
     decision, trace = provider.decide(context=_context())
     assert decision.promote is False
     assert trace.fallback_used is True
 
 
 def test_malformed_llm_output_falls_back_to_rule_provider() -> None:
-    provider = LLMPromotionDecisionProvider(llm_provider=FakeLLMProvider(final_output={"promote": "not_bool"}))
+    provider = LLMPromotionAssessmentProvider(llm_provider=FakeLLMProvider(final_output={"promote": "not_bool"}))
     decision, trace = provider.decide(context=_context())
     assert decision.promote is False
     assert trace.status == LLMDecisionStatus.VALIDATION_FAILED
@@ -113,7 +113,7 @@ def test_malformed_llm_output_falls_back_to_rule_provider() -> None:
 
 def test_hybrid_skips_llm_for_strong_rule_decision() -> None:
     fake_llm = FakeLLMProvider(final_output={"promote": False, "confidence": 0.2, "rationale": "llm"})
-    hybrid = HybridPromotionDecisionProvider(llm_provider=LLMPromotionDecisionProvider(llm_provider=fake_llm))
+    hybrid = HybridPromotionAssessmentProvider(llm_provider=LLMPromotionAssessmentProvider(llm_provider=fake_llm))
 
     decision, _ = hybrid.decide(
         context=_context(
@@ -131,10 +131,13 @@ def test_hybrid_uses_llm_for_weak_rule_decision() -> None:
             "promote": True,
             "target_plane": "semantic",
             "confidence": 0.88,
+            "reason_code": "repeated_across_episodes",
             "rationale": "llm_override",
+            "failure_mode": None,
+            "requires_judge_review": False,
         }
     )
-    hybrid = HybridPromotionDecisionProvider(llm_provider=LLMPromotionDecisionProvider(llm_provider=fake_llm))
+    hybrid = HybridPromotionAssessmentProvider(llm_provider=LLMPromotionAssessmentProvider(llm_provider=fake_llm))
 
     decision, trace = hybrid.decide(context=_context(candidate_type=PromotionCandidateType.SEMANTIC))
     assert decision.promote is True
@@ -142,14 +145,34 @@ def test_hybrid_uses_llm_for_weak_rule_decision() -> None:
     assert fake_llm.calls == 1
 
 
+def test_schema_complete_llm_output_reaches_domain_without_fallback() -> None:
+    output = {
+        "promote": False,
+        "target_plane": None,
+        "confidence": 0.35,
+        "reason_code": "observation_not_promoted",
+        "rationale": "A single observation is not durable memory.",
+        "failure_mode": "insufficient_repetition",
+        "requires_judge_review": False,
+    }
+    decision, trace = LLMPromotionAssessmentProvider(
+        llm_provider=FakeLLMProvider(final_output=output)
+    ).decide(context=_context())
+
+    assert trace.status == LLMDecisionStatus.SUCCEEDED
+    assert trace.fallback_used is False
+    assert decision.reason_code == "observation_not_promoted"
+    assert decision.failure_mode == "insufficient_repetition"
+
+
 def test_trace_always_returned() -> None:
-    decision, trace = RuleBasedPromotionDecisionProvider().decide(context=_context())
+    decision, trace = RuleBasedPromotionAssessmentProvider().decide(context=_context())
     assert decision.trace_id == trace.trace_id
 
 
 def test_strict_model_validation_works() -> None:
     with pytest.raises(ValidationError):
-        PromotionContext(
+        PromotionAssessmentContext(
             candidate_id="cand:strict",
             candidate_type=PromotionCandidateType.EPISODIC,
             content="x",

@@ -1,4 +1,5 @@
-from memorii.core.solver import SolverDecision, update_solver_belief
+from memorii.core.solver.abstention import SolverDecision
+from memorii.core.solver.belief import update_solver_belief
 
 
 def test_supported_with_evidence_increases_from_default_prior() -> None:
