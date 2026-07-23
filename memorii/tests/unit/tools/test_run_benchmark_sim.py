@@ -173,7 +173,7 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     assert first_trace["provider_attempt_status"] == "succeeded"
     assert first_trace["semantic_validation_status"] == "passed"
     assert first_trace["fallback_outcome"] == "not_used"
-    assert first_trace["primary_output_accepted"] is True
+    assert first_trace["final_output_accepted"] is True
     assert "output_accepted" not in first_trace
     assert "success" not in first_trace
     assert "fallback_used" not in first_trace

@@ -13,9 +13,9 @@ from memorii.core.benchmark.execution_graph_decision import (
 from memorii.core.benchmark.hotpotqa_official import HotpotQAAnswerContext, HotpotQAAnswerOutput
 from memorii.core.benchmark.lifecycle_decision import LifecycleDecisionContext, LifecycleDecisionOutput
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
-    MemoryEvolutionDecision,
     MemoryEvolutionDecisionContext,
-    MemoryEvolutionDecisionOutput,
+    MemoryEvolutionSemanticDecision,
+    MemoryEvolutionSemanticDecisionOutput,
 )
 from memorii.core.benchmark.memory_evolution_sim.closed_world_schema import (
     constrain_string_array_fields,
@@ -23,11 +23,8 @@ from memorii.core.benchmark.memory_evolution_sim.closed_world_schema import (
 )
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
-    SimProviderOutput,
-    SimSystemOutput,
-)
-from memorii.core.benchmark.memory_evolution_sim.visible_output_validation import (
-    validate_visible_sim_output,
+    SimSemanticDecision,
+    SimSemanticDecisionOutput,
 )
 from memorii.core.benchmark.retrieval_relevance_decision import (
     RetrievalRelevanceContext,
@@ -37,7 +34,6 @@ from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.runtime_manifest import PromptOwner
-from memorii.core.prompts.sensitivity import redact_sensitive_value
 
 
 class _BenchmarkPromptAdapter:
@@ -135,8 +131,8 @@ class LLMExecutionGraphDecisionAdapter(_BenchmarkPromptAdapter):
 class LLMMemoryEvolutionDecisionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "memory_evolution_decision:v1"
     owner = PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER
-    output_model = MemoryEvolutionDecisionOutput
-    semantic_model = MemoryEvolutionDecision
+    output_model = MemoryEvolutionSemanticDecisionOutput
+    semantic_model = MemoryEvolutionSemanticDecision
 
     def decide(
         self,
@@ -158,7 +154,8 @@ class LLMMemoryEvolutionDecisionAdapter(_BenchmarkPromptAdapter):
 class LLMMemoryEvolutionSimReconstructionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "memory_evolution_sim_reconstruction:v1"
     owner = PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER
-    output_model = SimProviderOutput
+    output_model = SimSemanticDecisionOutput
+    semantic_model = SimSemanticDecision
 
     def decide(
         self,
@@ -168,43 +165,13 @@ class LLMMemoryEvolutionSimReconstructionAdapter(_BenchmarkPromptAdapter):
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
         context = MemoryEvolutionSimReconstructionContext.model_validate(context)
-        result = self._run(
+        return self._run(
             context=context,
             query_variable="query",
             query=context.checkpoint.query_or_task,
             request_id=request_id,
             metadata=metadata,
             output_id_constraints=sim_output_id_constraints(context),
-        )
-        if not result.success:
-            return result
-        output = SimSystemOutput.model_validate(result.output)
-        issues = validate_visible_sim_output(context=context, output=output)
-        if not issues:
-            return result.model_copy(
-                update={
-                    "response": result.response.model_copy(
-                        update={"semantic_valid": True}
-                    )
-                }
-            )
-        rejected_output = redact_sensitive_value(output.model_dump(mode="json"))
-        if not isinstance(rejected_output, dict):
-            raise TypeError("redacted simulator output must remain a mapping")
-        return result.model_copy(
-            update={
-                "response": result.response.model_copy(
-                    update={
-                        "semantic_valid": False,
-                        "error": "Visible simulator semantic validation failed",
-                    }
-                ),
-                "output": None,
-                "rejected_output": rejected_output,
-                "validation_issues": list(issues),
-                "success": False,
-                "failure_mode": "semantic_validation",
-            }
         )
 
 

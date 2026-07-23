@@ -305,8 +305,55 @@ class SimScenarioResultRow(FlatArtifactModel):
         return self
 
 
+class SemanticDecisionAttemptRow(FlatArtifactModel):
+    """Auditable outcome for one primary or bounded-repair provider call."""
+
+    attempt: int = Field(ge=0, le=1)
+    request_id: str
+    provider_attempt_status: ProviderAttemptStatus
+    semantic_validation_status: Literal["not_evaluated", "passed", "failed"]
+    accepted: bool
+    failure_mode: str | None = None
+    validation_issues: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_attempt(self) -> SemanticDecisionAttemptRow:
+        provider_succeeded = self.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
+        if provider_succeeded != (self.semantic_validation_status in {"passed", "failed"}):
+            raise ValueError("semantic validation must be evaluated exactly after provider success")
+        if self.accepted != (provider_succeeded and self.semantic_validation_status == "passed"):
+            raise ValueError("attempt acceptance must require provider and semantic success")
+        if self.accepted and (self.failure_mode is not None or self.validation_issues):
+            raise ValueError("accepted attempts cannot report failures")
+        if not self.accepted and not self.failure_mode:
+            raise ValueError("rejected attempts require a failure mode")
+        return self
+
+
+def _validate_semantic_attempt_summary(
+    *,
+    attempts: list[SemanticDecisionAttemptRow],
+    provider_attempt_status: ProviderAttemptStatus,
+    semantic_validation_status: Literal["not_evaluated", "passed", "failed"],
+    accepted: bool,
+    failure_mode: str | None,
+) -> None:
+    expected_attempts = list(range(len(attempts)))
+    if [attempt.attempt for attempt in attempts] != expected_attempts:
+        raise ValueError("provider attempts must be contiguous and start at zero")
+    final_attempt = attempts[-1]
+    if final_attempt.provider_attempt_status != provider_attempt_status:
+        raise ValueError("final provider attempt status must match row status")
+    if final_attempt.semantic_validation_status != semantic_validation_status:
+        raise ValueError("final semantic validation status must match row status")
+    if final_attempt.accepted != accepted:
+        raise ValueError("final provider attempt acceptance must match row acceptance")
+    if final_attempt.failure_mode != failure_mode:
+        raise ValueError("final provider attempt failure mode must match row failure mode")
+
+
 class CuratedMemoryEvolutionLLMTraceRow(FlatArtifactModel):
-    """Typed primary-attempt outcome for one curated memory-evolution checkpoint."""
+    """Typed bounded-attempt outcome for one curated memory-evolution checkpoint."""
 
     scenario_id: str
     checkpoint_id: str
@@ -318,8 +365,9 @@ class CuratedMemoryEvolutionLLMTraceRow(FlatArtifactModel):
     provider_attempt_status: ProviderAttemptStatus
     semantic_validation_status: Literal["not_evaluated", "passed", "failed"]
     fallback_outcome: FallbackOutcome
-    primary_output_accepted: bool
+    final_output_accepted: bool
     failure_mode: str | None = None
+    provider_attempts: list[SemanticDecisionAttemptRow] = Field(min_length=1, max_length=2)
     output: MemoryEvolutionDecision
 
     @model_validator(mode="after")
@@ -328,19 +376,26 @@ class CuratedMemoryEvolutionLLMTraceRow(FlatArtifactModel):
         fallback_used = self.fallback_outcome != FallbackOutcome.NOT_USED
         if provider_succeeded != (self.semantic_validation_status in {"passed", "failed"}):
             raise ValueError("semantic validation must be evaluated exactly when provider transport succeeds")
-        if self.primary_output_accepted and (
+        if self.final_output_accepted and (
             not provider_succeeded
             or self.semantic_validation_status != "passed"
             or fallback_used
             or self.failure_mode is not None
         ):
             raise ValueError("accepted outputs require clean provider and semantic success")
-        if not self.primary_output_accepted and not self.failure_mode:
+        if not self.final_output_accepted and not self.failure_mode:
             raise ValueError("rejected outputs require a failure_mode")
         if fallback_used and self.final_output_source != "rule":
             raise ValueError("fallback traces must identify rule as the final output source")
-        if not fallback_used and not self.primary_output_accepted:
+        if not fallback_used and not self.final_output_accepted:
             raise ValueError("rejected curated outputs require an explicit fallback outcome")
+        _validate_semantic_attempt_summary(
+            attempts=self.provider_attempts,
+            provider_attempt_status=self.provider_attempt_status,
+            semantic_validation_status=self.semantic_validation_status,
+            accepted=self.final_output_accepted,
+            failure_mode=self.failure_mode,
+        )
         return self
 
 
@@ -357,8 +412,9 @@ class SimLLMTraceRow(FlatArtifactModel):
     provider_attempt_status: ProviderAttemptStatus
     semantic_validation_status: Literal["not_evaluated", "passed", "failed"]
     fallback_outcome: FallbackOutcome
-    primary_output_accepted: bool
+    final_output_accepted: bool
     failure_mode: str | None = None
+    provider_attempts: list[SemanticDecisionAttemptRow] = Field(min_length=1, max_length=2)
     output: SimSystemOutput
 
     @model_validator(mode="after")
@@ -367,14 +423,14 @@ class SimLLMTraceRow(FlatArtifactModel):
         fallback_used = self.fallback_outcome != FallbackOutcome.NOT_USED
         if provider_succeeded != (self.semantic_validation_status in {"passed", "failed"}):
             raise ValueError("semantic validation must be evaluated exactly when provider transport succeeds")
-        if self.primary_output_accepted and (
+        if self.final_output_accepted and (
             not provider_succeeded
             or self.semantic_validation_status != "passed"
             or fallback_used
             or self.failure_mode is not None
         ):
             raise ValueError("accepted outputs require clean provider and semantic success")
-        if not self.primary_output_accepted and not self.failure_mode:
+        if not self.final_output_accepted and not self.failure_mode:
             raise ValueError("rejected outputs require a failure_mode")
         if self.semantic_validation_status == "failed" and fallback_used:
             raise ValueError("semantic failures must remain visible instead of falling back")
@@ -382,6 +438,13 @@ class SimLLMTraceRow(FlatArtifactModel):
             raise ValueError("fallback traces must identify rule as the final output source")
         if self.fallback_outcome == FallbackOutcome.FAILED and self.final_output_source == "rule":
             raise ValueError("failed fallback cannot identify rule as a usable final source")
+        _validate_semantic_attempt_summary(
+            attempts=self.provider_attempts,
+            provider_attempt_status=self.provider_attempt_status,
+            semantic_validation_status=self.semantic_validation_status,
+            accepted=self.final_output_accepted,
+            failure_mode=self.failure_mode,
+        )
         return self
 
 

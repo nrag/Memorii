@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from memorii.core.benchmark.artifact_rows import SimLLMTraceRow
+from memorii.core.benchmark.artifact_rows import SemanticDecisionAttemptRow, SimLLMTraceRow
 from memorii.core.benchmark.memory_evolution_sim import SimSystemOutput
 from memorii.core.llm_decision.models import (
     LLMDecisionMode,
@@ -39,27 +39,38 @@ def _row(**updates: object) -> SimLLMTraceRow:
         "provider_attempt_status": ProviderAttemptStatus.SUCCEEDED,
         "semantic_validation_status": "passed",
         "fallback_outcome": FallbackOutcome.NOT_USED,
-        "primary_output_accepted": True,
+        "final_output_accepted": True,
         "failure_mode": None,
         "output": SimSystemOutput(operation="abstain", rationale="test"),
     }
     values.update(updates)
+    if "provider_attempts" not in updates:
+        values["provider_attempts"] = [
+            SemanticDecisionAttemptRow(
+                attempt=0,
+                request_id="request:test",
+                provider_attempt_status=values["provider_attempt_status"],
+                semantic_validation_status=values["semantic_validation_status"],
+                accepted=values["final_output_accepted"],
+                failure_mode=values["failure_mode"],
+            )
+        ]
     return SimLLMTraceRow.model_validate(values)
 
 
-def test_semantic_id_failure_remains_provider_success_without_fallback() -> None:
+def test_semantic_failure_remains_visible_without_fallback() -> None:
     row = _row(
         final_output_source="live_llm",
         trace=_trace(LLMDecisionStatus.VALIDATION_FAILED),
         semantic_validation_status="failed",
-        primary_output_accepted=False,
-        failure_mode="llm_output_referenced_invalid_ids",
+        final_output_accepted=False,
+        failure_mode="llm_semantic_validation_failed",
     )
 
     assert row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
     assert row.semantic_validation_status == "failed"
     assert row.fallback_outcome == FallbackOutcome.NOT_USED
-    assert row.primary_output_accepted is False
+    assert row.final_output_accepted is False
 
 
 @pytest.mark.parametrize(
@@ -79,7 +90,7 @@ def test_transport_failure_keeps_semantic_validation_not_evaluated(
         provider_attempt_status=provider_status,
         semantic_validation_status="not_evaluated",
         fallback_outcome=FallbackOutcome.SUCCEEDED,
-        primary_output_accepted=False,
+        final_output_accepted=False,
         failure_mode=provider_status.value,
     )
 
@@ -91,7 +102,16 @@ def test_outcome_contract_rejects_semantic_failure_masquerading_as_acceptance() 
     with pytest.raises(ValidationError, match="accepted outputs require"):
         _row(
             semantic_validation_status="failed",
-            primary_output_accepted=True,
+            final_output_accepted=True,
+            provider_attempts=[
+                SemanticDecisionAttemptRow(
+                    attempt=0,
+                    request_id="request:test",
+                    provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
+                    semantic_validation_status="passed",
+                    accepted=True,
+                )
+            ],
         )
 
 
@@ -103,6 +123,22 @@ def test_outcome_contract_rejects_fallback_with_live_final_source() -> None:
             provider_attempt_status=ProviderAttemptStatus.PROVIDER_ERROR,
             semantic_validation_status="not_evaluated",
             fallback_outcome=FallbackOutcome.SUCCEEDED,
-            primary_output_accepted=False,
+            final_output_accepted=False,
             failure_mode="provider_error",
+        )
+
+
+def test_outcome_contract_rejects_attempt_summary_disagreement() -> None:
+    with pytest.raises(ValidationError, match="final provider attempt status"):
+        _row(
+            provider_attempts=[
+                SemanticDecisionAttemptRow(
+                    attempt=0,
+                    request_id="request:test",
+                    provider_attempt_status=ProviderAttemptStatus.PROVIDER_ERROR,
+                    semantic_validation_status="not_evaluated",
+                    accepted=False,
+                    failure_mode="provider_error",
+                )
+            ]
         )

@@ -30,7 +30,12 @@ class PromptSemanticContract(StrEnum):
     NONE = "none"
     EVIDENCE_SELECTION = "memorii.core.grounding.models.EvidenceSelectionDecision"
     GROUNDED_ANSWER = "memorii.core.grounding.models.GroundedAnswerDecision"
-    MEMORY_EVOLUTION_DECISION = "memorii.core.benchmark.memory_evolution_decision.contracts.MemoryEvolutionDecision"
+    MEMORY_EVOLUTION_DECISION = (
+        "memorii.core.benchmark.memory_evolution_decision.contracts.MemoryEvolutionSemanticDecision"
+    )
+    MEMORY_EVOLUTION_SIM_DECISION = (
+        "memorii.core.benchmark.memory_evolution_sim.schemas.SimSemanticDecision"
+    )
     STRUCTURED_QUERY_ANALYSIS = "memorii.core.memory_evolution.temporal_contracts.TemporalInterpretationProposal"
 
 
@@ -140,7 +145,7 @@ def prompt_runtime_registrations() -> dict[str, PromptRuntimeRegistration]:
         _registration(
             "memory_evolution_sim_reconstruction:v1",
             PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER,
-            semantic_contract=PromptSemanticContract.NONE,
+            semantic_contract=PromptSemanticContract.MEMORY_EVOLUTION_SIM_DECISION,
             extra_forbidden=("excludedids",),
         ),
         _registration(

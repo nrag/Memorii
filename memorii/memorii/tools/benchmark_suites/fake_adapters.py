@@ -19,16 +19,16 @@ from memorii.core.benchmark.lifecycle_decision import (
 )
 from memorii.core.benchmark.memory_evolution_decision import (
     MemoryEvolutionDecisionContext,
-    MemoryEvolutionDecisionOutput,
     MemoryEvolutionScenario,
-    expected_memory_evolution_decision_for_checkpoint,
+    MemoryEvolutionSemanticDecisionOutput,
+    expected_memory_evolution_semantic_decision_for_checkpoint,
     fake_llm_result_for_memory_evolution,
 )
 from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
-    SimProviderOutput,
-    expected_sim_output_for_checkpoint,
+    SimSemanticDecisionOutput,
+    expected_sim_semantic_decision_for_checkpoint,
     fake_llm_result_for_memory_evolution_sim,
 )
 from memorii.core.benchmark.models import BenchmarkScenarioFixture
@@ -142,7 +142,7 @@ class ExpectedMemoryEvolutionFakeAdapter:
     def __init__(self, *, scenarios: list[MemoryEvolutionScenario], registry: PromptRegistry) -> None:
         self._registry = registry
         self._expected_by_key = {
-            (scenario.scenario_id, checkpoint.checkpoint_id): expected_memory_evolution_decision_for_checkpoint(
+            (scenario.scenario_id, checkpoint.checkpoint_id): expected_memory_evolution_semantic_decision_for_checkpoint(
                 scenario=scenario,
                 checkpoint=checkpoint,
             )
@@ -161,7 +161,7 @@ class ExpectedMemoryEvolutionFakeAdapter:
         contract = self._registry.load(
             "memory_evolution_decision:v1",
             owner=PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER,
-            output_model=MemoryEvolutionDecisionOutput,
+            output_model=MemoryEvolutionSemanticDecisionOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,
@@ -189,7 +189,7 @@ class ExpectedMemoryEvolutionSimFakeAdapter:
     def __init__(self, *, scenarios: list[LatentGraphScenario], registry: PromptRegistry) -> None:
         self._registry = registry
         self._expected_by_key = {
-            (scenario.scenario_id, checkpoint.checkpoint_id): expected_sim_output_for_checkpoint(checkpoint)
+            (scenario.scenario_id, checkpoint.checkpoint_id): expected_sim_semantic_decision_for_checkpoint(checkpoint)
             for scenario in scenarios
             for checkpoint in scenario.checkpoints
         }
@@ -204,7 +204,7 @@ class ExpectedMemoryEvolutionSimFakeAdapter:
         contract = self._registry.load(
             "memory_evolution_sim_reconstruction:v1",
             owner=PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER,
-            output_model=SimProviderOutput,
+            output_model=SimSemanticDecisionOutput,
         )
         request = LLMStructuredRequest(
             request_id=request_id,

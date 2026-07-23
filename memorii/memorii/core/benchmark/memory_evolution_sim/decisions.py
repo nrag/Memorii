@@ -9,19 +9,25 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
-from memorii.core.benchmark.memory_evolution_sim.output_validation import sim_output_allowed_id_errors
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
     OracleCheckpoint,
+    SimSemanticDecision,
     SimSystemOutput,
     SurfaceObservation,
+)
+from memorii.core.benchmark.memory_evolution_sim.semantic_pipeline import (
+    compile_sim_semantic_decision,
+    project_rejected_sim_semantic_decision,
+    render_sim_answer,
+    validate_sim_semantic_decision,
 )
 from memorii.core.benchmark.memory_evolution_sim.utils import extract_rule_answer, normalize_sim_text, ordered_unique
 from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
 from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest, LLMStructuredResponse
 from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
-from memorii.core.llm_validation import domain_validation_issue
+from memorii.core.llm_validation import LLMValidationIssue, LLMValidationStage
 
 
 def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSystemOutput:
@@ -81,8 +87,35 @@ def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSyste
     )
 
 
+def expected_sim_semantic_decision_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSemanticDecision:
+    """Oracle-backed fake-provider decision used only by deterministic dry runs."""
+
+    output = expected_sim_output_for_checkpoint(checkpoint)
+    return SimSemanticDecision(
+        operation=output.operation,
+        belief_ranking_ids=list(output.belief_ranking_ids),
+        selected_claim_ids=list(output.selected_claim_ids),
+        considered_claim_ids=ordered_unique(
+            [*output.selected_claim_ids, *output.rejected_claim_ids, *output.context_claim_ids]
+        ),
+        relevant_relation_ids=ordered_unique(
+            [
+                *output.selected_relation_ids,
+                *output.supporting_relation_ids,
+                *output.rejected_relation_ids,
+                *output.context_relation_ids,
+            ]
+        ),
+        answer=output.answer,
+        next_action=output.next_action,
+        uncertain_ids=list(output.uncertain_ids),
+        confidence=output.confidence,
+        rationale=output.rationale,
+    )
+
+
 def fake_llm_result_for_memory_evolution_sim(
-    *, request: LLMStructuredRequest, decision: SimSystemOutput, provider_name: str = "fake"
+    *, request: LLMStructuredRequest, decision: SimSemanticDecision, provider_name: str = "fake"
 ) -> LLMDecisionResult:
     output = decision.model_dump(mode="json")
     response = LLMStructuredResponse(
@@ -117,41 +150,21 @@ def memory_evolution_sim_engine_result_from_llm(
     *,
     result: LLMDecisionResult,
     mode: LLMDecisionMode,
-    scenario: LatentGraphScenario,
+    context: MemoryEvolutionSimReconstructionContext,
     rule_output: dict[str, object],
 ) -> tuple[dict[str, object], LLMDecisionTrace, bool, str | None]:
     if not result.success:
-        if (
-            result.failure_mode == "semantic_validation"
-            and result.rejected_output is not None
-        ):
-            rejected = SimSystemOutput.model_validate(result.rejected_output)
-            rejected_output = rejected.model_dump(mode="json")
-            trace = build_llm_decision_trace_from_result(
-                decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
-                mode=mode,
-                result=result,
-                final_output=rejected_output,
-                fallback_used=False,
-                status=LLMDecisionStatus.VALIDATION_FAILED,
-            )
-            return rejected_output, trace, False, "semantic_validation"
-        failure_status = (
-            LLMDecisionStatus.PROVIDER_ERROR
-            if result.failure_mode == "provider_error"
-            else LLMDecisionStatus.VALIDATION_FAILED
-        )
         trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
             mode=mode,
             result=result,
             final_output=rule_output,
             fallback_used=True,
-            status=failure_status,
+            status=LLMDecisionStatus.PROVIDER_ERROR,
         )
         return rule_output, trace, False, result.failure_mode or "llm_decision_failed"
     try:
-        decision = SimSystemOutput.model_validate(result.output)
+        semantic = SimSemanticDecision.model_validate(result.output)
     except ValidationError:
         trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
@@ -162,9 +175,17 @@ def memory_evolution_sim_engine_result_from_llm(
             status=LLMDecisionStatus.VALIDATION_FAILED,
         )
         return rule_output, trace, False, "llm_decision_validation_failed"
+    validation = validate_sim_semantic_decision(context=context, semantic=semantic)
+    decision = (
+        render_sim_answer(
+            output=compile_sim_semantic_decision(context=context, semantic=semantic),
+            semantic=semantic,
+        )
+        if validation.valid
+        else project_rejected_sim_semantic_decision(semantic)
+    )
     output = decision.model_dump(mode="json")
-    id_errors = sim_output_allowed_id_errors(scenario=scenario, output=decision)
-    status = LLMDecisionStatus.VALIDATION_FAILED if id_errors else LLMDecisionStatus.SUCCEEDED
+    status = LLMDecisionStatus.SUCCEEDED if validation.valid else LLMDecisionStatus.VALIDATION_FAILED
     trace = build_llm_decision_trace_from_result(
         decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
         mode=mode,
@@ -173,15 +194,16 @@ def memory_evolution_sim_engine_result_from_llm(
         fallback_used=False,
         status=status,
     )
-    if id_errors:
+    if not validation.valid:
         trace.validation_issues.extend(
-            domain_validation_issue(
-                error,
-                code=error.partition(":")[0],
+            LLMValidationIssue(
+                stage=LLMValidationStage.SEMANTIC,
+                code=code.value,
+                message=code.value.replace("_", " "),
             )
-            for error in id_errors
+            for code in validation.violation_codes
         )
-        return output, trace, False, "llm_output_referenced_invalid_ids"
+        return output, trace, False, "llm_semantic_validation_failed"
     return output, trace, True, None
 
 

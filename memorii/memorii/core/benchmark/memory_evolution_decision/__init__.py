@@ -22,7 +22,6 @@ from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionDecisionDiagnostics,
     MemoryEvolutionDecisionDomain,
     MemoryEvolutionDecisionOperation,
-    MemoryEvolutionDecisionOutput,
     MemoryEvolutionEntityResolutionCard,
     MemoryEvolutionEntityStateClaimCard,
     MemoryEvolutionEvent,
@@ -43,6 +42,11 @@ from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionScopeKind,
     MemoryEvolutionScopeMatchPolicy,
     MemoryEvolutionSelectedMemoryPolicy,
+    MemoryEvolutionSemanticBeliefScore,
+    MemoryEvolutionSemanticDecision,
+    MemoryEvolutionSemanticDecisionOutput,
+    MemoryEvolutionSemanticRepairRequest,
+    MemoryEvolutionSemanticTemporalFrame,
     MemoryEvolutionSourceType,
     MemoryEvolutionTemporalAnchorCard,
     MemoryEvolutionTemporalFrame,
@@ -55,6 +59,7 @@ from memorii.core.benchmark.memory_evolution_decision.contracts import (
 )
 from memorii.core.benchmark.memory_evolution_decision.decisions import (
     expected_memory_evolution_decision_for_checkpoint,
+    expected_memory_evolution_semantic_decision_for_checkpoint,
     memory_evolution_context_for_checkpoint,
     rule_memory_evolution_decision_for_checkpoint,
 )
@@ -64,6 +69,13 @@ from memorii.core.benchmark.memory_evolution_decision.diagnostics import (
 )
 from memorii.core.benchmark.memory_evolution_decision.policies import (
     visible_decision_contract as memory_evolution_visible_decision_contract,
+)
+from memorii.core.benchmark.memory_evolution_decision.semantic_pipeline import (
+    MemoryEvolutionSemanticValidation,
+    MemoryEvolutionSemanticViolationCode,
+    compile_memory_evolution_decision,
+    render_memory_evolution_answer,
+    validate_memory_evolution_semantic_decision,
 )
 
 __all__ = [
@@ -85,7 +97,6 @@ __all__ = [
     "MemoryEvolutionDecisionDomain",
     "MemoryEvolutionDecisionDiagnostics",
     "MemoryEvolutionDecisionOperation",
-    "MemoryEvolutionDecisionOutput",
     "MemoryEvolutionEntityResolutionCard",
     "MemoryEvolutionEntityStateClaimCard",
     "MemoryEvolutionEvent",
@@ -102,6 +113,13 @@ __all__ = [
     "MemoryEvolutionRecordLifecycleState",
     "MemoryEvolutionRetrievalContext",
     "MemoryEvolutionScenario",
+    "MemoryEvolutionSemanticBeliefScore",
+    "MemoryEvolutionSemanticDecision",
+    "MemoryEvolutionSemanticDecisionOutput",
+    "MemoryEvolutionSemanticRepairRequest",
+    "MemoryEvolutionSemanticTemporalFrame",
+    "MemoryEvolutionSemanticValidation",
+    "MemoryEvolutionSemanticViolationCode",
     "MemoryEvolutionScopeKeyPolicy",
     "MemoryEvolutionScopeKind",
     "MemoryEvolutionScopeMatchPolicy",
@@ -114,6 +132,7 @@ __all__ = [
     "MemoryEvolutionVisibleMemoryCard",
     "MemoryEvolutionWarningBucket",
     "expected_memory_evolution_decision_for_checkpoint",
+    "expected_memory_evolution_semantic_decision_for_checkpoint",
     "fake_llm_result_for_memory_evolution",
     "memory_evolution_assertion_passed",
     "memory_evolution_visible_decision_contract",
@@ -121,5 +140,8 @@ __all__ = [
     "memory_evolution_decision_diagnostics",
     "memory_evolution_engine_result_from_llm",
     "memory_evolution_trace_for_rule",
+    "compile_memory_evolution_decision",
+    "render_memory_evolution_answer",
+    "validate_memory_evolution_semantic_decision",
     "rule_memory_evolution_decision_for_checkpoint",
 ]

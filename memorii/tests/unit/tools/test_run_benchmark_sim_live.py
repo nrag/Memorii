@@ -23,27 +23,16 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
         def complete_structured(self, request: LLMStructuredRequest, *, config: LLMRuntimeConfig) -> LLMStructuredResponse:
             del config
             output = {
-                "operation": "answer",
+                "operation": "abstain",
                 "belief_ranking_ids": [],
-                "selected_entity_ids": [],
                 "selected_claim_ids": [],
-                "selected_relation_ids": [],
-                "supporting_claim_ids": [],
-                "supporting_relation_ids": [],
-                "supporting_citation_event_ids": [],
-                "rejected_entity_ids": [],
-                "rejected_claim_ids": [],
-                "rejected_relation_ids": [],
-                "rejection_citation_event_ids": [],
-                "context_entity_ids": [],
-                "context_claim_ids": [],
-                "context_relation_ids": [],
-                "context_citation_event_ids": [],
-                "answer": "not the oracle answer",
+                "considered_claim_ids": [],
+                "relevant_relation_ids": [],
+                "answer": None,
                 "next_action": None,
                 "uncertain_ids": [],
                 "confidence": 0.5,
-                "rationale": "valid live-shaped response, intentionally not oracle",
+                "rationale": "valid semantic abstention, intentionally not oracle",
             }
             return LLMStructuredResponse(
                 request_id=request.request_id,
@@ -88,7 +77,7 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
 
     assert payload["final_output_source_counts"] == {"live_llm": payload["checkpoint_count"]}
     assert payload["failed"] > 0
-    assert rows[0]["output"]["answer"] == "not the oracle answer"
+    assert rows[0]["output"]["operation"] == "abstain"
     assert traces[0]["trace"]["input_payload"]["provider"] == "stub-live"
     assert traces[0]["trace"]["prompt_version"] == "memory_evolution_sim_reconstruction:v1"
 

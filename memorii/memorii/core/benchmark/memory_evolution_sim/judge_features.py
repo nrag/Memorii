@@ -113,10 +113,7 @@ def required_definition_claim_ids_for_checkpoint(
     in support even when nearby stale/wrong-entity evidence is rejected.
     """
 
-    if (
-        checkpoint.task_contract.definition_claim_placement
-        == "selected_and_supporting_required"
-    ):
+    if checkpoint.task_contract.definition_claim_placement == "selected_and_supporting_required":
         return required_definition_claim_ids_for_selected_claims(scenario, output)
     if checkpoint.checkpoint_type in {"entity_reconstruction", "claim_rekey"}:
         return required_definition_claim_ids_for_selected_claims(scenario, output)
@@ -192,7 +189,7 @@ def supporting_wrong_subject_claim_ids(
 
     if checkpoint.checkpoint_type != "entity_split_repair":
         return []
-    selected_subject_ids = set(
+    selected_subject_ids = set(output.selected_entity_ids) or set(
         required_selected_entity_ids_for_policy(
             scenario=scenario,
             checkpoint=checkpoint,

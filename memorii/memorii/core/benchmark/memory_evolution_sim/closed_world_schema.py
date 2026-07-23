@@ -12,29 +12,12 @@ from memorii.core.prompts.registry import (
     prompt_registration_digest,
 )
 
-_ENTITY_ID_FIELDS = (
-    "selected_entity_ids",
-    "rejected_entity_ids",
-    "context_entity_ids",
-)
 _CLAIM_ID_FIELDS = (
     "belief_ranking_ids",
     "selected_claim_ids",
-    "supporting_claim_ids",
-    "rejected_claim_ids",
-    "context_claim_ids",
+    "considered_claim_ids",
 )
-_RELATION_ID_FIELDS = (
-    "selected_relation_ids",
-    "supporting_relation_ids",
-    "rejected_relation_ids",
-    "context_relation_ids",
-)
-_EVENT_ID_FIELDS = (
-    "supporting_citation_event_ids",
-    "rejection_citation_event_ids",
-    "context_citation_event_ids",
-)
+_RELATION_ID_FIELDS = ("relevant_relation_ids",)
 
 
 def sim_output_id_constraints(
@@ -48,10 +31,8 @@ def sim_output_id_constraints(
     event_ids = tuple(sorted({event.event_id for event in context.visible_events}))
     all_visible_ids = tuple(sorted({*entity_ids, *claim_ids, *relation_ids, *event_ids}))
     return {
-        **{field_name: entity_ids for field_name in _ENTITY_ID_FIELDS},
         **{field_name: claim_ids for field_name in _CLAIM_ID_FIELDS},
         **{field_name: relation_ids for field_name in _RELATION_ID_FIELDS},
-        **{field_name: event_ids for field_name in _EVENT_ID_FIELDS},
         "uncertain_ids": all_visible_ids,
     }
 

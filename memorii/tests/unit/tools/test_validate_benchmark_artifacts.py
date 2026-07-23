@@ -232,7 +232,7 @@ def test_validate_reports_accepts_curated_memory_evolution_dry_run(tmp_path: Pat
     ) == []
 
 
-def test_validate_reports_rejects_curated_primary_acceptance_tampering(tmp_path: Path) -> None:
+def test_validate_reports_rejects_curated_final_acceptance_tampering(tmp_path: Path) -> None:
     assert (
         main(
             [
@@ -250,7 +250,7 @@ def test_validate_reports_rejects_curated_primary_acceptance_tampering(tmp_path:
     root = tmp_path / "benchmark_runs"
     report_path = next(root.glob("memory_evolution_v1/hybrid/bench-*/report.json"))
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    report["primary_outputs_accepted"] -= 1
+    report["final_outputs_accepted"] -= 1
     report_path.write_text(json.dumps(report), encoding="utf-8")
     (report_path.parent / "memory_evolution_report.json").write_text(
         json.dumps(report),
@@ -260,7 +260,7 @@ def test_validate_reports_rejects_curated_primary_acceptance_tampering(tmp_path:
     errors = validate_reports(root, suite="memory_evolution_v1")
 
     assert errors
-    assert "primary_outputs_accepted" in errors[0]
+    assert "final_outputs_accepted" in errors[0]
 
 
 def test_validate_reports_rejects_curated_checkpoint_trace_disagreement(tmp_path: Path) -> None:
@@ -285,7 +285,7 @@ def test_validate_reports_rejects_curated_checkpoint_trace_disagreement(tmp_path
         json.loads(line)
         for line in checkpoint_path.read_text(encoding="utf-8").splitlines()
     ]
-    checkpoint_rows[0]["primary_output_accepted"] = False
+    checkpoint_rows[0]["final_output_accepted"] = False
     checkpoint_path.write_text(
         "".join(f"{json.dumps(row)}\n" for row in checkpoint_rows),
         encoding="utf-8",
@@ -302,4 +302,4 @@ def test_validate_reports_rejects_curated_checkpoint_trace_disagreement(tmp_path
     errors = validate_reports(root, suite="memory_evolution_v1")
 
     assert errors
-    assert "primary-output provenance disagrees" in errors[0]
+    assert "final-output acceptance disagrees" in errors[0]

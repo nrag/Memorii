@@ -526,30 +526,47 @@ class SimSystemOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SimProviderOutput(BaseModel):
-    """Strict model transport for simulated memory reconstruction."""
+class SimSemanticDecisionOutput(BaseModel):
+    """Strict transport for provider-owned semantic choices."""
 
     operation: Literal["answer", "next_action", "graph_reconstruction", "abstain"] = Field()
     belief_ranking_ids: list[str] = Field()
-    selected_entity_ids: list[str] = Field()
     selected_claim_ids: list[str] = Field()
-    selected_relation_ids: list[str] = Field()
-    supporting_claim_ids: list[str] = Field()
-    supporting_relation_ids: list[str] = Field()
-    supporting_citation_event_ids: list[str] = Field()
-    rejected_entity_ids: list[str] = Field()
-    rejected_claim_ids: list[str] = Field()
-    rejected_relation_ids: list[str] = Field()
-    rejection_citation_event_ids: list[str] = Field()
-    context_entity_ids: list[str] = Field()
-    context_claim_ids: list[str] = Field()
-    context_relation_ids: list[str] = Field()
-    context_citation_event_ids: list[str] = Field()
+    considered_claim_ids: list[str] = Field()
+    relevant_relation_ids: list[str] = Field()
     answer: str | None = Field()
     next_action: str | None = Field()
     uncertain_ids: list[str] = Field()
     confidence: float = Field(ge=0.0, le=1.0)
     rationale: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SimSemanticDecision(SimSemanticDecisionOutput):
+    """Validated semantic choices compiled into deterministic graph channels."""
+
+    @model_validator(mode="after")
+    def validate_operation_payload(self) -> SimSemanticDecision:
+        if self.operation == "next_action":
+            if not self.next_action or self.answer is not None:
+                raise ValueError("next_action requires next_action text and no answer")
+        elif self.operation == "answer":
+            if not self.answer or self.next_action is not None:
+                raise ValueError("answer requires answer text and no next_action")
+        elif self.operation == "abstain" and (
+            self.answer is not None or self.next_action is not None
+        ):
+            raise ValueError("abstain cannot include answer or next_action text")
+        return self
+
+
+class SimSemanticRepairRequest(BaseModel):
+    """One bounded request to revise only invalid semantic choices."""
+
+    attempt: Literal[1] = 1
+    violation_codes: list[str] = Field(min_length=1)
+    previous_decision: SimSemanticDecision
 
     model_config = ConfigDict(extra="forbid")
 
@@ -643,6 +660,7 @@ class MemoryEvolutionSimReconstructionContext(BaseModel):
     visible_entities: list[VisibleEntityCandidate] = Field(default_factory=list)
     visible_claims: list[VisibleClaimCandidate] = Field(default_factory=list)
     visible_relations: list[VisibleRelationCandidate] = Field(default_factory=list)
+    repair_request: SimSemanticRepairRequest | None = None
     model_config = ConfigDict(extra="forbid")
 
 

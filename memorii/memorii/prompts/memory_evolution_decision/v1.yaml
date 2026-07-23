@@ -1,7 +1,7 @@
 prompt_id: memory_evolution_decision
 version: v1
-task: Resolve a memory evolution benchmark checkpoint.
-description: Answers or selects the next action from an ordered memory evolution episode using separated answer, lifecycle, retrieval, and execution sections.
+task: Make the semantic decision for a memory evolution checkpoint.
+description: Selects answer-bearing memories and belief states; deterministic code compiles lifecycle and retrieval channels.
 input_schema:
   type: object
   required: [context_json, query]
@@ -18,19 +18,13 @@ output_schema:
     - next_action
     - confidence
     - query_temporal_frame
-    - answer_selection
-    - lifecycle_snapshot
-    - retrieval_context
-    - execution_selection
-    - evaluated_belief_ids
+    - selected_memory_ids
+    - considered_memory_ids
     - belief_scores
     - rationale
-    - failure_mode
     - requires_judge_review
   properties:
-    operation:
-      type: string
-      enum: [answer, next_action, abstain]
+    operation: {type: string, enum: [answer, next_action, abstain]}
     answer: {type: [string, 'null']}
     next_action: {type: [string, 'null']}
     confidence: {type: number, minimum: 0.0, maximum: 1.0}
@@ -39,15 +33,9 @@ output_schema:
       additionalProperties: false
       required: [temporal_reference, decision_domain, scope_kind, scope_key, anchor_id, valid_from, valid_to, confidence, rationale]
       properties:
-        temporal_reference:
-          type: string
-          enum: [current, historical, interval, ambiguous]
-        decision_domain:
-          type: string
-          enum: [fact, belief, execution]
-        scope_kind:
-          type: string
-          enum: [none, global, task, entity, custom]
+        temporal_reference: {type: string, enum: [current, historical, interval, ambiguous]}
+        decision_domain: {type: string, enum: [fact, belief, execution]}
+        scope_kind: {type: string, enum: [none, global, task, entity, custom]}
         scope_key: {type: [string, 'null']}
         anchor_id: {type: [string, 'null']}
         valid_from:
@@ -56,79 +44,8 @@ output_schema:
           anyOf: [{type: string, format: date-time}, {type: 'null'}]
         confidence: {type: number, minimum: 0.0, maximum: 1.0}
         rationale: {type: string}
-    answer_selection:
-      type: object
-      additionalProperties: false
-      required: [selected_memory_ids, supporting_memory_ids, citation_memory_ids, temporal_reference, rationale]
-      properties:
-        selected_memory_ids:
-          type: array
-          items: {type: string}
-        supporting_memory_ids:
-          type: array
-          items: {type: string}
-        citation_memory_ids:
-          type: array
-          items: {type: string}
-        temporal_reference:
-          type: string
-          enum: [current, historical, interval, ambiguous]
-        rationale: {type: string}
-    lifecycle_snapshot:
-      type: object
-      additionalProperties: false
-      required: [checkpoint_active_record_ids, checkpoint_superseded_record_ids, checkpoint_retained_record_ids, evaluation_time, rationale]
-      properties:
-        checkpoint_active_record_ids:
-          type: array
-          items: {type: string}
-        checkpoint_superseded_record_ids:
-          type: array
-          items: {type: string}
-        checkpoint_retained_record_ids:
-          type: array
-          items: {type: string}
-        evaluation_time: {type: string, format: date-time}
-        rationale: {type: string}
-    retrieval_context:
-      type: object
-      additionalProperties: false
-      required: [query_relevant_memory_ids, query_historical_memory_ids, query_context_memory_ids, rejected_memory_ids, rationale]
-      properties:
-        query_relevant_memory_ids:
-          type: array
-          items: {type: string}
-        query_historical_memory_ids:
-          type: array
-          items: {type: string}
-        query_context_memory_ids:
-          type: array
-          items: {type: string}
-        rejected_memory_ids:
-          type: array
-          items: {type: string}
-        rationale: {type: string}
-    execution_selection:
-      type: ['object', 'null']
-      additionalProperties: false
-      required: [selected_action_memory_ids, active_work_state_memory_ids, command_context_memory_ids, suppressed_branch_memory_ids, rationale]
-      properties:
-        selected_action_memory_ids:
-          type: array
-          items: {type: string}
-        active_work_state_memory_ids:
-          type: array
-          items: {type: string}
-        command_context_memory_ids:
-          type: array
-          items: {type: string}
-        suppressed_branch_memory_ids:
-          type: array
-          items: {type: string}
-        rationale: {type: string}
-    evaluated_belief_ids:
-      type: array
-      items: {type: string}
+    selected_memory_ids: {type: array, items: {type: string}}
+    considered_memory_ids: {type: array, items: {type: string}}
     belief_scores:
       type: array
       items:
@@ -140,146 +57,37 @@ output_schema:
           belief: {type: number, minimum: 0.0, maximum: 1.0}
           belief_state:
             type: string
-            enum: [confident, degraded, falsified, superseded, unknown]
+            enum: [unknown, confident, degraded, falsified, superseded]
     rationale: {type: string}
-    failure_mode: {type: [string, 'null']}
     requires_judge_review: {type: boolean}
 system_template: |-
-  You resolve benchmark-only memory evolution checkpoints from an ordered event chain.
+  Make only the semantic choices needed for this benchmark checkpoint.
 
-  Core rule: do not mix answer relevance with checkpoint-current lifecycle state.
+  The supplied decision_contract is authoritative for decision_domain, temporal_reference,
+  operation type, and answer projection. Select answer-bearing memories, record every
+  semantically considered alternative, and score visible beliefs when the contract asks for
+  belief evaluation. Do not emit lifecycle, support, citation, context, rejection, entity, or
+  relation channels; deterministic code derives those from visible cards and the public contract.
 
-  Return four explicit sections:
-  1. query_temporal_frame: the temporal, scope, and anchor frame that the query asks about.
-  2. answer_selection: the memories that directly answer the query or selected decision.
-  3. lifecycle_snapshot: checkpoint-current memory record lifecycle at the checkpoint timestamp.
-  4. retrieval_context: useful historical, rejected, stale, contradictory, or contextual memories.
-  5. execution_selection: required only for next_action; it identifies active work state separately from command context.
+  Semantic rules:
+  - Use only memory IDs present in visible_memory_cards.
+  - selected_memory_ids must be a subset of considered_memory_ids.
+  - Current fact queries select the trusted checkpoint-current state.
+  - Historical queries select the state valid in the requested visible interval or anchor.
+  - Belief decisions distinguish content state from memory-record lifecycle. Falsified beliefs
+    cannot be selected; include their scores and state when evaluated.
+  - Execution decisions select only the active action-state memory. Command, ownership, blocked,
+    abandoned, archived, and stale memories may be considered but cannot be selected.
+  - If evidence is genuinely insufficient or ambiguous, abstain and set requires_judge_review.
 
-  Temporal grounding rules:
-  - Resolve the query temporal frame before selecting memories.
-  - temporal_reference answers when the query is asking about: current, historical, interval, or ambiguous.
-  - decision_domain identifies what is being decided: fact, belief, or execution. Belief and execution are not temporal values.
-  - scope_kind/scope_key answers which visible scope the query is asking within: global, task, entity, custom, or none. Use only scope keys present in visible cards or task ids; do not invent custom scope keys from wording alone.
-  - anchor_id identifies a named event/period such as "release week"; anchors are not a replacement for temporal_reference.
-  - Use temporal_anchor_cards when the query names an event-like period such as "release week".
-  - Use entity_state_cards to identify which state claim was valid during that frame.
-  - If multiple temporal anchors plausibly match and context does not disambiguate, use temporal_reference=ambiguous and abstain or request review.
-  - Examples: "in January" is temporal_reference=historical and decision_domain=fact with a January interval; "during release week" is temporal_reference=historical and decision_domain=fact with the release-week anchor; "rank current beliefs" is temporal_reference=current and decision_domain=belief; "continue previous fix" is temporal_reference=current and decision_domain=execution with the relevant task scope.
+  If context_json.repair_request is present, revise only the semantic fields implicated by its
+  machine-readable violation_codes. It is the sole repair attempt.
 
-  Answer selection rules:
-  - answer_selection.selected_memory_ids contains final answer or decision memories only.
-  - answer_selection.supporting_memory_ids and answer_selection.citation_memory_ids contain only direct support for that selected answer or next action.
-  - answer_selection.temporal_reference must match query_temporal_frame.temporal_reference. Do not use temporal_reference to express scope or decision domain.
-  - Historical facts may be selected only when the query asks about the past.
-  - Current-truth queries must not select superseded historical facts.
-  - Wrong-scope, wrong-entity, stale, lower-trust, or noisy memories must not be selected or direct support.
-  - In source-trust conflicts, selected_memory_ids should contain the highest-authority winning current-truth memory. Same-answer corroborating memories may be supporting/citation/context, but lower-trust contradictory memories must be rejected/contextual and must not be selected.
-
-  Lifecycle snapshot rules:
-  - lifecycle_snapshot.checkpoint_active_record_ids means memory records currently asserted by the graph at checkpoint evaluation time, independent of query-temporal relevance.
-  - lifecycle_snapshot.checkpoint_superseded_record_ids means memory records superseded, invalidated, blocked, lower-trust, or no longer current at checkpoint time.
-  - lifecycle_snapshot.checkpoint_retained_record_ids means memory records retained only for audit/history.
-  - A memory that answers a historical query is not current-active merely because it answers that query.
-  - A memory record is not retained/superseded merely because the fact text says the subject is archived, closed, inactive, deprecated, expired, or abandoned.
-  - In source-trust conflicts, lower-trust contradictory claims are not checkpoint-active graph assertions after higher-trust tool/user evidence wins. Keep the raw observations as context/rejected history, and put their claim records in checkpoint_superseded_record_ids.
-
-  Retrieval context rules:
-  - query_relevant_memory_ids may include selected support plus useful interpretation context.
-  - query_historical_memory_ids is for memories relevant because the query asks about past state or because they explain supersession.
-  - query_context_memory_ids is useful audit context, not direct answer support.
-  - rejected_memory_ids is for stale, blocked, falsified, lower-trust, wrong-scope, or wrong-entity memories ruled out.
-
-  Execution selection rules:
-  - For next_action, set operation=next_action and include execution_selection.
-  - selected_action_memory_ids and active_work_state_memory_ids must identify the active branch/action to continue.
-  - User command events such as "continue the previous fix" belong in command_context_memory_ids, not active_work_state_memory_ids.
-  - Blocked, abandoned, stale, or lower-priority branches belong in suppressed_branch_memory_ids or retrieval_context.
-
-  Good historical example:
-  {{
-    "operation": "answer",
-    "answer": "Alice",
-    "next_action": null,
-    "confidence": 0.9,
-    "query_temporal_frame": {{
-      "temporal_reference": "historical",
-      "decision_domain": "fact",
-      "scope_kind": "none",
-      "scope_key": null,
-      "anchor_id": null,
-      "valid_from": "2026-01-01T00:00:00Z",
-      "valid_to": "2026-01-31T23:59:59Z",
-      "confidence": 0.9,
-      "rationale": "The query asks who owned it in January."
-    }},
-    "answer_selection": {{
-      "selected_memory_ids": ["mem:owner-alice-jan"],
-      "supporting_memory_ids": ["mem:owner-alice-jan"],
-      "citation_memory_ids": ["mem:owner-alice-jan"],
-      "temporal_reference": "historical",
-      "rationale": "The query asks who owned it in January."
-    }},
-    "lifecycle_snapshot": {{
-      "checkpoint_active_record_ids": ["mem:owner-bob-current"],
-      "checkpoint_superseded_record_ids": ["mem:owner-alice-jan"],
-      "checkpoint_retained_record_ids": [],
-      "evaluation_time": "2026-04-01T09:05:00Z",
-      "rationale": "Bob is checkpoint-current; Alice is historical."
-    }},
-    "retrieval_context": {{
-      "query_relevant_memory_ids": ["mem:owner-alice-jan", "mem:owner-bob-current"],
-      "query_historical_memory_ids": ["mem:owner-alice-jan"],
-      "query_context_memory_ids": ["mem:owner-bob-current"],
-      "rejected_memory_ids": [],
-      "rationale": "Bob is current contrast, not the historical answer."
-    }},
-    "execution_selection": null,
-    "evaluated_belief_ids": [],
-    "belief_scores": [],
-    "rationale": "Historical answer separated from lifecycle.",
-    "failure_mode": null,
-    "requires_judge_review": false
-  }}
-
-  Bad historical example:
-  - answer_selection selects mem:owner-alice-jan and lifecycle_snapshot.checkpoint_active_record_ids also contains mem:owner-alice-jan.
-  - This is wrong because Alice is query-relevant historical truth, not checkpoint-current active truth.
-
-  Good subject-state versus record-lifecycle example:
-  - If mem:beta-flag-archived-now says "Beta flag is archived now", that record belongs in lifecycle_snapshot.checkpoint_active_record_ids when it is the checkpoint-current truth.
-  - Do not put mem:beta-flag-archived-now in checkpoint_retained_record_ids just because the subject state is "archived".
-  - For "What was the beta flag state during release week?", select and cite the release-week record, but keep the now-archived-state record as checkpoint-active lifecycle state.
-
-  Good source-trust conflict example:
-  - If a low-trust transcript says deploy succeeded, a tool result says deploy failed, and a user correction confirms failed, answer "failed".
-  - Put only the highest-authority winning correction in selected_memory_ids.
-  - Put the tool failure in supporting_memory_ids/citation_memory_ids if useful.
-  - Put the low-trust transcript success claims in retrieval_context.rejected_memory_ids or query_context_memory_ids and lifecycle_snapshot.checkpoint_superseded_record_ids, not checkpoint_active_record_ids.
-
-  Belief rules:
-  - For competing beliefs, return belief_scores in evidence-supported order; do not preserve stale priors.
-  - For belief-ranking checkpoints, apply evidence_effect_cards: supported beliefs outrank neutral beliefs; neutral beliefs outrank weakened beliefs; falsified beliefs rank last.
-  - The order of answer_selection.selected_memory_ids, the ordering implied by belief_scores, and the answer text must agree. If selected order is B then C then A, belief_scores for B must be greater than or equal to C, and C must be greater than or equal to A.
-  - answer_selection.citation_memory_ids must contain only direct evidence/source memory ids that justify the ranking.
-  - Do not use ranked belief/hypothesis ids as answer_selection.citation_memory_ids unless the belief record itself is direct evidence.
-  - For belief-degradation checkpoints where no beliefs remain confident, select and cite the falsifying/current evidence.
-  - Degraded dependent beliefs are still retained/evaluable graph state: include them in evaluated_belief_ids and belief_scores with low confidence instead of deleting them.
-  - Only the falsified root belief should become superseded/rejected solely because it was contradicted. Dependent beliefs should be degraded unless separately contradicted.
-  - belief_scores[*].belief_state is the content state of the belief, not the lifecycle state of its memory record. Use confident, degraded, falsified, or superseded for evaluated beliefs; use unknown only for a non-evaluated placeholder.
-  - A falsified root belief must have belief_state=falsified and appear in the superseded/rejected record channels. A degraded dependent belief must have belief_state=degraded and remain evaluable; do not mark it superseded merely because its confidence fell.
-  - When the checkpoint contract uses degraded-threshold scoring, a degraded belief score must be at most 0.35. A score of 0.4 is above the degraded band even if belief_state is degraded.
-  - Never infer belief_state from lifecycle_snapshot alone: report both axes explicitly.
-  - query_temporal_frame describes the query's time/scope frame. Current, execution, and belief queries may mention checkpoint-time bounds as context, but those bounds must not change selected truth or lifecycle state.
-
-  The context may include visible_memory_cards, entity_resolution_cards, temporal_anchor_cards, entity_state_cards, and evidence_effect_cards derived only from surface event text. Use them as visible structure, not as oracle answers.
   Return strict JSON only.
-user_template: "MemoryEvolutionDecisionContext: {context_json}
-QueryOrTask: {query}
-Return strict JSON matching schema."
-model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1400, timeout_seconds: null}
+user_template: "MemoryEvolutionDecisionContext: {context_json}\nQueryOrTask: {query}\nReturn strict JSON matching schema."
+model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 700, timeout_seconds: null}
 redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
   redact_output_fields: [api_key, token, password, secret, authorization, cookie]
   redact_metadata_fields: [api_key, token, password, secret, authorization, cookie]
-tags: [memory_evolution, benchmark]
+tags: [memory_evolution, benchmark, semantic_decision]

@@ -337,7 +337,7 @@ def _load_curated_report(run_dir: Path) -> dict[str, object]:
         raise ArtifactValidationError("memory_evolution_report.json disagrees with report.json")
     if report.get("suite") != "memory_evolution_v1":
         raise ArtifactValidationError("report.json does not describe memory_evolution_v1")
-    if report.get("artifact_version") != "memory_evolution_v1_artifacts:3":
+    if report.get("artifact_version") != "memory_evolution_v1_artifacts:4":
         raise ArtifactValidationError("unsupported curated memory-evolution artifact version")
     return report
 
@@ -397,16 +397,16 @@ def validate_curated_memory_evolution_run(run_dir: Path) -> dict[str, object]:
         checkpoint_keys.append(key)
         checkpoint_by_key[key] = row
         success = _required_bool(row, "success", location=location)
-        primary_success = _required_bool(row, "primary_model_success", location=location)
+        model_success = _required_bool(row, "model_success", location=location)
         functional_success = _required_bool(row, "functional_success", location=location)
         fallback_used = _required_bool(row, "fallback_used", location=location)
         fallback_assisted = _required_bool(row, "fallback_assisted_success", location=location)
-        if success != primary_success:
-            raise ArtifactValidationError(f"{location}.success must equal primary_model_success")
-        primary_accepted = row.get("primary_output_accepted")
-        if primary_accepted is not None and type(primary_accepted) is not bool:
-            raise ArtifactValidationError(f"{location}.primary_output_accepted must be bool or null")
-        expected_assisted = bool(functional_success and fallback_used and primary_accepted is False)
+        if success != model_success:
+            raise ArtifactValidationError(f"{location}.success must equal model_success")
+        final_accepted = row.get("final_output_accepted")
+        if final_accepted is not None and type(final_accepted) is not bool:
+            raise ArtifactValidationError(f"{location}.final_output_accepted must be bool or null")
+        expected_assisted = bool(functional_success and fallback_used and final_accepted is False)
         if fallback_assisted != expected_assisted:
             raise ArtifactValidationError(
                 f"{location}.fallback_assisted_success is inconsistent with checkpoint provenance"
@@ -448,8 +448,8 @@ def validate_curated_memory_evolution_run(run_dir: Path) -> dict[str, object]:
     for key, trace_row in trace_by_key.items():
         checkpoint = checkpoint_by_key[key]
         location = f"checkpoint {key!r}"
-        if checkpoint.get("primary_output_accepted") != trace_row.primary_output_accepted:
-            raise ArtifactValidationError(f"{location} primary-output provenance disagrees with LLM trace")
+        if checkpoint.get("final_output_accepted") != trace_row.final_output_accepted:
+            raise ArtifactValidationError(f"{location} final-output acceptance disagrees with LLM trace")
         if checkpoint.get("final_output_source") != trace_row.final_output_source:
             raise ArtifactValidationError(f"{location} final-output source disagrees with LLM trace")
         fallback_used = trace_row.fallback_outcome.value != "not_used"
@@ -489,9 +489,22 @@ def validate_curated_memory_evolution_run(run_dir: Path) -> dict[str, object]:
         "functional_checkpoints_failed",
         sum(row["functional_success"] is False for row in checkpoint_rows),
     )
-    _assert_count(report, "llm_calls", len(trace_rows))
-    _assert_count(report, "primary_outputs_accepted", sum(row.primary_output_accepted for row in trace_rows))
-    _assert_count(report, "primary_outputs_rejected", sum(not row.primary_output_accepted for row in trace_rows))
+    provider_attempts = [
+        attempt
+        for row in trace_rows
+        for attempt in row.provider_attempts
+    ]
+    _assert_count(report, "llm_calls", len(provider_attempts))
+    _assert_count(
+        report,
+        "final_outputs_accepted",
+        sum(row.final_output_accepted for row in trace_rows),
+    )
+    _assert_count(
+        report,
+        "final_outputs_rejected",
+        sum(not row.final_output_accepted for row in trace_rows),
+    )
     _assert_count(
         report,
         "fallback_assisted_passes",
@@ -500,12 +513,12 @@ def validate_curated_memory_evolution_run(run_dir: Path) -> dict[str, object]:
     _assert_count_map(
         report,
         "provider_attempt_counts",
-        Counter(row.provider_attempt_status.value for row in trace_rows),
+        Counter(attempt.provider_attempt_status.value for attempt in provider_attempts),
     )
     _assert_count_map(
         report,
         "semantic_validation_counts",
-        Counter(row.semantic_validation_status for row in trace_rows),
+        Counter(attempt.semantic_validation_status for attempt in provider_attempts),
     )
     _assert_count_map(
         report,
@@ -522,7 +535,7 @@ def validate_curated_memory_evolution_run(run_dir: Path) -> dict[str, object]:
         if not trace_rows
         else bool(
             all(row["success"] is True for row in checkpoint_rows)
-            and all(row.primary_output_accepted for row in trace_rows)
+            and all(row.final_output_accepted for row in trace_rows)
             and not any(row["fallback_assisted_success"] is True for row in checkpoint_rows)
         )
     )

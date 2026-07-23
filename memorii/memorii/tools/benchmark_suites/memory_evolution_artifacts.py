@@ -61,6 +61,16 @@ _PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 LLMArtifactRow = SimLLMTraceRow | RuntimeExtractorTraceRow
 
 
+def _provider_attempt_statuses(row: LLMArtifactRow) -> list[ProviderAttemptStatus]:
+    if isinstance(row, SimLLMTraceRow) and row.provider_attempts:
+        return [attempt.provider_attempt_status for attempt in row.provider_attempts]
+    return [row.provider_attempt_status]
+
+
+def _llm_call_count(rows: Sequence[LLMArtifactRow]) -> int:
+    return sum(len(_provider_attempt_statuses(row)) for row in rows)
+
+
 def _mapping_has_values(value: object) -> bool:
     if not isinstance(value, Mapping):
         return False
@@ -251,13 +261,14 @@ def write_memory_evolution_artifacts(
         ),
     )
     final_output_source_counts = Counter(row.final_output_source for row in checkpoint_rows)
-    llm_successes = sum(
-        1
+    provider_statuses = [
+        status
         for row in llm_rows
-        if (
-            not isinstance(row, RuntimeExtractorTraceRow)
-            and row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
-        )
+        for status in _provider_attempt_statuses(row)
+    ]
+    llm_call_count = len(provider_statuses)
+    llm_successes = sum(
+        status == ProviderAttemptStatus.SUCCEEDED for status in provider_statuses
     )
     provider_successes = (
         runtime_report.provider_successes if runtime_report is not None else 0 if args.dry_run else llm_successes
@@ -267,9 +278,9 @@ def write_memory_evolution_artifacts(
         if runtime_report is not None
         else 0
         if args.dry_run
-        else len(llm_rows) - llm_successes
+        else llm_call_count - llm_successes
     )
-    fake_calls = len(llm_rows) if args.dry_run else 0
+    fake_calls = llm_call_count if args.dry_run else 0
     fallbacks = (
         runtime_report.fallbacks
         if runtime_report is not None
@@ -359,7 +370,7 @@ def write_memory_evolution_artifacts(
         checkpoint_count=len(checkpoint_rows),
         passed=passed,
         failed=failed,
-        llm_calls=len(llm_rows),
+        llm_calls=llm_call_count,
         provider_successes=provider_successes,
         provider_failures=provider_failures,
         fallbacks=fallbacks,
@@ -403,7 +414,7 @@ def write_memory_evolution_artifacts(
         f"# {suite}\n\n"
         f"mode={mode} profile={args.sim_profile} scenarios={len(scenario_rows)} "
         f"events={report['event_count']} checkpoints={len(checkpoint_rows)} "
-        f"passed={passed} failed={failed} llm_calls={len(llm_rows)}\n"
+        f"passed={passed} failed={failed} llm_calls={llm_call_count}\n"
     )
     write_json_atomic(run_dir / "report.json", report)
     write_text_atomic(run_dir / "report.md", report_md)
@@ -615,7 +626,7 @@ def print_memory_evolution_summary(
         f"suite={suite} mode={mode} systems=memorii profile={profile} "
         f"scenarios={len(scenario_rows)} events={event_count} checkpoints={len(checkpoint_rows)} "
         f"passed={passed} failed={failed} "
-        f"llm_calls={len(llm_rows)} artifacts={run_dir}"
+        f"llm_calls={_llm_call_count(llm_rows)} artifacts={run_dir}"
     )
 
 

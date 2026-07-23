@@ -393,7 +393,8 @@ def _selected_entity_role_judge(
             failure_buckets=["judge_uncovered_case"],
         )
     missing = [entity_id for entity_id in required_ids if entity_id not in output.selected_entity_ids]
-    if missing:
+    extra = [entity_id for entity_id in output.selected_entity_ids if entity_id not in required_ids]
+    if missing or extra:
         return JudgeVote(
             judge_id="selected_entity_role_judge",
             checkpoint_id=checkpoint.checkpoint_id,
@@ -401,9 +402,14 @@ def _selected_entity_role_judge(
             score=0.0,
             confidence=0.9,
             covered_ids=[entity_id for entity_id in required_ids if entity_id in output.selected_entity_ids],
-            failed_ids=missing,
-            failure_buckets=["entity_role_mismatch"],
-            rationale=f"selected_entity_ids must include {policy} entity ids for selected claims: {missing}",
+            failed_ids=ordered_unique([*missing, *extra]),
+            failure_buckets=[
+                "entity_role_mismatch" if missing else "selected_entity_role_overbreadth"
+            ],
+            rationale=(
+                f"selected_entity_ids must exactly match {policy} entity ids for selected claims; "
+                f"missing={missing}, extra={extra}"
+            ),
         )
     return JudgeVote(
         judge_id="selected_entity_role_judge",
@@ -652,10 +658,7 @@ def _definition_coverage_judge(
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
-    if (
-        checkpoint.task_contract.definition_claim_placement
-        != "selected_and_supporting_required"
-    ):
+    if checkpoint.task_contract.definition_claim_placement != "selected_and_supporting_required":
         return JudgeVote(
             judge_id="definition_coverage_judge",
             checkpoint_id=checkpoint.checkpoint_id,

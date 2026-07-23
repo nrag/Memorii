@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -451,6 +452,7 @@ class MemoryEvolutionDecisionContext(BaseModel):
     temporal_anchor_cards: list[MemoryEvolutionTemporalAnchorCard] = Field(default_factory=list)
     entity_state_cards: list[MemoryEvolutionEntityStateClaimCard] = Field(default_factory=list)
     evidence_effect_cards: list[MemoryEvolutionEvidenceEffectCard] = Field(default_factory=list)
+    repair_request: MemoryEvolutionSemanticRepairRequest | None = None
     metadata: dict[str, object] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -494,6 +496,11 @@ class MemoryEvolutionDecision(BaseModel):
         active = set(self.lifecycle_snapshot.checkpoint_active_record_ids)
         superseded = set(self.lifecycle_snapshot.checkpoint_superseded_record_ids)
         rejected = set(self.retrieval_context.rejected_memory_ids)
+        contextualized = (
+            rejected
+            | set(self.retrieval_context.query_context_memory_ids)
+            | set(self.retrieval_context.query_historical_memory_ids)
+        )
         direct = selected | supporting | citations
         contradictory_direct = direct & rejected
         if contradictory_direct:
@@ -523,21 +530,17 @@ class MemoryEvolutionDecision(BaseModel):
             suppressed_active = suppressed & active
             if suppressed_active:
                 raise ValueError(f"suppressed branches cannot be checkpoint-active: {sorted(suppressed_active)}")
+            missing_context = suppressed - contextualized
+            if missing_context:
+                raise ValueError(f"suppressed branches must be rejected or contextualized: {sorted(missing_context)}")
         return self
 
 
-class MemoryEvolutionBeliefScoreOutput(MemoryEvolutionBeliefScore):
+class MemoryEvolutionSemanticBeliefScore(MemoryEvolutionBeliefScore):
     belief_state: MemoryEvolutionBeliefState
 
 
-class MemoryEvolutionAnswerSelectionOutput(MemoryEvolutionAnswerSelection):
-    selected_memory_ids: list[str]
-    supporting_memory_ids: list[str]
-    citation_memory_ids: list[str]
-    rationale: str
-
-
-class MemoryEvolutionTemporalFrameOutput(MemoryEvolutionTemporalFrame):
+class MemoryEvolutionSemanticTemporalFrame(MemoryEvolutionTemporalFrame):
     scope_kind: MemoryEvolutionScopeKind
     scope_key: str | None
     anchor_id: str | None
@@ -547,48 +550,58 @@ class MemoryEvolutionTemporalFrameOutput(MemoryEvolutionTemporalFrame):
     rationale: str
 
 
-class MemoryEvolutionLifecycleSnapshotOutput(MemoryEvolutionLifecycleSnapshot):
-    checkpoint_active_record_ids: list[str]
-    checkpoint_superseded_record_ids: list[str]
-    checkpoint_retained_record_ids: list[str]
-    rationale: str
-
-
-class MemoryEvolutionRetrievalContextOutput(MemoryEvolutionRetrievalContext):
-    query_relevant_memory_ids: list[str]
-    query_historical_memory_ids: list[str]
-    query_context_memory_ids: list[str]
-    rejected_memory_ids: list[str]
-    rationale: str
-
-
-class MemoryEvolutionExecutionSelectionOutput(MemoryEvolutionExecutionSelection):
-    selected_action_memory_ids: list[str]
-    active_work_state_memory_ids: list[str]
-    command_context_memory_ids: list[str]
-    suppressed_branch_memory_ids: list[str]
-    rationale: str
-
-
-class MemoryEvolutionDecisionOutput(BaseModel):
-    """Structural provider response validated against the decision domain model."""
+class MemoryEvolutionSemanticDecisionOutput(BaseModel):
+    """Strict transport for provider-owned semantic choices."""
 
     operation: MemoryEvolutionDecisionOperation
     answer: str | None
     next_action: str | None
     confidence: float = Field(ge=0.0, le=1.0)
-    query_temporal_frame: MemoryEvolutionTemporalFrameOutput
-    answer_selection: MemoryEvolutionAnswerSelectionOutput
-    lifecycle_snapshot: MemoryEvolutionLifecycleSnapshotOutput
-    retrieval_context: MemoryEvolutionRetrievalContextOutput
-    execution_selection: MemoryEvolutionExecutionSelectionOutput | None
-    evaluated_belief_ids: list[str]
-    belief_scores: list[MemoryEvolutionBeliefScoreOutput]
+    query_temporal_frame: MemoryEvolutionSemanticTemporalFrame
+    selected_memory_ids: list[str]
+    considered_memory_ids: list[str]
+    belief_scores: list[MemoryEvolutionSemanticBeliefScore]
     rationale: str
-    failure_mode: str | None
     requires_judge_review: bool
 
     model_config = ConfigDict(extra="forbid")
+
+
+class MemoryEvolutionSemanticDecision(MemoryEvolutionSemanticDecisionOutput):
+    """Validated semantic choices compiled into deterministic graph channels."""
+
+    @model_validator(mode="after")
+    def validate_semantic_sections(self) -> MemoryEvolutionSemanticDecision:
+        if self.operation == MemoryEvolutionDecisionOperation.NEXT_ACTION:
+            if self.query_temporal_frame.decision_domain != MemoryEvolutionDecisionDomain.EXECUTION:
+                raise ValueError("next_action requires the execution decision domain")
+            if not self.next_action:
+                raise ValueError("next_action operation requires next_action text")
+            if self.answer is not None:
+                raise ValueError("next_action operation cannot include answer text")
+        elif self.operation == MemoryEvolutionDecisionOperation.ANSWER:
+            if self.query_temporal_frame.decision_domain == MemoryEvolutionDecisionDomain.EXECUTION:
+                raise ValueError("execution decisions require next_action")
+            if not self.answer:
+                raise ValueError("answer operation requires answer text")
+            if self.next_action is not None:
+                raise ValueError("answer operation cannot include next_action text")
+        elif self.answer is not None or self.next_action is not None:
+            raise ValueError("abstain cannot include answer or next_action text")
+        return self
+
+
+class MemoryEvolutionSemanticRepairRequest(BaseModel):
+    """One bounded request to revise only invalid semantic choices."""
+
+    attempt: Literal[1] = 1
+    violation_codes: list[str] = Field(min_length=1)
+    previous_decision: MemoryEvolutionSemanticDecision
+
+    model_config = ConfigDict(extra="forbid")
+
+
+MemoryEvolutionDecisionContext.model_rebuild()
 
 
 class MemoryEvolutionFailureBucket(StrEnum):

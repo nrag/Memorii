@@ -5,6 +5,7 @@ from __future__ import annotations
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionAnswerSelection,
     MemoryEvolutionBeliefScore,
+    MemoryEvolutionBeliefState,
     MemoryEvolutionCheckpoint,
     MemoryEvolutionDecision,
     MemoryEvolutionDecisionContext,
@@ -14,6 +15,8 @@ from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionRecordLifecycleState,
     MemoryEvolutionRetrievalContext,
     MemoryEvolutionScenario,
+    MemoryEvolutionSemanticBeliefScore,
+    MemoryEvolutionSemanticDecision,
     MemoryEvolutionTemporalReference,
     MemoryEvolutionVisibleCheckpoint,
 )
@@ -195,6 +198,46 @@ def expected_memory_evolution_decision_for_checkpoint(
         rationale="expected benchmark memory evolution decision",
         failure_mode=None,
         requires_judge_review=False,
+    )
+
+
+def expected_memory_evolution_semantic_decision_for_checkpoint(
+    *,
+    scenario: MemoryEvolutionScenario,
+    checkpoint: MemoryEvolutionCheckpoint,
+) -> MemoryEvolutionSemanticDecision:
+    """Oracle-backed fake-provider decision used only by deterministic dry runs."""
+
+    output = expected_memory_evolution_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    considered = dedupe_string_ids(
+        [
+            *output.answer_selection.selected_memory_ids,
+            *output.retrieval_context.query_historical_memory_ids,
+            *output.retrieval_context.query_context_memory_ids,
+            *output.retrieval_context.rejected_memory_ids,
+        ]
+    )
+    return MemoryEvolutionSemanticDecision(
+        operation=output.operation,
+        answer=output.answer,
+        next_action=output.next_action,
+        confidence=output.confidence,
+        query_temporal_frame=output.query_temporal_frame.model_dump(),
+        selected_memory_ids=list(output.answer_selection.selected_memory_ids),
+        considered_memory_ids=considered,
+        belief_scores=[
+            MemoryEvolutionSemanticBeliefScore(
+                memory_id=score.memory_id,
+                belief=score.belief,
+                belief_state=score.belief_state or MemoryEvolutionBeliefState.UNKNOWN,
+            )
+            for score in output.belief_scores
+        ],
+        rationale=output.rationale,
+        requires_judge_review=output.requires_judge_review,
     )
 
 

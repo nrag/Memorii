@@ -3,6 +3,7 @@
 from memorii.core.benchmark.memory_evolution_sim.candidate_cards import sim_reconstruction_context_for_checkpoint
 from memorii.core.benchmark.memory_evolution_sim.decisions import (
     expected_sim_output_for_checkpoint,
+    expected_sim_semantic_decision_for_checkpoint,
     fake_llm_result_for_memory_evolution_sim,
     memory_evolution_sim_engine_result_from_llm,
     memory_evolution_sim_trace_for_rule,
@@ -43,7 +44,9 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     RelationProvenance,
     RelationTemporal,
     SimLifecycleState,
-    SimProviderOutput,
+    SimSemanticDecision,
+    SimSemanticDecisionOutput,
+    SimSemanticRepairRequest,
     SimSystemOutput,
     SurfaceObservation,
     VisibleCheckpointCandidate,
@@ -53,6 +56,13 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     VisibleRelationCandidate,
     VisibleSurfaceObservation,
     WorldTransition,
+)
+from memorii.core.benchmark.memory_evolution_sim.semantic_pipeline import (
+    SimSemanticValidation,
+    SimSemanticViolationCode,
+    compile_sim_semantic_decision,
+    render_sim_answer,
+    validate_sim_semantic_decision,
 )
 
 __all__ = [
@@ -82,7 +92,11 @@ __all__ = [
     "RelationTemporal",
     "ReconstructionTaskContract",
     "SimLifecycleState",
-    "SimProviderOutput",
+    "SimSemanticDecision",
+    "SimSemanticDecisionOutput",
+    "SimSemanticRepairRequest",
+    "SimSemanticValidation",
+    "SimSemanticViolationCode",
     "SimSystemOutput",
     "SurfaceObservation",
     "VisibleCheckpointCandidate",
@@ -93,6 +107,7 @@ __all__ = [
     "VisibleSurfaceObservation",
     "WorldTransition",
     "expected_sim_output_for_checkpoint",
+    "expected_sim_semantic_decision_for_checkpoint",
     "fake_llm_result_for_memory_evolution_sim",
     "generate_memory_evolution_sim_scenarios",
     "judge_sim_checkpoint",
@@ -104,4 +119,7 @@ __all__ = [
     "sim_metrics_from_rows",
     "sim_output_allowed_id_errors",
     "sim_reconstruction_context_for_checkpoint",
+    "compile_sim_semantic_decision",
+    "render_sim_answer",
+    "validate_sim_semantic_decision",
 ]

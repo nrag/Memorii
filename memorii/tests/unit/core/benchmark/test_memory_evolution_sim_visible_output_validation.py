@@ -7,6 +7,7 @@ from memorii.core.benchmark.llm_adapters import (
     LLMMemoryEvolutionSimReconstructionAdapter,
 )
 from memorii.core.benchmark.memory_evolution_sim import (
+    SimSemanticDecision,
     expected_sim_output_for_checkpoint,
     generate_memory_evolution_sim_scenarios,
     memory_evolution_sim_engine_result_from_llm,
@@ -296,20 +297,23 @@ def test_visible_contract_requires_definition_when_policy_requires_selection() -
     assert "required_definition_not_supporting" in issue_codes
 
 
-def test_sim_adapter_preserves_visible_semantic_rejection_without_fallback() -> None:
+def test_sim_engine_preserves_semantic_rejection_without_fallback() -> None:
     context, output = _case(
         family="entity_split",
         checkpoint_type="entity_split_repair",
         index=1,
     )
-    selected_claim = next(
-        claim
-        for claim in context.visible_claims
-        if claim.claim_id == output.selected_claim_ids[0]
-    )
-    assert selected_claim.object_entity_id is not None
-    invalid = output.model_copy(
-        update={"selected_entity_ids": [selected_claim.object_entity_id]}
+    invalid = SimSemanticDecision(
+        operation=output.operation,
+        belief_ranking_ids=list(output.belief_ranking_ids),
+        selected_claim_ids=list(output.selected_claim_ids),
+        considered_claim_ids=[],
+        relevant_relation_ids=list(output.selected_relation_ids),
+        answer=output.answer,
+        next_action=output.next_action,
+        uncertain_ids=list(output.uncertain_ids),
+        confidence=output.confidence,
+        rationale=output.rationale,
     )
     adapter = LLMMemoryEvolutionSimReconstructionAdapter(
         runner=PromptLLMRunner(
@@ -323,31 +327,25 @@ def test_sim_adapter_preserves_visible_semantic_rejection_without_fallback() -> 
 
     result = adapter.decide(context, request_id="visible-semantic-rejection")
 
-    assert result.success is False
-    assert result.failure_mode == "semantic_validation"
-    assert result.output is None
-    assert result.rejected_output == invalid.model_dump(mode="json")
-    assert [issue.code for issue in result.validation_issues] == [
-        "selected_entity_role_mismatch"
-    ]
+    assert result.success is True
+    assert result.failure_mode is None
+    assert result.output == invalid.model_dump(mode="json")
     assert result.response.schema_valid is True
-    assert result.response.semantic_valid is False
 
     final_output, trace, accepted, failure_mode = (
         memory_evolution_sim_engine_result_from_llm(
             result=result,
             mode=LLMDecisionMode.HYBRID,
-            scenario=generate_scenario_by_family(
-                profile="adversarial",
-                family="entity_split",
-                seed=7,
-                noise_rate=0.35,
-            ),
+            context=context,
             rule_output=output.model_dump(mode="json"),
         )
     )
-    assert final_output == invalid.model_dump(mode="json")
+    assert final_output["selected_claim_ids"] == invalid.selected_claim_ids
+    assert final_output["context_claim_ids"] == []
     assert accepted is False
-    assert failure_mode == "semantic_validation"
+    assert failure_mode == "llm_semantic_validation_failed"
     assert trace.status == LLMDecisionStatus.VALIDATION_FAILED
     assert trace.fallback_used is False
+    assert [issue.code for issue in trace.validation_issues] == [
+        "selected_not_considered"
+    ]

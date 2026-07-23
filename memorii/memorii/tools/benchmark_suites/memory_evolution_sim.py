@@ -15,6 +15,7 @@ from memorii.core.benchmark.artifact_rows import (
     CheckpointVerdictSection,
     DecisionMode,
     FinalOutputSource,
+    SemanticDecisionAttemptRow,
     SimCheckpointResultRow,
     SimLLMTraceRow,
     SimScenarioResultRow,
@@ -24,6 +25,7 @@ from memorii.core.benchmark.artifact_validation import (
     finalize_memory_evolution_run,
     validate_memory_evolution_run,
 )
+from memorii.core.benchmark.bounded_semantic_repair import run_with_one_semantic_repair
 from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.llm_adapters import LLMMemoryEvolutionSimReconstructionAdapter
 from memorii.core.benchmark.memory_evolution_sim import (
@@ -31,6 +33,8 @@ from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
     OracleCheckpoint,
+    SimSemanticDecision,
+    SimSemanticRepairRequest,
     SimSystemOutput,
     judge_sim_checkpoint,
     memory_evolution_sim_engine_result_from_llm,
@@ -71,7 +75,7 @@ from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntime
 from memorii.tools.run_live_llm_eval import validate_live_safety
 
 SUITE_NAME = "memory_evolution_sim_v1"
-_INVALID_REFERENCE_ID_BUCKET = "invalid_reference_id"
+_SEMANTIC_DECISION_INVALID_BUCKET = "semantic_decision_invalid"
 
 
 def _decision_modes_from_args(mode: str) -> list[DecisionModeName]:
@@ -95,7 +99,7 @@ def _ordered_unique(values: Sequence[object]) -> list[str]:
 
 
 def _provider_attempt_status(result: LLMDecisionResult) -> ProviderAttemptStatus:
-    if result.success or result.failure_mode == "semantic_validation":
+    if result.success:
         return ProviderAttemptStatus.SUCCEEDED
     return {
         "provider_error": ProviderAttemptStatus.PROVIDER_ERROR,
@@ -175,35 +179,68 @@ def _run_memory_evolution_sim_transitions(
 
             if effective_mode in {"llm", "hybrid"} and adapter is not None:
                 llm_call_made = True
-                result = adapter.decide(
-                    context,
-                    request_id=request_id,
-                    metadata={
-                        "suite": "memory_evolution_sim_v1",
-                        "scenario_id": scenario.scenario_id,
-                        "checkpoint_id": checkpoint.checkpoint_id,
-                        "decision_mode": mode,
-                        "effective_decision_mode": effective_mode,
-                        "transition_type": "memory_evolution_sim_reconstruction",
-                    },
-                )
-                output_json, llm_trace, llm_success, fallback_reason = memory_evolution_sim_engine_result_from_llm(
-                    result=result,
-                    mode=LLMDecisionMode(effective_mode),
-                    scenario=scenario,
-                    rule_output=rule_output_json,
-                )
-                semantic_validation_failure = fallback_reason in {
-                    "llm_output_referenced_invalid_ids",
-                    "semantic_validation",
+                metadata: dict[str, object] = {
+                    "suite": "memory_evolution_sim_v1",
+                    "scenario_id": scenario.scenario_id,
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    "decision_mode": mode,
+                    "effective_decision_mode": effective_mode,
+                    "transition_type": "memory_evolution_sim_reconstruction",
                 }
-                if llm_success or semantic_validation_failure:
+                resolution = run_with_one_semantic_repair(
+                    context=context,
+                    request_id=request_id,
+                    metadata=metadata,
+                    decide=lambda candidate_context, candidate_request_id, candidate_metadata: adapter.decide(
+                        candidate_context,
+                        request_id=candidate_request_id,
+                        metadata=candidate_metadata,
+                    ),
+                    evaluate=lambda result, candidate_context, rule_output_json=rule_output_json: (
+                        memory_evolution_sim_engine_result_from_llm(
+                            result=result,
+                            mode=LLMDecisionMode(effective_mode),
+                            context=candidate_context,
+                            rule_output=rule_output_json,
+                        )
+                    ),
+                    build_repair_context=lambda original, output_payload, violation_codes: original.model_copy(
+                        update={
+                            "repair_request": SimSemanticRepairRequest(
+                                violation_codes=violation_codes,
+                                previous_decision=SimSemanticDecision.model_validate(output_payload),
+                            )
+                        }
+                    ),
+                )
+                final_attempt = resolution.final_attempt
+                result = final_attempt.provider_result
+                output_json = final_attempt.output
+                llm_trace = final_attempt.trace
+                llm_success = final_attempt.success
+                fallback_reason = final_attempt.failure_mode
+                attempts = [
+                    _semantic_attempt_row(
+                        attempt=index,
+                        result=attempt.provider_result,
+                        accepted=attempt.success,
+                        failure_mode=attempt.failure_mode,
+                        validation_issues=[
+                            issue.code for issue in attempt.trace.validation_issues
+                        ],
+                    )
+                    for index, attempt in enumerate(resolution.attempts)
+                ]
+                semantic_rejection = (
+                    fallback_reason == "llm_semantic_validation_failed"
+                )
+                if llm_success or semantic_rejection:
                     if llm_binding is None:
                         raise RuntimeError("LLM result is missing execution provenance")
                     final_output_source = llm_binding.final_output_source
                 else:
                     final_output_source = "rule"
-                fallback_used = not llm_success and not semantic_validation_failure
+                fallback_used = not llm_success and not semantic_rejection
                 llm_rows.append(
                     SimLLMTraceRow(
                         scenario_id=scenario.scenario_id,
@@ -215,15 +252,16 @@ def _run_memory_evolution_sim_transitions(
                         trace=llm_trace,
                         provider_attempt_status=_provider_attempt_status(result),
                         semantic_validation_status=(
-                            "failed"
-                            if semantic_validation_failure
-                            else "passed"
-                            if result.success
-                            else "not_evaluated"
+                            "passed" if llm_success else "failed" if result.success else "not_evaluated"
                         ),
-                        fallback_outcome=(FallbackOutcome.SUCCEEDED if fallback_used else FallbackOutcome.NOT_USED),
-                        primary_output_accepted=llm_success,
+                        fallback_outcome=(
+                            FallbackOutcome.SUCCEEDED
+                            if fallback_used
+                            else FallbackOutcome.NOT_USED
+                        ),
+                        final_output_accepted=llm_success,
                         failure_mode=fallback_reason,
+                        provider_attempts=attempts,
                         output=SimSystemOutput.model_validate(output_json),
                     )
                 )
@@ -235,30 +273,21 @@ def _run_memory_evolution_sim_transitions(
                 checkpoint=checkpoint,
                 output=output,
             )
-            semantic_validation_failure = fallback_reason in {
-                "llm_output_referenced_invalid_ids",
-                "semantic_validation",
-            }
+            semantic_failure = fallback_reason == "llm_semantic_validation_failed"
             diagnostics = sim_checkpoint_diagnostics(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 output=output,
                 aggregate=aggregate,
             )
-            engine_failure_buckets = (
-                [_INVALID_REFERENCE_ID_BUCKET]
-                if fallback_reason == "llm_output_referenced_invalid_ids"
-                else ["visible_semantic_validation_failed"]
-                if fallback_reason == "semantic_validation"
-                else []
-            )
+            engine_failure_buckets = [_SEMANTIC_DECISION_INVALID_BUCKET] if semantic_failure else []
             if effective_mode in {"llm", "hybrid"} and llm_call_made and not llm_success:
                 engine_failure_buckets.append(fallback_reason or "llm_provider_failure")
             success = (
                 aggregate.verdict.value == "pass"
                 and not aggregate.review_required
                 and (not llm_call_made or llm_success)
-                and not semantic_validation_failure
+                and not semantic_failure
             )
             warning_buckets = checkpoint_warning_buckets(
                 answer_match_type=diagnostics.answer_match_type,
@@ -304,6 +333,26 @@ def _run_memory_evolution_sim_transitions(
             )
         )
     return scenario_rows, checkpoint_rows, judge_rows, llm_rows
+
+
+def _semantic_attempt_row(
+    *,
+    attempt: int,
+    result: LLMDecisionResult,
+    accepted: bool,
+    failure_mode: str | None,
+    validation_issues: list[str],
+) -> SemanticDecisionAttemptRow:
+    provider_status = _provider_attempt_status(result)
+    return SemanticDecisionAttemptRow(
+        attempt=attempt,
+        request_id=result.request.request_id,
+        provider_attempt_status=provider_status,
+        semantic_validation_status=("passed" if accepted else "failed" if result.success else "not_evaluated"),
+        accepted=accepted,
+        failure_mode=failure_mode,
+        validation_issues=validation_issues,
+    )
 
 
 def _build_sim_checkpoint_result_row(

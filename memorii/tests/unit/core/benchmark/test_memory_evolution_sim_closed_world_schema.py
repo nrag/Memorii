@@ -8,7 +8,7 @@ from memorii.core.benchmark.llm_adapters import (
     LLMMemoryEvolutionSimReconstructionAdapter,
 )
 from memorii.core.benchmark.memory_evolution_sim import (
-    expected_sim_output_for_checkpoint,
+    expected_sim_semantic_decision_for_checkpoint,
     sim_reconstruction_context_for_checkpoint,
 )
 from memorii.core.benchmark.memory_evolution_sim.closed_world_schema import (
@@ -56,12 +56,9 @@ def test_closed_world_schema_uses_field_specific_visible_namespaces() -> None:
     )
     properties = constrained.output_schema["properties"]
 
-    assert properties["selected_entity_ids"]["items"]["enum"] == sorted(context.visible_entity_ids)
     assert properties["selected_claim_ids"]["items"]["enum"] == sorted(context.visible_claim_ids)
-    assert properties["selected_relation_ids"]["items"]["enum"] == sorted(context.visible_relation_ids)
-    assert properties["supporting_citation_event_ids"]["items"]["enum"] == sorted(
-        event.event_id for event in context.visible_events
-    )
+    assert properties["considered_claim_ids"]["items"]["enum"] == sorted(context.visible_claim_ids)
+    assert properties["relevant_relation_ids"]["items"]["enum"] == sorted(context.visible_relation_ids)
 
 
 def test_closed_world_schema_rejects_fabricated_and_cross_namespace_ids() -> None:
@@ -78,17 +75,17 @@ def test_closed_world_schema_rejects_fabricated_and_cross_namespace_ids() -> Non
     output.update(
         {
             "operation": "answer",
-            "answer": None,
+            "answer": "test answer",
             "next_action": None,
             "confidence": 0.5,
             "rationale": "test",
         }
     )
-    output["selected_entity_ids"] = ["fabricated-composite-id"]
+    output["selected_claim_ids"] = ["fabricated-composite-id"]
     errors = list(Draft202012Validator(constrained.output_schema).iter_errors(output))
     assert errors
 
-    output["selected_entity_ids"] = [context.visible_claim_ids[0]]
+    output["selected_claim_ids"] = [context.visible_relation_ids[0]]
     errors = list(Draft202012Validator(constrained.output_schema).iter_errors(output))
     assert errors
 
@@ -112,8 +109,8 @@ def test_closed_world_schema_constrains_uncertain_ids_to_visible_union() -> None
 def test_closed_world_schema_empty_namespace_requires_empty_array() -> None:
     context = _context().model_copy(
         update={
-            "visible_entity_ids": [],
-            "visible_entities": [],
+            "visible_claim_ids": [],
+            "visible_claims": [],
         }
     )
     constrained = constrain_string_array_fields(
@@ -121,23 +118,23 @@ def test_closed_world_schema_empty_namespace_requires_empty_array() -> None:
         allowed_values_by_field=sim_output_id_constraints(context),
     )
 
-    assert constrained.output_schema["properties"]["selected_entity_ids"]["maxItems"] == 0
-    assert "enum" not in constrained.output_schema["properties"]["selected_entity_ids"]["items"]
+    assert constrained.output_schema["properties"]["selected_claim_ids"]["maxItems"] == 0
+    assert "enum" not in constrained.output_schema["properties"]["selected_claim_ids"]["items"]
 
 
 def test_closed_world_schema_digest_is_order_invariant_and_content_sensitive() -> None:
     contract = _contract()
     first = constrain_string_array_fields(
         contract=contract,
-        allowed_values_by_field={"selected_entity_ids": ("b", "a", "a")},
+        allowed_values_by_field={"selected_claim_ids": ("b", "a", "a")},
     )
     reordered = constrain_string_array_fields(
         contract=contract,
-        allowed_values_by_field={"selected_entity_ids": ("a", "b")},
+        allowed_values_by_field={"selected_claim_ids": ("a", "b")},
     )
     changed = constrain_string_array_fields(
         contract=contract,
-        allowed_values_by_field={"selected_entity_ids": ("a", "c")},
+        allowed_values_by_field={"selected_claim_ids": ("a", "c")},
     )
 
     assert first.registration_digest == reordered.registration_digest
@@ -170,7 +167,7 @@ def test_sim_adapter_sends_request_specific_closed_world_schema() -> None:
         scenario=scenario,
         checkpoint=checkpoint,
     )
-    response = expected_sim_output_for_checkpoint(checkpoint).model_dump(mode="json")
+    response = expected_sim_semantic_decision_for_checkpoint(checkpoint).model_dump(mode="json")
     client = FakeLLMStructuredClient(default_response=json.dumps(response))
     adapter = LLMMemoryEvolutionSimReconstructionAdapter(
         runner=PromptLLMRunner(

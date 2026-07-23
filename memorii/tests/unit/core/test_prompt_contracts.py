@@ -23,8 +23,9 @@ from memorii.core.benchmark.llm_adapters import (
     LLMRetrievalRelevanceDecisionAdapter,
 )
 from memorii.core.benchmark.memory_evolution_decision import memory_evolution_context_for_checkpoint
-from memorii.core.benchmark.memory_evolution_decision.contracts import MemoryEvolutionDecision
+from memorii.core.benchmark.memory_evolution_decision.contracts import MemoryEvolutionSemanticDecision
 from memorii.core.benchmark.memory_evolution_sim import (
+    SimSemanticDecision,
     generate_memory_evolution_sim_scenarios,
     sim_reconstruction_context_for_checkpoint,
 )
@@ -170,7 +171,8 @@ _OUTPUT_MODELS_BY_REF[PromptBackedStructuredQueryAnalysisProvider.prompt_ref] = 
 _SEMANTIC_MODELS_BY_REF = {
     "evidence_selection:v1": EvidenceSelectionDecision,
     "grounded_answer:v1": GroundedAnswerDecision,
-    "memory_evolution_decision:v1": MemoryEvolutionDecision,
+    "memory_evolution_decision:v1": MemoryEvolutionSemanticDecision,
+    "memory_evolution_sim_reconstruction:v1": SimSemanticDecision,
     "structured_query_analysis:v1": TemporalInterpretationProposal,
 }
 
@@ -182,13 +184,9 @@ def _semantic_adversarial_payload(ref: str) -> dict[str, object]:
     elif ref == "grounded_answer:v1":
         payload["candidate_answers_considered"][0]["selected"] = False
     elif ref == "memory_evolution_decision:v1":
-        payload["execution_selection"] = {
-            "selected_action_memory_ids": [],
-            "active_work_state_memory_ids": [],
-            "command_context_memory_ids": [],
-            "suppressed_branch_memory_ids": [],
-            "rationale": "Invalid for an answer operation.",
-        }
+        payload["query_temporal_frame"]["decision_domain"] = "execution"
+    elif ref == "memory_evolution_sim_reconstruction:v1":
+        payload["operation"] = "next_action"
     elif ref == "structured_query_analysis:v1":
         payload["temporal_intent"] = "ambiguous"
         payload["abstention_reason"] = "Multiple temporal frames remain plausible."
@@ -418,11 +416,10 @@ def test_memory_evolution_sim_prompt_distinguishes_subject_and_answer_object_ent
 
     assert "subject entity" in system
     assert "object entity" in system
-    assert "selected_entity_role_policy" in system
-    assert "Query wording does not reverse graph endpoints" in system
-    assert "definition_claim_placement" in system
-    assert "belief_ranking_policy" in system
-    assert "active visible definition/type claims" in system
+    assert "selected_entity_role_policy" not in system
+    assert "subject entity remains graph-selected" in system
+    assert "deterministic compilation" in system
+    assert "visible entity definition/type claim" in system
     assert "operation=next_action" in system
     assert "conflict/correction relations" in system
     assert "latest eligible active action-state branch" in system
