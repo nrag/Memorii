@@ -195,6 +195,9 @@ def _run_memory_evolution_transitions(
                 llm_trace = final_attempt.trace
                 llm_success = final_attempt.success
                 fallback_reason = final_attempt.failure_mode
+                final_provider_status = _provider_attempt_status(
+                    final_attempt.provider_result
+                )
                 provider_attempts = [
                     _memory_evolution_provider_attempt(
                         attempt=index,
@@ -222,11 +225,10 @@ def _run_memory_evolution_transitions(
                         effective_decision_mode=effective_mode,
                         final_output_source=cast(FinalOutputSource, final_output_source),
                         trace=llm_trace,
-                        provider_attempt_status=_provider_attempt_status(
-                            final_attempt.provider_result
-                        ),
+                        provider_attempt_status=final_provider_status,
                         semantic_validation_status=_semantic_validation_status(
-                            final_attempt.provider_result
+                            provider_status=final_provider_status,
+                            accepted=final_attempt.success,
                         ),
                         fallback_outcome=(
                             FallbackOutcome.NOT_USED if llm_success else FallbackOutcome.SUCCEEDED
@@ -316,11 +318,15 @@ def _memory_evolution_provider_attempt(
     failure_mode: str | None,
     validation_issues: list[str],
 ) -> SemanticDecisionAttemptRow:
+    provider_status = _provider_attempt_status(result)
     return SemanticDecisionAttemptRow(
         attempt=attempt,
         request_id=result.request.request_id,
-        provider_attempt_status=_provider_attempt_status(result),
-        semantic_validation_status=_semantic_validation_status(result),
+        provider_attempt_status=provider_status,
+        semantic_validation_status=_semantic_validation_status(
+            provider_status=provider_status,
+            accepted=accepted,
+        ),
         accepted=accepted,
         failure_mode=failure_mode,
         validation_issues=validation_issues,
@@ -338,11 +344,13 @@ def _provider_attempt_status(result: LLMDecisionResult) -> ProviderAttemptStatus
 
 
 def _semantic_validation_status(
-    result: LLMDecisionResult,
+    *,
+    provider_status: ProviderAttemptStatus,
+    accepted: bool,
 ) -> Literal["not_evaluated", "passed", "failed"]:
-    if result.failure_mode == "semantic_validation":
-        return "failed"
-    return "passed" if result.success else "not_evaluated"
+    if provider_status != ProviderAttemptStatus.SUCCEEDED:
+        return "not_evaluated"
+    return "passed" if accepted else "failed"
 
 
 def memory_evolution_artifact_run_metadata(

@@ -42,6 +42,52 @@ def test_compiled_oracle_semantics_pass_every_curated_checkpoint() -> None:
             )
 
 
+def test_compilation_keeps_considered_direct_support_out_of_rejected_channel() -> None:
+    for scenario in load_memory_evolution_v1_fixture_set():
+        for checkpoint in scenario.checkpoints:
+            context = memory_evolution_context_for_checkpoint(
+                scenario=scenario,
+                checkpoint=checkpoint,
+            )
+            semantic = expected_memory_evolution_semantic_decision_for_checkpoint(
+                scenario=scenario,
+                checkpoint=checkpoint,
+            ).model_copy(
+                update={
+                    "considered_memory_ids": [
+                        card.memory_id for card in context.visible_memory_cards
+                    ]
+                }
+            )
+
+            validation = validate_memory_evolution_semantic_decision(
+                context=context,
+                semantic=semantic,
+            )
+            assert validation.valid, (
+                scenario.scenario_id,
+                checkpoint.checkpoint_id,
+                validation.violation_codes,
+            )
+
+            compiled = compile_memory_evolution_decision(
+                context=context,
+                semantic=semantic,
+            )
+            direct_support = {
+                *compiled.answer_selection.selected_memory_ids,
+                *compiled.answer_selection.supporting_memory_ids,
+                *compiled.answer_selection.citation_memory_ids,
+            }
+            rejected = set(compiled.retrieval_context.rejected_memory_ids)
+
+            assert not direct_support & rejected, (
+                scenario.scenario_id,
+                checkpoint.checkpoint_id,
+                sorted(direct_support & rejected),
+            )
+
+
 def test_falsified_belief_cannot_become_direct_answer_support() -> None:
     scenario = _scenario("evolution_belief_dependency_degradation")
     checkpoint = scenario.checkpoints[0]

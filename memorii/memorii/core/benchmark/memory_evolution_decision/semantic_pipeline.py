@@ -241,7 +241,8 @@ def compile_memory_evolution_decision(
             *command_context,
         ]
     )
-    rejected = [item for item in rejected if item not in selected_set]
+    direct_support_ids = selected_set | set(citations)
+    rejected = [item for item in rejected if item not in direct_support_ids]
 
     temporal_frame = semantic.query_temporal_frame
     execution = None
