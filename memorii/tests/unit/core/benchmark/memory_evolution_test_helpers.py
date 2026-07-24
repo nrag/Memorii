@@ -8,8 +8,17 @@ from memorii.core.benchmark.memory_evolution_sim import (
     LatentEntity,
     LatentGraphScenario,
     LatentRelation,
+    MemoryEvolutionSimReconstructionContext,
     OracleCheckpoint,
+    SimClaimAssessment,
+    SimClaimSemanticRole,
+    SimSemanticDecision,
     generate_memory_evolution_sim_scenarios,
+)
+from memorii.core.llm_provider.models import (
+    LLMDecisionResult,
+    LLMStructuredRequest,
+    LLMStructuredResponse,
 )
 
 SimProfile = Literal["smoke", "adversarial", "long_horizon"]
@@ -99,6 +108,91 @@ def relation_by_role(
         index=index,
         label=f"relation role {role!r}",
         available=_available_roles(relation.evaluation_roles for relation in scenario.relations),
+    )
+
+
+def oracle_shaped_sim_semantic_decision(
+    *,
+    context: MemoryEvolutionSimReconstructionContext,
+    checkpoint: OracleCheckpoint,
+) -> SimSemanticDecision:
+    """Build test-only semantic classifications from oracle expectations."""
+
+    execution = checkpoint.checkpoint_type == "execution_continuation"
+    primary_ids = set(
+        checkpoint.expected_execution_claim_ids
+        if execution
+        else checkpoint.expected_claim_ids
+    )
+    relevant_ids = {
+        *primary_ids,
+        *checkpoint.expected_excluded_claim_ids,
+    }
+    ranking = (
+        list(checkpoint.expected_claim_ids)
+        if checkpoint.task_contract.belief_ranking_policy == "required"
+        else []
+    )
+    rank_by_id = {
+        claim_id: index
+        for index, claim_id in enumerate(ranking, start=1)
+    }
+    operation: Literal["answer", "next_action", "graph_reconstruction", "abstain"]
+    if checkpoint.expected_abstention:
+        operation = "abstain"
+    elif checkpoint.expected_next_action is not None:
+        operation = "next_action"
+    elif "graph_reconstruction" in checkpoint.task_contract.allowed_operations:
+        operation = "graph_reconstruction"
+    else:
+        operation = "answer"
+    return SimSemanticDecision(
+        operation=operation,
+        claim_assessments=[
+            SimClaimAssessment(
+                claim_id=claim.claim_id,
+                role=(
+                    SimClaimSemanticRole.PRIMARY
+                    if claim.claim_id in primary_ids
+                    else SimClaimSemanticRole.RELEVANT
+                    if claim.claim_id in relevant_ids
+                    else SimClaimSemanticRole.IRRELEVANT
+                ),
+                belief_rank=rank_by_id.get(claim.claim_id),
+            )
+            for claim in context.visible_claims
+        ],
+        answer=checkpoint.expected_answer,
+        next_action=checkpoint.expected_next_action,
+        uncertain_ids=list(checkpoint.expected_uncertain_ids),
+        confidence=0.35 if checkpoint.expected_abstention else 0.92,
+        rationale="provider-shaped test semantic classification",
+    )
+
+
+def provider_result_for_sim_semantic(
+    *,
+    request: LLMStructuredRequest,
+    decision: SimSemanticDecision,
+    provider_name: str = "fake",
+) -> LLMDecisionResult:
+    """Return a provider-shaped result without using an oracle production adapter."""
+
+    payload = decision.model_dump(mode="json")
+    return LLMDecisionResult(
+        request=request,
+        response=LLMStructuredResponse(
+            request_id=request.request_id,
+            provider=provider_name,
+            requested_model=request.model_defaults.model,
+            actual_model=request.model_defaults.model,
+            raw_text="",
+            parsed_json=payload,
+            valid_json=True,
+            schema_valid=True,
+        ),
+        output=payload,
+        success=True,
     )
 
 

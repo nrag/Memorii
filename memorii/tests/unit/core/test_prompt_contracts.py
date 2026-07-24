@@ -412,16 +412,17 @@ def test_memory_extraction_prompt_schema_is_strict_for_openai() -> None:
 
 def test_memory_evolution_sim_prompt_distinguishes_subject_and_answer_object_entities() -> None:
     contract = _load("memory_evolution_sim_reconstruction:v1")
-    system = contract.system_template
+    system = " ".join(contract.system_template.split())
 
     assert "subject entity" in system
     assert "object entity" in system
     assert "selected_entity_role_policy" not in system
     assert "subject entity remains graph-selected" in system
-    assert "deterministic compilation" in system
-    assert "visible entity definition/type claim" in system
+    assert "Classify every visible claim exactly once" in system
+    assert "Deterministic code adds mechanically required definitions" in system
+    assert "belief_ranking_policy" in system
     assert "operation=next_action" in system
-    assert "conflict/correction relations" in system
+    assert "relations, and evidence" in system
     assert "latest eligible active action-state branch" in system
 
 

@@ -23,6 +23,11 @@ from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionTemporalReference,
 )
 from memorii.core.benchmark.memory_evolution_decision.utils import dedupe_string_ids
+from memorii.core.benchmark.task_conditioned_fields import (
+    TaskFieldPresencePolicy,
+    TaskFieldPresenceViolation,
+    task_field_presence_violation,
+)
 
 
 class MemoryEvolutionSemanticViolationCode(StrEnum):
@@ -37,6 +42,8 @@ class MemoryEvolutionSemanticViolationCode(StrEnum):
     NON_ACTION_SELECTED_FOR_EXECUTION = "non_action_selected_for_execution"
     STALE_SELECTED_FOR_CURRENT_QUERY = "stale_selected_for_current_query"
     FALSIFIED_BELIEF_SELECTED = "falsified_belief_selected"
+    BELIEF_SCORES_REQUIRED = "belief_scores_required"
+    BELIEF_SCORES_FORBIDDEN = "belief_scores_forbidden"
 
 
 class MemoryEvolutionSemanticValidation(BaseModel):
@@ -59,6 +66,18 @@ def validate_memory_evolution_semantic_decision(
     visible_by_id = {card.memory_id: card for card in context.visible_memory_cards}
     visible_ids = set(visible_by_id)
     violations: list[MemoryEvolutionSemanticViolationCode] = []
+    belief_score_presence = task_field_presence_violation(
+        policy=(
+            TaskFieldPresencePolicy.FORBIDDEN
+            if context.decision_contract.belief_score_policy == MemoryEvolutionBeliefScorePolicy.NONE
+            else TaskFieldPresencePolicy.REQUIRED
+        ),
+        item_count=len(semantic.belief_scores),
+    )
+    if belief_score_presence == TaskFieldPresenceViolation.REQUIRED_MISSING:
+        violations.append(MemoryEvolutionSemanticViolationCode.BELIEF_SCORES_REQUIRED)
+    elif belief_score_presence == TaskFieldPresenceViolation.FORBIDDEN_PRESENT:
+        violations.append(MemoryEvolutionSemanticViolationCode.BELIEF_SCORES_FORBIDDEN)
     referenced = {
         *semantic.selected_memory_ids,
         *semantic.considered_memory_ids,

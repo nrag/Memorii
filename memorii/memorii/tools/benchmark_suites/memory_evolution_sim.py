@@ -15,7 +15,6 @@ from memorii.core.benchmark.artifact_rows import (
     CheckpointVerdictSection,
     DecisionMode,
     FinalOutputSource,
-    SemanticDecisionAttemptRow,
     SimCheckpointResultRow,
     SimLLMTraceRow,
     SimScenarioResultRow,
@@ -36,12 +35,17 @@ from memorii.core.benchmark.memory_evolution_sim import (
     SimSemanticDecision,
     SimSemanticRepairRequest,
     SimSystemOutput,
+    expected_sim_output_for_checkpoint,
     judge_sim_checkpoint,
     memory_evolution_sim_engine_result_from_llm,
     memory_evolution_sim_trace_for_rule,
     rule_sim_output_for_checkpoint,
     sim_checkpoint_diagnostics,
     sim_reconstruction_context_for_checkpoint,
+)
+from memorii.core.benchmark.semantic_attempt_artifacts import (
+    provider_attempt_status,
+    semantic_attempt_artifact,
 )
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import (
@@ -51,16 +55,14 @@ from memorii.core.llm_config import (
     LLMRuntimeConfig,
 )
 from memorii.core.llm_decision.models import LLMDecisionMode
-from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.memory_evolution.models import FallbackOutcome, ProviderAttemptStatus
+from memorii.core.memory_evolution.models import FallbackOutcome
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.common import (
     ALL_DECISION_MODES,
     require_memorii_only,
 )
-from memorii.tools.benchmark_suites.fake_adapters import ExpectedMemoryEvolutionSimFakeAdapter
 from memorii.tools.benchmark_suites.memory_evolution_artifacts import (
     horizon_distance_bucket,
     interference_count_bucket,
@@ -96,16 +98,6 @@ def _ordered_unique(values: Sequence[object]) -> list[str]:
         seen.add(text)
         unique.append(text)
     return unique
-
-
-def _provider_attempt_status(result: LLMDecisionResult) -> ProviderAttemptStatus:
-    if result.success:
-        return ProviderAttemptStatus.SUCCEEDED
-    return {
-        "provider_error": ProviderAttemptStatus.PROVIDER_ERROR,
-        "invalid_json": ProviderAttemptStatus.INVALID_JSON,
-        "schema_validation": ProviderAttemptStatus.SCHEMA_ERROR,
-    }.get(result.failure_mode or "", ProviderAttemptStatus.SCHEMA_ERROR)
 
 
 def _run_memory_evolution_sim_transitions(
@@ -145,15 +137,18 @@ def _run_memory_evolution_sim_transitions(
             runtime_config = runtime_config.model_copy(update={"max_retries": 0})
 
     registry = PromptRegistry(prompt_root=prompt_root)
+    oracle_bypass = (
+        effective_mode in {"llm", "hybrid"}
+        and dependencies.use_oracle_adapters(dry_run=dry_run)
+    )
     adapter = None
     llm_binding = None
-    if effective_mode in {"llm", "hybrid"}:
+    if effective_mode in {"llm", "hybrid"} and not oracle_bypass:
         llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
         runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
-        adapter = (
-            ExpectedMemoryEvolutionSimFakeAdapter(scenarios=scenarios, registry=registry)
-            if dependencies.use_oracle_adapters(dry_run=dry_run)
-            else LLMMemoryEvolutionSimReconstructionAdapter(runner=runner, registry=registry)
+        adapter = LLMMemoryEvolutionSimReconstructionAdapter(
+            runner=runner,
+            registry=registry,
         )
 
     scenario_rows: list[SimScenarioResultRow] = []
@@ -177,7 +172,16 @@ def _run_memory_evolution_sim_transitions(
             final_output_source = "rule"
             llm_trace = rule_trace
 
-            if effective_mode in {"llm", "hybrid"} and adapter is not None:
+            if oracle_bypass:
+                oracle_output = expected_sim_output_for_checkpoint(checkpoint)
+                output_json = oracle_output.model_dump(mode="json")
+                final_output_source = "fake_oracle"
+                llm_trace = memory_evolution_sim_trace_for_rule(
+                    context=context,
+                    decision=oracle_output,
+                    mode=effective_mode,
+                )
+            elif effective_mode in {"llm", "hybrid"} and adapter is not None:
                 llm_call_made = True
                 metadata: dict[str, object] = {
                     "suite": "memory_evolution_sim_v1",
@@ -220,27 +224,33 @@ def _run_memory_evolution_sim_transitions(
                 llm_success = final_attempt.success
                 fallback_reason = final_attempt.failure_mode
                 attempts = [
-                    _semantic_attempt_row(
+                    semantic_attempt_artifact(
                         attempt=index,
                         result=attempt.provider_result,
+                        provider_status=provider_attempt_status(
+                            attempt.provider_result
+                        ),
                         accepted=attempt.success,
                         failure_mode=attempt.failure_mode,
                         validation_issues=[
                             issue.code for issue in attempt.trace.validation_issues
                         ],
+                        compiled_output=attempt.output if attempt.success else None,
+                        repair_request=(
+                            resolution.final_context.repair_request
+                            if index == 1
+                            else None
+                        ),
                     )
                     for index, attempt in enumerate(resolution.attempts)
                 ]
-                semantic_rejection = (
-                    fallback_reason == "llm_semantic_validation_failed"
-                )
-                if llm_success or semantic_rejection:
+                if llm_success:
                     if llm_binding is None:
                         raise RuntimeError("LLM result is missing execution provenance")
                     final_output_source = llm_binding.final_output_source
                 else:
                     final_output_source = "rule"
-                fallback_used = not llm_success and not semantic_rejection
+                fallback_used = not llm_success
                 llm_rows.append(
                     SimLLMTraceRow(
                         scenario_id=scenario.scenario_id,
@@ -250,7 +260,7 @@ def _run_memory_evolution_sim_transitions(
                         effective_decision_mode=effective_mode,
                         final_output_source=final_output_source,
                         trace=llm_trace,
-                        provider_attempt_status=_provider_attempt_status(result),
+                        provider_attempt_status=provider_attempt_status(result),
                         semantic_validation_status=(
                             "passed" if llm_success else "failed" if result.success else "not_evaluated"
                         ),
@@ -273,14 +283,19 @@ def _run_memory_evolution_sim_transitions(
                 checkpoint=checkpoint,
                 output=output,
             )
-            semantic_failure = fallback_reason == "llm_semantic_validation_failed"
             diagnostics = sim_checkpoint_diagnostics(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 output=output,
                 aggregate=aggregate,
             )
-            engine_failure_buckets = [_SEMANTIC_DECISION_INVALID_BUCKET] if semantic_failure else []
+            semantic_failure = fallback_reason in {
+                "llm_semantic_validation_failed",
+                "llm_compiled_output_validation_failed",
+            }
+            engine_failure_buckets = (
+                [_SEMANTIC_DECISION_INVALID_BUCKET] if semantic_failure else []
+            )
             if effective_mode in {"llm", "hybrid"} and llm_call_made and not llm_success:
                 engine_failure_buckets.append(fallback_reason or "llm_provider_failure")
             success = (
@@ -333,26 +348,6 @@ def _run_memory_evolution_sim_transitions(
             )
         )
     return scenario_rows, checkpoint_rows, judge_rows, llm_rows
-
-
-def _semantic_attempt_row(
-    *,
-    attempt: int,
-    result: LLMDecisionResult,
-    accepted: bool,
-    failure_mode: str | None,
-    validation_issues: list[str],
-) -> SemanticDecisionAttemptRow:
-    provider_status = _provider_attempt_status(result)
-    return SemanticDecisionAttemptRow(
-        attempt=attempt,
-        request_id=result.request.request_id,
-        provider_attempt_status=provider_status,
-        semantic_validation_status=("passed" if accepted else "failed" if result.success else "not_evaluated"),
-        accepted=accepted,
-        failure_mode=failure_mode,
-        validation_issues=validation_issues,
-    )
 
 
 def _build_sim_checkpoint_result_row(

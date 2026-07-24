@@ -3,8 +3,6 @@
 from memorii.core.benchmark.memory_evolution_sim.candidate_cards import sim_reconstruction_context_for_checkpoint
 from memorii.core.benchmark.memory_evolution_sim.decisions import (
     expected_sim_output_for_checkpoint,
-    expected_sim_semantic_decision_for_checkpoint,
-    fake_llm_result_for_memory_evolution_sim,
     memory_evolution_sim_engine_result_from_llm,
     memory_evolution_sim_trace_for_rule,
     rule_sim_output_for_checkpoint,
@@ -17,7 +15,9 @@ from memorii.core.benchmark.memory_evolution_sim.generation import (
 from memorii.core.benchmark.memory_evolution_sim.judges import judge_sim_checkpoint
 from memorii.core.benchmark.memory_evolution_sim.metrics import sim_metrics_from_rows
 from memorii.core.benchmark.memory_evolution_sim.opaque_ids import remap_scenario_ids
-from memorii.core.benchmark.memory_evolution_sim.output_validation import sim_output_allowed_id_errors
+from memorii.core.benchmark.memory_evolution_sim.oracle_output_audit import (
+    sim_output_allowed_id_errors,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     ClaimArgument,
     ClaimEvidence,
@@ -43,6 +43,8 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     RelationEndpoint,
     RelationProvenance,
     RelationTemporal,
+    SimClaimAssessment,
+    SimClaimSemanticRole,
     SimLifecycleState,
     SimSemanticDecision,
     SimSemanticDecisionOutput,
@@ -92,6 +94,8 @@ __all__ = [
     "RelationTemporal",
     "ReconstructionTaskContract",
     "SimLifecycleState",
+    "SimClaimAssessment",
+    "SimClaimSemanticRole",
     "SimSemanticDecision",
     "SimSemanticDecisionOutput",
     "SimSemanticRepairRequest",
@@ -107,8 +111,6 @@ __all__ = [
     "VisibleSurfaceObservation",
     "WorldTransition",
     "expected_sim_output_for_checkpoint",
-    "expected_sim_semantic_decision_for_checkpoint",
-    "fake_llm_result_for_memory_evolution_sim",
     "generate_memory_evolution_sim_scenarios",
     "judge_sim_checkpoint",
     "memory_evolution_sim_engine_result_from_llm",

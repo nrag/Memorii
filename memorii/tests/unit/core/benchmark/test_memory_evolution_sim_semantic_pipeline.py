@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from memorii.core.benchmark.memory_evolution_sim import (
     JudgeVerdict,
+    SimClaimAssessment,
+    SimClaimSemanticRole,
     SimSemanticViolationCode,
     compile_sim_semantic_decision,
-    expected_sim_semantic_decision_for_checkpoint,
     generate_memory_evolution_sim_scenarios,
     judge_sim_checkpoint,
     remap_scenario_ids,
@@ -12,9 +13,13 @@ from memorii.core.benchmark.memory_evolution_sim import (
     sim_reconstruction_context_for_checkpoint,
     validate_sim_semantic_decision,
 )
+from memorii.core.benchmark.memory_evolution_sim.visible_output_validation import (
+    validate_visible_sim_output,
+)
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
     generate_scenario_by_family,
+    oracle_shaped_sim_semantic_decision,
 )
 
 
@@ -32,7 +37,10 @@ def test_compiled_oracle_semantics_pass_adversarial_and_long_horizon_checkpoints
                     scenario=scenario,
                     checkpoint=checkpoint,
                 )
-                semantic = expected_sim_semantic_decision_for_checkpoint(checkpoint)
+                semantic = oracle_shaped_sim_semantic_decision(
+                    context=context,
+                    checkpoint=checkpoint,
+                )
                 output = compile_sim_semantic_decision(context=context, semantic=semantic)
                 aggregate = judge_sim_checkpoint(
                     scenario=scenario,
@@ -61,7 +69,10 @@ def test_execution_rejects_ownership_and_inactive_action_claims() -> None:
         scenario=scenario,
         checkpoint=checkpoint,
     )
-    semantic = expected_sim_semantic_decision_for_checkpoint(checkpoint)
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    )
     ownership = next(
         claim
         for claim in context.visible_claims
@@ -69,23 +80,37 @@ def test_execution_rejects_ownership_and_inactive_action_claims() -> None:
     )
     blocked = next(claim for claim in context.visible_claims if claim.object_value.casefold() == "blocked")
 
+    ownership_assessments = [
+        assessment.model_copy(
+            update={
+                "role": (
+                    SimClaimSemanticRole.PRIMARY
+                    if assessment.claim_id == ownership.claim_id
+                    else SimClaimSemanticRole.IRRELEVANT
+                )
+            }
+        )
+        for assessment in semantic.claim_assessments
+    ]
+    blocked_assessments = [
+        assessment.model_copy(
+            update={
+                "role": (
+                    SimClaimSemanticRole.PRIMARY
+                    if assessment.claim_id == blocked.claim_id
+                    else SimClaimSemanticRole.IRRELEVANT
+                )
+            }
+        )
+        for assessment in semantic.claim_assessments
+    ]
     ownership_validation = validate_sim_semantic_decision(
         context=context,
-        semantic=semantic.model_copy(
-            update={
-                "selected_claim_ids": [ownership.claim_id],
-                "considered_claim_ids": [ownership.claim_id],
-            }
-        ),
+        semantic=semantic.model_copy(update={"claim_assessments": ownership_assessments}),
     )
     blocked_validation = validate_sim_semantic_decision(
         context=context,
-        semantic=semantic.model_copy(
-            update={
-                "selected_claim_ids": [blocked.claim_id],
-                "considered_claim_ids": [blocked.claim_id],
-            }
-        ),
+        semantic=semantic.model_copy(update={"claim_assessments": blocked_assessments}),
     )
 
     assert SimSemanticViolationCode.NON_ACTION_SELECTED_FOR_EXECUTION in ownership_validation.violation_codes
@@ -104,7 +129,10 @@ def test_sim_compilation_is_invariant_to_candidate_order_and_irrelevant_insertio
         scenario=scenario,
         checkpoint=checkpoint,
     )
-    semantic = expected_sim_semantic_decision_for_checkpoint(checkpoint)
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    )
     expected = compile_sim_semantic_decision(context=context, semantic=semantic)
     irrelevant = context.visible_claims[0].model_copy(
         update={
@@ -125,7 +153,22 @@ def test_sim_compilation_is_invariant_to_candidate_order_and_irrelevant_insertio
         }
     )
 
-    actual = compile_sim_semantic_decision(context=changed, semantic=semantic)
+    changed_semantic = semantic.model_copy(
+        update={
+            "claim_assessments": [
+                *semantic.claim_assessments,
+                SimClaimAssessment(
+                    claim_id="irrelevant-visible-claim",
+                    role=SimClaimSemanticRole.IRRELEVANT,
+                    belief_rank=None,
+                ),
+            ]
+        }
+    )
+    actual = compile_sim_semantic_decision(
+        context=changed,
+        semantic=changed_semantic,
+    )
 
     assert actual == expected
     assert "irrelevant-visible" not in str(actual.model_dump(mode="json"))
@@ -151,7 +194,10 @@ def test_id_permutation_preserves_compiler_judgment() -> None:
         )
         output = compile_sim_semantic_decision(
             context=context,
-            semantic=expected_sim_semantic_decision_for_checkpoint(checkpoint),
+            semantic=oracle_shaped_sim_semantic_decision(
+                context=context,
+                checkpoint=checkpoint,
+            ),
         )
         aggregate = judge_sim_checkpoint(
             scenario=candidate,
@@ -175,7 +221,10 @@ def test_sim_answer_rendering_cannot_mutate_graph_channels() -> None:
         scenario=scenario,
         checkpoint=checkpoint,
     )
-    semantic = expected_sim_semantic_decision_for_checkpoint(checkpoint)
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    )
     compiled = compile_sim_semantic_decision(context=context, semantic=semantic)
     rendered = render_sim_answer(
         output=compiled,
@@ -187,3 +236,34 @@ def test_sim_answer_rendering_cannot_mutate_graph_channels() -> None:
     assert rendered_payload.pop("answer") == "Equivalent rendered answer"
     compiled_payload.pop("answer")
     assert rendered_payload == compiled_payload
+
+
+def test_audit_graph_entity_policy_is_consistent_across_compiler_and_validator() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="entity_split",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "entity_split_repair")
+    checkpoint = checkpoint.model_copy(
+        update={
+            "task_contract": checkpoint.task_contract.model_copy(
+                update={"selected_entity_role_policy": "audit_graph_entities"}
+            )
+        }
+    )
+    context = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    )
+
+    output = compile_sim_semantic_decision(context=context, semantic=semantic)
+    issue_codes = {issue.code for issue in validate_visible_sim_output(context=context, output=output)}
+
+    assert output.selected_entity_ids == []
+    assert "selected_entity_role_mismatch" not in issue_codes

@@ -74,6 +74,8 @@ system_template: |-
   - selected_memory_ids must be a subset of considered_memory_ids.
   - Current fact queries select the trusted checkpoint-current state.
   - Historical queries select the state valid in the requested visible interval or anchor.
+  - When decision_contract.belief_score_policy is none, belief_scores must be empty.
+    For every other belief-score policy, emit the required visible belief evaluations.
   - Belief decisions distinguish content state from memory-record lifecycle. Falsified beliefs
     cannot be selected; include their scores and state when evaluated.
   - Execution decisions select only the active action-state memory. Command, ownership, blocked,

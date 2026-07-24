@@ -17,7 +17,6 @@ from memorii.core.benchmark.artifact_rows import (
     CuratedMemoryEvolutionLLMTraceRow,
     DecisionMode,
     FinalOutputSource,
-    SemanticDecisionAttemptRow,
     artifact_row_to_json,
 )
 from memorii.core.benchmark.bounded_semantic_repair import run_with_one_semantic_repair
@@ -37,6 +36,10 @@ from memorii.core.benchmark.memory_evolution_decision import (
 )
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import build_run_id
+from memorii.core.benchmark.semantic_attempt_artifacts import (
+    provider_attempt_status,
+    semantic_attempt_artifact,
+)
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import (
     DecisionModeName,
@@ -45,7 +48,6 @@ from memorii.core.llm_config import (
     LLMRuntimeConfig,
 )
 from memorii.core.llm_decision.models import LLMDecisionMode
-from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.memory_evolution import FallbackOutcome, ProviderAttemptStatus
 from memorii.core.prompts.registry import PromptRegistry
@@ -195,18 +197,27 @@ def _run_memory_evolution_transitions(
                 llm_trace = final_attempt.trace
                 llm_success = final_attempt.success
                 fallback_reason = final_attempt.failure_mode
-                final_provider_status = _provider_attempt_status(
+                final_provider_status = provider_attempt_status(
                     final_attempt.provider_result
                 )
                 provider_attempts = [
-                    _memory_evolution_provider_attempt(
+                    semantic_attempt_artifact(
                         attempt=index,
                         result=attempt.provider_result,
+                        provider_status=provider_attempt_status(
+                            attempt.provider_result
+                        ),
                         accepted=attempt.success,
                         failure_mode=attempt.failure_mode,
                         validation_issues=[
                             issue.code for issue in attempt.trace.validation_issues
                         ],
+                        compiled_output=attempt.output if attempt.success else None,
+                        repair_request=(
+                            resolution.final_context.repair_request
+                            if index == 1
+                            else None
+                        ),
                     )
                     for index, attempt in enumerate(resolution.attempts)
                 ]
@@ -308,39 +319,6 @@ def _run_memory_evolution_transitions(
             }
         )
     return scenario_rows, checkpoint_rows, llm_rows
-
-
-def _memory_evolution_provider_attempt(
-    *,
-    attempt: int,
-    result: LLMDecisionResult,
-    accepted: bool,
-    failure_mode: str | None,
-    validation_issues: list[str],
-) -> SemanticDecisionAttemptRow:
-    provider_status = _provider_attempt_status(result)
-    return SemanticDecisionAttemptRow(
-        attempt=attempt,
-        request_id=result.request.request_id,
-        provider_attempt_status=provider_status,
-        semantic_validation_status=_semantic_validation_status(
-            provider_status=provider_status,
-            accepted=accepted,
-        ),
-        accepted=accepted,
-        failure_mode=failure_mode,
-        validation_issues=validation_issues,
-    )
-
-
-def _provider_attempt_status(result: LLMDecisionResult) -> ProviderAttemptStatus:
-    if result.success or result.failure_mode == "semantic_validation":
-        return ProviderAttemptStatus.SUCCEEDED
-    return {
-        "provider_error": ProviderAttemptStatus.PROVIDER_ERROR,
-        "invalid_json": ProviderAttemptStatus.INVALID_JSON,
-        "schema_validation": ProviderAttemptStatus.SCHEMA_ERROR,
-    }.get(result.failure_mode or "", ProviderAttemptStatus.SCHEMA_ERROR)
 
 
 def _semantic_validation_status(

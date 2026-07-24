@@ -2,18 +2,15 @@ from __future__ import annotations
 
 import json
 
-import pytest
 from jsonschema import Draft202012Validator
 from memorii.core.benchmark.llm_adapters import (
     LLMMemoryEvolutionSimReconstructionAdapter,
 )
 from memorii.core.benchmark.memory_evolution_sim import (
-    expected_sim_semantic_decision_for_checkpoint,
     sim_reconstruction_context_for_checkpoint,
 )
 from memorii.core.benchmark.memory_evolution_sim.closed_world_schema import (
-    constrain_string_array_fields,
-    sim_output_id_constraints,
+    constrain_sim_semantic_contract,
 )
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
@@ -23,6 +20,7 @@ from memorii.core.prompts.runtime_manifest import PromptOwner
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
     generate_scenario_by_family,
+    oracle_shaped_sim_semantic_decision,
 )
 
 
@@ -42,57 +40,68 @@ def _context():
         noise_rate=0.35,
     )
     checkpoint = checkpoint_by_type(scenario, "entity_split_repair")
-    return sim_reconstruction_context_for_checkpoint(
-        scenario=scenario,
-        checkpoint=checkpoint,
+    return (
+        scenario,
+        checkpoint,
+        sim_reconstruction_context_for_checkpoint(
+            scenario=scenario,
+            checkpoint=checkpoint,
+        ),
     )
 
 
-def test_closed_world_schema_uses_field_specific_visible_namespaces() -> None:
-    context = _context()
-    constrained = constrain_string_array_fields(
+def test_closed_world_schema_requires_exactly_one_assessment_per_visible_claim() -> None:
+    _scenario, _checkpoint, context = _context()
+    constrained = constrain_sim_semantic_contract(
         contract=_contract(),
-        allowed_values_by_field=sim_output_id_constraints(context),
+        context=context,
     )
-    properties = constrained.output_schema["properties"]
+    assessments = constrained.output_schema["properties"]["claim_assessments"]
+    claim_id = assessments["items"]["properties"]["claim_id"]
 
-    assert properties["selected_claim_ids"]["items"]["enum"] == sorted(context.visible_claim_ids)
-    assert properties["considered_claim_ids"]["items"]["enum"] == sorted(context.visible_claim_ids)
-    assert properties["relevant_relation_ids"]["items"]["enum"] == sorted(context.visible_relation_ids)
+    assert assessments["minItems"] == len(context.visible_claim_ids)
+    assert assessments["maxItems"] == len(context.visible_claim_ids)
+    assert claim_id["enum"] == sorted(context.visible_claim_ids)
+
+
+def test_closed_world_schema_uses_task_operation_domain_with_abstention() -> None:
+    _scenario, _checkpoint, context = _context()
+    constrained = constrain_sim_semantic_contract(
+        contract=_contract(),
+        context=context,
+    )
+
+    assert constrained.output_schema["properties"]["operation"]["enum"] == [
+        "abstain",
+        *sorted(context.checkpoint.task_contract.allowed_operations),
+    ]
 
 
 def test_closed_world_schema_rejects_fabricated_and_cross_namespace_ids() -> None:
-    context = _context()
-    constrained = constrain_string_array_fields(
+    _scenario, checkpoint, context = _context()
+    constrained = constrain_sim_semantic_contract(
         contract=_contract(),
-        allowed_values_by_field=sim_output_id_constraints(context),
+        context=context,
     )
-    output = {
-        field_name: []
-        for field_name, field_schema in constrained.output_schema["properties"].items()
-        if field_schema.get("type") == "array"
-    }
-    output.update(
-        {
-            "operation": "answer",
-            "answer": "test answer",
-            "next_action": None,
-            "confidence": 0.5,
-            "rationale": "test",
-        }
-    )
-    output["selected_claim_ids"] = ["fabricated-composite-id"]
-    errors = list(Draft202012Validator(constrained.output_schema).iter_errors(output))
-    assert errors
+    payload = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
 
-    output["selected_claim_ids"] = [context.visible_relation_ids[0]]
-    errors = list(Draft202012Validator(constrained.output_schema).iter_errors(output))
-    assert errors
+    payload["claim_assessments"][0]["claim_id"] = "fabricated-composite-id"
+    assert list(Draft202012Validator(constrained.output_schema).iter_errors(payload))
+
+    payload["claim_assessments"][0]["claim_id"] = context.visible_relation_ids[0]
+    assert list(Draft202012Validator(constrained.output_schema).iter_errors(payload))
 
 
 def test_closed_world_schema_constrains_uncertain_ids_to_visible_union() -> None:
-    context = _context()
-    constraints = sim_output_id_constraints(context)
+    _scenario, _checkpoint, context = _context()
+    constrained = constrain_sim_semantic_contract(
+        contract=_contract(),
+        context=context,
+    )
+    uncertain_items = constrained.output_schema["properties"]["uncertain_ids"]["items"]
     visible_union = sorted(
         {
             *context.visible_entity_ids,
@@ -102,39 +111,41 @@ def test_closed_world_schema_constrains_uncertain_ids_to_visible_union() -> None
         }
     )
 
-    assert list(constraints["uncertain_ids"]) == visible_union
-    assert "fabricated-id" not in constraints["uncertain_ids"]
+    assert uncertain_items["enum"] == visible_union
+    assert "fabricated-id" not in uncertain_items["enum"]
 
 
-def test_closed_world_schema_empty_namespace_requires_empty_array() -> None:
-    context = _context().model_copy(
-        update={
-            "visible_claim_ids": [],
-            "visible_claims": [],
-        }
-    )
-    constrained = constrain_string_array_fields(
+def test_closed_world_schema_forbids_ranks_for_non_ranking_tasks() -> None:
+    _scenario, _checkpoint, context = _context()
+    constrained = constrain_sim_semantic_contract(
         contract=_contract(),
-        allowed_values_by_field=sim_output_id_constraints(context),
+        context=context,
     )
 
-    assert constrained.output_schema["properties"]["selected_claim_ids"]["maxItems"] == 0
-    assert "enum" not in constrained.output_schema["properties"]["selected_claim_ids"]["items"]
+    rank_schema = constrained.output_schema["properties"]["claim_assessments"]["items"][
+        "properties"
+    ]["belief_rank"]
+
+    assert rank_schema == {"type": "null"}
 
 
 def test_closed_world_schema_digest_is_order_invariant_and_content_sensitive() -> None:
-    contract = _contract()
-    first = constrain_string_array_fields(
-        contract=contract,
-        allowed_values_by_field={"selected_claim_ids": ("b", "a", "a")},
+    _scenario, _checkpoint, context = _context()
+    first = constrain_sim_semantic_contract(
+        contract=_contract(),
+        context=context,
     )
-    reordered = constrain_string_array_fields(
-        contract=contract,
-        allowed_values_by_field={"selected_claim_ids": ("a", "b")},
+    reordered = constrain_sim_semantic_contract(
+        contract=_contract(),
+        context=context.model_copy(
+            update={"visible_claim_ids": list(reversed(context.visible_claim_ids))}
+        ),
     )
-    changed = constrain_string_array_fields(
-        contract=contract,
-        allowed_values_by_field={"selected_claim_ids": ("a", "c")},
+    changed = constrain_sim_semantic_contract(
+        contract=_contract(),
+        context=context.model_copy(
+            update={"visible_claim_ids": [*context.visible_claim_ids, "new-visible-claim"]}
+        ),
     )
 
     assert first.registration_digest == reordered.registration_digest
@@ -142,32 +153,12 @@ def test_closed_world_schema_digest_is_order_invariant_and_content_sensitive() -
     assert first.registration_digest != changed.registration_digest
 
 
-def test_closed_world_schema_rejects_unknown_or_non_array_fields() -> None:
-    with pytest.raises(ValueError, match="not a top-level array"):
-        constrain_string_array_fields(
-            contract=_contract(),
-            allowed_values_by_field={"answer": ("x",)},
-        )
-    with pytest.raises(ValueError, match="not a top-level array"):
-        constrain_string_array_fields(
-            contract=_contract(),
-            allowed_values_by_field={"missing_ids": ("x",)},
-        )
-
-
 def test_sim_adapter_sends_request_specific_closed_world_schema() -> None:
-    scenario = generate_scenario_by_family(
-        profile="adversarial",
-        family="entity_split",
-        seed=7,
-        noise_rate=0.35,
-    )
-    checkpoint = checkpoint_by_type(scenario, "entity_split_repair")
-    context = sim_reconstruction_context_for_checkpoint(
-        scenario=scenario,
+    _scenario, checkpoint, context = _context()
+    response = oracle_shaped_sim_semantic_decision(
+        context=context,
         checkpoint=checkpoint,
-    )
-    response = expected_sim_semantic_decision_for_checkpoint(checkpoint).model_dump(mode="json")
+    ).model_dump(mode="json")
     client = FakeLLMStructuredClient(default_response=json.dumps(response))
     adapter = LLMMemoryEvolutionSimReconstructionAdapter(
         runner=PromptLLMRunner(
@@ -181,6 +172,8 @@ def test_sim_adapter_sends_request_specific_closed_world_schema() -> None:
 
     assert result.success is True
     assert client.last_request is not None
-    selected_claim_schema = client.last_request.output_schema["properties"]["selected_claim_ids"]
-    assert selected_claim_schema["items"]["enum"] == sorted(context.visible_claim_ids)
+    assessments = client.last_request.output_schema["properties"]["claim_assessments"]
+    assert assessments["items"]["properties"]["claim_id"]["enum"] == sorted(
+        context.visible_claim_ids
+    )
     assert client.last_request.prompt_hash == client.last_request.metadata["prompt_hash"]

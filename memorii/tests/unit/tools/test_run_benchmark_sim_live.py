@@ -4,6 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
+from memorii.core.benchmark.artifact_validation import (
+    ArtifactValidationError,
+    finalize_memory_evolution_run,
+    validate_memory_evolution_run,
+)
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from tests.unit.tools.run_benchmark_test_helpers import (
@@ -22,12 +27,19 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
 
         def complete_structured(self, request: LLMStructuredRequest, *, config: LLMRuntimeConfig) -> LLMStructuredResponse:
             del config
+            claim_ids = request.output_schema["properties"]["claim_assessments"][
+                "items"
+            ]["properties"]["claim_id"]["enum"]
             output = {
                 "operation": "abstain",
-                "belief_ranking_ids": [],
-                "selected_claim_ids": [],
-                "considered_claim_ids": [],
-                "relevant_relation_ids": [],
+                "claim_assessments": [
+                    {
+                        "claim_id": claim_id,
+                        "role": "irrelevant",
+                        "belief_rank": None,
+                    }
+                    for claim_id in claim_ids
+                ],
                 "answer": None,
                 "next_action": None,
                 "uncertain_ids": [],
@@ -80,6 +92,22 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
     assert rows[0]["output"]["operation"] == "abstain"
     assert traces[0]["trace"]["input_payload"]["provider"] == "stub-live"
     assert traces[0]["trace"]["prompt_version"] == "memory_evolution_sim_reconstruction:v1"
+
+    rows[0]["output"]["rationale"] = "tampered judged output"
+    (run_dir / "sim_checkpoint_results.jsonl").write_text(
+        "".join(f"{json.dumps(row)}\n" for row in rows),
+        encoding="utf-8",
+    )
+    finalize_memory_evolution_run(run_dir)
+
+    with pytest.raises(
+        ArtifactValidationError,
+        match="judged output disagrees with persisted LLM output",
+    ):
+        validate_memory_evolution_run(
+            run_dir,
+            suite="memory_evolution_sim_v1",
+        )
 
 
 def test_memory_evolution_sim_hybrid_falls_back_to_rule_on_invalid_llm_output(

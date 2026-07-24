@@ -1,7 +1,7 @@
 prompt_id: memory_evolution_sim_reconstruction
 version: v1
 task: Make the semantic decision for a visible memory graph checkpoint.
-description: Selects answer-bearing claims and relevant relations; deterministic code compiles graph channels.
+description: Classifies every visible claim; deterministic code compiles graph channels and closure.
 input_schema:
   type: object
   required: [context_json, query]
@@ -14,10 +14,7 @@ output_schema:
   additionalProperties: false
   required:
     - operation
-    - belief_ranking_ids
-    - selected_claim_ids
-    - considered_claim_ids
-    - relevant_relation_ids
+    - claim_assessments
     - answer
     - next_action
     - uncertain_ids
@@ -25,10 +22,19 @@ output_schema:
     - rationale
   properties:
     operation: {type: string, enum: [answer, next_action, graph_reconstruction, abstain]}
-    belief_ranking_ids: {type: array, items: {type: string}}
-    selected_claim_ids: {type: array, items: {type: string}}
-    considered_claim_ids: {type: array, items: {type: string}}
-    relevant_relation_ids: {type: array, items: {type: string}}
+    claim_assessments:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [claim_id, role, belief_rank]
+        properties:
+          claim_id: {type: string}
+          role: {type: string, enum: [primary, relevant, irrelevant]}
+          belief_rank:
+            anyOf:
+              - {type: integer, minimum: 1}
+              - {type: 'null'}
     answer: {type: [string, 'null']}
     next_action: {type: [string, 'null']}
     uncertain_ids: {type: array, items: {type: string}}
@@ -37,25 +43,25 @@ output_schema:
 system_template: |-
   Make only the semantic choices needed to answer the query from visible candidate cards.
 
-  Follow checkpoint.task_contract for operation and answer projection. Select answer-bearing
-  claims, record every semantically considered alternative, and identify query-relevant visible
-  relations. Do not emit entity, support, citation, rejection, or context channels.
-  The deterministic compilation stage derives them from visible endpoints, evidence, lifecycle, and the
-  public task contract.
+  Follow checkpoint.task_contract for operation and answer projection. Classify every visible
+  claim exactly once. Use primary for answer-bearing truth or action claims, relevant for
+  query-relevant alternatives and disambiguating claims, and irrelevant for visible noise.
+  Do not emit entity, relation, support, citation, rejection, or context channels. Deterministic
+  compilation derives those channels from visible endpoints, evidence, lifecycle, assessments,
+  and the public task contract.
 
   Semantic rules:
   - Use only IDs in the visible candidate lists.
-  - selected_claim_ids must be a subset of considered_claim_ids.
-  - For current truth, select the trusted active claim and consider conflicting stale alternatives.
-  - For historical truth, select the claim valid in the requested interval.
+  - Emit exactly one claim_assessments item for every visible claim ID, without duplicates.
+  - For current truth, mark the trusted active answer claim primary and conflicting stale alternatives relevant.
+  - For historical truth, mark the claim valid in the requested interval primary.
   - Keep same-name entities distinct by ID and endpoint role.
-  - A selected ownership claim answers with its object value or object entity; its subject entity remains graph-selected.
-  - When the public task contract requires definitions, include the visible entity definition/type claim
-    for each selected claim subject in the semantic selection.
-  - Put query-relevant conflict/correction relations in relevant_relation_ids; deterministic code
-    assigns their graph channels.
-  - For belief ranking, rank considered belief claims best-to-worst.
-  - For operation=next_action, select only the latest eligible active action-state branch. Ownership
+  - A primary ownership claim answers with its object value or object entity; its subject entity remains graph-selected.
+  - Mark definitions and wrong-entity alternatives relevant when they disambiguate the query.
+  - Deterministic code adds mechanically required definitions, lifecycle competitors, relations, and evidence.
+  - When belief_ranking_policy is required, assign unique contiguous belief_rank values beginning at 1
+    to the ranked relevant belief claims. Otherwise belief_rank must be null for every assessment.
+  - For operation=next_action, mark only the latest eligible active action-state branch primary. Ownership
     and command context are not action state; blocked, abandoned, completed, and superseded branches
     are not selectable.
   - If evidence does not determine a unique result, abstain or identify uncertain visible IDs.

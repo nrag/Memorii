@@ -15,8 +15,6 @@ from memorii.core.benchmark.memory_evolution_decision import (
 from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
-    expected_sim_semantic_decision_for_checkpoint,
-    fake_llm_result_for_memory_evolution_sim,
 )
 from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest
 from memorii.core.prompts.models import PromptModelDefaults
@@ -24,8 +22,15 @@ from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
 from memorii.tools.benchmark_suites import memory_evolution as curated_suite
 from memorii.tools.benchmark_suites import memory_evolution_sim as sim_suite
 from memorii.tools.benchmark_suites.memory_evolution_artifacts import _llm_call_count
-from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntimeDependencies
-from tests.unit.core.benchmark.memory_evolution_test_helpers import generate_scenario_by_family
+from memorii.tools.benchmark_suites.runtime_dependencies import (
+    BenchmarkRuntimeDependencies,
+    DryRunDecisionStrategy,
+)
+from tests.unit.core.benchmark.memory_evolution_test_helpers import (
+    generate_scenario_by_family,
+    oracle_shaped_sim_semantic_decision,
+    provider_result_for_sim_semantic,
+)
 
 
 class _RepairingFakeAdapter:
@@ -39,7 +44,15 @@ class _RepairingFakeAdapter:
     ) -> None:
         self._registry = registry
         self._expected = {
-            (scenario.scenario_id, checkpoint.checkpoint_id): expected_sim_semantic_decision_for_checkpoint(checkpoint)
+            (scenario.scenario_id, checkpoint.checkpoint_id): (
+                oracle_shaped_sim_semantic_decision(
+                    context=sim_suite.sim_reconstruction_context_for_checkpoint(
+                        scenario=scenario,
+                        checkpoint=checkpoint,
+                    ),
+                    checkpoint=checkpoint,
+                )
+            )
             for scenario in scenarios
             for checkpoint in scenario.checkpoints
         }
@@ -57,8 +70,16 @@ class _RepairingFakeAdapter:
             if context.repair_request is not None
             else expected.model_copy(
                 update={
-                    "selected_claim_ids": ["not-visible"],
-                    "considered_claim_ids": ["not-visible"],
+                    "claim_assessments": [
+                        assessment.model_copy(
+                            update={"claim_id": "not-visible"}
+                        )
+                        if index == 0
+                        else assessment
+                        for index, assessment in enumerate(
+                            expected.claim_assessments
+                        )
+                    ],
                 }
             )
         )
@@ -72,7 +93,7 @@ class _RepairingFakeAdapter:
             model_defaults=PromptModelDefaults(model="test-model"),
             metadata=metadata or {},
         )
-        return fake_llm_result_for_memory_evolution_sim(
+        return provider_result_for_sim_semantic(
             request=request,
             decision=decision,
             provider_name=self.provider_name,
@@ -160,8 +181,11 @@ def test_sim_runner_repairs_once_and_accounts_for_both_provider_calls(
     )
     monkeypatch.setattr(
         sim_suite,
-        "ExpectedMemoryEvolutionSimFakeAdapter",
-        _RepairingFakeAdapter,
+        "LLMMemoryEvolutionSimReconstructionAdapter",
+        lambda *, runner, registry: _RepairingFakeAdapter(
+            scenarios=[scenario],
+            registry=registry,
+        ),
     )
 
     _scenario_rows, checkpoint_rows, _judge_rows, llm_rows = sim_suite._run_memory_evolution_sim_transitions(
@@ -170,7 +194,9 @@ def test_sim_runner_repairs_once_and_accounts_for_both_provider_calls(
         dry_run=True,
         allow_live=False,
         prompt_root=default_prompt_root(),
-        dependencies=BenchmarkRuntimeDependencies(),
+        dependencies=BenchmarkRuntimeDependencies(
+            dry_run_decision_strategy=DryRunDecisionStrategy.CLIENT_ADAPTERS,
+        ),
     )
 
     assert all(row.success for row in checkpoint_rows)
@@ -179,8 +205,16 @@ def test_sim_runner_repairs_once_and_accounts_for_both_provider_calls(
     for row in llm_rows:
         assert len(row.provider_attempts) == 2
         assert row.provider_attempts[0].accepted is False
-        assert row.provider_attempts[0].validation_issues == ["invalid_claim_id"]
+        assert set(row.provider_attempts[0].validation_issues) == {
+            "invalid_claim_id",
+            "missing_claim_assessment",
+        }
         assert row.provider_attempts[1].accepted is True
+        assert row.provider_attempts[1].repair_request is not None
+        assert row.provider_attempts[1].previous_decision_digest is not None
+        assert row.provider_attempts[1].compiled_output == row.output.model_dump(
+            mode="json"
+        )
         assert row.final_output_accepted is True
         assert row.fallback_outcome.value == "not_used"
 
@@ -211,8 +245,16 @@ def test_curated_runner_records_schema_valid_semantic_rejection_before_repair(
         assert row.provider_attempts[0].provider_attempt_status.value == "succeeded"
         assert row.provider_attempts[0].semantic_validation_status == "failed"
         assert row.provider_attempts[0].accepted is False
-        assert row.provider_attempts[0].validation_issues == ["invalid_belief_id"]
+        assert set(row.provider_attempts[0].validation_issues) == {
+            "belief_scores_forbidden",
+            "invalid_belief_id",
+        }
         assert row.provider_attempts[1].semantic_validation_status == "passed"
         assert row.provider_attempts[1].accepted is True
+        assert row.provider_attempts[1].repair_request is not None
+        assert row.provider_attempts[1].previous_decision_digest is not None
+        assert row.provider_attempts[1].compiled_output == row.output.model_dump(
+            mode="json"
+        )
         assert row.semantic_validation_status == "passed"
         assert row.final_output_accepted is True

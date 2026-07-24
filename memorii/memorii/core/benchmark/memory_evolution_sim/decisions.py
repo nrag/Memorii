@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
@@ -19,13 +18,15 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
 )
 from memorii.core.benchmark.memory_evolution_sim.semantic_pipeline import (
     compile_sim_semantic_decision,
-    project_rejected_sim_semantic_decision,
     render_sim_answer,
     validate_sim_semantic_decision,
 )
 from memorii.core.benchmark.memory_evolution_sim.utils import extract_rule_answer, normalize_sim_text, ordered_unique
+from memorii.core.benchmark.memory_evolution_sim.visible_output_validation import (
+    validate_visible_sim_output,
+)
 from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
-from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest, LLMStructuredResponse
+from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
 from memorii.core.llm_validation import LLMValidationIssue, LLMValidationStage
 
@@ -48,17 +49,11 @@ def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSyste
     citations = list(
         checkpoint.expected_execution_citation_event_ids if execution else checkpoint.expected_citation_event_ids
     )
-    graph_checkpoint = checkpoint.checkpoint_type in {
-        "entity_reconstruction",
-        "entity_split_repair",
-        "claim_rekey",
-        "conflict_audit",
-    }
-    context_claim_ids = list(checkpoint.expected_excluded_claim_ids) if graph_checkpoint else []
-    context_entity_ids = list(checkpoint.expected_excluded_entity_ids) if graph_checkpoint else []
+    context_claim_ids: list[str] = []
+    context_entity_ids: list[str] = []
     selected_relation_ids = list(checkpoint.expected_relation_ids)
     supporting_relation_ids = list(checkpoint.expected_relation_ids)
-    context_relation_ids = list(checkpoint.expected_relation_ids) if graph_checkpoint else []
+    context_relation_ids: list[str] = []
     if checkpoint.checkpoint_type == "source_trust_conflict":
         selected_relation_ids = []
         supporting_relation_ids = []
@@ -85,50 +80,6 @@ def expected_sim_output_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSyste
         confidence=0.35 if checkpoint.expected_abstention else 0.92,
         rationale="oracle-shaped dry-run graph reconstruction",
     )
-
-
-def expected_sim_semantic_decision_for_checkpoint(checkpoint: OracleCheckpoint) -> SimSemanticDecision:
-    """Oracle-backed fake-provider decision used only by deterministic dry runs."""
-
-    output = expected_sim_output_for_checkpoint(checkpoint)
-    return SimSemanticDecision(
-        operation=output.operation,
-        belief_ranking_ids=list(output.belief_ranking_ids),
-        selected_claim_ids=list(output.selected_claim_ids),
-        considered_claim_ids=ordered_unique(
-            [*output.selected_claim_ids, *output.rejected_claim_ids, *output.context_claim_ids]
-        ),
-        relevant_relation_ids=ordered_unique(
-            [
-                *output.selected_relation_ids,
-                *output.supporting_relation_ids,
-                *output.rejected_relation_ids,
-                *output.context_relation_ids,
-            ]
-        ),
-        answer=output.answer,
-        next_action=output.next_action,
-        uncertain_ids=list(output.uncertain_ids),
-        confidence=output.confidence,
-        rationale=output.rationale,
-    )
-
-
-def fake_llm_result_for_memory_evolution_sim(
-    *, request: LLMStructuredRequest, decision: SimSemanticDecision, provider_name: str = "fake"
-) -> LLMDecisionResult:
-    output = decision.model_dump(mode="json")
-    response = LLMStructuredResponse(
-        request_id=request.request_id,
-        provider=provider_name,
-        requested_model=request.model_defaults.model,
-        actual_model=request.model_defaults.model,
-        raw_text=json.dumps(output, sort_keys=True),
-        parsed_json=output,
-        valid_json=True,
-        schema_valid=True,
-    )
-    return LLMDecisionResult(request=request, response=response, output=output, success=True)
 
 
 def memory_evolution_sim_trace_for_rule(
@@ -176,25 +127,15 @@ def memory_evolution_sim_engine_result_from_llm(
         )
         return rule_output, trace, False, "llm_decision_validation_failed"
     validation = validate_sim_semantic_decision(context=context, semantic=semantic)
-    decision = (
-        render_sim_answer(
-            output=compile_sim_semantic_decision(context=context, semantic=semantic),
-            semantic=semantic,
-        )
-        if validation.valid
-        else project_rejected_sim_semantic_decision(semantic)
-    )
-    output = decision.model_dump(mode="json")
-    status = LLMDecisionStatus.SUCCEEDED if validation.valid else LLMDecisionStatus.VALIDATION_FAILED
-    trace = build_llm_decision_trace_from_result(
-        decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
-        mode=mode,
-        result=result,
-        final_output=output,
-        fallback_used=False,
-        status=status,
-    )
     if not validation.valid:
+        trace = build_llm_decision_trace_from_result(
+            decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
+            mode=mode,
+            result=result,
+            final_output=rule_output,
+            fallback_used=True,
+            status=LLMDecisionStatus.VALIDATION_FAILED,
+        )
         trace.validation_issues.extend(
             LLMValidationIssue(
                 stage=LLMValidationStage.SEMANTIC,
@@ -203,7 +144,50 @@ def memory_evolution_sim_engine_result_from_llm(
             )
             for code in validation.violation_codes
         )
-        return output, trace, False, "llm_semantic_validation_failed"
+        return rule_output, trace, False, "llm_semantic_validation_failed"
+    try:
+        decision = render_sim_answer(
+            output=compile_sim_semantic_decision(context=context, semantic=semantic),
+            semantic=semantic,
+        )
+    except ValueError as exc:
+        trace = build_llm_decision_trace_from_result(
+            decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
+            mode=mode,
+            result=result,
+            final_output=rule_output,
+            fallback_used=True,
+            status=LLMDecisionStatus.VALIDATION_FAILED,
+        )
+        trace.validation_issues.append(
+            LLMValidationIssue(
+                stage=LLMValidationStage.DOMAIN,
+                code="compiled_channel_failure",
+                message=str(exc),
+            )
+        )
+        return rule_output, trace, False, "llm_compiled_output_validation_failed"
+    visible_issues = validate_visible_sim_output(context=context, output=decision)
+    if visible_issues:
+        trace = build_llm_decision_trace_from_result(
+            decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
+            mode=mode,
+            result=result,
+            final_output=rule_output,
+            fallback_used=True,
+            status=LLMDecisionStatus.VALIDATION_FAILED,
+        )
+        trace.validation_issues.extend(visible_issues)
+        return rule_output, trace, False, "llm_compiled_output_validation_failed"
+    output = decision.model_dump(mode="json")
+    trace = build_llm_decision_trace_from_result(
+        decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
+        mode=mode,
+        result=result,
+        final_output=output,
+        fallback_used=False,
+        status=LLMDecisionStatus.SUCCEEDED,
+    )
     return output, trace, True, None
 
 

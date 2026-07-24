@@ -24,13 +24,6 @@ from memorii.core.benchmark.memory_evolution_decision import (
     expected_memory_evolution_semantic_decision_for_checkpoint,
     fake_llm_result_for_memory_evolution,
 )
-from memorii.core.benchmark.memory_evolution_sim import (
-    LatentGraphScenario,
-    MemoryEvolutionSimReconstructionContext,
-    SimSemanticDecisionOutput,
-    expected_sim_semantic_decision_for_checkpoint,
-    fake_llm_result_for_memory_evolution_sim,
-)
 from memorii.core.benchmark.models import BenchmarkScenarioFixture
 from memorii.core.benchmark.retrieval_relevance_decision import (
     RetrievalRelevanceContext,
@@ -177,47 +170,6 @@ class ExpectedMemoryEvolutionFakeAdapter:
             (evolution_context.scenario_id, evolution_context.checkpoint.checkpoint_id)
         ]
         return fake_llm_result_for_memory_evolution(
-            request=request,
-            decision=decision,
-            provider_name=self.provider_name,
-        )
-
-
-class ExpectedMemoryEvolutionSimFakeAdapter:
-    provider_name = "fake"
-
-    def __init__(self, *, scenarios: list[LatentGraphScenario], registry: PromptRegistry) -> None:
-        self._registry = registry
-        self._expected_by_key = {
-            (scenario.scenario_id, checkpoint.checkpoint_id): expected_sim_semantic_decision_for_checkpoint(checkpoint)
-            for scenario in scenarios
-            for checkpoint in scenario.checkpoints
-        }
-
-    def decide(
-        self,
-        context: MemoryEvolutionSimReconstructionContext,
-        *,
-        request_id: str,
-        metadata: dict[str, object] | None = None,
-    ) -> LLMDecisionResult:
-        contract = self._registry.load(
-            "memory_evolution_sim_reconstruction:v1",
-            owner=PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER,
-            output_model=SimSemanticDecisionOutput,
-        )
-        request = LLMStructuredRequest(
-            request_id=request_id,
-            prompt_ref="memory_evolution_sim_reconstruction:v1",
-            prompt_hash="dry-run",
-            system="",
-            user="",
-            output_schema=contract.output_schema,
-            model_defaults=contract.model_defaults,
-            metadata=metadata or {},
-        )
-        decision = self._expected_by_key[(context.scenario_id, context.checkpoint.checkpoint_id)]
-        return fake_llm_result_for_memory_evolution_sim(
             request=request,
             decision=decision,
             provider_name=self.provider_name,

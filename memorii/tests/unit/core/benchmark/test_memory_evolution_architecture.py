@@ -1,7 +1,13 @@
 import ast
 import importlib
 import importlib.util
+import re
 from pathlib import Path
+
+from memorii.core.prompts.sensitivity import (
+    ORACLE_INPUT_FIELDS,
+    normalize_sensitive_key,
+)
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[4] / "memorii" / "core"
 SOURCE_ROOT = PACKAGE_ROOT.parent
@@ -210,6 +216,37 @@ def test_production_runtime_contains_no_dynamic_test_support_references() -> Non
         for path in root.rglob("*.py")
         for module in _literal_module_references(path)
         if module == forbidden[0] or module.startswith(f"{forbidden[0]}.") or module in forbidden[1:]
+    ]
+
+    assert violations == []
+
+
+def test_memory_evolution_model_execution_paths_reference_no_oracle_fields() -> None:
+    execution_paths = (
+        PACKAGE_ROOT / "benchmark" / "llm_adapters.py",
+        PACKAGE_ROOT / "benchmark" / "bounded_semantic_repair.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_decision"
+        / "semantic_pipeline.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_decision"
+        / "closed_world_schema.py",
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "semantic_pipeline.py",
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "closed_world_schema.py",
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "visible_graph_closure.py",
+        SOURCE_ROOT / "prompts" / "memory_evolution_decision" / "v1.yaml",
+        SOURCE_ROOT / "prompts" / "memory_evolution_sim_reconstruction" / "v1.yaml",
+    )
+    violations = [
+        f"{path}:{token}"
+        for path in execution_paths
+        for token in re.findall(
+            r"[A-Za-z_][A-Za-z0-9_]*",
+            path.read_text(encoding="utf-8"),
+        )
+        if normalize_sensitive_key(token) in ORACLE_INPUT_FIELDS
     ]
 
     assert violations == []

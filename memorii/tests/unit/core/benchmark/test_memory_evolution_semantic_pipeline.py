@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
+from memorii.core.benchmark.llm_adapters import LLMMemoryEvolutionDecisionAdapter
 from memorii.core.benchmark.memory_evolution_decision import (
+    MemoryEvolutionBeliefState,
+    MemoryEvolutionSemanticBeliefScore,
     MemoryEvolutionSemanticViolationCode,
     compile_memory_evolution_decision,
     expected_memory_evolution_semantic_decision_for_checkpoint,
@@ -10,6 +13,11 @@ from memorii.core.benchmark.memory_evolution_decision import (
     render_memory_evolution_answer,
     validate_memory_evolution_semantic_decision,
 )
+from memorii.core.benchmark.memory_evolution_decision.closed_world_schema import (
+    constrain_memory_evolution_semantic_contract,
+)
+from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
+from memorii.core.prompts.runtime_manifest import PromptOwner
 
 
 def _scenario(scenario_id: str):
@@ -193,3 +201,90 @@ def test_answer_rendering_cannot_mutate_compiled_channels() -> None:
     assert rendered_payload.pop("answer") == "Equivalent rendered answer"
     compiled_payload.pop("answer")
     assert rendered_payload == compiled_payload
+
+
+def test_curated_task_contract_rejects_forbidden_belief_scores() -> None:
+    scenario = _scenario("evolution_current_vs_historical_truth")
+    checkpoint = scenario.checkpoints[0]
+    context = memory_evolution_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    semantic = expected_memory_evolution_semantic_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_copy(
+        update={
+            "belief_scores": [
+                MemoryEvolutionSemanticBeliefScore(
+                    memory_id=context.visible_memory_cards[0].memory_id,
+                    belief=0.5,
+                    belief_state=MemoryEvolutionBeliefState.UNKNOWN,
+                )
+            ]
+        }
+    )
+
+    validation = validate_memory_evolution_semantic_decision(
+        context=context,
+        semantic=semantic,
+    )
+
+    assert (
+        MemoryEvolutionSemanticViolationCode.BELIEF_SCORES_FORBIDDEN
+        in validation.violation_codes
+    )
+
+
+def test_curated_task_contract_requires_belief_scores_for_belief_tasks() -> None:
+    scenario = _scenario("evolution_belief_dependency_degradation")
+    checkpoint = scenario.checkpoints[0]
+    context = memory_evolution_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    semantic = expected_memory_evolution_semantic_decision_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_copy(update={"belief_scores": []})
+
+    validation = validate_memory_evolution_semantic_decision(
+        context=context,
+        semantic=semantic,
+    )
+
+    assert (
+        MemoryEvolutionSemanticViolationCode.BELIEF_SCORES_REQUIRED
+        in validation.violation_codes
+    )
+
+
+def test_curated_request_schema_encodes_belief_score_presence_policy() -> None:
+    registry = PromptRegistry(prompt_root=default_prompt_root())
+    contract = registry.load(
+        "memory_evolution_decision:v1",
+        owner=PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER,
+        output_model=LLMMemoryEvolutionDecisionAdapter.output_model,
+    )
+    fact_scenario = _scenario("evolution_current_vs_historical_truth")
+    fact_context = memory_evolution_context_for_checkpoint(
+        scenario=fact_scenario,
+        checkpoint=fact_scenario.checkpoints[0],
+    )
+    belief_scenario = _scenario("evolution_belief_dependency_degradation")
+    belief_context = memory_evolution_context_for_checkpoint(
+        scenario=belief_scenario,
+        checkpoint=belief_scenario.checkpoints[0],
+    )
+
+    fact_schema = constrain_memory_evolution_semantic_contract(
+        contract=contract,
+        context=fact_context,
+    ).output_schema["properties"]["belief_scores"]
+    belief_schema = constrain_memory_evolution_semantic_contract(
+        contract=contract,
+        context=belief_context,
+    ).output_schema["properties"]["belief_scores"]
+
+    assert fact_schema["maxItems"] == 0
+    assert belief_schema["minItems"] == 1

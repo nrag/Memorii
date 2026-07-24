@@ -15,13 +15,17 @@ from memorii.core.memory_evolution import FallbackOutcome, ProviderAttemptStatus
 from pydantic import ValidationError
 
 
+def _output() -> SimSystemOutput:
+    return SimSystemOutput(operation="abstain", rationale="test")
+
+
 def _trace(status: LLMDecisionStatus) -> LLMDecisionTrace:
     return LLMDecisionTrace(
         trace_id="trace:test",
         decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
         mode=LLMDecisionMode.LLM,
         input_payload={},
-        final_output={"operation": "abstain", "rationale": "test"},
+        final_output=_output().model_dump(mode="json"),
         status=status,
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
@@ -34,14 +38,14 @@ def _row(**updates: object) -> SimLLMTraceRow:
         "transition_type": "memory_evolution_sim_reconstruction",
         "decision_mode": "llm",
         "effective_decision_mode": "llm",
-        "final_output_source": "fake_oracle",
+        "final_output_source": "live_llm",
         "trace": _trace(LLMDecisionStatus.SUCCEEDED),
         "provider_attempt_status": ProviderAttemptStatus.SUCCEEDED,
         "semantic_validation_status": "passed",
         "fallback_outcome": FallbackOutcome.NOT_USED,
         "final_output_accepted": True,
         "failure_mode": None,
-        "output": SimSystemOutput(operation="abstain", rationale="test"),
+        "output": _output(),
     }
     values.update(updates)
     if "provider_attempts" not in updates:
@@ -49,8 +53,28 @@ def _row(**updates: object) -> SimLLMTraceRow:
             SemanticDecisionAttemptRow(
                 attempt=0,
                 request_id="request:test",
+                prompt_ref="memory_evolution_sim_reconstruction:v1",
+                prompt_hash="prompt-hash",
+                provider="test-provider",
                 provider_attempt_status=values["provider_attempt_status"],
+                schema_validation_status=(
+                    "passed"
+                    if values["provider_attempt_status"]
+                    == ProviderAttemptStatus.SUCCEEDED
+                    else "not_evaluated"
+                ),
                 semantic_validation_status=values["semantic_validation_status"],
+                semantic_output=(
+                    {"operation": "abstain"}
+                    if values["provider_attempt_status"]
+                    == ProviderAttemptStatus.SUCCEEDED
+                    else None
+                ),
+                compiled_output=(
+                    _output().model_dump(mode="json")
+                    if values["final_output_accepted"]
+                    else None
+                ),
                 accepted=values["final_output_accepted"],
                 failure_mode=values["failure_mode"],
             )
@@ -58,18 +82,19 @@ def _row(**updates: object) -> SimLLMTraceRow:
     return SimLLMTraceRow.model_validate(values)
 
 
-def test_semantic_failure_remains_visible_without_fallback() -> None:
+def test_semantic_failure_remains_visible_with_explicit_fallback() -> None:
     row = _row(
-        final_output_source="live_llm",
-        trace=_trace(LLMDecisionStatus.VALIDATION_FAILED),
+        final_output_source="rule",
+        trace=_trace(LLMDecisionStatus.FALLBACK_USED),
         semantic_validation_status="failed",
+        fallback_outcome=FallbackOutcome.SUCCEEDED,
         final_output_accepted=False,
         failure_mode="llm_semantic_validation_failed",
     )
 
     assert row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
     assert row.semantic_validation_status == "failed"
-    assert row.fallback_outcome == FallbackOutcome.NOT_USED
+    assert row.fallback_outcome == FallbackOutcome.SUCCEEDED
     assert row.final_output_accepted is False
 
 
@@ -107,8 +132,14 @@ def test_outcome_contract_rejects_semantic_failure_masquerading_as_acceptance() 
                 SemanticDecisionAttemptRow(
                     attempt=0,
                     request_id="request:test",
+                    prompt_ref="memory_evolution_sim_reconstruction:v1",
+                    prompt_hash="prompt-hash",
+                    provider="test-provider",
                     provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
+                    schema_validation_status="passed",
                     semantic_validation_status="passed",
+                    semantic_output={"operation": "abstain"},
+                    compiled_output=_output().model_dump(mode="json"),
                     accepted=True,
                 )
             ],
@@ -135,7 +166,11 @@ def test_outcome_contract_rejects_attempt_summary_disagreement() -> None:
                 SemanticDecisionAttemptRow(
                     attempt=0,
                     request_id="request:test",
+                    prompt_ref="memory_evolution_sim_reconstruction:v1",
+                    prompt_hash="prompt-hash",
+                    provider="test-provider",
                     provider_attempt_status=ProviderAttemptStatus.PROVIDER_ERROR,
+                    schema_validation_status="not_evaluated",
                     semantic_validation_status="not_evaluated",
                     accepted=False,
                     failure_mode="provider_error",

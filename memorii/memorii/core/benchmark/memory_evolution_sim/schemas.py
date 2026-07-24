@@ -407,11 +407,16 @@ class ReconstructionTaskContract(BaseModel):
     excluded_ids_must_be_rejected_or_contextualized: bool = True
     definition_claim_placement: Literal[
         "selected_and_supporting_required",
-        "context_or_support",
-    ] = "context_or_support"
+        "context_required",
+    ] = "context_required"
     supporting_citations_must_be_direct_current_evidence: bool = True
-    conflict_relation_ids_belong_in: list[str] = Field(default_factory=lambda: ["context_relation_ids"])
-    wrong_entity_claims_belong_in: list[str] = Field(default_factory=list)
+    conflict_relation_placement: Literal[
+        "selected_and_supporting",
+        "supporting",
+        "context",
+        "rejected",
+    ] = "context"
+    wrong_entity_claim_placement: Literal["context", "rejected", "omit"] = "omit"
     belief_ranking_policy: Literal["required", "forbidden"] = "forbidden"
     requires_next_action: bool = False
 
@@ -526,14 +531,29 @@ class SimSystemOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SimClaimSemanticRole(StrEnum):
+    """Provider-owned relevance judgment for one visible claim."""
+
+    PRIMARY = "primary"
+    RELEVANT = "relevant"
+    IRRELEVANT = "irrelevant"
+
+
+class SimClaimAssessment(BaseModel):
+    """Exactly one semantic assessment for a visible claim."""
+
+    claim_id: str
+    role: SimClaimSemanticRole
+    belief_rank: int | None = Field(ge=1)
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class SimSemanticDecisionOutput(BaseModel):
     """Strict transport for provider-owned semantic choices."""
 
     operation: Literal["answer", "next_action", "graph_reconstruction", "abstain"] = Field()
-    belief_ranking_ids: list[str] = Field()
-    selected_claim_ids: list[str] = Field()
-    considered_claim_ids: list[str] = Field()
-    relevant_relation_ids: list[str] = Field()
+    claim_assessments: list[SimClaimAssessment] = Field()
     answer: str | None = Field()
     next_action: str | None = Field()
     uncertain_ids: list[str] = Field()

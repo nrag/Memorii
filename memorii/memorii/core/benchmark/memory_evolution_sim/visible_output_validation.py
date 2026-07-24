@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from memorii.core.benchmark.memory_evolution_sim.channel_contract import (
+    channel_algebra_violations,
+    selected_entity_ids_for_claims,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
     SimSystemOutput,
     VisibleClaimCandidate,
+)
+from memorii.core.benchmark.task_conditioned_fields import (
+    TaskFieldPresencePolicy,
+    TaskFieldPresenceViolation,
+    task_field_presence_violation,
+    task_operation_allowed,
 )
 from memorii.core.llm_validation import (
     LLMValidationIssue,
@@ -26,26 +36,6 @@ def _issue(
     )
 
 
-def _required_selected_entity_ids(
-    *,
-    selected_claims: list[VisibleClaimCandidate],
-    role_policy: str,
-) -> set[str]:
-    subjects = {claim.subject_entity_id for claim in selected_claims}
-    objects = {
-        claim.object_entity_id
-        for claim in selected_claims
-        if claim.object_entity_id is not None
-    }
-    if role_policy in {"subject", "active_graph_subjects"}:
-        return subjects
-    if role_policy == "object":
-        return objects
-    if role_policy in {"subject_and_object", "audit_graph_entities"}:
-        return subjects | objects
-    raise ValueError(f"unsupported selected entity role policy: {role_policy}")
-
-
 def validate_visible_sim_output(
     *,
     context: MemoryEvolutionSimReconstructionContext,
@@ -55,7 +45,10 @@ def validate_visible_sim_output(
 
     contract = context.checkpoint.task_contract
     issues: list[LLMValidationIssue] = []
-    if output.operation not in contract.allowed_operations:
+    if not task_operation_allowed(
+        allowed_operations=contract.allowed_operations,
+        operation=output.operation,
+    ):
         issues.append(
             _issue(
                 "operation_not_allowed",
@@ -79,7 +72,11 @@ def validate_visible_sim_output(
                 "next_action is required by the visible task contract",
             )
         )
-    if contract.belief_ranking_policy == "required" and not output.belief_ranking_ids:
+    ranking_presence = task_field_presence_violation(
+        policy=TaskFieldPresencePolicy(contract.belief_ranking_policy),
+        item_count=len(output.belief_ranking_ids),
+    )
+    if ranking_presence == TaskFieldPresenceViolation.REQUIRED_MISSING:
         issues.append(
             _issue(
                 "belief_ranking_required",
@@ -87,7 +84,7 @@ def validate_visible_sim_output(
                 "belief_ranking_ids is required by the visible task contract",
             )
         )
-    if contract.belief_ranking_policy == "forbidden" and output.belief_ranking_ids:
+    elif ranking_presence == TaskFieldPresenceViolation.FORBIDDEN_PRESENT:
         issues.append(
             _issue(
                 "belief_ranking_forbidden",
@@ -111,9 +108,11 @@ def validate_visible_sim_output(
         else:
             selected_claims.append(claim)
 
-    required_entities = _required_selected_entity_ids(
-        selected_claims=selected_claims,
-        role_policy=contract.selected_entity_role_policy,
+    required_entities = set(
+        selected_entity_ids_for_claims(
+            selected_claims=selected_claims,
+            role_policy=contract.selected_entity_role_policy,
+        )
     )
     missing_entities = sorted(required_entities - set(output.selected_entity_ids))
     if missing_entities:
@@ -153,25 +152,18 @@ def validate_visible_sim_output(
         and claim.predicate_id == "entity_type"
         and claim.lifecycle_state == "active"
     }
-    rejected_active_definitions = sorted(
-        set(active_definitions) & set(output.rejected_claim_ids)
-    )
+    rejected_active_definitions = sorted(set(active_definitions) & set(output.rejected_claim_ids))
     if rejected_active_definitions:
         issues.append(
             _issue(
                 "selected_subject_definition_rejected",
                 ("rejected_claim_ids",),
-                "active definitions for selected subjects cannot be rejected: "
-                f"{rejected_active_definitions}",
+                f"active definitions for selected subjects cannot be rejected: {rejected_active_definitions}",
             )
         )
     if contract.definition_claim_placement == "selected_and_supporting_required":
-        missing_selected_definitions = sorted(
-            set(active_definitions) - set(output.selected_claim_ids)
-        )
-        missing_supporting_definitions = sorted(
-            set(active_definitions) - set(output.supporting_claim_ids)
-        )
+        missing_selected_definitions = sorted(set(active_definitions) - set(output.selected_claim_ids))
+        missing_supporting_definitions = sorted(set(active_definitions) - set(output.supporting_claim_ids))
         if missing_selected_definitions:
             issues.append(
                 _issue(
@@ -189,9 +181,7 @@ def validate_visible_sim_output(
                 )
             )
     else:
-        incorrectly_selected_definitions = sorted(
-            set(active_definitions) & set(output.selected_claim_ids)
-        )
+        incorrectly_selected_definitions = sorted(set(active_definitions) & set(output.selected_claim_ids))
         if incorrectly_selected_definitions:
             issues.append(
                 _issue(
@@ -202,26 +192,12 @@ def validate_visible_sim_output(
                 )
             )
 
-    selected_rejected = sorted(
-        set(output.selected_claim_ids) & set(output.rejected_claim_ids)
-    )
-    supporting_rejected = sorted(
-        set(output.supporting_claim_ids) & set(output.rejected_claim_ids)
-    )
-    if selected_rejected:
+    for violation in channel_algebra_violations(output):
         issues.append(
             _issue(
-                "selected_rejected_claim_overlap",
-                ("rejected_claim_ids",),
-                f"selected claims cannot also be rejected: {selected_rejected}",
-            )
-        )
-    if supporting_rejected:
-        issues.append(
-            _issue(
-                "supporting_rejected_claim_overlap",
-                ("rejected_claim_ids",),
-                f"supporting claims cannot also be rejected: {supporting_rejected}",
+                violation.value,
+                (),
+                f"compiled channel algebra violation: {violation.value}",
             )
         )
     return tuple(issues)

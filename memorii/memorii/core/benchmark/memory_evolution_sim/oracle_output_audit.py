@@ -1,4 +1,4 @@
-"""Fail-closed validation of simulator output identifiers."""
+"""Oracle-aware audit of final simulator output identifiers."""
 
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     LatentGraphScenario,

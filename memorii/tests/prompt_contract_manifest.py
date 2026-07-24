@@ -474,10 +474,13 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             output_schema_owner="memory_evolution_sim_reconstruction:v1.output_schema",
             fake_valid_output={
                 "operation": "answer",
-                "belief_ranking_ids": [],
-                "selected_claim_ids": ["claim_owner"],
-                "considered_claim_ids": ["claim_owner"],
-                "relevant_relation_ids": [],
+                "claim_assessments": [
+                    {
+                        "claim_id": "claim_owner",
+                        "role": "primary",
+                        "belief_rank": None,
+                    }
+                ],
                 "answer": "Bob",
                 "next_action": None,
                 "uncertain_ids": [],

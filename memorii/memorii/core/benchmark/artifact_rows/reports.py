@@ -310,8 +310,19 @@ class SemanticDecisionAttemptRow(FlatArtifactModel):
 
     attempt: int = Field(ge=0, le=1)
     request_id: str
+    prompt_ref: str
+    prompt_hash: str
+    provider: str
+    requested_model: str | None = None
+    actual_model: str | None = None
+    provider_request_id: str | None = None
     provider_attempt_status: ProviderAttemptStatus
+    schema_validation_status: Literal["not_evaluated", "passed", "failed"]
     semantic_validation_status: Literal["not_evaluated", "passed", "failed"]
+    semantic_output: ArtifactJsonObject | None = None
+    compiled_output: ArtifactJsonObject | None = None
+    repair_request: ArtifactJsonObject | None = None
+    previous_decision_digest: str | None = None
     accepted: bool
     failure_mode: str | None = None
     validation_issues: list[str] = Field(default_factory=list)
@@ -321,8 +332,30 @@ class SemanticDecisionAttemptRow(FlatArtifactModel):
         provider_succeeded = self.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
         if provider_succeeded != (self.semantic_validation_status in {"passed", "failed"}):
             raise ValueError("semantic validation must be evaluated exactly after provider success")
+        if self.schema_validation_status == "passed" and not provider_succeeded:
+            raise ValueError("passed schema validation requires provider success")
+        if provider_succeeded and self.schema_validation_status != "passed":
+            raise ValueError("provider success requires passed schema validation")
         if self.accepted != (provider_succeeded and self.semantic_validation_status == "passed"):
             raise ValueError("attempt acceptance must require provider and semantic success")
+        if provider_succeeded and self.semantic_output is None:
+            raise ValueError("provider success requires retained semantic output")
+        if (
+            self.provider_attempt_status
+            in {
+                ProviderAttemptStatus.PROVIDER_ERROR,
+                ProviderAttemptStatus.INVALID_JSON,
+            }
+            and self.semantic_output is not None
+        ):
+            raise ValueError(
+                "provider and invalid-JSON failures cannot retain semantic output"
+            )
+        if self.accepted != (self.compiled_output is not None):
+            raise ValueError("compiled output must be retained exactly for accepted attempts")
+        has_repair_evidence = self.repair_request is not None and self.previous_decision_digest is not None
+        if (self.attempt == 1) != has_repair_evidence:
+            raise ValueError("repair evidence is required exactly for attempt one")
         if self.accepted and (self.failure_mode is not None or self.validation_issues):
             raise ValueError("accepted attempts cannot report failures")
         if not self.accepted and not self.failure_mode:
@@ -396,6 +429,14 @@ class CuratedMemoryEvolutionLLMTraceRow(FlatArtifactModel):
             accepted=self.final_output_accepted,
             failure_mode=self.failure_mode,
         )
+        output_payload = self.output.model_dump(mode="json")
+        if self.trace.final_output != output_payload:
+            raise ValueError("persisted curated output must equal the traced final output")
+        if (
+            self.final_output_accepted
+            and self.provider_attempts[-1].compiled_output != output_payload
+        ):
+            raise ValueError("accepted curated output must equal the final compiled attempt")
         return self
 
 
@@ -432,12 +473,12 @@ class SimLLMTraceRow(FlatArtifactModel):
             raise ValueError("accepted outputs require clean provider and semantic success")
         if not self.final_output_accepted and not self.failure_mode:
             raise ValueError("rejected outputs require a failure_mode")
-        if self.semantic_validation_status == "failed" and fallback_used:
-            raise ValueError("semantic failures must remain visible instead of falling back")
         if fallback_used and self.final_output_source != "rule":
             raise ValueError("fallback traces must identify rule as the final output source")
         if self.fallback_outcome == FallbackOutcome.FAILED and self.final_output_source == "rule":
             raise ValueError("failed fallback cannot identify rule as a usable final source")
+        if not fallback_used and not self.final_output_accepted:
+            raise ValueError("rejected simulator outputs require an explicit fallback outcome")
         _validate_semantic_attempt_summary(
             attempts=self.provider_attempts,
             provider_attempt_status=self.provider_attempt_status,
@@ -445,6 +486,14 @@ class SimLLMTraceRow(FlatArtifactModel):
             accepted=self.final_output_accepted,
             failure_mode=self.failure_mode,
         )
+        output_payload = self.output.model_dump(mode="json")
+        if self.trace.final_output != output_payload:
+            raise ValueError("persisted simulator output must equal the traced final output")
+        if (
+            self.final_output_accepted
+            and self.provider_attempts[-1].compiled_output != output_payload
+        ):
+            raise ValueError("accepted simulator output must equal the final compiled attempt")
         return self
 
 

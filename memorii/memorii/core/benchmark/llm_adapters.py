@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import ClassVar
 
 from pydantic import BaseModel
@@ -12,14 +13,16 @@ from memorii.core.benchmark.execution_graph_decision import (
 )
 from memorii.core.benchmark.hotpotqa_official import HotpotQAAnswerContext, HotpotQAAnswerOutput
 from memorii.core.benchmark.lifecycle_decision import LifecycleDecisionContext, LifecycleDecisionOutput
+from memorii.core.benchmark.memory_evolution_decision.closed_world_schema import (
+    constrain_memory_evolution_semantic_contract,
+)
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionDecisionContext,
     MemoryEvolutionSemanticDecision,
     MemoryEvolutionSemanticDecisionOutput,
 )
 from memorii.core.benchmark.memory_evolution_sim.closed_world_schema import (
-    constrain_string_array_fields,
-    sim_output_id_constraints,
+    constrain_sim_semantic_contract,
 )
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
@@ -32,7 +35,7 @@ from memorii.core.benchmark.retrieval_relevance_decision import (
 )
 from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.registry import PromptRegistry, RegisteredPromptContract
 from memorii.core.prompts.runtime_manifest import PromptOwner
 
 
@@ -59,18 +62,18 @@ class _BenchmarkPromptAdapter:
         query: str,
         request_id: str,
         metadata: dict[str, object] | None,
-        output_id_constraints: dict[str, tuple[str, ...]] | None = None,
+        contract_transform: Callable[
+            [RegisteredPromptContract], RegisteredPromptContract
+        ]
+        | None = None,
     ) -> LLMDecisionResult:
         contract = self._registry.load(
             self.prompt_ref,
             owner=self.owner,
             output_model=self.output_model,
         )
-        if output_id_constraints is not None:
-            contract = constrain_string_array_fields(
-                contract=contract,
-                allowed_values_by_field=output_id_constraints,
-            )
+        if contract_transform is not None:
+            contract = contract_transform(contract)
         return self._runner.run(
             contract=contract,
             variables={
@@ -148,6 +151,10 @@ class LLMMemoryEvolutionDecisionAdapter(_BenchmarkPromptAdapter):
             query=context.checkpoint.query_or_task,
             request_id=request_id,
             metadata=metadata,
+            contract_transform=lambda contract: constrain_memory_evolution_semantic_contract(
+                contract=contract,
+                context=context,
+            ),
         )
 
 
@@ -171,7 +178,10 @@ class LLMMemoryEvolutionSimReconstructionAdapter(_BenchmarkPromptAdapter):
             query=context.checkpoint.query_or_task,
             request_id=request_id,
             metadata=metadata,
-            output_id_constraints=sim_output_id_constraints(context),
+            contract_transform=lambda contract: constrain_sim_semantic_contract(
+                contract=contract,
+                context=context,
+            ),
         )
 
 

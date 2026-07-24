@@ -28,6 +28,7 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeCheckpointResultRow,
     RuntimeGraphAlignmentRow,
     SimCheckpointResultRow,
+    SimLLMTraceRow,
     WarningExampleRow,
     execution_source_from_counts,
 )
@@ -455,6 +456,10 @@ def validate_curated_memory_evolution_run(run_dir: Path) -> dict[str, object]:
         fallback_used = trace_row.fallback_outcome.value != "not_used"
         if checkpoint.get("fallback_used") != fallback_used:
             raise ArtifactValidationError(f"{location} fallback provenance disagrees with LLM trace")
+        if checkpoint.get("output") != trace_row.output.model_dump(mode="json"):
+            raise ArtifactValidationError(
+                f"{location} judged output disagrees with persisted LLM output"
+            )
 
     failure_by_key = {
         (
@@ -580,6 +585,11 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
         )
         _validate_json_object(run_dir / "calibration_report.json", CalibrationReport, required=True)
         _validate_json_object(run_dir / "decision_quality_report.json", DecisionCostReport, required=True)
+        sim_trace_rows = _validate_jsonl(
+            run_dir / "llm_traces.jsonl",
+            SimLLMTraceRow,
+            required=True,
+        )
     elif suite == "memory_evolution_runtime_v1":
         runtime_checkpoint_rows = _validate_jsonl(
             run_dir / "runtime_checkpoint_results.jsonl", RuntimeCheckpointResultRow, required=True
@@ -610,6 +620,39 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
         raise ArtifactValidationError(
             f"checkpoint artifact count {len(checkpoint_rows)} does not match report {report.checkpoint_count}"
         )
+    if suite == "memory_evolution_sim_v1":
+        trace_by_key = {
+            (row.scenario_id, row.checkpoint_id): row
+            for row in sim_trace_rows
+        }
+        if len(trace_by_key) != len(sim_trace_rows):
+            raise ArtifactValidationError(
+                "llm_traces.jsonl contains duplicate simulator checkpoint identities"
+            )
+        llm_checkpoint_keys = {
+            (row.scenario_id, row.checkpoint_id)
+            for row in checkpoint_rows
+            if row.llm_call_made
+        }
+        if set(trace_by_key) != llm_checkpoint_keys:
+            raise ArtifactValidationError(
+                "llm_traces.jsonl identities do not match simulator checkpoints with LLM calls"
+            )
+        for row in checkpoint_rows:
+            key = (row.scenario_id, row.checkpoint_id)
+            trace_row = trace_by_key.get(key)
+            if trace_row is None:
+                continue
+            if trace_row.output.model_dump(mode="json") != row.output.model_dump(
+                mode="json"
+            ):
+                raise ArtifactValidationError(
+                    f"simulator checkpoint {key!r} judged output disagrees with persisted LLM output"
+                )
+            if trace_row.final_output_source != row.final_output_source:
+                raise ArtifactValidationError(
+                    f"simulator checkpoint {key!r} final output source disagrees with LLM trace"
+                )
 
     actual_verdict_counts = Counter(str(row.model_dump(mode="python").get("verdict")) for row in checkpoint_rows)
     actual_review_required_count = sum(

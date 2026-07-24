@@ -10,7 +10,9 @@ from memorii.core.benchmark.checkpoint_diagnostics import (
     SelectedClaimSupportClosureErrorSection,
 )
 from memorii.core.benchmark.memory_evolution_sim import judge_features
-from memorii.core.benchmark.memory_evolution_sim.output_validation import sim_output_allowed_id_errors
+from memorii.core.benchmark.memory_evolution_sim.oracle_output_audit import (
+    sim_output_allowed_id_errors,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     JudgeAggregate,
     JudgeVerdict,
