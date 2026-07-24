@@ -15,6 +15,7 @@ from memorii.domain.enums import (
     FinalExtractionSource,
     MemoryDomain,
     ProviderAttemptStatus,
+    SourceModality,
 )
 
 PrefetchDecisionT = TypeVar("PrefetchDecisionT", bound=BaseModel)
@@ -65,9 +66,22 @@ class ProviderEvolutionOutcome(BaseModel):
     @model_validator(mode="after")
     def validate_outcome(self) -> ProviderEvolutionOutcome:
         committed = self.status == "evolution_committed"
+        complete_extraction = self.extraction_status in {
+            ExtractionRunStatus.SUCCEEDED,
+            ExtractionRunStatus.ABSTAINED,
+        }
+        deterministic_abstention = (
+            self.extraction_status == ExtractionRunStatus.ABSTAINED
+            and self.provider_attempt_status == ProviderAttemptStatus.NOT_ATTEMPTED
+            and self.fallback_outcome == FallbackOutcome.NOT_USED
+            and self.final_extraction_source == FinalExtractionSource.NONE
+            and self.extraction_failure_code is None
+            and self.primary_failure_code is None
+        )
         if committed and (
-            self.extraction_status in {None, ExtractionRunStatus.FAILED}
-            or self.final_extraction_source in {None, FinalExtractionSource.NONE}
+            not complete_extraction
+            or self.final_extraction_source is None
+            or (self.final_extraction_source == FinalExtractionSource.NONE and not deterministic_abstention)
         ):
             raise ValueError("committed outcome requires a usable extraction result")
         if self.fallback_outcome == FallbackOutcome.SUCCEEDED:
@@ -97,6 +111,7 @@ class ProviderEvent(BaseModel):
     user_id: str | None = None
     language: str = "en"
     timestamp: datetime | None = None
+    source_modality: SourceModality | None = None
 
     model_config = ConfigDict(extra="forbid")
 

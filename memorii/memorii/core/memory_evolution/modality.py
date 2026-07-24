@@ -71,10 +71,11 @@ def classify_and_mark_observation(
     *,
     classifier: SourceModalityClassifier | None = None,
     trigger_policy: ExtractionTriggerPolicy | None = None,
+    declared_modality: SourceModality | None = None,
 ) -> SourceObservation:
     resolved_classifier = classifier or SourceModalityClassifier()
     resolved_policy = trigger_policy or ExtractionTriggerPolicy()
-    modality = resolved_classifier.classify(observation)
+    modality = declared_modality or resolved_classifier.classify(observation)
     marked = observation.model_copy(update={"modality": modality})
     return marked.model_copy(update={"trigger_mode": resolved_policy.trigger_for(marked)})
 
@@ -83,7 +84,9 @@ def _looks_like_question(text: str) -> bool:
     stripped = text.strip()
     if stripped.endswith("?"):
         return True
-    return bool(re.match(r"^(who|what|when|where|why|how|is|are|does|do|did|can|could|should)\b", stripped, re.IGNORECASE))
+    return bool(
+        re.match(r"^(who|what|when|where|why|how|is|are|does|do|did|can|could|should)\b", stripped, re.IGNORECASE)
+    )
 
 
 def _looks_like_hypothetical(lowered: str) -> bool:
@@ -108,4 +111,3 @@ def _looks_like_third_party(lowered: str) -> bool:
 
 def _looks_like_instruction(lowered: str) -> bool:
     return lowered.startswith(("please ", "can you ", "could you ", "remember to ", "do not ", "don't "))
-

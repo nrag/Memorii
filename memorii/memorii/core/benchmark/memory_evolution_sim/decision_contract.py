@@ -13,6 +13,9 @@ from memorii.core.benchmark.memory_evolution_sim.claim_policy import (
     is_execution_eligible_claim,
     is_noncurrent_claim,
 )
+from memorii.core.benchmark.memory_evolution_sim.definition_placement import (
+    definition_placement_for_selected_claims,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
     SimClaimSemanticRole,
@@ -39,6 +42,7 @@ class SimDecisionContractViolationCode(StrEnum):
     BELIEF_RANKING_REQUIRED = "belief_ranking_required"
     BELIEF_RANKING_FORBIDDEN = "belief_ranking_forbidden"
     BELIEF_RANKING_INVALID = "belief_ranking_invalid"
+    OPTIONAL_DEFINITION_PRIMARY = "optional_definition_primary"
 
 
 class SimDecisionContractIssue(BaseModel):
@@ -158,6 +162,24 @@ def validate_sim_decision_contract(
         )
 
     visible_primary_ids = [claim_id for claim_id in primary_ids if claim_id in claims]
+    definition_placement = definition_placement_for_selected_claims(
+        context=context,
+        selected_claim_ids=visible_primary_ids,
+    )
+    if definition_placement.channel == "context":
+        optional_primary_ids = sorted(
+            set(definition_placement.claim_ids) & set(visible_primary_ids)
+        )
+        if optional_primary_ids:
+            issues.append(
+                _issue(
+                    SimDecisionContractViolationCode.OPTIONAL_DEFINITION_PRIMARY,
+                    ("claim_assessments",),
+                    offending_ids=optional_primary_ids,
+                    allowed_values=(SimClaimSemanticRole.RELEVANT.value,),
+                    message="context-only definitions cannot be primary claims",
+                )
+            )
     if not context.checkpoint.task_contract.allow_stale_selected_claims:
         stale_primary_ids = sorted(
             claim_id

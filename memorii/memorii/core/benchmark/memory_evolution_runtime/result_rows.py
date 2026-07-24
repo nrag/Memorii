@@ -213,6 +213,10 @@ def extractor_trace_rows(
                 failure_code=run.failure_code,
                 primary_failure_code=run.primary_failure_code,
                 fallback_provider=run.fallback_provider,
+                operation_id=run.operation_id,
+                operation_status=run.operation_status,
+                operation_failure_code=run.operation_failure_code,
+                operation_retryable=run.operation_retryable,
                 output=RuntimeExtractorOutput(
                     entity_ids=run.entity_ids,
                     claim_ids=run.claim_ids,
@@ -248,6 +252,8 @@ def run_output_source(*, effective_mode: str, dry_run: bool, run: RecordedExtrac
         return "rule"
     if dry_run:
         return "fake_oracle"
+    if run.final_output_source == MemoryFinalExtractionSource.NONE:
+        return "reused_runtime_state"
     return "rule" if run.final_output_source == MemoryFinalExtractionSource.FALLBACK else "live_llm"
 
 

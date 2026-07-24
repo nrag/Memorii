@@ -10,16 +10,19 @@ from memorii.core.memory_evolution import (
     EntityResolutionService,
     EntityType,
     EvidenceSpan,
+    ExtractedAction,
     ExtractedClaim,
     ExtractionFailureCode,
     ExtractionRun,
     ExtractionRunStatus,
     ExtractionTriggerMode,
+    FinalExtractionSource,
     MemoryEvolutionService,
     MemoryEvolutionValidator,
     MemoryGraphEdgeType,
     MemoryScope,
     PredicateRegistry,
+    ProviderAttemptStatus,
     RetrievalView,
     SourceModality,
     SourceModalityClassifier,
@@ -27,6 +30,7 @@ from memorii.core.memory_evolution import (
 )
 from memorii.core.memory_evolution.extraction import models_from_llm_output
 from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput
+from memorii.core.memory_evolution.modality import classify_and_mark_observation
 from memorii.core.memory_evolution.models import ConfidenceComponents
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -137,6 +141,149 @@ class _StableClaimIdExtractor:
             [],
             [claim],
             [],
+        )
+
+
+class _RequestLocalIdentityExtractor:
+    provider = "test"
+    model = None
+    prompt_hash = None
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def extract(self, observations):
+        self.calls += 1
+        observation = observations[0]
+        project_id = f"request:{self.calls}:atlas"
+        person_id = f"request:{self.calls}:bob"
+        span = EvidenceSpan(
+            source_id=observation.source_id,
+            quote=observation.text,
+            source_type=observation.source_type,
+            timestamp=observation.timestamp,
+        )
+        scope = MemoryScope(task_id="task:evolution")
+        entities = [
+            EntityMention(
+                entity_id=project_id,
+                mention_text="Atlas",
+                normalized_name="atlas",
+                aliases=["Atlas"],
+                entity_type=EntityType.PROJECT,
+                evidence_spans=[span],
+                confidence=0.9,
+                scope=scope,
+            ),
+            EntityMention(
+                entity_id=person_id,
+                mention_text="Bob",
+                normalized_name="bob",
+                aliases=["Bob"],
+                entity_type=EntityType.PERSON,
+                evidence_spans=[span],
+                confidence=0.9,
+                scope=scope,
+            ),
+        ]
+        claim = ExtractedClaim(
+            claim_id=f"claim:{self.calls}:owner",
+            claim_key=ClaimKey(
+                subject_entity_id=project_id,
+                predicate_id="owner",
+                scope=scope,
+            ),
+            object_value="Bob",
+            object_entity_id=person_id,
+            valid_from=observation.timestamp,
+            evidence_spans=[span],
+            confidence=ConfidenceComponents(
+                extraction=0.9,
+                evidence=0.9,
+                source_trust=0.9,
+                calibrated=0.9,
+            ),
+            extraction_run_id=f"run:{self.calls}",
+        )
+        return (
+            ExtractionRun(
+                extraction_run_id=f"run:{self.calls}",
+                provider=self.provider,
+                input_source_ids=[observation.source_id],
+                entity_ids=[project_id, person_id],
+                claim_ids=[claim.claim_id],
+            ),
+            entities,
+            [claim],
+            [],
+        )
+
+
+class _RequestLocalActionRelationExtractor:
+    provider = "test"
+    model = None
+    prompt_hash = None
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def extract(self, observations):
+        self.calls += 1
+        observation = observations[0]
+        work_id = f"request:{self.calls}:migration"
+        blocker_id = f"request:{self.calls}:oauth"
+        span = EvidenceSpan(
+            source_id=observation.source_id,
+            quote=observation.text,
+            source_type=observation.source_type,
+            timestamp=observation.timestamp,
+        )
+        scope = MemoryScope(task_id="task:evolution")
+        entities = [
+            EntityMention(
+                entity_id=work_id,
+                mention_text="Atlas migration",
+                normalized_name="atlas migration",
+                aliases=["Atlas migration"],
+                entity_type=EntityType.TASK,
+                evidence_spans=[span],
+                confidence=0.9,
+                scope=scope,
+            ),
+            EntityMention(
+                entity_id=blocker_id,
+                mention_text="OAuth rollout",
+                normalized_name="oauth rollout",
+                aliases=["OAuth rollout"],
+                entity_type=EntityType.TASK,
+                evidence_spans=[span],
+                confidence=0.9,
+                scope=scope,
+            ),
+        ]
+        action = ExtractedAction(
+            action_id=f"action:{self.calls}:migration",
+            action_type="work_state",
+            target_entity_ids=[work_id],
+            status="blocked",
+            dependency_entity_ids=[blocker_id],
+            blocking_entity_ids=[blocker_id],
+            timestamp=observation.timestamp,
+            scope=scope,
+            evidence_spans=[span],
+            extraction_run_id=f"run:{self.calls}",
+        )
+        return (
+            ExtractionRun(
+                extraction_run_id=f"run:{self.calls}",
+                provider=self.provider,
+                input_source_ids=[observation.source_id],
+                entity_ids=[work_id, blocker_id],
+                action_ids=[action.action_id],
+            ),
+            entities,
+            [],
+            [action],
         )
 
 
@@ -486,6 +633,7 @@ def test_validator_rejects_wrong_predicate_even_when_quote_exists() -> None:
             scope=MemoryScope(task_id="task:evolution"),
         ),
         object_value="Bob",
+        object_entity_id="ent:bob-local",
         evidence_spans=[
             EvidenceSpan(
                 source_id=source.memory_id,
@@ -565,6 +713,52 @@ def test_source_modality_classifier_identifies_non_assertions() -> None:
         )
         == SourceModality.HYPOTHETICAL
     )
+
+
+def test_declared_modality_is_authoritative_but_absence_keeps_lexical_classification() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "tx:declared-modality",
+            "text": "Debug scratchpad says owner maybe TBD, but no source confirms it.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+    )
+
+    declared = classify_and_mark_observation(
+        observation,
+        declared_modality=SourceModality.NOISE,
+    )
+    inferred = classify_and_mark_observation(observation)
+
+    assert declared.modality == SourceModality.NOISE
+    assert declared.trigger_mode == ExtractionTriggerMode.SKIP
+    assert inferred.modality == SourceModality.THIRD_PARTY_CLAIM
+    assert inferred.trigger_mode == ExtractionTriggerMode.DEFERRED
+
+
+def test_empty_extraction_is_a_deterministic_abstention() -> None:
+    run, entities, claims, actions = EnglishRuleMemoryExtractor().extract([])
+
+    assert run.status == ExtractionRunStatus.ABSTAINED
+    assert run.provider_attempt_status.value == "not_attempted"
+    assert run.final_output_source.value == "none"
+    assert entities == []
+    assert claims == []
+    assert actions == []
+
+
+def test_failed_abstention_cannot_use_deterministic_no_output_contract() -> None:
+    with pytest.raises(ValueError, match="deterministic abstention"):
+        ExtractionRun(
+            extraction_run_id="run:invalid-abstention",
+            provider="test",
+            input_source_ids=[],
+            status=ExtractionRunStatus.ABSTAINED,
+            provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+            final_output_source=FinalExtractionSource.NONE,
+            failure_code=ExtractionFailureCode.OUTPUT_VALIDATION,
+        )
 
 
 def test_rule_extractor_handles_runtime_fact_phrasings() -> None:
@@ -684,8 +878,8 @@ def test_llm_extraction_binds_request_local_references_to_deterministic_runtime_
                 "action_type": "work_state",
                 "target_entity_refs": ["atlas"],
                 "status": "blocked",
-                "dependency_action_refs": [],
-                "blocking_action_refs": [],
+                "dependency_entity_refs": [],
+                "blocking_entity_refs": [],
                 "source_id": "tx:one",
                 "quote": "Atlas",
             },
@@ -695,8 +889,8 @@ def test_llm_extraction_binds_request_local_references_to_deterministic_runtime_
                 "action_type": "work_state",
                 "target_entity_refs": ["atlas"],
                 "status": "resumed",
-                "dependency_action_refs": [],
-                "blocking_action_refs": [],
+                "dependency_entity_refs": [],
+                "blocking_entity_refs": [],
                 "source_id": "tx:two",
                 "quote": "Atlas",
             },
@@ -763,8 +957,8 @@ def test_llm_action_extraction_preserves_observation_execution_context() -> None
                     "action_type": "progress",
                     "target_entity_refs": ["atlas-cleanup"],
                     "status": "in_progress",
-                    "dependency_action_refs": [],
-                    "blocking_action_refs": [],
+                    "dependency_entity_refs": [],
+                    "blocking_entity_refs": [],
                     "source_id": observation.source_id,
                     "quote": "Atlas cleanup is in progress",
                 }
@@ -780,7 +974,108 @@ def test_llm_action_extraction_preserves_observation_execution_context() -> None
     assert actions[0].scope_key == "task:incident"
 
 
-def test_llm_extraction_rejects_unknown_source_even_with_one_observation() -> None:
+def test_llm_action_relations_resolve_only_declared_entity_references() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "tx:blocked-migration",
+            "text": "Atlas migration is blocked by the OAuth rollout.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+    )
+    run, entities, _, actions = models_from_llm_output(
+        run_id="run:entity-relations",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation],
+        output={
+            "entities": [
+                {
+                    "entity_ref": "migration",
+                    "mention_text": "Atlas migration",
+                    "source_id": observation.source_id,
+                    "quote": "Atlas migration",
+                },
+                {
+                    "entity_ref": "oauth",
+                    "mention_text": "OAuth rollout",
+                    "source_id": observation.source_id,
+                    "quote": "OAuth rollout",
+                },
+            ],
+            "claims": [],
+            "actions": [
+                {
+                    "action_ref": "blocked",
+                    "actor_entity_ref": None,
+                    "action_type": "work_state",
+                    "target_entity_refs": ["migration"],
+                    "status": "blocked",
+                    "dependency_entity_refs": ["oauth"],
+                    "blocking_entity_refs": ["oauth"],
+                    "source_id": observation.source_id,
+                    "quote": "Atlas migration is blocked by the OAuth rollout",
+                }
+            ],
+        },
+    )
+
+    entity_id_by_name = {entity.normalized_name: entity.entity_id for entity in entities}
+    assert run.errors == []
+    assert actions[0].target_entity_ids == [entity_id_by_name["atlas migration"]]
+    assert actions[0].dependency_entity_ids == [entity_id_by_name["oauth rollout"]]
+    assert actions[0].blocking_entity_ids == [entity_id_by_name["oauth rollout"]]
+
+
+def test_llm_action_relations_reject_undeclared_entity_references() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "tx:bad-relation",
+            "text": "Atlas migration is blocked.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+    )
+    run, entities, _, actions = models_from_llm_output(
+        run_id="run:bad-entity-relation",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation],
+        output={
+            "entities": [
+                {
+                    "entity_ref": "migration",
+                    "mention_text": "Atlas migration",
+                    "source_id": observation.source_id,
+                    "quote": "Atlas migration",
+                }
+            ],
+            "claims": [],
+            "actions": [
+                {
+                    "action_ref": "blocked",
+                    "actor_entity_ref": None,
+                    "action_type": "work_state",
+                    "target_entity_refs": ["migration"],
+                    "status": "blocked",
+                    "dependency_entity_refs": ["missing"],
+                    "blocking_entity_refs": [],
+                    "source_id": observation.source_id,
+                    "quote": "Atlas migration is blocked",
+                }
+            ],
+        },
+    )
+
+    assert entities
+    assert actions == []
+    assert run.status == ExtractionRunStatus.PARTIAL
+    assert any("action[0]: KeyError" in error for error in run.errors)
+
+
+def test_llm_extraction_binds_unknown_echo_to_the_only_source_observation() -> None:
     observation = validator_source_from_dict(
         {
             "source_id": "tx:known",
@@ -810,6 +1105,159 @@ def test_llm_extraction_rejects_unknown_source_even_with_one_observation() -> No
         },
     )
 
+    assert run.status == ExtractionRunStatus.SUCCEEDED
+    assert run.failure_code is None
+    assert len(entities) == 1
+    assert entities[0].evidence_spans[0].source_id == observation.source_id
+    assert claims == []
+    assert actions == []
+    assert run.errors == []
+
+
+def test_llm_extraction_single_source_binding_restores_dependent_claim() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "tx:benchmark:runtime:opaque-source-id",
+            "text": "Priya owns Atlas for now.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+    )
+
+    run, entities, claims, actions = models_from_llm_output(
+        run_id="run:single-source-binding",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=[observation],
+        output={
+            "entities": [
+                {
+                    "entity_ref": "e1",
+                    "mention_text": "Priya",
+                    "source_id": "tx:benchmark:runtime:opaque-source-i",
+                    "quote": "Priya",
+                },
+                {
+                    "entity_ref": "e2",
+                    "mention_text": "Atlas",
+                    "source_id": "tx:benchmark:runtime:opaque-source-id-id",
+                    "quote": "Atlas",
+                },
+            ],
+            "claims": [
+                {
+                    "subject_entity_ref": "e1",
+                    "predicate_id": "owner",
+                    "object_value": "Atlas",
+                    "object_entity_ref": "e2",
+                    "source_id": "tx:benchmark:runtime:opaque-source-i",
+                    "quote": "Priya owns Atlas for now.",
+                }
+            ],
+            "actions": [],
+        },
+    )
+
+    assert run.status == ExtractionRunStatus.SUCCEEDED
+    assert len(entities) == 2
+    assert len(claims) == 1
+    assert actions == []
+    assert {span.source_id for item in [*entities, *claims] for span in item.evidence_spans} == {observation.source_id}
+
+
+def test_llm_extraction_single_source_binding_stabilizes_action_identity() -> None:
+    observation = validator_source_from_dict(
+        {
+            "source_id": "tx:benchmark:runtime:opaque-source-id",
+            "text": "Atlas cleanup is blocked.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+        }
+    )
+
+    def extract(source_id: str):
+        return models_from_llm_output(
+            run_id="run:single-source-action",
+            provider="llm",
+            model="test-model",
+            prompt_hash="prompt-hash",
+            observations=[observation],
+            output={
+                "entities": [
+                    {
+                        "entity_ref": "cleanup",
+                        "mention_text": "Atlas cleanup",
+                        "source_id": source_id,
+                        "quote": "Atlas cleanup",
+                    }
+                ],
+                "claims": [],
+                "actions": [
+                    {
+                        "action_ref": "blocked-cleanup",
+                        "actor_entity_ref": None,
+                        "action_type": "work_state",
+                        "target_entity_refs": ["cleanup"],
+                        "status": "blocked",
+                        "dependency_entity_refs": [],
+                        "blocking_entity_refs": [],
+                        "source_id": source_id,
+                        "quote": "Atlas cleanup is blocked",
+                    }
+                ],
+            },
+        )
+
+    exact_run, _, _, exact_actions = extract(observation.source_id)
+    malformed_run, _, _, malformed_actions = extract("tx:benchmark:runtime:opaque-source-id-id")
+
+    assert exact_run.status == ExtractionRunStatus.SUCCEEDED
+    assert malformed_run.status == ExtractionRunStatus.SUCCEEDED
+    assert [action.action_id for action in malformed_actions] == [action.action_id for action in exact_actions]
+    assert malformed_actions[0].evidence_spans[0].source_id == observation.source_id
+
+
+def test_llm_extraction_rejects_unknown_source_for_multi_source_request() -> None:
+    observations = [
+        validator_source_from_dict(
+            {
+                "source_id": "tx:first",
+                "text": "Atlas owner is Alice.",
+                "source_type": SourceType.USER,
+                "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
+            }
+        ),
+        validator_source_from_dict(
+            {
+                "source_id": "tx:second",
+                "text": "Atlas owner is Priya.",
+                "source_type": SourceType.USER,
+                "timestamp": datetime(2026, 1, 2, tzinfo=UTC),
+            }
+        ),
+    ]
+
+    run, entities, claims, actions = models_from_llm_output(
+        run_id="run:unknown-multi-source",
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        observations=observations,
+        output={
+            "entities": [
+                {
+                    "entity_ref": "atlas",
+                    "mention_text": "Atlas",
+                    "source_id": "tx:hallucinated",
+                    "quote": "Atlas",
+                }
+            ],
+            "claims": [],
+            "actions": [],
+        },
+    )
+
     assert run.status == ExtractionRunStatus.FAILED
     assert run.failure_code == ExtractionFailureCode.OUTPUT_VALIDATION
     assert entities == []
@@ -818,7 +1266,7 @@ def test_llm_extraction_rejects_unknown_source_even_with_one_observation() -> No
     assert "unknown source_id" in run.errors[0]
 
 
-def test_llm_extraction_preserves_valid_items_and_marks_mixed_provenance_partial() -> None:
+def test_llm_extraction_preserves_valid_items_and_marks_ambiguous_provenance_partial() -> None:
     observation = validator_source_from_dict(
         {
             "source_id": "tx:known",
@@ -827,13 +1275,21 @@ def test_llm_extraction_preserves_valid_items_and_marks_mixed_provenance_partial
             "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
         }
     )
+    other_observation = validator_source_from_dict(
+        {
+            "source_id": "tx:other",
+            "text": "Atlas owner is Priya.",
+            "source_type": SourceType.USER,
+            "timestamp": datetime(2026, 1, 2, tzinfo=UTC),
+        }
+    )
 
     run, entities, _, _ = models_from_llm_output(
         run_id="run:mixed-provenance",
         provider="llm",
         model="test-model",
         prompt_hash="prompt-hash",
-        observations=[observation],
+        observations=[observation, other_observation],
         output={
             "entities": [
                 {
@@ -1024,8 +1480,8 @@ def test_memory_extraction_transport_rejects_runtime_owned_metadata(
                 "action_type": "work_state",
                 "target_entity_refs": ["atlas"],
                 "status": "started",
-                "dependency_action_refs": [],
-                "blocking_action_refs": [],
+                "dependency_entity_refs": [],
+                "blocking_entity_refs": [],
                 "source_id": "tx:scoped",
                 "quote": "Atlas cleanup started",
             }
@@ -1431,6 +1887,7 @@ def test_entity_resolution_exposes_merge_split_and_claim_rekey_transitions() -> 
             scope=MemoryScope(task_id="task:evolution"),
         ),
         object_value="Bob",
+        object_entity_id="ent:bob-local",
         confidence=ConfidenceComponents(
             extraction=0.7,
             evidence=0.8,
@@ -1439,9 +1896,43 @@ def test_entity_resolution_exposes_merge_split_and_claim_rekey_transitions() -> 
         ),
         extraction_run_id="run:rekey",
     )
-    rekeyed, rekey_transition = resolver.rekey_claim(
+    rekeyed, rekey_transition = resolver.canonicalize_claim_entities(
         claim=claim,
-        new_subject_entity_id="ent:atlas",
+        references={
+            (
+                "ent:atlas-project",
+                claim.claim_key.scope.identity,
+            ): "ent:atlas",
+            (
+                "ent:bob-local",
+                claim.claim_key.scope.identity,
+            ): "ent:bob",
+        },
+    )
+    action = ExtractedAction(
+        action_id="action:local",
+        actor_entity_id="ent:bob-local",
+        action_type="start",
+        target_entity_ids=["ent:atlas-project"],
+        status="started",
+        dependency_entity_ids=["ent:atlas-project"],
+        blocking_entity_ids=["ent:bob-local"],
+        timestamp=datetime(2026, 2, 1, tzinfo=UTC),
+        scope=claim.claim_key.scope,
+        extraction_run_id="run:rekey",
+    )
+    canonical_action = resolver.canonicalize_action_entities(
+        action=action,
+        references={
+            (
+                "ent:atlas-project",
+                action.scope.identity,
+            ): "ent:atlas",
+            (
+                "ent:bob-local",
+                action.scope.identity,
+            ): "ent:bob",
+        },
     )
 
     assert "Atlas Project" in merged.aliases
@@ -1449,9 +1940,96 @@ def test_entity_resolution_exposes_merge_split_and_claim_rekey_transitions() -> 
     assert split_old.lifecycle_state.value == "active"
     assert split_new.canonical_entity_id == "ent:atlas-billing"
     assert rekeyed.claim_key.subject_entity_id == "ent:atlas"
+    assert rekeyed.object_entity_id == "ent:bob"
+    assert canonical_action.actor_entity_id == "ent:bob"
+    assert canonical_action.target_entity_ids == ["ent:atlas"]
+    assert canonical_action.dependency_entity_ids == ["ent:atlas"]
+    assert canonical_action.blocking_entity_ids == ["ent:bob"]
+    assert rekey_transition is not None
     assert merge_transition.transition_type.value == "entity_merge"
     assert split_transition.transition_type.value == "entity_split"
     assert rekey_transition.transition_type.value == "claim_rekey"
+
+
+def test_service_propagates_canonical_identity_across_request_local_outputs() -> None:
+    service = MemoryEvolutionService(
+        memory_plane=MemoryPlaneService(),
+        extractor=_RequestLocalIdentityExtractor(),
+    )
+
+    first = service.evolve_records(
+        [
+            _record(
+                "event:first-owner",
+                "Atlas owner is Bob.",
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+        ]
+    )
+    second = service.evolve_records(
+        [
+            _record(
+                "event:second-owner",
+                "Atlas owner is Bob.",
+                timestamp=datetime(2026, 1, 2, tzinfo=UTC),
+            )
+        ]
+    )
+
+    canonical_project = next(link.canonical_entity_id for link in first.entity_links if link.normalized_name == "atlas")
+    canonical_person = next(link.canonical_entity_id for link in first.entity_links if link.normalized_name == "bob")
+    assert second.claims[0].claim_key.subject_entity_id == canonical_project
+    assert second.claims[0].object_entity_id == canonical_person
+    assert {transition.transition_type.value for transition in second.transitions} >= {"claim_rekey"}
+    current = service.retrieve_claim_states(
+        view=RetrievalView.CURRENT,
+        predicate_id="owner",
+        subject_entity_id=canonical_project,
+    )
+    assert len(current) == 1
+    canonical_person_link_ids = {
+        link.link_id for link in second.entity_links if link.canonical_entity_id == canonical_person
+    }
+    assert current[0].object_link_id in canonical_person_link_ids
+
+
+def test_service_preserves_cross_event_action_relation_identity() -> None:
+    service = MemoryEvolutionService(
+        memory_plane=MemoryPlaneService(),
+        extractor=_RequestLocalActionRelationExtractor(),
+    )
+
+    first = service.evolve_records(
+        [
+            _record(
+                "event:first-blocked",
+                "Atlas migration is blocked by the OAuth rollout.",
+                timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+            )
+        ]
+    )
+    second = service.evolve_records(
+        [
+            _record(
+                "event:still-blocked",
+                "Atlas migration remains blocked by the OAuth rollout.",
+                timestamp=datetime(2026, 1, 2, tzinfo=UTC),
+            )
+        ]
+    )
+
+    first_action = first.actions[0]
+    second_action = second.actions[0]
+    assert second_action.target_entity_ids == first_action.target_entity_ids
+    assert second_action.dependency_entity_ids == first_action.dependency_entity_ids
+    assert second_action.blocking_entity_ids == first_action.blocking_entity_ids
+    dependency_id = second_action.dependency_entity_ids[0]
+    relation_targets = {
+        edge.target_node_id
+        for edge in second.graph_edges
+        if edge.edge_type in {MemoryGraphEdgeType.DEPENDS_ON, MemoryGraphEdgeType.BLOCKS}
+    }
+    assert {node.node_id for node in second.graph_nodes if node.canonical_id == dependency_id} <= relation_targets
 
 
 def test_provider_chat_ingestion_is_deferred_when_evolution_is_opted_in() -> None:

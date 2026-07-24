@@ -14,6 +14,7 @@ from memorii.domain.enums import (
     FinalExtractionSource,
     MemoryDomain,
     ProviderAttemptStatus,
+    SourceModality,
     SourceType,
 )
 
@@ -93,19 +94,6 @@ class ClaimTransitionType(StrEnum):
     ENTITY_SPLIT = "entity_split"
     ENTITY_RELINK = "entity_relink"
     CLAIM_REKEY = "claim_rekey"
-
-
-class SourceModality(StrEnum):
-    ASSERTION = "assertion"
-    CORRECTION = "correction"
-    QUOTED_OR_PASTED = "quoted_or_pasted"
-    HYPOTHETICAL = "hypothetical"
-    QUESTION = "question"
-    INSTRUCTION = "instruction"
-    TOOL_RESULT = "tool_result"
-    ASSISTANT_CLAIM = "assistant_claim"
-    THIRD_PARTY_CLAIM = "third_party_claim"
-    NOISE = "noise"
 
 
 class ExtractionTriggerMode(StrEnum):
@@ -389,8 +377,8 @@ class ExtractedAction(BaseModel):
     action_type: str
     target_entity_ids: list[str] = Field(default_factory=list)
     status: str
-    dependency_ids: list[str] = Field(default_factory=list)
-    blocking_ids: list[str] = Field(default_factory=list)
+    dependency_entity_ids: list[str] = Field(default_factory=list)
+    blocking_entity_ids: list[str] = Field(default_factory=list)
     timestamp: datetime
     scope: MemoryScope = Field(default_factory=MemoryScope)
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
@@ -621,10 +609,21 @@ class ExtractionRun(BaseModel):
             )
             if self.final_output_source != expected_source:
                 raise ValueError("fallback outcome and final output source disagree")
-        if self.status == ExtractionRunStatus.FAILED and self.final_output_source != FinalExtractionSource.NONE:
+        deterministic_abstention = (
+            self.status == ExtractionRunStatus.ABSTAINED
+            and self.provider_attempt_status == ProviderAttemptStatus.NOT_ATTEMPTED
+            and self.fallback_outcome == FallbackOutcome.NOT_USED
+            and self.failure_code is None
+            and self.primary_failure_code is None
+            and not self.entity_ids
+            and not self.claim_ids
+            and not self.action_ids
+        )
+        if self.final_output_source == FinalExtractionSource.NONE:
+            if self.status != ExtractionRunStatus.FAILED and not deterministic_abstention:
+                raise ValueError("missing extraction output requires failure or deterministic abstention")
+        elif self.status == ExtractionRunStatus.FAILED:
             raise ValueError("failed extraction cannot identify a final output source")
-        if self.status != ExtractionRunStatus.FAILED and self.final_output_source == FinalExtractionSource.NONE:
-            raise ValueError("non-failed extraction requires a final output source")
         return self
 
 

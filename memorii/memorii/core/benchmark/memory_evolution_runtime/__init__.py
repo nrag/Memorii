@@ -24,6 +24,7 @@ from memorii.core.benchmark.memory_evolution_runtime.extractors import (
 from memorii.core.benchmark.memory_evolution_runtime.graph_items import graph_items_from_snapshot
 from memorii.core.benchmark.memory_evolution_runtime.ingestion import (
     IngestionContext,
+    SurfaceIngestionResult,
     ingest_scenario_surface_observations,
 )
 from memorii.core.benchmark.memory_evolution_runtime.models import (
@@ -66,6 +67,7 @@ __all__ = [
     "graph_items_from_snapshot",
     "ingest_scenario_surface_observations",
     "IngestionContext",
+    "SurfaceIngestionResult",
     "normalize_action_status",
     "project_runtime_checkpoint",
     "run_runtime_scenarios",

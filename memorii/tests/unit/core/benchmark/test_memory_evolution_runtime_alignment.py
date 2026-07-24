@@ -5,6 +5,7 @@ from memorii.core.benchmark.memory_evolution_runtime import (
     expected_action_alignment_rows,
 )
 from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import (
+    _oracle_ids_for_runtime_claim_ids,
     runtime_answer_for_checkpoint,
 )
 from tests.unit.core.benchmark.memory_evolution_runtime_test_helpers import (
@@ -313,3 +314,70 @@ def test_runtime_answer_projection_uses_checkpoint_policy_not_english_query_text
 
     assert checkpoint.answer_projection_policy == "claim_subject"
     assert answer == "Atlas Platform Service"
+
+
+def test_runtime_answer_projection_prefers_canonical_entity_over_stored_literal() -> None:
+    scenario = generate_scenario_by_family(profile="adversarial", family="entity_split", seed=7)
+    checkpoint = next(
+        item
+        for item in scenario.checkpoints
+        if item.answer_projection_policy not in {"none", "next_action", "graph_channels_only", "claim_subject"}
+        and item.expected_claim_ids
+    )
+    claim = next(item for item in scenario.claims if item.claim_id == checkpoint.expected_claim_ids[0])
+    runtime_claim_id = "graph:node:claim:canonical-object"
+    runtime_item = runtime_claim(
+        scenario_id=scenario.scenario_id,
+        runtime_id=runtime_claim_id,
+        subject_id=claim.subject.entity_id,
+        subject=claim.subject.entity_id,
+        predicate=claim.predicate.predicate_id,
+        obj="canonical entity",
+        event=claim_event_id(claim),
+    ).model_copy(
+        update={
+            "object_entity_id": "entity:canonical",
+            "object": "canonical entity",
+            "object_value": "misleading stale literal",
+        }
+    )
+
+    answer = runtime_answer_for_checkpoint(
+        checkpoint=checkpoint,
+        selected_claim_ids=[claim.claim_id],
+        runtime_claim_by_oracle={claim.claim_id: runtime_claim_id},
+        item_by_id={runtime_claim_id: runtime_item},
+    )
+
+    assert answer == "Canonical Entity"
+
+
+def test_runtime_context_claim_ids_cross_persisted_graph_and_oracle_namespaces() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="entity_definition_before_role_claims",
+        seed=7,
+    )
+    claim = next(item for item in scenario.claims if item.observability.value != "hidden")
+    runtime_item = runtime_claim(
+        scenario_id=scenario.scenario_id,
+        runtime_id="graph:node:claim:runtime-owner",
+        subject_id=claim.subject.entity_id,
+        subject=claim.subject.canonical_name,
+        predicate=claim.predicate.predicate_id,
+        obj=claim.object.value,
+        event=claim_event_id(claim),
+    ).model_copy(update={"claim_id": "persisted:claim:runtime-owner"})
+    alignments = align_runtime_graph_to_oracle(
+        scenario=scenario,
+        graph_items=[runtime_item],
+    )
+
+    oracle_ids = _oracle_ids_for_runtime_claim_ids(
+        claim_ids=["persisted:claim:runtime-owner"],
+        graph_items=[runtime_item],
+        alignments=alignments,
+    )
+
+    assert oracle_ids == [claim.claim_id]
+    assert claim.claim_id not in {"persisted:claim:runtime-owner", runtime_item.runtime_item_id}

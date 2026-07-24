@@ -13,6 +13,9 @@ from memorii.core.benchmark.memory_evolution_sim.claim_policy import (
 from memorii.core.benchmark.memory_evolution_sim.decision_contract import (
     validate_sim_decision_contract,
 )
+from memorii.core.benchmark.memory_evolution_sim.definition_placement import (
+    definition_placement_for_selected_claims,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
     SimSemanticDecision,
@@ -48,22 +51,22 @@ def compile_sim_semantic_decision(
         context=context,
         assessments=semantic.claim_assessments,
     )
-    selected = list(closure.primary_claim_ids)
+    selected = [
+        claim_id
+        for claim_id in closure.primary_claim_ids
+        if claims[claim_id].predicate_id != "entity_type"
+    ]
     selected_subjects = {
         claims[item].subject_entity_id
         for item in selected
         if claims[item].predicate_id != "entity_type"
     }
-    if (
-        context.checkpoint.task_contract.definition_claim_placement
-        == "selected_and_supporting_required"
-    ):
-        selected.extend(
-            claim_id
-            for claim_id in closure.relevant_claim_ids
-            if claims[claim_id].predicate_id == "entity_type"
-            and claims[claim_id].subject_entity_id in selected_subjects
-        )
+    definition_placement = definition_placement_for_selected_claims(
+        context=context,
+        selected_claim_ids=selected,
+    )
+    if definition_placement.channel == "selected_and_supporting":
+        selected.extend(definition_placement.claim_ids)
     selected = ordered_unique(selected)
     selected_set = set(selected)
 

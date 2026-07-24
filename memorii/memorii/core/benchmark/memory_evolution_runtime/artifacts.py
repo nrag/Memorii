@@ -35,6 +35,7 @@ from memorii.core.memory_evolution import (
     ProviderAttemptStatus,
     RecordLifecycleState,
 )
+from memorii.core.memory_evolution.operation_models import EvolutionOperationStatus
 
 
 def write_runtime_artifacts(*, run_dir: Path, rows: RuntimeSuiteRows) -> None:
@@ -316,6 +317,22 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
     )
     abstentions = sum(row.extraction_status == ExtractionRunStatus.ABSTAINED for row in rows.llm_rows)
     partial_extractions = sum(row.extraction_status == ExtractionRunStatus.PARTIAL for row in rows.llm_rows)
+    operation_status_counts = Counter(
+        row.operation_status.value
+        for row in rows.llm_rows
+        if row.operation_status is not None
+    )
+    operation_failure_classifications = Counter(
+        row.operation_failure_code.value
+        for row in rows.llm_rows
+        if row.operation_failure_code is not None
+    )
+    operation_outcome_count = sum(operation_status_counts.values())
+    committed_operations = operation_status_counts[EvolutionOperationStatus.COMMITTED.value]
+    failed_operations = operation_status_counts[EvolutionOperationStatus.FAILED.value]
+    missing_operation_outcomes = sum(
+        row.operation_status is None for row in rows.llm_rows
+    )
     failure_buckets: list[str] = []
     if provider_failures:
         failure_buckets.append("runtime_provider_failure")
@@ -325,6 +342,13 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
         failure_buckets.append("runtime_output_validation_failure")
     if partial_extractions:
         failure_buckets.append("runtime_partial_extraction")
+    if failed_operations:
+        failure_buckets.append("runtime_evolution_operation_failure")
+    if missing_operation_outcomes:
+        failure_buckets.append("runtime_missing_evolution_outcome")
+    nonterminal_operations = operation_outcome_count - committed_operations - failed_operations
+    if nonterminal_operations:
+        failure_buckets.append("runtime_nonterminal_evolution_outcome")
     if not provider_backed:
         status: ProviderHealthStatus = "not_applicable"
         clean_runtime_gate = True
@@ -337,6 +361,9 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
             and not fallbacks
             and not output_validation_failures
             and not partial_extractions
+            and not failed_operations
+            and not missing_operation_outcomes
+            and not nonterminal_operations
             else "fail"
         )
         clean_runtime_gate = status == "pass"
@@ -363,6 +390,14 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
         output_validation_failures=output_validation_failures,
         abstentions=abstentions,
         partial_extractions=partial_extractions,
+        operation_outcome_count=operation_outcome_count,
+        committed_operations=committed_operations,
+        failed_operations=failed_operations,
+        missing_operation_outcomes=missing_operation_outcomes,
+        operation_status_counts=dict(sorted(operation_status_counts.items())),
+        operation_failure_classification_counts=dict(
+            sorted(operation_failure_classifications.items())
+        ),
         execution_source=execution_source,
         dry_run=rows.dry_run,
         fake_extractor_calls=sum(1 for row in rows.checkpoint_rows if row.final_output_source == "fake_oracle"),
@@ -374,6 +409,7 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
             "rule_mode": "not_applicable",
             "dry_run": "not_provider_health",
             "fake_oracle": "never_provider_success",
+            "operation_outcome": "require_committed_for_every_extraction",
         },
     )
 

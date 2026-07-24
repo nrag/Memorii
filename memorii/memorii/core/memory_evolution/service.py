@@ -54,6 +54,7 @@ from memorii.core.memory_evolution.mutations import (
 from memorii.core.memory_evolution.predicates import PredicateRegistry
 from memorii.core.memory_evolution.query_analysis import EnglishLexicalQueryAnalyzer, QueryAnalyzer
 from memorii.core.memory_evolution.record_projection import (
+    declared_source_modality_from_record,
     record_from_contradiction_set,
     record_from_entity_link,
     record_from_temporal_anchor,
@@ -205,6 +206,7 @@ class MemoryEvolutionService:
                 source_observation_from_record(record),
                 classifier=self._modality_classifier,
                 trigger_policy=self._trigger_policy,
+                declared_modality=declared_source_modality_from_record(record),
             )
             for record in records
             if record.is_raw_event or record.domain == MemoryDomain.TRANSCRIPT
@@ -234,7 +236,10 @@ class MemoryEvolutionService:
             obs.source_id for obs in observations if obs.trigger_mode == ExtractionTriggerMode.SKIP
         ]
         run, entities, claims, actions = self._extractor.extract(extractable_observations)
-        if run.status == ExtractionRunStatus.FAILED:
+        if run.status in {
+            ExtractionRunStatus.FAILED,
+            ExtractionRunStatus.PARTIAL,
+        }:
             raise MemoryExtractionRunError(run)
         validation_results = self._validator.validate_claims(claims=claims, observations=extractable_observations)
         run = run.model_copy(update={"validation_summary": self._validator.summary(validation_results)})
@@ -264,11 +269,33 @@ class MemoryEvolutionService:
         existing_entity_links = self._state_repository.list_entity_links()
         entity_resolution = self._entity_resolver.resolve_mentions(entities, existing_entity_links)
         entity_links = entity_resolution.links
+        canonical_references = self._entity_resolver.canonical_reference_map(entity_resolution)
+        canonical_claims: list[ExtractedClaim] = []
+        rekey_transitions: list[ClaimLifecycleTransition] = []
+        for claim in claims:
+            canonical_claim, transition = self._entity_resolver.canonicalize_claim_entities(
+                claim=claim,
+                references=canonical_references,
+            )
+            canonical_claims.append(canonical_claim)
+            if transition is not None:
+                rekey_transitions.append(transition)
+        claims = canonical_claims
+        actions = [
+            self._entity_resolver.canonicalize_action_entities(
+                action=action,
+                references=canonical_references,
+            )
+            for action in actions
+        ]
         for link in entity_links:
             self._memory_plane.upsert_record(record_from_entity_link(link))
 
         claim_states: list[ClaimState] = []
-        transitions: list[ClaimLifecycleTransition] = list(entity_resolution.transitions)
+        transitions: list[ClaimLifecycleTransition] = [
+            *entity_resolution.transitions,
+            *rekey_transitions,
+        ]
         contradiction_sets: list[ContradictionSet] = []
         written_record_ids: list[str] = []
         deferred_ids = set(deferred_observation_ids)

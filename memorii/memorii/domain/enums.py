@@ -47,6 +47,19 @@ class SourceType(StrEnum):
     DERIVED = "derived"
 
 
+class SourceModality(StrEnum):
+    ASSERTION = "assertion"
+    CORRECTION = "correction"
+    QUOTED_OR_PASTED = "quoted_or_pasted"
+    HYPOTHETICAL = "hypothetical"
+    QUESTION = "question"
+    INSTRUCTION = "instruction"
+    TOOL_RESULT = "tool_result"
+    ASSISTANT_CLAIM = "assistant_claim"
+    THIRD_PARTY_CLAIM = "third_party_claim"
+    NOISE = "noise"
+
+
 class ExtractionRunStatus(StrEnum):
     SUCCEEDED = "succeeded"
     PARTIAL = "partial"

@@ -112,6 +112,79 @@ def test_contract_reports_duplicate_claim_once_with_exact_id() -> None:
     assert issue.offending_ids == (duplicate_id,)
 
 
+def test_context_only_definition_cannot_be_a_primary_claim() -> None:
+    context, semantic = _case(
+        family="current_vs_historical_truth",
+        checkpoint_type="current_truth",
+    )
+    definition = next(
+        claim
+        for claim in context.visible_claims
+        if claim.predicate_id == "entity_type"
+        and claim.lifecycle_state == "active"
+    )
+    changed = semantic.model_copy(
+        update={
+            "claim_assessments": [
+                assessment.model_copy(
+                    update={"role": SimClaimSemanticRole.PRIMARY}
+                )
+                if assessment.claim_id == definition.claim_id
+                else assessment
+                for assessment in semantic.claim_assessments
+            ]
+        }
+    )
+
+    result = validate_sim_decision_contract(context=context, semantic=changed)
+    issue = next(
+        issue
+        for issue in result.issues
+        if issue.code
+        == SimDecisionContractViolationCode.OPTIONAL_DEFINITION_PRIMARY
+    )
+
+    assert issue.offending_ids == (definition.claim_id,)
+    assert issue.allowed_values == (SimClaimSemanticRole.RELEVANT.value,)
+
+
+def test_context_only_definition_cannot_be_the_only_primary_claim() -> None:
+    context, semantic = _case(
+        family="current_vs_historical_truth",
+        checkpoint_type="current_truth",
+    )
+    definition = next(
+        claim
+        for claim in context.visible_claims
+        if claim.predicate_id == "entity_type"
+        and claim.lifecycle_state == "active"
+    )
+    changed = semantic.model_copy(
+        update={
+            "claim_assessments": [
+                assessment.model_copy(
+                    update={
+                        "role": (
+                            SimClaimSemanticRole.PRIMARY
+                            if assessment.claim_id == definition.claim_id
+                            else SimClaimSemanticRole.IRRELEVANT
+                        )
+                    }
+                )
+                for assessment in semantic.claim_assessments
+            ]
+        }
+    )
+
+    result = validate_sim_decision_contract(context=context, semantic=changed)
+
+    assert any(
+        issue.code == SimDecisionContractViolationCode.OPTIONAL_DEFINITION_PRIMARY
+        and issue.offending_ids == (definition.claim_id,)
+        for issue in result.issues
+    )
+
+
 def test_execution_contract_distinguishes_non_action_and_inactive_action() -> None:
     context, semantic = _case(
         family="abandoned_then_resumed_work",

@@ -140,14 +140,16 @@ def run_runtime_scenarios(
                 and ordered_observations[observation_index].timestamp <= checkpoint.timestamp
             ):
                 observation = ordered_observations[observation_index]
-                source_id_to_event_id.update(
-                    ingest_surface_observation(
-                        provider=provider,
-                        memory_plane=memory_plane,
-                        observation=observation,
-                        context=ingestion_context,
-                        before_ids=before_record_ids,
-                    )
+                ingestion_result = ingest_surface_observation(
+                    provider=provider,
+                    memory_plane=memory_plane,
+                    observation=observation,
+                    context=ingestion_context,
+                    before_ids=before_record_ids,
+                )
+                source_id_to_event_id.update(ingestion_result.source_id_to_event_id)
+                extractor.record_operation_outcomes(
+                    ingestion_result.evolution_outcomes
                 )
                 before_record_ids = {record.memory_id for record in memory_plane.list_records()}
                 observation_index += 1

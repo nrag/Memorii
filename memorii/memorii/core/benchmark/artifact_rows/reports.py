@@ -36,6 +36,10 @@ from memorii.core.memory_evolution.models import (
 from memorii.core.memory_evolution.models import (
     FinalExtractionSource as MemoryFinalExtractionSource,
 )
+from memorii.core.memory_evolution.operation_models import (
+    EvolutionFailureCategory,
+    EvolutionOperationStatus,
+)
 
 _CALIBRATION_REQUIRED_SUITES = {"memory_evolution_sim_v1", "memory_evolution_runtime_v1"}
 
@@ -134,6 +138,12 @@ class RuntimeProviderHealth(FlatArtifactModel):
     output_validation_failures: int = Field(default=0, ge=0)
     abstentions: int = Field(default=0, ge=0)
     partial_extractions: int = Field(default=0, ge=0)
+    operation_outcome_count: int = Field(default=0, ge=0)
+    committed_operations: int = Field(default=0, ge=0)
+    failed_operations: int = Field(default=0, ge=0)
+    missing_operation_outcomes: int = Field(default=0, ge=0)
+    operation_status_counts: CountMap = Field(default_factory=dict)
+    operation_failure_classification_counts: CountMap = Field(default_factory=dict)
     execution_source: FinalOutputSource
     dry_run: bool
     fake_extractor_calls: int = Field(default=0, ge=0)
@@ -146,6 +156,13 @@ class RuntimeProviderHealth(FlatArtifactModel):
             raise ValueError("attempted provider calls must equal successes plus failures")
         if sum(self.provider_attempt_status_counts.values()) < self.attempted_calls:
             raise ValueError("provider status counts cannot underreport attempted calls")
+        if sum(self.operation_status_counts.values()) != self.operation_outcome_count:
+            raise ValueError("operation status counts must sum to operation_outcome_count")
+        extraction_trace_count = sum(self.extraction_status_counts.values())
+        if self.operation_outcome_count + self.missing_operation_outcomes != extraction_trace_count:
+            raise ValueError("operation outcome accounting must cover every extraction trace")
+        if self.committed_operations + self.failed_operations > self.operation_outcome_count:
+            raise ValueError("terminal operation counts cannot exceed operation outcomes")
         if self.dry_run:
             if any((self.attempted_calls, self.provider_successes, self.provider_failures, self.fallbacks)):
                 raise ValueError("dry runtime health cannot contain provider accounting")
@@ -536,6 +553,10 @@ class RuntimeExtractorTraceRow(FlatArtifactModel):
     failure_code: ExtractionFailureCode | None = None
     primary_failure_code: ExtractionFailureCode | None = None
     fallback_provider: str | None = None
+    operation_id: str | None = None
+    operation_status: EvolutionOperationStatus | None = None
+    operation_failure_code: EvolutionFailureCategory | None = None
+    operation_retryable: bool = False
     output: RuntimeExtractorOutput
 
     @model_validator(mode="after")
@@ -552,6 +573,20 @@ class RuntimeExtractorTraceRow(FlatArtifactModel):
                 raise ValueError("successful fallback must identify fallback output")
         elif self.final_extraction_source == MemoryFinalExtractionSource.FALLBACK:
             raise ValueError("fallback output requires a successful fallback")
+        if self.operation_status is None:
+            if (
+                self.operation_id is not None
+                or self.operation_failure_code is not None
+                or self.operation_retryable
+            ):
+                raise ValueError("missing operation status cannot contain operation telemetry")
+        elif not self.operation_id:
+            raise ValueError("operation status requires an operation ID")
+        elif self.operation_status == EvolutionOperationStatus.FAILED:
+            if self.operation_failure_code is None:
+                raise ValueError("failed operation requires a failure classification")
+        elif self.operation_failure_code is not None or self.operation_retryable:
+            raise ValueError("non-failed operation cannot contain failure telemetry")
         return self
 
 

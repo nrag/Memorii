@@ -6,6 +6,9 @@ from memorii.core.benchmark.memory_evolution_sim.channel_contract import (
     channel_algebra_violations,
     selected_entity_ids_for_claims,
 )
+from memorii.core.benchmark.memory_evolution_sim.definition_placement import (
+    definition_placement_for_selected_claims,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
     SimSystemOutput,
@@ -144,15 +147,12 @@ def validate_visible_sim_output(
                 )
             )
 
-    selected_subjects = {claim.subject_entity_id for claim in selected_claims}
-    active_definitions = {
-        claim.claim_id: claim
-        for claim in context.visible_claims
-        if claim.subject_entity_id in selected_subjects
-        and claim.predicate_id == "entity_type"
-        and claim.lifecycle_state == "active"
-    }
-    rejected_active_definitions = sorted(set(active_definitions) & set(output.rejected_claim_ids))
+    definition_placement = definition_placement_for_selected_claims(
+        context=context,
+        selected_claim_ids=output.selected_claim_ids,
+    )
+    active_definition_ids = set(definition_placement.claim_ids)
+    rejected_active_definitions = sorted(active_definition_ids & set(output.rejected_claim_ids))
     if rejected_active_definitions:
         issues.append(
             _issue(
@@ -161,9 +161,9 @@ def validate_visible_sim_output(
                 f"active definitions for selected subjects cannot be rejected: {rejected_active_definitions}",
             )
         )
-    if contract.definition_claim_placement == "selected_and_supporting_required":
-        missing_selected_definitions = sorted(set(active_definitions) - set(output.selected_claim_ids))
-        missing_supporting_definitions = sorted(set(active_definitions) - set(output.supporting_claim_ids))
+    if definition_placement.channel == "selected_and_supporting":
+        missing_selected_definitions = sorted(active_definition_ids - set(output.selected_claim_ids))
+        missing_supporting_definitions = sorted(active_definition_ids - set(output.supporting_claim_ids))
         if missing_selected_definitions:
             issues.append(
                 _issue(
@@ -181,7 +181,7 @@ def validate_visible_sim_output(
                 )
             )
     else:
-        incorrectly_selected_definitions = sorted(set(active_definitions) & set(output.selected_claim_ids))
+        incorrectly_selected_definitions = sorted(active_definition_ids & set(output.selected_claim_ids))
         if incorrectly_selected_definitions:
             issues.append(
                 _issue(

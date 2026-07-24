@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from memorii.core.provider.models import ProviderEvent, ProviderOperation
+from memorii.domain.enums import SourceModality
 
 
 def build_event_id(prefix: str, *, session_id: str | None, task_id: str | None) -> str:
@@ -43,6 +44,7 @@ def make_event(
     user_id: str | None = None,
     language: str = "en",
     timestamp: datetime | None = None,
+    source_modality: SourceModality | None = None,
 ) -> ProviderEvent:
     return ProviderEvent(
         event_id=event_id,
@@ -56,4 +58,5 @@ def make_event(
         user_id=user_id,
         language=language,
         timestamp=timestamp or datetime.now(UTC),
+        source_modality=source_modality,
     )

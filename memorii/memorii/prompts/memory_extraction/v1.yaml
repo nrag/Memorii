@@ -53,7 +53,7 @@ output_schema:
       items:
         type: object
         additionalProperties: false
-        required: [action_ref, actor_entity_ref, action_type, target_entity_refs, status, dependency_action_refs, blocking_action_refs, source_id, quote]
+        required: [action_ref, actor_entity_ref, action_type, target_entity_refs, status, dependency_entity_refs, blocking_entity_refs, source_id, quote]
         properties:
           action_ref: {type: string, minLength: 1}
           actor_entity_ref: {type: [string, 'null']}
@@ -62,10 +62,10 @@ output_schema:
             type: array
             items: {type: string}
           status: {type: string}
-          dependency_action_refs:
+          dependency_entity_refs:
             type: array
             items: {type: string}
-          blocking_action_refs:
+          blocking_entity_refs:
             type: array
             items: {type: string}
           source_id: {type: string}
@@ -109,6 +109,9 @@ system_template: |-
   - an action entry so the runtime graph exposes agent-execution pressure as ACTION nodes
   Use stable action status values when possible: started, in_progress, blocked, resumed, abandoned, completed, failed, or succeeded.
   Do not emit actions from hypothetical, noise, question, or pasted/quoted text unless the observation is an explicit tool/verified execution result.
+  Action targets, dependencies, and blockers must reference entities declared in the same response.
+  Use dependency_entity_refs for entities the action depends on and blocking_entity_refs for
+  entities that block the action. Never use action_ref values in either relation field.
 
   For each observation, copy the exact source_id from that observation. If there is one source observation, every extracted item must use that source_id.
 

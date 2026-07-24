@@ -182,12 +182,22 @@ class EvolutionCoordinator:
             )
         except Exception as exc:  # orchestration boundary records every projection failure
             heartbeat.stop()
-            logger.warning(
-                "memory_evolution_projection_failed operation_id=%s error_type=%s",
-                running.operation_id,
-                type(exc).__name__,
-                exc_info=True,
-            )
+            if isinstance(exc, MemoryExtractionRunError):
+                logger.warning(
+                    "memory_evolution_extraction_rejected operation_id=%s "
+                    "status=%s failure_code=%s errors=%s",
+                    running.operation_id,
+                    exc.run.status.value,
+                    exc.run.failure_code.value if exc.run.failure_code is not None else "unknown",
+                    exc.run.errors,
+                )
+            else:
+                logger.warning(
+                    "memory_evolution_projection_failed operation_id=%s error_type=%s",
+                    running.operation_id,
+                    type(exc).__name__,
+                    exc_info=True,
+                )
             durable = self._synchronize_completion_marker(running.operation_id)
             if durable is not None and durable.status == EvolutionOperationStatus.COMMITTED:
                 return durable, None

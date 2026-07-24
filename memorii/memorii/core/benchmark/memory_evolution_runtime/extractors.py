@@ -53,6 +53,11 @@ from memorii.core.memory_evolution.models import (
     ProviderAttemptStatus,
     memory_scope_from_observation,
 )
+from memorii.core.memory_evolution.operation_models import (
+    EvolutionFailureCategory,
+    EvolutionOperationStatus,
+)
+from memorii.core.provider.models import ProviderEvolutionOutcome
 
 
 class RecordedExtractionRun(BaseModel):
@@ -79,6 +84,10 @@ class RecordedExtractionRun(BaseModel):
     claim_ids: list[str]
     action_ids: list[str]
     validation_summary: dict[str, int]
+    operation_id: str | None = None
+    operation_status: EvolutionOperationStatus | None = None
+    operation_failure_code: EvolutionFailureCategory | None = None
+    operation_retryable: bool = False
 
 
 class OracleVisibleMemoryExtractor:
@@ -102,6 +111,22 @@ class OracleVisibleMemoryExtractor:
     ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         self.calls += 1
         run_id = stable_id("runtime-fake-extraction", "|".join(obs.source_id for obs in observations))
+        if not observations:
+            return (
+                ExtractionRun(
+                    extraction_run_id=run_id,
+                    provider=self.provider,
+                    model=self.model,
+                    prompt_hash=self.prompt_hash,
+                    input_source_ids=[],
+                    status=ExtractionRunStatus.ABSTAINED,
+                    provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+                    final_output_source=FinalExtractionSource.NONE,
+                ),
+                [],
+                [],
+                [],
+            )
         entity_by_scope: dict[tuple[str, str], EntityMention] = {}
         claims: list[ExtractedClaim] = []
         actions: list[ExtractedAction] = []
@@ -278,6 +303,35 @@ class RecordingMemoryExtractor:
             )
         )
         return run, entities, claims, actions
+
+    def record_operation_outcomes(
+        self,
+        outcomes: list[ProviderEvolutionOutcome],
+    ) -> None:
+        """Attach synchronous durable outcomes to their just-recorded extractions."""
+
+        if not outcomes:
+            return
+        if len(outcomes) > len(self.recorded_runs):
+            raise RuntimeError("operation outcomes exceed recorded extraction runs")
+        target_indexes = range(
+            len(self.recorded_runs) - len(outcomes),
+            len(self.recorded_runs),
+        )
+        for index, outcome in zip(target_indexes, outcomes, strict=True):
+            run = self.recorded_runs[index]
+            if run.operation_status is not None:
+                raise RuntimeError("recorded extraction already has an operation outcome")
+            self.recorded_runs[index] = run.model_copy(
+                update={
+                    "operation_id": outcome.operation_id,
+                    "operation_status": EvolutionOperationStatus(outcome.status),
+                    "operation_failure_code": (
+                        EvolutionFailureCategory(outcome.failure_code) if outcome.failure_code is not None else None
+                    ),
+                    "operation_retryable": outcome.retryable,
+                }
+            )
 
 
 def build_runtime_extractor(

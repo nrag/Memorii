@@ -393,6 +393,10 @@ def test_memory_extraction_prompt_schema_is_strict_for_openai() -> None:
     assert entity_schema["properties"]["entity_ref"]["minLength"] == 1
     assert claim_schema["properties"]["subject_entity_ref"]["minLength"] == 1
     assert action_schema["properties"]["action_ref"]["minLength"] == 1
+    assert "dependency_entity_refs" in action_schema["required"]
+    assert "blocking_entity_refs" in action_schema["required"]
+    assert "dependency_action_refs" not in action_schema["properties"]
+    assert "blocking_action_refs" not in action_schema["properties"]
     runtime_owned = {
         "entity_id",
         "claim_id",

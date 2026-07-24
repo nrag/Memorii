@@ -94,6 +94,34 @@ class _FailedExtractionProvider:
         )
 
 
+class _PartialExtractionProvider:
+    provider = "test_llm"
+    model = "test-model"
+    prompt_hash = "test-prompt"
+
+    def extract(self, observations: list[SourceObservation]):
+        return (
+            ExtractionRun(
+                extraction_run_id="extraction:partial",
+                provider=self.provider,
+                model=self.model,
+                prompt_hash=self.prompt_hash,
+                input_source_ids=[
+                    observation.source_id for observation in observations
+                ],
+                entity_ids=["entity:accepted-before-error"],
+                status=ExtractionRunStatus.PARTIAL,
+                provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
+                final_output_source=FinalExtractionSource.PRIMARY,
+                failure_code=ExtractionFailureCode.OUTPUT_VALIDATION,
+                errors=["claim[0]: KeyError:missing-reference"],
+            ),
+            [],
+            [],
+            [],
+        )
+
+
 class _OneConflictStore(InMemoryMemoryPlaneStore):
     def __init__(self) -> None:
         super().__init__()
@@ -317,6 +345,44 @@ def test_failed_extraction_records_terminal_provider_failure_without_committing(
     assert outcome.fallback_outcome == FallbackOutcome.NOT_USED
     assert outcome.final_extraction_source == FinalExtractionSource.NONE
     assert provider.memory_evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
+
+
+def test_partial_extraction_fails_atomically_and_retains_truthful_telemetry(caplog) -> None:
+    memory_plane = MemoryPlaneService()
+    provider = ProviderMemoryService(
+        memory_plane=memory_plane,
+        memory_evolution_extractor=_PartialExtractionProvider()
+    )
+
+    result = provider.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Alice.",
+        operation_id="operation:partial-extraction",
+    )
+
+    outcome = result.evolution_outcomes[0]
+    assert outcome.status == "evolution_failed"
+    assert outcome.failure_code == "extraction_output_error"
+    assert outcome.retryable is False
+    assert outcome.extraction_status == ExtractionRunStatus.PARTIAL
+    assert outcome.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
+    assert outcome.final_extraction_source == FinalExtractionSource.PRIMARY
+    assert (
+        provider.memory_evolution_service.retrieve_claim_states(
+            view=RetrievalView.ALL_VERSIONS
+        )
+        == []
+    )
+    assert all(
+        record.content.get("memory_evolution_kind") not in {
+            "claim_state",
+            "entity_link",
+            "action",
+        }
+        for record in memory_plane.list_records()
+    )
+    assert "memory_evolution_extraction_rejected" in caplog.text
+    assert "Traceback" not in caplog.text
 
 
 def test_hybrid_fallback_records_recovery_without_masking_primary_failure() -> None:

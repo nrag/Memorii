@@ -23,6 +23,7 @@ from memorii.core.benchmark.memory_evolution_runtime.extractors import (
 )
 from memorii.core.benchmark.memory_evolution_runtime.models import RUNTIME_GRAPH_ITEM_ADAPTER
 from memorii.core.benchmark.memory_evolution_runtime.result_rows import (
+    run_output_source,
     runtime_failure_classification,
     runtime_final_output_source,
 )
@@ -40,6 +41,10 @@ from memorii.core.memory_evolution.execution import (
     ContinuationDecision,
     ContinuationResolutionStatus,
     WorkStateSnapshot,
+)
+from memorii.core.memory_evolution.operation_models import (
+    EvolutionFailureCategory,
+    EvolutionOperationStatus,
 )
 from tests.unit.core.benchmark.checkpoint_artifact_test_helpers import checkpoint_diagnostics_payload
 from tests.unit.core.benchmark.memory_evolution_runtime_test_helpers import runtime_checkpoint_row
@@ -88,6 +93,9 @@ def runtime_extractor_trace(
     provider_attempt_status: ProviderAttemptStatus = ProviderAttemptStatus.SUCCEEDED,
     fallback_outcome: FallbackOutcome = FallbackOutcome.NOT_USED,
     final_output_source: FinalOutputSource = "live_llm",
+    extraction_failure_code: ExtractionFailureCode | None = None,
+    operation_status: EvolutionOperationStatus | None = EvolutionOperationStatus.COMMITTED,
+    operation_failure_code: EvolutionFailureCategory | None = None,
 ) -> RuntimeExtractorTraceRow:
     fallback_used = fallback_outcome != FallbackOutcome.NOT_USED
     provider_failed = provider_attempt_status not in {
@@ -113,9 +121,12 @@ def runtime_extractor_trace(
             "provider_attempt_status": provider_attempt_status,
             "fallback_outcome": fallback_outcome,
             "final_extraction_source": "fallback" if fallback_used else "primary",
-            "failure_code": None,
+            "failure_code": extraction_failure_code,
             "primary_failure_code": "provider_error" if provider_failed else None,
             "fallback_provider": "english_rule" if fallback_used else None,
+            "operation_id": ("benchmark:runtime:event:1" if operation_status is not None else None),
+            "operation_status": operation_status,
+            "operation_failure_code": operation_failure_code,
             "output": RuntimeExtractorOutput(),
         }
     )
@@ -460,6 +471,9 @@ def test_runtime_provider_health_fails_for_terminal_provider_errors_and_fallback
     assert health.provider_success_rate == 0.5
     assert health.failure_buckets == ["runtime_provider_failure", "runtime_provider_fallback"]
     assert health.failure_classification_counts == {"provider_error": 1}
+    assert health.committed_operations == 2
+    assert health.failed_operations == 0
+    assert health.missing_operation_outcomes == 0
     assert health.provider_metadata == {
         "backend": "live_provider",
         "max_retries": "0",
@@ -495,6 +509,90 @@ def test_runtime_provider_health_counts_valid_abstention_as_provider_success() -
     assert health.provider_failures == 0
     assert health.abstentions == 1
     assert health.failure_classification_counts == {}
+
+
+def test_runtime_provider_health_separates_semantic_rejection_from_transport_success() -> None:
+    rows = RuntimeSuiteRows(
+        scenario_rows=[],
+        checkpoint_rows=[
+            runtime_checkpoint_row(
+                effective_decision_mode="llm",
+                final_output_source="live_llm",
+            )
+        ],
+        judge_rows=[],
+        llm_rows=[
+            runtime_extractor_trace(
+                extraction_status=ExtractionRunStatus.PARTIAL,
+                extraction_failure_code=ExtractionFailureCode.OUTPUT_VALIDATION,
+                operation_status=EvolutionOperationStatus.FAILED,
+                operation_failure_code=EvolutionFailureCategory.EXTRACTION_OUTPUT_ERROR,
+            )
+        ],
+        effective_mode="llm",
+        provider_metadata={"backend": "live_provider"},
+    )
+
+    health = runtime_provider_health(rows)
+
+    assert health.provider_successes == 1
+    assert health.provider_failures == 0
+    assert health.partial_extractions == 1
+    assert health.failed_operations == 1
+    assert health.status == "fail"
+    assert "runtime_partial_extraction" in health.failure_buckets
+    assert "runtime_evolution_operation_failure" in health.failure_buckets
+
+
+def test_runtime_provider_health_fails_commit_after_semantic_success() -> None:
+    rows = RuntimeSuiteRows(
+        scenario_rows=[],
+        checkpoint_rows=[
+            runtime_checkpoint_row(
+                effective_decision_mode="llm",
+                final_output_source="live_llm",
+            )
+        ],
+        judge_rows=[],
+        llm_rows=[
+            runtime_extractor_trace(
+                operation_status=EvolutionOperationStatus.FAILED,
+                operation_failure_code=EvolutionFailureCategory.STORE_ERROR,
+            )
+        ],
+        effective_mode="llm",
+        provider_metadata={"backend": "live_provider"},
+    )
+
+    health = runtime_provider_health(rows)
+
+    assert health.provider_successes == 1
+    assert health.extraction_status_counts == {"succeeded": 1}
+    assert health.failed_operations == 1
+    assert health.operation_failure_classification_counts == {"store_error": 1}
+    assert health.status == "fail"
+
+
+def test_runtime_provider_health_fails_missing_operation_outcome() -> None:
+    rows = RuntimeSuiteRows(
+        scenario_rows=[],
+        checkpoint_rows=[
+            runtime_checkpoint_row(
+                effective_decision_mode="llm",
+                final_output_source="live_llm",
+            )
+        ],
+        judge_rows=[],
+        llm_rows=[runtime_extractor_trace(operation_status=None)],
+        effective_mode="llm",
+        provider_metadata={"backend": "live_provider"},
+    )
+
+    health = runtime_provider_health(rows)
+
+    assert health.missing_operation_outcomes == 1
+    assert health.status == "fail"
+    assert health.failure_buckets == ["runtime_missing_evolution_outcome"]
 
 
 def test_runtime_provider_metadata_rejects_credentials() -> None:
@@ -557,22 +655,14 @@ def test_runtime_output_source_is_scoped_to_the_current_checkpoint_runs() -> Non
             prompt_hash="prompt-hash",
             extraction_status=ExtractionRunStatus.SUCCEEDED,
             provider_attempt_status=(
-                ProviderAttemptStatus.PROVIDER_ERROR
-                if fallback_used
-                else ProviderAttemptStatus.SUCCEEDED
+                ProviderAttemptStatus.PROVIDER_ERROR if fallback_used else ProviderAttemptStatus.SUCCEEDED
             ),
-            fallback_outcome=(
-                FallbackOutcome.SUCCEEDED if fallback_used else FallbackOutcome.NOT_USED
-            ),
+            fallback_outcome=(FallbackOutcome.SUCCEEDED if fallback_used else FallbackOutcome.NOT_USED),
             final_output_source=(
-                MemoryFinalExtractionSource.FALLBACK
-                if fallback_used
-                else MemoryFinalExtractionSource.PRIMARY
+                MemoryFinalExtractionSource.FALLBACK if fallback_used else MemoryFinalExtractionSource.PRIMARY
             ),
             failure_code=None,
-            primary_failure_code=(
-                ExtractionFailureCode.PROVIDER_ERROR if fallback_used else None
-            ),
+            primary_failure_code=(ExtractionFailureCode.PROVIDER_ERROR if fallback_used else None),
             fallback_provider="english_rule" if fallback_used else None,
             errors=["fallback_used:provider_failure"] if fallback_used else [],
             entity_count=0,
@@ -613,6 +703,39 @@ def test_runtime_output_source_is_scoped_to_the_current_checkpoint_runs() -> Non
             dry_run=False,
             extractor=extractor,
             recorded_runs=[],
+        )
+        == "reused_runtime_state"
+    )
+
+
+def test_runtime_output_source_reports_deterministic_abstention_as_reused_state() -> None:
+    run = RecordedExtractionRun(
+        input_source_ids=[],
+        provider="llm",
+        model=None,
+        prompt_hash=None,
+        extraction_status=ExtractionRunStatus.ABSTAINED,
+        provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+        fallback_outcome=FallbackOutcome.NOT_USED,
+        final_output_source=MemoryFinalExtractionSource.NONE,
+        failure_code=None,
+        primary_failure_code=None,
+        fallback_provider=None,
+        errors=[],
+        entity_count=0,
+        claim_count=0,
+        action_count=0,
+        entity_ids=[],
+        claim_ids=[],
+        action_ids=[],
+        validation_summary={},
+    )
+
+    assert (
+        run_output_source(
+            effective_mode="llm",
+            dry_run=False,
+            run=run,
         )
         == "reused_runtime_state"
     )

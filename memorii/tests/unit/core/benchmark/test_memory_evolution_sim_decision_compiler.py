@@ -181,6 +181,43 @@ def test_sim_compilation_is_invariant_to_candidate_order_and_irrelevant_insertio
     assert "irrelevant-visible" not in str(actual.model_dump(mode="json"))
 
 
+def test_compiler_places_context_only_definitions_outside_selected_truth() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="current_vs_historical_truth",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "current_truth")
+    context = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    )
+    output = compile_sim_semantic_decision(context=context, semantic=semantic)
+    selected_subjects = {
+        claim.subject_entity_id
+        for claim in context.visible_claims
+        if claim.claim_id in output.selected_claim_ids
+        and claim.predicate_id != "entity_type"
+    }
+    definitions = {
+        claim.claim_id
+        for claim in context.visible_claims
+        if claim.predicate_id == "entity_type"
+        and claim.lifecycle_state == "active"
+        and claim.subject_entity_id in selected_subjects
+    }
+
+    assert definitions
+    assert definitions.isdisjoint(output.selected_claim_ids)
+    assert definitions <= set(output.context_claim_ids)
+    assert validate_visible_sim_output(context=context, output=output) == ()
+
+
 def test_id_permutation_preserves_compiler_judgment() -> None:
     scenario = generate_scenario_by_family(
         profile="long_horizon",

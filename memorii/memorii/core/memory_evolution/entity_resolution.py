@@ -17,9 +17,15 @@ from memorii.core.memory_evolution.models import (
     EntityMention,
     EntityResolutionOutcome,
     EntityType,
+    ExtractedAction,
     ExtractedClaim,
     MemoryScope,
 )
+
+ScopedEntityReference = tuple[
+    str,
+    tuple[str | None, str | None, str | None],
+]
 
 
 def _scope_identity(scope: MemoryScope) -> tuple[str | None, str | None, str | None]:
@@ -281,23 +287,112 @@ class EntityResolutionService:
                 return link
         return None
 
-    def rekey_claim(
+    @staticmethod
+    def canonical_reference_map(
+        outcome: EntityResolutionOutcome,
+    ) -> dict[ScopedEntityReference, str]:
+        """Map request-local entity references to resolved scoped identities."""
+
+        return {
+            (
+                decision.mention_entity_id,
+                _scope_identity(decision.scope),
+            ): decision.resolved_entity_id
+            for decision in outcome.decisions
+            if decision.resolved_entity_id is not None
+        }
+
+    def canonicalize_claim_entities(
         self,
         *,
         claim: ExtractedClaim,
-        new_subject_entity_id: str,
-    ) -> tuple[ExtractedClaim, ClaimLifecycleTransition]:
+        references: dict[ScopedEntityReference, str],
+    ) -> tuple[ExtractedClaim, ClaimLifecycleTransition | None]:
+        """Resolve every entity-bearing claim field before persistence."""
+
         old_key = claim.claim_key
-        updated_key = old_key.model_copy(update={"subject_entity_id": new_subject_entity_id})
-        updated_claim = claim.model_copy(update={"claim_key": updated_key})
+        scope_identity = _scope_identity(old_key.scope)
+        subject_entity_id = references.get(
+            (old_key.subject_entity_id, scope_identity),
+            old_key.subject_entity_id,
+        )
+        object_entity_id = (
+            references.get(
+                (claim.object_entity_id, scope_identity),
+                claim.object_entity_id,
+            )
+            if claim.object_entity_id is not None
+            else None
+        )
+        if (
+            subject_entity_id == old_key.subject_entity_id
+            and object_entity_id == claim.object_entity_id
+        ):
+            return claim, None
+        updated_key = old_key.model_copy(
+            update={"subject_entity_id": subject_entity_id}
+        )
+        updated_claim = claim.model_copy(
+            update={
+                "claim_key": updated_key,
+                "object_entity_id": object_entity_id,
+            }
+        )
         transition = ClaimLifecycleTransition(
-            transition_id=_stable_id("transition", f"{claim.claim_id}:claim_rekey:{new_subject_entity_id}"),
+            transition_id=_stable_id(
+                "transition",
+                "|".join(
+                    [
+                        claim.claim_id,
+                        "claim_rekey",
+                        subject_entity_id,
+                        object_entity_id or "",
+                    ]
+                ),
+            ),
             transition_type=ClaimTransitionType.CLAIM_REKEY,
             claim_id=claim.claim_id,
             related_claim_ids=[],
-            rationale=f"claim rekeyed from {old_key.subject_entity_id} to {new_subject_entity_id}",
+            rationale=(
+                "claim entity references canonicalized "
+                f"from subject={old_key.subject_entity_id},object={claim.object_entity_id or ''} "
+                f"to subject={subject_entity_id},object={object_entity_id or ''}"
+            ),
+            timestamp=self._now_provider(),
         )
         return updated_claim, transition
+
+    @staticmethod
+    def canonicalize_action_entities(
+        *,
+        action: ExtractedAction,
+        references: dict[ScopedEntityReference, str],
+    ) -> ExtractedAction:
+        """Resolve every entity-bearing action reference in one explicit boundary."""
+
+        scope_identity = _scope_identity(action.scope)
+
+        def resolve(entity_id: str) -> str:
+            return references.get((entity_id, scope_identity), entity_id)
+
+        return action.model_copy(
+            update={
+                "actor_entity_id": (
+                    resolve(action.actor_entity_id)
+                    if action.actor_entity_id is not None
+                    else None
+                ),
+                "target_entity_ids": [
+                    resolve(entity_id) for entity_id in action.target_entity_ids
+                ],
+                "dependency_entity_ids": [
+                    resolve(entity_id) for entity_id in action.dependency_entity_ids
+                ],
+                "blocking_entity_ids": [
+                    resolve(entity_id) for entity_id in action.blocking_entity_ids
+                ],
+            }
+        )
 
     def merge_links(
         self,

@@ -121,6 +121,8 @@ def runtime_answer_for_checkpoint(
         return None
     if checkpoint.answer_projection_policy == "claim_subject":
         return title_from_normalized(item.subject) or None
+    if item.object_entity_id:
+        return title_from_normalized(item.object) or None
     return item.object_value or item.object or None
 
 

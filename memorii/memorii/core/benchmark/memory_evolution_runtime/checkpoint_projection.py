@@ -157,6 +157,7 @@ def project_runtime_checkpoint(
     rejected_claim_ids.extend(suppressed_action_claim_ids)
     context_claim_ids = _oracle_ids_for_runtime_claim_ids(
         claim_ids=retrieval_decision.context_record_ids if retrieval_decision else [],
+        graph_items=graph_items,
         alignments=alignments,
     )
     rejected_entity_ids: list[str] = []
@@ -361,17 +362,22 @@ def _oracle_ids_for_runtime_items(
 
 
 def _oracle_ids_for_runtime_claim_ids(
-    *, claim_ids: Sequence[str], alignments: Sequence[RuntimeGraphAlignment]
+    *,
+    claim_ids: Sequence[str],
+    graph_items: Sequence[RuntimeGraphItem],
+    alignments: Sequence[RuntimeGraphAlignment],
 ) -> list[str]:
     wanted = set(str(claim_id) for claim_id in claim_ids)
-    return ordered_unique(
-        [
-            str(alignment.oracle_item_id or "")
-            for alignment in alignments
-            if alignment.item_type == "claim"
-            and alignment.verdict == RuntimeGraphAlignmentVerdict.ALIGNED
-            and str(alignment.oracle_item_id or "") in wanted
-        ]
+    runtime_claim_items = [
+        item
+        for item in graph_items
+        if isinstance(item, RuntimeClaimGraphItemRow)
+        and item.claim_id in wanted
+    ]
+    return _oracle_ids_for_runtime_items(
+        runtime_items=runtime_claim_items,
+        alignments=alignments,
+        item_type="claim",
     )
 
 

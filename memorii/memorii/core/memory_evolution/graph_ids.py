@@ -37,10 +37,6 @@ def scope_node_id(scope: MemoryScope) -> str:
     return stable_graph_id("graph:node:scope", scope.stable_id())
 
 
-def task_node_id(task_id: str) -> str:
-    return f"graph:node:task:{task_id}"
-
-
 def contradiction_node_id(contradiction_set_id: str) -> str:
     return f"graph:node:contradiction:{contradiction_set_id}"
 

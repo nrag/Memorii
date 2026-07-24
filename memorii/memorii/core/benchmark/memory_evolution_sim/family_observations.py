@@ -193,22 +193,28 @@ def build_family_observations(
 
     hidden_ids = hidden_graph_ids_for_profile(profile=profile, suffix=suffix)
     if hidden_ids is not None:
+        # Keep the established draw sequence so captured opaque-ID replays
+        # remain stable while correcting the observable modality contract.
+        rng.choice(["third_party_claim", "hypothetical", "noise"])
+        uncertainty_trust = rng.choice([0, 1])
+        uncertainty_text = rng.choice(
+            [
+                "Someone hinted there may be another Atlas owner, but no source confirmed who.",
+                "A private HR note was referenced but not shown, so no ownership change can be verified.",
+                "The migration owner might have changed again, but the directory lookup is unavailable.",
+            ]
+        )
+        uncertainty_modality = "noise" if uncertainty_text.startswith("A private HR note") else "hypothetical"
         observations.append(
             SurfaceObservation(
                 event_id=f"event_{suffix}_uncertainty_hint",
                 transition_id=f"transition_{suffix}_uncertainty_hint",
                 timestamp=base + timedelta(days=69),
                 source_type="transcript",
-                modality=rng.choice(["third_party_claim", "hypothetical", "noise"]),
+                modality=uncertainty_modality,
                 phase="interference",
-                trust_level=rng.choice([0, 1]),
-                text=rng.choice(
-                    [
-                        "Someone hinted there may be another Atlas owner, but no source confirmed who.",
-                        "A private HR note was referenced but not shown, so no ownership change can be verified.",
-                        "The migration owner might have changed again, but the directory lookup is unavailable.",
-                    ]
-                ),
+                trust_level=uncertainty_trust,
+                text=uncertainty_text,
                 hidden_distractor_ids=[
                     hidden_ids["entity_id"],
                     hidden_ids["claim_id"],

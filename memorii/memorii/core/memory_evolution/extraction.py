@@ -47,6 +47,12 @@ class EnglishRuleMemoryExtractor:
     def extract(
         self, observations: list[SourceObservation]
     ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+        if not observations:
+            return _deterministic_abstention(
+                provider=self.provider,
+                model=self.model,
+                prompt_hash=self.prompt_hash,
+            )
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
         entities: dict[tuple[str, str, str], EntityMention] = {}
         claims: list[ExtractedClaim] = []
@@ -73,11 +79,7 @@ class EnglishRuleMemoryExtractor:
         entity_list = list(entities.values())
         claims = _canonicalize_claim_arguments(claims, entity_list)
         if errors:
-            status = (
-                ExtractionRunStatus.PARTIAL
-                if entity_list or claims or actions
-                else ExtractionRunStatus.ABSTAINED
-            )
+            status = ExtractionRunStatus.PARTIAL if entity_list or claims or actions else ExtractionRunStatus.ABSTAINED
             failure_code = (
                 ExtractionFailureCode.UNSUPPORTED_LANGUAGE
                 if all("unsupported_language:" in error for error in errors)
@@ -204,6 +206,12 @@ class LLMMemoryExtractor:
     def extract(
         self, observations: list[SourceObservation]
     ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+        if not observations:
+            return _deterministic_abstention(
+                provider=self.provider,
+                model=self.model,
+                prompt_hash=self.prompt_hash,
+            )
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
         contract = self._registry.load(
             self.prompt_ref,
@@ -300,7 +308,7 @@ class HybridMemoryExtractor:
                             *run.errors,
                             *fallback_run.errors,
                             f"fallback_failed:{fallback_run.status.value}",
-                        ]
+                        ],
                     }
                 )
                 return failed_run, [], [], []
@@ -317,6 +325,29 @@ class HybridMemoryExtractor:
             )
             return fallback_run, fallback_entities, fallback_claims, fallback_actions
         return run.model_copy(update={"provider": self.provider}), entities, claims, actions
+
+
+def _deterministic_abstention(
+    *,
+    provider: str,
+    model: str | None,
+    prompt_hash: str | None,
+) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    return (
+        ExtractionRun(
+            extraction_run_id=_stable_id("extraction", ""),
+            provider=provider,
+            model=model,
+            prompt_hash=prompt_hash,
+            input_source_ids=[],
+            status=ExtractionRunStatus.ABSTAINED,
+            provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+            final_output_source=FinalExtractionSource.NONE,
+        ),
+        [],
+        [],
+        [],
+    )
 
 
 def _extract_fact_matches(text: str) -> list[tuple[str, str, str, str]]:
@@ -455,14 +486,8 @@ def models_from_llm_output(
                 qualifier_key="default",
             )
             confidence = _float_output(item.get("confidence"), default=0.6)
-            object_entity_ref = (
-                str(item["object_entity_ref"]).strip()
-                if item.get("object_entity_ref")
-                else None
-            )
-            object_entity_id = (
-                entity_id_by_ref[object_entity_ref] if object_entity_ref is not None else None
-            )
+            object_entity_ref = str(item["object_entity_ref"]).strip() if item.get("object_entity_ref") else None
+            object_entity_id = entity_id_by_ref[object_entity_ref] if object_entity_ref is not None else None
             claim_id = _stable_id(
                 "claim",
                 "|".join(
@@ -503,20 +528,12 @@ def models_from_llm_output(
             errors.append(f"claim[{idx}]: {type(exc).__name__}:{exc}")
 
     action_items = _list_output(output, "actions")
-    action_id_by_ref: dict[str, str] = {}
-    duplicate_action_refs: set[str] = set()
+    action_ref_counts: dict[str, int] = {}
     for item in action_items:
         action_ref = str(item.get("action_ref") or "").strip()
-        source_id = str(item.get("source_id") or "")
-        if action_ref in action_id_by_ref:
-            duplicate_action_refs.add(action_ref)
-            continue
-        if not action_ref:
-            continue
-        action_id_by_ref[action_ref] = _stable_id(
-            "action",
-            "|".join([run_id, source_id, action_ref]),
-        )
+        if action_ref:
+            action_ref_counts[action_ref] = action_ref_counts.get(action_ref, 0) + 1
+    duplicate_action_refs = {action_ref for action_ref, count in action_ref_counts.items() if count > 1}
     for idx, item in enumerate(action_items):
         try:
             source_id = str(item.get("source_id") or "")
@@ -526,37 +543,29 @@ def models_from_llm_output(
             action_ref = str(item["action_ref"]).strip()
             if action_ref in duplicate_action_refs:
                 raise ValueError(f"duplicate action_ref:{action_ref!r}")
-            action_id = action_id_by_ref[action_ref]
+            action_id = _stable_id(
+                "action",
+                "|".join([run_id, observation.source_id, action_ref]),
+            )
             action_type = str(item["action_type"])
             target_entity_ids = [
-                entity_id_by_ref[str(value)]
-                for value in _sequence_output(item.get("target_entity_refs"))
+                entity_id_by_ref[str(value)] for value in _sequence_output(item.get("target_entity_refs"))
             ]
             status = str(item["status"])
             observation_scope = memory_scope_from_observation(observation)
-            actor_entity_ref = (
-                str(item["actor_entity_ref"]).strip()
-                if item.get("actor_entity_ref")
-                else None
-            )
+            actor_entity_ref = str(item["actor_entity_ref"]).strip() if item.get("actor_entity_ref") else None
             actions.append(
                 ExtractedAction(
                     action_id=action_id,
-                    actor_entity_id=(
-                        entity_id_by_ref[actor_entity_ref]
-                        if actor_entity_ref is not None
-                        else None
-                    ),
+                    actor_entity_id=(entity_id_by_ref[actor_entity_ref] if actor_entity_ref is not None else None),
                     action_type=action_type,
                     target_entity_ids=target_entity_ids,
                     status=status,
-                    dependency_ids=[
-                        action_id_by_ref[str(value)]
-                        for value in _sequence_output(item.get("dependency_action_refs"))
+                    dependency_entity_ids=[
+                        entity_id_by_ref[str(value)] for value in _sequence_output(item.get("dependency_entity_refs"))
                     ],
-                    blocking_ids=[
-                        action_id_by_ref[str(value)]
-                        for value in _sequence_output(item.get("blocking_action_refs"))
+                    blocking_entity_ids=[
+                        entity_id_by_ref[str(value)] for value in _sequence_output(item.get("blocking_entity_refs"))
                     ],
                     timestamp=observation.timestamp,
                     scope=observation_scope,
@@ -590,9 +599,7 @@ def models_from_llm_output(
         status=status,
         provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
         final_output_source=(
-            FinalExtractionSource.NONE
-            if status == ExtractionRunStatus.FAILED
-            else FinalExtractionSource.PRIMARY
+            FinalExtractionSource.NONE if status == ExtractionRunStatus.FAILED else FinalExtractionSource.PRIMARY
         ),
         failure_code=failure_code,
         validation_summary={
@@ -680,6 +687,11 @@ def _resolve_observation(*, source_id: str, observation_by_id: dict[str, SourceO
     observation = observation_by_id.get(source_id)
     if observation is not None:
         return observation
+    if len(observation_by_id) == 1:
+        # The source is authoritative at the ingestion boundary. For a
+        # single-source request, an echoed opaque ID adds no information; bind
+        # provenance deterministically and continue to validate the quote.
+        return next(iter(observation_by_id.values()))
     raise KeyError(f"unknown source_id:{source_id!r}")
 
 

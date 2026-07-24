@@ -312,7 +312,10 @@ def add_noise_observations(
                 transition_id=f"transition_{suffix}_noise_{noise_index:02d}",
                 timestamp=base + timedelta(days=97 if profile == "long_horizon" else 70, minutes=noise_index),
                 source_type=rng.choice(["user", "transcript", "assistant"]),
-                modality=rng.choice(["noise", "quoted_or_pasted", "third_party_claim"]),
+                # Preserve the random-stream schema used by captured opaque-ID
+                # replays; every option is noise because this generator emits
+                # explicitly non-factual distractors.
+                modality=rng.choice(["noise", "noise", "noise"]),
                 phase="dormancy" if profile == "long_horizon" else "interference",
                 trust_level=rng.choice([0, 1]),
                 text=text,

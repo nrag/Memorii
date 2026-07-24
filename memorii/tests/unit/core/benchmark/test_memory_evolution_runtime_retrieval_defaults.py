@@ -4,6 +4,7 @@ from typing import Any
 
 from memorii.core.benchmark.memory_evolution_runtime.runner import run_runtime_scenarios
 from memorii.core.benchmark.memory_evolution_sim import generate_memory_evolution_sim_scenarios
+from memorii.core.memory_evolution.operation_models import EvolutionOperationStatus
 from memorii.core.prompts.registry import default_prompt_root
 from memorii.core.provider.service import ProviderMemoryService
 
@@ -51,3 +52,27 @@ def test_runtime_benchmark_preserves_production_retrieval_defaults(monkeypatch) 
     assert all(call["include_conflicts"] is True for call in graph_audit_calls)
     assert all("include_context" not in call for call in answer_calls)
     assert all("include_conflicts" not in call for call in answer_calls)
+
+
+def test_dry_runtime_records_durable_outcome_for_every_extraction() -> None:
+    scenario = generate_memory_evolution_sim_scenarios(
+        profile="adversarial",
+        scenario_count=1,
+        seed=7,
+        noise_rate=0.35,
+    )[0]
+
+    rows = run_runtime_scenarios(
+        scenarios=[scenario],
+        mode="llm",
+        dry_run=True,
+        allow_live=False,
+        prompt_root=default_prompt_root(),
+    )
+
+    assert rows.llm_rows
+    assert all(
+        row.operation_status == EvolutionOperationStatus.COMMITTED
+        for row in rows.llm_rows
+    )
+    assert all(row.operation_id for row in rows.llm_rows)
