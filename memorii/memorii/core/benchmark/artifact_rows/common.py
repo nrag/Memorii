@@ -35,12 +35,12 @@ def execution_source_from_counts(counts: Mapping[str, int]) -> FinalOutputSource
         raise ValueError(f"unknown final output source: {source}")
     return cast(FinalOutputSource, source)
 ActionSupportMode: TypeAlias = Literal[
-    "runtime_action_item_exact",
     "runtime_action_semantic",
     "runtime_action_work_state_bridge",
     "claim_derived_action",
     "partial_action",
     "missing_action",
+    "unexpected_action",
     "ambiguous_action",
     "ambiguous_work_state_bridge",
 ]

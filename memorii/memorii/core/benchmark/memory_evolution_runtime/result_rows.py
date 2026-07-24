@@ -18,6 +18,7 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeExtractorOutput,
     RuntimeExtractorTracePayload,
     RuntimeExtractorTraceRow,
+    RuntimeStageTraceRow,
     checkpoint_warning_buckets,
 )
 from memorii.core.benchmark.memory_evolution_runtime.artifacts import (
@@ -71,6 +72,7 @@ def build_runtime_checkpoint_result_row(
     provider_failures: int,
     fallbacks: int,
     fallback_used: bool,
+    recorded_runs: Sequence[RecordedExtractionRun],
 ) -> RuntimeCheckpointResultRow:
     failure_classification = runtime_failure_classification(runtime_buckets, diagnostics)
     horizon = CheckpointHorizonSection(
@@ -115,6 +117,13 @@ def build_runtime_checkpoint_result_row(
         runtime_relation_support=runtime_relation_support_rows(projection),
         runtime_action_support=runtime_action_support_rows(projection),
         runtime_action_alignments=projection.action_alignment_rows,
+        runtime_channel_alignments=projection.channel_alignment_rows,
+        runtime_stage_trace=runtime_stage_trace(
+            recorded_runs=recorded_runs,
+            graph_snapshot=graph_snapshot,
+            projection=projection,
+            runtime_buckets=runtime_buckets,
+        ),
         runtime_execution_state=projection.execution_state,
         runtime_retrieval_decision=projection.retrieval_decision,
         active_continuation_branch=projection.execution_state.active_continuation_branch,
@@ -258,39 +267,136 @@ def run_output_source(*, effective_mode: str, dry_run: bool, run: RecordedExtrac
 
 
 def runtime_failure_classification(runtime_buckets: list[str], diagnostics: CheckpointDiagnosticsSection) -> list[str]:
-    classifications = list(diagnostics.failure_classification)
-    known_buckets = {
-        "runtime_missing_expected_entity",
-        "runtime_missing_expected_claim",
-        "runtime_missing_expected_relation",
-        "runtime_missing_expected_action",
-        "runtime_missing_expected_rejection",
-        "runtime_action_target_mismatch",
-        "runtime_action_status_mismatch",
-        "runtime_action_evidence_missing",
-        "runtime_execution_state_missing",
-        "runtime_execution_state_ambiguous",
-        "runtime_extra_hidden_fact",
-        "runtime_modality_false_positive",
-        "runtime_scope_leak",
-        "runtime_provenance_missing",
-        "runtime_alignment_ambiguous",
-        "runtime_graph_validation_error",
-        "long_horizon_retrieval_miss",
-        "stale_fact_resurfaced",
-        "historical_fact_lost",
-        "scope_decay",
-        "source_trust_decay",
-        "entity_rekey_lost",
-        "branch_state_decay",
-        "branch_state_not_projected",
-        "blocked_branch_selected",
-        "provenance_chain_broken",
-        "hidden_fact_leak",
-        "calibration_drift",
-    }
-    concrete_runtime_classifications = [bucket for bucket in runtime_buckets if bucket in known_buckets]
-    if concrete_runtime_classifications:
-        classifications = [item for item in classifications if item != "unclassified_failure"]
-    classifications.extend(concrete_runtime_classifications)
+    classifications = [
+        f"{_runtime_failure_owner(bucket)}:{bucket}"
+        for bucket in runtime_buckets
+    ]
+    diagnostic_classifications = [
+        classification
+        for classification in diagnostics.failure_classification
+        if classification != "unclassified_failure" or not runtime_buckets
+    ]
+    classifications.extend(
+        f"benchmark_comparison:{classification}"
+        for classification in diagnostic_classifications
+    )
     return ordered_unique(classifications)
+
+
+def _runtime_failure_owner(bucket: str) -> str:
+    if bucket.startswith("production_ingestion_"):
+        return "production_ingestion"
+    if bucket.startswith("production_lifecycle_"):
+        return "production_lifecycle"
+    if bucket.startswith("production_semantic_graph_") or bucket.startswith("runtime_action_"):
+        return "production_semantic_graph"
+    if bucket.startswith("production_retrieval_") or bucket.startswith("runtime_evolution_"):
+        return "production_retrieval"
+    if bucket.startswith("runtime_provider_") or bucket.startswith("runtime_output_validation_"):
+        return "production_ingestion"
+    if bucket.startswith("runtime_partial_extraction") or bucket.startswith("runtime_evolution_operation_"):
+        return "production_ingestion"
+    if bucket.startswith("runtime_missing_evolution_") or bucket.startswith("runtime_nonterminal_evolution_"):
+        return "production_ingestion"
+    if bucket.startswith("benchmark_alignment_"):
+        return "benchmark_alignment"
+    return "benchmark_harness"
+
+
+def runtime_stage_trace(
+    *,
+    recorded_runs: Sequence[RecordedExtractionRun],
+    graph_snapshot: MemoryGraphSnapshot,
+    projection: RuntimeProjection,
+    runtime_buckets: Sequence[str],
+) -> list[RuntimeStageTraceRow]:
+    extraction_failures = sorted(
+        {
+            run.extraction_status.value
+            for run in recorded_runs
+            if run.extraction_status.value in {"failed", "partial"}
+        }
+    )
+    operation_failures = sorted(
+        {
+            run.operation_failure_code.value
+            for run in recorded_runs
+            if run.operation_failure_code is not None
+        }
+    )
+    validation_failures = sum(
+        run.validation_summary.get("fail", 0)
+        + run.validation_summary.get("input_validation_errors", 0)
+        + run.validation_summary.get("entity_binding_errors", 0)
+        + run.validation_summary.get("claim_binding_errors", 0)
+        + run.validation_summary.get("action_binding_errors", 0)
+        for run in recorded_runs
+    )
+    lifecycle_counts: dict[str, int] = {}
+    for item in projection.graph_items:
+        lifecycle_counts[item.lifecycle_state.value] = lifecycle_counts.get(item.lifecycle_state.value, 0) + 1
+    decision = projection.retrieval_decision
+    return [
+        RuntimeStageTraceRow(
+            stage="extraction",
+            status="fail" if extraction_failures else "pass",
+            reason_codes=extraction_failures or (["reused_persisted_state"] if not recorded_runs else []),
+            input_count=len(recorded_runs),
+            output_count=sum(run.entity_count + run.claim_count + run.action_count for run in recorded_runs),
+        ),
+        RuntimeStageTraceRow(
+            stage="validation",
+            status="fail" if extraction_failures else "pass",
+            reason_codes=([f"candidate_validation_failures:{validation_failures}"] if validation_failures else []),
+            input_count=sum(run.claim_count for run in recorded_runs),
+            output_count=sum(run.claim_count for run in recorded_runs),
+        ),
+        RuntimeStageTraceRow(
+            stage="normalization",
+            status="fail" if graph_snapshot.validation_errors else "pass",
+            reason_codes=["runtime_graph_validation_error"] if graph_snapshot.validation_errors else [],
+            input_count=len(graph_snapshot.nodes) + len(graph_snapshot.edges),
+            output_count=len(projection.graph_items),
+        ),
+        RuntimeStageTraceRow(
+            stage="lifecycle",
+            status="pass",
+            reason_codes=[f"{name}:{count}" for name, count in sorted(lifecycle_counts.items())],
+            input_count=sum(lifecycle_counts.values()),
+            output_count=lifecycle_counts.get("active", 0),
+        ),
+        RuntimeStageTraceRow(
+            stage="persistence",
+            status="fail" if operation_failures else "pass",
+            reason_codes=operation_failures,
+            input_count=len(recorded_runs),
+            output_count=sum(run.operation_status is not None for run in recorded_runs),
+        ),
+        RuntimeStageTraceRow(
+            stage="query",
+            status="fail" if decision is None else "pass",
+            reason_codes=["retrieval_decision_missing"] if decision is None else [decision.semantic_frame_status.value],
+            input_count=1,
+            output_count=int(decision is not None),
+        ),
+        RuntimeStageTraceRow(
+            stage="retrieval",
+            status="fail" if decision is None else "pass",
+            reason_codes=["retrieval_decision_missing"] if decision is None else [decision.resolution_status],
+            input_count=int(decision is not None),
+            output_count=(
+                0
+                if decision is None
+                else len(decision.selected_record_ids)
+                + len(decision.context_record_ids)
+                + len(decision.rejected_record_ids)
+            ),
+        ),
+        RuntimeStageTraceRow(
+            stage="comparison",
+            status="fail" if runtime_buckets else "pass",
+            reason_codes=sorted(set(runtime_buckets)),
+            input_count=len(projection.alignments),
+            output_count=sum(alignment.verdict.value == "aligned" for alignment in projection.alignments),
+        ),
+    ]

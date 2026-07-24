@@ -112,6 +112,79 @@ def test_production_retrieval_abstains_on_ambiguous_entity_anchor() -> None:
     assert decision.abstention_reason == "entity_resolution_ambiguous"
 
 
+def test_graph_audit_preserves_explicit_multi_entity_query() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records(
+        [_record("tx:project", "Atlas migration owner is Bob.", datetime(2026, 1, 1, tzinfo=UTC))]
+    )
+    service.evolve_records(
+        [_record("tx:service", "Atlas service owner is Iris.", datetime(2026, 1, 2, tzinfo=UTC))]
+    )
+
+    decision = service.retrieve(
+        GraphAuditRequest(
+            query="Reconstruct the Atlas project and Atlas service ownership graph.",
+            reference_time=datetime(2026, 1, 3, tzinfo=UTC),
+            purpose="graph_audit",
+            scope_mode="full",
+        )
+    )
+
+    snapshot = service.retrieve_graph_snapshot()
+    expected_entities = {
+        node.properties["canonical_entity_id"]
+        for node in snapshot.nodes
+        if node.node_type.value == "entity"
+        and node.properties.get("entity_type") in {"project", "service"}
+    }
+    assert decision.abstained is False
+    assert expected_entities <= set(decision.temporal_frame.resolved_entity_ids)
+    states = {
+        state.claim_id: state
+        for state in service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS)
+    }
+    assert {states[claim_id].object_value for claim_id in decision.selected_record_ids} >= {"Bob", "Iris"}
+
+
+def test_graph_audit_preserves_explicit_belief_candidates() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records(
+        [_record("tx:bob", "Atlas migration owner is Bob.", datetime(2026, 1, 1, tzinfo=UTC))]
+    )
+    service.evolve_records(
+        [_record("tx:alice", "Atlas migration owner is Alice.", datetime(2026, 1, 2, tzinfo=UTC))]
+    )
+
+    decision = service.retrieve(
+        GraphAuditRequest(
+            query="Rank the competing belief claims that Bob and Alice own the Atlas migration.",
+            reference_time=datetime(2026, 1, 3, tzinfo=UTC),
+            purpose="graph_audit",
+            scope_mode="full",
+            include_conflicts=True,
+        )
+    )
+
+    states = {
+        state.claim_id: state
+        for state in service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS)
+    }
+    selected_values = {states[claim_id].object_value for claim_id in decision.selected_record_ids}
+    rejected_values = {states[claim_id].object_value for claim_id in decision.rejected_record_ids}
+    assert decision.abstained is False
+    assert decision.temporal_frame.temporal_kind == QueryTemporalKind.BELIEF
+    snapshot = service.retrieve_graph_snapshot()
+    selected_entity_names = {
+        node.properties["normalized_name"]
+        for node in snapshot.nodes
+        if node.node_type.value == "entity"
+        and node.properties.get("canonical_entity_id") in decision.temporal_frame.resolved_entity_ids
+    }
+    assert {"bob", "alice"} <= selected_entity_names
+    assert selected_values == {"Alice"}
+    assert "Bob" in rejected_values
+
+
 def test_relation_condition_resolves_shared_alias_from_object_evidence() -> None:
     timestamp = datetime(2026, 1, 3, tzinfo=UTC)
     project = EntityLinkState(

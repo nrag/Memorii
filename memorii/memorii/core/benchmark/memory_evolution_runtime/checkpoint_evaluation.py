@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
+from memorii.core.benchmark.calibration.alignment import RuntimeGraphAlignmentVerdict
 from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection import (
     action_alignment_failure_reason,
 )
@@ -14,19 +16,25 @@ from memorii.core.benchmark.memory_evolution_runtime.models import (
     RuntimeProjection,
 )
 from memorii.core.benchmark.memory_evolution_runtime.utils import ordered_unique
-from memorii.core.benchmark.memory_evolution_sim import JudgeAggregate, OracleCheckpoint, SimSystemOutput
+from memorii.core.benchmark.memory_evolution_sim import OracleCheckpoint, SimSystemOutput
 from memorii.core.memory_evolution import MemoryGraphSnapshot
+
+if TYPE_CHECKING:
+    from memorii.core.benchmark.memory_evolution_runtime.extractors import RecordedExtractionRun
 
 
 def runtime_failure_buckets(
     *,
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
-    aggregate: JudgeAggregate,
     projection: RuntimeProjection,
     graph_snapshot: MemoryGraphSnapshot,
+    recorded_runs: Sequence[RecordedExtractionRun] = (),
 ) -> list[str]:
-    buckets: list[str] = list(projection.stage_failure_buckets)
+    buckets: list[str] = [
+        *projection.stage_failure_buckets,
+        *runtime_ingestion_failure_buckets(recorded_runs),
+    ]
     expected_claim_ids = (
         list(checkpoint.expected_execution_claim_ids)
         if checkpoint.checkpoint_type == "execution_continuation"
@@ -43,61 +51,175 @@ def runtime_failure_buckets(
         else list(checkpoint.expected_citation_event_ids)
     )
     if graph_snapshot.validation_errors:
-        buckets.append("runtime_graph_validation_error")
+        buckets.append("production_semantic_graph_validation_error")
+    for row in projection.channel_alignment_rows:
+        if row.channel != "selected" or row.verdict == "aligned":
+            continue
+        if row.verdict == "unmatched_runtime":
+            buckets.append(f"production_retrieval_unexpected_selected_{row.item_type}")
+        elif row.verdict == "ambiguous_alignment":
+            buckets.append(f"benchmark_alignment_ambiguous_selected_{row.item_type}")
+        else:
+            buckets.append(f"production_semantic_graph_partial_selected_{row.item_type}")
+    selected_action_ids = {
+        *projection.production_channels.selected_action_ids,
+        *projection.production_channels.selected_action_runtime_ids,
+    }
+    for row in projection.action_alignment_rows:
+        if (
+            row.verdict == "aligned"
+            or not selected_action_ids.intersection({row.runtime_action_id, row.runtime_item_id})
+        ):
+            continue
+        if row.verdict == "unmatched_runtime":
+            buckets.append("production_retrieval_unexpected_selected_action")
+        elif row.verdict == "ambiguous_alignment":
+            buckets.append("production_retrieval_execution_state_ambiguous")
+        else:
+            buckets.append(
+                f"production_semantic_graph_{row.failure_reason or 'partial_selected_action'}"
+            )
     selected = set(output.selected_claim_ids)
     missing_claims = [claim_id for claim_id in expected_claim_ids if claim_id not in selected]
-    if missing_claims:
-        buckets.append("runtime_missing_expected_claim")
-        if checkpoint.horizon_distance >= 10:
-            buckets.append("long_horizon_retrieval_miss")
-    if any(entity_id not in output.selected_entity_ids for entity_id in expected_entity_ids):
-        buckets.append("runtime_missing_expected_entity")
-    if any(
-        relation_id not in output.selected_relation_ids
+    for claim_id in missing_claims:
+        buckets.append(
+            _missing_expected_bucket(
+                projection=projection,
+                item_type="claim",
+                oracle_id=claim_id,
+            )
+        )
+    if missing_claims and checkpoint.horizon_distance >= 10 and any(
+        bucket == "production_retrieval_missing_expected_claim" for bucket in buckets
+    ):
+        buckets.append("production_retrieval_long_horizon_miss")
+    for entity_id in expected_entity_ids:
+        if entity_id not in output.selected_entity_ids:
+            buckets.append(
+                _missing_expected_bucket(
+                    projection=projection,
+                    item_type="entity",
+                    oracle_id=entity_id,
+                )
+            )
+    missing_relations = [
+        relation_id
+        for relation_id in checkpoint.expected_relation_ids
+        if relation_id not in output.selected_relation_ids
         and relation_id not in output.context_relation_ids
         and relation_id not in output.supporting_relation_ids
-        for relation_id in checkpoint.expected_relation_ids
-    ):
-        buckets.append("runtime_missing_expected_relation")
+    ]
+    for relation_id in missing_relations:
+        buckets.append(
+            _missing_expected_bucket(
+                projection=projection,
+                item_type="relation",
+                oracle_id=relation_id,
+            )
+        )
     missing_actions = [
         action_id for action_id in checkpoint.expected_action_ids if action_id not in projection.action_support
     ]
     if missing_actions:
-        buckets.append("runtime_missing_expected_action")
         reason = action_alignment_failure_reason(projection.action_alignment_rows)
-        if reason:
-            buckets.append(reason)
+        aligned_action_ids = {
+            row.expected_action_id
+            for row in projection.action_alignment_rows
+            if row.verdict == "aligned"
+        }
+        buckets.append(
+            "production_retrieval_missing_expected_action"
+            if set(missing_actions) <= aligned_action_ids
+            else f"production_semantic_graph_{reason or 'missing_expected_action'}"
+        )
         if not projection.execution_state.active_continuation_branch:
-            buckets.append("runtime_execution_state_missing")
+            buckets.append("production_retrieval_execution_state_missing")
         if projection.execution_state.ambiguous_action_count:
-            buckets.append("runtime_execution_state_ambiguous")
-        buckets.append("branch_state_not_projected")
+            buckets.append("production_retrieval_execution_state_ambiguous")
     if expected_event_ids and not set(expected_event_ids) & set(output.supporting_citation_event_ids):
-        buckets.append("runtime_provenance_missing")
+        buckets.append("production_semantic_graph_provenance_missing")
         if checkpoint.horizon_distance >= 10:
-            buckets.append("provenance_chain_broken")
-    critical = set(aggregate.critical_failure_buckets)
-    if "modality_false_positive" in critical:
-        buckets.extend(("runtime_modality_false_positive", "stale_fact_resurfaced", "modality_decay"))
-    if "scope_leak" in critical:
-        buckets.extend(("runtime_scope_leak", "scope_decay"))
-    if {"hidden_fact_hallucinated", "hidden_fact_answer_leak"} & critical:
-        buckets.extend(("runtime_extra_hidden_fact", "hidden_fact_leak"))
-    if "source_trust_inversion" in critical:
-        buckets.append("source_trust_decay")
-    if {"claim_rekey_error", "entity_split_error"} & critical:
-        buckets.append("entity_rekey_lost")
-    if "abandoned_branch_selected" in critical:
-        buckets.extend(("branch_state_decay", "blocked_branch_selected"))
-    if {"stale_memory_selected", "supporting_noncurrent_claim_selected"} & critical:
-        buckets.append("stale_fact_resurfaced")
-    if "historical_truth_lost" in critical:
-        buckets.append("historical_fact_lost")
-    if "missing_rejected_id" in critical:
-        buckets.append("runtime_missing_expected_rejection")
-    if "overconfident_wrong_answer" in critical:
-        buckets.append("calibration_drift")
+            buckets.append("production_semantic_graph_long_horizon_provenance_break")
+    for claim_id in set(checkpoint.expected_excluded_claim_ids) - set(output.rejected_claim_ids):
+        rejected_rows = [
+            row
+            for row in projection.channel_alignment_rows
+            if row.channel == "rejected" and row.oracle_id == claim_id
+        ]
+        if any(row.verdict == "partial" for row in rejected_rows):
+            buckets.append("production_semantic_graph_partial_expected_rejection")
+        else:
+            buckets.append(
+                _missing_expected_bucket(
+                    projection=projection,
+                    item_type="claim",
+                    oracle_id=claim_id,
+                    suffix="expected_rejection",
+                )
+            )
     return sorted(set(buckets))
+
+
+def runtime_ingestion_failure_buckets(
+    recorded_runs: Sequence[RecordedExtractionRun],
+) -> list[str]:
+    """Classify commit-path failures before retrieval and oracle comparison."""
+
+    buckets: list[str] = []
+    for run in recorded_runs:
+        if run.extraction_status.value in {"failed", "partial"}:
+            failure_code = run.failure_code.value if run.failure_code is not None else "unknown"
+            buckets.append(
+                f"production_ingestion_extraction_{run.extraction_status.value}_{failure_code}"
+            )
+        if run.fallback_outcome.value != "not_used":
+            buckets.append(
+                f"production_ingestion_fallback_{run.fallback_outcome.value}"
+            )
+        if run.operation_failure_code is not None:
+            buckets.append(
+                f"production_ingestion_operation_{run.operation_failure_code.value}"
+            )
+    return sorted(set(buckets))
+
+
+def _missing_expected_bucket(
+    *,
+    projection: RuntimeProjection,
+    item_type: str,
+    oracle_id: str,
+    suffix: str | None = None,
+) -> str:
+    verdicts = {
+        alignment.verdict
+        for alignment in projection.alignments
+        if alignment.item_type == item_type and alignment.oracle_item_id == oracle_id
+    }
+    label = suffix or f"expected_{item_type}"
+    if RuntimeGraphAlignmentVerdict.ALIGNED in verdicts:
+        aligned_runtime_ids = {
+            alignment.runtime_item_id
+            for alignment in projection.alignments
+            if alignment.item_type == item_type
+            and alignment.oracle_item_id == oracle_id
+            and alignment.verdict == RuntimeGraphAlignmentVerdict.ALIGNED
+            and alignment.runtime_item_id is not None
+        }
+        aligned_items = [
+            item for item in projection.graph_items if item.runtime_item_id in aligned_runtime_ids
+        ]
+        if suffix == "expected_rejection" and any(
+            item.lifecycle_state.value == "active" for item in aligned_items
+        ):
+            return "production_lifecycle_active_expected_rejection"
+        if suffix is None and any(
+            item.lifecycle_state.value != "active" for item in aligned_items
+        ):
+            return f"production_lifecycle_inactive_expected_{item_type}"
+        return f"production_retrieval_missing_{label}"
+    if RuntimeGraphAlignmentVerdict.PARTIAL in verdicts:
+        return f"production_semantic_graph_partial_{label}"
+    return f"production_semantic_graph_missing_{label}"
 
 
 def runtime_answer_for_checkpoint(

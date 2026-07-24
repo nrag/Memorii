@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid5
@@ -14,6 +15,7 @@ from memorii.core.memory_evolution.models import (
     ClaimTransitionType,
     ContradictionSet,
     EntityLinkState,
+    EvidenceSpan,
     ExtractedClaim,
     SourceModality,
     SourceObservation,
@@ -31,26 +33,48 @@ if TYPE_CHECKING:
     from memorii.core.memory_plane.service import MemoryPlaneService
 
 
-def claim_strength(
+@dataclass(frozen=True, order=True)
+class ClaimPrecedence:
+    """Semantic ordering for accepted claims of one single-valued key."""
+
+    effective_time: datetime
+    source_authority: int
+    stable_id: str
+
+
+def claim_precedence(
     claim: ExtractedClaim,
     *,
     predicate_registry: PredicateRegistry,
-) -> tuple[float, datetime]:
+) -> ClaimPrecedence:
     source_type = claim.evidence_spans[0].source_type if claim.evidence_spans else SourceType.DERIVED
     policy = predicate_registry.require(claim.claim_key.predicate_id)
-    trust_bonus = source_trust_rank(policy, source_type) / max(1, len(policy.trust_precedence)) * 0.05
-    return min(1.0, claim.confidence.calibrated + trust_bonus), claim.valid_from or datetime.min.replace(tzinfo=UTC)
+    return ClaimPrecedence(
+        effective_time=claim.valid_from or _earliest_evidence_time(claim.evidence_spans),
+        source_authority=source_trust_rank(policy, source_type),
+        stable_id=claim.claim_id,
+    )
 
 
-def state_strength(
+def state_precedence(
     state: ClaimState,
     *,
     predicate_registry: PredicateRegistry,
-) -> tuple[float, datetime]:
+) -> ClaimPrecedence:
     source_type = state.evidence_spans[0].source_type if state.evidence_spans else SourceType.DERIVED
     policy = predicate_registry.require(state.claim_key.predicate_id)
-    trust_bonus = source_trust_rank(policy, source_type) / max(1, len(policy.trust_precedence)) * 0.05
-    return min(1.0, state.confidence.calibrated + trust_bonus), state.valid_from or datetime.min.replace(tzinfo=UTC)
+    return ClaimPrecedence(
+        effective_time=state.valid_from or _earliest_evidence_time(state.evidence_spans),
+        source_authority=source_trust_rank(policy, source_type),
+        stable_id=state.claim_id,
+    )
+
+
+def _earliest_evidence_time(evidence_spans: list[EvidenceSpan]) -> datetime:
+    return min(
+        (span.timestamp for span in evidence_spans),
+        default=datetime.min.replace(tzinfo=UTC),
+    )
 
 
 def modality_for_claim(claim: ExtractedClaim, observations: list[SourceObservation]) -> SourceModality:
@@ -140,7 +164,7 @@ class ClaimLifecycleMutator:
         ]
         strongest = max(
             different_value,
-            key=lambda state: state_strength(state, predicate_registry=self._predicates),
+            key=lambda state: state_precedence(state, predicate_registry=self._predicates),
             default=None,
         )
         state = ClaimState(
@@ -233,10 +257,10 @@ class ClaimLifecycleMutator:
         if policy.is_single_value and different_value:
             strongest = max(
                 different_value,
-                key=lambda state: state_strength(state, predicate_registry=self._predicates),
+                key=lambda state: state_precedence(state, predicate_registry=self._predicates),
             )
             strongest_conflicting_claim_id = strongest.claim_id
-            if claim_strength(claim, predicate_registry=self._predicates) >= state_strength(
+            if claim_precedence(claim, predicate_registry=self._predicates) >= state_precedence(
                 strongest,
                 predicate_registry=self._predicates,
             ):
@@ -244,7 +268,7 @@ class ClaimLifecycleMutator:
                 related = [state.claim_id for state in different_value]
                 supersedes = list(related)
                 conflicts = list(related)
-                rationale = "new single-value claim supersedes weaker or older active claims"
+                rationale = "accepted single-value claim wins explicit recency, source-authority, and stable-ID precedence"
                 for old_state in different_value:
                     self._mark_superseded(
                         old_state=old_state,
@@ -256,7 +280,7 @@ class ClaimLifecycleMutator:
                 transition_type = ClaimTransitionType.INVALIDATE
                 related = [strongest.claim_id]
                 conflicts = [strongest.claim_id]
-                rationale = "new single-value claim conflicts with a stronger active claim"
+                rationale = "accepted single-value claim loses explicit recency, source-authority, and stable-ID precedence"
 
         state = ClaimState(
             claim_id=claim.claim_id,

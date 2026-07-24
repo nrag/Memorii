@@ -7,6 +7,7 @@ from typing import Literal
 
 from memorii.core.benchmark.artifact_rows import (
     RuntimeActionAlignmentRow,
+    RuntimeChannelAlignmentRow,
     RuntimeExecutionStateSection,
     RuntimeRelationSupportRow,
 )
@@ -19,12 +20,13 @@ from memorii.core.benchmark.memory_evolution_runtime.checkpoint_evaluation impor
 )
 from memorii.core.benchmark.memory_evolution_runtime.execution_state_projection import (
     expected_action_alignment_rows,
-    suppressed_action_state_claim_ids,
+    include_unmatched_selected_actions,
 )
 from memorii.core.benchmark.memory_evolution_runtime.models import (
     RuntimeActionGraphItemRow,
     RuntimeClaimGraphItemRow,
     RuntimeGraphItem,
+    RuntimeProductionChannels,
     RuntimeProjection,
     RuntimeRelationGraphItemRow,
 )
@@ -47,6 +49,35 @@ def project_runtime_checkpoint(
     work_state: WorkStateSnapshot | None = None,
     retrieval_decision: ProductionRetrievalDecision | None = None,
 ) -> RuntimeProjection:
+    selected_runtime_claims = _runtime_claims_for_decision(
+        decision=retrieval_decision,
+        graph_items=graph_items,
+    )
+    selected_runtime_actions = _runtime_actions_for_decision(
+        decision=retrieval_decision,
+        graph_items=graph_items,
+    )
+    context_claim_items = _runtime_claim_items_for_claim_ids(
+        claim_ids=retrieval_decision.context_record_ids if retrieval_decision else [],
+        graph_items=graph_items,
+    )
+    selected_runtime_claim_ids = {item.claim_id for item in selected_runtime_claims}
+    rejected_claim_items = [
+        item
+        for item in _runtime_claim_items_for_claim_ids(
+            claim_ids=retrieval_decision.rejected_record_ids if retrieval_decision else [],
+            graph_items=graph_items,
+        )
+        if item.claim_id not in selected_runtime_claim_ids
+    ]
+    production_channels = RuntimeProductionChannels(
+        selected_claim_ids=tuple(item.claim_id for item in selected_runtime_claims),
+        selected_action_ids=tuple(item.action_id for item in selected_runtime_actions),
+        selected_action_runtime_ids=tuple(item.runtime_item_id for item in selected_runtime_actions),
+        context_claim_ids=tuple(item.claim_id for item in context_claim_items),
+        rejected_claim_ids=tuple(item.claim_id for item in rejected_claim_items),
+    )
+
     alignments = align_runtime_graph_to_oracle(
         scenario=scenario,
         graph_items=graph_items,
@@ -61,32 +92,30 @@ def project_runtime_checkpoint(
     }
     item_by_id = {item.runtime_item_id: item for item in graph_items}
 
-    action_alignment_rows = expected_action_alignment_rows(
-        scenario=scenario,
-        expected_action_ids=checkpoint.expected_action_ids,
-        graph_items=graph_items,
-        runtime_claim_by_oracle=runtime_claim_by_oracle,
-    )
-    selected_runtime_claims = _runtime_claims_for_decision(
-        decision=retrieval_decision,
-        graph_items=graph_items,
-    )
-    selected_runtime_actions = _runtime_actions_for_decision(
-        decision=retrieval_decision,
-        graph_items=graph_items,
+    action_alignment_rows = include_unmatched_selected_actions(
+        rows=expected_action_alignment_rows(
+            scenario=scenario,
+            expected_action_ids=checkpoint.expected_action_ids,
+            graph_items=graph_items,
+            runtime_claim_by_oracle=runtime_claim_by_oracle,
+            entity_alignments=alignments,
+        ),
+        selected_actions=selected_runtime_actions,
     )
     selected_runtime_decision_ids = {
         item.runtime_item_id for item in [*selected_runtime_claims, *selected_runtime_actions]
     }
     selected_runtime_decision_ids.update(item.action_id for item in selected_runtime_actions)
-    selected_action_alignment_rows = [
+    selected_action_rows = [
         row
         for row in action_alignment_rows
-        if row.verdict == "aligned"
-        and (
+        if (
             row.runtime_action_id in selected_runtime_decision_ids
             or row.runtime_item_id in selected_runtime_decision_ids
         )
+    ]
+    selected_action_alignment_rows = [
+        row for row in selected_action_rows if row.verdict == "aligned"
     ]
     selected_claim_ids = _oracle_ids_for_runtime_items(
         runtime_items=selected_runtime_claims,
@@ -133,31 +162,26 @@ def project_runtime_checkpoint(
     )
     supporting_citation_event_ids.extend(
         _runtime_action_evidence_events(
-            action_alignment_rows=selected_action_alignment_rows,
+            action_alignment_rows=selected_action_rows,
             item_by_id=item_by_id,
         )
     )
-    suppressed_action_claim_ids = suppressed_action_state_claim_ids(
-        scenario=scenario,
-        checkpoint=checkpoint,
-        graph_items=graph_items,
-    )
-    rejected_claim_items = [
-        item
-        for item in graph_items
-        if item.item_type == "claim"
-        and item.claim_id in set(retrieval_decision.rejected_record_ids if retrieval_decision else [])
-        and item.claim_id not in set(selected_claim_ids)
-    ]
     rejected_claim_ids = _oracle_ids_for_runtime_items(
         runtime_items=rejected_claim_items,
         alignments=alignments,
         item_type="claim",
     )
-    rejected_claim_ids.extend(suppressed_action_claim_ids)
     context_claim_ids = _oracle_ids_for_runtime_claim_ids(
         claim_ids=retrieval_decision.context_record_ids if retrieval_decision else [],
         graph_items=graph_items,
+        alignments=alignments,
+    )
+    channel_alignment_rows = _channel_alignment_rows(
+        channels={
+            "selected": selected_runtime_claims,
+            "context": context_claim_items,
+            "rejected": rejected_claim_items,
+        },
         alignments=alignments,
     )
     rejected_entity_ids: list[str] = []
@@ -177,14 +201,16 @@ def project_runtime_checkpoint(
         claim = claim_by_id(scenario, claim_id)
         if (
             claim
-            and (claim.subject.entity_id in entity_map or claim_id in suppressed_action_claim_ids)
+            and claim.subject.entity_id in entity_map
             and claim.subject.entity_id not in selected_entity_ids
             and claim.subject.entity_id not in rejected_entity_ids
         ):
             rejected_entity_ids.append(claim.subject.entity_id)
     operation: Literal["answer", "next_action", "graph_reconstruction", "abstain"] = _operation_for_checkpoint(
         checkpoint=checkpoint,
-        has_selection=bool(selected_claim_ids or selected_relation_ids),
+        has_selection=bool(
+            selected_runtime_claims or selected_runtime_actions or selected_runtime_relations
+        ),
     )
     answer = runtime_answer_for_checkpoint(
         checkpoint=checkpoint,
@@ -230,6 +256,8 @@ def project_runtime_checkpoint(
         relation_support=relation_support,
         action_support=expected_action_support,
         action_alignment_rows=action_alignment_rows,
+        channel_alignment_rows=channel_alignment_rows,
+        production_channels=production_channels,
         execution_state=execution_state,
         work_state=work_state,
         retrieval_decision=retrieval_decision,
@@ -367,17 +395,47 @@ def _oracle_ids_for_runtime_claim_ids(
     graph_items: Sequence[RuntimeGraphItem],
     alignments: Sequence[RuntimeGraphAlignment],
 ) -> list[str]:
-    wanted = set(str(claim_id) for claim_id in claim_ids)
-    runtime_claim_items = [
-        item
-        for item in graph_items
-        if isinstance(item, RuntimeClaimGraphItemRow)
-        and item.claim_id in wanted
-    ]
+    runtime_claim_items = _runtime_claim_items_for_claim_ids(
+        claim_ids=claim_ids,
+        graph_items=graph_items,
+    )
     return _oracle_ids_for_runtime_items(
         runtime_items=runtime_claim_items,
         alignments=alignments,
         item_type="claim",
+    )
+
+
+def _runtime_claim_items_for_claim_ids(
+    *,
+    claim_ids: Sequence[str],
+    graph_items: Sequence[RuntimeGraphItem],
+) -> list[RuntimeClaimGraphItemRow]:
+    wanted = {str(claim_id) for claim_id in claim_ids}
+    return [
+        item
+        for item in graph_items
+        if isinstance(item, RuntimeClaimGraphItemRow) and item.claim_id in wanted
+    ]
+
+
+def _channel_alignment_rows(
+    *,
+    channels: Mapping[str, Sequence[RuntimeClaimGraphItemRow]],
+    alignments: Sequence[RuntimeGraphAlignment],
+) -> list[RuntimeChannelAlignmentRow]:
+    rows: list[RuntimeChannelAlignmentRow] = []
+    for channel in ("selected", "context", "rejected"):
+        runtime_ids = {item.runtime_item_id for item in channels.get(channel, ())}
+        rows.extend(
+            RuntimeChannelAlignmentRow.from_alignment(alignment, channel=channel)
+            for alignment in alignments
+            if alignment.item_type == "claim"
+            and str(alignment.runtime_item_id or "") in runtime_ids
+        )
+    return sorted(
+        rows,
+        key=lambda row: (row.channel, row.runtime_id, row.oracle_id, row.verdict),
     )
 
 

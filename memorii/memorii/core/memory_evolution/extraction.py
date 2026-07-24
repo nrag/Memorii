@@ -290,16 +290,14 @@ class HybridMemoryExtractor:
         run, entities, claims, actions = self._llm_extractor.extract(observations)
         self.model = run.model
         self.prompt_hash = run.prompt_hash
-        if run.status == ExtractionRunStatus.FAILED:
+        if run.status in {ExtractionRunStatus.FAILED, ExtractionRunStatus.PARTIAL}:
             fallback_run, fallback_entities, fallback_claims, fallback_actions = self._rule_extractor.extract(
                 observations
             )
-            if fallback_run.status not in {
-                ExtractionRunStatus.SUCCEEDED,
-                ExtractionRunStatus.PARTIAL,
-            }:
+            if fallback_run.status != ExtractionRunStatus.SUCCEEDED:
                 failed_run = run.model_copy(
                     update={
+                        "status": ExtractionRunStatus.FAILED,
                         "fallback_outcome": FallbackOutcome.FAILED,
                         "fallback_provider": self._rule_extractor.provider,
                         "final_output_source": FinalExtractionSource.NONE,
@@ -487,7 +485,16 @@ def models_from_llm_output(
             )
             confidence = _float_output(item.get("confidence"), default=0.6)
             object_entity_ref = str(item["object_entity_ref"]).strip() if item.get("object_entity_ref") else None
-            object_entity_id = entity_id_by_ref[object_entity_ref] if object_entity_ref is not None else None
+            object_entity_id, object_value, object_qualifiers = _resolve_claim_object_endpoint(
+                run_id=run_id,
+                predicate_id=predicate_id,
+                object_value=object_value,
+                object_entity_ref=object_entity_ref,
+                observation=observation,
+                confidence=confidence,
+                entity_id_by_ref=entity_id_by_ref,
+                entities=entities,
+            )
             claim_id = _stable_id(
                 "claim",
                 "|".join(
@@ -509,6 +516,7 @@ def models_from_llm_output(
                     claim_key=claim_key,
                     object_value=object_value,
                     object_entity_id=object_entity_id,
+                    qualifiers=object_qualifiers,
                     valid_from=observation.timestamp,
                     valid_to=None,
                     evidence_spans=[span],
@@ -551,6 +559,8 @@ def models_from_llm_output(
             target_entity_ids = [
                 entity_id_by_ref[str(value)] for value in _sequence_output(item.get("target_entity_refs"))
             ]
+            if not target_entity_ids:
+                raise ValueError("action requires at least one grounded target_entity_ref")
             status = str(item["status"])
             observation_scope = memory_scope_from_observation(observation)
             actor_entity_ref = str(item["actor_entity_ref"]).strip() if item.get("actor_entity_ref") else None
@@ -577,6 +587,20 @@ def models_from_llm_output(
             errors.append(f"action[{idx}]: {type(exc).__name__}:{exc}")
 
     claims = _canonicalize_claim_arguments(claims, entities)
+    entities_by_id = {entity.entity_id: entity for entity in entities}
+    valid_claims: list[ExtractedClaim] = []
+    for idx, claim in enumerate(claims):
+        try:
+            _validate_claim_endpoint_contract(
+                predicate_id=claim.claim_key.predicate_id,
+                subject=entities_by_id[claim.claim_key.subject_entity_id],
+                object_entity=(entities_by_id[claim.object_entity_id] if claim.object_entity_id is not None else None),
+                object_value=claim.object_value,
+            )
+            valid_claims.append(claim)
+        except (KeyError, ValueError) as exc:
+            errors.append(f"claim[{idx}]: {type(exc).__name__}:{exc}")
+    claims = valid_claims
     extracted_anything = bool(entities or claims or actions)
     if errors:
         status = ExtractionRunStatus.PARTIAL if extracted_anything else ExtractionRunStatus.FAILED
@@ -614,6 +638,180 @@ def models_from_llm_output(
         errors=errors,
     )
     return run, entities, claims, actions
+
+
+_REQUIRED_OBJECT_ENTITY_TYPES = {
+    "owner": EntityType.PERSON,
+    "approver": EntityType.PERSON,
+    "api_owner": EntityType.PERSON,
+    "dependency": EntityType.UNKNOWN,
+}
+
+
+def _resolve_claim_object_endpoint(
+    *,
+    run_id: str,
+    predicate_id: str,
+    object_value: str,
+    object_entity_ref: str | None,
+    observation: SourceObservation,
+    confidence: float,
+    entity_id_by_ref: dict[str, str],
+    entities: list[EntityMention],
+) -> tuple[str | None, str, dict[str, str]]:
+    normalized_object = _normalize_name(object_value)
+    if object_entity_ref is not None and object_entity_ref in entity_id_by_ref:
+        entity_id = entity_id_by_ref[object_entity_ref]
+        if predicate_id in _REQUIRED_OBJECT_ENTITY_TYPES:
+            endpoint = next(
+                (entity for entity in entities if entity.entity_id == entity_id),
+                None,
+            )
+            if endpoint is None:
+                raise KeyError(object_entity_ref)
+            endpoint_names = _normalized_entity_names(endpoint)
+            conflicting_entities = [
+                entity
+                for entity in entities
+                if entity.entity_id != endpoint.entity_id
+                and entity.scope == memory_scope_from_observation(observation)
+                and any(span.source_id == observation.source_id for span in entity.evidence_spans)
+                and normalized_object
+                and normalized_object in _normalized_entity_names(entity)
+            ]
+            if normalized_object not in endpoint_names and conflicting_entities:
+                raise ValueError(
+                    f"object_entity_ref {object_entity_ref!r} conflicts with object_value {object_value!r}"
+                )
+            canonical_value = _entity_display_name(endpoint, fallback=entity_id)
+            if object_value != canonical_value:
+                qualifiers = {
+                    "object_endpoint_grounding": "declared_entity_ref",
+                    "object_value_normalization": "from_grounded_entity",
+                }
+                if object_value:
+                    qualifiers["original_object_value"] = object_value
+                return entity_id, canonical_value, qualifiers
+        return entity_id, object_value, {}
+    if predicate_id not in _REQUIRED_OBJECT_ENTITY_TYPES:
+        if object_entity_ref is None:
+            return None, object_value, {}
+        raise KeyError(object_entity_ref)
+
+    matching_entities = [
+        entity
+        for entity in entities
+        if entity.scope == memory_scope_from_observation(observation)
+        and any(span.source_id == observation.source_id for span in entity.evidence_spans)
+        and normalized_object in _normalized_entity_names(entity)
+    ]
+    if len(matching_entities) > 1:
+        raise ValueError(f"ambiguous grounded object endpoint:{object_value!r}")
+    if matching_entities:
+        entity_id = matching_entities[0].entity_id
+        if object_entity_ref is not None:
+            entity_id_by_ref[object_entity_ref] = entity_id
+        return (
+            entity_id,
+            _entity_display_name(matching_entities[0], fallback=entity_id),
+            {"object_endpoint_grounding": "matched_verbatim_entity"},
+        )
+
+    endpoint_span = _grounded_endpoint_span(
+        observation=observation,
+        object_value=object_value,
+    )
+    if endpoint_span is None:
+        if object_entity_ref is not None:
+            raise KeyError(object_entity_ref) from None
+        return None, object_value, {}
+
+    endpoint_ref = object_entity_ref or f"claim-object:{predicate_id}:{normalized_object}"
+    entity_id = _stable_id(
+        "mention",
+        "|".join([run_id, observation.source_id, endpoint_ref]),
+    )
+    entities.append(
+        EntityMention(
+            entity_id=entity_id,
+            mention_text=object_value,
+            normalized_name=normalized_object,
+            aliases=[],
+            entity_type=_REQUIRED_OBJECT_ENTITY_TYPES[predicate_id],
+            evidence_spans=[endpoint_span],
+            confidence=confidence,
+            scope=memory_scope_from_observation(observation),
+        )
+    )
+    if object_entity_ref is not None:
+        entity_id_by_ref[object_entity_ref] = entity_id
+    return (
+        entity_id,
+        object_value,
+        {"object_endpoint_grounding": "materialized_from_verbatim_object"},
+    )
+
+
+def _normalized_entity_names(entity: EntityMention) -> set[str]:
+    return {
+        _normalize_name(entity.mention_text),
+        entity.normalized_name,
+        *(_normalize_name(alias) for alias in entity.aliases),
+    } - {""}
+
+
+def _grounded_endpoint_span(
+    *,
+    observation: SourceObservation,
+    object_value: str,
+) -> EvidenceSpan | None:
+    if not _normalize_name(object_value):
+        return None
+    try:
+        span = _span(observation=observation, quote=object_value)
+    except ValueError:
+        return None
+    assert span.char_start is not None
+    assert span.char_end is not None
+    before = observation.text[span.char_start - 1] if span.char_start else ""
+    after = observation.text[span.char_end] if span.char_end < len(observation.text) else ""
+    if object_value[0].isalnum() and before.isalnum():
+        return None
+    if object_value[-1].isalnum() and after.isalnum():
+        return None
+    return span
+
+
+def _validate_claim_endpoint_contract(
+    *,
+    predicate_id: str,
+    subject: EntityMention,
+    object_entity: EntityMention | None,
+    object_value: str,
+) -> None:
+    if predicate_id in _REQUIRED_OBJECT_ENTITY_TYPES and object_entity is None:
+        raise ValueError(f"{predicate_id} requires a grounded object_entity_ref")
+    if (
+        predicate_id in {"owner", "approver", "api_owner"}
+        and object_entity is not None
+        and object_entity.entity_type not in {EntityType.PERSON, EntityType.UNKNOWN}
+    ):
+        raise ValueError(f"{predicate_id} object must be a person entity")
+    if (
+        predicate_id == "dependency"
+        and object_entity is not None
+        and object_entity.entity_type == EntityType.PREFERENCE
+    ):
+        raise ValueError("dependency object cannot be a preference entity")
+    if predicate_id == "entity_type":
+        if object_entity is not None:
+            raise ValueError("entity_type requires a literal object, not object_entity_ref")
+        try:
+            declared_type = EntityType(object_value.strip().casefold())
+        except ValueError as exc:
+            raise ValueError(f"unsupported entity_type value:{object_value!r}") from exc
+        if subject.entity_type not in {EntityType.UNKNOWN, declared_type}:
+            raise ValueError("entity_type literal conflicts with the grounded subject type")
 
 
 def _canonicalize_claim_arguments(claims: list[ExtractedClaim], entities: list[EntityMention]) -> list[ExtractedClaim]:

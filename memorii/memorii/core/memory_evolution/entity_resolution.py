@@ -50,7 +50,7 @@ class EntityResolutionService:
         decisions: list[EntityIdentityDecision] = []
         transitions: list[ClaimLifecycleTransition] = []
         now = self._now_provider()
-        for mention in mentions:
+        for mention in sorted(mentions, key=_mention_resolution_key):
             scope_identity = _scope_identity(mention.scope)
             existing = links_by_key.get((mention.normalized_name, mention.entity_id, scope_identity))
             if existing is not None:
@@ -478,7 +478,18 @@ def _shares_identity_alias(*, link: EntityLinkState, mention: EntityMention) -> 
     mention_names = {
         _identity_key(value) for value in [mention.normalized_name, mention.mention_text, *mention.aliases]
     }
-    return bool((link_names - {""}) & (mention_names - {""}))
+    link_names.discard("")
+    mention_names.discard("")
+    return bool(link_names & mention_names)
+
+
+def _mention_resolution_key(mention: EntityMention) -> tuple[str, str, str, str]:
+    return (
+        mention.scope.stable_id(),
+        mention.entity_type.value,
+        mention.entity_id,
+        mention.normalized_name,
+    )
 
 
 def _identity_key(value: str) -> str:

@@ -94,12 +94,16 @@ class _FailedExtractionProvider:
         )
 
 
-class _PartialExtractionProvider:
+class _PartialExtractionProvider(EnglishRuleMemoryExtractor):
     provider = "test_llm"
     model = "test-model"
     prompt_hash = "test-prompt"
 
+    def __init__(self) -> None:
+        self.calls = 0
+
     def extract(self, observations: list[SourceObservation]):
+        self.calls += 1
         return (
             ExtractionRun(
                 extraction_run_id="extraction:partial",
@@ -406,6 +410,54 @@ def test_hybrid_fallback_records_recovery_without_masking_primary_failure() -> N
     assert outcome.fallback_outcome == FallbackOutcome.SUCCEEDED
     assert outcome.final_extraction_source == FinalExtractionSource.FALLBACK
     assert outcome.fallback_provider == "english_rule"
+
+
+def test_hybrid_repairs_partial_extraction_with_commit_eligible_output() -> None:
+    primary = _PartialExtractionProvider()
+    provider = ProviderMemoryService(
+        memory_evolution_extractor=HybridMemoryExtractor(llm_extractor=primary)
+    )
+
+    result = provider.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Alice.",
+        operation_id="operation:partial-fallback",
+    )
+
+    outcome = result.evolution_outcomes[0]
+    assert primary.calls == 1
+    assert outcome.status == "evolution_committed"
+    assert outcome.extraction_status == ExtractionRunStatus.SUCCEEDED
+    assert outcome.primary_failure_code == ExtractionFailureCode.OUTPUT_VALIDATION
+    assert outcome.fallback_outcome == FallbackOutcome.SUCCEEDED
+    assert outcome.final_extraction_source == FinalExtractionSource.FALLBACK
+
+
+def test_hybrid_rejects_partial_repair_and_attempts_only_once() -> None:
+    primary = _PartialExtractionProvider()
+    repair = _PartialExtractionProvider()
+    provider = ProviderMemoryService(
+        memory_evolution_extractor=HybridMemoryExtractor(
+            llm_extractor=primary,
+            rule_extractor=repair,
+        )
+    )
+
+    result = provider.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Alice.",
+        operation_id="operation:partial-repair-failed",
+    )
+
+    outcome = result.evolution_outcomes[0]
+    assert primary.calls == repair.calls == 1
+    assert outcome.status == "evolution_failed"
+    assert outcome.extraction_status == ExtractionRunStatus.FAILED
+    assert outcome.fallback_outcome == FallbackOutcome.FAILED
+    assert outcome.final_extraction_source == FinalExtractionSource.NONE
+    assert provider.memory_evolution_service.retrieve_claim_states(
+        view=RetrievalView.ALL_VERSIONS
+    ) == []
 
 
 def test_hybrid_does_not_report_an_abstaining_fallback_as_success() -> None:

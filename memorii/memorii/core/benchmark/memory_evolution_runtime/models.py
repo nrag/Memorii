@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapte
 from memorii.core.benchmark.artifact_rows import (
     FlatArtifactModel,
     RuntimeActionAlignmentRow,
+    RuntimeChannelAlignmentRow,
     RuntimeCheckpointResultRow,
     RuntimeExecutionStateSection,
     RuntimeExtractorTraceRow,
@@ -199,6 +200,17 @@ def _require_row_types(
         raise TypeError(f"{field_name} must contain one of ({expected}), got {invalid}")
 
 
+@dataclass(frozen=True)
+class RuntimeProductionChannels:
+    """Public retrieval channels captured before oracle alignment."""
+
+    selected_claim_ids: tuple[str, ...] = ()
+    selected_action_ids: tuple[str, ...] = ()
+    selected_action_runtime_ids: tuple[str, ...] = ()
+    context_claim_ids: tuple[str, ...] = ()
+    rejected_claim_ids: tuple[str, ...] = ()
+
+
 @dataclass
 class RuntimeProjection:
     output: SimSystemOutput
@@ -209,6 +221,8 @@ class RuntimeProjection:
     relation_support: dict[str, str] = field(default_factory=dict)
     action_support: dict[str, str] = field(default_factory=dict)
     action_alignment_rows: list[RuntimeActionAlignmentRow] = field(default_factory=list)
+    channel_alignment_rows: list[RuntimeChannelAlignmentRow] = field(default_factory=list)
+    production_channels: RuntimeProductionChannels = field(default_factory=RuntimeProductionChannels)
     execution_state: RuntimeExecutionStateSection = field(default_factory=RuntimeExecutionStateSection)
     stage_failure_buckets: list[str] = field(default_factory=list)
     work_state: WorkStateSnapshot | None = None
@@ -217,5 +231,6 @@ class RuntimeProjection:
     def __post_init__(self) -> None:
         _require_row_types("graph_items", self.graph_items, RUNTIME_GRAPH_ITEM_TYPES)
         _require_row_type("action_alignment_rows", self.action_alignment_rows, RuntimeActionAlignmentRow)
+        _require_row_type("channel_alignment_rows", self.channel_alignment_rows, RuntimeChannelAlignmentRow)
         if not isinstance(self.execution_state, RuntimeExecutionStateSection):
             raise TypeError("execution_state must be a RuntimeExecutionStateSection")

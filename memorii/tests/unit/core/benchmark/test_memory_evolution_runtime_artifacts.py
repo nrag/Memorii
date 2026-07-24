@@ -3,10 +3,12 @@ from __future__ import annotations
 import pytest
 from memorii.core.benchmark.artifact_rows import (
     FinalOutputSource,
+    RuntimeChannelAlignmentRow,
     RuntimeExecutionStateSection,
     RuntimeExtractorOutput,
     RuntimeExtractorTracePayload,
     RuntimeExtractorTraceRow,
+    RuntimeStageTraceRow,
 )
 from memorii.core.benchmark.memory_evolution_runtime import (
     RuntimeGraphItem,
@@ -16,6 +18,9 @@ from memorii.core.benchmark.memory_evolution_runtime import (
     runtime_graph_completeness_metrics,
     runtime_provider_health,
     runtime_summary_metrics,
+)
+from memorii.core.benchmark.memory_evolution_runtime.checkpoint_evaluation import (
+    runtime_ingestion_failure_buckets,
 )
 from memorii.core.benchmark.memory_evolution_runtime.extractors import (
     RecordedExtractionRun,
@@ -182,11 +187,69 @@ def test_runtime_graph_snapshot_requires_identity() -> None:
         RuntimeGraphSnapshotRow.model_validate({"scenario_id": "scenario_1", "checkpoint_id": "checkpoint_1"})
 
 
+def test_runtime_channel_alignment_row_survives_constructor_validation() -> None:
+    row = RuntimeChannelAlignmentRow(
+        channel="rejected",
+        oracle_id="oracle:claim:1",
+        runtime_id="runtime:claim:1",
+        item_type="claim",
+        verdict="partial",
+        score=0.8,
+        matched_on=["claim_id"],
+        failure_reason="claim id matches but provenance is missing",
+    )
+
+    assert row.model_dump(mode="json")["verdict"] == "partial"
+
+
 def test_runtime_missing_rejection_has_named_failure_classification() -> None:
     assert runtime_failure_classification(
-        ["runtime_missing_expected_rejection"],
+        ["production_retrieval_missing_expected_rejection"],
         checkpoint_diagnostics_payload(failure_classification=["unclassified_failure"]),
-    ) == ["runtime_missing_expected_rejection"]
+    ) == [
+        "production_retrieval:production_retrieval_missing_expected_rejection"
+    ]
+
+
+def test_runtime_failure_classification_does_not_relabel_judge_evidence_as_production() -> None:
+    assert runtime_failure_classification(
+        [],
+        checkpoint_diagnostics_payload(failure_classification=["source_trust_inversion"]),
+    ) == ["benchmark_comparison:source_trust_inversion"]
+
+
+def test_runtime_failure_classification_attributes_extraction_failures_to_ingestion() -> None:
+    assert runtime_failure_classification(
+        ["runtime_output_validation_failure"],
+        checkpoint_diagnostics_payload(),
+    ) == ["production_ingestion:runtime_output_validation_failure"]
+
+
+def test_runtime_failure_classification_preserves_lifecycle_owner() -> None:
+    assert runtime_failure_classification(
+        ["production_lifecycle_inactive_expected_claim"],
+        checkpoint_diagnostics_payload(),
+    ) == [
+        "production_lifecycle:production_lifecycle_inactive_expected_claim"
+    ]
+
+
+def test_runtime_stage_trace_has_closed_stage_and_status_contracts() -> None:
+    row = RuntimeStageTraceRow(
+        stage="lifecycle",
+        status="pass",
+        reason_codes=["active:2", "superseded:1"],
+        input_count=3,
+        output_count=2,
+    )
+
+    assert row.model_dump(mode="json") == {
+        "stage": "lifecycle",
+        "status": "pass",
+        "reason_codes": ["active:2", "superseded:1"],
+        "input_count": 3,
+        "output_count": 2,
+    }
 
 
 def test_runtime_checkpoint_diagnostics_cannot_drift_between_public_views() -> None:
@@ -739,3 +802,56 @@ def test_runtime_output_source_reports_deterministic_abstention_as_reused_state(
         )
         == "reused_runtime_state"
     )
+
+
+def test_runtime_ingestion_failures_are_classified_before_comparison() -> None:
+    base = RecordedExtractionRun(
+        input_source_ids=["source:1"],
+        provider="llm",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        extraction_status=ExtractionRunStatus.SUCCEEDED,
+        provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
+        fallback_outcome=FallbackOutcome.NOT_USED,
+        final_output_source=MemoryFinalExtractionSource.PRIMARY,
+        failure_code=None,
+        primary_failure_code=None,
+        fallback_provider=None,
+        errors=[],
+        entity_count=1,
+        claim_count=1,
+        action_count=0,
+        entity_ids=["entity:1"],
+        claim_ids=["claim:1"],
+        action_ids=[],
+        validation_summary={},
+    )
+    partial = base.model_copy(
+        update={
+            "extraction_status": ExtractionRunStatus.PARTIAL,
+            "failure_code": ExtractionFailureCode.OUTPUT_VALIDATION,
+        }
+    )
+    fallback = base.model_copy(
+        update={
+            "provider_attempt_status": ProviderAttemptStatus.PROVIDER_ERROR,
+            "fallback_outcome": FallbackOutcome.SUCCEEDED,
+            "final_output_source": MemoryFinalExtractionSource.FALLBACK,
+            "primary_failure_code": ExtractionFailureCode.PROVIDER_ERROR,
+            "fallback_provider": "english_rule",
+        }
+    )
+    operation_failure = base.model_copy(
+        update={
+            "operation_status": EvolutionOperationStatus.FAILED,
+            "operation_failure_code": EvolutionFailureCategory.STORE_ERROR,
+        }
+    )
+
+    assert runtime_ingestion_failure_buckets(
+        [partial, fallback, operation_failure]
+    ) == [
+        "production_ingestion_extraction_partial_output_validation",
+        "production_ingestion_fallback_succeeded",
+        "production_ingestion_operation_store_error",
+    ]

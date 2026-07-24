@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from memorii.core.memory_evolution.language import supports_english_rules
@@ -47,6 +48,14 @@ class EnglishLexicalQueryResolver:
             anchor_catalog=anchor_catalog,
             request_scope=request_scope,
         )
+
+
+@dataclass(frozen=True)
+class _EntityQueryMatch:
+    entity_id: str
+    entity_type: str | None
+    score: float
+    explicit_names: frozenset[str]
 
 
 def infer_query_predicate_id(query: str) -> str | None:
@@ -279,7 +288,7 @@ def _resolve_entities(
         return [], "unresolved", "no entity catalog supplied"
     query_tokens = set(re.findall(r"[\w]{2,}", query))
     preferred_types, excluded_types = _query_entity_type_constraints(query)
-    scored: list[tuple[float, str]] = []
+    matches_by_id: dict[str, _EntityQueryMatch] = {}
     for candidate in candidates:
         if not _entity_candidate_matches_query(
             candidate,
@@ -290,12 +299,14 @@ def _resolve_entities(
         ):
             continue
         candidate_scores: list[float] = []
+        explicit_names: set[str] = set()
         for name in candidate.names:
             normalized_name = normalize_query_text(name)
             name_tokens = set(re.findall(r"[\w]{2,}", normalized_name))
             overlap = len(query_tokens & name_tokens)
             if contains_query_phrase(query, normalized_name):
                 candidate_scores.append(100.0 + len(name_tokens) + min(len(normalized_name), 50) / 100.0)
+                explicit_names.add(normalized_name)
             elif overlap:
                 candidate_scores.append(float(overlap))
         if candidate_scores:
@@ -304,15 +315,59 @@ def _resolve_entities(
                 type_score = 50.0
             elif candidate.entity_type in excluded_types:
                 type_score = -100.0
-            scored.append((max(candidate_scores) + type_score, candidate.entity_id))
-    scored = [(score, entity_id) for score, entity_id in scored if score]
-    if not scored:
+            score = max(candidate_scores) + type_score
+            if not score:
+                continue
+            previous = matches_by_id.get(candidate.entity_id)
+            matches_by_id[candidate.entity_id] = _EntityQueryMatch(
+                entity_id=candidate.entity_id,
+                entity_type=candidate.entity_type,
+                score=max(score, previous.score) if previous is not None else score,
+                explicit_names=frozenset(
+                    explicit_names | (set(previous.explicit_names) if previous is not None else set())
+                ),
+            )
+    matches = list(matches_by_id.values())
+    if not matches:
         return [], "unresolved", "no entity candidate matched the query"
-    best_score = max(score for score, _entity_id in scored)
-    best_ids = sorted(entity_id for score, entity_id in scored if score == best_score)
+    explicit_set_ids = _explicit_entity_set_ids(
+        matches,
+        preferred_types=preferred_types,
+        excluded_types=excluded_types,
+    )
+    if len(explicit_set_ids) > 1:
+        return explicit_set_ids, "resolved", f"resolved explicit entity set {','.join(explicit_set_ids)}"
+    best_score = max(match.score for match in matches)
+    best_ids = sorted(match.entity_id for match in matches if match.score == best_score)
     if len(best_ids) > 1:
         return best_ids, "ambiguous", f"entity candidates tied at score {best_score}"
     return best_ids, "resolved", f"resolved entity {best_ids[0]}"
+
+
+def _explicit_entity_set_ids(
+    matches: list[_EntityQueryMatch],
+    *,
+    preferred_types: set[str],
+    excluded_types: set[str],
+) -> list[str]:
+    eligible = [match for match in matches if match.entity_type not in excluded_types]
+    name_owners: dict[str, set[str]] = {}
+    type_owners: dict[str, set[str]] = {}
+    for match in eligible:
+        for name in match.explicit_names:
+            name_owners.setdefault(name, set()).add(match.entity_id)
+        if match.entity_type is not None:
+            type_owners.setdefault(match.entity_type, set()).add(match.entity_id)
+    explicit_ids = {
+        match.entity_id
+        for match in eligible
+        if any(name_owners[name] == {match.entity_id} for name in match.explicit_names)
+        or (
+            match.entity_type in preferred_types
+            and type_owners.get(match.entity_type) == {match.entity_id}
+        )
+    }
+    return sorted(explicit_ids) if len(explicit_ids) > 1 else []
 
 
 def _query_entity_type_constraints(query: str) -> tuple[set[str], set[str]]:

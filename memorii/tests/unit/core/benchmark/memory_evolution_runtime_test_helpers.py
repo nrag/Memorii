@@ -266,6 +266,11 @@ def runtime_execution_base_items(
         "in_progress",
         subject_name="Atlas Cleanup Branch B",
     )
+    branch_a_started = action_claim_by_state(
+        scenario,
+        "started",
+        subject_name="Atlas Cleanup Branch A",
+    )
     return [
         runtime_entity(
             scenario_id=scenario.scenario_id,
@@ -279,11 +284,20 @@ def runtime_execution_base_items(
         runtime_entity(
             scenario_id=scenario.scenario_id,
             runtime_id="rt:entity:branch-b",
-            canonical_id="ent:atlas-cleanup-branch-b",
+            canonical_id="runtime:branch-b",
             name="Atlas Cleanup Branch B",
             entity_type="task",
             aliases=["Atlas cleanup Branch B"],
             events=branch_b_events or [claim_event_id(branch_b_progress)],
+        ),
+        runtime_entity(
+            scenario_id=scenario.scenario_id,
+            runtime_id="rt:entity:branch-a",
+            canonical_id="runtime:branch-a",
+            name="Atlas Cleanup Branch A",
+            entity_type="task",
+            aliases=["Atlas cleanup Branch A"],
+            events=[claim_event_id(branch_a_started)],
         ),
         runtime_claim(
             scenario_id=scenario.scenario_id,

@@ -99,6 +99,16 @@ system_template: |-
   - entity_type: type/classification of an entity, e.g. project, service, person, task
   - semantic_fact: generic factual relationship when no product-specific predicate fits
 
+  Typed relation contracts:
+  - owner, approver, and api_owner must use object_entity_ref for a person entity declared
+    in the same response.
+  - dependency must use object_entity_ref for the depended-on entity.
+  - For every claim with object_entity_ref, set object_value to that entity's mention_text.
+    Never leave object_value blank or put qualifiers such as "temporary" in object_value;
+    qualifiers remain represented by the verbatim evidence quote.
+  - entity_type must use a supported literal object_value and no object_entity_ref.
+  - semantic_fact is historical evidence only; do not use it in place of a typed predicate.
+
   For each entity, emit aliases that are explicitly supported by the source text. Preserve a
   shared ambiguous name for each distinct typed entity when the text uses that name, so
   deterministic entity resolution can preserve split lineage. Do not invent
@@ -110,6 +120,7 @@ system_template: |-
   Use stable action status values when possible: started, in_progress, blocked, resumed, abandoned, completed, failed, or succeeded.
   Do not emit actions from hypothetical, noise, question, or pasted/quoted text unless the observation is an explicit tool/verified execution result.
   Action targets, dependencies, and blockers must reference entities declared in the same response.
+  Every action must have at least one target_entity_ref.
   Use dependency_entity_refs for entities the action depends on and blocking_entity_refs for
   entities that block the action. Never use action_ref values in either relation field.
 

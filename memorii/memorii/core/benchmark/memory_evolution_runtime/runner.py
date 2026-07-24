@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -40,6 +41,7 @@ from memorii.core.benchmark.memory_evolution_runtime.result_rows import (
 from memorii.core.benchmark.memory_evolution_sim import (
     JudgeAggregate,
     LatentGraphScenario,
+    OracleCheckpoint,
     judge_sim_checkpoint,
     sim_checkpoint_diagnostics,
 )
@@ -51,6 +53,44 @@ from memorii.core.memory_evolution import FallbackOutcome, ProviderAttemptStatus
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.tools.run_live_llm_eval import validate_live_safety
+
+
+@dataclass(frozen=True)
+class RuntimeRetrievalInvocation:
+    """Benchmark translation into the public production retrieval contract."""
+
+    purpose: RetrievalPurpose
+    include_context: bool
+    include_conflicts: bool
+
+
+def runtime_retrieval_invocation(checkpoint: OracleCheckpoint) -> RuntimeRetrievalInvocation:
+    if checkpoint.checkpoint_type == "execution_continuation":
+        return RuntimeRetrievalInvocation(
+            purpose=RetrievalPurpose.EXECUTION,
+            include_context=False,
+            include_conflicts=False,
+        )
+    view = checkpoint.required_retrieval_view
+    if view in {"all_versions", "conflicts"}:
+        return RuntimeRetrievalInvocation(
+            purpose=RetrievalPurpose.GRAPH_AUDIT,
+            include_context=True,
+            include_conflicts=True,
+        )
+    if view in {"historical_at", "evidence_only"}:
+        return RuntimeRetrievalInvocation(
+            purpose=RetrievalPurpose.ANSWER,
+            include_context=True,
+            include_conflicts=True,
+        )
+    if view == "current":
+        return RuntimeRetrievalInvocation(
+            purpose=RetrievalPurpose.ANSWER,
+            include_context=False,
+            include_conflicts=False,
+        )
+    raise ValueError(f"Unsupported runtime retrieval view: {view}")
 
 
 def validate_runtime_live_safety(
@@ -157,47 +197,22 @@ def run_runtime_scenarios(
             # Keep the benchmark on the provider-facing production retrieval
             # contract. The benchmark may judge the result, but it must not
             # bypass the provider's decision boundary.
-            is_graph_audit = checkpoint.checkpoint_type in {
-                "entity_reconstruction",
-                "conflict_audit",
-                "claim_rekey",
-            }
+            retrieval_invocation = runtime_retrieval_invocation(checkpoint)
             request_task_id = checkpoint.request_task_id or ingestion_context.task_id
             request_session_id = checkpoint.request_session_id or ingestion_context.session_id
             request_user_id = checkpoint.request_user_id or ingestion_context.user_id
-            retrieval_purpose = (
-                RetrievalPurpose.GRAPH_AUDIT
-                if is_graph_audit
-                else RetrievalPurpose.EXECUTION
-                if checkpoint.checkpoint_type == "execution_continuation"
-                else RetrievalPurpose.ANSWER
+            prefetch_result = provider.prefetch_result(
+                checkpoint.query_or_task,
+                reference_time=checkpoint.timestamp,
+                top_k=8,
+                include_context=retrieval_invocation.include_context,
+                include_conflicts=retrieval_invocation.include_conflicts,
+                purpose=retrieval_invocation.purpose,
+                query_language=checkpoint.query_language,
+                task_id=request_task_id,
+                session_id=request_session_id,
+                user_id=request_user_id,
             )
-            if is_graph_audit:
-                prefetch_result = provider.prefetch_result(
-                    checkpoint.query_or_task,
-                    reference_time=checkpoint.timestamp,
-                    top_k=8,
-                    include_context=True,
-                    include_conflicts=True,
-                    purpose=retrieval_purpose,
-                    query_language=checkpoint.query_language,
-                    task_id=request_task_id,
-                    session_id=request_session_id,
-                    user_id=request_user_id,
-                )
-            else:
-                # Omit optional retrieval controls so answer and execution
-                # checkpoints certify the provider's production defaults.
-                prefetch_result = provider.prefetch_result(
-                    checkpoint.query_or_task,
-                    reference_time=checkpoint.timestamp,
-                    top_k=8,
-                    purpose=retrieval_purpose,
-                    query_language=checkpoint.query_language,
-                    task_id=request_task_id,
-                    session_id=request_session_id,
-                    user_id=request_user_id,
-                )
             retrieval_decision = prefetch_result.evolution_decision
             if retrieval_decision is None:
                 raise RuntimeError("production prefetch omitted its evolution decision")
@@ -267,15 +282,15 @@ def run_runtime_scenarios(
             diagnostics = sim_checkpoint_diagnostics(
                 scenario=scenario, checkpoint=checkpoint, output=output, aggregate=aggregate
             )
+            checkpoint_runs = recorded_extraction_runs(extractor)[checkpoint_run_start:]
             runtime_buckets = runtime_failure_buckets(
                 checkpoint=checkpoint,
                 output=output,
-                aggregate=aggregate,
                 projection=projection,
                 graph_snapshot=graph_snapshot,
+                recorded_runs=checkpoint_runs,
             )
             success = aggregate.verdict.value == "pass" and not runtime_buckets
-            checkpoint_runs = recorded_extraction_runs(extractor)[checkpoint_run_start:]
             final_output_source = runtime_final_output_source(
                 effective_mode=effective_mode,
                 dry_run=dry_run,
@@ -302,6 +317,7 @@ def run_runtime_scenarios(
                 fallback_used=any(
                     run.fallback_outcome != FallbackOutcome.NOT_USED for run in checkpoint_runs
                 ),
+                recorded_runs=checkpoint_runs,
             )
             checkpoint_rows.append(row)
             scenario_checkpoint_rows.append(row)

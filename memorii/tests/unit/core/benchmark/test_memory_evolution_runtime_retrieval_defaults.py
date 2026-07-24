@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from memorii.core.benchmark.memory_evolution_runtime.runner import run_runtime_scenarios
+import pytest
+from memorii.core.benchmark.memory_evolution_runtime.runner import (
+    run_runtime_scenarios,
+    runtime_retrieval_invocation,
+)
 from memorii.core.benchmark.memory_evolution_sim import generate_memory_evolution_sim_scenarios
 from memorii.core.memory_evolution.operation_models import EvolutionOperationStatus
 from memorii.core.prompts.registry import default_prompt_root
 from memorii.core.provider.service import ProviderMemoryService
 
 
-def test_runtime_benchmark_preserves_production_retrieval_defaults(monkeypatch) -> None:
+def test_runtime_benchmark_dispatches_checkpoint_retrieval_contract(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
     original = ProviderMemoryService.prefetch_result
 
@@ -25,33 +29,48 @@ def test_runtime_benchmark_preserves_production_retrieval_defaults(monkeypatch) 
         noise_rate=0.35,
     )
 
-    graph_audit_scenario = next(
-        scenario
-        for scenario in scenarios
-        if any(checkpoint.checkpoint_type == "entity_reconstruction" for checkpoint in scenario.checkpoints)
-    )
-    answer_scenario = next(
-        scenario
-        for scenario in scenarios
-        if any(checkpoint.checkpoint_type == "current_truth" for checkpoint in scenario.checkpoints)
-    )
-
     run_runtime_scenarios(
-        scenarios=[graph_audit_scenario, answer_scenario],
+        scenarios=scenarios,
         mode="rule",
         dry_run=True,
         allow_live=False,
         prompt_root=default_prompt_root(),
     )
 
-    graph_audit_calls = [call for call in calls if call["purpose"] == "graph_audit"]
-    answer_calls = [call for call in calls if call["purpose"] == "answer"]
-    assert graph_audit_calls
-    assert answer_calls
-    assert all(call["include_context"] is True for call in graph_audit_calls)
-    assert all(call["include_conflicts"] is True for call in graph_audit_calls)
-    assert all("include_context" not in call for call in answer_calls)
-    assert all("include_conflicts" not in call for call in answer_calls)
+    checkpoints = [
+        checkpoint
+        for scenario in scenarios
+        for checkpoint in sorted(scenario.checkpoints, key=lambda item: (item.timestamp, item.checkpoint_id))
+    ]
+    assert len(calls) == len(checkpoints)
+    for checkpoint, call in zip(checkpoints, calls, strict=True):
+        invocation = runtime_retrieval_invocation(checkpoint)
+        assert call["purpose"] == invocation.purpose
+        assert call["include_context"] is invocation.include_context
+        assert call["include_conflicts"] is invocation.include_conflicts
+        assert call["reference_time"] == checkpoint.timestamp
+
+    calls_by_type = {
+        checkpoint.checkpoint_type: call for checkpoint, call in zip(checkpoints, calls, strict=True)
+    }
+    assert calls_by_type["entity_split_repair"]["purpose"] == "graph_audit"
+    assert calls_by_type["belief_ranking"]["purpose"] == "graph_audit"
+    assert calls_by_type["execution_continuation"]["purpose"] == "execution"
+    assert calls_by_type["modality_suppression"]["purpose"] == "answer"
+    assert calls_by_type["modality_suppression"]["include_context"] is True
+
+
+def test_runtime_retrieval_invocation_rejects_unknown_view() -> None:
+    scenario = generate_memory_evolution_sim_scenarios(
+        profile="adversarial",
+        scenario_count=1,
+        seed=7,
+        noise_rate=0.35,
+    )[0]
+    invalid = scenario.checkpoints[0].model_copy(update={"required_retrieval_view": "future_view"})
+
+    with pytest.raises(ValueError, match="Unsupported runtime retrieval view"):
+        runtime_retrieval_invocation(invalid)
 
 
 def test_dry_runtime_records_durable_outcome_for_every_extraction() -> None:

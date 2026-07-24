@@ -180,9 +180,14 @@ def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
     for row in runtime_checkpoint_rows:
         if row["passed"]:
             assert not row["runtime_failure_buckets"]
+            assert not row["runtime_failure_classification"]
         else:
-            assert row["runtime_failure_buckets"]
             assert row["runtime_failure_classification"]
+            if not row["runtime_failure_buckets"]:
+                assert all(
+                    classification.startswith("benchmark_comparison:")
+                    for classification in row["runtime_failure_classification"]
+                )
     warning_rows = [
         json.loads(line)
         for line in (run_dir / "sim_warning_examples.jsonl").read_text(encoding="utf-8").splitlines()
