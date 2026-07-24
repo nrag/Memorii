@@ -4,14 +4,14 @@ from memorii.core.benchmark.memory_evolution_sim import (
     JudgeVerdict,
     SimClaimAssessment,
     SimClaimSemanticRole,
-    SimSemanticViolationCode,
+    SimDecisionContractViolationCode,
     compile_sim_semantic_decision,
     generate_memory_evolution_sim_scenarios,
     judge_sim_checkpoint,
     remap_scenario_ids,
     render_sim_answer,
     sim_reconstruction_context_for_checkpoint,
-    validate_sim_semantic_decision,
+    validate_sim_decision_contract,
 )
 from memorii.core.benchmark.memory_evolution_sim.visible_output_validation import (
     validate_visible_sim_output,
@@ -104,17 +104,21 @@ def test_execution_rejects_ownership_and_inactive_action_claims() -> None:
         )
         for assessment in semantic.claim_assessments
     ]
-    ownership_validation = validate_sim_semantic_decision(
+    ownership_validation = validate_sim_decision_contract(
         context=context,
         semantic=semantic.model_copy(update={"claim_assessments": ownership_assessments}),
     )
-    blocked_validation = validate_sim_semantic_decision(
+    blocked_validation = validate_sim_decision_contract(
         context=context,
         semantic=semantic.model_copy(update={"claim_assessments": blocked_assessments}),
     )
 
-    assert SimSemanticViolationCode.NON_ACTION_SELECTED_FOR_EXECUTION in ownership_validation.violation_codes
-    assert SimSemanticViolationCode.INACTIVE_ACTION_SELECTED_FOR_EXECUTION in blocked_validation.violation_codes
+    assert SimDecisionContractViolationCode.NON_ACTION_SELECTED_FOR_EXECUTION in {
+        issue.code for issue in ownership_validation.issues
+    }
+    assert SimDecisionContractViolationCode.INACTIVE_ACTION_SELECTED_FOR_EXECUTION in {
+        issue.code for issue in blocked_validation.issues
+    }
 
 
 def test_sim_compilation_is_invariant_to_candidate_order_and_irrelevant_insertion() -> None:
@@ -138,6 +142,9 @@ def test_sim_compilation_is_invariant_to_candidate_order_and_irrelevant_insertio
         update={
             "claim_id": "irrelevant-visible-claim",
             "subject_entity_id": "irrelevant-visible-entity",
+            "predicate_id": "unrelated_test_predicate",
+            "object_entity_id": None,
+            "object_entity_type": None,
         }
     )
     changed = context.model_copy(
@@ -236,6 +243,54 @@ def test_sim_answer_rendering_cannot_mutate_graph_channels() -> None:
     assert rendered_payload.pop("answer") == "Equivalent rendered answer"
     compiled_payload.pop("answer")
     assert rendered_payload == compiled_payload
+
+
+def test_hidden_expectation_mutation_cannot_change_compilation_but_changes_judgment() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="current_vs_historical_truth",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "current_truth")
+    context = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    )
+    compiled = compile_sim_semantic_decision(context=context, semantic=semantic)
+    mutated_checkpoint = checkpoint.model_copy(
+        update={
+            "expected_entity_ids": ["hidden:wrong-entity"],
+            "expected_claim_ids": ["hidden:wrong-claim"],
+            "expected_citation_event_ids": ["hidden:wrong-event"],
+            "expected_answer": "hidden wrong answer",
+        }
+    )
+    mutated_context = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=mutated_checkpoint,
+    )
+    compiled_with_mutated_oracle = compile_sim_semantic_decision(
+        context=mutated_context,
+        semantic=semantic,
+    )
+
+    assert mutated_context == context
+    assert compiled_with_mutated_oracle == compiled
+    assert judge_sim_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        output=compiled,
+    ).verdict == JudgeVerdict.PASS
+    assert judge_sim_checkpoint(
+        scenario=scenario,
+        checkpoint=mutated_checkpoint,
+        output=compiled,
+    ).verdict == JudgeVerdict.FAIL
 
 
 def test_audit_graph_entity_policy_is_consistent_across_compiler_and_validator() -> None:

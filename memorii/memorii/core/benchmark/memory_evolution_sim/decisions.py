@@ -8,6 +8,13 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from memorii.core.benchmark.memory_evolution_sim.decision_compiler import (
+    compile_sim_semantic_decision,
+    render_sim_answer,
+)
+from memorii.core.benchmark.memory_evolution_sim.decision_contract import (
+    validate_sim_decision_contract,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
@@ -15,11 +22,6 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     SimSemanticDecision,
     SimSystemOutput,
     SurfaceObservation,
-)
-from memorii.core.benchmark.memory_evolution_sim.semantic_pipeline import (
-    compile_sim_semantic_decision,
-    render_sim_answer,
-    validate_sim_semantic_decision,
 )
 from memorii.core.benchmark.memory_evolution_sim.utils import extract_rule_answer, normalize_sim_text, ordered_unique
 from memorii.core.benchmark.memory_evolution_sim.visible_output_validation import (
@@ -126,7 +128,7 @@ def memory_evolution_sim_engine_result_from_llm(
             status=LLMDecisionStatus.VALIDATION_FAILED,
         )
         return rule_output, trace, False, "llm_decision_validation_failed"
-    validation = validate_sim_semantic_decision(context=context, semantic=semantic)
+    validation = validate_sim_decision_contract(context=context, semantic=semantic)
     if not validation.valid:
         trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_SIM_RECONSTRUCTION,
@@ -139,10 +141,11 @@ def memory_evolution_sim_engine_result_from_llm(
         trace.validation_issues.extend(
             LLMValidationIssue(
                 stage=LLMValidationStage.SEMANTIC,
-                code=code.value,
-                message=code.value.replace("_", " "),
+                code=issue.code.value,
+                location=issue.location,
+                message=issue.message,
             )
-            for code in validation.violation_codes
+            for issue in validation.issues
         )
         return rule_output, trace, False, "llm_semantic_validation_failed"
     try:

@@ -5,6 +5,7 @@ import json
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import pytest
 from memorii.core.benchmark.artifact_rows import (
@@ -609,6 +610,30 @@ def test_report_rejects_empty_layer_fingerprints() -> None:
         BenchmarkReportSummary.model_validate(payload)
 
 
+def test_live_report_rejects_fake_oracle_provenance() -> None:
+    payload = deepcopy(_benchmark_report_payload())
+    runtime = cast(dict[str, object], payload["runtime"])
+    runtime_health = cast(
+        dict[str, object],
+        runtime["runtime_provider_health"],
+    )
+    report_health = cast(
+        dict[str, object],
+        payload["runtime_provider_health"],
+    )
+    payload["execution_source"] = "fake_oracle"
+    payload["final_output_source_counts"] = {"fake_oracle": 2}
+    payload["fake_calls"] = 2
+    runtime["final_output_source_counts"] = {"fake_oracle": 2}
+    runtime_health["execution_source"] = "fake_oracle"
+    runtime_health["fake_extractor_calls"] = 2
+    report_health["execution_source"] = "fake_oracle"
+    report_health["fake_extractor_calls"] = 2
+
+    with pytest.raises(ValidationError, match="fake provenance"):
+        BenchmarkReportSummary.model_validate(payload)
+
+
 def test_typed_jsonl_writer_rejects_unvalidated_mapping(tmp_path: Path) -> None:
     with pytest.raises(ArtifactValidationError, match="must be a validated SimCheckpointResultRow"):
         write_typed_jsonl(
@@ -634,6 +659,9 @@ def test_memory_evolution_owned_submodule_imports_resolve() -> None:
         "memorii.core.benchmark.memory_evolution_sim.schemas": "SimSystemOutput",
         "memorii.core.benchmark.memory_evolution_sim.generation": "generate_memory_evolution_sim_scenarios",
         "memorii.core.benchmark.memory_evolution_sim.candidate_cards": "sim_reconstruction_context_for_checkpoint",
+        "memorii.core.benchmark.memory_evolution_sim.claim_policy": "is_execution_eligible_claim",
+        "memorii.core.benchmark.memory_evolution_sim.decision_contract": "validate_sim_decision_contract",
+        "memorii.core.benchmark.memory_evolution_sim.decision_compiler": "compile_sim_semantic_decision",
         "memorii.core.benchmark.memory_evolution_sim.decisions": "expected_sim_output_for_checkpoint",
         "memorii.core.benchmark.memory_evolution_sim.judges": "judge_sim_checkpoint",
         "memorii.core.benchmark.memory_evolution_sim.diagnostics": "sim_checkpoint_diagnostics",

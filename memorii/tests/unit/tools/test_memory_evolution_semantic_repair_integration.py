@@ -4,21 +4,24 @@ from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import (
     load_memory_evolution_v1_fixture_set,
 )
 from memorii.core.benchmark.memory_evolution_decision import (
-    MemoryEvolutionBeliefState,
     MemoryEvolutionDecisionContext,
-    MemoryEvolutionMemoryKind,
-    MemoryEvolutionScenario,
-    MemoryEvolutionSemanticBeliefScore,
-    expected_memory_evolution_semantic_decision_for_checkpoint,
+    MemoryEvolutionDecisionOperation,
+    MemoryEvolutionScopeKind,
+    MemoryEvolutionSemanticDecision,
+    MemoryEvolutionSemanticTemporalFrame,
     fake_llm_result_for_memory_evolution,
+    memory_evolution_context_for_checkpoint,
 )
 from memorii.core.benchmark.memory_evolution_sim import (
-    LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
+    SimClaimAssessment,
+    SimClaimSemanticRole,
+    SimSemanticDecision,
+    sim_reconstruction_context_for_checkpoint,
 )
 from memorii.core.llm_provider.models import LLMDecisionResult, LLMStructuredRequest
 from memorii.core.prompts.models import PromptModelDefaults
-from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
+from memorii.core.prompts.registry import default_prompt_root
 from memorii.tools.benchmark_suites import memory_evolution as curated_suite
 from memorii.tools.benchmark_suites import memory_evolution_sim as sim_suite
 from memorii.tools.benchmark_suites.memory_evolution_artifacts import _llm_call_count
@@ -28,34 +31,19 @@ from memorii.tools.benchmark_suites.runtime_dependencies import (
 )
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     generate_scenario_by_family,
-    oracle_shaped_sim_semantic_decision,
     provider_result_for_sim_semantic,
 )
 
 
-class _RepairingFakeAdapter:
+class _ScriptedSimRepairAdapter:
     provider_name = "fake"
 
     def __init__(
         self,
         *,
-        scenarios: list[LatentGraphScenario],
-        registry: PromptRegistry,
+        corrected_by_checkpoint: dict[str, SimSemanticDecision],
     ) -> None:
-        self._registry = registry
-        self._expected = {
-            (scenario.scenario_id, checkpoint.checkpoint_id): (
-                oracle_shaped_sim_semantic_decision(
-                    context=sim_suite.sim_reconstruction_context_for_checkpoint(
-                        scenario=scenario,
-                        checkpoint=checkpoint,
-                    ),
-                    checkpoint=checkpoint,
-                )
-            )
-            for scenario in scenarios
-            for checkpoint in scenario.checkpoints
-        }
+        self._corrected_by_checkpoint = corrected_by_checkpoint
 
     def decide(
         self,
@@ -64,11 +52,11 @@ class _RepairingFakeAdapter:
         request_id: str,
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
-        expected = self._expected[(context.scenario_id, context.checkpoint.checkpoint_id)]
+        corrected = self._corrected_by_checkpoint[context.checkpoint.checkpoint_id]
         decision = (
-            expected
+            corrected
             if context.repair_request is not None
-            else expected.model_copy(
+            else corrected.model_copy(
                 update={
                     "claim_assessments": [
                         assessment.model_copy(
@@ -77,7 +65,7 @@ class _RepairingFakeAdapter:
                         if index == 0
                         else assessment
                         for index, assessment in enumerate(
-                            expected.claim_assessments
+                            corrected.claim_assessments
                         )
                     ],
                 }
@@ -100,26 +88,15 @@ class _RepairingFakeAdapter:
         )
 
 
-class _RepairingCuratedFakeAdapter:
+class _ScriptedCuratedRepairAdapter:
     provider_name = "fake"
 
     def __init__(
         self,
         *,
-        scenarios: list[MemoryEvolutionScenario],
-        registry: PromptRegistry,
+        corrected_by_checkpoint: dict[str, MemoryEvolutionSemanticDecision],
     ) -> None:
-        self._registry = registry
-        self._expected = {
-            (scenario.scenario_id, checkpoint.checkpoint_id): (
-                expected_memory_evolution_semantic_decision_for_checkpoint(
-                    scenario=scenario,
-                    checkpoint=checkpoint,
-                )
-            )
-            for scenario in scenarios
-            for checkpoint in scenario.checkpoints
-        }
+        self._corrected_by_checkpoint = corrected_by_checkpoint
 
     def decide(
         self,
@@ -128,28 +105,19 @@ class _RepairingCuratedFakeAdapter:
         request_id: str,
         metadata: dict[str, object] | None = None,
     ) -> LLMDecisionResult:
-        expected = self._expected[(context.scenario_id, context.checkpoint.checkpoint_id)]
+        corrected = self._corrected_by_checkpoint[context.checkpoint.checkpoint_id]
         if context.repair_request is not None:
-            decision = expected
+            decision = corrected
         else:
-            non_belief = next(
-                card
-                for card in context.visible_memory_cards
-                if card.memory_kind != MemoryEvolutionMemoryKind.BELIEF
-            )
-            decision = expected.model_copy(
+            decision = corrected.model_copy(
                 update={
                     "considered_memory_ids": [
-                        *expected.considered_memory_ids,
-                        non_belief.memory_id,
+                        *corrected.considered_memory_ids,
+                        "not-visible",
                     ],
-                    "belief_scores": [
-                        *expected.belief_scores,
-                        MemoryEvolutionSemanticBeliefScore(
-                            memory_id=non_belief.memory_id,
-                            belief=0.5,
-                            belief_state=MemoryEvolutionBeliefState.UNKNOWN,
-                        ),
+                    "selected_memory_ids": [
+                        *corrected.selected_memory_ids,
+                        "not-visible",
                     ],
                 }
             )
@@ -170,6 +138,72 @@ class _RepairingCuratedFakeAdapter:
         )
 
 
+def _scripted_current_owner_decision(
+    context: MemoryEvolutionSimReconstructionContext,
+) -> SimSemanticDecision:
+    primary = next(
+        claim
+        for claim in context.visible_claims
+        if claim.subject_entity_type == "project"
+        and claim.predicate_id == "owner"
+        and claim.lifecycle_state == "active"
+    )
+    return SimSemanticDecision(
+        operation="answer",
+        claim_assessments=[
+            SimClaimAssessment(
+                claim_id=claim.claim_id,
+                role=(
+                    SimClaimSemanticRole.PRIMARY
+                    if claim.claim_id == primary.claim_id
+                    else SimClaimSemanticRole.IRRELEVANT
+                ),
+                belief_rank=None,
+            )
+            for claim in context.visible_claims
+        ],
+        answer=primary.object_value,
+        next_action=None,
+        uncertain_ids=[],
+        confidence=0.9,
+        rationale="scripted visible-context current owner selection",
+    )
+
+
+def _scripted_latest_fact_decision(
+    context: MemoryEvolutionDecisionContext,
+) -> MemoryEvolutionSemanticDecision:
+    selected = max(
+        context.visible_memory_cards,
+        key=lambda card: (card.timestamp, card.trust_level, card.memory_id),
+    )
+    answer = selected.statement.rsplit(" ", maxsplit=1)[-1].rstrip(".")
+    return MemoryEvolutionSemanticDecision(
+        operation=MemoryEvolutionDecisionOperation.ANSWER,
+        answer=answer,
+        next_action=None,
+        confidence=0.9,
+        query_temporal_frame=MemoryEvolutionSemanticTemporalFrame(
+            temporal_reference=context.decision_contract.temporal_reference,
+            decision_domain=context.decision_contract.decision_domain,
+            scope_kind=MemoryEvolutionScopeKind.NONE,
+            scope_key=None,
+            anchor_id=None,
+            valid_from=None,
+            valid_to=None,
+            confidence=0.9,
+            rationale="scripted current visible-context frame",
+        ),
+        selected_memory_ids=[selected.memory_id],
+        considered_memory_ids=[
+            card.memory_id for card in context.visible_memory_cards
+        ],
+        belief_scores=[],
+        rationale="scripted latest visible fact selection",
+        requires_judge_review=False,
+    )
+
+
 def test_sim_runner_repairs_once_and_accounts_for_both_provider_calls(
     monkeypatch,
 ) -> None:
@@ -179,12 +213,19 @@ def test_sim_runner_repairs_once_and_accounts_for_both_provider_calls(
         seed=7,
         noise_rate=0.35,
     )
+    scenario = scenario.model_copy(update={"checkpoints": [scenario.checkpoints[0]]})
+    context = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=scenario.checkpoints[0],
+    )
+    corrected = _scripted_current_owner_decision(context)
     monkeypatch.setattr(
         sim_suite,
         "LLMMemoryEvolutionSimReconstructionAdapter",
-        lambda *, runner, registry: _RepairingFakeAdapter(
-            scenarios=[scenario],
-            registry=registry,
+        lambda *, runner, registry: _ScriptedSimRepairAdapter(
+            corrected_by_checkpoint={
+                scenario.checkpoints[0].checkpoint_id: corrected
+            },
         ),
     )
 
@@ -223,10 +264,20 @@ def test_curated_runner_records_schema_valid_semantic_rejection_before_repair(
     monkeypatch,
 ) -> None:
     scenario = load_memory_evolution_v1_fixture_set()[0]
+    scenario = scenario.model_copy(update={"checkpoints": [scenario.checkpoints[0]]})
+    context = memory_evolution_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=scenario.checkpoints[0],
+    )
+    corrected = _scripted_latest_fact_decision(context)
     monkeypatch.setattr(
         curated_suite,
         "ExpectedMemoryEvolutionFakeAdapter",
-        _RepairingCuratedFakeAdapter,
+        lambda *, scenarios, registry: _ScriptedCuratedRepairAdapter(
+            corrected_by_checkpoint={
+                scenario.checkpoints[0].checkpoint_id: corrected
+            }
+        ),
     )
 
     _scenario_rows, checkpoint_rows, llm_rows = curated_suite._run_memory_evolution_transitions(
@@ -246,8 +297,7 @@ def test_curated_runner_records_schema_valid_semantic_rejection_before_repair(
         assert row.provider_attempts[0].semantic_validation_status == "failed"
         assert row.provider_attempts[0].accepted is False
         assert set(row.provider_attempts[0].validation_issues) == {
-            "belief_scores_forbidden",
-            "invalid_belief_id",
+            "invalid_memory_id",
         }
         assert row.provider_attempts[1].semantic_validation_status == "passed"
         assert row.provider_attempts[1].accepted is True

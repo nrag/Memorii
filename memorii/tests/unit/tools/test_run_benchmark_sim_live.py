@@ -27,9 +27,13 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
 
         def complete_structured(self, request: LLMStructuredRequest, *, config: LLMRuntimeConfig) -> LLMStructuredResponse:
             del config
-            claim_ids = request.output_schema["properties"]["claim_assessments"][
-                "items"
-            ]["properties"]["claim_id"]["enum"]
+            assessment_variants = request.output_schema["properties"][
+                "claim_assessments"
+            ]["items"]["anyOf"]
+            claim_ids = [
+                variant["properties"]["claim_id"]["const"]
+                for variant in assessment_variants
+            ]
             output = {
                 "operation": "abstain",
                 "claim_assessments": [

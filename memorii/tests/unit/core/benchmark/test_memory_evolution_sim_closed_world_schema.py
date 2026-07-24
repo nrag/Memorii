@@ -7,7 +7,10 @@ from memorii.core.benchmark.llm_adapters import (
     LLMMemoryEvolutionSimReconstructionAdapter,
 )
 from memorii.core.benchmark.memory_evolution_sim import (
+    SimDecisionContractViolationCode,
+    SimSemanticDecision,
     sim_reconstruction_context_for_checkpoint,
+    validate_sim_decision_contract,
 )
 from memorii.core.benchmark.memory_evolution_sim.closed_world_schema import (
     constrain_sim_semantic_contract,
@@ -50,6 +53,22 @@ def _context():
     )
 
 
+def _assessment_variants(schema: dict[str, object]) -> list[dict[str, object]]:
+    assessments = schema["properties"]["claim_assessments"]  # type: ignore[index]
+    return assessments["items"]["anyOf"]  # type: ignore[index]
+
+
+def _variant_by_claim_id(
+    schema: dict[str, object],
+    claim_id: str,
+) -> dict[str, object]:
+    return next(
+        variant
+        for variant in _assessment_variants(schema)
+        if variant["properties"]["claim_id"]["const"] == claim_id  # type: ignore[index]
+    )
+
+
 def test_closed_world_schema_requires_exactly_one_assessment_per_visible_claim() -> None:
     _scenario, _checkpoint, context = _context()
     constrained = constrain_sim_semantic_contract(
@@ -57,11 +76,13 @@ def test_closed_world_schema_requires_exactly_one_assessment_per_visible_claim()
         context=context,
     )
     assessments = constrained.output_schema["properties"]["claim_assessments"]
-    claim_id = assessments["items"]["properties"]["claim_id"]
 
     assert assessments["minItems"] == len(context.visible_claim_ids)
     assert assessments["maxItems"] == len(context.visible_claim_ids)
-    assert claim_id["enum"] == sorted(context.visible_claim_ids)
+    assert sorted(
+        variant["properties"]["claim_id"]["const"]  # type: ignore[index]
+        for variant in assessments["items"]["anyOf"]
+    ) == sorted(context.visible_claim_ids)
 
 
 def test_closed_world_schema_uses_task_operation_domain_with_abstention() -> None:
@@ -122,11 +143,10 @@ def test_closed_world_schema_forbids_ranks_for_non_ranking_tasks() -> None:
         context=context,
     )
 
-    rank_schema = constrained.output_schema["properties"]["claim_assessments"]["items"][
-        "properties"
-    ]["belief_rank"]
-
-    assert rank_schema == {"type": "null"}
+    assert all(
+        variant["properties"]["belief_rank"] == {"type": "null"}  # type: ignore[index]
+        for variant in _assessment_variants(constrained.output_schema)
+    )
 
 
 def test_closed_world_schema_digest_is_order_invariant_and_content_sensitive() -> None:
@@ -141,10 +161,19 @@ def test_closed_world_schema_digest_is_order_invariant_and_content_sensitive() -
             update={"visible_claim_ids": list(reversed(context.visible_claim_ids))}
         ),
     )
+    new_claim = context.visible_claims[0].model_copy(
+        update={"claim_id": "new-visible-claim"}
+    )
     changed = constrain_sim_semantic_contract(
         contract=_contract(),
         context=context.model_copy(
-            update={"visible_claim_ids": [*context.visible_claim_ids, "new-visible-claim"]}
+            update={
+                "visible_claim_ids": [
+                    *context.visible_claim_ids,
+                    "new-visible-claim",
+                ],
+                "visible_claims": [*context.visible_claims, new_claim],
+            }
         ),
     )
 
@@ -172,8 +201,95 @@ def test_sim_adapter_sends_request_specific_closed_world_schema() -> None:
 
     assert result.success is True
     assert client.last_request is not None
-    assessments = client.last_request.output_schema["properties"]["claim_assessments"]
-    assert assessments["items"]["properties"]["claim_id"]["enum"] == sorted(
-        context.visible_claim_ids
-    )
+    assert sorted(
+        variant["properties"]["claim_id"]["const"]  # type: ignore[index]
+        for variant in _assessment_variants(client.last_request.output_schema)
+    ) == sorted(context.visible_claim_ids)
     assert client.last_request.prompt_hash == client.last_request.metadata["prompt_hash"]
+
+
+def test_execution_schema_prevents_ineligible_primary_roles() -> None:
+    scenario = generate_scenario_by_family(
+        profile="long_horizon",
+        family="abandoned_then_resumed_work",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "execution_continuation")
+    context = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    constrained = constrain_sim_semantic_contract(
+        contract=_contract(),
+        context=context,
+    )
+    eligible = next(
+        claim
+        for claim in context.visible_claims
+        if claim.predicate_id == "action_state"
+        and claim.lifecycle_state == "active"
+        and claim.object_value == "in_progress"
+    )
+    owner = next(
+        claim for claim in context.visible_claims if claim.predicate_id == "owner"
+    )
+    blocked = next(
+        claim
+        for claim in context.visible_claims
+        if claim.predicate_id == "action_state"
+        and claim.object_value == "blocked"
+    )
+
+    assert _variant_by_claim_id(
+        constrained.output_schema,
+        eligible.claim_id,
+    )["properties"]["role"]["enum"] == ["primary", "relevant", "irrelevant"]  # type: ignore[index]
+    for claim in (owner, blocked):
+        assert _variant_by_claim_id(
+            constrained.output_schema,
+            claim.claim_id,
+        )["properties"]["role"]["enum"] == ["relevant", "irrelevant"]  # type: ignore[index]
+
+
+def test_execution_schema_and_validator_agree_on_primary_eligibility() -> None:
+    scenario = generate_scenario_by_family(
+        profile="long_horizon",
+        family="abandoned_then_resumed_work",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "execution_continuation")
+    context = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    constrained = constrain_sim_semantic_contract(
+        contract=_contract(),
+        context=context,
+    )
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    )
+    owner = next(
+        claim for claim in context.visible_claims if claim.predicate_id == "owner"
+    )
+    payload = semantic.model_dump(mode="json")
+    for assessment in payload["claim_assessments"]:
+        assessment["role"] = (
+            "primary" if assessment["claim_id"] == owner.claim_id else "irrelevant"
+        )
+
+    errors = list(
+        Draft202012Validator(constrained.output_schema).iter_errors(payload)
+    )
+    validation = validate_sim_decision_contract(
+        context=context,
+        semantic=SimSemanticDecision.model_validate(payload),
+    )
+
+    assert errors
+    assert SimDecisionContractViolationCode.NON_ACTION_SELECTED_FOR_EXECUTION in {
+        issue.code for issue in validation.issues
+    }

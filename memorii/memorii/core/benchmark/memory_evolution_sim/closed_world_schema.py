@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from memorii.core.benchmark.memory_evolution_sim.claim_policy import (
+    is_execution_eligible_claim,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
 )
@@ -46,11 +49,33 @@ def constrain_sim_semantic_contract(
         raise ValueError("claim assessment schema is incomplete")
 
     visible_claim_ids = sorted(set(context.visible_claim_ids))
+    visible_claims = {claim.claim_id: claim for claim in context.visible_claims}
+    if set(visible_claim_ids) != set(visible_claims):
+        raise ValueError("visible claim IDs and cards must describe the same closed world")
     assessments["minItems"] = len(visible_claim_ids)
     assessments["maxItems"] = len(visible_claim_ids)
-    claim_id["enum"] = visible_claim_ids
     if context.checkpoint.task_contract.belief_ranking_policy == "forbidden":
         item_properties["belief_rank"] = {"type": "null"}
+    assessment_variants: list[dict[str, object]] = []
+    for visible_claim_id in visible_claim_ids:
+        variant = deepcopy(items)
+        variant_properties = variant["properties"]
+        if not isinstance(variant_properties, dict):
+            raise ValueError("claim assessment variant must define properties")
+        variant_properties["claim_id"] = {
+            "type": "string",
+            "const": visible_claim_id,
+        }
+        if (
+            context.checkpoint.task_contract.requires_next_action
+            and not is_execution_eligible_claim(visible_claims[visible_claim_id])
+        ):
+            variant_properties["role"] = {
+                "type": "string",
+                "enum": ["relevant", "irrelevant"],
+            }
+        assessment_variants.append(variant)
+    assessments["items"] = {"anyOf": assessment_variants}
 
     uncertain = properties.get("uncertain_ids")
     if not isinstance(uncertain, dict):

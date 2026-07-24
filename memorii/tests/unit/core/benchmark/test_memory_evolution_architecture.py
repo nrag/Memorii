@@ -66,7 +66,7 @@ def _dynamic_import_capabilities(path: Path) -> list[tuple[int, str]]:
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"eval", "exec"}:
             capabilities.append((node.lineno, node.func.id))
         elif isinstance(node, ast.Constant) and node.value == "__import__":
-            capabilities.append((node.lineno, node.value))
+            capabilities.append((node.lineno, "__import__"))
     return capabilities
 
 
@@ -233,7 +233,15 @@ def test_memory_evolution_model_execution_paths_reference_no_oracle_fields() -> 
         / "benchmark"
         / "memory_evolution_decision"
         / "closed_world_schema.py",
-        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "semantic_pipeline.py",
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "claim_policy.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "decision_contract.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "decision_compiler.py",
         PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "closed_world_schema.py",
         PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "visible_graph_closure.py",
         SOURCE_ROOT / "prompts" / "memory_evolution_decision" / "v1.yaml",
@@ -250,6 +258,74 @@ def test_memory_evolution_model_execution_paths_reference_no_oracle_fields() -> 
     ]
 
     assert violations == []
+
+
+def test_simulator_compiler_modules_cannot_import_hidden_oracle_or_judges() -> None:
+    compiler_paths = (
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "claim_policy.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "decision_contract.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "decision_compiler.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "visible_graph_closure.py",
+    )
+    forbidden_modules = {
+        "memorii.core.benchmark.memory_evolution_sim.judges",
+        "memorii.core.benchmark.memory_evolution_sim.answer_judges",
+        "memorii.core.benchmark.memory_evolution_sim.support_judges",
+        "memorii.core.benchmark.memory_evolution_sim.judge_features",
+    }
+    forbidden_symbols = {"OracleCheckpoint", "LatentGraphScenario"}
+    violations: list[str] = []
+    for path in compiler_paths:
+        for module, names in _imports(path):
+            if module in forbidden_modules:
+                violations.append(f"{path}:{module}")
+            violations.extend(
+                f"{path}:{name}" for name in names if name in forbidden_symbols
+            )
+
+    assert violations == []
+
+
+def test_runtime_runner_does_not_invoke_simulator_decision_pipeline() -> None:
+    runner_path = (
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_runtime"
+        / "runner.py"
+    )
+    forbidden_modules = {
+        "memorii.core.benchmark.memory_evolution_sim.decision_contract",
+        "memorii.core.benchmark.memory_evolution_sim.decision_compiler",
+        "memorii.core.benchmark.memory_evolution_sim.decisions",
+        "memorii.core.benchmark.memory_evolution_sim.visible_graph_closure",
+    }
+    forbidden_calls = {
+        "validate_sim_decision_contract",
+        "compile_sim_semantic_decision",
+        "expected_sim_output_for_checkpoint",
+        "oracle_shaped_sim_semantic_decision",
+        "memory_evolution_sim_engine_result_from_llm",
+    }
+    imported_modules = {module for module, _names in _imports(runner_path)}
+    tree = ast.parse(runner_path.read_text(encoding="utf-8"), filename=str(runner_path))
+    invoked = {
+        call_name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and (call_name := _call_attribute(node)) is not None
+    }
+
+    assert imported_modules.isdisjoint(forbidden_modules)
+    assert invoked.isdisjoint(forbidden_calls)
 
 
 def test_benchmark_prompt_adapters_use_explicit_context_annotations() -> None:

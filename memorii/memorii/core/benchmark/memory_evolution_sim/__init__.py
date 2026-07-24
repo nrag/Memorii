@@ -1,6 +1,16 @@
 """Public facade for memory evolution simulator helpers."""
 
 from memorii.core.benchmark.memory_evolution_sim.candidate_cards import sim_reconstruction_context_for_checkpoint
+from memorii.core.benchmark.memory_evolution_sim.decision_compiler import (
+    compile_sim_semantic_decision,
+    render_sim_answer,
+)
+from memorii.core.benchmark.memory_evolution_sim.decision_contract import (
+    SimDecisionContractIssue,
+    SimDecisionContractValidation,
+    SimDecisionContractViolationCode,
+    validate_sim_decision_contract,
+)
 from memorii.core.benchmark.memory_evolution_sim.decisions import (
     expected_sim_output_for_checkpoint,
     memory_evolution_sim_engine_result_from_llm,
@@ -59,13 +69,6 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     VisibleSurfaceObservation,
     WorldTransition,
 )
-from memorii.core.benchmark.memory_evolution_sim.semantic_pipeline import (
-    SimSemanticValidation,
-    SimSemanticViolationCode,
-    compile_sim_semantic_decision,
-    render_sim_answer,
-    validate_sim_semantic_decision,
-)
 
 __all__ = [
     "ClaimArgument",
@@ -99,8 +102,9 @@ __all__ = [
     "SimSemanticDecision",
     "SimSemanticDecisionOutput",
     "SimSemanticRepairRequest",
-    "SimSemanticValidation",
-    "SimSemanticViolationCode",
+    "SimDecisionContractIssue",
+    "SimDecisionContractValidation",
+    "SimDecisionContractViolationCode",
     "SimSystemOutput",
     "SurfaceObservation",
     "VisibleCheckpointCandidate",
@@ -123,5 +127,5 @@ __all__ = [
     "sim_reconstruction_context_for_checkpoint",
     "compile_sim_semantic_decision",
     "render_sim_answer",
-    "validate_sim_semantic_decision",
+    "validate_sim_decision_contract",
 ]

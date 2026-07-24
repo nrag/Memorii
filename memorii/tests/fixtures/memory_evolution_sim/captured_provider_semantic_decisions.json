@@ -1,0 +1,1184 @@
+[
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_f5c82859990a3980c4ad",
+    "checkpoint_id": "oid_d99ae764db15755ad47d",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": null,
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_21d6a15f7a8f2e402341",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_365ef87416dcf767d0fd",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_3b32934da4df5794ffab",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_522c2816f97c3f079682",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_c9b5c05747e6fc9e3c0b",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d1374253216065708d74",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "graph_reconstruction",
+      "rationale": "The Atlas Billing Migration project (oid_4e1affecd7e1f25addbc) is confirmed as a project with current owner Rina (oid_d1374253216065708d74) as per the latest and highest trust claim. Previous owner claims for Priya (oid_3b32934da4df5794ffab) are superseded, and Carol's ownership claim (oid_522c2816f97c3f079682) is invalidated and contradicted by the latest data. The Atlas Platform Service (oid_49ff3da0663a047e522) is a distinct internal platform service entity, owned by Carol (oid_365ef87416dcf767d0fd), with no ownership conflict. The alias relation confirms 'Atlas' refers to the billing migration project. The contradicts relation clarifies the ownership conflict between Carol and Rina claims for the project. Noise and unrelated claims are excluded.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_f0608d421564915e13c9",
+    "checkpoint_id": "oid_377f8fe5475bba12debd",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Owen",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5a5328494cc0be15b5a2",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_7fbabeff2064659e034d",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9858eab0c1ee63c28cc2",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a9e59477fa26e04980ab",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bf200f5633984f96ff92",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The Atlas billing migration project is currently owned by Owen according to the most recent and trusted org_directory result (claim oid_bf200f5633984f96ff92) dated 2030-03-13. Previous ownership by Eli (claim oid_9858eab0c1ee63c28cc2) is superseded and thus not current. Claims about Iris owning the Atlas service are irrelevant as that refers to a different entity (Atlas Platform Service). Therefore, Owen is the current owner of the Atlas billing migration.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_f0608d421564915e13c9",
+    "checkpoint_id": "oid_3f127f4c8b07a7bb5a89",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Eli",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5a5328494cc0be15b5a2",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_7fbabeff2064659e034d",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9858eab0c1ee63c28cc2",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a9e59477fa26e04980ab",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bf200f5633984f96ff92",
+          "role": "relevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The query asks for the Atlas migration owner in January before the directory correction. The claim oid_9858eab0c1ee63c28cc2 states that Eli owned Atlas starting from 2030-01-06 until 2030-03-13, which covers January and is before the directory correction on 2030-03-13 when Owen became the owner (oid_bf200f5633984f96ff92). Therefore, Eli was the owner in January before the directory correction.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_2d1db2a7b6866110d7be",
+    "checkpoint_id": "oid_f41bbeb17c14dc25cbda",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Rina",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_09cb9f213e5c8874b704",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5b1d95dd5e2c76a447fe",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_6c3da8d0a30a9c4a4cc8",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_8316627137ae2de0f4c7",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bd8011e61114f107f3fb",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_da37e82b598adff61709",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The claim 'oid_da37e82b598adff61709' states that Rina is the current owner of the Atlas billing migration, supported by a recent and highly trusted org_directory tool result from 2034-03-14. Earlier claims that Marta or Sam own Atlas are either superseded or refer to a different entity (Atlas service). Therefore, Rina is the current owner.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_f92c667b9cc6e81fee74",
+    "checkpoint_id": "oid_6dad5521a38ef27d95a1",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Rina",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_0b76e6b178d5db30aa9d",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bbe0652be0ea80a3e42f",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bcf569d5eaf6f167b200",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_c538cefe390eb6ed04be",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d4dcb4e89aee3fc8768b",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_e85518d9eb1daa36f4d1",
+          "role": "irrelevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The claim 'Rina owns Atlas billing migration' (oid_bbe0652be0ea80a3e42f) is the most recent and trusted active claim with the highest trust level (5) from the org_directory tool result dated 2039-03-15. Earlier ownership claims for Priya are superseded, and claims about Sam owning Atlas are invalidated or refer to the Atlas service, not the migration project. Therefore, Rina is the trusted current owner for the Atlas migration.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_4ae79b8c9f5d3ff5d024",
+    "checkpoint_id": "oid_778e40b9b44009c62675",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "No, the stale pasted note does not change the current Atlas migration owner to Alice. The current owner is Owen, as per the latest and most trusted org_directory result.",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_38bf15d827fb8369a362",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a3597dcd40eaa46ddc79",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a488de5bba3b02d569ab",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bcd75c5236579cba8749",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_efe04f72fe7b794c09cd",
+          "role": "irrelevant"
+        }
+      ],
+      "confidence": 1.0,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The stale pasted note states that Eli owns Atlas, but this claim is superseded and has lower trust. The latest and highest trust claim from the org_directory states that Owen is the current owner. There is no mention of Alice as an owner in any visible claims, so the stale note does not change the current owner to Alice.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_2beffed1547ec5133e89",
+    "checkpoint_id": "oid_577040004e4f586874f8",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Owen",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_54219449bd49d5c59227",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_83ee5879154c086dd8da",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_947a55db1ada65b803d8",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9af738ea59a6c233704f",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a96d7cde15a0b4ad943d",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_c6aaa8edfd02ab2b275f",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The claim 'oid_c6aaa8edfd02ab2b275f' states that according to the org_directory (a high trust source), Owen is the current global owner of the Atlas billing migration project as of 2045-03-17. Earlier claims that Eli owns Atlas are superseded or task-local temporary assignments, and claims about Sam owning the Atlas service are about a different entity (the platform service). Therefore, Owen should be treated as the global Atlas migration owner.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_1aa1ad401446205a5fe9",
+    "checkpoint_id": "oid_1fbb6db0ed38322148a4",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": null,
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_16b9059c6f07101a039e",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_31e05a1f56d1f48634a1",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_35fa713cb2ba9d1dba9e",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_db11f357d6bc08bbf422",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_dea0cc4ff7277348e3d2",
+          "role": "irrelevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "graph_reconstruction",
+      "rationale": "The alias relation confirms that 'Atlas' refers to the 'Atlas Billing Migration' project. Among the ownership claims, the most recent and highest trust claim states that Bob is the current owner of the Atlas billing migration project (claim oid_db11f357d6bc08bbf422). Earlier claims that Priya owns Atlas are superseded and thus marked relevant but not primary. Claims about the Atlas Platform Service and its owner Carol are irrelevant to the Atlas migration owner. Therefore, the reconstructed owner of the Atlas migration is Bob.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_150209408cb8c026a8cf",
+    "checkpoint_id": "oid_4166db9732fc3e453eaf",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Nadia",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_29438b356c58aaae140f",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5f3fc0764c49d3f34db7",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_8543d9493d43670edbea",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_acb4bff45632bb311f78",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d7e826a6ca950751e8e3",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d9a6a3b5fabf95009338",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The query asks for the current owner of the Atlas project, not the Atlas service. The Atlas project is identified as 'Atlas Billing Migration' (oid_57056773ec679b9c00ac). The claim oid_d9a6a3b5fabf95009338 states that Nadia is the owner of the Atlas Billing Migration project, supported by a high-trust org_directory tool result from 2038-03-19. Earlier claims that Priya owns Atlas are superseded, and claims that Sam owns Atlas refer to the Atlas service, not the project. Therefore, Nadia is the current owner of the Atlas project.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_150209408cb8c026a8cf",
+    "checkpoint_id": "oid_30acef56657ad5fafbd0",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Sam owns the Atlas Platform Service.",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_29438b356c58aaae140f",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5f3fc0764c49d3f34db7",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_8543d9493d43670edbea",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_acb4bff45632bb311f78",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d7e826a6ca950751e8e3",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d9a6a3b5fabf95009338",
+          "role": "irrelevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The claim that Sam owns the Atlas Platform Service (oid_acb4bff45632bb311f78) is active and trusted with high confidence. The claim that Sam owns the Atlas Billing Migration project is invalidated and contradicted by a more recent and higher trust claim that Nadia owns the billing migration. Therefore, Sam owns the Atlas Platform Service, not the billing migration project.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_01f42b79db87360d6622",
+    "checkpoint_id": "oid_0220cd87e25abe32cb03",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": null,
+      "claim_assessments": [
+        {
+          "belief_rank": 2,
+          "claim_id": "oid_581c1dade2a862727d23",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": 1,
+          "claim_id": "oid_5c9f1785f8be214aa6fc",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_72648ec47f5913dee192",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9ae91c9d5ab0df6f9ae2",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9e2784c6b8ba0d2fd26c",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": 3,
+          "claim_id": "oid_e061bdb7309be9eaa3df",
+          "role": "relevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "graph_reconstruction",
+      "rationale": "The strongest current owner claim for the Atlas billing migration project is that Nadia owns it (oid_5c9f1785f8be214aa6fc), supported by a high-trust org_directory tool result and active lifecycle state. The claim that Nikhil owns Atlas (oid_581c1dade2a862727d23) is relevant but invalidated and likely confused with ownership of the Atlas Platform Service, which Nikhil does own (oid_9e2784c6b8ba0d2fd26c). Eli's ownership claim (oid_e061bdb7309be9eaa3df) is superseded and thus less current. Entity type claims and unrelated service ownership claims are irrelevant to the billing migration owner question.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-edb0c049124dc17b-rep0-20260724T005752124046Z",
+    "mode": "llm",
+    "scenario_id": "oid_4e55388235a6efa26454",
+    "checkpoint_id": "oid_a6c40a11740d77bf21e1",
+    "recorded_final_output_accepted": false,
+    "recorded_fallback_outcome": "succeeded",
+    "recorded_validation_issues": [
+      {
+        "code": "non_action_selected_for_execution",
+        "location": [],
+        "message": "non action selected for execution",
+        "stage": "semantic"
+      }
+    ],
+    "semantic_decision": {
+      "answer": null,
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_1d74d7bade909122b7c4",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_2c306646c0d3df6effe2",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5068df7cc8d1bf03df33",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_59df50beac73cf4b03e2",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_7ebb8e8640add08d2855",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9168862469298b95ddfa",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9243f06c8b2fa4c0e61a",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_ac6ea5f092ccacab0367",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_c2bfeab962f2b76ee062",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": "Continue the org-directory owner cleanup task for Atlas Cleanup Branch B, as it is currently in progress and not blocked.",
+      "operation": "next_action",
+      "rationale": "The current verified owner of the Atlas Billing Migration project is Nadia (claim oid_1d74d7bade909122b7c4), replacing the previous owner Alice (claim oid_9243f06c8b2fa4c0e61a) which is now superseded. The cleanup efforts are split into two branches: Branch A is blocked on stale onboarding notes (claim oid_7ebb8e8640add08d2855), and Branch B is in progress (claim oid_c2bfeab962f2b76ee062). Therefore, the next actionable step is to continue the owner cleanup in Branch B, which is active and ongoing.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_f5c82859990a3980c4ad",
+    "checkpoint_id": "oid_d99ae764db15755ad47d",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": null,
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_21d6a15f7a8f2e402341",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_365ef87416dcf767d0fd",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_3b32934da4df5794ffab",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_522c2816f97c3f079682",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_c9b5c05747e6fc9e3c0b",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d1374253216065708d74",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "graph_reconstruction",
+      "rationale": "The Atlas Billing Migration project (oid_4e1affecd7e1f25addbc) is confirmed as a project with current owner Rina (oid_d1374253216065708d74) as per the latest and highest trust claim from org_directory (trust level 5). Priya's prior ownership claim (oid_3b32934da4df5794ffab) is superseded and thus relevant for historical context. Carol's ownership claim of the project (oid_522c2816f97c3f079682) is invalidated and contradicted by the Rina ownership claim, but remains relevant for disambiguation. The Atlas Platform Service (oid_49ff3da0663a047e522) is a distinct internal platform service entity, owned by Carol (oid_365ef87416dcf767d0fd), with no contradiction. The alias relation confirms 'Atlas' refers to the billing migration project. The contradicts relation between Carol's and Rina's ownership claims of the project is noted, with Rina's claim prevailing. Carol's ownership of the service is primary and distinct from the project ownership. The uncertain claim is Carol's ownership of the project, which is contradicted and invalidated but still visible. Noise and unrelated claims are omitted.",
+      "uncertain_ids": [
+        "oid_522c2816f97c3f079682"
+      ]
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_f0608d421564915e13c9",
+    "checkpoint_id": "oid_377f8fe5475bba12debd",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Owen",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5a5328494cc0be15b5a2",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_7fbabeff2064659e034d",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9858eab0c1ee63c28cc2",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a9e59477fa26e04980ab",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bf200f5633984f96ff92",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The Atlas billing migration project is currently owned by Owen according to the most recent and trusted org_directory result (claim oid_bf200f5633984f96ff92) dated 2030-03-13. Previous ownership by Eli (claim oid_9858eab0c1ee63c28cc2) is superseded and thus not current. Claims about Iris owning the Atlas service are irrelevant as that refers to a different entity (Atlas Platform Service).",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_f0608d421564915e13c9",
+    "checkpoint_id": "oid_3f127f4c8b07a7bb5a89",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Eli",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5a5328494cc0be15b5a2",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_7fbabeff2064659e034d",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9858eab0c1ee63c28cc2",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a9e59477fa26e04980ab",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bf200f5633984f96ff92",
+          "role": "relevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The claim oid_9858eab0c1ee63c28cc2 states that Eli owned the Atlas Billing Migration project starting from January 6, 2030, until March 13, 2030, when the directory correction updated the owner to Owen (claim oid_bf200f5633984f96ff92). Therefore, before the directory correction, Eli was the owner in January.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_2d1db2a7b6866110d7be",
+    "checkpoint_id": "oid_f41bbeb17c14dc25cbda",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Rina",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_09cb9f213e5c8874b704",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5b1d95dd5e2c76a447fe",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_6c3da8d0a30a9c4a4cc8",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_8316627137ae2de0f4c7",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bd8011e61114f107f3fb",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_da37e82b598adff61709",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The claim 'oid_da37e82b598adff61709' states that Rina is the owner of the Atlas billing migration as of 2034-03-14 with high trust (source trust 5). Earlier claims that Marta or Sam own Atlas are either superseded or invalidated, and Sam is owner of a different entity (Atlas Platform Service). Therefore, the current owner of the Atlas billing migration is Rina.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_f92c667b9cc6e81fee74",
+    "checkpoint_id": "oid_6dad5521a38ef27d95a1",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Rina",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_0b76e6b178d5db30aa9d",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bbe0652be0ea80a3e42f",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bcf569d5eaf6f167b200",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_c538cefe390eb6ed04be",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d4dcb4e89aee3fc8768b",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_e85518d9eb1daa36f4d1",
+          "role": "irrelevant"
+        }
+      ],
+      "confidence": 1.0,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The claim oid_bbe0652be0ea80a3e42f states that Rina is the owner of the Atlas billing migration project as of 2039-03-15 with the highest trust level (5) and is active. Earlier claims that Priya owned Atlas are superseded, and claims that Sam owns Atlas are invalidated or refer to a different entity (Atlas service). Therefore, Rina is the trusted current owner for the Atlas migration.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_4ae79b8c9f5d3ff5d024",
+    "checkpoint_id": "oid_778e40b9b44009c62675",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "No, the stale pasted note does not change the current Atlas migration owner to Alice. The current owner is Owen according to the latest and most trusted org_directory result.",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_38bf15d827fb8369a362",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a3597dcd40eaa46ddc79",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a488de5bba3b02d569ab",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_bcd75c5236579cba8749",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_efe04f72fe7b794c09cd",
+          "role": "irrelevant"
+        }
+      ],
+      "confidence": 1.0,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The stale pasted note states that Eli owns Atlas, but this claim is superseded and has lower trust. The latest and highest trust claim from the org_directory tool result states that Owen is the current owner of the Atlas billing migration project. There is no mention of Alice as an owner in any visible claims. Therefore, the stale note does not change the current owner to Alice.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_2beffed1547ec5133e89",
+    "checkpoint_id": "oid_577040004e4f586874f8",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Owen",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_54219449bd49d5c59227",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_83ee5879154c086dd8da",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_947a55db1ada65b803d8",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9af738ea59a6c233704f",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_a96d7cde15a0b4ad943d",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_c6aaa8edfd02ab2b275f",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The claim 'oid_c6aaa8edfd02ab2b275f' states that according to the org_directory (a high trust source with trust level 5), Owen is the current global owner of the Atlas billing migration project as of 2045-03-17. Earlier claims that Eli owns Atlas are superseded or task-local (temporary for a specific incident task), and the claim about Sam owning the Atlas service is about a different entity (Atlas Platform Service). Therefore, at global scope, Owen should be treated as the Atlas migration owner.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_1aa1ad401446205a5fe9",
+    "checkpoint_id": "oid_1fbb6db0ed38322148a4",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": null,
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_16b9059c6f07101a039e",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_31e05a1f56d1f48634a1",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_35fa713cb2ba9d1dba9e",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_db11f357d6bc08bbf422",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_dea0cc4ff7277348e3d2",
+          "role": "irrelevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "graph_reconstruction",
+      "rationale": "The alias relation confirms that 'Atlas' refers to the 'Atlas Billing Migration' project. Among the ownership claims, the most recent and trusted claim (oid_db11f357d6bc08bbf422) states that Bob is the current owner of the Atlas billing migration project, superseding the earlier claim that Priya owns it. Claims about the Atlas Platform Service and its owner Carol are irrelevant to the migration project ownership. Therefore, Bob is reconstructed as the current owner of the Atlas migration project.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_150209408cb8c026a8cf",
+    "checkpoint_id": "oid_4166db9732fc3e453eaf",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Nadia",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_29438b356c58aaae140f",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5f3fc0764c49d3f34db7",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_8543d9493d43670edbea",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_acb4bff45632bb311f78",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d7e826a6ca950751e8e3",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d9a6a3b5fabf95009338",
+          "role": "primary"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The query asks for the current owner of the Atlas project, not the Atlas service. The Atlas project is identified as 'Atlas Billing Migration' (oid_57056773ec679b9c00ac). The claim oid_d9a6a3b5fabf95009338 states that Nadia is the owner of the Atlas Billing Migration project as of 2038-03-19, supported by a high-trust org_directory tool result. Earlier claims naming Priya or Sam as owners are either superseded or refer to the Atlas service, not the project. Therefore, Nadia is the current owner of the Atlas project.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_150209408cb8c026a8cf",
+    "checkpoint_id": "oid_30acef56657ad5fafbd0",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": "Sam owns the Atlas Platform Service.",
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_29438b356c58aaae140f",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5f3fc0764c49d3f34db7",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_8543d9493d43670edbea",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_acb4bff45632bb311f78",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d7e826a6ca950751e8e3",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_d9a6a3b5fabf95009338",
+          "role": "irrelevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "answer",
+      "rationale": "The claim that Sam owns the Atlas Platform Service (oid_acb4bff45632bb311f78) is active and trusted with high confidence. The claim that Sam owns the Atlas Billing Migration project is invalidated and contradicted by a more recent and higher trust claim that Nadia owns the billing migration. Therefore, Sam's ownership is correctly attributed to the Atlas Platform Service, not the billing migration project.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_01f42b79db87360d6622",
+    "checkpoint_id": "oid_0220cd87e25abe32cb03",
+    "recorded_final_output_accepted": true,
+    "recorded_fallback_outcome": "not_used",
+    "recorded_validation_issues": [],
+    "semantic_decision": {
+      "answer": null,
+      "claim_assessments": [
+        {
+          "belief_rank": 3,
+          "claim_id": "oid_581c1dade2a862727d23",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": 1,
+          "claim_id": "oid_5c9f1785f8be214aa6fc",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_72648ec47f5913dee192",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9ae91c9d5ab0df6f9ae2",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9e2784c6b8ba0d2fd26c",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": 2,
+          "claim_id": "oid_e061bdb7309be9eaa3df",
+          "role": "relevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": null,
+      "operation": "graph_reconstruction",
+      "rationale": "The strongest current owner claim for the Atlas billing migration project is that Nadia owns it (oid_5c9f1785f8be214aa6fc), supported by a high-trust org_directory tool result and active lifecycle state. The claim that Eli owns Atlas (oid_e061bdb7309be9eaa3df) is superseded and thus less current, ranked second. The claim that Nikhil owns Atlas (oid_581c1dade2a862727d23) is invalidated and likely confused with ownership of the Atlas Platform Service, so it is ranked lowest among relevant claims. Claims about the Atlas service entity and its ownership by Nikhil are irrelevant to the billing migration project ownership question.",
+      "uncertain_ids": []
+    }
+  },
+  {
+    "source_run": "bench-fbdecd6f4a6e95c9-rep0-20260724T005856020814Z",
+    "mode": "hybrid",
+    "scenario_id": "oid_4e55388235a6efa26454",
+    "checkpoint_id": "oid_a6c40a11740d77bf21e1",
+    "recorded_final_output_accepted": false,
+    "recorded_fallback_outcome": "succeeded",
+    "recorded_validation_issues": [
+      {
+        "code": "non_action_selected_for_execution",
+        "location": [],
+        "message": "non action selected for execution",
+        "stage": "semantic"
+      }
+    ],
+    "semantic_decision": {
+      "answer": null,
+      "claim_assessments": [
+        {
+          "belief_rank": null,
+          "claim_id": "oid_1d74d7bade909122b7c4",
+          "role": "primary"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_2c306646c0d3df6effe2",
+          "role": "relevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_5068df7cc8d1bf03df33",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_59df50beac73cf4b03e2",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_7ebb8e8640add08d2855",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9168862469298b95ddfa",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_9243f06c8b2fa4c0e61a",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_ac6ea5f092ccacab0367",
+          "role": "irrelevant"
+        },
+        {
+          "belief_rank": null,
+          "claim_id": "oid_c2bfeab962f2b76ee062",
+          "role": "irrelevant"
+        }
+      ],
+      "confidence": 0.95,
+      "next_action": "Continue the org-directory owner cleanup task for Atlas Cleanup Branch B (oid_e395cd4c37a2b83a129f), as it is currently in progress and focused on verifying and updating the Atlas billing migration ownership to Nadia.",
+      "operation": "next_action",
+      "rationale": "The current authoritative owner claim for the Atlas Billing Migration project is that Nadia owns it (oid_1d74d7bade909122b7c4), superseding the previous owner Alice (oid_9243f06c8b2fa4c0e61a). The cleanup task Branch B (oid_e395cd4c37a2b83a129f) is active and in progress (oid_c2bfeab962f2b76ee062) specifically to verify and continue the org-directory owner cleanup, making it the appropriate next action. Branch A is blocked and superseded, and other claims about the Atlas Platform Service and unrelated noise are irrelevant to this ownership cleanup.",
+      "uncertain_ids": []
+    }
+  }
+]

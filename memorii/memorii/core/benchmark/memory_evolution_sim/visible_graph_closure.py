@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from memorii.core.benchmark.memory_evolution_sim.claim_policy import (
+    is_action_claim,
+    is_identity_confusion_bridge,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
     SimClaimAssessment,
@@ -28,6 +32,21 @@ def derive_visible_graph_closure(
     """Close semantic claim judgments over visible lifecycle and graph edges."""
 
     claims = {claim.claim_id: claim for claim in context.visible_claims}
+    claims_by_subject_predicate: dict[tuple[str, str], list[VisibleClaimCandidate]] = {}
+    claims_by_object_predicate: dict[tuple[str, str], list[VisibleClaimCandidate]] = {}
+    contradicted_by: dict[str, set[str]] = {}
+    for claim in context.visible_claims:
+        claims_by_subject_predicate.setdefault(
+            (claim.subject_entity_id, claim.predicate_id),
+            [],
+        ).append(claim)
+        if claim.object_entity_id is not None:
+            claims_by_object_predicate.setdefault(
+                (claim.predicate_id, claim.object_entity_id),
+                [],
+            ).append(claim)
+        for contradicted_id in claim.contradicts_claim_ids:
+            contradicted_by.setdefault(contradicted_id, set()).add(claim.claim_id)
     primary = {
         assessment.claim_id
         for assessment in assessments
@@ -39,19 +58,42 @@ def derive_visible_graph_closure(
         if assessment.role in {SimClaimSemanticRole.PRIMARY, SimClaimSemanticRole.RELEVANT}
     }
 
+    identity_frontier: set[str] = set(primary)
     for claim_id in tuple(primary):
         claim = claims[claim_id]
-        relevant.update(
+        lifecycle_competitors = {
             candidate.claim_id
-            for candidate in context.visible_claims
-            if candidate.subject_entity_id == claim.subject_entity_id
-            and candidate.predicate_id == claim.predicate_id
+            for candidate in claims_by_subject_predicate[
+                (claim.subject_entity_id, claim.predicate_id)
+            ]
+        }
+        relevant.update(lifecycle_competitors)
+        identity_frontier.update(lifecycle_competitors)
+        relevant.update(
+            item for item in claim.contradicts_claim_ids if item in claims
         )
-        relevant.update(item for item in claim.contradicts_claim_ids if item in claims)
+        relevant.update(contradicted_by.get(claim_id, set()))
+
+    # One identity hop captures visible same-object confusion without turning the
+    # candidate graph into an unrestricted connected component.
+    for claim_id in tuple(identity_frontier):
+        claim = claims[claim_id]
+        if claim.object_entity_id is None:
+            continue
         relevant.update(
             candidate.claim_id
-            for candidate in context.visible_claims
-            if claim_id in candidate.contradicts_claim_ids
+            for candidate in claims_by_object_predicate.get(
+                (claim.predicate_id, claim.object_entity_id),
+                [],
+            )
+            if is_identity_confusion_bridge(claim, candidate)
+        )
+
+    if context.checkpoint.task_contract.requires_next_action:
+        relevant.update(
+            claim.claim_id
+            for claim in context.visible_claims
+            if is_action_claim(claim)
         )
 
     entity_ids = _claim_entity_ids(claims, relevant)
