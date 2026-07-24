@@ -35,9 +35,11 @@ from memorii.core.memory_evolution.models import (
     EntityMention,
     ExtractedAction,
     ExtractedClaim,
+    ExtractionFailureCode,
     ExtractionRun,
     ExtractionRunStatus,
     ExtractionTriggerMode,
+    FinalExtractionSource,
     MemoryEvolutionResult,
     MemoryGraphSnapshot,
     MemoryScope,
@@ -240,6 +242,35 @@ class MemoryEvolutionService:
             ExtractionRunStatus.FAILED,
             ExtractionRunStatus.PARTIAL,
         }:
+            raise MemoryExtractionRunError(run)
+        coverage_errors = (
+            self._validator.extraction_coverage_errors(
+                observations=extractable_observations,
+                entities=entities,
+                claims=claims,
+                actions=actions,
+            )
+            if run.status == ExtractionRunStatus.SUCCEEDED
+            else []
+        )
+        if coverage_errors:
+            failed_without_output = not (entities or claims or actions)
+            run = run.model_copy(
+                update={
+                    "status": (
+                        ExtractionRunStatus.PARTIAL
+                        if not failed_without_output
+                        else ExtractionRunStatus.FAILED
+                    ),
+                    "final_output_source": (
+                        run.final_output_source
+                        if not failed_without_output
+                        else FinalExtractionSource.NONE
+                    ),
+                    "failure_code": ExtractionFailureCode.OUTPUT_VALIDATION,
+                    "errors": [*run.errors, *coverage_errors],
+                }
+            )
             raise MemoryExtractionRunError(run)
         validation_results = self._validator.validate_claims(claims=claims, observations=extractable_observations)
         run = run.model_copy(update={"validation_summary": self._validator.summary(validation_results)})

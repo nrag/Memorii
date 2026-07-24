@@ -30,7 +30,10 @@ from memorii.core.memory_evolution import (
 )
 from memorii.core.memory_evolution.claim_policy import claim_precedence
 from memorii.core.memory_evolution.extraction import models_from_llm_output
-from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput
+from memorii.core.memory_evolution.extraction_contracts import (
+    MemoryExtractionOutput,
+    MemoryExtractionRunError,
+)
 from memorii.core.memory_evolution.modality import classify_and_mark_observation
 from memorii.core.memory_evolution.models import ConfidenceComponents
 from memorii.core.memory_plane import MemoryPlaneService
@@ -59,6 +62,37 @@ def _record(
         task_id=task_id,
         is_raw_event=True,
     )
+
+
+def test_successful_extraction_cannot_silently_omit_an_eligible_source() -> None:
+    class EmptySuccessfulExtractor:
+        provider = "test"
+        model = None
+        prompt_hash = None
+
+        def extract(self, observations):
+            return (
+                ExtractionRun(
+                    extraction_run_id="run:empty-success",
+                    provider=self.provider,
+                    input_source_ids=[observation.source_id for observation in observations],
+                ),
+                [],
+                [],
+                [],
+            )
+
+    plane = MemoryPlaneService()
+    service = MemoryEvolutionService(
+        memory_plane=plane,
+        extractor=EmptySuccessfulExtractor(),
+    )
+
+    with pytest.raises(MemoryExtractionRunError, match="failed:output_validation") as exc:
+        service.evolve_records([_record("tx:omitted", "Atlas owner is Alice.")])
+
+    assert exc.value.run.errors == ["source_unaccounted:tx:omitted"]
+    assert service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
 
 
 class _EntitySequenceExtractor:
@@ -2651,6 +2685,60 @@ def test_single_value_precedence_uses_effective_time_before_source_authority() -
     assert {state.object_value: state.lifecycle_state.value for state in history} == {
         "Alice": "invalidated",
         "Bob": "active",
+    }
+
+
+def test_status_precedence_prefers_authority_and_is_input_order_invariant() -> None:
+    older_user = _record(
+        "tx:status:user",
+        "Atlas deploy failed.",
+        source_kind="user",
+        timestamp=datetime(2026, 3, 1, 12, 0, tzinfo=UTC),
+    )
+    newer_environment = _record(
+        "tx:status:environment",
+        "Atlas deploy succeeded.",
+        source_kind="environment",
+        timestamp=datetime(2026, 3, 1, 12, 5, tzinfo=UTC),
+    )
+
+    current_values: list[list[str]] = []
+    for records in ([older_user, newer_environment], [newer_environment, older_user]):
+        service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+        for record in records:
+            service.evolve_records([record])
+        current_values.append(
+            [
+                state.object_value
+                for state in service.retrieve_claim_states(
+                    view=RetrievalView.CURRENT,
+                    predicate_id="status",
+                    subject_entity_id="ent:atlas",
+                )
+            ]
+        )
+
+    assert current_values == [["failed"], ["failed"]]
+
+
+def test_single_value_lifecycle_isolated_by_complete_scope() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records(
+        [
+            _record("tx:task-a", "Atlas owner is Alice.", task_id="task:a"),
+            _record("tx:task-b", "Atlas owner is Bob.", task_id="task:b"),
+        ]
+    )
+
+    current = service.retrieve_claim_states(
+        view=RetrievalView.CURRENT,
+        predicate_id="owner",
+        subject_entity_id="ent:atlas",
+    )
+
+    assert {(state.claim_key.scope.task_id, state.object_value) for state in current} == {
+        ("task:a", "Alice"),
+        ("task:b", "Bob"),
     }
 
 

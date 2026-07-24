@@ -432,7 +432,6 @@ class ProviderMemoryService:
                 include_context=include_context,
                 include_conflicts=include_conflicts,
                 purpose=purpose,
-                scope_mode="full",
             )
         else:
             request = MemoryQueryRequest(

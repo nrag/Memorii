@@ -76,6 +76,7 @@ from memorii.core.memory_evolution.query_analysis import (
     EnglishLexicalQueryResolver,
     LexicalQueryAnalyzer,
     LexicalQueryResolver,
+    ProductionQueryAnalyzer,
     PromptBackedStructuredQueryAnalysisProvider,
     QueryAnalyzer,
     StructuredQueryAnalysisProvider,
@@ -85,7 +86,7 @@ from memorii.core.memory_evolution.query_analysis import (
     infer_query_predicate_id,
     resolve_query_temporal_frame,
 )
-from memorii.core.memory_evolution.query_analysis.runtime_factory import build_prompt_backed_query_analyzer
+from memorii.core.memory_evolution.query_analysis.runtime_factory import build_production_query_analyzer
 from memorii.core.memory_evolution.query_graph import (
     AmbiguousEntityReference,
     EntityReference,
@@ -200,11 +201,12 @@ __all__ = [
     "QueryResolutionConfidenceSource",
     "StructuredQueryConstraintError",
     "StructuredQueryProviderError",
-    "build_prompt_backed_query_analyzer",
+    "build_production_query_analyzer",
     "HybridMemoryExtractor",
     "LLMMemoryExtractor",
     "PredicatePolicy",
     "PredicateRegistry",
+    "ProductionQueryAnalyzer",
     "ReferenceClaim",
     "ReferenceEntity",
     "RetrievalView",

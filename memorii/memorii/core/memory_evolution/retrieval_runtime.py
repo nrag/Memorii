@@ -315,7 +315,10 @@ class MemoryEvolutionRetrievalRuntime:
             None,
         )
         selected_ids = [selected_action.action_id.removeprefix("action:")] if selected_action is not None else []
-        relevant_branch_ids = set(continuation.candidate_branch_ids)
+        relevant_branch_ids = {
+            *continuation.candidate_branch_ids,
+            *snapshot.suppressed_branch_ids,
+        }
         context_ids = [
             action.action_id.removeprefix("action:")
             for action in actions

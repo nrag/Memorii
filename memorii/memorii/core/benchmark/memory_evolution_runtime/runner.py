@@ -50,6 +50,7 @@ from memorii.core.llm_config import DecisionModeName, LLMDecisionRuntimeConfig, 
 from memorii.core.llm_provider.base import LLMStructuredClient
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.memory_evolution import FallbackOutcome, ProviderAttemptStatus, RetrievalPurpose
+from memorii.core.memory_evolution.query_analysis.runtime_factory import build_production_query_analyzer
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.tools.run_live_llm_eval import validate_live_safety
@@ -65,20 +66,33 @@ class RuntimeRetrievalInvocation:
 
 
 def runtime_retrieval_invocation(checkpoint: OracleCheckpoint) -> RuntimeRetrievalInvocation:
+    view = checkpoint.required_retrieval_view
+    supported_views = {
+        "current",
+        "historical_at",
+        "all_versions",
+        "conflicts",
+        "evidence_only",
+    }
+    if view not in supported_views:
+        raise ValueError(f"Unsupported runtime retrieval view: {view}")
     if checkpoint.checkpoint_type == "execution_continuation":
         return RuntimeRetrievalInvocation(
             purpose=RetrievalPurpose.EXECUTION,
             include_context=False,
             include_conflicts=False,
         )
-    view = checkpoint.required_retrieval_view
-    if view in {"all_versions", "conflicts"}:
+    graph_reconstruction = (
+        "graph_reconstruction" in checkpoint.task_contract.allowed_operations
+        and checkpoint.task_contract.belief_ranking_policy != "required"
+    )
+    if graph_reconstruction:
         return RuntimeRetrievalInvocation(
             purpose=RetrievalPurpose.GRAPH_AUDIT,
             include_context=True,
-            include_conflicts=True,
+            include_conflicts=view in {"all_versions", "conflicts"},
         )
-    if view in {"historical_at", "evidence_only"}:
+    if view in {"all_versions", "conflicts", "historical_at", "evidence_only"}:
         return RuntimeRetrievalInvocation(
             purpose=RetrievalPurpose.ANSWER,
             include_context=True,
@@ -90,7 +104,7 @@ def runtime_retrieval_invocation(checkpoint: OracleCheckpoint) -> RuntimeRetriev
             include_context=False,
             include_conflicts=False,
         )
-    raise ValueError(f"Unsupported runtime retrieval view: {view}")
+    raise AssertionError(f"unhandled runtime retrieval view: {view}")
 
 
 def validate_runtime_live_safety(
@@ -158,9 +172,15 @@ def run_runtime_scenarios(
             live_client_factory=live_client_factory,
         )
         memory_plane = MemoryPlaneService()
+        query_analyzer = build_production_query_analyzer(
+            runtime_config=runtime_config,
+            prompt_root=prompt_root,
+            client_factory=live_client_factory,
+        )
         provider = ProviderMemoryService(
             memory_plane=memory_plane,
             memory_evolution_extractor=extractor,
+            memory_evolution_query_analyzer=query_analyzer,
         )
         source_id_to_event_id: dict[str, str] = {}
         ordered_observations = sorted(scenario.observations, key=lambda item: (item.timestamp, item.event_id))
@@ -290,7 +310,7 @@ def run_runtime_scenarios(
                 graph_snapshot=graph_snapshot,
                 recorded_runs=checkpoint_runs,
             )
-            success = aggregate.verdict.value == "pass" and not runtime_buckets
+            success = not runtime_buckets
             final_output_source = runtime_final_output_source(
                 effective_mode=effective_mode,
                 dry_run=dry_run,

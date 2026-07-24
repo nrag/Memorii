@@ -123,6 +123,12 @@ def test_fake_provider_ingestion_to_retrieval_matches_independent_expected_graph
     )
 
     service.evolve_records([_record("tx:alice", "Atlas Billing Migration owner is Alice.", january)])
+    first_prefix_states = service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS)
+    assert [
+        (state.object_value, state.lifecycle_state.value)
+        for state in first_prefix_states
+    ] == [("Alice", "active")]
+
     service.evolve_records([_record("tx:bob", "Bob owns Atlas. Atlas means Atlas Billing Migration.", march)])
     decision = service.retrieve(
         MemoryQueryRequest(

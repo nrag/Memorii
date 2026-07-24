@@ -29,7 +29,7 @@ def test_runtime_benchmark_dispatches_checkpoint_retrieval_contract(monkeypatch)
         noise_rate=0.35,
     )
 
-    run_runtime_scenarios(
+    rows = run_runtime_scenarios(
         scenarios=scenarios,
         mode="rule",
         dry_run=True,
@@ -53,11 +53,38 @@ def test_runtime_benchmark_dispatches_checkpoint_retrieval_contract(monkeypatch)
     calls_by_type = {
         checkpoint.checkpoint_type: call for checkpoint, call in zip(checkpoints, calls, strict=True)
     }
-    assert calls_by_type["entity_split_repair"]["purpose"] == "graph_audit"
-    assert calls_by_type["belief_ranking"]["purpose"] == "graph_audit"
+    assert calls_by_type["entity_reconstruction"]["purpose"] == "graph_audit"
+    assert calls_by_type["claim_rekey"]["purpose"] == "graph_audit"
+    assert calls_by_type["entity_split_repair"]["purpose"] == "answer"
+    assert calls_by_type["source_trust_conflict"]["purpose"] == "answer"
+    assert calls_by_type["belief_ranking"]["purpose"] == "answer"
     assert calls_by_type["execution_continuation"]["purpose"] == "execution"
     assert calls_by_type["modality_suppression"]["purpose"] == "answer"
     assert calls_by_type["modality_suppression"]["include_context"] is True
+    assert all(
+        row.diagnostics.runtime_retrieval_decision is not None
+        and row.diagnostics.runtime_retrieval_decision.query_analysis is not None
+        and row.diagnostics.runtime_retrieval_decision.query_analysis.analyzer_path
+        == ["english_lexical_query_analyzer"]
+        for row in rows.checkpoint_rows
+    )
+    rows_with_comparison_issues = [
+        row
+        for row in rows.checkpoint_rows
+        if row.diagnostics.runtime_semantic_comparison_issues
+    ]
+    assert rows_with_comparison_issues
+    for row in rows_with_comparison_issues:
+        comparison = next(
+            stage
+            for stage in row.diagnostics.runtime_stage_trace
+            if stage.stage == "comparison"
+        )
+        assert comparison.status == "fail"
+        assert set(comparison.reason_codes) == {
+            issue.code
+            for issue in row.diagnostics.runtime_semantic_comparison_issues
+        }
 
 
 def test_runtime_retrieval_invocation_rejects_unknown_view() -> None:

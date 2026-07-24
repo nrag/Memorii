@@ -46,6 +46,10 @@ from memorii.core.benchmark.memory_evolution_runtime.runner import (
     run_runtime_scenarios,
     validate_runtime_live_safety,
 )
+from memorii.core.benchmark.memory_evolution_runtime.semantic_comparison import (
+    SemanticComparisonResult,
+    compare_checkpoint_semantics,
+)
 
 __all__ = [
     "OracleVisibleMemoryExtractor",
@@ -59,9 +63,11 @@ __all__ = [
     "RuntimeGraphItemRow",
     "RuntimeRelationGraphItemRow",
     "RuntimeSuiteRows",
+    "SemanticComparisonResult",
     "expected_action_alignment_rows",
     "align_runtime_graph_to_oracle",
     "build_runtime_extractor",
+    "compare_checkpoint_semantics",
     "extractor_fallback_count",
     "extractor_trace_rows",
     "graph_items_from_snapshot",

@@ -212,3 +212,37 @@ def test_graph_validator_reports_exact_missing_endpoint_and_claim_shape_errors()
     assert f"claim_missing_scope:{claim_node.node_id}" in errors
     assert f"claim_missing_object:{claim_node.node_id}" in errors
     assert f"claim_missing_observed_in:{claim_node.node_id}" in errors
+
+
+def test_graph_validator_rejects_semantic_self_relations() -> None:
+    claim_node = MemoryGraphNode(
+        node_id=claim_node_id("claim:self"),
+        node_type=MemoryGraphNodeType.CLAIM,
+        label="self relation claim",
+        canonical_id="claim:self",
+        lifecycle_state="active",
+        confidence=0.8,
+        payload_ref="mem:evolution:claim:claim:self",
+        properties={"claim_id": "claim:self"},
+    )
+    self_edge = MemoryGraphEdge(
+        edge_id=edge_id(
+            MemoryGraphEdgeType.CONTRADICTS,
+            claim_node.node_id,
+            claim_node.node_id,
+        ),
+        edge_type=MemoryGraphEdgeType.CONTRADICTS,
+        source_node_id=claim_node.node_id,
+        target_node_id=claim_node.node_id,
+        lifecycle_state="active",
+        confidence=0.8,
+    )
+    snapshot = MemoryGraphSnapshot(
+        snapshot_id="graph:snapshot:self",
+        nodes=[claim_node],
+        edges=[self_edge],
+    )
+
+    errors = MemoryGraphValidator().validate_snapshot(snapshot)
+
+    assert f"self_relation:{self_edge.edge_id}" in errors

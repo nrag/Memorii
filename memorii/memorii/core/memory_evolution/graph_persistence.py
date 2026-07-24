@@ -93,6 +93,19 @@ class MemoryGraphValidator:
         node_by_id = {node.node_id: node for node in snapshot.nodes}
         errors: list[str] = []
         for edge in snapshot.edges:
+            if (
+                edge.source_node_id == edge.target_node_id
+                and edge.edge_type
+                in {
+                    MemoryGraphEdgeType.SUPERSEDES,
+                    MemoryGraphEdgeType.CONFLICTS_WITH,
+                    MemoryGraphEdgeType.CONTRADICTS,
+                    MemoryGraphEdgeType.MERGED_INTO,
+                    MemoryGraphEdgeType.SPLIT_FROM,
+                    MemoryGraphEdgeType.REKEYED_FROM,
+                }
+            ):
+                errors.append(f"self_relation:{edge.edge_id}")
             if edge.source_node_id not in node_by_id:
                 errors.append(f"missing_endpoint:{edge.edge_id}:{edge.source_node_id}")
             if edge.target_node_id not in node_by_id:

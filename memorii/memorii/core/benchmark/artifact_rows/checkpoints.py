@@ -460,9 +460,30 @@ class RuntimeStageTraceRow(FlatArtifactModel):
         "comparison",
     ]
     status: Literal["pass", "fail", "not_run"]
+    execution_status: Literal["pass", "fail", "not_run"] = "pass"
+    semantic_status: Literal["pass", "fail", "not_evaluated"] = "pass"
+    is_first_divergence: bool = False
     reason_codes: list[str] = Field(default_factory=list)
     input_count: int = Field(default=0, ge=0)
     output_count: int = Field(default=0, ge=0)
+
+
+class RuntimeSemanticComparisonIssueRow(FlatArtifactModel):
+    """Canonical expected/actual mismatch emitted by the independent oracle."""
+
+    code: str = Field(min_length=1)
+    channel: Literal[
+        "selected",
+        "supporting",
+        "context",
+        "rejected",
+        "uncertain",
+        "graph",
+        "provenance",
+        "abstention",
+    ]
+    expected: str = ""
+    actual: str = ""
 
 
 class RuntimeDiagnosticsSection(BaseModel):
@@ -474,6 +495,9 @@ class RuntimeDiagnosticsSection(BaseModel):
     runtime_action_alignments: list[RuntimeActionAlignmentRow] = Field(default_factory=list)
     runtime_channel_alignments: list[RuntimeChannelAlignmentRow] = Field(default_factory=list)
     runtime_stage_trace: list[RuntimeStageTraceRow] = Field(default_factory=list)
+    runtime_semantic_comparison_issues: list[RuntimeSemanticComparisonIssueRow] = Field(
+        default_factory=list
+    )
     runtime_execution_state: RuntimeExecutionStateSection
     runtime_retrieval_decision: ProductionRetrievalDecision | None = None
     active_continuation_branch: str | None = None
@@ -495,6 +519,9 @@ class CheckpointDiagnosticsPayload(CheckpointDiagnosticsSection):
     runtime_action_alignments: list[RuntimeActionAlignmentRow] = Field(default_factory=list)
     runtime_channel_alignments: list[RuntimeChannelAlignmentRow] = Field(default_factory=list)
     runtime_stage_trace: list[RuntimeStageTraceRow] = Field(default_factory=list)
+    runtime_semantic_comparison_issues: list[RuntimeSemanticComparisonIssueRow] = Field(
+        default_factory=list
+    )
     runtime_execution_state: RuntimeExecutionStateSection | None = None
     runtime_retrieval_decision: ProductionRetrievalDecision | None = None
     active_continuation_branch: str | None = None
@@ -556,6 +583,11 @@ class CheckpointDiagnosticsPayload(CheckpointDiagnosticsSection):
             runtime_action_alignments=[] if runtime is None else runtime.runtime_action_alignments,
             runtime_channel_alignments=[] if runtime is None else runtime.runtime_channel_alignments,
             runtime_stage_trace=[] if runtime is None else runtime.runtime_stage_trace,
+            runtime_semantic_comparison_issues=(
+                []
+                if runtime is None
+                else runtime.runtime_semantic_comparison_issues
+            ),
             runtime_execution_state=None if runtime is None else runtime.runtime_execution_state,
             runtime_retrieval_decision=None if runtime is None else runtime.runtime_retrieval_decision,
             active_continuation_branch=None if runtime is None else runtime.active_continuation_branch,

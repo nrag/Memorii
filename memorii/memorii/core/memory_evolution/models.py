@@ -421,6 +421,7 @@ class ClaimState(BaseModel):
     lifecycle_state: ClaimLifecycleState
     source_claim_id: str
     confidence: ConfidenceComponents
+    source_modality: SourceModality = SourceModality.ASSERTION
     validation_results: list[ValidationResult] = Field(default_factory=list)
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
     supersedes_claim_ids: list[str] = Field(default_factory=list)

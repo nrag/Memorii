@@ -78,6 +78,7 @@ class EnglishRuleMemoryExtractor:
 
         entity_list = list(entities.values())
         claims = _canonicalize_claim_arguments(claims, entity_list)
+        extracted_anything = bool(entity_list or claims or actions)
         if errors:
             status = ExtractionRunStatus.PARTIAL if entity_list or claims or actions else ExtractionRunStatus.ABSTAINED
             failure_code = (
@@ -85,8 +86,11 @@ class EnglishRuleMemoryExtractor:
                 if all("unsupported_language:" in error for error in errors)
                 else ExtractionFailureCode.OUTPUT_VALIDATION
             )
-        else:
+        elif extracted_anything:
             status = ExtractionRunStatus.SUCCEEDED
+            failure_code = None
+        else:
+            status = ExtractionRunStatus.ABSTAINED
             failure_code = None
         run = ExtractionRun(
             extraction_run_id=run_id,
@@ -99,6 +103,11 @@ class EnglishRuleMemoryExtractor:
             action_ids=[action.action_id for action in actions],
             validation_summary={},
             status=status,
+            final_output_source=(
+                FinalExtractionSource.NONE
+                if status == ExtractionRunStatus.ABSTAINED and failure_code is None
+                else FinalExtractionSource.PRIMARY
+            ),
             failure_code=failure_code,
             errors=errors,
         )

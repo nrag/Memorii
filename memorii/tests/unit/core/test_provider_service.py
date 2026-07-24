@@ -9,6 +9,8 @@ from memorii.core.memory_evolution import (
     EnglishRuleMemoryExtractor,
     LLMMemoryExtractor,
     MemoryQueryRequest,
+    RetrievalPurpose,
+    RetrievalView,
     StructuredQueryAnalyzer,
 )
 from memorii.core.memory_evolution.models import SourceObservation
@@ -309,6 +311,43 @@ def test_provider_exposes_structured_evolution_decision() -> None:
     assert decision is not None
     assert decision.decision_source == "production_memory_evolution_retriever"
     assert decision.context_items == []
+
+
+def test_provider_graph_audit_prefetch_preserves_analyzer_entity_scope() -> None:
+    service = ProviderMemoryService(
+        memory_evolution_extractor=EnglishRuleMemoryExtractor(),
+    )
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Bob.",
+        operation_id="test:graph-audit:project",
+    )
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas service owner is Iris.",
+        operation_id="test:graph-audit:service",
+    )
+
+    result = service.prefetch_result(
+        "Reconstruct the Atlas migration ownership graph.",
+        purpose=RetrievalPurpose.GRAPH_AUDIT,
+        include_context=True,
+        include_conflicts=True,
+    )
+
+    decision = result.evolution_decision
+    assert decision is not None
+    states = {
+        state.claim_id: state
+        for state in service.memory_evolution_service.retrieve_claim_states(
+            view=RetrievalView.ALL_VERSIONS
+        )
+    }
+    selected_values = {
+        states[claim_id].object_value for claim_id in decision.selected_record_ids
+    }
+    assert "Bob" in selected_values
+    assert "Iris" not in selected_values
 
 
 def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:

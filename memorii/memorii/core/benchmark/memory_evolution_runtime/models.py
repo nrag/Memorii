@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Annotated, Literal, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Annotated, Literal, TypeAlias, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 
@@ -30,6 +30,11 @@ from memorii.core.memory_evolution import (
     WorkStateSnapshot,
     WorkStateStatus,
 )
+
+if TYPE_CHECKING:
+    from memorii.core.benchmark.memory_evolution_runtime.semantic_comparison import (
+        SemanticComparisonResult,
+    )
 
 T = TypeVar("T")
 NonEmptyString: TypeAlias = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -207,8 +212,10 @@ class RuntimeProductionChannels:
     selected_claim_ids: tuple[str, ...] = ()
     selected_action_ids: tuple[str, ...] = ()
     selected_action_runtime_ids: tuple[str, ...] = ()
+    supporting_claim_ids: tuple[str, ...] = ()
     context_claim_ids: tuple[str, ...] = ()
     rejected_claim_ids: tuple[str, ...] = ()
+    uncertain_record_ids: tuple[str, ...] = ()
 
 
 @dataclass
@@ -227,6 +234,7 @@ class RuntimeProjection:
     stage_failure_buckets: list[str] = field(default_factory=list)
     work_state: WorkStateSnapshot | None = None
     retrieval_decision: ProductionRetrievalDecision | None = None
+    semantic_comparison: SemanticComparisonResult | None = None
 
     def __post_init__(self) -> None:
         _require_row_types("graph_items", self.graph_items, RUNTIME_GRAPH_ITEM_TYPES)

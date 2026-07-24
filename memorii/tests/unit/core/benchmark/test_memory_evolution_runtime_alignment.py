@@ -241,7 +241,7 @@ def test_partial_rejected_claim_alignment_remains_visible_and_fails_closed() -> 
     ]
     assert partial_rows
     assert excluded_claim.claim_id not in projection.output.rejected_claim_ids
-    assert "production_semantic_graph_partial_expected_rejection" in runtime_failure_buckets(
+    assert "production_retrieval_missing_expected_rejection" in runtime_failure_buckets(
         checkpoint=checkpoint,
         output=projection.output,
         projection=projection,
@@ -271,6 +271,7 @@ def test_nonaligned_production_selected_claim_remains_visible_and_fails_closed()
         semantic_frame_status=SemanticFrameStatus.MATCHED,
         temporal_frame=QueryTemporalFrame(),
         selected_record_ids=[runtime_claim_id],
+        supporting_record_ids=[runtime_claim_id],
     )
     snapshot = MemoryGraphSnapshot(snapshot_id="unexpected-selection")
 
@@ -290,7 +291,7 @@ def test_nonaligned_production_selected_claim_remains_visible_and_fails_closed()
         and row.verdict != "aligned"
         for row in projection.channel_alignment_rows
     )
-    assert "benchmark_alignment_ambiguous_selected_claim" in runtime_failure_buckets(
+    assert "production_retrieval_unexpected_selected_claim" in runtime_failure_buckets(
         checkpoint=checkpoint,
         output=projection.output,
         projection=projection,

@@ -26,6 +26,9 @@ class ContradictionResolver:
         ]
         if not conflicting:
             return None
+        conflicting_claim_ids = {claim.claim_id, *conflicting}
+        if active_claim_id is not None:
+            conflicting_claim_ids.discard(active_claim_id)
         now = datetime.now(UTC)
         return ContradictionSet(
             contradiction_set_id=_stable_id(
@@ -35,7 +38,7 @@ class ContradictionResolver:
             predicate_id=policy.predicate_id,
             claim_key=claim.claim_key,
             active_claim_id=active_claim_id,
-            conflicting_claim_ids=sorted({claim.claim_id, *conflicting}),
+            conflicting_claim_ids=sorted(conflicting_claim_ids),
             rationale=f"claims disagree under predicate policy {policy.conflict_policy.value}",
             created_at=now,
             updated_at=now,
@@ -48,4 +51,3 @@ def _norm(value: str) -> str:
 
 def _stable_id(prefix: str, value: str) -> str:
     return f"{prefix}:{uuid5(NAMESPACE_URL, value)}"
-

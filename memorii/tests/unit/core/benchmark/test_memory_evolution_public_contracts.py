@@ -187,6 +187,9 @@ def _benchmark_report_payload() -> dict[str, object]:
     provider_health = {
         "effective_decision_mode": "hybrid",
         "attempted_calls": 10,
+        "extraction_attempted_calls": 10,
+        "structured_query_attempted_calls": 0,
+        "structured_query_failures": 0,
         "provider_successes": 10,
         "provider_failures": 0,
         "fallbacks": 0,

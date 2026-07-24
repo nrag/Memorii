@@ -30,6 +30,9 @@ from memorii.core.benchmark.memory_evolution_runtime.models import (
     RuntimeProjection,
     RuntimeRelationGraphItemRow,
 )
+from memorii.core.benchmark.memory_evolution_runtime.semantic_comparison import (
+    compare_checkpoint_semantics,
+)
 from memorii.core.benchmark.memory_evolution_runtime.utils import claim_by_id, ordered_unique
 from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
@@ -74,8 +77,10 @@ def project_runtime_checkpoint(
         selected_claim_ids=tuple(item.claim_id for item in selected_runtime_claims),
         selected_action_ids=tuple(item.action_id for item in selected_runtime_actions),
         selected_action_runtime_ids=tuple(item.runtime_item_id for item in selected_runtime_actions),
+        supporting_claim_ids=tuple(retrieval_decision.supporting_record_ids if retrieval_decision else []),
         context_claim_ids=tuple(item.claim_id for item in context_claim_items),
         rejected_claim_ids=tuple(item.claim_id for item in rejected_claim_items),
+        uncertain_record_ids=tuple(retrieval_decision.uncertain_record_ids if retrieval_decision else []),
     )
 
     alignments = align_runtime_graph_to_oracle(
@@ -247,6 +252,17 @@ def project_runtime_checkpoint(
         confidence=confidence,
         rationale="runtime graph candidates selected from query and production state; oracle IDs added only at comparison boundary",
     )
+    semantic_comparison = (
+        compare_checkpoint_semantics(
+            scenario=scenario,
+            checkpoint=checkpoint,
+            graph_items=graph_items,
+            decision=retrieval_decision,
+            source_id_to_event_id=source_id_to_event_id,
+        )
+        if retrieval_decision is not None
+        else None
+    )
     return RuntimeProjection(
         output=output,
         graph_snapshot=graph_snapshot,
@@ -261,6 +277,7 @@ def project_runtime_checkpoint(
         execution_state=execution_state,
         work_state=work_state,
         retrieval_decision=retrieval_decision,
+        semantic_comparison=semantic_comparison,
     )
 
 

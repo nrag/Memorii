@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from memorii.core.memory_evolution.models import (
+    EntityMention,
     EvidenceSpan,
+    ExtractedAction,
     ExtractedClaim,
     ExtractionTriggerMode,
     SourceModality,
@@ -29,6 +31,29 @@ class MemoryEvolutionValidator:
             claim.claim_id: self.validate_claim(claim=claim, observation_by_id=observation_by_id)
             for claim in claims
         }
+
+    def extraction_coverage_errors(
+        self,
+        *,
+        observations: list[SourceObservation],
+        entities: list[EntityMention],
+        claims: list[ExtractedClaim],
+        actions: list[ExtractedAction],
+    ) -> list[str]:
+        """Require every eligible source to have a grounded extraction outcome."""
+
+        expected_source_ids = {observation.source_id for observation in observations}
+        covered_source_ids = {
+            span.source_id
+            for candidate in [*entities, *claims, *actions]
+            for span in candidate.evidence_spans
+        }
+        missing = sorted(expected_source_ids - covered_source_ids)
+        unknown = sorted(covered_source_ids - expected_source_ids)
+        return [
+            *(f"source_unaccounted:{source_id}" for source_id in missing),
+            *(f"source_outside_extraction_input:{source_id}" for source_id in unknown),
+        ]
 
     def validate_claim(
         self,

@@ -10,6 +10,7 @@ from memorii.core.memory_evolution.models import MemoryScope
 from memorii.core.memory_evolution.predicates import PredicateRegistry
 from memorii.core.memory_evolution.query_analysis.contracts import (
     LexicalQueryResolver,
+    QueryAnalyzer,
     StructuredQueryAnalysisProvider,
     StructuredQueryConstraintError,
     StructuredQueryProviderError,
@@ -211,3 +212,84 @@ class EnglishLexicalQueryAnalyzer(LexicalQueryAnalyzer):
             analyzer_name="english_lexical_query_analyzer",
             analyzer_version="1",
         )
+
+
+class ProductionQueryAnalyzer:
+    """Escalate only unresolved lexical analyses and fail closed on model errors."""
+
+    def __init__(
+        self,
+        *,
+        lexical: QueryAnalyzer,
+        structured: QueryAnalyzer | None,
+    ) -> None:
+        self._lexical = lexical
+        self._structured = structured
+
+    def analyze(
+        self,
+        *,
+        query: str,
+        language: str,
+        reference_time: datetime | None,
+        entity_candidates: list[TemporalEntityCandidate],
+        anchor_catalog: TemporalAnchorCatalog,
+        request_scope: MemoryScope | None = None,
+    ) -> QueryAnalysis:
+        arguments = {
+            "query": query,
+            "language": language,
+            "reference_time": reference_time,
+            "entity_candidates": entity_candidates,
+            "anchor_catalog": anchor_catalog,
+            "request_scope": request_scope,
+        }
+        lexical = self._lexical.analyze(**arguments)
+        reason = _structured_escalation_reason(lexical)
+        lexical_name = lexical.analyzer_name or type(self._lexical).__name__
+        if reason is None:
+            return lexical.model_copy(
+                update={
+                    "analyzer_path": [lexical_name],
+                    "analyzer_outcome": "resolved",
+                    "structured_query_call_count": 0,
+                }
+            )
+        if self._structured is None:
+            return lexical.model_copy(
+                update={
+                    "analyzer_path": [lexical_name],
+                    "escalation_reason": reason,
+                    "analyzer_outcome": "abstained",
+                    "structured_query_call_count": 0,
+                }
+            )
+
+        structured = self._structured.analyze(**arguments)
+        structured_name = structured.analyzer_name or type(self._structured).__name__
+        failed = structured.failure_code is not None or structured.provider_error is not None
+        abstained = structured.abstention_reason is not None or (
+            structured.temporal_frame is None
+            or structured.temporal_frame.temporal_kind == QueryTemporalKind.AMBIGUOUS
+        )
+        outcome = "failed" if failed else "abstained" if abstained else "resolved"
+        return structured.model_copy(
+            update={
+                "analyzer_path": [lexical_name, structured_name],
+                "escalation_reason": reason,
+                "analyzer_outcome": outcome,
+                "structured_query_call_count": 1,
+            }
+        )
+
+
+def _structured_escalation_reason(analysis: QueryAnalysis) -> str | None:
+    if analysis.failure_code == QueryAnalysisFailureCode.UNSUPPORTED_LANGUAGE:
+        return "unsupported_language"
+    if analysis.temporal_frame is None:
+        return "missing_temporal_frame"
+    if analysis.temporal_frame.temporal_kind == QueryTemporalKind.AMBIGUOUS:
+        return "ambiguous_lexical_analysis"
+    if analysis.abstention_reason is not None:
+        return "unresolved_lexical_analysis"
+    return None

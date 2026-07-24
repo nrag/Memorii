@@ -18,6 +18,7 @@ from memorii.core.benchmark.artifact_rows import (
     RuntimeExtractorOutput,
     RuntimeExtractorTracePayload,
     RuntimeExtractorTraceRow,
+    RuntimeSemanticComparisonIssueRow,
     RuntimeStageTraceRow,
     checkpoint_warning_buckets,
 )
@@ -46,10 +47,12 @@ from memorii.core.benchmark.memory_evolution_sim import (
     sim_reconstruction_context_for_checkpoint,
 )
 from memorii.core.memory_evolution import (
-    FinalExtractionSource as MemoryFinalExtractionSource,
+    FallbackOutcome,
+    MemoryGraphSnapshot,
+    ProviderAttemptStatus,
 )
 from memorii.core.memory_evolution import (
-    MemoryGraphSnapshot,
+    FinalExtractionSource as MemoryFinalExtractionSource,
 )
 
 
@@ -104,12 +107,16 @@ def build_runtime_checkpoint_result_row(
     )
     verdict = CheckpointVerdictSection(
         success=success,
-        passed=aggregate.verdict.value == "pass" and not runtime_buckets,
-        verdict="fail" if runtime_buckets else aggregate.verdict.value,
-        score=aggregate.score,
+        passed=success,
+        verdict="pass" if success else "fail",
+        score=(
+            projection.semantic_comparison.score
+            if projection.semantic_comparison is not None
+            else 0.0
+        ),
         confidence=aggregate.confidence,
-        review_required=aggregate.review_required or bool(runtime_buckets),
-        failure_buckets=sorted({*aggregate.critical_failure_buckets, *runtime_buckets}),
+        review_required=not success,
+        failure_buckets=sorted(set(runtime_buckets)),
         warning_buckets=warning_buckets,
     )
     runtime_section = RuntimeDiagnosticsSection(
@@ -119,10 +126,24 @@ def build_runtime_checkpoint_result_row(
         runtime_action_alignments=projection.action_alignment_rows,
         runtime_channel_alignments=projection.channel_alignment_rows,
         runtime_stage_trace=runtime_stage_trace(
+            checkpoint=checkpoint,
             recorded_runs=recorded_runs,
             graph_snapshot=graph_snapshot,
             projection=projection,
             runtime_buckets=runtime_buckets,
+        ),
+        runtime_semantic_comparison_issues=(
+            []
+            if projection.semantic_comparison is None
+            else [
+                RuntimeSemanticComparisonIssueRow(
+                    code=issue.code,
+                    channel=issue.channel,
+                    expected=issue.expected,
+                    actual=issue.actual,
+                )
+                for issue in projection.semantic_comparison.issues
+            ]
         ),
         runtime_execution_state=projection.execution_state,
         runtime_retrieval_decision=projection.retrieval_decision,
@@ -305,6 +326,7 @@ def _runtime_failure_owner(bucket: str) -> str:
 
 def runtime_stage_trace(
     *,
+    checkpoint: OracleCheckpoint,
     recorded_runs: Sequence[RecordedExtractionRun],
     graph_snapshot: MemoryGraphSnapshot,
     projection: RuntimeProjection,
@@ -317,6 +339,41 @@ def runtime_stage_trace(
             if run.extraction_status.value in {"failed", "partial"}
         }
     )
+    extraction_execution_failures = sorted(
+        {
+            run.provider_attempt_status.value
+            for run in recorded_runs
+            if run.provider_attempt_status == ProviderAttemptStatus.PROVIDER_ERROR
+        }
+    )
+    extraction_schema_failures = sorted(
+        {
+            run.provider_attempt_status.value
+            for run in recorded_runs
+            if run.provider_attempt_status
+            in {
+                ProviderAttemptStatus.INVALID_JSON,
+                ProviderAttemptStatus.SCHEMA_ERROR,
+            }
+        }
+    )
+    extraction_fallbacks = sorted(
+        {
+            run.fallback_outcome.value
+            for run in recorded_runs
+            if run.fallback_outcome != FallbackOutcome.NOT_USED
+        }
+    )
+    extraction_semantic_failure = bool(
+        extraction_failures or extraction_schema_failures or extraction_fallbacks
+    )
+    extraction_execution_failure = bool(extraction_execution_failures)
+    extraction_reason_codes = [
+        *(f"provider_execution:{status}" for status in extraction_execution_failures),
+        *(f"provider_schema:{status}" for status in extraction_schema_failures),
+        *(f"extraction_status:{status}" for status in extraction_failures),
+        *(f"fallback_outcome:{status}" for status in extraction_fallbacks),
+    ]
     operation_failures = sorted(
         {
             run.operation_failure_code.value
@@ -336,17 +393,65 @@ def runtime_stage_trace(
     for item in projection.graph_items:
         lifecycle_counts[item.lifecycle_state.value] = lifecycle_counts.get(item.lifecycle_state.value, 0) + 1
     decision = projection.retrieval_decision
-    return [
+    query_semantic_failure = (
+        decision is None
+        or (
+            checkpoint.expected_abstention
+            and not decision.abstained
+        )
+        or (
+            not checkpoint.expected_abstention
+            and (
+                decision.abstained
+                or decision.semantic_frame_status.value != "matched"
+                or decision.resolution_status != "resolved"
+            )
+        )
+    )
+    retrieval_count = (
+        0
+        if decision is None
+        else len(decision.selected_record_ids)
+        + len(decision.context_record_ids)
+        + len(decision.rejected_record_ids)
+    )
+    retrieval_semantic_failure = (
+        decision is None
+        or (not checkpoint.expected_abstention and retrieval_count == 0)
+        or any(bucket.startswith("production_retrieval_") for bucket in runtime_buckets)
+    )
+    lifecycle_semantic_failure = any(
+        bucket.startswith("production_lifecycle_") for bucket in runtime_buckets
+    )
+    comparison_failure = (
+        projection.semantic_comparison is None
+        or not projection.semantic_comparison.passed
+    )
+    comparison_reasons = (
+        ["benchmark_semantic_comparison_missing"]
+        if projection.semantic_comparison is None
+        else projection.semantic_comparison.failure_buckets
+    )
+    rows = [
         RuntimeStageTraceRow(
             stage="extraction",
-            status="fail" if extraction_failures else "pass",
-            reason_codes=extraction_failures or (["reused_persisted_state"] if not recorded_runs else []),
+            status=(
+                "fail"
+                if extraction_execution_failure or extraction_semantic_failure
+                else "pass"
+            ),
+            execution_status="fail" if extraction_execution_failure else "pass",
+            semantic_status="fail" if extraction_semantic_failure else "pass",
+            reason_codes=extraction_reason_codes
+            or (["reused_persisted_state"] if not recorded_runs else []),
             input_count=len(recorded_runs),
             output_count=sum(run.entity_count + run.claim_count + run.action_count for run in recorded_runs),
         ),
         RuntimeStageTraceRow(
             stage="validation",
-            status="fail" if extraction_failures else "pass",
+            status="fail" if extraction_failures or validation_failures else "pass",
+            execution_status="pass",
+            semantic_status="fail" if extraction_failures or validation_failures else "pass",
             reason_codes=([f"candidate_validation_failures:{validation_failures}"] if validation_failures else []),
             input_count=sum(run.claim_count for run in recorded_runs),
             output_count=sum(run.claim_count for run in recorded_runs),
@@ -354,13 +459,17 @@ def runtime_stage_trace(
         RuntimeStageTraceRow(
             stage="normalization",
             status="fail" if graph_snapshot.validation_errors else "pass",
+            execution_status="pass",
+            semantic_status="fail" if graph_snapshot.validation_errors else "pass",
             reason_codes=["runtime_graph_validation_error"] if graph_snapshot.validation_errors else [],
             input_count=len(graph_snapshot.nodes) + len(graph_snapshot.edges),
             output_count=len(projection.graph_items),
         ),
         RuntimeStageTraceRow(
             stage="lifecycle",
-            status="pass",
+            status="fail" if lifecycle_semantic_failure else "pass",
+            execution_status="pass",
+            semantic_status="fail" if lifecycle_semantic_failure else "pass",
             reason_codes=[f"{name}:{count}" for name, count in sorted(lifecycle_counts.items())],
             input_count=sum(lifecycle_counts.values()),
             output_count=lifecycle_counts.get("active", 0),
@@ -368,35 +477,51 @@ def runtime_stage_trace(
         RuntimeStageTraceRow(
             stage="persistence",
             status="fail" if operation_failures else "pass",
+            execution_status="fail" if operation_failures else "pass",
+            semantic_status="not_evaluated" if operation_failures else "pass",
             reason_codes=operation_failures,
             input_count=len(recorded_runs),
             output_count=sum(run.operation_status is not None for run in recorded_runs),
         ),
         RuntimeStageTraceRow(
             stage="query",
-            status="fail" if decision is None else "pass",
-            reason_codes=["retrieval_decision_missing"] if decision is None else [decision.semantic_frame_status.value],
+            status="fail" if query_semantic_failure else "pass",
+            execution_status="fail" if decision is None else "pass",
+            semantic_status="fail" if query_semantic_failure else "pass",
+            reason_codes=(
+                ["retrieval_decision_missing"]
+                if decision is None
+                else [decision.semantic_frame_status.value, decision.resolution_status]
+            ),
             input_count=1,
             output_count=int(decision is not None),
         ),
         RuntimeStageTraceRow(
             stage="retrieval",
-            status="fail" if decision is None else "pass",
+            status="fail" if retrieval_semantic_failure else "pass",
+            execution_status="fail" if decision is None else "pass",
+            semantic_status="fail" if retrieval_semantic_failure else "pass",
             reason_codes=["retrieval_decision_missing"] if decision is None else [decision.resolution_status],
             input_count=int(decision is not None),
-            output_count=(
-                0
-                if decision is None
-                else len(decision.selected_record_ids)
-                + len(decision.context_record_ids)
-                + len(decision.rejected_record_ids)
-            ),
+            output_count=retrieval_count,
         ),
         RuntimeStageTraceRow(
             stage="comparison",
-            status="fail" if runtime_buckets else "pass",
-            reason_codes=sorted(set(runtime_buckets)),
+            status="fail" if comparison_failure else "pass",
+            execution_status="fail" if projection.semantic_comparison is None else "pass",
+            semantic_status="fail" if comparison_failure else "pass",
+            reason_codes=comparison_reasons,
             input_count=len(projection.alignments),
-            output_count=sum(alignment.verdict.value == "aligned" for alignment in projection.alignments),
+            output_count=(
+                0
+                if projection.semantic_comparison is None
+                else projection.semantic_comparison.requirement_count
+            ),
         ),
     ]
+    first_failure = next((index for index, row in enumerate(rows) if row.status == "fail"), None)
+    if first_failure is not None:
+        rows[first_failure] = rows[first_failure].model_copy(
+            update={"is_first_divergence": True}
+        )
+    return rows

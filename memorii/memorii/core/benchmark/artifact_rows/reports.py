@@ -124,6 +124,9 @@ class RuntimeProviderHealth(FlatArtifactModel):
 
     effective_decision_mode: DecisionMode | None = None
     attempted_calls: int = Field(ge=0)
+    extraction_attempted_calls: int = Field(default=0, ge=0)
+    structured_query_attempted_calls: int = Field(default=0, ge=0)
+    structured_query_failures: int = Field(default=0, ge=0)
     provider_successes: int = Field(ge=0)
     provider_failures: int = Field(ge=0)
     fallbacks: int = Field(ge=0)
@@ -154,6 +157,10 @@ class RuntimeProviderHealth(FlatArtifactModel):
     def validate_provider_accounting(self) -> RuntimeProviderHealth:
         if self.attempted_calls != self.provider_successes + self.provider_failures:
             raise ValueError("attempted provider calls must equal successes plus failures")
+        if self.attempted_calls != self.extraction_attempted_calls + self.structured_query_attempted_calls:
+            raise ValueError("provider call total must include extraction and structured-query calls")
+        if self.structured_query_failures > self.structured_query_attempted_calls:
+            raise ValueError("structured-query failures cannot exceed structured-query calls")
         if sum(self.provider_attempt_status_counts.values()) < self.attempted_calls:
             raise ValueError("provider status counts cannot underreport attempted calls")
         if sum(self.operation_status_counts.values()) != self.operation_outcome_count:

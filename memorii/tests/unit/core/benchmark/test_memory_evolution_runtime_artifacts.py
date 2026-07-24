@@ -15,6 +15,7 @@ from memorii.core.benchmark.memory_evolution_runtime import (
     RuntimeGraphItemRow,
     RuntimeGraphSnapshotRow,
     RuntimeSuiteRows,
+    project_runtime_checkpoint,
     runtime_graph_completeness_metrics,
     runtime_provider_health,
     runtime_summary_metrics,
@@ -31,12 +32,17 @@ from memorii.core.benchmark.memory_evolution_runtime.result_rows import (
     run_output_source,
     runtime_failure_classification,
     runtime_final_output_source,
+    runtime_stage_trace,
+)
+from memorii.core.benchmark.memory_evolution_sim import (
+    generate_memory_evolution_sim_scenarios,
 )
 from memorii.core.memory_evolution import (
     EnglishRuleMemoryExtractor,
     ExtractionFailureCode,
     ExtractionRunStatus,
     FallbackOutcome,
+    ProductionRetrievalDecision,
     ProviderAttemptStatus,
 )
 from memorii.core.memory_evolution import (
@@ -47,10 +53,12 @@ from memorii.core.memory_evolution.execution import (
     ContinuationResolutionStatus,
     WorkStateSnapshot,
 )
+from memorii.core.memory_evolution.models import MemoryGraphSnapshot
 from memorii.core.memory_evolution.operation_models import (
     EvolutionFailureCategory,
     EvolutionOperationStatus,
 )
+from memorii.core.memory_evolution.temporal_contracts import QueryAnalysis, QueryTemporalFrame
 from tests.unit.core.benchmark.checkpoint_artifact_test_helpers import checkpoint_diagnostics_payload
 from tests.unit.core.benchmark.memory_evolution_runtime_test_helpers import runtime_checkpoint_row
 
@@ -246,10 +254,170 @@ def test_runtime_stage_trace_has_closed_stage_and_status_contracts() -> None:
     assert row.model_dump(mode="json") == {
         "stage": "lifecycle",
         "status": "pass",
+        "execution_status": "pass",
+        "semantic_status": "pass",
+        "is_first_divergence": False,
         "reason_codes": ["active:2", "superseded:1"],
         "input_count": 3,
         "output_count": 2,
     }
+
+
+@pytest.mark.parametrize(
+    ("decision", "expected_query_reason"),
+    [
+        (
+            ProductionRetrievalDecision(
+                query="ambiguous",
+                semantic_frame_status="ambiguous",
+                temporal_frame=QueryTemporalFrame(),
+                resolution_status="ambiguous",
+                abstained=True,
+                abstention_reason="entity tie",
+            ),
+            "ambiguous",
+        ),
+        (
+            ProductionRetrievalDecision(
+                query="resolved but empty",
+                semantic_frame_status="matched",
+                temporal_frame=QueryTemporalFrame(),
+                resolution_status="resolved",
+            ),
+            "matched",
+        ),
+    ],
+)
+def test_runtime_stage_trace_fails_ambiguous_or_empty_required_retrieval(
+    decision: ProductionRetrievalDecision,
+    expected_query_reason: str,
+) -> None:
+    scenario = next(
+        item
+        for item in generate_memory_evolution_sim_scenarios(
+            profile="adversarial",
+            scenario_count=10,
+            seed=7,
+            noise_rate=0.35,
+        )
+        if item.family == "current_vs_historical_truth"
+    )
+    checkpoint = next(
+        item for item in scenario.checkpoints if item.checkpoint_type == "current_truth"
+    )
+    snapshot = MemoryGraphSnapshot(snapshot_id="stage-trace")
+    projection = project_runtime_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        graph_snapshot=snapshot,
+        graph_items=[],
+        source_id_to_event_id={},
+        retrieval_decision=decision,
+    )
+
+    rows = runtime_stage_trace(
+        checkpoint=checkpoint,
+        recorded_runs=[],
+        graph_snapshot=snapshot,
+        projection=projection,
+        runtime_buckets=projection.semantic_comparison.failure_buckets,
+    )
+    by_stage = {row.stage: row for row in rows}
+
+    assert by_stage["query"].reason_codes[0] == expected_query_reason
+    if expected_query_reason == "ambiguous":
+        assert by_stage["query"].status == "fail"
+        assert by_stage["query"].is_first_divergence
+    else:
+        assert by_stage["query"].status == "pass"
+        assert by_stage["retrieval"].status == "fail"
+        assert by_stage["retrieval"].is_first_divergence
+    assert by_stage["comparison"].status == "fail"
+    assert by_stage["comparison"].reason_codes == (
+        projection.semantic_comparison.failure_buckets
+    )
+
+
+def test_runtime_stage_trace_separates_provider_execution_from_semantic_failure() -> None:
+    scenario = next(
+        item
+        for item in generate_memory_evolution_sim_scenarios(
+            profile="adversarial",
+            scenario_count=10,
+            seed=7,
+            noise_rate=0.35,
+        )
+        if item.family == "current_vs_historical_truth"
+    )
+    checkpoint = next(
+        item for item in scenario.checkpoints if item.checkpoint_type == "current_truth"
+    )
+    snapshot = MemoryGraphSnapshot(snapshot_id="extraction-stage-trace")
+    decision = ProductionRetrievalDecision(
+        query=checkpoint.query_or_task,
+        semantic_frame_status="matched",
+        temporal_frame=QueryTemporalFrame(),
+        resolution_status="resolved",
+    )
+    projection = project_runtime_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        graph_snapshot=snapshot,
+        graph_items=[],
+        source_id_to_event_id={},
+        retrieval_decision=decision,
+    )
+    base = RecordedExtractionRun(
+        input_source_ids=["source:1"],
+        provider="hybrid",
+        model="test-model",
+        prompt_hash="prompt-hash",
+        extraction_status=ExtractionRunStatus.SUCCEEDED,
+        provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
+        fallback_outcome=FallbackOutcome.NOT_USED,
+        final_output_source=MemoryFinalExtractionSource.PRIMARY,
+        failure_code=None,
+        primary_failure_code=None,
+        fallback_provider=None,
+        errors=[],
+        entity_count=1,
+        claim_count=1,
+        action_count=0,
+        entity_ids=["entity:1"],
+        claim_ids=["claim:1"],
+        action_ids=[],
+        validation_summary={},
+    )
+    fallback = base.model_copy(
+        update={
+            "provider_attempt_status": ProviderAttemptStatus.PROVIDER_ERROR,
+            "fallback_outcome": FallbackOutcome.SUCCEEDED,
+            "final_output_source": MemoryFinalExtractionSource.FALLBACK,
+            "primary_failure_code": ExtractionFailureCode.PROVIDER_ERROR,
+            "fallback_provider": "english_rule",
+        }
+    )
+
+    rows = runtime_stage_trace(
+        checkpoint=checkpoint,
+        recorded_runs=[fallback],
+        graph_snapshot=snapshot,
+        projection=projection,
+        runtime_buckets=[
+            *runtime_ingestion_failure_buckets([fallback]),
+            *projection.semantic_comparison.failure_buckets,
+        ],
+    )
+    extraction = rows[0]
+
+    assert extraction.status == "fail"
+    assert extraction.execution_status == "fail"
+    assert extraction.semantic_status == "fail"
+    assert extraction.is_first_divergence
+    assert extraction.reason_codes == [
+        "provider_execution:provider_error",
+        "fallback_outcome:succeeded",
+    ]
 
 
 def test_runtime_checkpoint_diagnostics_cannot_drift_between_public_views() -> None:
@@ -572,6 +740,44 @@ def test_runtime_provider_health_counts_valid_abstention_as_provider_success() -
     assert health.provider_failures == 0
     assert health.abstentions == 1
     assert health.failure_classification_counts == {}
+
+
+def test_runtime_provider_health_accounts_for_structured_query_calls() -> None:
+    query_analysis = QueryAnalysis(
+        temporal_frame=QueryTemporalFrame(),
+        analyzer_name="fake-structured",
+        analyzer_path=["english_lexical_query_analyzer", "fake-structured"],
+        escalation_reason="unsupported_language",
+        structured_query_call_count=1,
+    )
+    decision = ProductionRetrievalDecision(
+        query="¿Quién es el propietario?",
+        semantic_frame_status="matched",
+        temporal_frame=QueryTemporalFrame(),
+        query_analysis=query_analysis,
+    )
+    rows = RuntimeSuiteRows(
+        scenario_rows=[],
+        checkpoint_rows=[
+            runtime_checkpoint_row(
+                effective_decision_mode="llm",
+                final_output_source="live_llm",
+                runtime_retrieval_decision=decision,
+            )
+        ],
+        judge_rows=[],
+        llm_rows=[runtime_extractor_trace()],
+        effective_mode="llm",
+        provider_metadata={"backend": "live_provider"},
+    )
+
+    health = runtime_provider_health(rows)
+
+    assert health.attempted_calls == 2
+    assert health.extraction_attempted_calls == 1
+    assert health.structured_query_attempted_calls == 1
+    assert health.structured_query_failures == 0
+    assert health.provider_successes == 2
 
 
 def test_runtime_provider_health_separates_semantic_rejection_from_transport_success() -> None:

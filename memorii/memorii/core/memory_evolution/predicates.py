@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict
 
 from memorii.core.memory_evolution.models import (
@@ -10,8 +12,16 @@ from memorii.core.memory_evolution.models import (
     PredicateConflictPolicy,
     PredicateMergePolicy,
     PredicateTemporalPolicy,
+    SourceModality,
 )
 from memorii.domain.enums import MemoryScope, SourceType
+
+
+class LifecyclePrecedencePolicy(StrEnum):
+    """Semantic arbitration order for a predicate's current value."""
+
+    RECENCY_THEN_AUTHORITY = "recency_then_authority"
+    AUTHORITY_THEN_RECENCY = "authority_then_recency"
 
 
 class PredicatePolicy(BaseModel):
@@ -24,6 +34,8 @@ class PredicatePolicy(BaseModel):
     default_scope: MemoryScope
     temporal_policy: PredicateTemporalPolicy
     trust_precedence: list[SourceType]
+    modality_precedence: list[SourceModality]
+    lifecycle_precedence: LifecyclePrecedencePolicy
 
     model_config = ConfigDict(extra="forbid")
 
@@ -58,6 +70,20 @@ def default_predicate_policies() -> list[PredicatePolicy]:
         SourceType.AGENT,
         SourceType.SYSTEM,
     ]
+    strong_modalities = [
+        SourceModality.CORRECTION,
+        SourceModality.TOOL_RESULT,
+        SourceModality.ASSERTION,
+        SourceModality.THIRD_PARTY_CLAIM,
+        SourceModality.ASSISTANT_CLAIM,
+        SourceModality.QUOTED_OR_PASTED,
+        SourceModality.INSTRUCTION,
+        SourceModality.HYPOTHETICAL,
+        SourceModality.QUESTION,
+        SourceModality.NOISE,
+    ]
+    recency_first = LifecyclePrecedencePolicy.RECENCY_THEN_AUTHORITY
+    authority_first = LifecyclePrecedencePolicy.AUTHORITY_THEN_RECENCY
     return [
         PredicatePolicy(
             predicate_id="owner",
@@ -69,6 +95,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.TASK,
             temporal_policy=PredicateTemporalPolicy.CURRENT_VALUE,
             trust_precedence=strong_sources,
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=recency_first,
         ),
         PredicatePolicy(
             predicate_id="approver",
@@ -80,6 +108,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.TASK,
             temporal_policy=PredicateTemporalPolicy.CURRENT_VALUE,
             trust_precedence=strong_sources,
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=recency_first,
         ),
         PredicatePolicy(
             predicate_id="api_owner",
@@ -91,6 +121,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.TASK,
             temporal_policy=PredicateTemporalPolicy.CURRENT_VALUE,
             trust_precedence=strong_sources,
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=recency_first,
         ),
         PredicatePolicy(
             predicate_id="status",
@@ -102,6 +134,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.TASK,
             temporal_policy=PredicateTemporalPolicy.CURRENT_VALUE,
             trust_precedence=strong_sources,
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=authority_first,
         ),
         PredicatePolicy(
             predicate_id="preference",
@@ -113,6 +147,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.USER,
             temporal_policy=PredicateTemporalPolicy.CURRENT_VALUE,
             trust_precedence=[SourceType.USER, SourceType.DERIVED, SourceType.AGENT, SourceType.SYSTEM],
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=authority_first,
         ),
         PredicatePolicy(
             predicate_id="dependency",
@@ -124,6 +160,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.TASK,
             temporal_policy=PredicateTemporalPolicy.HISTORICAL_EVENT,
             trust_precedence=strong_sources,
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=recency_first,
         ),
         PredicatePolicy(
             predicate_id="action_state",
@@ -135,6 +173,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.TASK,
             temporal_policy=PredicateTemporalPolicy.CURRENT_VALUE,
             trust_precedence=strong_sources,
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=authority_first,
         ),
         PredicatePolicy(
             predicate_id="belief",
@@ -146,6 +186,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.TASK,
             temporal_policy=PredicateTemporalPolicy.CURRENT_VALUE,
             trust_precedence=strong_sources,
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=authority_first,
         ),
         PredicatePolicy(
             predicate_id="correction",
@@ -157,6 +199,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.TASK,
             temporal_policy=PredicateTemporalPolicy.HISTORICAL_EVENT,
             trust_precedence=[SourceType.USER, SourceType.TOOL, SourceType.ENVIRONMENT, SourceType.DERIVED],
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=authority_first,
         ),
         PredicatePolicy(
             predicate_id="entity_type",
@@ -168,6 +212,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.GLOBAL,
             temporal_policy=PredicateTemporalPolicy.CURRENT_VALUE,
             trust_precedence=strong_sources,
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=authority_first,
         ),
         PredicatePolicy(
             predicate_id="semantic_fact",
@@ -179,6 +225,8 @@ def default_predicate_policies() -> list[PredicatePolicy]:
             default_scope=MemoryScope.TASK,
             temporal_policy=PredicateTemporalPolicy.HISTORICAL_EVENT,
             trust_precedence=strong_sources,
+            modality_precedence=strong_modalities,
+            lifecycle_precedence=recency_first,
         ),
     ]
 
@@ -186,5 +234,12 @@ def default_predicate_policies() -> list[PredicatePolicy]:
 def source_trust_rank(policy: PredicatePolicy, source_type: SourceType) -> int:
     try:
         return len(policy.trust_precedence) - policy.trust_precedence.index(source_type)
+    except ValueError:
+        return 0
+
+
+def modality_trust_rank(policy: PredicatePolicy, modality: SourceModality) -> int:
+    try:
+        return len(policy.modality_precedence) - policy.modality_precedence.index(modality)
     except ValueError:
         return 0
