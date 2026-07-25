@@ -1215,12 +1215,16 @@ def test_structured_graph_retrieval_abstains_on_ambiguous_object_reference() -> 
                 "tx:project",
                 "Atlas migration owner is Bob.",
                 datetime(2026, 1, 1, tzinfo=UTC),
-            ),
+            )
+        ]
+    )
+    service.evolve_records(
+        [
             _record(
                 "tx:service",
                 "Atlas service owner is Iris.",
                 datetime(2026, 1, 2, tzinfo=UTC),
-            ),
+            )
         ]
     )
 

@@ -92,13 +92,14 @@ class EntityResolutionService:
                 )
                 continue
 
-            same_name = [
+            exact_alias_candidates = [
                 link
                 for link in links_by_key.values()
                 if _shares_identity_alias(link=link, mention=mention)
                 and link.canonical_entity_id != mention.entity_id
                 and _scope_identity(link.scope) == scope_identity
             ]
+            same_name = exact_alias_candidates
             type_consistent_aliases = [
                 link
                 for link in same_name

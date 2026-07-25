@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from memorii.core.benchmark.memory_evolution_sim import LatentGraphScenario, SurfaceObservation
+from memorii.core.memory_evolution import MemoryEvolutionResult
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.provider.models import ProviderEvolutionOutcome, ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
@@ -31,6 +32,7 @@ class SurfaceIngestionResult(BaseModel):
 
     source_id_to_event_id: dict[str, str]
     evolution_outcomes: list[ProviderEvolutionOutcome]
+    evolution_results: list[MemoryEvolutionResult] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -45,6 +47,7 @@ def ingest_scenario_surface_observations(
     before_ids: set[str] = set()
     source_id_to_event_id: dict[str, str] = {}
     evolution_outcomes: list[ProviderEvolutionOutcome] = []
+    evolution_results: list[MemoryEvolutionResult] = []
     context = context or IngestionContext()
     for observation in sorted(scenario.observations, key=lambda item: (item.timestamp, item.event_id)):
         result = ingest_surface_observation(
@@ -56,10 +59,12 @@ def ingest_scenario_surface_observations(
         )
         source_id_to_event_id.update(result.source_id_to_event_id)
         evolution_outcomes.extend(result.evolution_outcomes)
+        evolution_results.extend(result.evolution_results)
         before_ids = {record.memory_id for record in memory_plane.list_records()}
     return SurfaceIngestionResult(
         source_id_to_event_id=source_id_to_event_id,
         evolution_outcomes=evolution_outcomes,
+        evolution_results=evolution_results,
     )
 
 
@@ -100,6 +105,11 @@ def ingest_surface_observation(
             timestamp=observation.timestamp,
             source_modality=SourceModality(observation.modality),
         )
+    evolution_result = (
+        provider.last_memory_evolution_result()
+        if provider_result.evolution_outcomes
+        else None
+    )
     return SurfaceIngestionResult(
         source_id_to_event_id={
             record.memory_id: observation.event_id
@@ -107,6 +117,7 @@ def ingest_surface_observation(
             if record.memory_id not in before and record.is_raw_event and record.text == observation.text
         },
         evolution_outcomes=list(provider_result.evolution_outcomes),
+        evolution_results=[] if evolution_result is None else [evolution_result],
     )
 
 

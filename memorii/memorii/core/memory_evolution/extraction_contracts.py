@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -112,3 +112,11 @@ class MemoryExtractionOutput(BaseModel):
     actions: list[ExtractedActionOutput]
 
     model_config = ConfigDict(extra="forbid")
+
+
+@runtime_checkable
+class StructuredProposalProvider(Protocol):
+    """Extractor capability for replaying schema-valid provider proposals."""
+
+    @property
+    def structured_proposal(self) -> MemoryExtractionOutput | None: ...

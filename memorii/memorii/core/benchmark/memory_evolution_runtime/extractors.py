@@ -5,14 +5,17 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
-
 from memorii.core.benchmark.calibration.alignment import normalize_alignment_value
 from memorii.core.benchmark.memory_evolution_runtime.graph_items import (
     claim_quote,
     entity_quote,
     runtime_entity_type,
     runtime_span_for_item,
+)
+from memorii.core.benchmark.memory_evolution_runtime.models import (
+    RuntimeGraphDelta,
+    RuntimeIngestionTraceRow,
+    RuntimeSourceObservationTrace,
 )
 from memorii.core.benchmark.memory_evolution_runtime.utils import (
     claim_by_id,
@@ -40,8 +43,15 @@ from memorii.core.memory_evolution import (
     ExtractionRun,
     HybridMemoryExtractor,
     LLMMemoryExtractor,
+    MemoryEvolutionResult,
     MemoryExtractor,
+    MemoryGraphEdge,
+    MemoryGraphNode,
     SourceObservation,
+)
+from memorii.core.memory_evolution.extraction_contracts import (
+    MemoryExtractionOutput,
+    StructuredProposalProvider,
 )
 from memorii.core.memory_evolution.models import (
     ConfidenceComponents,
@@ -60,34 +70,8 @@ from memorii.core.memory_evolution.operation_models import (
 from memorii.core.provider.models import ProviderEvolutionOutcome
 
 
-class RecordedExtractionRun(BaseModel):
+class RecordedExtractionRun(RuntimeIngestionTraceRow):
     """Validated telemetry for one runtime extraction call."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    input_source_ids: list[str]
-    provider: str
-    model: str | None
-    prompt_hash: str | None
-    extraction_status: ExtractionRunStatus
-    provider_attempt_status: ProviderAttemptStatus
-    fallback_outcome: FallbackOutcome
-    final_output_source: FinalExtractionSource
-    failure_code: ExtractionFailureCode | None
-    primary_failure_code: ExtractionFailureCode | None
-    fallback_provider: str | None
-    errors: list[str]
-    entity_count: int = Field(ge=0)
-    claim_count: int = Field(ge=0)
-    action_count: int = Field(ge=0)
-    entity_ids: list[str]
-    claim_ids: list[str]
-    action_ids: list[str]
-    validation_summary: dict[str, int]
-    operation_id: str | None = None
-    operation_status: EvolutionOperationStatus | None = None
-    operation_failure_code: EvolutionFailureCategory | None = None
-    operation_retryable: bool = False
 
 
 class OracleVisibleMemoryExtractor:
@@ -105,6 +89,10 @@ class OracleVisibleMemoryExtractor:
         self.calls = 0
         self.failures = 0
         self.fallbacks = 0
+
+    @property
+    def structured_proposal(self) -> MemoryExtractionOutput | None:
+        return None
 
     def extract(
         self, observations: list[SourceObservation]
@@ -181,7 +169,12 @@ class OracleVisibleMemoryExtractor:
                         object_value=claim.object.value,
                         object_entity_id=claim.object.entity_id,
                         valid_from=claim.lifecycle.valid_from,
-                        valid_to=claim.lifecycle.valid_to,
+                        valid_to=(
+                            claim.lifecycle.valid_to
+                            if claim.lifecycle.valid_to is not None
+                            and observation.timestamp >= claim.lifecycle.valid_to
+                            else None
+                        ),
                         evidence_spans=[span],
                         confidence=ConfidenceComponents(
                             extraction=claim.confidence.extraction,
@@ -262,6 +255,8 @@ class RecordingMemoryExtractor:
     def __init__(self, *, delegate: MemoryExtractor) -> None:
         self._delegate = delegate
         self.recorded_runs: list[RecordedExtractionRun] = []
+        self._graph_nodes: dict[str, MemoryGraphNode] = {}
+        self._graph_edges: dict[str, MemoryGraphEdge] = {}
 
     @property
     def provider(self) -> str:
@@ -293,6 +288,28 @@ class RecordingMemoryExtractor:
                 primary_failure_code=run.primary_failure_code,
                 fallback_provider=run.fallback_provider,
                 errors=list(run.errors),
+                input_observations=[
+                    RuntimeSourceObservationTrace(
+                        source_id=observation.source_id,
+                        source_type=observation.source_type.value,
+                        timestamp=observation.timestamp.isoformat(),
+                        modality=observation.modality.value,
+                        trigger_mode=observation.trigger_mode.value,
+                        language=observation.language,
+                        task_id=observation.task_id,
+                        session_id=observation.session_id,
+                        user_id=observation.user_id,
+                    )
+                    for observation in observations
+                ],
+                structured_proposal=(
+                    self._delegate.structured_proposal
+                    if isinstance(self._delegate, StructuredProposalProvider)
+                    else None
+                ),
+                proposed_entities=list(entities),
+                proposed_claims=list(claims),
+                proposed_actions=list(actions),
                 entity_count=len(entities),
                 claim_count=len(claims),
                 action_count=len(actions),
@@ -303,6 +320,70 @@ class RecordingMemoryExtractor:
             )
         )
         return run, entities, claims, actions
+
+    def record_evolution_results(
+        self,
+        results: list[MemoryEvolutionResult],
+    ) -> None:
+        """Attach deterministic compilation and projection evidence in call order."""
+
+        if not results:
+            return
+        if len(results) > len(self.recorded_runs):
+            raise RuntimeError("evolution results exceed recorded extraction runs")
+        target_indexes = range(
+            len(self.recorded_runs) - len(results),
+            len(self.recorded_runs),
+        )
+        for index, result in zip(target_indexes, results, strict=True):
+            run = self.recorded_runs[index]
+            if run.evolution_result_recorded:
+                raise RuntimeError("recorded extraction already has an evolution result")
+            current_nodes = {node.node_id: node for node in result.graph_nodes}
+            current_edges = {edge.edge_id: edge for edge in result.graph_edges}
+            graph_delta = RuntimeGraphDelta(
+                added_nodes=[
+                    node
+                    for node_id, node in current_nodes.items()
+                    if node_id not in self._graph_nodes
+                ],
+                updated_nodes=[
+                    node
+                    for node_id, node in current_nodes.items()
+                    if node_id in self._graph_nodes and node != self._graph_nodes[node_id]
+                ],
+                removed_node_ids=sorted(set(self._graph_nodes) - set(current_nodes)),
+                added_edges=[
+                    edge
+                    for edge_id, edge in current_edges.items()
+                    if edge_id not in self._graph_edges
+                ],
+                updated_edges=[
+                    edge
+                    for edge_id, edge in current_edges.items()
+                    if edge_id in self._graph_edges and edge != self._graph_edges[edge_id]
+                ],
+                removed_edge_ids=sorted(set(self._graph_edges) - set(current_edges)),
+            )
+            self.recorded_runs[index] = run.model_copy(
+                update={
+                    "validation_results": {
+                        claim_id: list(values)
+                        for claim_id, values in result.validation_results.items()
+                    },
+                    "entity_identity_decisions": list(result.entity_identity_decisions),
+                    "evolution_result_recorded": True,
+                    "compiled_claims": list(result.claims),
+                    "compiled_actions": list(result.actions),
+                    "lifecycle_transitions": list(result.transitions),
+                    "graph_nodes": list(result.graph_nodes),
+                    "graph_edges": list(result.graph_edges),
+                    "graph_validation_errors": list(result.graph_validation_errors),
+                    "graph_delta": graph_delta,
+                }
+            )
+            self._graph_nodes = current_nodes
+            self._graph_edges = current_edges
 
     def record_operation_outcomes(
         self,

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput, MemoryExtractor
+from memorii.core.memory_evolution.extraction_contracts import (
+    MemoryExtractionOutput,
+    MemoryExtractor,
+    StructuredProposalProvider,
+)
 from memorii.core.memory_evolution.extraction_identity import normalize_extracted_name as _normalize_name
 from memorii.core.memory_evolution.extraction_identity import stable_entity_id as _entity_id
 from memorii.core.memory_evolution.extraction_identity import stable_extraction_id as _stable_id
@@ -44,6 +48,10 @@ class EnglishRuleMemoryExtractor:
     model: str | None = None
     prompt_hash: str | None = None
 
+    @property
+    def structured_proposal(self) -> MemoryExtractionOutput | None:
+        return None
+
     def extract(
         self, observations: list[SourceObservation]
     ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
@@ -78,6 +86,7 @@ class EnglishRuleMemoryExtractor:
 
         entity_list = list(entities.values())
         claims = _canonicalize_claim_arguments(claims, entity_list)
+        entity_list = _apply_grounded_declared_entity_types(entity_list, claims)
         extracted_anything = bool(entity_list or claims or actions)
         if errors:
             status = ExtractionRunStatus.PARTIAL if entity_list or claims or actions else ExtractionRunStatus.ABSTAINED
@@ -179,11 +188,23 @@ class EnglishRuleMemoryExtractor:
             target = action_match.group("target").strip()
             status = action_match.group("status").lower()
             span = _span(observation=observation, quote=action_match.group(0))
+            target_entity_id = _entity_id(target)
+            entities.append(
+                EntityMention(
+                    entity_id=target_entity_id,
+                    mention_text=target,
+                    normalized_name=_normalize_name(target),
+                    entity_type=EntityType.UNKNOWN,
+                    evidence_spans=[span],
+                    confidence=0.7,
+                    scope=observation_scope,
+                )
+            )
             actions.append(
                 ExtractedAction(
                     action_id=_stable_id("action", f"{run_id}:{observation.source_id}:{target}:{status}"),
                     action_type="work_state",
-                    target_entity_ids=[_entity_id(target)],
+                    target_entity_ids=[target_entity_id],
                     status=status,
                     timestamp=observation.timestamp,
                     scope=observation_scope,
@@ -211,16 +232,23 @@ class LLMMemoryExtractor:
         self._registry = PromptRegistry(prompt_root=root)
         self.model: str | None = None
         self.prompt_hash: str | None = None
+        self._structured_proposal: MemoryExtractionOutput | None = None
+
+    @property
+    def structured_proposal(self) -> MemoryExtractionOutput | None:
+        return self._structured_proposal
 
     def extract(
         self, observations: list[SourceObservation]
     ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
         if not observations:
+            self._structured_proposal = None
             return _deterministic_abstention(
                 provider=self.provider,
                 model=self.model,
                 prompt_hash=self.prompt_hash,
             )
+        self._structured_proposal = None
         run_id = _stable_id("extraction", "|".join(obs.source_id for obs in observations))
         contract = self._registry.load(
             self.prompt_ref,
@@ -241,6 +269,11 @@ class LLMMemoryExtractor:
         )
         self.model = result.response.actual_model or result.response.requested_model
         self.prompt_hash = result.request.prompt_hash
+        self._structured_proposal = (
+            MemoryExtractionOutput.model_validate(result.output)
+            if result.output is not None
+            else None
+        )
         if not result.success or result.output is None:
             failure_mode = result.failure_mode or "output_validation"
             failure_code = {
@@ -292,6 +325,12 @@ class HybridMemoryExtractor:
         self._rule_extractor = rule_extractor or EnglishRuleMemoryExtractor()
         self.model: str | None = None
         self.prompt_hash: str | None = None
+
+    @property
+    def structured_proposal(self) -> MemoryExtractionOutput | None:
+        if isinstance(self._llm_extractor, StructuredProposalProvider):
+            return self._llm_extractor.structured_proposal
+        return None
 
     def extract(
         self, observations: list[SourceObservation]
@@ -495,12 +534,10 @@ def models_from_llm_output(
             confidence = _float_output(item.get("confidence"), default=0.6)
             object_entity_ref = str(item["object_entity_ref"]).strip() if item.get("object_entity_ref") else None
             object_entity_id, object_value, object_qualifiers = _resolve_claim_object_endpoint(
-                run_id=run_id,
                 predicate_id=predicate_id,
                 object_value=object_value,
                 object_entity_ref=object_entity_ref,
                 observation=observation,
-                confidence=confidence,
                 entity_id_by_ref=entity_id_by_ref,
                 entities=entities,
             )
@@ -596,16 +633,50 @@ def models_from_llm_output(
             errors.append(f"action[{idx}]: {type(exc).__name__}:{exc}")
 
     claims = _canonicalize_claim_arguments(claims, entities)
+    entities = _apply_grounded_declared_entity_types(entities, claims)
+    claims = _compile_grounded_entity_type_claims(
+        run_id=run_id,
+        entities=entities,
+        claims=claims,
+        observation_by_id=observation_by_id,
+    )
     entities_by_id = {entity.entity_id: entity for entity in entities}
     valid_claims: list[ExtractedClaim] = []
     for idx, claim in enumerate(claims):
         try:
+            subject = entities_by_id[claim.claim_key.subject_entity_id]
             _validate_claim_endpoint_contract(
                 predicate_id=claim.claim_key.predicate_id,
-                subject=entities_by_id[claim.claim_key.subject_entity_id],
+                subject=subject,
                 object_entity=(entities_by_id[claim.object_entity_id] if claim.object_entity_id is not None else None),
                 object_value=claim.object_value,
             )
+            if claim.claim_key.predicate_id == "entity_type":
+                declared_type = EntityType(claim.object_value.strip().casefold())
+                if not _entity_type_declaration_is_grounded(
+                    entity=subject,
+                    claim=claim,
+                    declared_type=declared_type,
+                ):
+                    raise ValueError(
+                        "entity_type declaration is not grounded in its evidence quote"
+                    )
+            elif (
+                claim.claim_key.predicate_id in _EVIDENCE_BOUND_RELATION_PREDICATES
+                and not _relation_arguments_are_grounded(
+                    predicate_id=claim.claim_key.predicate_id,
+                    subject=subject,
+                    object_entity=(
+                        entities_by_id[claim.object_entity_id]
+                        if claim.object_entity_id is not None
+                        else None
+                    ),
+                    claim=claim,
+                )
+            ):
+                raise ValueError(
+                    "relation arguments are not grounded in the evidence quote"
+                )
             valid_claims.append(claim)
         except (KeyError, ValueError) as exc:
             errors.append(f"claim[{idx}]: {type(exc).__name__}:{exc}")
@@ -649,6 +720,242 @@ def models_from_llm_output(
     return run, entities, claims, actions
 
 
+_GROUNDED_ENTITY_TYPE_TERMS = {
+    EntityType.PROJECT: frozenset({"project", "workstream"}),
+    EntityType.SERVICE: frozenset({"service"}),
+    EntityType.TASK: frozenset({"task"}),
+    EntityType.PREFERENCE: frozenset({"preference"}),
+    EntityType.PERSON: frozenset({"person"}),
+}
+
+
+def _compile_grounded_entity_type_claims(
+    *,
+    run_id: str,
+    entities: list[EntityMention],
+    claims: list[ExtractedClaim],
+    observation_by_id: dict[str, SourceObservation],
+) -> list[ExtractedClaim]:
+    """Compile explicit typed declarations into registered, grounded claims."""
+
+    existing_type_keys = {
+        (
+            claim.claim_key.subject_entity_id,
+            span.source_id,
+        )
+        for claim in claims
+        if claim.claim_key.predicate_id == "entity_type"
+        for span in claim.evidence_spans
+    }
+    derived: list[ExtractedClaim] = []
+    derived_keys: set[tuple[str, str]] = set()
+    for entity in entities:
+        terms = _GROUNDED_ENTITY_TYPE_TERMS.get(entity.entity_type)
+        if not terms:
+            continue
+        for span in entity.evidence_spans:
+            key = (entity.entity_id, span.source_id)
+            observation = observation_by_id.get(span.source_id)
+            quote_tokens = set(re.findall(r"[a-z0-9]+", span.quote.casefold()))
+            if (
+                key in existing_type_keys
+                or key in derived_keys
+                or observation is None
+                or quote_tokens.isdisjoint(terms)
+                or not _entity_type_evidence_is_grounded(
+                    entity=entity,
+                    declared_type=entity.entity_type,
+                    evidence_quotes=(span.quote,),
+                )
+            ):
+                continue
+            confidence = entity.confidence
+            claim_id = _stable_id(
+                "claim",
+                "|".join(
+                    [
+                        run_id,
+                        span.source_id,
+                        "entity_type",
+                        entity.entity_id,
+                        entity.entity_type.value,
+                        entity.scope.stable_id(),
+                        "default",
+                    ]
+                ),
+            )
+            derived.append(
+                ExtractedClaim(
+                    claim_id=claim_id,
+                    claim_key=ClaimKey(
+                        subject_entity_id=entity.entity_id,
+                        predicate_id="entity_type",
+                        scope=entity.scope,
+                        qualifier_key="default",
+                    ),
+                    object_value=entity.entity_type.value,
+                    valid_from=observation.timestamp,
+                    evidence_spans=[span],
+                    confidence=ConfidenceComponents(
+                        extraction=confidence,
+                        evidence=0.8 if span.char_start is not None else 0.4,
+                        source_trust=_confidence_for_source(observation).source_trust,
+                        calibrated=min(
+                            1.0,
+                            max(
+                                0.0,
+                                confidence * 0.5
+                                + _confidence_for_source(observation).source_trust * 0.3
+                                + 0.16,
+                            ),
+                        ),
+                    ),
+                    extraction_run_id=run_id,
+                )
+            )
+            derived_keys.add(key)
+
+    if not derived:
+        return claims
+    derived_subject_sources = {
+        (claim.claim_key.subject_entity_id, span.source_id)
+        for claim in derived
+        for span in claim.evidence_spans
+    }
+    entity_type_by_id = {
+        entity.entity_id: entity.entity_type
+        for entity in entities
+    }
+    retained = [
+        claim
+        for claim in claims
+        if claim.claim_key.predicate_id != "semantic_fact"
+        or not (
+            any(
+                (claim.claim_key.subject_entity_id, span.source_id) in derived_subject_sources
+                for span in claim.evidence_spans
+            )
+            and _semantic_fact_denotes_entity_type(
+                claim.object_value,
+                entity_type_by_id.get(claim.claim_key.subject_entity_id),
+            )
+        )
+    ]
+    return [*retained, *derived]
+
+
+def _apply_grounded_declared_entity_types(
+    entities: list[EntityMention],
+    claims: list[ExtractedClaim],
+) -> list[EntityMention]:
+    entities_by_id = {entity.entity_id: entity for entity in entities}
+    declared_types: dict[str, set[EntityType]] = {}
+    for claim in claims:
+        if (
+            claim.claim_key.predicate_id != "entity_type"
+            or claim.object_entity_id is not None
+            or not claim.evidence_spans
+        ):
+            continue
+        try:
+            declared_type = EntityType(claim.object_value.strip().casefold())
+        except ValueError:
+            continue
+        entity = entities_by_id.get(claim.claim_key.subject_entity_id)
+        if (
+            declared_type == EntityType.UNKNOWN
+            or entity is None
+            or not _entity_type_declaration_is_grounded(
+                entity=entity,
+                claim=claim,
+                declared_type=declared_type,
+            )
+        ):
+            continue
+        declared_types.setdefault(
+            claim.claim_key.subject_entity_id,
+            set(),
+        ).add(declared_type)
+
+    resolved: list[EntityMention] = []
+    for entity in entities:
+        types = declared_types.get(entity.entity_id, set())
+        if entity.entity_type == EntityType.UNKNOWN and len(types) == 1:
+            resolved.append(
+                entity.model_copy(update={"entity_type": next(iter(types))})
+            )
+        else:
+            resolved.append(entity)
+    return resolved
+
+
+def _entity_type_declaration_is_grounded(
+    *,
+    entity: EntityMention,
+    claim: ExtractedClaim,
+    declared_type: EntityType,
+) -> bool:
+    return _entity_type_evidence_is_grounded(
+        entity=entity,
+        declared_type=declared_type,
+        evidence_quotes=(span.quote for span in claim.evidence_spans),
+    )
+
+
+def _entity_type_evidence_is_grounded(
+    *,
+    entity: EntityMention,
+    declared_type: EntityType,
+    evidence_quotes: Iterable[str],
+) -> bool:
+    entity_patterns = _entity_name_patterns(entity)
+    type_terms = _GROUNDED_ENTITY_TYPE_TERMS.get(declared_type, frozenset())
+    if not entity_patterns or not type_terms:
+        return False
+    type_pattern = _word_alternation(type_terms)
+    declaration_patterns = [
+        re.compile(
+            rf"{entity_pattern}\s+(?:is|was|remains|became|becomes)\s+"
+            rf"(?:(?:an?|the)\s+)?(?:[a-z0-9_-]+\s+){{0,6}}?{type_pattern}\b",
+            flags=re.IGNORECASE,
+        )
+        for entity_pattern in entity_patterns
+    ]
+    declaration_patterns.extend(
+        re.compile(
+            rf"{entity_pattern}\s*,\s*(?:(?:an?|the)\s+)?"
+            rf"(?:[a-z0-9_-]+\s+){{0,3}}?{type_pattern}\b",
+            flags=re.IGNORECASE,
+        )
+        for entity_pattern in entity_patterns
+    )
+    declaration_patterns.extend(
+        re.compile(
+            rf"{entity_pattern}\s+(?:[a-z0-9_-]+\s+){{0,2}}?{type_pattern}\b",
+            flags=re.IGNORECASE,
+        )
+        for entity_pattern in entity_patterns
+    )
+    return any(
+        pattern.search(quote)
+        for quote in evidence_quotes
+        for pattern in declaration_patterns
+    )
+
+
+def _semantic_fact_denotes_entity_type(
+    object_value: str,
+    entity_type: EntityType | None,
+) -> bool:
+    if entity_type is None:
+        return False
+    normalized = _normalize_name(object_value)
+    return normalized == entity_type.value or normalized in _GROUNDED_ENTITY_TYPE_TERMS.get(
+        entity_type,
+        frozenset(),
+    )
+
+
 _REQUIRED_OBJECT_ENTITY_TYPES = {
     "owner": EntityType.PERSON,
     "approver": EntityType.PERSON,
@@ -656,15 +963,111 @@ _REQUIRED_OBJECT_ENTITY_TYPES = {
     "dependency": EntityType.UNKNOWN,
 }
 
+_EVIDENCE_BOUND_RELATION_PREDICATES = frozenset(
+    {"owner", "approver", "api_owner", "dependency"}
+)
+
+
+def _relation_arguments_are_grounded(
+    *,
+    predicate_id: str,
+    subject: EntityMention,
+    object_entity: EntityMention | None,
+    claim: ExtractedClaim,
+) -> bool:
+    if object_entity is None:
+        return False
+    subject_patterns = _entity_name_patterns(subject)
+    object_patterns = _entity_name_patterns(object_entity)
+    patterns = [
+        pattern
+        for subject_pattern in subject_patterns
+        for object_pattern in object_patterns
+        for pattern in _relation_binding_patterns(
+            predicate_id=predicate_id,
+            subject_pattern=subject_pattern,
+            object_pattern=object_pattern,
+        )
+    ]
+    return any(
+        pattern.search(span.quote)
+        for span in claim.evidence_spans
+        for pattern in patterns
+    )
+
+
+def _relation_binding_patterns(
+    *,
+    predicate_id: str,
+    subject_pattern: str,
+    object_pattern: str,
+) -> tuple[re.Pattern[str], ...]:
+    if predicate_id == "owner":
+        expressions = (
+            rf"{subject_pattern}\s+(?:owner(?:\s+and\s+api\s+owner)?|ownership)"
+            rf"\s*(?:(?:is|are|:|=)|(?:in\s+\w+\s+)?(?:belongs|belonged)\s+to)"
+            rf"\s+{object_pattern}",
+            rf"{object_pattern}\s+(?:currently\s+)?owns\s+{subject_pattern}",
+            rf"{subject_pattern}\s+(?:is|was)\s+(?:(?:an?|the)\s+)?"
+            rf"(?:[a-z0-9_-]+\s+){{0,6}}?owned\s+by\s+{object_pattern}",
+            rf"{object_pattern}\s+(?:is|was)\s+(?:(?:an?|the)\s+)?"
+            rf"(?:[a-z0-9_-]+\s+){{0,3}}?{subject_pattern}\s+owner\b",
+        )
+    elif predicate_id == "approver":
+        expressions = (
+            rf"{subject_pattern}\s+approver\s*(?:is|:|=)\s+{object_pattern}",
+            rf"{object_pattern}\s+approves\s+{subject_pattern}",
+            rf"{subject_pattern}\s+(?:is|was)\s+approved\s+by\s+{object_pattern}",
+        )
+    elif predicate_id == "api_owner":
+        expressions = (
+            rf"{subject_pattern}\s+(?:owner\s+and\s+)?api\s+owner"
+            rf"\s*(?:is|are|:|=)\s+{object_pattern}",
+            rf"{object_pattern}\s+owns\s+(?:the\s+)?{subject_pattern}\s+api\b",
+        )
+    elif predicate_id == "dependency":
+        expressions = (
+            rf"{subject_pattern}\s+(?:depends|depended)\s+on\s+{object_pattern}",
+            rf"{subject_pattern}\s+dependency\s*(?:is|:|=)\s+{object_pattern}",
+            rf"{subject_pattern}\s+(?:is|was)\s+blocked\s+by\s+{object_pattern}",
+        )
+    else:
+        return ()
+    return tuple(
+        re.compile(expression, flags=re.IGNORECASE)
+        for expression in expressions
+    )
+
+
+def _entity_name_patterns(entity: EntityMention) -> tuple[str, ...]:
+    names = {
+        value.strip()
+        for value in (entity.mention_text, *entity.aliases)
+        if value.strip()
+    }
+    return tuple(
+        rf"(?<!\w){_literal_phrase_pattern(name)}(?!\w)"
+        for name in sorted(names, key=lambda value: (-len(value), value.casefold()))
+    )
+
+
+def _literal_phrase_pattern(value: str) -> str:
+    return r"\s+".join(re.escape(part) for part in value.split())
+
+
+def _word_alternation(values: Iterable[str]) -> str:
+    return "(?:" + "|".join(
+        re.escape(value)
+        for value in sorted(values, key=lambda item: (-len(item), item))
+    ) + ")"
+
 
 def _resolve_claim_object_endpoint(
     *,
-    run_id: str,
     predicate_id: str,
     object_value: str,
     object_entity_ref: str | None,
     observation: SourceObservation,
-    confidence: float,
     entity_id_by_ref: dict[str, str],
     entities: list[EntityMention],
 ) -> tuple[str | None, str, dict[str, str]]:
@@ -726,39 +1129,9 @@ def _resolve_claim_object_endpoint(
             {"object_endpoint_grounding": "matched_verbatim_entity"},
         )
 
-    endpoint_span = _grounded_endpoint_span(
-        observation=observation,
-        object_value=object_value,
-    )
-    if endpoint_span is None:
-        if object_entity_ref is not None:
-            raise KeyError(object_entity_ref) from None
-        return None, object_value, {}
-
-    endpoint_ref = object_entity_ref or f"claim-object:{predicate_id}:{normalized_object}"
-    entity_id = _stable_id(
-        "mention",
-        "|".join([run_id, observation.source_id, endpoint_ref]),
-    )
-    entities.append(
-        EntityMention(
-            entity_id=entity_id,
-            mention_text=object_value,
-            normalized_name=normalized_object,
-            aliases=[],
-            entity_type=_REQUIRED_OBJECT_ENTITY_TYPES[predicate_id],
-            evidence_spans=[endpoint_span],
-            confidence=confidence,
-            scope=memory_scope_from_observation(observation),
-        )
-    )
     if object_entity_ref is not None:
-        entity_id_by_ref[object_entity_ref] = entity_id
-    return (
-        entity_id,
-        object_value,
-        {"object_endpoint_grounding": "materialized_from_verbatim_object"},
-    )
+        raise KeyError(object_entity_ref) from None
+    return None, object_value, {}
 
 
 def _normalized_entity_names(entity: EntityMention) -> set[str]:
@@ -767,28 +1140,6 @@ def _normalized_entity_names(entity: EntityMention) -> set[str]:
         entity.normalized_name,
         *(_normalize_name(alias) for alias in entity.aliases),
     } - {""}
-
-
-def _grounded_endpoint_span(
-    *,
-    observation: SourceObservation,
-    object_value: str,
-) -> EvidenceSpan | None:
-    if not _normalize_name(object_value):
-        return None
-    try:
-        span = _span(observation=observation, quote=object_value)
-    except ValueError:
-        return None
-    assert span.char_start is not None
-    assert span.char_end is not None
-    before = observation.text[span.char_start - 1] if span.char_start else ""
-    after = observation.text[span.char_end] if span.char_end < len(observation.text) else ""
-    if object_value[0].isalnum() and before.isalnum():
-        return None
-    if object_value[-1].isalnum() and after.isalnum():
-        return None
-    return span
 
 
 def _validate_claim_endpoint_contract(
@@ -803,7 +1154,7 @@ def _validate_claim_endpoint_contract(
     if (
         predicate_id in {"owner", "approver", "api_owner"}
         and object_entity is not None
-        and object_entity.entity_type not in {EntityType.PERSON, EntityType.UNKNOWN}
+        and object_entity.entity_type != EntityType.PERSON
     ):
         raise ValueError(f"{predicate_id} object must be a person entity")
     if (

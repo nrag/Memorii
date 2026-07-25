@@ -332,6 +332,11 @@ def runtime_stage_trace(
     projection: RuntimeProjection,
     runtime_buckets: Sequence[str],
 ) -> list[RuntimeStageTraceRow]:
+    prefix_semantic_failures = sorted(
+        bucket
+        for bucket in runtime_buckets
+        if bucket.startswith("production_ingestion_semantic_prefix_")
+    )
     extraction_failures = sorted(
         {
             run.extraction_status.value
@@ -365,7 +370,10 @@ def runtime_stage_trace(
         }
     )
     extraction_semantic_failure = bool(
-        extraction_failures or extraction_schema_failures or extraction_fallbacks
+        extraction_failures
+        or extraction_schema_failures
+        or extraction_fallbacks
+        or prefix_semantic_failures
     )
     extraction_execution_failure = bool(extraction_execution_failures)
     extraction_reason_codes = [
@@ -373,6 +381,7 @@ def runtime_stage_trace(
         *(f"provider_schema:{status}" for status in extraction_schema_failures),
         *(f"extraction_status:{status}" for status in extraction_failures),
         *(f"fallback_outcome:{status}" for status in extraction_fallbacks),
+        *prefix_semantic_failures,
     ]
     operation_failures = sorted(
         {

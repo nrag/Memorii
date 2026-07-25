@@ -21,9 +21,13 @@ from memorii.core.benchmark.artifact_rows import (
 )
 from memorii.core.benchmark.artifact_validation import write_json_atomic, write_typed_jsonl
 from memorii.core.benchmark.failure_policy import WARNING_ONLY_BUCKET_RATIONALES
+from memorii.core.benchmark.memory_evolution_runtime.ingestion_oracle import (
+    IngestionPrefixAuditRow,
+)
 from memorii.core.benchmark.memory_evolution_runtime.models import (
     RuntimeGraphItemRow,
     RuntimeGraphSnapshotRow,
+    RuntimeIngestionTraceRow,
     RuntimeSuiteRows,
 )
 from memorii.core.memory_evolution import (
@@ -48,6 +52,16 @@ def write_runtime_artifacts(*, run_dir: Path, rows: RuntimeSuiteRows) -> None:
     write_json_atomic(run_dir / "runtime_graph_alignments_summary.json", runtime_alignment_summary(rows))
     snapshots = [snapshot.model_dump(mode="json") for snapshot in rows.graph_snapshots]
     write_json_atomic(run_dir / "runtime_graph_snapshot.json", snapshots)
+    write_typed_jsonl(
+        run_dir / "runtime_ingestion_traces.jsonl",
+        rows.ingestion_traces,
+        model_type=RuntimeIngestionTraceRow,
+    )
+    write_typed_jsonl(
+        run_dir / "runtime_ingestion_prefix_audits.jsonl",
+        rows.ingestion_prefix_audits,
+        model_type=IngestionPrefixAuditRow,
+    )
 
 
 def horizon_distance_bucket(distance: int | float | object) -> str:

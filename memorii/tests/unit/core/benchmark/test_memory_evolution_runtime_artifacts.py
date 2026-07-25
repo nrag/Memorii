@@ -27,7 +27,10 @@ from memorii.core.benchmark.memory_evolution_runtime.extractors import (
     RecordedExtractionRun,
     RecordingMemoryExtractor,
 )
-from memorii.core.benchmark.memory_evolution_runtime.models import RUNTIME_GRAPH_ITEM_ADAPTER
+from memorii.core.benchmark.memory_evolution_runtime.models import (
+    RUNTIME_GRAPH_ITEM_ADAPTER,
+    RuntimeIngestionTraceRow,
+)
 from memorii.core.benchmark.memory_evolution_runtime.result_rows import (
     run_output_source,
     runtime_failure_classification,
@@ -40,8 +43,10 @@ from memorii.core.benchmark.memory_evolution_sim import (
 from memorii.core.memory_evolution import (
     EnglishRuleMemoryExtractor,
     ExtractionFailureCode,
+    ExtractionRun,
     ExtractionRunStatus,
     FallbackOutcome,
+    MemoryEvolutionResult,
     ProductionRetrievalDecision,
     ProviderAttemptStatus,
 )
@@ -233,6 +238,15 @@ def test_runtime_failure_classification_attributes_extraction_failures_to_ingest
     ) == ["production_ingestion:runtime_output_validation_failure"]
 
 
+def test_runtime_failure_classification_attributes_prefix_semantic_failure_to_ingestion() -> None:
+    bucket = "production_ingestion_semantic_prefix_ingestion_owner_mismatch"
+
+    assert runtime_failure_classification(
+        [bucket],
+        checkpoint_diagnostics_payload(),
+    ) == [f"production_ingestion:{bucket}"]
+
+
 def test_runtime_failure_classification_preserves_lifecycle_owner() -> None:
     assert runtime_failure_classification(
         ["production_lifecycle_inactive_expected_claim"],
@@ -368,7 +382,7 @@ def test_runtime_stage_trace_separates_provider_execution_from_semantic_failure(
         retrieval_decision=decision,
     )
     base = RecordedExtractionRun(
-        input_source_ids=["source:1"],
+        input_source_ids=[],
         provider="hybrid",
         model="test-model",
         prompt_hash="prompt-hash",
@@ -380,11 +394,11 @@ def test_runtime_stage_trace_separates_provider_execution_from_semantic_failure(
         primary_failure_code=None,
         fallback_provider=None,
         errors=[],
-        entity_count=1,
-        claim_count=1,
+        entity_count=0,
+        claim_count=0,
         action_count=0,
-        entity_ids=["entity:1"],
-        claim_ids=["claim:1"],
+        entity_ids=[],
+        claim_ids=[],
         action_ids=[],
         validation_summary={},
     )
@@ -418,6 +432,53 @@ def test_runtime_stage_trace_separates_provider_execution_from_semantic_failure(
         "provider_execution:provider_error",
         "fallback_outcome:succeeded",
     ]
+
+
+def test_runtime_stage_trace_marks_prefix_semantic_failure_as_first_ingestion_divergence() -> None:
+    scenario = next(
+        item
+        for item in generate_memory_evolution_sim_scenarios(
+            profile="adversarial",
+            scenario_count=10,
+            seed=7,
+            noise_rate=0.35,
+        )
+        if item.family == "current_vs_historical_truth"
+    )
+    checkpoint = next(
+        item for item in scenario.checkpoints if item.checkpoint_type == "current_truth"
+    )
+    snapshot = MemoryGraphSnapshot(snapshot_id="prefix-semantic-stage-trace")
+    decision = ProductionRetrievalDecision(
+        query=checkpoint.query_or_task,
+        semantic_frame_status="matched",
+        temporal_frame=QueryTemporalFrame(),
+        resolution_status="resolved",
+    )
+    projection = project_runtime_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        graph_snapshot=snapshot,
+        graph_items=[],
+        source_id_to_event_id={},
+        retrieval_decision=decision,
+    )
+    bucket = "production_ingestion_semantic_prefix_ingestion_owner_mismatch"
+
+    rows = runtime_stage_trace(
+        checkpoint=checkpoint,
+        recorded_runs=[],
+        graph_snapshot=snapshot,
+        projection=projection,
+        runtime_buckets=[bucket],
+    )
+    extraction = rows[0]
+
+    assert extraction.status == "fail"
+    assert extraction.execution_status == "pass"
+    assert extraction.semantic_status == "fail"
+    assert extraction.reason_codes == [bucket]
+    assert extraction.is_first_divergence
 
 
 def test_runtime_checkpoint_diagnostics_cannot_drift_between_public_views() -> None:
@@ -918,7 +979,7 @@ def test_runtime_provider_health_does_not_count_fake_extraction_as_provider_succ
 def test_runtime_output_source_is_scoped_to_the_current_checkpoint_runs() -> None:
     def recorded_run(*, fallback_used: bool) -> RecordedExtractionRun:
         return RecordedExtractionRun(
-            input_source_ids=["source:1"],
+            input_source_ids=[],
             provider="hybrid",
             model="test-model",
             prompt_hash="prompt-hash",
@@ -1010,9 +1071,97 @@ def test_runtime_output_source_reports_deterministic_abstention_as_reused_state(
     )
 
 
+def test_recording_extractor_marks_empty_evolution_result_as_recorded() -> None:
+    extraction_run = ExtractionRun(
+        extraction_run_id="run:empty",
+        provider="test",
+        input_source_ids=[],
+        status=ExtractionRunStatus.ABSTAINED,
+        provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+    )
+    extractor = RecordingMemoryExtractor(delegate=EnglishRuleMemoryExtractor())
+    extractor.recorded_runs = [
+        RecordedExtractionRun(
+            input_source_ids=[],
+            provider="test",
+            model=None,
+            prompt_hash=None,
+            extraction_status=ExtractionRunStatus.ABSTAINED,
+            provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+            fallback_outcome=FallbackOutcome.NOT_USED,
+            final_output_source=MemoryFinalExtractionSource.NONE,
+            failure_code=None,
+            primary_failure_code=None,
+            fallback_provider=None,
+            errors=[],
+            entity_count=0,
+            claim_count=0,
+            action_count=0,
+            entity_ids=[],
+            claim_ids=[],
+            action_ids=[],
+            validation_summary={},
+        )
+    ]
+    result = MemoryEvolutionResult(extraction_run=extraction_run)
+
+    extractor.record_evolution_results([result])
+
+    assert extractor.recorded_runs[0].evolution_result_recorded
+    with pytest.raises(
+        RuntimeError,
+        match="recorded extraction already has an evolution result",
+    ):
+        extractor.record_evolution_results([result])
+
+
+def test_runtime_ingestion_trace_rejects_committed_operation_without_result() -> None:
+    with pytest.raises(
+        ValueError,
+        match="committed operations require a recorded evolution result",
+    ):
+        RuntimeIngestionTraceRow(
+            input_source_ids=[],
+            provider="test",
+            model=None,
+            prompt_hash=None,
+            extraction_status=ExtractionRunStatus.ABSTAINED,
+            provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+            fallback_outcome=FallbackOutcome.NOT_USED,
+            final_output_source=MemoryFinalExtractionSource.NONE,
+            failure_code=None,
+            primary_failure_code=None,
+            fallback_provider=None,
+            errors=[],
+            operation_status=EvolutionOperationStatus.COMMITTED,
+        )
+
+
+def test_runtime_ingestion_trace_rejects_graph_without_recorded_result() -> None:
+    with pytest.raises(
+        ValueError,
+        match="unrecorded evolution results cannot contain compiled graph evidence",
+    ):
+        RuntimeIngestionTraceRow(
+            input_source_ids=[],
+            provider="test",
+            model=None,
+            prompt_hash=None,
+            extraction_status=ExtractionRunStatus.ABSTAINED,
+            provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+            fallback_outcome=FallbackOutcome.NOT_USED,
+            final_output_source=MemoryFinalExtractionSource.NONE,
+            failure_code=None,
+            primary_failure_code=None,
+            fallback_provider=None,
+            errors=[],
+            graph_validation_errors=["invalid"],
+        )
+
+
 def test_runtime_ingestion_failures_are_classified_before_comparison() -> None:
     base = RecordedExtractionRun(
-        input_source_ids=["source:1"],
+        input_source_ids=[],
         provider="llm",
         model="test-model",
         prompt_hash="prompt-hash",
@@ -1024,11 +1173,11 @@ def test_runtime_ingestion_failures_are_classified_before_comparison() -> None:
         primary_failure_code=None,
         fallback_provider=None,
         errors=[],
-        entity_count=1,
-        claim_count=1,
+        entity_count=0,
+        claim_count=0,
         action_count=0,
-        entity_ids=["entity:1"],
-        claim_ids=["claim:1"],
+        entity_ids=[],
+        claim_ids=[],
         action_ids=[],
         validation_summary={},
     )

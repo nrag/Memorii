@@ -62,7 +62,12 @@ class MemoryGraphProjector:
         for observation in result.observations:
             self._add_source_observation(node_by_id, observation)
         for link in result.entity_links:
-            self._add_entity_link(node_by_id, edge_by_id, link)
+            self._add_entity_link(
+                node_by_id,
+                edge_by_id,
+                link,
+                link_by_canonical_entity,
+            )
         for state in result.claim_states:
             self._add_claim_state(node_by_id, edge_by_id, state, link_by_id, source_by_id)
         for action in result.actions:
@@ -200,6 +205,7 @@ class MemoryGraphProjector:
         node_by_id: dict[str, MemoryGraphNode],
         edge_by_id: dict[str, MemoryGraphEdge],
         link: EntityLinkState,
+        link_by_canonical_entity: dict[ScopedCanonicalEntity, EntityLinkState] | None = None,
     ) -> MemoryGraphNode:
         node = _node_from_entity_link(link)
         node_by_id[node.node_id] = node
@@ -215,7 +221,14 @@ class MemoryGraphProjector:
                 confidence=link.confidence,
             )
         if link.lifecycle_state == EntityLinkLifecycleState.MERGED and link.superseded_by_entity_id:
-            target_node = _candidate_entity_node(link.superseded_by_entity_id)
+            target_link = (link_by_canonical_entity or {}).get(
+                (link.superseded_by_entity_id, link.scope.identity)
+            )
+            target_node = (
+                _node_from_entity_link(target_link)
+                if target_link is not None
+                else _candidate_entity_node(link.superseded_by_entity_id)
+            )
             node_by_id.setdefault(target_node.node_id, target_node)
             self._add_edge(
                 edge_by_id,
@@ -226,7 +239,14 @@ class MemoryGraphProjector:
                 confidence=link.confidence,
             )
         if link.lineage_parent_entity_id:
-            parent_node = _candidate_entity_node(link.lineage_parent_entity_id)
+            parent_link = (link_by_canonical_entity or {}).get(
+                (link.lineage_parent_entity_id, link.scope.identity)
+            )
+            parent_node = (
+                _node_from_entity_link(parent_link)
+                if parent_link is not None
+                else _candidate_entity_node(link.lineage_parent_entity_id)
+            )
             node_by_id.setdefault(parent_node.node_id, parent_node)
             self._add_edge(
                 edge_by_id,
@@ -582,6 +602,10 @@ def _node_from_entity_link(link: EntityLinkState) -> MemoryGraphNode:
             "entity_type": link.entity_type.value,
             "aliases": "|".join(link.aliases),
             "superseded_by_entity_id": link.superseded_by_entity_id or "",
+            "scope_key": link.scope.scope_key,
+            "scope_user_id": link.scope.user_id or "",
+            "scope_session_id": link.scope.session_id or "",
+            "scope_task_id": link.scope.task_id or "",
         },
         created_at=link.created_at,
         updated_at=link.updated_at,

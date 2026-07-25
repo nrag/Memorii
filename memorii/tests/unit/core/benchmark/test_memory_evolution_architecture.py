@@ -21,6 +21,12 @@ INDEPENDENT_EVALUATORS = (
     PACKAGE_ROOT / "benchmark" / "memory_evolution_decision",
     PACKAGE_ROOT / "benchmark" / "memory_evolution_sim",
 )
+INGESTION_ORACLE = (
+    PACKAGE_ROOT
+    / "benchmark"
+    / "memory_evolution_runtime"
+    / "ingestion_oracle.py"
+)
 DYNAMIC_IMPORT_OWNERS = {
     PACKAGE_ROOT / "memory_plane" / "file_lock.py": "platform-specific standard-library lock API",
     PACKAGE_ROOT / "provider" / "bm25.py": "optional external rank_bm25 dependency",
@@ -121,6 +127,24 @@ def test_production_memory_evolution_never_imports_benchmark_code() -> None:
     ]
 
     assert violations == []
+
+
+def test_ingestion_oracle_does_not_import_production_semantic_implementations() -> None:
+    forbidden_modules = {
+        "memorii.core.memory_evolution.claim_policy",
+        "memorii.core.memory_evolution.contradictions",
+        "memorii.core.memory_evolution.entity_resolution",
+        "memorii.core.memory_evolution.graph",
+        "memorii.core.memory_evolution.graph_constraint_compilation",
+        "memorii.core.memory_evolution.graph_constraint_resolution",
+        "memorii.core.memory_evolution.graph_persistence",
+        "memorii.core.memory_evolution.service",
+        "memorii.core.benchmark.memory_evolution_runtime.semantic_comparison",
+    }
+
+    imported_modules = {module for module, _names in _imports(INGESTION_ORACLE)}
+
+    assert imported_modules.isdisjoint(forbidden_modules)
 
 
 def test_production_runtime_never_imports_benchmark_code() -> None:

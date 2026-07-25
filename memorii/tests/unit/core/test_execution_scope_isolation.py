@@ -35,13 +35,17 @@ def test_execution_prefetch_never_discloses_unreadable_branch_or_event() -> None
                 text="Private Atlas migration resumed",
                 task_id="task:private-atlas",
                 user_id="user:other",
-            ),
+            )
+        ]
+    )
+    evolution.evolve_records(
+        [
             _action_record(
                 memory_id="event:beta",
                 text="Beta rollout resumed",
                 task_id="task:beta",
                 user_id="user:requester",
-            ),
+            )
         ]
     )
 
@@ -114,13 +118,17 @@ def test_same_task_identifier_never_crosses_user_scope() -> None:
                 text="Atlas migration owner is Alice.",
                 task_id=shared_task,
                 user_id="user:alice",
-            ),
+            )
+        ]
+    )
+    evolution.evolve_records(
+        [
             _action_record(
                 memory_id="event:bob-owner",
                 text="Atlas migration owner is Bob.",
                 task_id=shared_task,
                 user_id="user:bob",
-            ),
+            )
         ]
     )
 

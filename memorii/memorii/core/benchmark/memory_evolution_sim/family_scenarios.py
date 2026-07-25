@@ -252,6 +252,8 @@ def build_family_scenario(
             timestamp=base + timedelta(minutes=5),
             state=SimLifecycleState.SUPERSEDED,
             valid_to=base + timedelta(days=66),
+            superseded_by_claim_id=claim_bob_owner,
+            conflict_with_claim_ids=[claim_bob_owner],
             roles=["historical_truth"],
         ),
         claim(
@@ -268,6 +270,8 @@ def build_family_scenario(
             transition_id=observations[4].transition_id,
             timestamp=base + timedelta(days=66),
             state=SimLifecycleState.ACTIVE,
+            supersedes_claim_ids=[claim_alice_owner],
+            conflict_with_claim_ids=[claim_alice_owner],
             roles=["current_truth", "source_trust"],
         ),
         claim(
@@ -304,6 +308,7 @@ def build_family_scenario(
             if ambiguity_observation is not None
             else observations[4].timestamp,
             state=SimLifecycleState.INVALIDATED,
+            conflict_with_claim_ids=[claim_bob_owner],
             roles=["modality_suppression", "conflict_detection"],
             observability=ObservabilityLabel.AMBIGUOUS,
             confidence=build_confidence(0.35),
@@ -337,6 +342,20 @@ def build_family_scenario(
             )
         )
     if family == "abandoned_then_resumed_work":
+        action_successors = {
+            claim_branch_a_started: (
+                claim_branch_a_blocked,
+                branch_a_blocked_time,
+            ),
+            claim_branch_b_started: (
+                claim_branch_b_progress,
+                branch_b_progress_time,
+            ),
+        }
+        action_predecessors = {
+            successor_id: claim_id
+            for claim_id, (successor_id, _timestamp) in action_successors.items()
+        }
         action_claim_specs = [
             (
                 claim_branch_a_started,
@@ -394,6 +413,8 @@ def build_family_scenario(
             quote,
             state,
         ) in action_claim_specs:
+            successor = action_successors.get(claim_id)
+            predecessor = action_predecessors.get(claim_id)
             claims.append(
                 claim(
                     claim_id=claim_id,
@@ -408,6 +429,21 @@ def build_family_scenario(
                     transition_id=transition_id,
                     timestamp=timestamp,
                     state=state,
+                    valid_to=successor[1] if successor is not None else None,
+                    supersedes_claim_ids=(
+                        [predecessor] if predecessor is not None else []
+                    ),
+                    superseded_by_claim_id=(
+                        successor[0] if successor is not None else None
+                    ),
+                    conflict_with_claim_ids=[
+                        related_claim_id
+                        for related_claim_id in (
+                            successor[0] if successor is not None else None,
+                            predecessor,
+                        )
+                        if related_claim_id is not None
+                    ],
                     roles=["execution_continuation", "action_state"],
                 )
             )

@@ -87,6 +87,40 @@ def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
     assert "graph_edge_counts_by_type" in runtime_graph
     assert report["metrics"]["runtime_graph_item_count"] == runtime["runtime_graph_item_count"]
     assert (run_dir / "runtime_graph_snapshot.json").exists()
+    assert (run_dir / "runtime_ingestion_traces.jsonl").exists()
+    assert (run_dir / "runtime_ingestion_prefix_audits.jsonl").exists()
+    ingestion_trace_rows = [
+        json.loads(line)
+        for line in (run_dir / "runtime_ingestion_traces.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        if line.strip()
+    ]
+    ingestion_prefix_rows = [
+        json.loads(line)
+        for line in (run_dir / "runtime_ingestion_prefix_audits.jsonl").read_text(
+            encoding="utf-8"
+        ).splitlines()
+        if line.strip()
+    ]
+    assert ingestion_trace_rows
+    assert ingestion_prefix_rows
+    assert all(
+        row["input_source_ids"]
+        == [observation["source_id"] for observation in row["input_observations"]]
+        for row in ingestion_trace_rows
+    )
+    assert all(row["evolution_result_recorded"] for row in ingestion_trace_rows)
+    assert all(row["passed"] and not row["issues"] for row in ingestion_prefix_rows)
+    prefix_indexes: dict[str, list[int]] = {}
+    for row in ingestion_prefix_rows:
+        prefix_indexes.setdefault(row["scenario_id"], []).append(
+            row["observation_index"]
+        )
+    assert all(
+        sorted(indexes) == list(range(len(indexes)))
+        for indexes in prefix_indexes.values()
+    )
     assert (run_dir / "runtime_graph_items.jsonl").exists()
     assert (run_dir / "runtime_graph_alignments.jsonl").exists()
     runtime_graph_rows = [

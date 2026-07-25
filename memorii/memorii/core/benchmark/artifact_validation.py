@@ -554,9 +554,13 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
 
     # Import lazily because runtime models are re-exported by the runtime
     # package, whose artifact writer depends on this module.
+    from memorii.core.benchmark.memory_evolution_runtime.ingestion_oracle import (
+        IngestionPrefixAuditRow,
+    )
     from memorii.core.benchmark.memory_evolution_runtime.models import (
         RUNTIME_GRAPH_ITEM_ADAPTER,
         RuntimeGraphSnapshotRow,
+        RuntimeIngestionTraceRow,
     )
 
     report_path = run_dir / "report.json"
@@ -604,12 +608,81 @@ def validate_memory_evolution_run(run_dir: Path, *, suite: str) -> BenchmarkRepo
             run_dir / "runtime_graph_snapshot.json", RuntimeGraphSnapshotRow, required=True
         )
         alignment_rows = _validate_jsonl(run_dir / "runtime_graph_alignments.jsonl", RuntimeGraphAlignmentRow)
+        prefix_audit_rows = _validate_jsonl(
+            run_dir / "runtime_ingestion_prefix_audits.jsonl",
+            IngestionPrefixAuditRow,
+            required=True,
+        )
+        ingestion_trace_rows = _validate_jsonl(
+            run_dir / "runtime_ingestion_traces.jsonl",
+            RuntimeIngestionTraceRow,
+            required=True,
+        )
         standalone_alignment_summary = _validate_json_object(
             run_dir / "runtime_graph_alignments_summary.json",
             AlignmentSummary,
             required=True,
         )
         failure_rows = _validate_jsonl(run_dir / "runtime_failures.jsonl", RuntimeCheckpointResultRow)
+        unknown_prefix_scenarios = sorted(
+            {row.scenario_id for row in prefix_audit_rows}
+            - {row.scenario_id for row in runtime_checkpoint_rows}
+        )
+        if unknown_prefix_scenarios:
+            raise ArtifactValidationError(
+                "runtime ingestion-prefix audits reference unknown scenarios: "
+                f"{unknown_prefix_scenarios}"
+            )
+        prefix_indexes: dict[str, list[int]] = {}
+        for row in prefix_audit_rows:
+            prefix_indexes.setdefault(row.scenario_id, []).append(row.observation_index)
+        noncontiguous_prefixes = {
+            scenario_id: indexes
+            for scenario_id, indexes in prefix_indexes.items()
+            if sorted(indexes) != list(range(len(indexes)))
+        }
+        if noncontiguous_prefixes:
+            raise ArtifactValidationError(
+                "runtime ingestion-prefix audits must have one contiguous zero-based "
+                f"observation sequence per scenario: {noncontiguous_prefixes}"
+            )
+        for index, row in enumerate(ingestion_trace_rows):
+            traced_source_ids = [observation.source_id for observation in row.input_observations]
+            if traced_source_ids != row.input_source_ids:
+                raise ArtifactValidationError(
+                    "runtime_ingestion_traces.jsonl"
+                    f"[{index}] source metadata does not match input_source_ids"
+                )
+            expected_counts = (
+                len(row.proposed_entities),
+                len(row.proposed_claims),
+                len(row.proposed_actions),
+            )
+            recorded_counts = (
+                row.entity_count,
+                row.claim_count,
+                row.action_count,
+            )
+            if recorded_counts != expected_counts:
+                raise ArtifactValidationError(
+                    "runtime_ingestion_traces.jsonl"
+                    f"[{index}] proposal counts do not match proposal rows"
+                )
+            expected_ids = (
+                [entity.entity_id for entity in row.proposed_entities],
+                [claim.claim_id for claim in row.proposed_claims],
+                [action.action_id for action in row.proposed_actions],
+            )
+            recorded_ids = (
+                row.entity_ids,
+                row.claim_ids,
+                row.action_ids,
+            )
+            if recorded_ids != expected_ids:
+                raise ArtifactValidationError(
+                    "runtime_ingestion_traces.jsonl"
+                    f"[{index}] proposal IDs do not match proposal rows"
+                )
     else:
         raise ArtifactValidationError(f"unsupported memory-evolution suite: {suite}")
 

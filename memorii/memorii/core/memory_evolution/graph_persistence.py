@@ -92,6 +92,10 @@ class MemoryGraphValidator:
     def validate_snapshot(self, snapshot: MemoryGraphSnapshot) -> list[str]:
         node_by_id = {node.node_id: node for node in snapshot.nodes}
         errors: list[str] = []
+        if len(node_by_id) != len(snapshot.nodes):
+            errors.append("duplicate_graph_node_id")
+        if len({edge.edge_id for edge in snapshot.edges}) != len(snapshot.edges):
+            errors.append("duplicate_graph_edge_id")
         for edge in snapshot.edges:
             if (
                 edge.source_node_id == edge.target_node_id
@@ -114,6 +118,8 @@ class MemoryGraphValidator:
                 target = node_by_id.get(edge.target_node_id)
                 if target is not None and target.node_type != MemoryGraphNodeType.SOURCE_OBSERVATION:
                     errors.append(f"invalid_observed_in_target:{edge.edge_id}")
+                if not edge.source_record_ids or not edge.evidence_span_ids:
+                    errors.append(f"observed_in_missing_provenance:{edge.edge_id}")
             if edge.edge_type in {
                 MemoryGraphEdgeType.SUPERSEDES,
                 MemoryGraphEdgeType.CONFLICTS_WITH,
@@ -141,17 +147,75 @@ class MemoryGraphValidator:
         for edge in snapshot.edges:
             edges_by_source.setdefault(edge.source_node_id, []).append(edge)
         for node in snapshot.nodes:
+            if (
+                node.node_type
+                in {
+                    MemoryGraphNodeType.ENTITY,
+                    MemoryGraphNodeType.CLAIM,
+                    MemoryGraphNodeType.ACTION,
+                }
+                and node.lifecycle_state != RecordLifecycleState.CANDIDATE
+                and not node.source_record_ids
+            ):
+                errors.append(f"semantic_node_missing_provenance:{node.node_id}")
             if node.node_type != MemoryGraphNodeType.CLAIM or node.lifecycle_state == RecordLifecycleState.CANDIDATE:
                 continue
-            edge_types = {edge.edge_type for edge in edges_by_source.get(node.node_id, [])}
-            if MemoryGraphEdgeType.HAS_SUBJECT not in edge_types:
+            outgoing = edges_by_source.get(node.node_id, [])
+            edge_types = {edge.edge_type for edge in outgoing}
+            subject_count = _edge_count(
+                outgoing,
+                MemoryGraphEdgeType.HAS_SUBJECT,
+            )
+            scope_count = _edge_count(
+                outgoing,
+                MemoryGraphEdgeType.HAS_SCOPE,
+            )
+            object_count = sum(
+                _edge_count(outgoing, edge_type)
+                for edge_type in (
+                    MemoryGraphEdgeType.HAS_OBJECT,
+                    MemoryGraphEdgeType.HAS_LITERAL_OBJECT,
+                )
+            )
+            if subject_count == 0:
                 errors.append(f"claim_missing_subject:{node.node_id}")
-            if MemoryGraphEdgeType.HAS_SCOPE not in edge_types:
+            elif subject_count > 1:
+                errors.append(f"claim_ambiguous_subject:{node.node_id}")
+            if scope_count == 0:
                 errors.append(f"claim_missing_scope:{node.node_id}")
-            if not ({MemoryGraphEdgeType.HAS_OBJECT, MemoryGraphEdgeType.HAS_LITERAL_OBJECT} & edge_types):
+            elif scope_count > 1:
+                errors.append(f"claim_ambiguous_scope:{node.node_id}")
+            if object_count == 0:
                 errors.append(f"claim_missing_object:{node.node_id}")
+            elif object_count > 1:
+                errors.append(f"claim_ambiguous_object:{node.node_id}")
             if MemoryGraphEdgeType.OBSERVED_IN not in edge_types:
                 errors.append(f"claim_missing_observed_in:{node.node_id}")
+            _validate_claim_semantics(
+                node=node,
+                outgoing=outgoing,
+                node_by_id=node_by_id,
+                errors=errors,
+            )
+        for node in snapshot.nodes:
+            if node.node_type != MemoryGraphNodeType.ACTION:
+                continue
+            outgoing = edges_by_source.get(node.node_id, [])
+            target_edges = [
+                edge for edge in outgoing if edge.edge_type == MemoryGraphEdgeType.HAS_OBJECT
+            ]
+            if not target_edges:
+                errors.append(f"action_missing_target:{node.node_id}")
+            if not any(edge.edge_type == MemoryGraphEdgeType.OBSERVED_IN for edge in outgoing):
+                errors.append(f"action_missing_observed_in:{node.node_id}")
+            for edge in target_edges:
+                target = node_by_id.get(edge.target_node_id)
+                if (
+                    target is None
+                    or target.node_type != MemoryGraphNodeType.ENTITY
+                    or target.lifecycle_state == RecordLifecycleState.CANDIDATE
+                ):
+                    errors.append(f"action_target_not_grounded_entity:{node.node_id}")
         return sorted(set(errors))
 
 
@@ -166,6 +230,76 @@ def _validate_edge_node_type(
         endpoint = node_by_id.get(endpoint_id)
         if endpoint is not None and endpoint.node_type != expected_type:
             errors.append(_invalid_edge_error(edge))
+
+
+_PERSON_OBJECT_PREDICATES = frozenset({"owner", "approver", "api_owner"})
+
+
+def _validate_claim_semantics(
+    *,
+    node: MemoryGraphNode,
+    outgoing: list[MemoryGraphEdge],
+    node_by_id: dict[str, MemoryGraphNode],
+    errors: list[str],
+) -> None:
+    predicate = node.properties.get("predicate_id", "")
+    subject = _single_target(
+        outgoing,
+        edge_type=MemoryGraphEdgeType.HAS_SUBJECT,
+        node_by_id=node_by_id,
+    )
+    object_entity = _single_target(
+        outgoing,
+        edge_type=MemoryGraphEdgeType.HAS_OBJECT,
+        node_by_id=node_by_id,
+    )
+    literal_object = _single_target(
+        outgoing,
+        edge_type=MemoryGraphEdgeType.HAS_LITERAL_OBJECT,
+        node_by_id=node_by_id,
+    )
+    if predicate in _PERSON_OBJECT_PREDICATES and (
+        object_entity is None
+        or object_entity.node_type != MemoryGraphNodeType.ENTITY
+        or object_entity.lifecycle_state == RecordLifecycleState.CANDIDATE
+        or object_entity.properties.get("entity_type") != "person"
+    ):
+        errors.append(f"claim_requires_grounded_person_object:{node.node_id}")
+    if predicate != "entity_type":
+        return
+    if (
+        subject is None
+        or subject.node_type != MemoryGraphNodeType.ENTITY
+        or literal_object is None
+        or literal_object.node_type != MemoryGraphNodeType.LITERAL
+    ):
+        errors.append(f"entity_type_claim_has_invalid_endpoints:{node.node_id}")
+        return
+    declared_type = literal_object.properties.get("normalized_value", "")
+    subject_type = subject.properties.get("entity_type", "")
+    if not declared_type or declared_type != subject_type:
+        errors.append(f"entity_type_claim_mismatch:{node.node_id}")
+
+
+def _single_target(
+    outgoing: list[MemoryGraphEdge],
+    *,
+    edge_type: MemoryGraphEdgeType,
+    node_by_id: dict[str, MemoryGraphNode],
+) -> MemoryGraphNode | None:
+    targets = [
+        node_by_id.get(edge.target_node_id)
+        for edge in outgoing
+        if edge.edge_type == edge_type
+    ]
+    return targets[0] if len(targets) == 1 else None
+
+
+def _edge_count(
+    outgoing: list[MemoryGraphEdge],
+    edge_type: MemoryGraphEdgeType,
+) -> int:
+    return sum(edge.edge_type == edge_type for edge in outgoing)
 
 
 def _record_from_graph_node(node: MemoryGraphNode) -> CanonicalMemoryRecord:

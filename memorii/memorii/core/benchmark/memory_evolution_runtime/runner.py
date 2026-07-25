@@ -25,9 +25,14 @@ from memorii.core.benchmark.memory_evolution_runtime.graph_items import (
     graph_items_from_snapshot,
 )
 from memorii.core.benchmark.memory_evolution_runtime.ingestion import IngestionContext, ingest_surface_observation
+from memorii.core.benchmark.memory_evolution_runtime.ingestion_oracle import (
+    IngestionPrefixAuditRow,
+    audit_ingestion_prefix,
+)
 from memorii.core.benchmark.memory_evolution_runtime.models import (
     RuntimeGraphItem,
     RuntimeGraphSnapshotRow,
+    RuntimeIngestionTraceRow,
     RuntimeSuiteRows,
 )
 from memorii.core.benchmark.memory_evolution_runtime.provider_composition import (
@@ -161,6 +166,8 @@ def run_runtime_scenarios(
     graph_items: list[RuntimeGraphItem] = []
     alignments: list[RuntimeGraphAlignmentRow] = []
     runtime_failures: list[RuntimeCheckpointResultRow] = []
+    ingestion_traces: list[RuntimeIngestionTraceRow] = []
+    ingestion_prefix_audits: list[IngestionPrefixAuditRow] = []
 
     for scenario in scenarios:
         extractor = build_runtime_extractor(
@@ -188,6 +195,7 @@ def run_runtime_scenarios(
         before_record_ids: set[str] = set()
         evolution_service = provider.memory_evolution_service
         scenario_checkpoint_rows: list[RuntimeCheckpointResultRow] = []
+        scenario_prefix_audits: list[IngestionPrefixAuditRow] = []
         extractor_provider_successes = 0
         extractor_provider_failures = 0
         extractor_fallbacks = 0
@@ -211,8 +219,19 @@ def run_runtime_scenarios(
                 extractor.record_operation_outcomes(
                     ingestion_result.evolution_outcomes
                 )
+                extractor.record_evolution_results(
+                    ingestion_result.evolution_results
+                )
                 before_record_ids = {record.memory_id for record in memory_plane.list_records()}
                 observation_index += 1
+                prefix_audit = audit_ingestion_prefix(
+                    scenario=scenario,
+                    observations=ordered_observations[:observation_index],
+                    snapshot=evolution_service.retrieve_graph_snapshot(),
+                    source_id_to_event_id=source_id_to_event_id,
+                )
+                scenario_prefix_audits.append(prefix_audit)
+                ingestion_prefix_audits.append(prefix_audit)
             work_state = evolution_service.derive_work_state()
             # Keep the benchmark on the provider-facing production retrieval
             # contract. The benchmark may judge the result, but it must not
@@ -288,6 +307,16 @@ def run_runtime_scenarios(
                 retrieval_decision=retrieval_decision,
             )
             projection.stage_failure_buckets.extend(composition_failures)
+            projection.stage_failure_buckets.extend(
+                sorted(
+                    {
+                        f"production_ingestion_semantic_prefix_{issue.code}"
+                        for audit in scenario_prefix_audits
+                        if not audit.passed
+                        for issue in audit.issues
+                    }
+                )
+            )
             alignments.extend(
                 RuntimeGraphAlignmentRow.from_alignment(
                     alignment,
@@ -351,6 +380,7 @@ def run_runtime_scenarios(
             dry_run=dry_run,
         )
         llm_rows.extend(extractor_call_rows)
+        ingestion_traces.extend(recorded_extraction_runs(extractor))
         scenario_success = all(row.success is True for row in scenario_checkpoint_rows)
         scenario_rows.append(
             SimScenarioResultRow(
@@ -376,6 +406,8 @@ def run_runtime_scenarios(
         graph_items=graph_items,
         alignments=alignments,
         runtime_failures=runtime_failures,
+        ingestion_traces=ingestion_traces,
+        ingestion_prefix_audits=ingestion_prefix_audits,
         effective_mode=effective_mode,
         dry_run=dry_run,
         provider_metadata=_provider_metadata(

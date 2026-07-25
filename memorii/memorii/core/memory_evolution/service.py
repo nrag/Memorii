@@ -237,6 +237,10 @@ class MemoryEvolutionService:
         skipped_observation_ids = [
             obs.source_id for obs in observations if obs.trigger_mode == ExtractionTriggerMode.SKIP
         ]
+        if len(extractable_observations) > 1:
+            raise ValueError(
+                "memory evolution requires one extractable source observation per call"
+            )
         run, entities, claims, actions = self._extractor.extract(extractable_observations)
         if run.status in {
             ExtractionRunStatus.FAILED,
@@ -299,6 +303,17 @@ class MemoryEvolutionService:
 
         existing_entity_links = self._state_repository.list_entity_links()
         entity_resolution = self._entity_resolver.resolve_mentions(entities, existing_entity_links)
+        unresolved_reference_errors = _unresolved_entity_reference_errors(
+            claims=claims,
+            actions=actions,
+            unresolved_entity_ids={
+                decision.mention_entity_id
+                for decision in entity_resolution.decisions
+                if decision.resolved_entity_id is None
+            },
+        )
+        if unresolved_reference_errors:
+            raise MemoryEvolutionMutationValidationError(unresolved_reference_errors)
         entity_links = entity_resolution.links
         canonical_references = self._entity_resolver.canonical_reference_map(entity_resolution)
         canonical_claims: list[ExtractedClaim] = []
@@ -580,3 +595,31 @@ class MemoryEvolutionService:
 
     def retrieve_conflict_graph(self) -> MemoryGraphSnapshot:
         return self._graph_queries.conflict_graph()
+
+
+def _unresolved_entity_reference_errors(
+    *,
+    claims: list[ExtractedClaim],
+    actions: list[ExtractedAction],
+    unresolved_entity_ids: set[str],
+) -> list[str]:
+    if not unresolved_entity_ids:
+        return []
+    errors: list[str] = []
+    for claim in claims:
+        references = {
+            claim.claim_key.subject_entity_id,
+            *([claim.object_entity_id] if claim.object_entity_id is not None else []),
+        }
+        for entity_id in sorted(references & unresolved_entity_ids):
+            errors.append(f"unresolved_entity_reference:claim:{claim.claim_id}:{entity_id}")
+    for action in actions:
+        references = {
+            *action.target_entity_ids,
+            *action.dependency_entity_ids,
+            *action.blocking_entity_ids,
+            *([action.actor_entity_id] if action.actor_entity_id is not None else []),
+        }
+        for entity_id in sorted(references & unresolved_entity_ids):
+            errors.append(f"unresolved_entity_reference:action:{action.action_id}:{entity_id}")
+    return errors
