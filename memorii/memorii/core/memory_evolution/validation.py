@@ -66,7 +66,6 @@ class MemoryEvolutionValidator:
             self._validate_modality(claim, observation_by_id),
             self._validate_object(claim),
             self._validate_subject_support(claim, observation_by_id),
-            self._validate_predicate_support(claim, observation_by_id),
             self._validate_temporal_support(claim),
             self._validate_evidence_spans(claim, observation_by_id),
         ]
@@ -177,51 +176,6 @@ class MemoryEvolutionValidator:
             verdict=ValidationVerdict.WARN,
             score=0.5,
             rationale="claim subject was not directly found in source text",
-        )
-
-    def _validate_predicate_support(
-        self,
-        claim: ExtractedClaim,
-        observation_by_id: dict[str, SourceObservation],
-    ) -> ValidationResult:
-        predicate = claim.claim_key.predicate_id
-        text = _source_text_for_claim(claim, observation_by_id)
-        support_terms = {
-            "owner": ["owner", "owns", "owned", "ownership", "belongs to", "belonged to"],
-            "approver": ["approver", "approval"],
-            "api_owner": ["api owner", "api_owner"],
-            "status": ["status", "state", "deploy", "deployment", "failed", "succeeded", "blocked"],
-            "preference": ["prefer", "preference", "style"],
-            "dependency": ["depends", "dependency", "requires", "supports"],
-            "action_state": [
-                "started",
-                "in progress",
-                "in_progress",
-                "progressing",
-                "blocked",
-                "resumed",
-                "abandoned",
-                "completed",
-                "failed",
-                "succeeded",
-            ],
-            "belief": ["hypothesis", "belief", "root cause", "candidate"],
-            "correction": ["correction", "actually", "not", "instead", "should be"],
-            "entity_type": ["is", "project", "service", "type", "workstream"],
-            "semantic_fact": [],
-        }.get(predicate, [])
-        if not support_terms or any(term in text for term in support_terms):
-            return ValidationResult(
-                validator_name="predicate_support",
-                verdict=ValidationVerdict.PASS,
-                score=1.0,
-                rationale="predicate is supported by source text",
-            )
-        return ValidationResult(
-            validator_name="predicate_support",
-            verdict=ValidationVerdict.FAIL,
-            score=0.0,
-            rationale=f"predicate {predicate} is not supported by source text",
         )
 
     def _validate_temporal_support(self, claim: ExtractedClaim) -> ValidationResult:

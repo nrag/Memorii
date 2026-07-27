@@ -85,9 +85,7 @@ def test_oracle_detects_wrong_owner(
         }
     )
 
-    assert "ingestion_claim_object_mismatch" in _issue_codes(
-        scenario, mutated, source_map
-    )
+    assert "ingestion_claim_object_mismatch" in _issue_codes(scenario, mutated, source_map)
 
 
 def test_oracle_detects_swapped_claim_endpoints(
@@ -122,18 +120,10 @@ def test_oracle_detects_missing_claim_object_endpoint(
     claim = _current_owner_claim(snapshot)
     object_edge = _edge(snapshot, claim.node_id, MemoryGraphEdgeType.HAS_OBJECT)
     mutated = snapshot.model_copy(
-        update={
-            "edges": [
-                edge
-                for edge in snapshot.edges
-                if edge.edge_id != object_edge.edge_id
-            ]
-        }
+        update={"edges": [edge for edge in snapshot.edges if edge.edge_id != object_edge.edge_id]}
     )
 
-    assert "ingestion_claim_object_mismatch" in _issue_codes(
-        scenario, mutated, source_map
-    )
+    assert "ingestion_claim_object_mismatch" in _issue_codes(scenario, mutated, source_map)
 
 
 def test_oracle_detects_wrong_predicate(
@@ -159,9 +149,7 @@ def test_oracle_detects_wrong_predicate(
         }
     )
 
-    assert "ingestion_claim_predicate_mismatch" in _issue_codes(
-        scenario, mutated, source_map
-    )
+    assert "ingestion_claim_predicate_mismatch" in _issue_codes(scenario, mutated, source_map)
 
 
 def test_oracle_detects_wrong_entity_type(
@@ -171,8 +159,7 @@ def test_oracle_detects_wrong_entity_type(
     project = next(
         node
         for node in snapshot.nodes
-        if node.node_type == MemoryGraphNodeType.ENTITY
-        and node.properties.get("entity_type") == "project"
+        if node.node_type == MemoryGraphNodeType.ENTITY and node.properties.get("entity_type") == "project"
     )
     mutated = snapshot.model_copy(
         update={
@@ -192,9 +179,7 @@ def test_oracle_detects_wrong_entity_type(
         }
     )
 
-    assert "ingestion_entity_type_mismatch" in _issue_codes(
-        scenario, mutated, source_map
-    )
+    assert "ingestion_entity_type_mismatch" in _issue_codes(scenario, mutated, source_map)
 
 
 def test_oracle_detects_entity_merge(
@@ -209,11 +194,15 @@ def test_oracle_detects_entity_merge(
         and node.properties.get("scope_key") == "global"
     ]
     primary, duplicate = people[:2]
-    merged_aliases = "|".join(
+    merged_observed_names = "|".join(
         sorted(
             {
-                *primary.properties.get("aliases", "").split("|"),
-                *duplicate.properties.get("aliases", "").split("|"),
+                primary.label,
+                duplicate.label,
+                primary.properties.get("normalized_name", ""),
+                duplicate.properties.get("normalized_name", ""),
+                *primary.properties.get("observed_names", "").split("|"),
+                *duplicate.properties.get("observed_names", "").split("|"),
             }
         )
     )
@@ -221,7 +210,7 @@ def test_oracle_detects_entity_merge(
         update={
             "properties": {
                 **primary.properties,
-                "aliases": merged_aliases,
+                "observed_names": merged_observed_names,
             }
         }
     )
@@ -236,14 +225,10 @@ def test_oracle_detects_entity_merge(
                 edge.model_copy(
                     update={
                         "source_node_id": (
-                            primary.node_id
-                            if edge.source_node_id == duplicate.node_id
-                            else edge.source_node_id
+                            primary.node_id if edge.source_node_id == duplicate.node_id else edge.source_node_id
                         ),
                         "target_node_id": (
-                            primary.node_id
-                            if edge.target_node_id == duplicate.node_id
-                            else edge.target_node_id
+                            primary.node_id if edge.target_node_id == duplicate.node_id else edge.target_node_id
                         ),
                     }
                 )
@@ -252,9 +237,7 @@ def test_oracle_detects_entity_merge(
         }
     )
 
-    assert "ingestion_unexpected_entity_merge" in _issue_codes(
-        scenario, mutated, source_map
-    )
+    assert "ingestion_unexpected_entity_merge" in _issue_codes(scenario, mutated, source_map)
 
 
 def test_oracle_detects_entity_split(
@@ -264,8 +247,7 @@ def test_oracle_detects_entity_split(
     project = next(
         node
         for node in snapshot.nodes
-        if node.node_type == MemoryGraphNodeType.ENTITY
-        and node.properties.get("entity_type") == "project"
+        if node.node_type == MemoryGraphNodeType.ENTITY and node.properties.get("entity_type") == "project"
     )
     duplicate = project.model_copy(
         update={
@@ -276,9 +258,7 @@ def test_oracle_detects_entity_split(
     )
     mutated = snapshot.model_copy(update={"nodes": [*snapshot.nodes, duplicate]})
 
-    assert "ingestion_unexpected_entity_split" in _issue_codes(
-        scenario, mutated, source_map
-    )
+    assert "ingestion_unexpected_entity_split" in _issue_codes(scenario, mutated, source_map)
 
 
 def test_oracle_detects_wrong_action_state(
@@ -288,8 +268,7 @@ def test_oracle_detects_wrong_action_state(
     action = next(
         node
         for node in snapshot.nodes
-        if node.node_type == MemoryGraphNodeType.ACTION
-        and node.properties.get("execution_status") == "in_progress"
+        if node.node_type == MemoryGraphNodeType.ACTION and node.properties.get("execution_status") == "in_progress"
     )
     mutated = snapshot.model_copy(
         update={
@@ -310,9 +289,7 @@ def test_oracle_detects_wrong_action_state(
         }
     )
 
-    assert "ingestion_action_status_mismatch" in _issue_codes(
-        scenario, mutated, source_map
-    )
+    assert "ingestion_action_status_mismatch" in _issue_codes(scenario, mutated, source_map)
 
 
 def test_oracle_detects_missing_provenance(
@@ -329,17 +306,42 @@ def test_oracle_detects_missing_provenance(
                         "evidence_span_ids": [],
                     }
                 )
-                if edge.source_node_id == claim.node_id
-                and edge.edge_type == MemoryGraphEdgeType.OBSERVED_IN
+                if edge.source_node_id == claim.node_id and edge.edge_type == MemoryGraphEdgeType.OBSERVED_IN
                 else edge
                 for edge in snapshot.edges
             ]
         }
     )
 
-    assert "ingestion_claim_provenance_mismatch" in _issue_codes(
-        scenario, mutated, source_map
+    assert "ingestion_claim_provenance_mismatch" in _issue_codes(scenario, mutated, source_map)
+
+
+def test_oracle_allows_extra_corroborating_claim_provenance(
+    ownership_graph: tuple[LatentGraphScenario, MemoryGraphSnapshot, dict[str, str]],
+) -> None:
+    scenario, snapshot, source_map = ownership_graph
+    claim = _current_owner_claim(snapshot)
+    observed_edge = _edge(snapshot, claim.node_id, MemoryGraphEdgeType.OBSERVED_IN)
+    extra_source_id = next(source_id for source_id in source_map if source_id not in observed_edge.source_record_ids)
+    mutated = snapshot.model_copy(
+        update={
+            "edges": [
+                edge.model_copy(
+                    update={
+                        "source_record_ids": [
+                            *edge.source_record_ids,
+                            extra_source_id,
+                        ]
+                    }
+                )
+                if edge.edge_id == observed_edge.edge_id
+                else edge
+                for edge in snapshot.edges
+            ]
+        }
     )
+
+    assert "ingestion_claim_provenance_mismatch" not in _issue_codes(scenario, mutated, source_map)
 
 
 def test_oracle_detects_missing_relation(
@@ -347,29 +349,17 @@ def test_oracle_detects_missing_relation(
 ) -> None:
     scenario, snapshot, source_map = ownership_graph
     mutated = snapshot.model_copy(
-        update={
-            "edges": [
-                edge
-                for edge in snapshot.edges
-                if edge.edge_type != MemoryGraphEdgeType.ALIAS_OF
-            ]
-        }
+        update={"edges": [edge for edge in snapshot.edges if edge.edge_type != MemoryGraphEdgeType.ALIAS_OF]}
     )
 
-    assert "ingestion_missing_expected_relation" in _issue_codes(
-        scenario, mutated, source_map
-    )
+    assert "ingestion_missing_expected_relation" in _issue_codes(scenario, mutated, source_map)
 
 
 def test_oracle_detects_unexpected_entity(
     ownership_graph: tuple[LatentGraphScenario, MemoryGraphSnapshot, dict[str, str]],
 ) -> None:
     scenario, snapshot, source_map = ownership_graph
-    template = next(
-        node
-        for node in snapshot.nodes
-        if node.node_type == MemoryGraphNodeType.ENTITY
-    )
+    template = next(node for node in snapshot.nodes if node.node_type == MemoryGraphNodeType.ENTITY)
     extra = template.model_copy(
         update={
             "node_id": "entity:unexpected",
@@ -450,9 +440,7 @@ def test_oracle_detects_fully_connected_unexpected_historical_claim(
                 "edge_id": f"{edge.edge_id}:unexpected-historical",
                 "source_node_id": extra_id,
                 "target_node_id": (
-                    current_owner
-                    if edge.edge_type == MemoryGraphEdgeType.HAS_OBJECT
-                    else edge.target_node_id
+                    current_owner if edge.edge_type == MemoryGraphEdgeType.HAS_OBJECT else edge.target_node_id
                 ),
             }
         )
@@ -476,11 +464,7 @@ def test_oracle_detects_unexpected_action(
     action_graph: tuple[LatentGraphScenario, MemoryGraphSnapshot, dict[str, str]],
 ) -> None:
     scenario, snapshot, source_map = action_graph
-    template = next(
-        node
-        for node in snapshot.nodes
-        if node.node_type == MemoryGraphNodeType.ACTION
-    )
+    template = next(node for node in snapshot.nodes if node.node_type == MemoryGraphNodeType.ACTION)
     extra = template.model_copy(
         update={
             "node_id": "action:unexpected",
@@ -499,11 +483,7 @@ def test_oracle_detects_unexpected_semantic_relation(
     ownership_graph: tuple[LatentGraphScenario, MemoryGraphSnapshot, dict[str, str]],
 ) -> None:
     scenario, snapshot, source_map = ownership_graph
-    entities = [
-        node
-        for node in snapshot.nodes
-        if node.node_type == MemoryGraphNodeType.ENTITY
-    ]
+    entities = [node for node in snapshot.nodes if node.node_type == MemoryGraphNodeType.ENTITY]
     template = snapshot.edges[0]
     extra = template.model_copy(
         update={
@@ -536,8 +516,7 @@ def test_oracle_detects_unexpected_claim_lineage_relation(
     owner_claims = [
         node
         for node in snapshot.nodes
-        if node.node_type == MemoryGraphNodeType.CLAIM
-        and node.properties.get("predicate_id") == "owner"
+        if node.node_type == MemoryGraphNodeType.CLAIM and node.properties.get("predicate_id") == "owner"
     ]
     current = _current_owner_claim(snapshot)
     target = next(
@@ -590,8 +569,7 @@ def _issue_codes(
 
 def _source_event_map(scenario: LatentGraphScenario) -> dict[str, str]:
     return {
-        f"tx:benchmark:runtime:{observation.event_id}": observation.event_id
-        for observation in scenario.observations
+        f"tx:benchmark:runtime:{observation.event_id}": observation.event_id for observation in scenario.observations
     }
 
 
@@ -612,9 +590,7 @@ def _edge(
     edge_type: MemoryGraphEdgeType,
 ) -> MemoryGraphEdge:
     return next(
-        edge
-        for edge in snapshot.edges
-        if edge.source_node_id == source_node_id and edge.edge_type == edge_type
+        edge for edge in snapshot.edges if edge.source_node_id == source_node_id and edge.edge_type == edge_type
     )
 
 

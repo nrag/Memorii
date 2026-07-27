@@ -498,7 +498,12 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "source_observations": [{"source_id": "event_1", "text": "Remember that Atlas owner is Bob."}]
             },
             output_schema_owner="memory_extraction:v1.output_schema",
-            fake_valid_output={"entities": [], "claims": [], "actions": []},
+            fake_valid_output={
+                "entities": [],
+                "claims": [],
+                "actions": [],
+                "identity_relations": [],
+            },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
             no_leakage_rules=_base_rules("Extraction prompts must not receive benchmark oracle data."),
         ),

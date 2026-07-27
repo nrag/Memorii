@@ -8,6 +8,7 @@ from pathlib import Path
 from memorii.core.benchmark.calibration.alignment import normalize_alignment_value
 from memorii.core.benchmark.memory_evolution_runtime.graph_items import (
     claim_quote,
+    entity_mention_text,
     entity_quote,
     runtime_entity_type,
     runtime_span_for_item,
@@ -20,6 +21,7 @@ from memorii.core.benchmark.memory_evolution_runtime.models import (
 from memorii.core.benchmark.memory_evolution_runtime.utils import (
     claim_by_id,
     entity_by_id,
+    relation_by_id,
     stable_id,
     text_key,
 )
@@ -36,14 +38,18 @@ from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.memory_evolution import (
     ClaimKey,
     EnglishRuleMemoryExtractor,
+    EntityIdentityRelationType,
     EntityMention,
+    EntityType,
     EvidenceSpan,
     ExtractedAction,
     ExtractedClaim,
+    ExtractedIdentityRelation,
     ExtractionRun,
     HybridMemoryExtractor,
     LLMMemoryExtractor,
     MemoryEvolutionResult,
+    MemoryExtractionProposal,
     MemoryExtractor,
     MemoryGraphEdge,
     MemoryGraphNode,
@@ -94,14 +100,12 @@ class OracleVisibleMemoryExtractor:
     def structured_proposal(self) -> MemoryExtractionOutput | None:
         return None
 
-    def extract(
-        self, observations: list[SourceObservation]
-    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    def extract(self, observations: list[SourceObservation]) -> MemoryExtractionProposal:
         self.calls += 1
         run_id = stable_id("runtime-fake-extraction", "|".join(obs.source_id for obs in observations))
         if not observations:
-            return (
-                ExtractionRun(
+            return MemoryExtractionProposal(
+                run=ExtractionRun(
                     extraction_run_id=run_id,
                     provider=self.provider,
                     model=self.model,
@@ -110,14 +114,12 @@ class OracleVisibleMemoryExtractor:
                     status=ExtractionRunStatus.ABSTAINED,
                     provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
                     final_output_source=FinalExtractionSource.NONE,
-                ),
-                [],
-                [],
-                [],
+                )
             )
         entity_by_scope: dict[tuple[str, str], EntityMention] = {}
         claims: list[ExtractedClaim] = []
         actions: list[ExtractedAction] = []
+        identity_relations: list[ExtractedIdentityRelation] = []
         errors: list[str] = []
         for observation in observations:
             surface = self._surface_for_runtime_observation(observation)
@@ -137,9 +139,8 @@ class OracleVisibleMemoryExtractor:
                 )
                 mention = EntityMention(
                     entity_id=entity.entity_id,
-                    mention_text=entity.canonical_name,
-                    normalized_name=normalize_alignment_value(entity.canonical_name),
-                    aliases=[alias.alias_text for alias in entity.aliases],
+                    mention_text=entity_mention_text(entity, span.quote),
+                    normalized_name=normalize_alignment_value(entity_mention_text(entity, span.quote)),
                     entity_type=runtime_entity_type(entity.entity_type),
                     evidence_spans=[span],
                     confidence=entity.confidence.calibrated,
@@ -196,9 +197,8 @@ class OracleVisibleMemoryExtractor:
                         (entity.entity_id, claim_scope.scope_key),
                         EntityMention(
                             entity_id=entity.entity_id,
-                            mention_text=entity.canonical_name,
-                            normalized_name=normalize_alignment_value(entity.canonical_name),
-                            aliases=[alias.alias_text for alias in entity.aliases],
+                            mention_text=entity_mention_text(entity, span.quote),
+                            normalized_name=normalize_alignment_value(entity_mention_text(entity, span.quote)),
                             entity_type=runtime_entity_type(entity.entity_type),
                             evidence_spans=[span],
                             confidence=entity.confidence.calibrated,
@@ -218,6 +218,71 @@ class OracleVisibleMemoryExtractor:
                             extraction_run_id=run_id,
                         )
                     )
+            for relation_id in surface.exposed_relation_ids:
+                relation = relation_by_id(self._scenario, relation_id)
+                if (
+                    relation is None
+                    or relation.observability == ObservabilityLabel.HIDDEN
+                    or relation.relation_type not in {"alias_of", "same_as", "split_from", "merged_into"}
+                ):
+                    continue
+                relation_span = runtime_span_for_item(
+                    surface=surface,
+                    runtime_observation=observation,
+                    quote=next(
+                        (
+                            span.quote
+                            for span in relation.evidence_spans
+                            if span.event_id == surface.event_id and span.quote
+                        ),
+                        surface.text,
+                    ),
+                    cache=span_cache,
+                )
+                relation_scope = memory_scope_from_observation(observation)
+                endpoint_ids: list[str] = []
+                for endpoint in (relation.source, relation.target):
+                    latent_entity = (
+                        entity_by_id(self._scenario, endpoint.endpoint_id)
+                        if endpoint.endpoint_type == "entity"
+                        else None
+                    )
+                    endpoint_id = latent_entity.entity_id if latent_entity is not None else endpoint.endpoint_id
+                    endpoint_name = (
+                        entity_mention_text(latent_entity, relation_span.quote)
+                        if latent_entity is not None
+                        else endpoint.label
+                    )
+                    endpoint_type = (
+                        runtime_entity_type(latent_entity.entity_type)
+                        if latent_entity is not None
+                        else EntityType.UNKNOWN
+                    )
+                    endpoint_ids.append(endpoint_id)
+                    entity_by_scope.setdefault(
+                        (endpoint_id, relation_scope.scope_key),
+                        EntityMention(
+                            entity_id=endpoint_id,
+                            mention_text=endpoint_name,
+                            normalized_name=normalize_alignment_value(endpoint_name),
+                            entity_type=endpoint_type,
+                            evidence_spans=[relation_span],
+                            confidence=relation.confidence.calibrated,
+                            scope=relation_scope,
+                        ),
+                    )
+                identity_relations.append(
+                    ExtractedIdentityRelation(
+                        relation_id=relation.relation_id,
+                        relation_type=EntityIdentityRelationType(relation.relation_type),
+                        source_entity_id=endpoint_ids[0],
+                        target_entity_id=endpoint_ids[1],
+                        evidence_spans=[relation_span],
+                        confidence=relation.confidence.calibrated,
+                        scope=relation_scope,
+                        extraction_run_id=run_id,
+                    )
+                )
         if errors:
             self.failures += 1
         run = ExtractionRun(
@@ -229,11 +294,18 @@ class OracleVisibleMemoryExtractor:
             entity_ids=sorted({entity_id for entity_id, _scope_key in entity_by_scope}),
             claim_ids=[claim.claim_id for claim in claims],
             action_ids=[action.action_id for action in actions],
+            identity_relation_ids=[relation.relation_id for relation in identity_relations],
             status=ExtractionRunStatus.PARTIAL if errors else ExtractionRunStatus.SUCCEEDED,
             failure_code=ExtractionFailureCode.OUTPUT_VALIDATION if errors else None,
             errors=errors,
         )
-        return run, list(entity_by_scope.values()), claims, actions
+        return MemoryExtractionProposal(
+            run=run,
+            entities=list(entity_by_scope.values()),
+            claims=claims,
+            actions=actions,
+            identity_relations=identity_relations,
+        )
 
     def _surface_for_runtime_observation(self, observation: SourceObservation) -> SurfaceObservation | None:
         candidates = self._observations_by_text.get(text_key(observation.text), [])
@@ -270,15 +342,19 @@ class RecordingMemoryExtractor:
     def prompt_hash(self) -> str | None:
         return self._delegate.prompt_hash
 
-    def extract(
-        self, observations: list[SourceObservation]
-    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
-        run, entities, claims, actions = self._delegate.extract(observations)
+    def extract(self, observations: list[SourceObservation]) -> MemoryExtractionProposal:
+        proposal = self._delegate.extract(observations)
+        run = proposal.run
+        entities = proposal.entities
+        claims = proposal.claims
+        actions = proposal.actions
         self.recorded_runs.append(
             RecordedExtractionRun(
                 input_source_ids=list(run.input_source_ids),
                 provider=run.provider,
                 model=run.model,
+                requested_model=run.requested_model,
+                actual_model=run.actual_model,
                 prompt_hash=run.prompt_hash,
                 extraction_status=run.status,
                 provider_attempt_status=run.provider_attempt_status,
@@ -310,16 +386,20 @@ class RecordingMemoryExtractor:
                 proposed_entities=list(entities),
                 proposed_claims=list(claims),
                 proposed_actions=list(actions),
+                proposed_identity_relations=list(proposal.identity_relations),
                 entity_count=len(entities),
                 claim_count=len(claims),
                 action_count=len(actions),
+                identity_relation_count=len(proposal.identity_relations),
                 entity_ids=[entity.entity_id for entity in entities],
                 claim_ids=[claim.claim_id for claim in claims],
                 action_ids=[action.action_id for action in actions],
+                identity_relation_ids=[relation.relation_id for relation in proposal.identity_relations],
+                language_capability_ids=list(run.language_capability_ids),
                 validation_summary=dict(run.validation_summary),
             )
         )
-        return run, entities, claims, actions
+        return proposal
 
     def record_evolution_results(
         self,
@@ -342,22 +422,14 @@ class RecordingMemoryExtractor:
             current_nodes = {node.node_id: node for node in result.graph_nodes}
             current_edges = {edge.edge_id: edge for edge in result.graph_edges}
             graph_delta = RuntimeGraphDelta(
-                added_nodes=[
-                    node
-                    for node_id, node in current_nodes.items()
-                    if node_id not in self._graph_nodes
-                ],
+                added_nodes=[node for node_id, node in current_nodes.items() if node_id not in self._graph_nodes],
                 updated_nodes=[
                     node
                     for node_id, node in current_nodes.items()
                     if node_id in self._graph_nodes and node != self._graph_nodes[node_id]
                 ],
                 removed_node_ids=sorted(set(self._graph_nodes) - set(current_nodes)),
-                added_edges=[
-                    edge
-                    for edge_id, edge in current_edges.items()
-                    if edge_id not in self._graph_edges
-                ],
+                added_edges=[edge for edge_id, edge in current_edges.items() if edge_id not in self._graph_edges],
                 updated_edges=[
                     edge
                     for edge_id, edge in current_edges.items()
@@ -368,13 +440,13 @@ class RecordingMemoryExtractor:
             self.recorded_runs[index] = run.model_copy(
                 update={
                     "validation_results": {
-                        claim_id: list(values)
-                        for claim_id, values in result.validation_results.items()
+                        claim_id: list(values) for claim_id, values in result.validation_results.items()
                     },
                     "entity_identity_decisions": list(result.entity_identity_decisions),
                     "evolution_result_recorded": True,
                     "compiled_claims": list(result.claims),
                     "compiled_actions": list(result.actions),
+                    "compiled_identity_relations": list(result.identity_relations),
                     "lifecycle_transitions": list(result.transitions),
                     "graph_nodes": list(result.graph_nodes),
                     "graph_edges": list(result.graph_edges),

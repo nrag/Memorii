@@ -27,6 +27,7 @@ from memorii.core.memory_evolution import (
     EntityMention,
     ExtractedAction,
     ExtractedClaim,
+    ExtractedIdentityRelation,
     ExtractionFailureCode,
     ExtractionRunStatus,
     FallbackOutcome,
@@ -163,9 +164,7 @@ RUNTIME_GRAPH_ITEM_TYPES = (
     RuntimeRelationGraphItemRow,
     RuntimeActionGraphItemRow,
 )
-_PROVIDER_METADATA_KEYS = frozenset(
-    {"backend", "provider", "model", "timeout_seconds", "max_retries"}
-)
+_PROVIDER_METADATA_KEYS = frozenset({"backend", "provider", "model", "timeout_seconds", "max_retries"})
 
 
 class GraphItemNormalizationResult(BaseModel):
@@ -212,6 +211,8 @@ class RuntimeIngestionTraceRow(BaseModel):
     input_source_ids: list[str]
     provider: str
     model: str | None
+    requested_model: str | None = None
+    actual_model: str | None = None
     prompt_hash: str | None
     extraction_status: ExtractionRunStatus
     provider_attempt_status: ProviderAttemptStatus
@@ -226,18 +227,23 @@ class RuntimeIngestionTraceRow(BaseModel):
     proposed_entities: list[EntityMention] = Field(default_factory=list)
     proposed_claims: list[ExtractedClaim] = Field(default_factory=list)
     proposed_actions: list[ExtractedAction] = Field(default_factory=list)
+    proposed_identity_relations: list[ExtractedIdentityRelation] = Field(default_factory=list)
     entity_count: int = Field(default=0, ge=0)
     claim_count: int = Field(default=0, ge=0)
     action_count: int = Field(default=0, ge=0)
+    identity_relation_count: int = Field(default=0, ge=0)
     entity_ids: list[str] = Field(default_factory=list)
     claim_ids: list[str] = Field(default_factory=list)
     action_ids: list[str] = Field(default_factory=list)
+    identity_relation_ids: list[str] = Field(default_factory=list)
+    language_capability_ids: list[str] = Field(default_factory=list)
     validation_summary: dict[str, int] = Field(default_factory=dict)
     validation_results: dict[str, list[ValidationResult]] = Field(default_factory=dict)
     entity_identity_decisions: list[EntityIdentityDecision] = Field(default_factory=list)
     evolution_result_recorded: bool = False
     compiled_claims: list[ExtractedClaim] = Field(default_factory=list)
     compiled_actions: list[ExtractedAction] = Field(default_factory=list)
+    compiled_identity_relations: list[ExtractedIdentityRelation] = Field(default_factory=list)
     lifecycle_transitions: list[ClaimLifecycleTransition] = Field(default_factory=list)
     graph_nodes: list[MemoryGraphNode] = Field(default_factory=list)
     graph_edges: list[MemoryGraphEdge] = Field(default_factory=list)
@@ -256,20 +262,24 @@ class RuntimeIngestionTraceRow(BaseModel):
             len(self.proposed_entities),
             len(self.proposed_claims),
             len(self.proposed_actions),
+            len(self.proposed_identity_relations),
         ) != (
             self.entity_count,
             self.claim_count,
             self.action_count,
+            self.identity_relation_count,
         ):
             raise ValueError("proposal counts must match proposal rows")
         if (
             [entity.entity_id for entity in self.proposed_entities],
             [claim.claim_id for claim in self.proposed_claims],
             [action.action_id for action in self.proposed_actions],
+            [relation.relation_id for relation in self.proposed_identity_relations],
         ) != (
             self.entity_ids,
             self.claim_ids,
             self.action_ids,
+            self.identity_relation_ids,
         ):
             raise ValueError("proposal IDs must match proposal rows")
         if [item.source_id for item in self.input_observations] != self.input_source_ids:
@@ -279,6 +289,7 @@ class RuntimeIngestionTraceRow(BaseModel):
             self.entity_identity_decisions,
             self.compiled_claims,
             self.compiled_actions,
+            self.compiled_identity_relations,
             self.lifecycle_transitions,
             self.graph_nodes,
             self.graph_edges,
@@ -292,16 +303,9 @@ class RuntimeIngestionTraceRow(BaseModel):
             self.graph_delta.updated_edges,
             self.graph_delta.removed_edge_ids,
         )
-        if not self.evolution_result_recorded and (
-            any(result_fields) or any(delta_fields)
-        ):
-            raise ValueError(
-                "unrecorded evolution results cannot contain compiled graph evidence"
-            )
-        if (
-            self.operation_status == EvolutionOperationStatus.COMMITTED
-            and not self.evolution_result_recorded
-        ):
+        if not self.evolution_result_recorded and (any(result_fields) or any(delta_fields)):
+            raise ValueError("unrecorded evolution results cannot contain compiled graph evidence")
+        if self.operation_status == EvolutionOperationStatus.COMMITTED and not self.evolution_result_recorded:
             raise ValueError("committed operations require a recorded evolution result")
         _validate_graph_delta(self)
         return self
@@ -321,11 +325,7 @@ def _validate_graph_delta(row: RuntimeIngestionTraceRow) -> None:
         set(row.graph_delta.removed_edge_ids),
     )
     for label, groups in (("node", node_groups), ("edge", edge_groups)):
-        if any(
-            left & right
-            for index, left in enumerate(groups)
-            for right in groups[index + 1 :]
-        ):
+        if any(left & right for index, left in enumerate(groups) for right in groups[index + 1 :]):
             raise ValueError(f"graph delta {label} operations must be disjoint")
     if not (node_groups[0] | node_groups[1]).issubset(node_ids):
         raise ValueError("added and updated graph nodes must exist in graph_nodes")

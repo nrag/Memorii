@@ -22,10 +22,12 @@ from memorii.core.memory_evolution.models import (
     ClaimState,
     ClaimTransitionType,
     ContradictionSet,
+    EntityIdentityRelationType,
     EntityLinkLifecycleState,
     EntityLinkState,
     EvidenceSpan,
     ExtractedAction,
+    ExtractedIdentityRelation,
     MemoryEvolutionResult,
     MemoryGraphEdge,
     MemoryGraphEdgeType,
@@ -55,8 +57,7 @@ class MemoryGraphProjector:
         source_by_id = {observation.source_id: observation for observation in result.observations}
         link_by_id = {link.link_id: link for link in result.entity_links}
         link_by_canonical_entity = {
-            (link.canonical_entity_id, link.scope.identity): link
-            for link in result.entity_links
+            (link.canonical_entity_id, link.scope.identity): link for link in result.entity_links
         }
 
         for observation in result.observations:
@@ -66,6 +67,13 @@ class MemoryGraphProjector:
                 node_by_id,
                 edge_by_id,
                 link,
+                link_by_canonical_entity,
+            )
+        for relation in result.identity_relations:
+            self._add_identity_relation(
+                node_by_id,
+                edge_by_id,
+                relation,
                 link_by_canonical_entity,
             )
         for state in result.claim_states:
@@ -200,6 +208,53 @@ class MemoryGraphProjector:
         node_by_id[node_id] = node
         return node
 
+    def _add_identity_relation(
+        self,
+        node_by_id: dict[str, MemoryGraphNode],
+        edge_by_id: dict[str, MemoryGraphEdge],
+        relation: ExtractedIdentityRelation,
+        link_by_canonical_entity: dict[ScopedCanonicalEntity, EntityLinkState],
+    ) -> None:
+        if relation.source_entity_id == relation.target_entity_id:
+            return
+        source_link = link_by_canonical_entity.get((relation.source_entity_id, relation.scope.identity))
+        target_link = link_by_canonical_entity.get((relation.target_entity_id, relation.scope.identity))
+        source_node = (
+            _node_from_entity_link(source_link)
+            if source_link is not None
+            else _candidate_entity_node(relation.source_entity_id)
+        )
+        target_node = (
+            _node_from_entity_link(target_link)
+            if target_link is not None
+            else _candidate_entity_node(relation.target_entity_id)
+        )
+        node_by_id.setdefault(source_node.node_id, source_node)
+        node_by_id.setdefault(target_node.node_id, target_node)
+        edge_type = {
+            EntityIdentityRelationType.ALIAS_OF: MemoryGraphEdgeType.ALIAS_OF,
+            EntityIdentityRelationType.SAME_AS: MemoryGraphEdgeType.SAME_AS,
+            EntityIdentityRelationType.SPLIT_FROM: MemoryGraphEdgeType.SPLIT_FROM,
+            EntityIdentityRelationType.MERGED_INTO: MemoryGraphEdgeType.MERGED_INTO,
+        }[relation.relation_type]
+        self._add_edge(
+            edge_by_id,
+            edge_type,
+            source_node.node_id,
+            target_node.node_id,
+            lifecycle_state=RecordLifecycleState.ACTIVE,
+            confidence=relation.confidence,
+            evidence_span_ids=[
+                stable_graph_id(
+                    "graph:evidence",
+                    f"{span.source_id}:{span.char_start}:{span.char_end}:{span.quote}",
+                )
+                for span in relation.evidence_spans
+            ],
+            source_record_ids=sorted({span.source_id for span in relation.evidence_spans}),
+            properties={"relation_id": relation.relation_id},
+        )
+
     def _add_entity_link(
         self,
         node_by_id: dict[str, MemoryGraphNode],
@@ -221,9 +276,7 @@ class MemoryGraphProjector:
                 confidence=link.confidence,
             )
         if link.lifecycle_state == EntityLinkLifecycleState.MERGED and link.superseded_by_entity_id:
-            target_link = (link_by_canonical_entity or {}).get(
-                (link.superseded_by_entity_id, link.scope.identity)
-            )
+            target_link = (link_by_canonical_entity or {}).get((link.superseded_by_entity_id, link.scope.identity))
             target_node = (
                 _node_from_entity_link(target_link)
                 if target_link is not None
@@ -239,9 +292,7 @@ class MemoryGraphProjector:
                 confidence=link.confidence,
             )
         if link.lineage_parent_entity_id:
-            parent_link = (link_by_canonical_entity or {}).get(
-                (link.lineage_parent_entity_id, link.scope.identity)
-            )
+            parent_link = (link_by_canonical_entity or {}).get((link.lineage_parent_entity_id, link.scope.identity))
             parent_node = (
                 _node_from_entity_link(parent_link)
                 if parent_link is not None
@@ -594,13 +645,14 @@ def _node_from_entity_link(link: EntityLinkState) -> MemoryGraphNode:
         canonical_id=link.canonical_entity_id,
         lifecycle_state=RecordLifecycleState(link.lifecycle_state.value),
         confidence=link.confidence,
-        source_record_ids=[span.source_id for span in link.evidence_spans],
+        source_record_ids=sorted({span.source_id for span in link.evidence_spans}),
         payload_ref=f"mem:evolution:entity-link:{link.link_id}",
         properties={
             "canonical_entity_id": link.canonical_entity_id,
             "normalized_name": link.normalized_name,
             "entity_type": link.entity_type.value,
             "aliases": "|".join(link.aliases),
+            "observed_names": "|".join(link.observed_names),
             "superseded_by_entity_id": link.superseded_by_entity_id or "",
             "scope_key": link.scope.scope_key,
             "scope_user_id": link.scope.user_id or "",

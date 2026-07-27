@@ -127,6 +127,7 @@ class RuntimeProviderHealth(FlatArtifactModel):
     extraction_attempted_calls: int = Field(default=0, ge=0)
     structured_query_attempted_calls: int = Field(default=0, ge=0)
     structured_query_failures: int = Field(default=0, ge=0)
+    model_identity_mismatches: int = Field(default=0, ge=0)
     provider_successes: int = Field(ge=0)
     provider_failures: int = Field(ge=0)
     fallbacks: int = Field(ge=0)
@@ -372,9 +373,7 @@ class SemanticDecisionAttemptRow(FlatArtifactModel):
             }
             and self.semantic_output is not None
         ):
-            raise ValueError(
-                "provider and invalid-JSON failures cannot retain semantic output"
-            )
+            raise ValueError("provider and invalid-JSON failures cannot retain semantic output")
         if self.accepted != (self.compiled_output is not None):
             raise ValueError("compiled output must be retained exactly for accepted attempts")
         has_repair_evidence = self.repair_request is not None and self.previous_decision_digest is not None
@@ -456,10 +455,7 @@ class CuratedMemoryEvolutionLLMTraceRow(FlatArtifactModel):
         output_payload = self.output.model_dump(mode="json")
         if self.trace.final_output != output_payload:
             raise ValueError("persisted curated output must equal the traced final output")
-        if (
-            self.final_output_accepted
-            and self.provider_attempts[-1].compiled_output != output_payload
-        ):
+        if self.final_output_accepted and self.provider_attempts[-1].compiled_output != output_payload:
             raise ValueError("accepted curated output must equal the final compiled attempt")
         return self
 
@@ -513,10 +509,7 @@ class SimLLMTraceRow(FlatArtifactModel):
         output_payload = self.output.model_dump(mode="json")
         if self.trace.final_output != output_payload:
             raise ValueError("persisted simulator output must equal the traced final output")
-        if (
-            self.final_output_accepted
-            and self.provider_attempts[-1].compiled_output != output_payload
-        ):
+        if self.final_output_accepted and self.provider_attempts[-1].compiled_output != output_payload:
             raise ValueError("accepted simulator output must equal the final compiled attempt")
         return self
 
@@ -526,6 +519,8 @@ class RuntimeExtractorTracePayload(FlatArtifactModel):
 
     provider: str
     model: str | None = None
+    requested_model: str | None = None
+    actual_model: str | None = None
     prompt_hash: str | None = None
     scenario_id: str
     call_index: int = Field(ge=0)
@@ -581,11 +576,7 @@ class RuntimeExtractorTraceRow(FlatArtifactModel):
         elif self.final_extraction_source == MemoryFinalExtractionSource.FALLBACK:
             raise ValueError("fallback output requires a successful fallback")
         if self.operation_status is None:
-            if (
-                self.operation_id is not None
-                or self.operation_failure_code is not None
-                or self.operation_retryable
-            ):
+            if self.operation_id is not None or self.operation_failure_code is not None or self.operation_retryable:
                 raise ValueError("missing operation status cannot contain operation telemetry")
         elif not self.operation_id:
             raise ValueError("operation status requires an operation ID")

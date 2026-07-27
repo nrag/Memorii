@@ -19,7 +19,11 @@ from memorii.core.memory_evolution.execution import (
 from memorii.core.memory_evolution.extraction import (
     EnglishRuleMemoryExtractor,
 )
-from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionRunError, MemoryExtractor
+from memorii.core.memory_evolution.extraction_contracts import (
+    MemoryExtractionProposal,
+    MemoryExtractionRunError,
+    MemoryExtractor,
+)
 from memorii.core.memory_evolution.graph import MemoryGraphProjector
 from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore, MemoryGraphValidator
 from memorii.core.memory_evolution.graph_queries import MemoryGraphQueryService
@@ -32,11 +36,8 @@ from memorii.core.memory_evolution.models import (
     ClaimLifecycleTransition,
     ClaimState,
     ContradictionSet,
-    EntityMention,
     ExtractedAction,
-    ExtractedClaim,
     ExtractionFailureCode,
-    ExtractionRun,
     ExtractionRunStatus,
     ExtractionTriggerMode,
     FinalExtractionSource,
@@ -67,6 +68,7 @@ from memorii.core.memory_evolution.retrieval_contracts import (
     ProductionRetrievalDecision,
 )
 from memorii.core.memory_evolution.retrieval_runtime import MemoryEvolutionRetrievalRuntime
+from memorii.core.memory_evolution.semantic_compilation import SemanticIngestionCompiler
 from memorii.core.memory_evolution.state_repository import EvolutionStateRepository
 from memorii.core.memory_evolution.temporal_contracts import (
     QueryTemporalFrame,
@@ -90,11 +92,7 @@ class PreparedEvolution:
     extractable_observations: list[SourceObservation]
     deferred_observation_ids: list[str]
     skipped_observation_ids: list[str]
-    run: ExtractionRun
-    entities: list[EntityMention]
-    claims: list[ExtractedClaim]
-    actions: list[ExtractedAction]
-    validation_results: dict[str, list[ValidationResult]]
+    proposal: MemoryExtractionProposal
 
 
 class MemoryEvolutionService:
@@ -125,6 +123,10 @@ class MemoryEvolutionService:
         self._trigger_policy = trigger_policy or ExtractionTriggerPolicy()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
         self._entity_resolver = entity_resolver or EntityResolutionService(now_provider=self._now_provider)
+        self._semantic_compiler = SemanticIngestionCompiler(
+            entity_resolver=self._entity_resolver,
+            validator=self._validator,
+        )
         confidence_aggregator = confidence_aggregator or ConfidenceAggregator()
         contradiction_resolver = contradiction_resolver or ContradictionResolver()
         self._graph_projector = graph_projector or MemoryGraphProjector()
@@ -238,10 +240,9 @@ class MemoryEvolutionService:
             obs.source_id for obs in observations if obs.trigger_mode == ExtractionTriggerMode.SKIP
         ]
         if len(extractable_observations) > 1:
-            raise ValueError(
-                "memory evolution requires one extractable source observation per call"
-            )
-        run, entities, claims, actions = self._extractor.extract(extractable_observations)
+            raise ValueError("memory evolution requires one extractable source observation per call")
+        proposal = self._extractor.extract(extractable_observations)
+        run = proposal.run
         if run.status in {
             ExtractionRunStatus.FAILED,
             ExtractionRunStatus.PARTIAL,
@@ -250,44 +251,34 @@ class MemoryEvolutionService:
         coverage_errors = (
             self._validator.extraction_coverage_errors(
                 observations=extractable_observations,
-                entities=entities,
-                claims=claims,
-                actions=actions,
+                entities=proposal.entities,
+                claims=proposal.claims,
+                actions=proposal.actions,
             )
             if run.status == ExtractionRunStatus.SUCCEEDED
             else []
         )
         if coverage_errors:
-            failed_without_output = not (entities or claims or actions)
+            failed_without_output = not (proposal.entities or proposal.claims or proposal.actions)
             run = run.model_copy(
                 update={
                     "status": (
-                        ExtractionRunStatus.PARTIAL
-                        if not failed_without_output
-                        else ExtractionRunStatus.FAILED
+                        ExtractionRunStatus.PARTIAL if not failed_without_output else ExtractionRunStatus.FAILED
                     ),
                     "final_output_source": (
-                        run.final_output_source
-                        if not failed_without_output
-                        else FinalExtractionSource.NONE
+                        run.final_output_source if not failed_without_output else FinalExtractionSource.NONE
                     ),
                     "failure_code": ExtractionFailureCode.OUTPUT_VALIDATION,
                     "errors": [*run.errors, *coverage_errors],
                 }
             )
             raise MemoryExtractionRunError(run)
-        validation_results = self._validator.validate_claims(claims=claims, observations=extractable_observations)
-        run = run.model_copy(update={"validation_summary": self._validator.summary(validation_results)})
         return PreparedEvolution(
             observations=observations,
             extractable_observations=extractable_observations,
             deferred_observation_ids=deferred_observation_ids,
             skipped_observation_ids=skipped_observation_ids,
-            run=run,
-            entities=entities,
-            claims=claims,
-            actions=actions,
-            validation_results=validation_results,
+            proposal=proposal.model_copy(update={"run": run}),
         )
 
     def _build_evolution_mutation(self, prepared: PreparedEvolution) -> MemoryEvolutionResult:
@@ -295,53 +286,25 @@ class MemoryEvolutionService:
         extractable_observations = prepared.extractable_observations
         deferred_observation_ids = prepared.deferred_observation_ids
         skipped_observation_ids = prepared.skipped_observation_ids
-        run = prepared.run
-        entities = prepared.entities
-        claims = prepared.claims
-        actions = prepared.actions
-        validation_results = {claim_id: list(results) for claim_id, results in prepared.validation_results.items()}
-
         existing_entity_links = self._state_repository.list_entity_links()
-        entity_resolution = self._entity_resolver.resolve_mentions(entities, existing_entity_links)
-        unresolved_reference_errors = _unresolved_entity_reference_errors(
-            claims=claims,
-            actions=actions,
-            unresolved_entity_ids={
-                decision.mention_entity_id
-                for decision in entity_resolution.decisions
-                if decision.resolved_entity_id is None
-            },
+        compilation = self._semantic_compiler.compile(
+            proposal=prepared.proposal,
+            observations=extractable_observations,
+            existing_entity_links=existing_entity_links,
         )
-        if unresolved_reference_errors:
-            raise MemoryEvolutionMutationValidationError(unresolved_reference_errors)
+        run = prepared.proposal.run
+        entities = list(prepared.proposal.entities)
+        claims = list(compilation.claims)
+        actions = list(compilation.actions)
+        identity_relations = list(compilation.identity_relations)
+        validation_results = {claim_id: list(results) for claim_id, results in compilation.validation_results.items()}
+        entity_resolution = compilation.entity_resolution
         entity_links = entity_resolution.links
-        canonical_references = self._entity_resolver.canonical_reference_map(entity_resolution)
-        canonical_claims: list[ExtractedClaim] = []
-        rekey_transitions: list[ClaimLifecycleTransition] = []
-        for claim in claims:
-            canonical_claim, transition = self._entity_resolver.canonicalize_claim_entities(
-                claim=claim,
-                references=canonical_references,
-            )
-            canonical_claims.append(canonical_claim)
-            if transition is not None:
-                rekey_transitions.append(transition)
-        claims = canonical_claims
-        actions = [
-            self._entity_resolver.canonicalize_action_entities(
-                action=action,
-                references=canonical_references,
-            )
-            for action in actions
-        ]
         for link in entity_links:
             self._memory_plane.upsert_record(record_from_entity_link(link))
 
         claim_states: list[ClaimState] = []
-        transitions: list[ClaimLifecycleTransition] = [
-            *entity_resolution.transitions,
-            *rekey_transitions,
-        ]
+        transitions: list[ClaimLifecycleTransition] = list(compilation.transitions)
         contradiction_sets: list[ContradictionSet] = []
         written_record_ids: list[str] = []
         deferred_ids = set(deferred_observation_ids)
@@ -419,6 +382,7 @@ class MemoryEvolutionService:
             entities=entities,
             claims=claims,
             actions=actions,
+            identity_relations=identity_relations,
             observations=observations,
             entity_links=entity_links,
             entity_identity_decisions=entity_resolution.decisions,
@@ -595,31 +559,3 @@ class MemoryEvolutionService:
 
     def retrieve_conflict_graph(self) -> MemoryGraphSnapshot:
         return self._graph_queries.conflict_graph()
-
-
-def _unresolved_entity_reference_errors(
-    *,
-    claims: list[ExtractedClaim],
-    actions: list[ExtractedAction],
-    unresolved_entity_ids: set[str],
-) -> list[str]:
-    if not unresolved_entity_ids:
-        return []
-    errors: list[str] = []
-    for claim in claims:
-        references = {
-            claim.claim_key.subject_entity_id,
-            *([claim.object_entity_id] if claim.object_entity_id is not None else []),
-        }
-        for entity_id in sorted(references & unresolved_entity_ids):
-            errors.append(f"unresolved_entity_reference:claim:{claim.claim_id}:{entity_id}")
-    for action in actions:
-        references = {
-            *action.target_entity_ids,
-            *action.dependency_entity_ids,
-            *action.blocking_entity_ids,
-            *([action.actor_entity_id] if action.actor_entity_id is not None else []),
-        }
-        for entity_id in sorted(references & unresolved_entity_ids):
-            errors.append(f"unresolved_entity_reference:action:{action.action_id}:{entity_id}")
-    return errors

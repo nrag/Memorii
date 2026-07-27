@@ -389,10 +389,19 @@ def test_memory_extraction_prompt_schema_is_strict_for_openai() -> None:
     entity_schema = contract.output_schema["properties"]["entities"]["items"]
     claim_schema = contract.output_schema["properties"]["claims"]["items"]
     action_schema = contract.output_schema["properties"]["actions"]["items"]
+    identity_schema = contract.output_schema["properties"]["identity_relations"]["items"]
 
     assert entity_schema["properties"]["entity_ref"]["minLength"] == 1
+    assert "aliases" not in entity_schema["properties"]
     assert claim_schema["properties"]["subject_entity_ref"]["minLength"] == 1
     assert action_schema["properties"]["action_ref"]["minLength"] == 1
+    assert identity_schema["properties"]["relation_ref"]["minLength"] == 1
+    assert set(identity_schema["properties"]["relation_type"]["enum"]) == {
+        "alias_of",
+        "same_as",
+        "split_from",
+        "merged_into",
+    }
     assert "dependency_entity_refs" in action_schema["required"]
     assert "blocking_entity_refs" in action_schema["required"]
     assert "dependency_action_refs" not in action_schema["properties"]
@@ -412,6 +421,7 @@ def test_memory_extraction_prompt_schema_is_strict_for_openai() -> None:
     assert runtime_owned.isdisjoint(entity_schema["properties"])
     assert runtime_owned.isdisjoint(claim_schema["properties"])
     assert runtime_owned.isdisjoint(action_schema["properties"])
+    assert runtime_owned.isdisjoint(identity_schema["properties"])
 
 
 def test_memory_evolution_sim_prompt_distinguishes_subject_and_answer_object_entities() -> None:

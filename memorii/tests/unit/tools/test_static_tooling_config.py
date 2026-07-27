@@ -143,6 +143,7 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     live_environment = live_smoke["env"]
     assert isinstance(live_environment, dict)
     assert live_environment["MEMORII_LLM_PROVIDER"] == "openai"
+    assert live_environment["MEMORII_LLM_MODEL"] == "${{ vars.MEMORII_LLM_MODEL }}"
     assert live_environment["MEMORII_ENABLE_LIVE_LLM_TESTS"] == "true"
     assert live_environment["OPENAI_API_KEY"] == "${{ secrets.OPENAI_API_KEY }}"
     live_gate = jobs["live-runtime-gate"]
@@ -162,6 +163,7 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     assert "--minimum-replicates-per-seed" not in workflow
     assert "Verify live provider configuration" in workflow
     assert "runtime.has_live_provider()" in workflow
+    assert "assert runtime.model" in workflow
     assert "live.should_run_live_llm_tests(runtime)" in workflow
     assert "LLMDecisionRuntimeConfig(mode='hybrid').resolve(runtime) == 'hybrid'" in workflow
     assert "ref: ${{ env.MEMORII_SOURCE_REVISION }}" in workflow
@@ -204,9 +206,7 @@ def test_runtime_dry_runs_separate_plumbing_from_semantic_quality_gates() -> Non
     runtime_steps = [body for name, body in pr_steps if "runtime plumbing artifact" in name]
     semantic_runtime_steps = [body for name, body in pr_steps if "runtime semantic artifact" in name]
     simulator_steps = [body for name, body in pr_steps if "simulator plumbing artifact" in name]
-    scheduled_semantic_runtime_steps = [
-        body for name, body in scheduled_steps if "runtime semantic artifact" in name
-    ]
+    scheduled_semantic_runtime_steps = [body for name, body in scheduled_steps if "runtime semantic artifact" in name]
 
     assert len(runtime_steps) == 0
     assert len(semantic_runtime_steps) == 4

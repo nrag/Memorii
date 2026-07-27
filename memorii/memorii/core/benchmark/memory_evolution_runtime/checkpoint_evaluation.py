@@ -26,6 +26,7 @@ def runtime_failure_buckets(
     projection: RuntimeProjection,
     graph_snapshot: MemoryGraphSnapshot,
     recorded_runs: Sequence[RecordedExtractionRun] = (),
+    ingestion_blocked: bool = False,
 ) -> list[str]:
     buckets: list[str] = [
         *projection.stage_failure_buckets,
@@ -33,13 +34,13 @@ def runtime_failure_buckets(
     ]
     if graph_snapshot.validation_errors:
         buckets.append("production_semantic_graph_validation_error")
+    if ingestion_blocked:
+        return sorted(set(buckets))
     if projection.semantic_comparison is None:
         buckets.append("benchmark_semantic_comparison_missing")
     else:
         buckets.extend(projection.semantic_comparison.failure_buckets)
-    if checkpoint.horizon_distance >= 10 and (
-        "production_retrieval_missing_expected_claim" in buckets
-    ):
+    if checkpoint.horizon_distance >= 10 and ("production_retrieval_missing_expected_claim" in buckets):
         buckets.append("production_retrieval_long_horizon_miss")
     return sorted(set(buckets))
 
@@ -53,17 +54,11 @@ def runtime_ingestion_failure_buckets(
     for run in recorded_runs:
         if run.extraction_status.value in {"failed", "partial"}:
             failure_code = run.failure_code.value if run.failure_code is not None else "unknown"
-            buckets.append(
-                f"production_ingestion_extraction_{run.extraction_status.value}_{failure_code}"
-            )
+            buckets.append(f"production_ingestion_extraction_{run.extraction_status.value}_{failure_code}")
         if run.fallback_outcome.value != "not_used":
-            buckets.append(
-                f"production_ingestion_fallback_{run.fallback_outcome.value}"
-            )
+            buckets.append(f"production_ingestion_fallback_{run.fallback_outcome.value}")
         if run.operation_failure_code is not None:
-            buckets.append(
-                f"production_ingestion_operation_{run.operation_failure_code.value}"
-            )
+            buckets.append(f"production_ingestion_operation_{run.operation_failure_code.value}")
     return sorted(set(buckets))
 
 

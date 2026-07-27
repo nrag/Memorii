@@ -341,10 +341,7 @@ def _unsupported_audit_claims(
         claim
         for claim in claims
         if claim not in expected.visible_claims
-        and (
-            not claim.provenance
-            or not set(claim.provenance).issubset(expected.visible_event_ids)
-        )
+        and (not claim.provenance or not set(claim.provenance).issubset(expected.visible_event_ids))
     )
 
 
@@ -367,27 +364,15 @@ def _expected_view(*, scenario: LatentGraphScenario, checkpoint: OracleCheckpoin
         if checkpoint.checkpoint_type == "execution_continuation"
         else checkpoint.expected_citation_event_ids
     )
-    selected_action_claim_ids = {
-        action_id.removeprefix("action:")
-        for action_id in checkpoint.expected_action_ids
-    }
-    selected_claim_ids = [
-        claim_id
-        for claim_id in selected_claim_ids
-        if claim_id not in selected_action_claim_ids
-    ]
+    selected_action_claim_ids = {action_id.removeprefix("action:") for action_id in checkpoint.expected_action_ids}
+    selected_claim_ids = [claim_id for claim_id in selected_claim_ids if claim_id not in selected_action_claim_ids]
     return _ExpectedView(
-        selected_entities=frozenset(
-            _expected_entity(entity_by_id[entity_id])
-            for entity_id in selected_entity_ids
-        ),
+        selected_entities=frozenset(_expected_entity(entity_by_id[entity_id]) for entity_id in selected_entity_ids),
         selected_claims=frozenset(
-            _expected_claim(claim_by_id[claim_id], entity_by_id)
-            for claim_id in selected_claim_ids
+            _expected_claim(claim_by_id[claim_id], entity_by_id) for claim_id in selected_claim_ids
         ),
         supporting_claims=frozenset(
-            _expected_claim(claim_by_id[claim_id], entity_by_id)
-            for claim_id in selected_claim_ids
+            _expected_claim(claim_by_id[claim_id], entity_by_id) for claim_id in selected_claim_ids
         ),
         excluded_claims=frozenset(
             _expected_claim(claim_by_id[claim_id], entity_by_id)
@@ -395,9 +380,7 @@ def _expected_view(*, scenario: LatentGraphScenario, checkpoint: OracleCheckpoin
             if checkpoint.task_contract.excluded_ids_must_be_rejected_or_contextualized
         ),
         visible_claims=frozenset(
-            _expected_claim(claim, entity_by_id)
-            for claim in scenario.claims
-            if claim.observability.value != "hidden"
+            _expected_claim(claim, entity_by_id) for claim in scenario.claims if claim.observability.value != "hidden"
         ),
         visible_event_ids=frozenset(observation.event_id for observation in scenario.observations),
         relations=frozenset(
@@ -405,8 +388,7 @@ def _expected_view(*, scenario: LatentGraphScenario, checkpoint: OracleCheckpoin
             for relation_id in checkpoint.expected_relation_ids
         ),
         actions=frozenset(
-            _expected_action(action_id, claim_by_id, entity_by_id)
-            for action_id in checkpoint.expected_action_ids
+            _expected_action(action_id, claim_by_id, entity_by_id) for action_id in checkpoint.expected_action_ids
         ),
         citations=frozenset(citation_ids),
         uncertain_items=frozenset(
@@ -432,60 +414,31 @@ def _observed_view(
     claims = [item for item in graph_items if isinstance(item, RuntimeClaimGraphItemRow)]
     actions = [item for item in graph_items if isinstance(item, RuntimeActionGraphItemRow)]
     relations = [item for item in graph_items if isinstance(item, RuntimeRelationGraphItemRow)]
-    entity_by_ref = {
-        ref: item
-        for item in entities
-        for ref in (item.runtime_item_id, item.canonical_id)
-    }
-    claim_by_ref = {
-        ref: item
-        for item in claims
-        for ref in (item.runtime_item_id, item.claim_id)
-    }
+    entity_by_ref = {ref: item for item in entities for ref in (item.runtime_item_id, item.canonical_id)}
+    claim_by_ref = {ref: item for item in claims for ref in (item.runtime_item_id, item.claim_id)}
     action_by_ref = {
         ref: item
         for item in actions
         for ref in (item.runtime_item_id, item.action_id, item.action_id.removeprefix("action:"))
     }
     selected_actions = [
-        action_by_ref[action_id]
-        for action_id in decision.selected_record_ids
-        if action_id in action_by_ref
+        action_by_ref[action_id] for action_id in decision.selected_record_ids if action_id in action_by_ref
     ]
-    selected_action_claim_ids = {
-        action.action_id.removeprefix("action:")
-        for action in selected_actions
-    }
+    selected_action_claim_ids = {action.action_id.removeprefix("action:") for action in selected_actions}
     selected_claims = [
         claim_by_ref[claim_id]
         for claim_id in decision.selected_record_ids
-        if (
-            claim_id in claim_by_ref
-            and claim_by_ref[claim_id].claim_id not in selected_action_claim_ids
-        )
+        if (claim_id in claim_by_ref and claim_by_ref[claim_id].claim_id not in selected_action_claim_ids)
     ]
-    rejected_claims = [
-        claim_by_ref[claim_id]
-        for claim_id in decision.rejected_record_ids
-        if claim_id in claim_by_ref
-    ]
+    rejected_claims = [claim_by_ref[claim_id] for claim_id in decision.rejected_record_ids if claim_id in claim_by_ref]
     supporting_claims = [
         claim_by_ref[claim_id]
         for claim_id in decision.supporting_record_ids
-        if (
-            claim_id in claim_by_ref
-            and claim_by_ref[claim_id].claim_id not in selected_action_claim_ids
-        )
+        if (claim_id in claim_by_ref and claim_by_ref[claim_id].claim_id not in selected_action_claim_ids)
     ]
-    context_claims = [
-        claim_by_ref[claim_id]
-        for claim_id in decision.context_record_ids
-        if claim_id in claim_by_ref
-    ]
+    context_claims = [claim_by_ref[claim_id] for claim_id in decision.context_record_ids if claim_id in claim_by_ref]
     selected_entities = [
-        entity_by_ref[claim.subject_entity_id]
-        for claim in selected_claims
-        if claim.subject_entity_id in entity_by_ref
+        entity_by_ref[claim.subject_entity_id] for claim in selected_claims if claim.subject_entity_id in entity_by_ref
     ]
     selected_entities.extend(
         entity_by_ref[target_id]
@@ -534,20 +487,16 @@ def _observed_view(
     return _ObservedView(
         selected_entities=frozenset(_observed_entity(entity) for entity in selected_entities),
         selected_claims=frozenset(
-            _observed_claim(claim, entity_by_ref, source_id_to_event_id)
-            for claim in selected_claims
+            _observed_claim(claim, entity_by_ref, source_id_to_event_id) for claim in selected_claims
         ),
         supporting_claims=frozenset(
-            _observed_claim(claim, entity_by_ref, source_id_to_event_id)
-            for claim in supporting_claims
+            _observed_claim(claim, entity_by_ref, source_id_to_event_id) for claim in supporting_claims
         ),
         context_claims=frozenset(
-            _observed_claim(claim, entity_by_ref, source_id_to_event_id)
-            for claim in context_claims
+            _observed_claim(claim, entity_by_ref, source_id_to_event_id) for claim in context_claims
         ),
         rejected_claims=frozenset(
-            _observed_claim(claim, entity_by_ref, source_id_to_event_id)
-            for claim in rejected_claims
+            _observed_claim(claim, entity_by_ref, source_id_to_event_id) for claim in rejected_claims
         ),
         relations=frozenset(
             _observed_relation(
@@ -560,8 +509,7 @@ def _observed_view(
             if relation.source != relation.target
         ),
         actions=frozenset(
-            _observed_action(action, entity_by_ref, source_id_to_event_id)
-            for action in selected_actions
+            _observed_action(action, entity_by_ref, source_id_to_event_id) for action in selected_actions
         ),
         citations=frozenset(
             source_id_to_event_id.get(event_id, event_id)
@@ -587,19 +535,8 @@ def _expected_entity(entity: LatentEntity) -> CanonicalEntity:
 
 
 def _observed_entity(entity: RuntimeEntityGraphItemRow) -> CanonicalEntity:
-    semantic_names = {_observed_text(alias) for alias in entity.aliases if alias.strip()}
-    stored_name = _observed_text(entity.canonical_name)
-    stored_id = _observed_text(entity.canonical_id)
-    canonical_name = (
-        max(
-            semantic_names,
-            key=lambda value: (len(value.split()), len(value), value),
-        )
-        if semantic_names and stored_name == stored_id
-        else stored_name
-    )
     return CanonicalEntity(
-        canonical_name,
+        _observed_text(entity.canonical_name),
         _observed_text(entity.entity_type),
     )
 
@@ -635,11 +572,7 @@ def _observed_claim(
     subject = entity_by_ref.get(claim.subject_entity_id)
     object_entity = entity_by_ref.get(claim.object_entity_id)
     return CanonicalClaim(
-        subject=(
-            _observed_entity(subject)
-            if subject
-            else CanonicalEntity(_observed_text(claim.subject), "unknown")
-        ),
+        subject=(_observed_entity(subject) if subject else CanonicalEntity(_observed_text(claim.subject), "unknown")),
         predicate=_observed_text(claim.predicate),
         object_kind="entity" if object_entity else "literal",
         object_value=(

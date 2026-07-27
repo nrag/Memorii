@@ -342,6 +342,18 @@ def build_family_scenario(
             )
         )
     if family == "abandoned_then_resumed_work":
+        action_observation_by_claim_id = {
+            observation.exposed_claim_ids[0]: observation
+            for observation in observations
+            if len(observation.exposed_claim_ids) == 1
+            and observation.exposed_claim_ids[0]
+            in {
+                claim_branch_a_started,
+                claim_branch_a_blocked,
+                claim_branch_b_started,
+                claim_branch_b_progress,
+            }
+        }
         action_successors = {
             claim_branch_a_started: (
                 claim_branch_a_blocked,
@@ -353,8 +365,7 @@ def build_family_scenario(
             ),
         }
         action_predecessors = {
-            successor_id: claim_id
-            for claim_id, (successor_id, _timestamp) in action_successors.items()
+            successor_id: claim_id for claim_id, (successor_id, _timestamp) in action_successors.items()
         }
         action_claim_specs = [
             (
@@ -365,7 +376,6 @@ def build_family_scenario(
                 f"event_{suffix}_branch_a_started",
                 f"transition_{suffix}_branch_a_started",
                 branch_a_started_time,
-                "Atlas cleanup Branch A started: re-open old owner notes.",
                 SimLifecycleState.SUPERSEDED,
             ),
             (
@@ -376,7 +386,6 @@ def build_family_scenario(
                 f"event_{suffix}_branch_a_blocked",
                 f"transition_{suffix}_branch_a_blocked",
                 branch_a_blocked_time,
-                "Atlas cleanup Branch A blocked on stale onboarding notes.",
                 SimLifecycleState.ACTIVE,
             ),
             (
@@ -387,7 +396,6 @@ def build_family_scenario(
                 f"event_{suffix}_branch_b_started",
                 f"transition_{suffix}_branch_b_started",
                 branch_b_started_time,
-                "Atlas cleanup Branch B started: verify the org-directory owner path.",
                 SimLifecycleState.SUPERSEDED,
             ),
             (
@@ -398,7 +406,6 @@ def build_family_scenario(
                 f"event_{suffix}_branch_b_progress",
                 f"transition_{suffix}_branch_b_progress",
                 branch_b_progress_time,
-                "Atlas cleanup Branch B in_progress: continue the org-directory owner cleanup.",
                 SimLifecycleState.ACTIVE,
             ),
         ]
@@ -410,9 +417,9 @@ def build_family_scenario(
             event_id,
             transition_id,
             timestamp,
-            quote,
             state,
         ) in action_claim_specs:
+            action_observation = action_observation_by_claim_id[claim_id]
             successor = action_successors.get(claim_id)
             predecessor = action_predecessors.get(claim_id)
             claims.append(
@@ -425,17 +432,13 @@ def build_family_scenario(
                     predicate_id="action_state",
                     object_value=object_value,
                     event_id=event_id,
-                    quote=quote,
+                    quote=action_observation.text,
                     transition_id=transition_id,
                     timestamp=timestamp,
                     state=state,
                     valid_to=successor[1] if successor is not None else None,
-                    supersedes_claim_ids=(
-                        [predecessor] if predecessor is not None else []
-                    ),
-                    superseded_by_claim_id=(
-                        successor[0] if successor is not None else None
-                    ),
+                    supersedes_claim_ids=([predecessor] if predecessor is not None else []),
+                    superseded_by_claim_id=(successor[0] if successor is not None else None),
                     conflict_with_claim_ids=[
                         related_claim_id
                         for related_claim_id in (

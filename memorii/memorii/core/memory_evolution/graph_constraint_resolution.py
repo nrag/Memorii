@@ -96,9 +96,7 @@ def resolve_graph_constraints(
         )
         return GraphPatternResolution(
             status=(
-                GraphPatternResolutionStatus.NO_MATCH
-                if not common_subjects
-                else GraphPatternResolutionStatus.AMBIGUOUS
+                GraphPatternResolutionStatus.NO_MATCH if not common_subjects else GraphPatternResolutionStatus.AMBIGUOUS
             ),
             resolution_method=GraphResolutionMethod.STRUCTURED_CONSTRAINT,
             pattern=compiled.patterns[0].source_pattern,
@@ -126,9 +124,7 @@ def resolve_graph_constraints(
         conjunctive_patterns=[item.pattern for item in resolutions],
         subject_entity_id=subject_entity_id,
         matched_claim_ids=matched_claim_ids,
-        supporting_source_ids=_source_ids(
-            state for state in state_list if state.claim_id in matched_claim_id_set
-        ),
+        supporting_source_ids=_source_ids(state for state in state_list if state.claim_id in matched_claim_id_set),
         candidate_subject_entity_ids=[subject_entity_id],
     )
 
@@ -176,10 +172,7 @@ def _execute_pattern(
         for state in states
         if state.claim_key.predicate_id == pattern.predicate_id
         and _state_matches_temporal_frame(state, temporal_frame)
-        and (
-            pattern.subject_entity_id is None
-            or subject_by_claim_id[state.claim_id] == pattern.subject_entity_id
-        )
+        and (pattern.subject_entity_id is None or subject_by_claim_id[state.claim_id] == pattern.subject_entity_id)
     ]
     if pattern.subject_entity_id is not None and not eligible:
         return _failure_resolution(
@@ -296,9 +289,7 @@ def _resolve_unstructured_pattern(
     entity_by_link_id = {link.link_id: link.canonical_entity_id for link in entity_links}
     subject_by_claim_id = _subject_entity_by_claim(states, entity_links)
     mentioned_entity_ids = {
-        entity_id
-        for entity_id, names in entity_names.items()
-        if any(_contains_phrase(query, name) for name in names)
+        entity_id for entity_id, names in entity_names.items() if any(_contains_phrase(query, name) for name in names)
     }
     eligible = [
         state
@@ -308,9 +299,7 @@ def _resolve_unstructured_pattern(
     ]
     explicit_subjects = {subject_entity_id} if subject_entity_id is not None else set()
     if explicit_subjects:
-        eligible = [
-            state for state in eligible if subject_by_claim_id[state.claim_id] in explicit_subjects
-        ]
+        eligible = [state for state in eligible if subject_by_claim_id[state.claim_id] in explicit_subjects]
     elif mentioned_entity_ids:
         evidence_counts = {
             state.claim_id: _participant_evidence_score(
@@ -323,9 +312,7 @@ def _resolve_unstructured_pattern(
         }
         maximum_evidence = max(evidence_counts.values(), default=0)
         eligible = [
-            state
-            for state in eligible
-            if maximum_evidence > 0 and evidence_counts[state.claim_id] == maximum_evidence
+            state for state in eligible if maximum_evidence > 0 and evidence_counts[state.claim_id] == maximum_evidence
         ]
 
     candidate_subject_ids = sorted({subject_by_claim_id[state.claim_id] for state in eligible})
@@ -351,9 +338,7 @@ def _resolve_unstructured_pattern(
     return GraphPatternResolution(
         status=GraphPatternResolutionStatus.RESOLVED,
         resolution_method=GraphResolutionMethod.LEXICAL_PARTICIPANT_FALLBACK,
-        pattern=pattern.model_copy(
-            update={"subject": ResolvedEntityReference(entity_id=resolved_subject)}
-        ),
+        pattern=pattern.model_copy(update={"subject": ResolvedEntityReference(entity_id=resolved_subject)}),
         subject_entity_id=resolved_subject,
         matched_claim_ids=sorted(state.claim_id for state in eligible),
         supporting_source_ids=_source_ids(eligible),
@@ -445,17 +430,13 @@ def _fall_back_to_subject_resolution(
         return GraphPatternResolution(
             status=GraphPatternResolutionStatus.RESOLVED,
             resolution_method=resolution_method,
-            pattern=pattern.model_copy(
-                update={"subject": ResolvedEntityReference(entity_id=resolved)}
-            ),
+            pattern=pattern.model_copy(update={"subject": ResolvedEntityReference(entity_id=resolved)}),
             subject_entity_id=resolved,
             candidate_subject_entity_ids=[resolved],
         )
     return GraphPatternResolution(
         status=(
-            GraphPatternResolutionStatus.AMBIGUOUS
-            if len(subject_ids) > 1
-            else GraphPatternResolutionStatus.NO_MATCH
+            GraphPatternResolutionStatus.AMBIGUOUS if len(subject_ids) > 1 else GraphPatternResolutionStatus.NO_MATCH
         ),
         resolution_method=resolution_method,
         pattern=pattern,
@@ -512,7 +493,14 @@ def _entity_names(links: Iterable[EntityLinkState]) -> dict[str, set[str]]:
     names: dict[str, set[str]] = {}
     for link in links:
         names.setdefault(link.canonical_entity_id, set()).update(
-            name for name in {link.mention_text, link.normalized_name, *link.aliases} if name.strip()
+            name
+            for name in {
+                link.mention_text,
+                link.normalized_name,
+                *link.observed_names,
+                *link.aliases,
+            }
+            if name.strip()
         )
     return names
 

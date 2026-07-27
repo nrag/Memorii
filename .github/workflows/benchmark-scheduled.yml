@@ -148,6 +148,7 @@ jobs:
       matrix: ${{ fromJSON(needs.live-certification-policy.outputs.matrix) }}
     env:
       MEMORII_LLM_PROVIDER: openai
+      MEMORII_LLM_MODEL: ${{ vars.MEMORII_LLM_MODEL }}
       MEMORII_ENABLE_LIVE_LLM_TESTS: 'true'
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       MEMORII_LLM_MAX_RETRIES: '0'
@@ -178,7 +179,7 @@ jobs:
         working-directory: memorii
         run: >-
           python -c
-          "from memorii.core.llm_config import LLMLiveTestConfig, LLMDecisionRuntimeConfig, LLMRuntimeConfig; runtime=LLMRuntimeConfig.from_env(); live=LLMLiveTestConfig.from_env(); assert runtime.provider == 'openai'; assert runtime.has_live_provider(); assert live.should_run_live_llm_tests(runtime); assert LLMDecisionRuntimeConfig(mode='hybrid').resolve(runtime) == 'hybrid'"
+          "from memorii.core.llm_config import LLMLiveTestConfig, LLMDecisionRuntimeConfig, LLMRuntimeConfig; runtime=LLMRuntimeConfig.from_env(); live=LLMLiveTestConfig.from_env(); assert runtime.provider == 'openai'; assert runtime.model, 'MEMORII_LLM_MODEL repository variable is required'; assert runtime.has_live_provider(); assert live.should_run_live_llm_tests(runtime); assert LLMDecisionRuntimeConfig(mode='hybrid').resolve(runtime) == 'hybrid'"
 
       - name: Run live runtime smoke
         working-directory: memorii

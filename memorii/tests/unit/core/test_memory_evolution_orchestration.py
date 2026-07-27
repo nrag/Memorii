@@ -8,6 +8,9 @@ from threading import Barrier, Lock
 
 from memorii.core.memory_evolution import (
     EnglishRuleMemoryExtractor,
+    EntityMention,
+    EntityType,
+    EvidenceSpan,
     ExtractionFailureCode,
     ExtractionRun,
     ExtractionRunStatus,
@@ -16,6 +19,7 @@ from memorii.core.memory_evolution import (
     HybridMemoryExtractor,
     MemoryEvolutionResult,
     MemoryEvolutionService,
+    MemoryExtractionProposal,
     MemoryGraphProjector,
     MemoryGraphSnapshot,
     ProviderAttemptStatus,
@@ -74,8 +78,8 @@ class _FailedExtractionProvider:
     prompt_hash = "test-prompt"
 
     def extract(self, observations: list[SourceObservation]):
-        return (
-            ExtractionRun(
+        return MemoryExtractionProposal(
+            run=ExtractionRun(
                 extraction_run_id="extraction:failed",
                 provider=self.provider,
                 model=self.model,
@@ -87,10 +91,7 @@ class _FailedExtractionProvider:
                 failure_code=ExtractionFailureCode.PROVIDER_ERROR,
                 primary_failure_code=ExtractionFailureCode.PROVIDER_ERROR,
                 errors=["provider_error"],
-            ),
-            [],
-            [],
-            [],
+            )
         )
 
 
@@ -104,25 +105,37 @@ class _PartialExtractionProvider(EnglishRuleMemoryExtractor):
 
     def extract(self, observations: list[SourceObservation]):
         self.calls += 1
-        return (
-            ExtractionRun(
+        observation = observations[0]
+        entity = EntityMention(
+            entity_id="entity:accepted-before-error",
+            mention_text="Atlas",
+            normalized_name="atlas",
+            entity_type=EntityType.UNKNOWN,
+            evidence_spans=[
+                EvidenceSpan(
+                    source_id=observation.source_id,
+                    quote="Atlas",
+                    source_type=observation.source_type,
+                    timestamp=observation.timestamp,
+                )
+            ],
+            confidence=0.8,
+        )
+        return MemoryExtractionProposal(
+            run=ExtractionRun(
                 extraction_run_id="extraction:partial",
                 provider=self.provider,
                 model=self.model,
                 prompt_hash=self.prompt_hash,
-                input_source_ids=[
-                    observation.source_id for observation in observations
-                ],
-                entity_ids=["entity:accepted-before-error"],
+                input_source_ids=[observation.source_id for observation in observations],
+                entity_ids=[entity.entity_id],
                 status=ExtractionRunStatus.PARTIAL,
                 provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
                 final_output_source=FinalExtractionSource.PRIMARY,
                 failure_code=ExtractionFailureCode.OUTPUT_VALIDATION,
                 errors=["claim[0]: KeyError:missing-reference"],
             ),
-            [],
-            [],
-            [],
+            entities=[entity],
         )
 
 
@@ -353,10 +366,7 @@ def test_failed_extraction_records_terminal_provider_failure_without_committing(
 
 def test_partial_extraction_fails_atomically_and_retains_truthful_telemetry(caplog) -> None:
     memory_plane = MemoryPlaneService()
-    provider = ProviderMemoryService(
-        memory_plane=memory_plane,
-        memory_evolution_extractor=_PartialExtractionProvider()
-    )
+    provider = ProviderMemoryService(memory_plane=memory_plane, memory_evolution_extractor=_PartialExtractionProvider())
 
     result = provider.sync_event(
         operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
@@ -371,14 +381,10 @@ def test_partial_extraction_fails_atomically_and_retains_truthful_telemetry(capl
     assert outcome.extraction_status == ExtractionRunStatus.PARTIAL
     assert outcome.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
     assert outcome.final_extraction_source == FinalExtractionSource.PRIMARY
-    assert (
-        provider.memory_evolution_service.retrieve_claim_states(
-            view=RetrievalView.ALL_VERSIONS
-        )
-        == []
-    )
+    assert provider.memory_evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
     assert all(
-        record.content.get("memory_evolution_kind") not in {
+        record.content.get("memory_evolution_kind")
+        not in {
             "claim_state",
             "entity_link",
             "action",
@@ -414,9 +420,7 @@ def test_hybrid_fallback_records_recovery_without_masking_primary_failure() -> N
 
 def test_hybrid_repairs_partial_extraction_with_commit_eligible_output() -> None:
     primary = _PartialExtractionProvider()
-    provider = ProviderMemoryService(
-        memory_evolution_extractor=HybridMemoryExtractor(llm_extractor=primary)
-    )
+    provider = ProviderMemoryService(memory_evolution_extractor=HybridMemoryExtractor(llm_extractor=primary))
 
     result = provider.sync_event(
         operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
@@ -455,9 +459,7 @@ def test_hybrid_rejects_partial_repair_and_attempts_only_once() -> None:
     assert outcome.extraction_status == ExtractionRunStatus.FAILED
     assert outcome.fallback_outcome == FallbackOutcome.FAILED
     assert outcome.final_extraction_source == FinalExtractionSource.NONE
-    assert provider.memory_evolution_service.retrieve_claim_states(
-        view=RetrievalView.ALL_VERSIONS
-    ) == []
+    assert provider.memory_evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
 
 
 def test_hybrid_does_not_report_an_abstaining_fallback_as_success() -> None:

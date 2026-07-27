@@ -15,7 +15,10 @@ from memorii.core.benchmark.artifact_rows import (
     SimScenarioResultRow,
 )
 from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
-from memorii.core.benchmark.memory_evolution_runtime.checkpoint_evaluation import runtime_failure_buckets
+from memorii.core.benchmark.memory_evolution_runtime.checkpoint_evaluation import (
+    runtime_failure_buckets,
+    runtime_ingestion_failure_buckets,
+)
 from memorii.core.benchmark.memory_evolution_runtime.checkpoint_projection import project_runtime_checkpoint
 from memorii.core.benchmark.memory_evolution_runtime.extractors import (
     build_runtime_extractor,
@@ -45,6 +48,7 @@ from memorii.core.benchmark.memory_evolution_runtime.result_rows import (
 )
 from memorii.core.benchmark.memory_evolution_sim import (
     JudgeAggregate,
+    JudgeVerdict,
     LatentGraphScenario,
     OracleCheckpoint,
     judge_sim_checkpoint,
@@ -128,6 +132,8 @@ def validate_runtime_live_safety(
         dry_run=dry_run,
     )
     if effective_mode in {"llm", "hybrid"}:
+        if not dry_run and not runtime_config.model:
+            raise RuntimeError("live runtime benchmarks require an explicit MEMORII_LLM_MODEL")
         live_config = LLMLiveTestConfig.from_env(env_snapshot.env)
         validate_live_safety(
             modes=[effective_mode],
@@ -179,8 +185,11 @@ def run_runtime_scenarios(
             live_client_factory=live_client_factory,
         )
         memory_plane = MemoryPlaneService()
+        query_runtime_config = (
+            runtime_config.model_copy(update={"provider": "none", "api_key": None}) if dry_run else runtime_config
+        )
         query_analyzer = build_production_query_analyzer(
-            runtime_config=runtime_config,
+            runtime_config=query_runtime_config,
             prompt_root=prompt_root,
             client_factory=live_client_factory,
         )
@@ -216,12 +225,8 @@ def run_runtime_scenarios(
                     before_ids=before_record_ids,
                 )
                 source_id_to_event_id.update(ingestion_result.source_id_to_event_id)
-                extractor.record_operation_outcomes(
-                    ingestion_result.evolution_outcomes
-                )
-                extractor.record_evolution_results(
-                    ingestion_result.evolution_results
-                )
+                extractor.record_operation_outcomes(ingestion_result.evolution_outcomes)
+                extractor.record_evolution_results(ingestion_result.evolution_results)
                 before_record_ids = {record.memory_id for record in memory_plane.list_records()}
                 observation_index += 1
                 prefix_audit = audit_ingestion_prefix(
@@ -232,30 +237,37 @@ def run_runtime_scenarios(
                 )
                 scenario_prefix_audits.append(prefix_audit)
                 ingestion_prefix_audits.append(prefix_audit)
-            work_state = evolution_service.derive_work_state()
-            # Keep the benchmark on the provider-facing production retrieval
-            # contract. The benchmark may judge the result, but it must not
-            # bypass the provider's decision boundary.
-            retrieval_invocation = runtime_retrieval_invocation(checkpoint)
-            request_task_id = checkpoint.request_task_id or ingestion_context.task_id
-            request_session_id = checkpoint.request_session_id or ingestion_context.session_id
-            request_user_id = checkpoint.request_user_id or ingestion_context.user_id
-            prefetch_result = provider.prefetch_result(
-                checkpoint.query_or_task,
-                reference_time=checkpoint.timestamp,
-                top_k=8,
-                include_context=retrieval_invocation.include_context,
-                include_conflicts=retrieval_invocation.include_conflicts,
-                purpose=retrieval_invocation.purpose,
-                query_language=checkpoint.query_language,
-                task_id=request_task_id,
-                session_id=request_session_id,
-                user_id=request_user_id,
+            prefix_runs = recorded_extraction_runs(extractor)
+            ingestion_blocked = any(not audit.passed for audit in scenario_prefix_audits) or bool(
+                runtime_ingestion_failure_buckets(prefix_runs)
             )
-            retrieval_decision = prefetch_result.evolution_decision
-            if retrieval_decision is None:
-                raise RuntimeError("production prefetch omitted its evolution decision")
-            composition_failures = provider_composition_failure_buckets(prefetch_result)
+            work_state = evolution_service.derive_work_state()
+            retrieval_decision = None
+            composition_failures: list[str] = []
+            if not ingestion_blocked:
+                # Keep the benchmark on the provider-facing production retrieval
+                # contract. The benchmark may judge the result, but it must not
+                # bypass the provider's decision boundary.
+                retrieval_invocation = runtime_retrieval_invocation(checkpoint)
+                request_task_id = checkpoint.request_task_id or ingestion_context.task_id
+                request_session_id = checkpoint.request_session_id or ingestion_context.session_id
+                request_user_id = checkpoint.request_user_id or ingestion_context.user_id
+                prefetch_result = provider.prefetch_result(
+                    checkpoint.query_or_task,
+                    reference_time=checkpoint.timestamp,
+                    top_k=8,
+                    include_context=retrieval_invocation.include_context,
+                    include_conflicts=retrieval_invocation.include_conflicts,
+                    purpose=retrieval_invocation.purpose,
+                    query_language=checkpoint.query_language,
+                    task_id=request_task_id,
+                    session_id=request_session_id,
+                    user_id=request_user_id,
+                )
+                retrieval_decision = prefetch_result.evolution_decision
+                if retrieval_decision is None:
+                    raise RuntimeError("production prefetch omitted its evolution decision")
+                composition_failures = provider_composition_failure_buckets(prefetch_result)
             graph_snapshot = evolution_service.retrieve_graph_snapshot()
             normalization = graph_items_from_snapshot(
                 scenario_id=scenario.scenario_id,
@@ -294,9 +306,7 @@ def run_runtime_scenarios(
                 }
                 for run in recorded_runs
             )
-            extractor_fallbacks = sum(
-                run.fallback_outcome != FallbackOutcome.NOT_USED for run in recorded_runs
-            )
+            extractor_fallbacks = sum(run.fallback_outcome != FallbackOutcome.NOT_USED for run in recorded_runs)
             projection = project_runtime_checkpoint(
                 scenario=scenario,
                 checkpoint=checkpoint,
@@ -327,7 +337,11 @@ def run_runtime_scenarios(
             )
             raw_output = projection.output
             output = raw_output
-            aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
+            aggregate = (
+                _ingestion_blocked_judge_aggregate(checkpoint)
+                if ingestion_blocked
+                else judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
+            )
             diagnostics = sim_checkpoint_diagnostics(
                 scenario=scenario, checkpoint=checkpoint, output=output, aggregate=aggregate
             )
@@ -337,7 +351,8 @@ def run_runtime_scenarios(
                 output=output,
                 projection=projection,
                 graph_snapshot=graph_snapshot,
-                recorded_runs=checkpoint_runs,
+                recorded_runs=prefix_runs,
+                ingestion_blocked=ingestion_blocked,
             )
             success = not runtime_buckets
             final_output_source = runtime_final_output_source(
@@ -363,10 +378,8 @@ def run_runtime_scenarios(
                 provider_successes=extractor_provider_successes,
                 provider_failures=extractor_provider_failures,
                 fallbacks=extractor_fallbacks,
-                fallback_used=any(
-                    run.fallback_outcome != FallbackOutcome.NOT_USED for run in checkpoint_runs
-                ),
-                recorded_runs=checkpoint_runs,
+                fallback_used=any(run.fallback_outcome != FallbackOutcome.NOT_USED for run in checkpoint_runs),
+                recorded_runs=prefix_runs,
             )
             checkpoint_rows.append(row)
             scenario_checkpoint_rows.append(row)
@@ -415,6 +428,22 @@ def run_runtime_scenarios(
             effective_mode=effective_mode,
             dry_run=dry_run,
         ),
+    )
+
+
+def _ingestion_blocked_judge_aggregate(checkpoint: OracleCheckpoint) -> JudgeAggregate:
+    """Represent an intentionally unevaluated downstream judge boundary."""
+
+    return JudgeAggregate(
+        checkpoint_id=checkpoint.checkpoint_id,
+        verdict=JudgeVerdict.ABSTAIN,
+        score=0.0,
+        confidence=0.0,
+        votes=[],
+        required_judge_ids=list(checkpoint.required_judge_ids),
+        critical_failure_buckets=[],
+        review_required=True,
+        rationale="not evaluated because ingestion prefix validation failed",
     )
 
 

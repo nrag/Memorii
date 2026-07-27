@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.memory_evolution.extraction_contracts import (
     MemoryExtractionOutput,
+    MemoryExtractionProposal,
     MemoryExtractor,
     StructuredProposalProvider,
 )
@@ -16,14 +16,20 @@ from memorii.core.memory_evolution.extraction_identity import normalize_extracte
 from memorii.core.memory_evolution.extraction_identity import stable_entity_id as _entity_id
 from memorii.core.memory_evolution.extraction_identity import stable_extraction_id as _stable_id
 from memorii.core.memory_evolution.language import supports_english_rules
+from memorii.core.memory_evolution.language_support import (
+    DEFAULT_EXTRACTION_LANGUAGE_REGISTRY,
+    ExtractionLanguageRegistry,
+)
 from memorii.core.memory_evolution.models import (
     ClaimKey,
     ConfidenceComponents,
+    EntityIdentityRelationType,
     EntityMention,
     EntityType,
     EvidenceSpan,
     ExtractedAction,
     ExtractedClaim,
+    ExtractedIdentityRelation,
     ExtractionFailureCode,
     ExtractionRun,
     ExtractionRunStatus,
@@ -33,6 +39,7 @@ from memorii.core.memory_evolution.models import (
     SourceObservation,
     memory_scope_from_observation,
 )
+from memorii.core.memory_evolution.source_grounding import ground_extraction_candidates
 from memorii.core.prompts.registry import PromptRegistry, default_prompt_root
 from memorii.core.prompts.runtime_manifest import PromptOwner
 
@@ -47,14 +54,20 @@ class EnglishRuleMemoryExtractor:
     provider: str = "english_rule"
     model: str | None = None
     prompt_hash: str | None = None
+    _language_registry: ExtractionLanguageRegistry = DEFAULT_EXTRACTION_LANGUAGE_REGISTRY
+
+    def __init__(
+        self,
+        *,
+        language_registry: ExtractionLanguageRegistry = DEFAULT_EXTRACTION_LANGUAGE_REGISTRY,
+    ) -> None:
+        self._language_registry = language_registry
 
     @property
     def structured_proposal(self) -> MemoryExtractionOutput | None:
         return None
 
-    def extract(
-        self, observations: list[SourceObservation]
-    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    def extract(self, observations: list[SourceObservation]) -> MemoryExtractionProposal:
         if not observations:
             return _deterministic_abstention(
                 provider=self.provider,
@@ -85,8 +98,20 @@ class EnglishRuleMemoryExtractor:
             actions.extend(obs_actions)
 
         entity_list = list(entities.values())
-        claims = _canonicalize_claim_arguments(claims, entity_list)
-        entity_list = _apply_grounded_declared_entity_types(entity_list, claims)
+        grounding = ground_extraction_candidates(
+            claims=claims,
+            entities=entity_list,
+            actions=actions,
+            identity_relations=[],
+            observations=observations,
+            language_registry=self._language_registry,
+            allow_argument_reversal=True,
+        )
+        claims = grounding.claims
+        entity_list = grounding.entities
+        actions = grounding.actions
+        errors.extend(grounding.errors)
+        capability_ids = grounding.capability_ids
         extracted_anything = bool(entity_list or claims or actions)
         if errors:
             status = ExtractionRunStatus.PARTIAL if entity_list or claims or actions else ExtractionRunStatus.ABSTAINED
@@ -110,6 +135,7 @@ class EnglishRuleMemoryExtractor:
             entity_ids=sorted({entity.entity_id for entity in entity_list}),
             claim_ids=[claim.claim_id for claim in claims],
             action_ids=[action.action_id for action in actions],
+            language_capability_ids=sorted(capability_ids),
             validation_summary={},
             status=status,
             final_output_source=(
@@ -120,7 +146,12 @@ class EnglishRuleMemoryExtractor:
             failure_code=failure_code,
             errors=errors,
         )
-        return run, entity_list, claims, actions
+        return MemoryExtractionProposal(
+            run=run,
+            entities=entity_list,
+            claims=claims,
+            actions=actions,
+        )
 
     def _extract_observation(
         self,
@@ -133,11 +164,18 @@ class EnglishRuleMemoryExtractor:
         claims: list[ExtractedClaim] = []
         actions: list[ExtractedAction] = []
         observation_scope = memory_scope_from_observation(observation)
+        capability = self._language_registry.resolve(observation.language)
+        if capability is None:
+            raise ValueError(f"unsupported_language:{observation.language}")
 
-        for predicate, subject, value, quote in _extract_fact_matches(text):
+        for candidate in capability.rule_fact_candidates(text):
+            predicate = candidate.predicate_id
+            subject = candidate.subject_name
+            value = candidate.object_value
+            quote = candidate.quote
             subject_entity_id = _entity_id(subject)
             value_entity_id = _entity_id(value) if predicate in {"owner", "approver", "api_owner"} else None
-            span = _span(observation=observation, quote=quote)
+            span = _span(observation=observation, quote=quote, require_unique=True)
             entities.append(
                 EntityMention(
                     entity_id=subject_entity_id,
@@ -179,15 +217,10 @@ class EnglishRuleMemoryExtractor:
                 )
             )
 
-        action_match = re.search(
-            r"\b(?P<target>[A-Z][A-Za-z0-9 _:-]+?)\s+(?P<status>started|blocked|resumed|abandoned|completed|failed|succeeded)\b",
-            text,
-            re.IGNORECASE,
-        )
-        if action_match:
-            target = action_match.group("target").strip()
-            status = action_match.group("status").lower()
-            span = _span(observation=observation, quote=action_match.group(0))
+        for candidate in capability.rule_action_candidates(text):
+            target = candidate.target_name
+            status = candidate.status
+            span = _span(observation=observation, quote=candidate.quote, require_unique=True)
             target_entity_id = _entity_id(target)
             entities.append(
                 EntityMention(
@@ -226,10 +259,12 @@ class LLMMemoryExtractor:
         *,
         runner: PromptLLMRunner,
         prompt_root: Path | None = None,
+        language_registry: ExtractionLanguageRegistry = DEFAULT_EXTRACTION_LANGUAGE_REGISTRY,
     ) -> None:
         root = prompt_root or default_prompt_root()
         self._runner = runner
         self._registry = PromptRegistry(prompt_root=root)
+        self._language_registry = language_registry
         self.model: str | None = None
         self.prompt_hash: str | None = None
         self._structured_proposal: MemoryExtractionOutput | None = None
@@ -238,9 +273,7 @@ class LLMMemoryExtractor:
     def structured_proposal(self) -> MemoryExtractionOutput | None:
         return self._structured_proposal
 
-    def extract(
-        self, observations: list[SourceObservation]
-    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    def extract(self, observations: list[SourceObservation]) -> MemoryExtractionProposal:
         if not observations:
             self._structured_proposal = None
             return _deterministic_abstention(
@@ -270,9 +303,7 @@ class LLMMemoryExtractor:
         self.model = result.response.actual_model or result.response.requested_model
         self.prompt_hash = result.request.prompt_hash
         self._structured_proposal = (
-            MemoryExtractionOutput.model_validate(result.output)
-            if result.output is not None
-            else None
+            MemoryExtractionOutput.model_validate(result.output) if result.output is not None else None
         )
         if not result.success or result.output is None:
             failure_mode = result.failure_mode or "output_validation"
@@ -288,6 +319,8 @@ class LLMMemoryExtractor:
                 extraction_run_id=run_id,
                 provider=self.provider,
                 model=result.response.actual_model or result.response.requested_model,
+                requested_model=result.response.requested_model,
+                actual_model=result.response.actual_model,
                 prompt_hash=result.request.prompt_hash,
                 input_source_ids=[obs.source_id for obs in observations],
                 status=ExtractionRunStatus.FAILED,
@@ -301,7 +334,7 @@ class LLMMemoryExtractor:
                 primary_failure_code=failure_code,
                 errors=errors,
             )
-            return run, [], [], []
+            return MemoryExtractionProposal(run=run)
         return models_from_llm_output(
             run_id=run_id,
             provider=self.provider,
@@ -309,6 +342,9 @@ class LLMMemoryExtractor:
             prompt_hash=result.request.prompt_hash,
             observations=observations,
             output=result.output,
+            requested_model=result.response.requested_model,
+            actual_model=result.response.actual_model,
+            language_registry=self._language_registry,
         )
 
 
@@ -332,16 +368,14 @@ class HybridMemoryExtractor:
             return self._llm_extractor.structured_proposal
         return None
 
-    def extract(
-        self, observations: list[SourceObservation]
-    ) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
-        run, entities, claims, actions = self._llm_extractor.extract(observations)
+    def extract(self, observations: list[SourceObservation]) -> MemoryExtractionProposal:
+        proposal = self._llm_extractor.extract(observations)
+        run = proposal.run
         self.model = run.model
         self.prompt_hash = run.prompt_hash
         if run.status in {ExtractionRunStatus.FAILED, ExtractionRunStatus.PARTIAL}:
-            fallback_run, fallback_entities, fallback_claims, fallback_actions = self._rule_extractor.extract(
-                observations
-            )
+            fallback_proposal = self._rule_extractor.extract(observations)
+            fallback_run = fallback_proposal.run
             if fallback_run.status != ExtractionRunStatus.SUCCEEDED:
                 failed_run = run.model_copy(
                     update={
@@ -357,10 +391,13 @@ class HybridMemoryExtractor:
                         ],
                     }
                 )
-                return failed_run, [], [], []
+                return proposal.model_copy(update={"run": failed_run})
             fallback_run = fallback_run.model_copy(
                 update={
                     "provider": self.provider,
+                    "model": run.model,
+                    "requested_model": run.requested_model,
+                    "actual_model": run.actual_model,
                     "provider_attempt_status": run.provider_attempt_status,
                     "primary_failure_code": run.failure_code,
                     "fallback_outcome": FallbackOutcome.SUCCEEDED,
@@ -369,8 +406,8 @@ class HybridMemoryExtractor:
                     "errors": [*run.errors, "fallback_used:english_rule"],
                 }
             )
-            return fallback_run, fallback_entities, fallback_claims, fallback_actions
-        return run.model_copy(update={"provider": self.provider}), entities, claims, actions
+            return fallback_proposal.model_copy(update={"run": fallback_run})
+        return proposal.model_copy(update={"run": run.model_copy(update={"provider": self.provider})})
 
 
 def _deterministic_abstention(
@@ -378,9 +415,9 @@ def _deterministic_abstention(
     provider: str,
     model: str | None,
     prompt_hash: str | None,
-) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
-    return (
-        ExtractionRun(
+) -> MemoryExtractionProposal:
+    return MemoryExtractionProposal(
+        run=ExtractionRun(
             extraction_run_id=_stable_id("extraction", ""),
             provider=provider,
             model=model,
@@ -389,64 +426,8 @@ def _deterministic_abstention(
             status=ExtractionRunStatus.ABSTAINED,
             provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
             final_output_source=FinalExtractionSource.NONE,
-        ),
-        [],
-        [],
-        [],
+        )
     )
-
-
-def _extract_fact_matches(text: str) -> list[tuple[str, str, str, str]]:
-    patterns: list[tuple[str, str]] = [
-        (
-            "api_owner",
-            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:API\s+owner|api\s+owner)\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)",
-        ),
-        ("approver", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+approver\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        ("owner", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+owner\s*(?:is|:|=)\s*(?P<value>[A-Z][A-Za-z0-9 _:-]+)"),
-        (
-            "owner",
-            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+ownership\s+(?:in\s+\w+\s+)?(?:belonged to|belongs to)\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)",
-        ),
-        (
-            "owner",
-            r"(?P<value>[A-Z][A-Za-z0-9 _:-]+?)\s+owns\s+(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)(?=\s+for now|\s+currently|[.,;]|$)",
-        ),
-        (
-            "owner",
-            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?:project|service|task|workstream)\b\s+owned\s+by\s+(?P<value>[A-Z][A-Za-z0-9 _:-]+)",
-        ),
-        (
-            "entity_type",
-            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+is\s+(?:the\s+)?[A-Za-z0-9 _:-]*?\b(?P<value>project|service|task|incident|document|preference)\b",
-        ),
-        (
-            "status",
-            r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:state|status)\s*(?:is|:|=)\s*(?P<value>failed|succeeded|blocked|running|done|active|inactive)",
-        ),
-        ("status", r"(?P<subject>[A-Z][A-Za-z0-9 _:-]+?)\s+(?:deploy|deployment)\s+(?P<value>failed|succeeded)"),
-        ("preference", r"(?:prefers|preference is|style is)\s+(?P<value>[a-z][A-Za-z0-9 _:-]+)"),
-    ]
-    matches: list[tuple[str, str, str, str]] = []
-    seen: set[tuple[str, str, str, str]] = set()
-    for predicate, pattern in patterns:
-        for match in re.finditer(pattern, text):
-            subject = _clean_extracted_value(match.groupdict().get("subject") or "user")
-            value = _clean_extracted_value(match.group("value"))
-            quote = match.group(0).strip(" .")
-            key = (predicate, subject.lower(), value.lower(), quote.lower())
-            if key in seen:
-                continue
-            seen.add(key)
-            matches.append((predicate, subject, value, quote))
-    return matches
-
-
-def _clean_extracted_value(value: str) -> str:
-    cleaned = re.sub(r"^(?:the|a|an)\s+", "", value.strip(" .:"), flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s+for now$", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s+currently$", "", cleaned, flags=re.IGNORECASE)
-    return re.sub(r"\s+", " ", cleaned).strip(" .:")
 
 
 def models_from_llm_output(
@@ -457,17 +438,25 @@ def models_from_llm_output(
     prompt_hash: str | None,
     observations: list[SourceObservation],
     output: dict[str, object],
-) -> tuple[ExtractionRun, list[EntityMention], list[ExtractedClaim], list[ExtractedAction]]:
+    requested_model: str | None = None,
+    actual_model: str | None = None,
+    language_registry: ExtractionLanguageRegistry = DEFAULT_EXTRACTION_LANGUAGE_REGISTRY,
+) -> MemoryExtractionProposal:
     observation_by_id = {obs.source_id: obs for obs in observations}
     errors: list[str] = []
     entities: list[EntityMention] = []
     claims: list[ExtractedClaim] = []
     actions: list[ExtractedAction] = []
+    identity_relations: list[ExtractedIdentityRelation] = []
+    proposed_entity_types: dict[str, EntityType] = {}
+    capability_ids: set[str] = set()
     if len(observation_by_id) != len(observations):
         run = ExtractionRun(
             extraction_run_id=run_id,
             provider=provider,
             model=model,
+            requested_model=requested_model,
+            actual_model=actual_model,
             prompt_hash=prompt_hash,
             input_source_ids=[obs.source_id for obs in observations],
             status=ExtractionRunStatus.FAILED,
@@ -482,7 +471,7 @@ def models_from_llm_output(
             },
             errors=["input: ValueError:source observation IDs must be unique"],
         )
-        return run, [], [], []
+        return MemoryExtractionProposal(run=run)
 
     entity_items = _list_output(output, "entities")
     entity_id_by_ref: dict[str, str] = {}
@@ -490,7 +479,15 @@ def models_from_llm_output(
         try:
             source_id = str(item.get("source_id") or "")
             observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
-            span = _span(observation=observation, quote=str(item.get("quote") or ""))
+            capability = language_registry.resolve(observation.language)
+            if capability is None:
+                raise ValueError(f"unsupported_language:{observation.language}")
+            capability_ids.add(capability.capability_id)
+            span = _span(
+                observation=observation,
+                quote=str(item.get("quote") or ""),
+                require_unique=False,
+            )
             observation_scope = memory_scope_from_observation(observation)
             entity_ref = str(item["entity_ref"]).strip()
             if entity_ref in entity_id_by_ref:
@@ -500,13 +497,14 @@ def models_from_llm_output(
                 "|".join([run_id, observation.source_id, entity_ref]),
             )
             entity_id_by_ref[entity_ref] = entity_id
+            proposed_entity_types[entity_id] = _entity_type(str(item.get("entity_type") or "unknown"))
             entities.append(
                 EntityMention(
                     entity_id=entity_id,
                     mention_text=str(item["mention_text"]),
-                    normalized_name=_normalize_name(str(item["mention_text"])),
-                    aliases=[str(alias) for alias in _sequence_output(item.get("aliases"))],
-                    entity_type=_entity_type(str(item.get("entity_type") or "unknown")),
+                    normalized_name=capability.normalize_identity(str(item["mention_text"])),
+                    aliases=[],
+                    entity_type=EntityType.UNKNOWN,
                     evidence_spans=[span],
                     confidence=_float_output(item.get("confidence"), default=0.5),
                     scope=observation_scope,
@@ -514,6 +512,64 @@ def models_from_llm_output(
             )
         except (KeyError, TypeError, ValueError) as exc:
             errors.append(f"entity[{idx}]: {type(exc).__name__}:{exc}")
+
+    identity_items = _list_output(output, "identity_relations")
+    relation_ref_counts: dict[str, int] = {}
+    relation_source_counts: dict[str, int] = {}
+    for item in identity_items:
+        relation_ref = str(item.get("relation_ref") or "").strip()
+        if relation_ref:
+            relation_ref_counts[relation_ref] = relation_ref_counts.get(relation_ref, 0) + 1
+        source_entity_ref = str(item.get("source_entity_ref") or "").strip()
+        if source_entity_ref:
+            relation_source_counts[source_entity_ref] = relation_source_counts.get(source_entity_ref, 0) + 1
+    duplicate_relation_refs = {relation_ref for relation_ref, count in relation_ref_counts.items() if count > 1}
+    duplicate_relation_sources = {
+        source_entity_ref for source_entity_ref, count in relation_source_counts.items() if count > 1
+    }
+    for idx, item in enumerate(identity_items):
+        try:
+            source_id = str(item.get("source_id") or "")
+            observation = _resolve_observation(
+                source_id=source_id,
+                observation_by_id=observation_by_id,
+            )
+            span = _span(
+                observation=observation,
+                quote=str(item.get("quote") or ""),
+                require_unique=True,
+            )
+            capability = language_registry.resolve(observation.language)
+            if capability is None:
+                raise ValueError(f"unsupported_language:{observation.language}")
+            capability_ids.add(capability.capability_id)
+            relation_ref = str(item["relation_ref"]).strip()
+            if relation_ref in duplicate_relation_refs:
+                raise ValueError(f"duplicate relation_ref:{relation_ref!r}")
+            source_entity_ref = str(item["source_entity_ref"]).strip()
+            if source_entity_ref in duplicate_relation_sources:
+                raise ValueError(f"multiple identity relations for source_entity_ref:{source_entity_ref!r}")
+            source_entity_id = entity_id_by_ref[source_entity_ref]
+            target_entity_id = entity_id_by_ref[str(item["target_entity_ref"]).strip()]
+            if source_entity_id == target_entity_id:
+                raise ValueError("identity relation endpoints must be distinct")
+            identity_relations.append(
+                ExtractedIdentityRelation(
+                    relation_id=_stable_id(
+                        "identity-relation",
+                        "|".join([run_id, observation.source_id, relation_ref]),
+                    ),
+                    relation_type=EntityIdentityRelationType(str(item["relation_type"])),
+                    source_entity_id=source_entity_id,
+                    target_entity_id=target_entity_id,
+                    evidence_spans=[span],
+                    confidence=_float_output(item.get("confidence"), default=0.6),
+                    scope=memory_scope_from_observation(observation),
+                    extraction_run_id=run_id,
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            errors.append(f"identity_relation[{idx}]: {type(exc).__name__}:{exc}")
 
     for idx, item in enumerate(_list_output(output, "claims")):
         try:
@@ -523,7 +579,11 @@ def models_from_llm_output(
             subject_entity_ref = str(item["subject_entity_ref"]).strip()
             subject_entity_id = entity_id_by_ref[subject_entity_ref]
             object_value = str(item["object_value"]).strip()
-            span = _span(observation=observation, quote=str(item.get("quote") or ""))
+            span = _span(
+                observation=observation,
+                quote=str(item.get("quote") or ""),
+                require_unique=True,
+            )
             observation_scope = memory_scope_from_observation(observation)
             claim_key = ClaimKey(
                 subject_entity_id=subject_entity_id,
@@ -593,7 +653,7 @@ def models_from_llm_output(
             source_id = str(item.get("source_id") or "")
             observation = _resolve_observation(source_id=source_id, observation_by_id=observation_by_id)
             quote = str(item.get("quote") or "")
-            span = _span(observation=observation, quote=quote)
+            span = _span(observation=observation, quote=quote, require_unique=True)
             action_ref = str(item["action_ref"]).strip()
             if action_ref in duplicate_action_refs:
                 raise ValueError(f"duplicate action_ref:{action_ref!r}")
@@ -632,14 +692,21 @@ def models_from_llm_output(
         except (KeyError, TypeError, ValueError) as exc:
             errors.append(f"action[{idx}]: {type(exc).__name__}:{exc}")
 
-    claims = _canonicalize_claim_arguments(claims, entities)
-    entities = _apply_grounded_declared_entity_types(entities, claims)
-    claims = _compile_grounded_entity_type_claims(
-        run_id=run_id,
-        entities=entities,
+    grounding = ground_extraction_candidates(
         claims=claims,
-        observation_by_id=observation_by_id,
+        entities=entities,
+        actions=actions,
+        identity_relations=identity_relations,
+        observations=observations,
+        language_registry=language_registry,
+        allow_argument_reversal=True,
     )
+    claims = grounding.claims
+    entities = grounding.entities
+    actions = grounding.actions
+    identity_relations = grounding.identity_relations
+    errors.extend(grounding.errors)
+    capability_ids.update(grounding.capability_ids)
     entities_by_id = {entity.entity_id: entity for entity in entities}
     valid_claims: list[ExtractedClaim] = []
     for idx, claim in enumerate(claims):
@@ -653,35 +720,13 @@ def models_from_llm_output(
             )
             if claim.claim_key.predicate_id == "entity_type":
                 declared_type = EntityType(claim.object_value.strip().casefold())
-                if not _entity_type_declaration_is_grounded(
-                    entity=subject,
-                    claim=claim,
-                    declared_type=declared_type,
-                ):
-                    raise ValueError(
-                        "entity_type declaration is not grounded in its evidence quote"
-                    )
-            elif (
-                claim.claim_key.predicate_id in _EVIDENCE_BOUND_RELATION_PREDICATES
-                and not _relation_arguments_are_grounded(
-                    predicate_id=claim.claim_key.predicate_id,
-                    subject=subject,
-                    object_entity=(
-                        entities_by_id[claim.object_entity_id]
-                        if claim.object_entity_id is not None
-                        else None
-                    ),
-                    claim=claim,
-                )
-            ):
-                raise ValueError(
-                    "relation arguments are not grounded in the evidence quote"
-                )
+                if subject.entity_type != declared_type:
+                    raise ValueError("entity_type declaration did not compile to the grounded subject type")
             valid_claims.append(claim)
         except (KeyError, ValueError) as exc:
             errors.append(f"claim[{idx}]: {type(exc).__name__}:{exc}")
     claims = valid_claims
-    extracted_anything = bool(entities or claims or actions)
+    extracted_anything = bool(entities or claims or actions or identity_relations)
     if errors:
         status = ExtractionRunStatus.PARTIAL if extracted_anything else ExtractionRunStatus.FAILED
         failure_code = ExtractionFailureCode.OUTPUT_VALIDATION
@@ -695,11 +740,15 @@ def models_from_llm_output(
         extraction_run_id=run_id,
         provider=provider,
         model=model,
+        requested_model=requested_model,
+        actual_model=actual_model,
         prompt_hash=prompt_hash,
         input_source_ids=[obs.source_id for obs in observations],
         entity_ids=[entity.entity_id for entity in entities],
         claim_ids=[claim.claim_id for claim in claims],
         action_ids=[action.action_id for action in actions],
+        identity_relation_ids=[relation.relation_id for relation in identity_relations],
+        language_capability_ids=sorted(capability_ids),
         status=status,
         provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
         final_output_source=(
@@ -711,248 +760,29 @@ def models_from_llm_output(
             "entity_binding_errors": sum(error.startswith("entity[") for error in errors),
             "claim_binding_errors": sum(error.startswith("claim[") for error in errors),
             "action_binding_errors": sum(error.startswith("action[") for error in errors),
+            "identity_relation_binding_errors": sum(error.startswith("identity_relation[") for error in errors),
             "accepted_entities": len(entities),
             "accepted_claims": len(claims),
             "accepted_actions": len(actions),
+            "accepted_identity_relations": len(identity_relations),
+            "discarded_entity_type_hints": sum(
+                proposed_type != EntityType.UNKNOWN
+                and next(
+                    (entity.entity_type for entity in entities if entity.entity_id == entity_id),
+                    EntityType.UNKNOWN,
+                )
+                != proposed_type
+                for entity_id, proposed_type in proposed_entity_types.items()
+            ),
         },
         errors=errors,
     )
-    return run, entities, claims, actions
-
-
-_GROUNDED_ENTITY_TYPE_TERMS = {
-    EntityType.PROJECT: frozenset({"project", "workstream"}),
-    EntityType.SERVICE: frozenset({"service"}),
-    EntityType.TASK: frozenset({"task"}),
-    EntityType.PREFERENCE: frozenset({"preference"}),
-    EntityType.PERSON: frozenset({"person"}),
-}
-
-
-def _compile_grounded_entity_type_claims(
-    *,
-    run_id: str,
-    entities: list[EntityMention],
-    claims: list[ExtractedClaim],
-    observation_by_id: dict[str, SourceObservation],
-) -> list[ExtractedClaim]:
-    """Compile explicit typed declarations into registered, grounded claims."""
-
-    existing_type_keys = {
-        (
-            claim.claim_key.subject_entity_id,
-            span.source_id,
-        )
-        for claim in claims
-        if claim.claim_key.predicate_id == "entity_type"
-        for span in claim.evidence_spans
-    }
-    derived: list[ExtractedClaim] = []
-    derived_keys: set[tuple[str, str]] = set()
-    for entity in entities:
-        terms = _GROUNDED_ENTITY_TYPE_TERMS.get(entity.entity_type)
-        if not terms:
-            continue
-        for span in entity.evidence_spans:
-            key = (entity.entity_id, span.source_id)
-            observation = observation_by_id.get(span.source_id)
-            quote_tokens = set(re.findall(r"[a-z0-9]+", span.quote.casefold()))
-            if (
-                key in existing_type_keys
-                or key in derived_keys
-                or observation is None
-                or quote_tokens.isdisjoint(terms)
-                or not _entity_type_evidence_is_grounded(
-                    entity=entity,
-                    declared_type=entity.entity_type,
-                    evidence_quotes=(span.quote,),
-                )
-            ):
-                continue
-            confidence = entity.confidence
-            claim_id = _stable_id(
-                "claim",
-                "|".join(
-                    [
-                        run_id,
-                        span.source_id,
-                        "entity_type",
-                        entity.entity_id,
-                        entity.entity_type.value,
-                        entity.scope.stable_id(),
-                        "default",
-                    ]
-                ),
-            )
-            derived.append(
-                ExtractedClaim(
-                    claim_id=claim_id,
-                    claim_key=ClaimKey(
-                        subject_entity_id=entity.entity_id,
-                        predicate_id="entity_type",
-                        scope=entity.scope,
-                        qualifier_key="default",
-                    ),
-                    object_value=entity.entity_type.value,
-                    valid_from=observation.timestamp,
-                    evidence_spans=[span],
-                    confidence=ConfidenceComponents(
-                        extraction=confidence,
-                        evidence=0.8 if span.char_start is not None else 0.4,
-                        source_trust=_confidence_for_source(observation).source_trust,
-                        calibrated=min(
-                            1.0,
-                            max(
-                                0.0,
-                                confidence * 0.5
-                                + _confidence_for_source(observation).source_trust * 0.3
-                                + 0.16,
-                            ),
-                        ),
-                    ),
-                    extraction_run_id=run_id,
-                )
-            )
-            derived_keys.add(key)
-
-    if not derived:
-        return claims
-    derived_subject_sources = {
-        (claim.claim_key.subject_entity_id, span.source_id)
-        for claim in derived
-        for span in claim.evidence_spans
-    }
-    entity_type_by_id = {
-        entity.entity_id: entity.entity_type
-        for entity in entities
-    }
-    retained = [
-        claim
-        for claim in claims
-        if claim.claim_key.predicate_id != "semantic_fact"
-        or not (
-            any(
-                (claim.claim_key.subject_entity_id, span.source_id) in derived_subject_sources
-                for span in claim.evidence_spans
-            )
-            and _semantic_fact_denotes_entity_type(
-                claim.object_value,
-                entity_type_by_id.get(claim.claim_key.subject_entity_id),
-            )
-        )
-    ]
-    return [*retained, *derived]
-
-
-def _apply_grounded_declared_entity_types(
-    entities: list[EntityMention],
-    claims: list[ExtractedClaim],
-) -> list[EntityMention]:
-    entities_by_id = {entity.entity_id: entity for entity in entities}
-    declared_types: dict[str, set[EntityType]] = {}
-    for claim in claims:
-        if (
-            claim.claim_key.predicate_id != "entity_type"
-            or claim.object_entity_id is not None
-            or not claim.evidence_spans
-        ):
-            continue
-        try:
-            declared_type = EntityType(claim.object_value.strip().casefold())
-        except ValueError:
-            continue
-        entity = entities_by_id.get(claim.claim_key.subject_entity_id)
-        if (
-            declared_type == EntityType.UNKNOWN
-            or entity is None
-            or not _entity_type_declaration_is_grounded(
-                entity=entity,
-                claim=claim,
-                declared_type=declared_type,
-            )
-        ):
-            continue
-        declared_types.setdefault(
-            claim.claim_key.subject_entity_id,
-            set(),
-        ).add(declared_type)
-
-    resolved: list[EntityMention] = []
-    for entity in entities:
-        types = declared_types.get(entity.entity_id, set())
-        if entity.entity_type == EntityType.UNKNOWN and len(types) == 1:
-            resolved.append(
-                entity.model_copy(update={"entity_type": next(iter(types))})
-            )
-        else:
-            resolved.append(entity)
-    return resolved
-
-
-def _entity_type_declaration_is_grounded(
-    *,
-    entity: EntityMention,
-    claim: ExtractedClaim,
-    declared_type: EntityType,
-) -> bool:
-    return _entity_type_evidence_is_grounded(
-        entity=entity,
-        declared_type=declared_type,
-        evidence_quotes=(span.quote for span in claim.evidence_spans),
-    )
-
-
-def _entity_type_evidence_is_grounded(
-    *,
-    entity: EntityMention,
-    declared_type: EntityType,
-    evidence_quotes: Iterable[str],
-) -> bool:
-    entity_patterns = _entity_name_patterns(entity)
-    type_terms = _GROUNDED_ENTITY_TYPE_TERMS.get(declared_type, frozenset())
-    if not entity_patterns or not type_terms:
-        return False
-    type_pattern = _word_alternation(type_terms)
-    declaration_patterns = [
-        re.compile(
-            rf"{entity_pattern}\s+(?:is|was|remains|became|becomes)\s+"
-            rf"(?:(?:an?|the)\s+)?(?:[a-z0-9_-]+\s+){{0,6}}?{type_pattern}\b",
-            flags=re.IGNORECASE,
-        )
-        for entity_pattern in entity_patterns
-    ]
-    declaration_patterns.extend(
-        re.compile(
-            rf"{entity_pattern}\s*,\s*(?:(?:an?|the)\s+)?"
-            rf"(?:[a-z0-9_-]+\s+){{0,3}}?{type_pattern}\b",
-            flags=re.IGNORECASE,
-        )
-        for entity_pattern in entity_patterns
-    )
-    declaration_patterns.extend(
-        re.compile(
-            rf"{entity_pattern}\s+(?:[a-z0-9_-]+\s+){{0,2}}?{type_pattern}\b",
-            flags=re.IGNORECASE,
-        )
-        for entity_pattern in entity_patterns
-    )
-    return any(
-        pattern.search(quote)
-        for quote in evidence_quotes
-        for pattern in declaration_patterns
-    )
-
-
-def _semantic_fact_denotes_entity_type(
-    object_value: str,
-    entity_type: EntityType | None,
-) -> bool:
-    if entity_type is None:
-        return False
-    normalized = _normalize_name(object_value)
-    return normalized == entity_type.value or normalized in _GROUNDED_ENTITY_TYPE_TERMS.get(
-        entity_type,
-        frozenset(),
+    return MemoryExtractionProposal(
+        run=run,
+        entities=entities,
+        claims=claims,
+        actions=actions,
+        identity_relations=identity_relations,
     )
 
 
@@ -962,105 +792,6 @@ _REQUIRED_OBJECT_ENTITY_TYPES = {
     "api_owner": EntityType.PERSON,
     "dependency": EntityType.UNKNOWN,
 }
-
-_EVIDENCE_BOUND_RELATION_PREDICATES = frozenset(
-    {"owner", "approver", "api_owner", "dependency"}
-)
-
-
-def _relation_arguments_are_grounded(
-    *,
-    predicate_id: str,
-    subject: EntityMention,
-    object_entity: EntityMention | None,
-    claim: ExtractedClaim,
-) -> bool:
-    if object_entity is None:
-        return False
-    subject_patterns = _entity_name_patterns(subject)
-    object_patterns = _entity_name_patterns(object_entity)
-    patterns = [
-        pattern
-        for subject_pattern in subject_patterns
-        for object_pattern in object_patterns
-        for pattern in _relation_binding_patterns(
-            predicate_id=predicate_id,
-            subject_pattern=subject_pattern,
-            object_pattern=object_pattern,
-        )
-    ]
-    return any(
-        pattern.search(span.quote)
-        for span in claim.evidence_spans
-        for pattern in patterns
-    )
-
-
-def _relation_binding_patterns(
-    *,
-    predicate_id: str,
-    subject_pattern: str,
-    object_pattern: str,
-) -> tuple[re.Pattern[str], ...]:
-    if predicate_id == "owner":
-        expressions = (
-            rf"{subject_pattern}\s+(?:owner(?:\s+and\s+api\s+owner)?|ownership)"
-            rf"\s*(?:(?:is|are|:|=)|(?:in\s+\w+\s+)?(?:belongs|belonged)\s+to)"
-            rf"\s+{object_pattern}",
-            rf"{object_pattern}\s+(?:currently\s+)?owns\s+{subject_pattern}",
-            rf"{subject_pattern}\s+(?:is|was)\s+(?:(?:an?|the)\s+)?"
-            rf"(?:[a-z0-9_-]+\s+){{0,6}}?owned\s+by\s+{object_pattern}",
-            rf"{object_pattern}\s+(?:is|was)\s+(?:(?:an?|the)\s+)?"
-            rf"(?:[a-z0-9_-]+\s+){{0,3}}?{subject_pattern}\s+owner\b",
-        )
-    elif predicate_id == "approver":
-        expressions = (
-            rf"{subject_pattern}\s+approver\s*(?:is|:|=)\s+{object_pattern}",
-            rf"{object_pattern}\s+approves\s+{subject_pattern}",
-            rf"{subject_pattern}\s+(?:is|was)\s+approved\s+by\s+{object_pattern}",
-        )
-    elif predicate_id == "api_owner":
-        expressions = (
-            rf"{subject_pattern}\s+(?:owner\s+and\s+)?api\s+owner"
-            rf"\s*(?:is|are|:|=)\s+{object_pattern}",
-            rf"{object_pattern}\s+owns\s+(?:the\s+)?{subject_pattern}\s+api\b",
-        )
-    elif predicate_id == "dependency":
-        expressions = (
-            rf"{subject_pattern}\s+(?:depends|depended)\s+on\s+{object_pattern}",
-            rf"{subject_pattern}\s+dependency\s*(?:is|:|=)\s+{object_pattern}",
-            rf"{subject_pattern}\s+(?:is|was)\s+blocked\s+by\s+{object_pattern}",
-        )
-    else:
-        return ()
-    return tuple(
-        re.compile(expression, flags=re.IGNORECASE)
-        for expression in expressions
-    )
-
-
-def _entity_name_patterns(entity: EntityMention) -> tuple[str, ...]:
-    names = {
-        value.strip()
-        for value in (entity.mention_text, *entity.aliases)
-        if value.strip()
-    }
-    return tuple(
-        rf"(?<!\w){_literal_phrase_pattern(name)}(?!\w)"
-        for name in sorted(names, key=lambda value: (-len(value), value.casefold()))
-    )
-
-
-def _literal_phrase_pattern(value: str) -> str:
-    return r"\s+".join(re.escape(part) for part in value.split())
-
-
-def _word_alternation(values: Iterable[str]) -> str:
-    return "(?:" + "|".join(
-        re.escape(value)
-        for value in sorted(values, key=lambda item: (-len(item), item))
-    ) + ")"
-
 
 def _resolve_claim_object_endpoint(
     *,
@@ -1174,67 +905,6 @@ def _validate_claim_endpoint_contract(
             raise ValueError("entity_type literal conflicts with the grounded subject type")
 
 
-def _canonicalize_claim_arguments(claims: list[ExtractedClaim], entities: list[EntityMention]) -> list[ExtractedClaim]:
-    entities_by_id = {entity.entity_id: entity for entity in entities}
-    return [_canonicalize_claim_argument(claim, entities_by_id) for claim in claims]
-
-
-def _canonicalize_claim_argument(claim: ExtractedClaim, entities_by_id: dict[str, EntityMention]) -> ExtractedClaim:
-    if claim.claim_key.predicate_id != "owner" or not claim.object_entity_id:
-        return claim
-
-    subject = entities_by_id.get(claim.claim_key.subject_entity_id)
-    obj = entities_by_id.get(claim.object_entity_id)
-    if not _looks_like_inverse_owner_claim(subject=subject, obj=obj):
-        return claim
-
-    original_subject_id = claim.claim_key.subject_entity_id
-    original_object_entity_id = claim.object_entity_id
-    original_object_value = claim.object_value
-    object_value = _entity_display_name(subject, fallback=original_subject_id)
-    source_id = claim.evidence_spans[0].source_id if claim.evidence_spans else ""
-    new_claim_key = claim.claim_key.model_copy(update={"subject_entity_id": original_object_entity_id})
-    qualifiers = {
-        **claim.qualifiers,
-        "argument_normalization": "owner_inverse_subject_object_swap",
-        "original_subject_entity_id": original_subject_id,
-        "original_object_entity_id": original_object_entity_id,
-        "original_object_value": original_object_value,
-    }
-    claim_id = _stable_id(
-        "claim",
-        "|".join(
-            [
-                claim.extraction_run_id,
-                source_id,
-                new_claim_key.predicate_id,
-                new_claim_key.subject_entity_id,
-                object_value,
-                original_subject_id,
-                new_claim_key.scope.stable_id(),
-                new_claim_key.qualifier_key,
-            ]
-        ),
-    )
-    return claim.model_copy(
-        update={
-            "claim_id": claim_id,
-            "claim_key": new_claim_key,
-            "object_value": object_value,
-            "object_entity_id": original_subject_id,
-            "qualifiers": qualifiers,
-        }
-    )
-
-
-def _looks_like_inverse_owner_claim(*, subject: EntityMention | None, obj: EntityMention | None) -> bool:
-    if subject is None or obj is None:
-        return False
-    owner_types = {EntityType.PERSON}
-    owned_types = {EntityType.PROJECT, EntityType.SERVICE, EntityType.TASK, EntityType.PREFERENCE}
-    return subject.entity_type in owner_types and obj.entity_type in owned_types
-
-
 def _entity_display_name(entity: EntityMention | None, *, fallback: str) -> str:
     if entity is not None and entity.mention_text.strip():
         return entity.mention_text.strip()
@@ -1242,15 +912,10 @@ def _entity_display_name(entity: EntityMention | None, *, fallback: str) -> str:
 
 
 def _resolve_observation(*, source_id: str, observation_by_id: dict[str, SourceObservation]) -> SourceObservation:
-    observation = observation_by_id.get(source_id)
-    if observation is not None:
-        return observation
-    if len(observation_by_id) == 1:
-        # The source is authoritative at the ingestion boundary. For a
-        # single-source request, an echoed opaque ID adds no information; bind
-        # provenance deterministically and continue to validate the quote.
-        return next(iter(observation_by_id.values()))
-    raise KeyError(f"unknown source_id:{source_id!r}")
+    try:
+        return observation_by_id[source_id]
+    except KeyError:
+        raise KeyError(f"unknown source_id:{source_id!r}") from None
 
 
 def _list_output(output: dict[str, object], key: str) -> list[dict[str, object]]:
@@ -1277,12 +942,17 @@ def _entity_type(value: str) -> EntityType:
         return EntityType.UNKNOWN
 
 
-def _span(*, observation: SourceObservation, quote: str) -> EvidenceSpan:
+def _span(*, observation: SourceObservation, quote: str, require_unique: bool) -> EvidenceSpan:
     if not quote:
         raise ValueError("evidence quote must be non-empty")
     start = observation.text.find(quote)
     if start < 0:
         raise ValueError(f"evidence quote is not verbatim in source {observation.source_id!r}")
+    if require_unique and observation.text.find(quote, start + 1) >= 0:
+        raise ValueError(
+            f"evidence quote is ambiguous in source {observation.source_id!r}; "
+            "use a source-unique verbatim quote"
+        )
     end = start + len(quote)
     return EvidenceSpan(
         source_id=observation.source_id,

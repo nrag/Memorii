@@ -23,12 +23,8 @@ def _scenario_and_checkpoint():
         seed=7,
         noise_rate=0.35,
     )
-    scenario = next(
-        item for item in scenarios if item.family == "current_vs_historical_truth"
-    )
-    checkpoint = next(
-        item for item in scenario.checkpoints if item.checkpoint_type == "current_truth"
-    )
+    scenario = next(item for item in scenarios if item.family == "current_vs_historical_truth")
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_type == "current_truth")
     return scenario, checkpoint
 
 
@@ -58,9 +54,7 @@ def _runtime_view(
                     runtime_item_id=runtime_id,
                     canonical_id=f"unrelated-id:{len(entity_runtime_id)}",
                     canonical_name=(
-                        f"unrelated-id:{len(entity_runtime_id)}"
-                        if opaque_entity_names
-                        else entity.canonical_name
+                        f"unrelated-id:{len(entity_runtime_id)}" if opaque_entity_names else entity.canonical_name
                     ),
                     entity_type=entity.entity_type,
                     aliases=[
@@ -95,16 +89,8 @@ def _runtime_view(
                     else claim.object.normalized_value or claim.object.value
                 ),
                 scope=claim.scope.scope_key,
-                valid_from=(
-                    claim.lifecycle.valid_from.isoformat()
-                    if claim.lifecycle.valid_from
-                    else ""
-                ),
-                valid_to=(
-                    claim.lifecycle.valid_to.isoformat()
-                    if claim.lifecycle.valid_to
-                    else ""
-                ),
+                valid_from=(claim.lifecycle.valid_from.isoformat() if claim.lifecycle.valid_from else ""),
+                valid_to=(claim.lifecycle.valid_to.isoformat() if claim.lifecycle.valid_to else ""),
                 lifecycle_state=claim.lifecycle.state.value,
                 evidence_event_ids=list(claim.evidence.source_event_ids),
             )
@@ -115,26 +101,17 @@ def _runtime_view(
         query=checkpoint.query_or_task,
         semantic_frame_status="matched",
         temporal_frame={},
-        selected_record_ids=[
-            runtime_claim_ids[claim_id] for claim_id in checkpoint.expected_claim_ids
-        ],
-        supporting_record_ids=[
-            runtime_claim_ids[claim_id] for claim_id in checkpoint.expected_claim_ids
-        ],
+        selected_record_ids=[runtime_claim_ids[claim_id] for claim_id in checkpoint.expected_claim_ids],
+        supporting_record_ids=[runtime_claim_ids[claim_id] for claim_id in checkpoint.expected_claim_ids],
         context_record_ids=[],
-        rejected_record_ids=[
-            runtime_claim_ids[claim_id]
-            for claim_id in checkpoint.expected_excluded_claim_ids
-        ],
+        rejected_record_ids=[runtime_claim_ids[claim_id] for claim_id in checkpoint.expected_excluded_claim_ids],
     )
     return scenario, checkpoint, items, decision
 
 
 def test_canonical_comparison_ignores_runtime_ids_and_traversal_order() -> None:
     scenario, checkpoint, items, decision = _runtime_view()
-    reversed_scenario, reversed_checkpoint, reversed_items, reversed_decision = (
-        _runtime_view(reverse=True)
-    )
+    reversed_scenario, reversed_checkpoint, reversed_items, reversed_decision = _runtime_view(reverse=True)
 
     result = compare_checkpoint_semantics(
         scenario=scenario,
@@ -153,7 +130,7 @@ def test_canonical_comparison_ignores_runtime_ids_and_traversal_order() -> None:
     assert reversed_result == result
 
 
-def test_canonical_comparison_resolves_opaque_subject_and_object_entity_names() -> None:
+def test_canonical_comparison_does_not_guess_canonical_names_from_aliases() -> None:
     scenario, checkpoint, items, decision = _runtime_view(opaque_entity_names=True)
 
     result = compare_checkpoint_semantics(
@@ -163,7 +140,9 @@ def test_canonical_comparison_resolves_opaque_subject_and_object_entity_names() 
         decision=decision,
     )
 
-    assert result.passed
+    assert not result.passed
+    assert "production_retrieval_missing_expected_claim" in result.failure_buckets
+    assert "production_retrieval_unexpected_selected_claim" in result.failure_buckets
 
 
 def test_canonical_comparison_rejects_semantic_object_mutation() -> None:
@@ -236,14 +215,10 @@ def test_action_selection_takes_precedence_over_duplicate_claim_projection() -> 
         )
         if item.family == "abandoned_then_resumed_work"
     )
-    checkpoint = scenario.checkpoints[0].model_copy(
-        update={"expected_excluded_claim_ids": []}
-    )
+    checkpoint = scenario.checkpoints[0].model_copy(update={"expected_excluded_claim_ids": []})
     claim_id = checkpoint.expected_execution_claim_ids[0]
     claim = next(item for item in scenario.claims if item.claim_id == claim_id)
-    entity = next(
-        item for item in scenario.entities if item.entity_id == claim.subject.entity_id
-    )
+    entity = next(item for item in scenario.entities if item.entity_id == claim.subject.entity_id)
     runtime_entity_id = "runtime:branch"
     runtime_claim_id = "runtime:action-state"
     items: list[RuntimeGraphItem] = [
@@ -251,9 +226,9 @@ def test_action_selection_takes_precedence_over_duplicate_claim_projection() -> 
             scenario_id="runtime-scenario",
             runtime_item_id=runtime_entity_id,
             canonical_id="opaque:branch",
-            canonical_name="opaque:branch",
+            canonical_name=entity.canonical_name,
             entity_type=entity.entity_type,
-            aliases=[entity.canonical_name],
+            aliases=[alias.alias_text for alias in entity.aliases],
             lifecycle_state="active",
             evidence_event_ids=[],
         ),
@@ -334,15 +309,8 @@ def test_canonical_comparator_does_not_import_runtime_alignment() -> None:
 
     module = ast.parse(inspect.getsource(semantic_comparison))
     imported_modules = {
-        alias.name
-        for node in ast.walk(module)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    } | {
-        node.module or ""
-        for node in ast.walk(module)
-        if isinstance(node, ast.ImportFrom)
-    }
+        alias.name for node in ast.walk(module) if isinstance(node, ast.Import) for alias in node.names
+    } | {node.module or "" for node in ast.walk(module) if isinstance(node, ast.ImportFrom)}
 
     assert not any(".alignment" in module_name for module_name in imported_modules)
     assert not any(".judges" in module_name for module_name in imported_modules)

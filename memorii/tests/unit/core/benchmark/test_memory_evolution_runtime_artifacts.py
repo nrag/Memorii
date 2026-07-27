@@ -114,6 +114,9 @@ def runtime_extractor_trace(
     extraction_failure_code: ExtractionFailureCode | None = None,
     operation_status: EvolutionOperationStatus | None = EvolutionOperationStatus.COMMITTED,
     operation_failure_code: EvolutionFailureCategory | None = None,
+    model: str | None = "provider_default",
+    requested_model: str | None = "provider_default",
+    actual_model: str | None = "provider_default",
 ) -> RuntimeExtractorTraceRow:
     fallback_used = fallback_outcome != FallbackOutcome.NOT_USED
     provider_failed = provider_attempt_status not in {
@@ -129,6 +132,9 @@ def runtime_extractor_trace(
             "final_output_source": final_output_source,
             "trace": RuntimeExtractorTracePayload(
                 provider="test",
+                model=model,
+                requested_model=requested_model,
+                actual_model=actual_model,
                 scenario_id="scenario_1",
                 call_index=0,
                 entity_count=0,
@@ -219,16 +225,14 @@ def test_runtime_missing_rejection_has_named_failure_classification() -> None:
     assert runtime_failure_classification(
         ["production_retrieval_missing_expected_rejection"],
         checkpoint_diagnostics_payload(failure_classification=["unclassified_failure"]),
-    ) == [
-        "production_retrieval:production_retrieval_missing_expected_rejection"
-    ]
+    ) == ["production_retrieval:production_retrieval_missing_expected_rejection"]
 
 
-def test_runtime_failure_classification_does_not_relabel_judge_evidence_as_production() -> None:
+def test_runtime_failure_classification_does_not_turn_diagnostic_only_judge_evidence_into_a_failure() -> None:
     assert runtime_failure_classification(
         [],
         checkpoint_diagnostics_payload(failure_classification=["source_trust_inversion"]),
-    ) == ["benchmark_comparison:source_trust_inversion"]
+    ) == []
 
 
 def test_runtime_failure_classification_attributes_extraction_failures_to_ingestion() -> None:
@@ -251,9 +255,7 @@ def test_runtime_failure_classification_preserves_lifecycle_owner() -> None:
     assert runtime_failure_classification(
         ["production_lifecycle_inactive_expected_claim"],
         checkpoint_diagnostics_payload(),
-    ) == [
-        "production_lifecycle:production_lifecycle_inactive_expected_claim"
-    ]
+    ) == ["production_lifecycle:production_lifecycle_inactive_expected_claim"]
 
 
 def test_runtime_stage_trace_has_closed_stage_and_status_contracts() -> None:
@@ -316,9 +318,7 @@ def test_runtime_stage_trace_fails_ambiguous_or_empty_required_retrieval(
         )
         if item.family == "current_vs_historical_truth"
     )
-    checkpoint = next(
-        item for item in scenario.checkpoints if item.checkpoint_type == "current_truth"
-    )
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_type == "current_truth")
     snapshot = MemoryGraphSnapshot(snapshot_id="stage-trace")
     projection = project_runtime_checkpoint(
         scenario=scenario,
@@ -347,9 +347,7 @@ def test_runtime_stage_trace_fails_ambiguous_or_empty_required_retrieval(
         assert by_stage["retrieval"].status == "fail"
         assert by_stage["retrieval"].is_first_divergence
     assert by_stage["comparison"].status == "fail"
-    assert by_stage["comparison"].reason_codes == (
-        projection.semantic_comparison.failure_buckets
-    )
+    assert by_stage["comparison"].reason_codes == (projection.semantic_comparison.failure_buckets)
 
 
 def test_runtime_stage_trace_separates_provider_execution_from_semantic_failure() -> None:
@@ -363,9 +361,7 @@ def test_runtime_stage_trace_separates_provider_execution_from_semantic_failure(
         )
         if item.family == "current_vs_historical_truth"
     )
-    checkpoint = next(
-        item for item in scenario.checkpoints if item.checkpoint_type == "current_truth"
-    )
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_type == "current_truth")
     snapshot = MemoryGraphSnapshot(snapshot_id="extraction-stage-trace")
     decision = ProductionRetrievalDecision(
         query=checkpoint.query_or_task,
@@ -432,6 +428,7 @@ def test_runtime_stage_trace_separates_provider_execution_from_semantic_failure(
         "provider_execution:provider_error",
         "fallback_outcome:succeeded",
     ]
+    assert [row.status for row in rows[-3:]] == ["not_run", "not_run", "not_run"]
 
 
 def test_runtime_stage_trace_marks_prefix_semantic_failure_as_first_ingestion_divergence() -> None:
@@ -445,9 +442,7 @@ def test_runtime_stage_trace_marks_prefix_semantic_failure_as_first_ingestion_di
         )
         if item.family == "current_vs_historical_truth"
     )
-    checkpoint = next(
-        item for item in scenario.checkpoints if item.checkpoint_type == "current_truth"
-    )
+    checkpoint = next(item for item in scenario.checkpoints if item.checkpoint_type == "current_truth")
     snapshot = MemoryGraphSnapshot(snapshot_id="prefix-semantic-stage-trace")
     decision = ProductionRetrievalDecision(
         query=checkpoint.query_or_task,
@@ -479,6 +474,10 @@ def test_runtime_stage_trace_marks_prefix_semantic_failure_as_first_ingestion_di
     assert extraction.semantic_status == "fail"
     assert extraction.reason_codes == [bucket]
     assert extraction.is_first_divergence
+    assert [row.status for row in rows[-3:]] == ["not_run", "not_run", "not_run"]
+    assert all(row.execution_status == "not_run" for row in rows[-3:])
+    assert all(row.semantic_status == "not_evaluated" for row in rows[-3:])
+    assert all(row.reason_codes == ["blocked_by_ingestion"] for row in rows[-3:])
 
 
 def test_runtime_checkpoint_diagnostics_cannot_drift_between_public_views() -> None:
@@ -801,6 +800,106 @@ def test_runtime_provider_health_counts_valid_abstention_as_provider_success() -
     assert health.provider_failures == 0
     assert health.abstentions == 1
     assert health.failure_classification_counts == {}
+
+
+def test_runtime_provider_health_rejects_model_identity_mismatch() -> None:
+    rows = RuntimeSuiteRows(
+        scenario_rows=[],
+        checkpoint_rows=[
+            runtime_checkpoint_row(
+                effective_decision_mode="llm",
+                final_output_source="live_llm",
+            )
+        ],
+        judge_rows=[],
+        llm_rows=[
+            runtime_extractor_trace(
+                model="other-model",
+                requested_model="expected-model",
+                actual_model="other-model",
+            )
+        ],
+        effective_mode="llm",
+        provider_metadata={
+            "backend": "live_provider",
+            "provider": "openai",
+            "model": "expected-model",
+            "timeout_seconds": "60",
+            "max_retries": "0",
+        },
+    )
+
+    health = runtime_provider_health(rows)
+
+    assert health.model_identity_mismatches == 1
+    assert health.status == "fail"
+    assert "runtime_provider_model_mismatch" in health.failure_buckets
+
+
+def test_runtime_provider_health_accepts_dated_model_snapshot() -> None:
+    rows = RuntimeSuiteRows(
+        scenario_rows=[],
+        checkpoint_rows=[
+            runtime_checkpoint_row(
+                effective_decision_mode="llm",
+                final_output_source="live_llm",
+            )
+        ],
+        judge_rows=[],
+        llm_rows=[
+            runtime_extractor_trace(
+                model="expected-model-2026-07-24",
+                requested_model="expected-model",
+                actual_model="expected-model-2026-07-24",
+            )
+        ],
+        effective_mode="llm",
+        provider_metadata={
+            "backend": "live_provider",
+            "provider": "openai",
+            "model": "expected-model",
+            "timeout_seconds": "60",
+            "max_retries": "0",
+        },
+    )
+
+    health = runtime_provider_health(rows)
+
+    assert health.model_identity_mismatches == 0
+    assert health.status == "pass"
+
+
+def test_runtime_provider_health_rejects_missing_actual_model_identity() -> None:
+    rows = RuntimeSuiteRows(
+        scenario_rows=[],
+        checkpoint_rows=[
+            runtime_checkpoint_row(
+                effective_decision_mode="llm",
+                final_output_source="live_llm",
+            )
+        ],
+        judge_rows=[],
+        llm_rows=[
+            runtime_extractor_trace(
+                model="expected-model",
+                requested_model="expected-model",
+                actual_model=None,
+            )
+        ],
+        effective_mode="llm",
+        provider_metadata={
+            "backend": "live_provider",
+            "provider": "openai",
+            "model": "expected-model",
+            "timeout_seconds": "60",
+            "max_retries": "0",
+        },
+    )
+
+    health = runtime_provider_health(rows)
+
+    assert health.model_identity_mismatches == 1
+    assert health.status == "fail"
 
 
 def test_runtime_provider_health_accounts_for_structured_query_calls() -> None:
@@ -1203,9 +1302,7 @@ def test_runtime_ingestion_failures_are_classified_before_comparison() -> None:
         }
     )
 
-    assert runtime_ingestion_failure_buckets(
-        [partial, fallback, operation_failure]
-    ) == [
+    assert runtime_ingestion_failure_buckets([partial, fallback, operation_failure]) == [
         "production_ingestion_extraction_partial_output_validation",
         "production_ingestion_fallback_succeeded",
         "production_ingestion_operation_store_error",

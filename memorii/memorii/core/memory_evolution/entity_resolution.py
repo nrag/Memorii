@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from uuid import NAMESPACE_URL, uuid5
 
@@ -12,6 +12,7 @@ from memorii.core.memory_evolution.models import (
     ClaimTransitionType,
     EntityIdentityDecision,
     EntityIdentityDecisionType,
+    EntityIdentityRelationType,
     EntityLinkLifecycleState,
     EntityLinkState,
     EntityMention,
@@ -19,6 +20,7 @@ from memorii.core.memory_evolution.models import (
     EntityType,
     ExtractedAction,
     ExtractedClaim,
+    ExtractedIdentityRelation,
     MemoryScope,
 )
 
@@ -40,6 +42,8 @@ class EntityResolutionService:
         self,
         mentions: list[EntityMention],
         existing_links: list[EntityLinkState],
+        *,
+        identity_relations: list[ExtractedIdentityRelation] | None = None,
     ) -> EntityResolutionOutcome:
         links_by_key = {
             (link.normalized_name, link.canonical_entity_id, _scope_identity(link.scope)): link
@@ -49,14 +53,142 @@ class EntityResolutionService:
         resolved: list[EntityLinkState] = []
         decisions: list[EntityIdentityDecision] = []
         transitions: list[ClaimLifecycleTransition] = []
+        relations_by_source = {relation.source_entity_id: relation for relation in identity_relations or []}
+        relation_target_ids = {relation.target_entity_id for relation in identity_relations or []}
+        resolved_entity_by_mention: dict[str, str] = {}
         now = self._now_provider()
-        for mention in sorted(mentions, key=_mention_resolution_key):
+        ordered_mentions = sorted(
+            mentions,
+            key=lambda mention: (
+                0 if mention.entity_id in relation_target_ids else 1,
+                *_mention_resolution_key(mention),
+            ),
+        )
+        for mention in ordered_mentions:
             scope_identity = _scope_identity(mention.scope)
+            explicit_relation = relations_by_source.get(mention.entity_id)
+            if explicit_relation is not None:
+                target_entity_id = resolved_entity_by_mention.get(explicit_relation.target_entity_id)
+                target_link = next(
+                    (
+                        link
+                        for link in links_by_key.values()
+                        if link.canonical_entity_id == target_entity_id
+                        and _scope_identity(link.scope) == scope_identity
+                    ),
+                    None,
+                )
+                if target_link is None:
+                    decisions.append(
+                        self._decision(
+                            mention=mention,
+                            decision_type=EntityIdentityDecisionType.ABSTAIN,
+                            resolved_entity_id=None,
+                            candidates=[],
+                            confidence=0.0,
+                            rationale="explicit identity relation target did not resolve in scope",
+                            failure_code="identity_relation_target_unresolved",
+                        )
+                    )
+                    continue
+                if explicit_relation.relation_type == EntityIdentityRelationType.SPLIT_FROM:
+                    _, link, transition = self.split_link(
+                        existing=target_link,
+                        mention=mention,
+                    )
+                    links_by_key[(link.normalized_name, link.canonical_entity_id, scope_identity)] = link
+                    resolved.append(link)
+                    transitions.append(transition)
+                    resolved_entity_by_mention[mention.entity_id] = link.canonical_entity_id
+                    decisions.append(
+                        self._decision(
+                            mention=mention,
+                            decision_type=EntityIdentityDecisionType.SPLIT_EXISTING,
+                            resolved_entity_id=link.canonical_entity_id,
+                            candidates=[target_link],
+                            parent_entity_id=target_link.canonical_entity_id,
+                            confidence=link.confidence,
+                            rationale="explicit grounded split relation preserves distinct lineage",
+                        )
+                    )
+                    continue
+                if explicit_relation.relation_type == EntityIdentityRelationType.MERGED_INTO:
+                    duplicate_candidates = [
+                        link
+                        for link in links_by_key.values()
+                        if link.canonical_entity_id != target_link.canonical_entity_id
+                        and _scope_identity(link.scope) == scope_identity
+                        and _shares_identity_alias(link=link, mention=mention)
+                    ]
+                    if len(duplicate_candidates) > 1:
+                        decisions.append(
+                            self._decision(
+                                mention=mention,
+                                decision_type=EntityIdentityDecisionType.ABSTAIN,
+                                resolved_entity_id=None,
+                                candidates=duplicate_candidates,
+                                confidence=0.0,
+                                rationale="merge source resolves to multiple scoped entities",
+                                failure_code="entity_merge_source_ambiguous",
+                            )
+                        )
+                        continue
+                    if duplicate_candidates:
+                        merged, invalidated, transition = self.merge_links(
+                            primary=target_link,
+                            duplicate=duplicate_candidates[0],
+                        )
+                        links_by_key[
+                            (
+                                merged.normalized_name,
+                                merged.canonical_entity_id,
+                                scope_identity,
+                            )
+                        ] = merged
+                        resolved.extend([merged, invalidated])
+                        transitions.append(transition)
+                        resolved_entity_by_mention[mention.entity_id] = merged.canonical_entity_id
+                        decisions.append(
+                            self._decision(
+                                mention=mention,
+                                decision_type=EntityIdentityDecisionType.MERGE_EXISTING,
+                                resolved_entity_id=merged.canonical_entity_id,
+                                candidates=[duplicate_candidates[0], target_link],
+                                confidence=merged.confidence,
+                                rationale="explicit grounded merge retires the duplicate entity",
+                            )
+                        )
+                        continue
+                updated = self._reinforce_link(
+                    existing=target_link,
+                    mention=mention,
+                    now=now,
+                    explicit_alias=True,
+                )
+                links_by_key[(target_link.normalized_name, target_link.canonical_entity_id, scope_identity)] = updated
+                resolved.append(updated)
+                resolved_entity_by_mention[mention.entity_id] = updated.canonical_entity_id
+                decisions.append(
+                    self._decision(
+                        mention=mention,
+                        decision_type=(
+                            EntityIdentityDecisionType.MERGE_EXISTING
+                            if explicit_relation.relation_type == EntityIdentityRelationType.MERGED_INTO
+                            else EntityIdentityDecisionType.REUSE_EXISTING
+                        ),
+                        resolved_entity_id=updated.canonical_entity_id,
+                        candidates=[target_link],
+                        confidence=updated.confidence,
+                        rationale=("explicit grounded identity relation maps the mention to the resolved target"),
+                    )
+                )
+                continue
             existing = links_by_key.get((mention.normalized_name, mention.entity_id, scope_identity))
             if existing is not None:
                 updated = self._reinforce_link(existing=existing, mention=mention, now=now)
                 links_by_key[(mention.normalized_name, mention.entity_id, scope_identity)] = updated
                 resolved.append(updated)
+                resolved_entity_by_mention[mention.entity_id] = updated.canonical_entity_id
                 decisions.append(
                     self._decision(
                         mention=mention,
@@ -77,9 +209,9 @@ class EntityResolutionService:
             if len(same_entity) == 1:
                 existing = same_entity[0]
                 updated = self._reinforce_link(existing=existing, mention=mention, now=now)
-                links_by_key.pop((existing.normalized_name, existing.canonical_entity_id, scope_identity))
-                links_by_key[(mention.normalized_name, mention.entity_id, scope_identity)] = updated
+                links_by_key[(existing.normalized_name, mention.entity_id, scope_identity)] = updated
                 resolved.append(updated)
+                resolved_entity_by_mention[mention.entity_id] = updated.canonical_entity_id
                 decisions.append(
                     self._decision(
                         mention=mention,
@@ -110,9 +242,9 @@ class EntityResolutionService:
             if len(type_consistent_aliases) == 1:
                 existing = type_consistent_aliases[0]
                 updated = self._reinforce_link(existing=existing, mention=mention, now=now)
-                links_by_key.pop((existing.normalized_name, existing.canonical_entity_id, scope_identity))
-                links_by_key[(mention.normalized_name, existing.canonical_entity_id, scope_identity)] = updated
+                links_by_key[(existing.normalized_name, existing.canonical_entity_id, scope_identity)] = updated
                 resolved.append(updated)
+                resolved_entity_by_mention[mention.entity_id] = updated.canonical_entity_id
                 decisions.append(
                     self._decision(
                         mention=mention,
@@ -129,6 +261,7 @@ class EntityResolutionService:
                 _, link, transition = self.split_link(existing=split_parent, mention=mention)
                 links_by_key[(mention.normalized_name, mention.entity_id, scope_identity)] = link
                 resolved.append(link)
+                resolved_entity_by_mention[mention.entity_id] = link.canonical_entity_id
                 transitions.append(transition)
                 decisions.append(
                     self._decision(
@@ -163,6 +296,52 @@ class EntityResolutionService:
                     )
                 )
                 continue
+            visible_typed_candidates = _visible_typed_identity_candidates(
+                mention=mention,
+                links=links_by_key.values(),
+            )
+            if len(visible_typed_candidates) == 1:
+                existing = visible_typed_candidates[0]
+                updated = self._project_link_into_scope(
+                    existing=existing,
+                    mention=mention,
+                    now=now,
+                )
+                links_by_key[
+                    (
+                        updated.normalized_name,
+                        updated.canonical_entity_id,
+                        _scope_identity(updated.scope),
+                    )
+                ] = updated
+                resolved.append(updated)
+                resolved_entity_by_mention[mention.entity_id] = updated.canonical_entity_id
+                decisions.append(
+                    self._decision(
+                        mention=mention,
+                        decision_type=EntityIdentityDecisionType.REUSE_EXISTING,
+                        resolved_entity_id=existing.canonical_entity_id,
+                        candidates=visible_typed_candidates,
+                        confidence=updated.confidence,
+                        rationale=(
+                            "one readable less-specific entity has an exact identity name and the same grounded type"
+                        ),
+                    )
+                )
+                continue
+            if visible_typed_candidates:
+                decisions.append(
+                    self._decision(
+                        mention=mention,
+                        decision_type=EntityIdentityDecisionType.ABSTAIN,
+                        resolved_entity_id=None,
+                        candidates=visible_typed_candidates,
+                        confidence=0.0,
+                        rationale=("multiple readable less-specific entities share the exact typed identity"),
+                        failure_code="entity_identity_ambiguous",
+                    )
+                )
+                continue
             link = EntityLinkState(
                 link_id=_entity_link_id(
                     entity_id=mention.entity_id,
@@ -173,7 +352,8 @@ class EntityResolutionService:
                 canonical_entity_id=mention.entity_id,
                 normalized_name=mention.normalized_name,
                 entity_type=mention.entity_type,
-                aliases=sorted({mention.mention_text, mention.normalized_name, *mention.aliases}),
+                aliases=sorted(set(mention.aliases)),
+                observed_names=sorted({mention.mention_text, mention.normalized_name}),
                 evidence_spans=list(mention.evidence_spans),
                 confidence=mention.confidence,
                 scope=mention.scope,
@@ -182,6 +362,7 @@ class EntityResolutionService:
             )
             links_by_key[(mention.normalized_name, mention.entity_id, scope_identity)] = link
             resolved.append(link)
+            resolved_entity_by_mention[mention.entity_id] = link.canonical_entity_id
             decisions.append(
                 self._decision(
                     mention=mention,
@@ -194,7 +375,7 @@ class EntityResolutionService:
             )
         return EntityResolutionOutcome(
             decisions=decisions,
-            links=resolved,
+            links=_final_link_states(resolved),
             transitions=transitions,
         )
 
@@ -204,17 +385,64 @@ class EntityResolutionService:
         existing: EntityLinkState,
         mention: EntityMention,
         now: datetime,
+        explicit_alias: bool = False,
+    ) -> EntityLinkState:
+        aliases = {*existing.aliases, *mention.aliases}
+        if explicit_alias:
+            aliases.update({mention.mention_text, mention.normalized_name})
+        return existing.model_copy(
+            update={
+                "entity_type": (
+                    mention.entity_type
+                    if existing.entity_type == EntityType.UNKNOWN and mention.entity_type != EntityType.UNKNOWN
+                    else existing.entity_type
+                ),
+                "aliases": sorted(aliases),
+                "observed_names": sorted(
+                    {
+                        *existing.observed_names,
+                        mention.mention_text,
+                        mention.normalized_name,
+                    }
+                ),
+                "evidence_spans": [*existing.evidence_spans, *mention.evidence_spans],
+                "confidence": min(1.0, max(existing.confidence, mention.confidence) + 0.05),
+                "updated_at": now,
+            }
+        )
+
+    @staticmethod
+    def _project_link_into_scope(
+        *,
+        existing: EntityLinkState,
+        mention: EntityMention,
+        now: datetime,
     ) -> EntityLinkState:
         return existing.model_copy(
             update={
-                "mention_text": mention.mention_text,
-                "normalized_name": mention.normalized_name,
-                "entity_type": (
-                    mention.entity_type if mention.entity_type != EntityType.UNKNOWN else existing.entity_type
+                "link_id": _entity_link_id(
+                    entity_id=existing.canonical_entity_id,
+                    normalized_name=existing.normalized_name,
+                    scope=mention.scope,
                 ),
-                "aliases": sorted({*existing.aliases, mention.mention_text, mention.normalized_name, *mention.aliases}),
-                "evidence_spans": [*existing.evidence_spans, *mention.evidence_spans],
-                "confidence": min(1.0, max(existing.confidence, mention.confidence) + 0.05),
+                "aliases": sorted({*existing.aliases, *mention.aliases}),
+                "observed_names": sorted(
+                    {
+                        *existing.observed_names,
+                        mention.mention_text,
+                        mention.normalized_name,
+                    }
+                ),
+                "evidence_spans": [
+                    *existing.evidence_spans,
+                    *mention.evidence_spans,
+                ],
+                "confidence": min(
+                    1.0,
+                    max(existing.confidence, mention.confidence) + 0.05,
+                ),
+                "scope": mention.scope,
+                "created_at": now,
                 "updated_at": now,
             }
         )
@@ -325,14 +553,9 @@ class EntityResolutionService:
             if claim.object_entity_id is not None
             else None
         )
-        if (
-            subject_entity_id == old_key.subject_entity_id
-            and object_entity_id == claim.object_entity_id
-        ):
+        if subject_entity_id == old_key.subject_entity_id and object_entity_id == claim.object_entity_id:
             return claim, None
-        updated_key = old_key.model_copy(
-            update={"subject_entity_id": subject_entity_id}
-        )
+        updated_key = old_key.model_copy(update={"subject_entity_id": subject_entity_id})
         updated_claim = claim.model_copy(
             update={
                 "claim_key": updated_key,
@@ -378,20 +601,10 @@ class EntityResolutionService:
 
         return action.model_copy(
             update={
-                "actor_entity_id": (
-                    resolve(action.actor_entity_id)
-                    if action.actor_entity_id is not None
-                    else None
-                ),
-                "target_entity_ids": [
-                    resolve(entity_id) for entity_id in action.target_entity_ids
-                ],
-                "dependency_entity_ids": [
-                    resolve(entity_id) for entity_id in action.dependency_entity_ids
-                ],
-                "blocking_entity_ids": [
-                    resolve(entity_id) for entity_id in action.blocking_entity_ids
-                ],
+                "actor_entity_id": (resolve(action.actor_entity_id) if action.actor_entity_id is not None else None),
+                "target_entity_ids": [resolve(entity_id) for entity_id in action.target_entity_ids],
+                "dependency_entity_ids": [resolve(entity_id) for entity_id in action.dependency_entity_ids],
+                "blocking_entity_ids": [resolve(entity_id) for entity_id in action.blocking_entity_ids],
             }
         )
 
@@ -406,7 +619,15 @@ class EntityResolutionService:
         now = self._now_provider()
         merged = primary.model_copy(
             update={
-                "aliases": sorted({*primary.aliases, *duplicate.aliases, duplicate.mention_text}),
+                "aliases": sorted({*primary.aliases, *duplicate.aliases}),
+                "observed_names": sorted(
+                    {
+                        *primary.observed_names,
+                        *duplicate.observed_names,
+                        duplicate.mention_text,
+                        duplicate.normalized_name,
+                    }
+                ),
                 "evidence_spans": [*primary.evidence_spans, *duplicate.evidence_spans],
                 "confidence": min(1.0, max(primary.confidence, duplicate.confidence) + 0.05),
                 "updated_at": now,
@@ -450,7 +671,8 @@ class EntityResolutionService:
             canonical_entity_id=mention.entity_id,
             normalized_name=mention.normalized_name,
             entity_type=mention.entity_type,
-            aliases=sorted({mention.mention_text, mention.normalized_name, *mention.aliases}),
+            aliases=sorted(set(mention.aliases)),
+            observed_names=sorted({mention.mention_text, mention.normalized_name}),
             evidence_spans=list(mention.evidence_spans),
             confidence=mention.confidence,
             scope=existing.scope,
@@ -474,14 +696,60 @@ def _stable_id(prefix: str, value: str) -> str:
     return f"{prefix}:{uuid5(NAMESPACE_URL, value)}"
 
 
+def _final_link_states(links: Iterable[EntityLinkState]) -> list[EntityLinkState]:
+    order: list[str] = []
+    latest: dict[str, EntityLinkState] = {}
+    for link in links:
+        if link.link_id not in latest:
+            order.append(link.link_id)
+        latest[link.link_id] = link
+    return [latest[link_id] for link_id in order]
+
+
 def _shares_identity_alias(*, link: EntityLinkState, mention: EntityMention) -> bool:
-    link_names = {_identity_key(value) for value in [link.normalized_name, *link.aliases]}
+    link_names = {
+        key
+        for value in [
+            link.mention_text,
+            link.normalized_name,
+            *link.observed_names,
+            *link.aliases,
+        ]
+        for key in _identity_keys(value)
+    }
     mention_names = {
-        _identity_key(value) for value in [mention.normalized_name, mention.mention_text, *mention.aliases]
+        key
+        for value in [mention.normalized_name, mention.mention_text, *mention.aliases]
+        for key in _identity_keys(value)
     }
     link_names.discard("")
     mention_names.discard("")
     return bool(link_names & mention_names)
+
+
+def _visible_typed_identity_candidates(
+    *,
+    mention: EntityMention,
+    links: Iterable[EntityLinkState],
+) -> list[EntityLinkState]:
+    if mention.entity_type == EntityType.UNKNOWN:
+        return []
+    candidates_by_id = {
+        link.link_id: link
+        for link in links
+        if link.entity_type == mention.entity_type
+        and link.entity_type != EntityType.UNKNOWN
+        and link.scope != mention.scope
+        and mention.scope.can_read(link.scope)
+        and _shares_identity_alias(link=link, mention=mention)
+    }
+    if not candidates_by_id:
+        return []
+    most_specific = max(link.scope.specificity for link in candidates_by_id.values())
+    return sorted(
+        (link for link in candidates_by_id.values() if link.scope.specificity == most_specific),
+        key=lambda link: (link.canonical_entity_id, link.link_id),
+    )
 
 
 def _mention_resolution_key(mention: EntityMention) -> tuple[str, str, str, str]:
@@ -495,6 +763,11 @@ def _mention_resolution_key(mention: EntityMention) -> tuple[str, str, str, str]
 
 def _identity_key(value: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def _identity_keys(value: str) -> set[str]:
+    base = _identity_key(value)
+    return {base} if base else set()
 
 
 def _entity_link_id(

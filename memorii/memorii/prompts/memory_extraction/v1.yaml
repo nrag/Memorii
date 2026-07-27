@@ -14,20 +14,17 @@ input_schema:
 output_schema:
   type: object
   additionalProperties: false
-  required: [entities, claims, actions]
+  required: [entities, claims, actions, identity_relations]
   properties:
     entities:
       type: array
       items:
         type: object
         additionalProperties: false
-        required: [entity_ref, mention_text, aliases, entity_type, source_id, quote, confidence]
+        required: [entity_ref, mention_text, entity_type, source_id, quote, confidence]
         properties:
           entity_ref: {type: string, minLength: 1}
           mention_text: {type: string}
-          aliases:
-            type: array
-            items: {type: string}
           entity_type: {type: string, enum: [project, person, service, task, preference, unknown]}
           source_id: {type: string}
           quote: {type: string}
@@ -70,19 +67,37 @@ output_schema:
             items: {type: string}
           source_id: {type: string}
           quote: {type: string}
+    identity_relations:
+      type: array
+      items:
+        type: object
+        additionalProperties: false
+        required: [relation_ref, relation_type, source_entity_ref, target_entity_ref, source_id, quote, confidence]
+        properties:
+          relation_ref: {type: string, minLength: 1}
+          relation_type: {type: string, enum: [alias_of, same_as, split_from, merged_into]}
+          source_entity_ref: {type: string, minLength: 1}
+          target_entity_ref: {type: string, minLength: 1}
+          source_id: {type: string}
+          quote: {type: string}
+          confidence: {type: number, minimum: 0.0, maximum: 1.0}
 system_template: |-
   You extract runtime memory primitives from source observations.
 
-  Use only the provided observation text. Every entity, claim, and action must include:
+  Use only the provided observation text. Every entity, claim, action, and identity relation must include:
   - source_id from the input
   - quote copied verbatim from that source observation
+  For claims, actions, and identity relations, make the quote long enough to identify one
+  unique occurrence in the source. If no source-unique verbatim quote supports the item, omit it.
 
   Extract only facts that the text directly supports. Do not infer durable preferences, owners,
   statuses, dependencies, or actions from vague discussion. If evidence is ambiguous, omit it.
 
   The source observation includes modality and trigger_mode. Respect them:
   - question, hypothetical, instruction, noise: extract nothing.
-  - quoted_or_pasted and third_party_claim: extract entities and evidence-linked semantic facts only when useful, not user beliefs.
+  - quoted_or_pasted and third_party_claim: extract explicitly attributed, evidence-linked
+    facts with the most specific supported predicate. Do not treat them as user beliefs or
+    promote them based on extraction; deterministic lifecycle policy controls eligibility.
   - assertion, correction, tool_result: extract directly supported claims/actions.
   - correction should use predicate_id=correction only for the correction statement itself; also extract the corrected factual claim when explicit.
 
@@ -99,24 +114,45 @@ system_template: |-
   - entity_type: type/classification of an entity, e.g. project, service, person, task
   - semantic_fact: generic factual relationship when no product-specific predicate fits
 
+  Identity relations are the only authority for alternate names and lineage. Emit an
+  identity_relations entry only when the
+  source explicitly states alias, equivalence, split lineage, or merge lineage between two
+  entities declared in this response. Use alias_of from the alternate name to the canonical
+  name, split_from from the new/distinct entity to its
+  parent and merged_into from the retired entity to the surviving entity. Do not encode these
+  relations as semantic_fact.
+
   Typed relation contracts:
   - owner, approver, and api_owner must use object_entity_ref for a person entity declared
     in the same response.
+  - The owner claim subject is the entity being owned, regardless of grammatical voice;
+    the person who owns it is the object.
+  - Every entity-valued relation quote must explicitly name or alias both endpoints. Do not
+    use a pronoun or anaphor as the only evidence for either endpoint.
+  - Introductory scope phrases constrain observation scope. They are not relation arguments
+    unless the text explicitly makes them relation endpoints. Use observation scope fields;
+    do not substitute a scope-label entity for the factual subject.
   - dependency must use object_entity_ref for the depended-on entity.
   - For every claim with object_entity_ref, set object_value to that entity's mention_text.
     Never leave object_value blank or put qualifiers such as "temporary" in object_value;
     qualifiers remain represented by the verbatim evidence quote.
   - entity_type must use a supported literal object_value and no object_entity_ref.
+  - Emit one claim for each fact using the most specific supported predicate. Do not also
+    emit semantic_fact when a typed predicate already represents the same fact.
   - semantic_fact is historical evidence only; do not use it in place of a typed predicate.
 
-  For each entity, emit aliases that are explicitly supported by the source text. Preserve a
-  shared ambiguous name for each distinct typed entity when the text uses that name, so
-  deterministic entity resolution can preserve split lineage. Do not invent
-  translations, abbreviations, or aliases that do not occur in the observation.
+  For each entity, use mention_text for the shortest verbatim span that names the entity.
+  Keep generic type designators such as "project", "service", or "person" in entity_type
+  rather than appending them to a proper name. Treat entity_type as a proposal: use unknown
+  unless the same quote directly types the entity or a typed relation determines its role.
+  Emit a matching entity_type claim for explicit type declarations. Represent every alternate
+  name with an explicit identity_relations entry; never invent translations, abbreviations,
+  or identity links that do not occur in the observation.
 
-  For explicit task, branch, workflow, or execution-state observations, emit both:
-  - an action_state claim so lifecycle/conflict policy can evolve the branch state
-  - an action entry so the runtime graph exposes agent-execution pressure as ACTION nodes
+  For explicit task, branch, workflow, or execution-state observations, emit both an
+  action_state claim and one matching action entry. Use entity_type=task for the task,
+  branch, workflow, or execution target. Their target, status, source_id, and evidence quote
+  must agree; deterministic compilation treats them as one semantic update.
   Use stable action status values when possible: started, in_progress, blocked, resumed, abandoned, completed, failed, or succeeded.
   Do not emit actions from hypothetical, noise, question, or pasted/quoted text unless the observation is an explicit tool/verified execution result.
   Action targets, dependencies, and blockers must reference entities declared in the same response.
@@ -134,7 +170,7 @@ user_template: |-
   Source observations:
   {source_observations}
 
-  Extract source-grounded entities, claims, and actions. Return strict JSON matching the schema.
+  Extract source-grounded entities, claims, actions, and identity relations. Return strict JSON matching the schema.
 model_defaults: {provider: openai, model: null, temperature: 0.0, max_tokens: 1600, timeout_seconds: null}
 redaction:
   redact_input_fields: [api_key, token, password, secret, authorization, cookie]
