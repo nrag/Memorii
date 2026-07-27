@@ -3,10 +3,15 @@
 **Document status:** Proposed target architecture for production memory
 ingestion.
 
-Assessment baseline: `live-benchmark-repair` at commit `f76850f`, including
-the uncommitted ingestion and runtime-benchmark changes present on 2026-07-25.
-The file and symbol references describe that snapshot. The architectural
-contracts are intended to survive later refactoring.
+Assessment baseline: commit
+`44cd7773a75ac8545ddcf799c76dc94c0240f788` (2026-07-26). The file and symbol
+references in this document were revalidated against that committed tree:
+`memorii/core/provider/service.py:ProviderMemoryService.sync_event`,
+`memorii/core/provider/factory.py:build_provider_memory_service_from_env`,
+`memorii/domain/enums.py:MemoryScope`,
+`memorii/core/memory_evolution/models.py:MemoryScope`, and their provider,
+memory-evolution, and factory test surfaces. The architectural contracts are
+intended to survive later refactoring.
 
 The current implementation remains authoritative until this design is
 implemented and accepted through the rollout gates in Section 5.
@@ -141,7 +146,8 @@ The target system must:
 
 1. retain the original observation even when extraction fails;
 2. generate open-vocabulary semantic candidates from the source;
-3. derive an independent linguistic view from the same complete source;
+3. derive independent linguistic views over the same complete semantic content
+   through exact content-bound segment routes;
 4. validate provenance, roles, polarity, commitment, attribution, and domains
    separately;
 5. promote only propositions inside an empirically certified capability;
@@ -205,29 +211,54 @@ because a related CFP or ING row is marked closed.
 
 | ID | Requirement and source | Priority | Canonical owner | Measurable acceptance | Required verification |
 | --- | --- | --- | --- | --- | --- |
-| SIA-R01 | Retain immutable verbatim source and provenance before derivation. Sources: Memorii spec; storage details. | Required | Source governance and source store | Every durably accepted delivery has exactly one byte-identical source record and provenance envelope before any derivation. Invalid envelopes are explicitly rejected; retention failures return no success-shaped admission, and indeterminate writes require idempotent recovery before semantic execution. | Invalid-envelope, prewrite failure, write-before-acknowledgement recovery, delivery replay, conflicting replay, source mutation, and every post-retention stage-failure test. |
+| SIA-R01 | Retain immutable verbatim source and provenance before derivation. Sources: Memorii spec; storage details. | Required | Source governance and source store | Every durably accepted stable delivery-principal binding/key has exactly one byte-identical source record and provenance envelope before any derivation. Current session authorization is separately typed and revalidated for admission, recovery, and result access without changing durable identity. A governed source derives and authorizes its complete canonical required-scope set and exact per-segment governance carriers before semantic admission; source context contains only whole-source invariants. Invalid envelopes or insufficient current scope coverage are explicitly rejected; retention failures return no success-shaped admission, and indeterminate writes require authenticated idempotent recovery before semantic execution. | Invalid-envelope, complete-scope exact/superset/partial/zero/cross-tenant/stale/revoked, mixed scope/classification/modality/authority/egress, carrier substitution, authorization-spy, cross-principal same-ID, forged recovery, stable-binding/key substitution, session renewal/policy rotation, prewrite failure, write-before-acknowledgement recovery, delivery replay, conflicting replay, source mutation, and every post-retention stage-failure test. |
 | SIA-R02 | Keep model output candidate-only until typed transport, semantic, provenance, lifecycle, and transaction checks pass. Sources: Memorii spec; implementation rules; C2. | Required | Proposal adapter, reconciler, coordinator | No provider field, confidence, or successful transport response alone can create committed graph state. | Malformed, unsupported, high-confidence, partial, and failed-stage zero-effect tests. |
-| SIA-R03 | Give every material requirement a stable source, owner, acceptance rule, and verification path. Sources: `.agent/PLANS.md`; `$review-design`. | Required | This design and implementation WorkPlan | This ledger and the implementation coverage ledger contain no missing or contradictory material row. | Static traceability audit and fresh whole-design review. |
-| SIA-R04 | Make proposal, source-analysis, normalization, reconciliation, retry-plan, and terminal-result contracts compose without invented identifiers, statuses, or side channels. Source: implementation rules. | Required | Semantic-analysis and transaction-result contracts | Every downstream reference is produced by exactly one typed upstream artifact; pre-planning and planned progress are disjoint; every terminal group identifies its exact eligible attempt, plan, and authorization. | Definition/reference audit, schema round trips, pre-planning/planned transition tests, mixed accepted/unresolved event tests, and commit-then-replan lineage mutations. |
+| SIA-R03 | Give every material requirement a stable source, owner, acceptance rule, and executable verification path. Sources: `.agent/PLANS.md`; `$review-design`. | Required | This design and implementation WorkPlan | Closed structural extraction covers every unit in Sections 1-5; every ledger row self-maps; every unit maps to all applicable requirements, owners, versioned assertions, and test groups; and trusted passing evidence binds exact unit content plus exact design and implementation revisions. Parser agreement alone is insufficient. | Independent structure/coverage checker, independent evidence verifier, fresh whole-design review, and Sections 1-5 mapping plus missing/stale/orphan/wrong-revision/failed/unexecuted/forged-evidence mutation tests. |
+| SIA-R04 | Make proposal, source-analysis, normalization, reconciliation, retry-plan, and terminal-result contracts compose without invented identifiers, statuses, or side channels. Source: implementation rules. | Required | Semantic-analysis and transaction-result contracts | Every downstream reference is produced by exactly one typed upstream artifact; every segment/operation consumes its exact governance binding without a representative source value; pre-planning and planned progress are disjoint; every terminal group identifies its exact eligible attempt, plan, and authorization. | Definition/reference audit, schema round trips, mixed-governance carrier mutation tests, pre-planning/planned transition tests, mixed accepted/unresolved event tests, and commit-then-replan lineage mutations. |
 | SIA-R05 | Require certified independent role, scope, attribution-bearer, and attachment evidence before promotion. Sources: Memorii spec Sections 16.25-16.27 and 25.1-25.3; implementation rules, commit gating. | Required | Linguistic consensus, scope interpreter, source-local identity, and canonical identity resolver | Analyzer disagreement, incomplete ancestor closure, unsupported attachment, or missing/ambiguous/noncanonical reported-source bearer yields unresolved and zero graph effect. | Active/passive, negation, quotation, direct/reported/nested attribution, bearer/identity substitution, coordination, and analyzer-mutation tests. |
 | SIA-R06 | Detect and attach textual valid time independently of proposer completeness, and combine it with authenticated non-text temporal evidence only through the closed matrix in Section 3.5. Sources: Memorii spec Sections 7.2, 17, and 25; implementation rules, commit gating. | Required | Temporal resolver and attachment consensus | Source-present temporal text omitted by the proposer, ambiguous or misattached text, and unsupported text/non-text combinations cannot be promoted. Genuinely absent text follows the predicate mode and authenticated-evidence matrix rather than being treated as proposer omission. | Absolute/relative/interval, omission versus absence, event/document reference provenance, authenticated interval, atemporal, misattachment, timezone, DST, and replay tests covering every matrix cell. |
 | SIA-R07 | Bind prompt text, schema, owner, redaction, and visibility policy through one registered prompt authority. Source: prompt contracts. | Required | Prompt registry/renderer and proposer transport | Any registration-coordinate substitution blocks transport before a provider or local model call; a valid policy removes registered non-source secrets from rendered prompt, transport metadata, and traces without rewriting source text. | YAML/schema/owner/visibility/redaction/digest mutation tests plus independent serialized-byte observation for valid nested redaction and immutable sanitized copies. |
-| SIA-R08 | Preserve a certifiable local-only active ingestion path and make it the ordinary production default; cloud proposal is explicit opt-in. Source: storage-details local-first requirement. | Required | Proposer protocol, capability registry, and production composition roots | Ordinary in-memory and filesystem builders promote the supported certified envelope with network denied. Remote proposal requires explicit operator selection plus current source-bound authorization; no attempt silently switches or falls back between proposers. | Default-constructor embedded local-proposer end-to-end tests, explicit remote-opt-in tests, and remote-deny zero-call tests. |
-| SIA-R09 | Authorize remote egress only under the current active source-bound policy. Sources: storage details; Memorii spec Sections 15 and 25. | Required | Source governance and provider transport | Revoked, expired, superseded, stale, or mismatched policy produces zero remote calls. | Policy rotation, rollback, concurrent change, classification, provider/model/region, and replay tests. |
-| SIA-R10 | Emit canonical idempotent full-state memory events for every committed semantic mutation, retain canonical ingestion-observation deltas for every terminal source-visible operation, and reconstruct both materialized authorities and every acknowledged replay dependency from their logs. Sources: Memorii spec Sections 18.2-18.3; event model Sections 3-5, 8-9, and 14-16. | Required | Transaction coordinator, graph event/replay authority, ingestion-observation ledger, and atomic replay-artifact store | Genesis and signed-checkpoint replay across every active read schema reproduce the exact committed graph revision, ingestion-observation ledger, progress state, and replay-authoritative artifact closure without prior materialized state, provider, analyzer, or read-time reconstruction. No visible state references an artifact absent from the same or an earlier complete generation. Envelope `event_id`, logical-retry `dedupe_key`, and record identity are distinct; only `payload.entity_id == payload.record_id == GraphRecordMutation.record_id`. One typed `create|update` mutation kind is carried unchanged from compiler delta through event identity and replay; one logical mutation has one stable dedupe key across retries. Every terminal operation has exactly one immutable introduction and terminal-outcome record; committed outcomes link exactly one graph delta and terminal non-committing outcomes forbid one. | Every-record-kind create/update/retirement mapping, introduction/outcome replay, zero-mutation terminals, artifact/state publication failpoints, pre-planning resume, identity mutations, envelope/dedupe/record identity separation, current-writer version-collision rejection, canonical historical same-version precedence, duplicate, conflicting-dedupe, reordered, supported/retired/future schema, deterministic upcast, corrupt, partial-commit, checkpoint trust/rollback, and replay-resume tests. |
-| SIA-R11 | Enforce one certified semantic writer across embedded, sidecar, event-consumer, legacy, and generic-store paths. Sources: Memorii spec Sections 17.3 and 19.2; implementation rules, commit gating. | Required | Store-owned writer admission, semantic-record ownership manifest, and common storage boundary | Every governed semantic mutation carries one current writer binding. Activation stops new legacy admissions and drains or terminalizes every old-epoch operation before advancing the epoch. A stale or binding-free writer changes no semantic or lifecycle revision. | Shared-store mixed-version, every atomic and generic write entry point, cutover, rollback, drain, active-lease, and paused in-flight process tests. |
+| SIA-R08 | Preserve a certifiable local-only active ingestion path and make it the ordinary production default after `SIA-ED-TOPOLOGY-001` selects its inference/writeback owner and deployment envelope; cloud proposal is explicit opt-in. Source: storage-details local-first requirement. | Required | Externally selected inference/writeback owner, proposer protocol, capability registry, and production composition roots | After external approval, the selected ordinary composition promotes the supported certified envelope under an approved local resource profile with network denied. Before approval it is `profile_unapproved` and evidence-only. Remote proposal requires explicit operator selection plus current source-bound authorization; no attempt silently switches or falls back between proposers. | Owner-stripping, approved-profile default-composition, no-network local, profile-unapproved zero-mutation, explicit remote-opt-in, and remote-deny zero-call tests. |
+| SIA-R09 | Authorize remote egress only under the current active source-bound policy. Sources: storage details; Memorii spec Sections 15 and 25. | Required | Source governance and provider transport | Each segment uses only its exact classification/context-bound decision; revoked, expired, superseded, stale, swapped-segment, or mismatched policy produces zero remote calls. | Mixed classification/modality/authority/egress routing, policy rotation, rollback, concurrent change, provider/model/region, swapped/missing/extra decision, and replay tests. |
+| SIA-R10 | Emit canonical idempotent full-state memory events for every committed semantic mutation, retain canonical ingestion-observation deltas for every terminal source-visible operation, and reconstruct both materialized authorities and every acknowledged replay dependency from their logs. Sources: Memorii spec Sections 18.2-18.3; event model Sections 3-5, 8-9, and 14-16. | Required | Transaction coordinator, graph event/replay authority, ingestion-observation ledger, and atomic replay-artifact store | Genesis and signed-checkpoint replay across every active read schema reproduce the exact committed graph revision, ingestion-observation ledger, progress state, and replay-authoritative artifact closure without prior materialized state, provider, analyzer, or read-time reconstruction. No visible state references an artifact absent from the same or an earlier complete generation. Envelope `event_id`, logical-retry `dedupe_key`, and record identity are distinct; only `payload.entity_id == payload.record_id == GraphRecordMutation.record_id`. One typed `create|update` mutation kind is carried unchanged from compiler delta through event identity and replay; one logical mutation has one stable dedupe key across retries. Every terminal operation has exactly one immutable introduction and terminal-outcome record; committed outcomes link exactly one graph delta and terminal non-committing outcomes forbid one. Exact duplicate envelopes remain idempotent and current-writer same-record/version collisions reject before visibility. Non-identical historical equal-version conflicts fail closed without selecting or materializing a winner until `SIA-ED-REPLAY-001` is resolved. | Every-record-kind create/update/retirement mapping, introduction/outcome replay, zero-mutation terminals, artifact/state publication failpoints, pre-planning resume, identity mutations, envelope/dedupe/record identity separation, exact-duplicate idempotency, current-writer version-collision rejection, non-identical historical equal-version fail-closed behavior from genesis and checkpoints, conflicting-dedupe, reordered, supported/retired/future schema, deterministic upcast, corrupt, partial-commit, checkpoint trust/rollback, and replay-resume tests. |
+| SIA-R11 | Enforce one certified semantic writer across embedded, sidecar, event-consumer, legacy, and generic-store paths. Sources: Memorii spec Sections 17.3 and 19.2; implementation rules, commit gating. | Required | Store-owned writer admission, delivery-coordinate migration owner, semantic-record ownership manifest, and common storage boundary | Every governed semantic mutation carries one current writer binding. Activation stops new legacy admissions, drains or terminalizes every old-epoch operation, and atomically publishes one independently certified complete target-coordinate generation before advancing the epoch. A stale or binding-free writer changes no semantic or lifecycle revision. | Shared-store mixed-version, every atomic and generic write entry point, finite migration inventory/certificate, ambiguity/collision, crash/restart, cutover, rollback, cross-cutover retry, drain, active-lease, and paused in-flight process tests. |
 | SIA-R12 | Use closed discriminated temporal and lifecycle algebras in source, resolver, accepted, durable, expected, and observed contracts. Sources: implementation rules; C1. | Required | Decision, graph, and acceptance contracts | Impossible basis/value combinations and unknown variants fail deserialization; equal temporal values with different authenticated bases remain distinct end to end. | Exhaustive variant round trips, equal-value/different-basis mutations, missing/swapped provenance, and malformed-row tests. |
 | SIA-R13 | Bind acceptance evidence to lifecycle-checked keys and monotonic active releases without placing acceptance authority in production. Sources: Memorii spec Sections 17-18 and 25; implementation rules, commit gating. | Required | Acceptance trust policy and acceptance harness | Revoked, compromised, expired, superseded, wrong-purpose, or rollback releases cannot validate evidence; signed acceptance witnesses bind exact public production attestations, while production imports no acceptance schema, key, or policy. | Key lifecycle, active-release, cross-purpose, cross-artifact replay, production-import-boundary, attestation substitution, and witness reconstruction tests. |
 | SIA-R14 | Statistically certify every behavior-affecting routing, analysis, coverage, temporal, semantic, safety, utility, and abstention lane. Sources: Memorii spec Sections 16.25-16.27 and 25; engineering-hardening closure matrix C4. | Required | Acceptance statistical gate | Capability activation requires every predeclared mandatory metric gate and valid multiplicity adjustment. | Independent metric/cluster/p-value/bound recomputation and manifest-completeness tests. |
 | SIA-R15 | Make runtime monitoring decisions executable and deterministic from typed policy plus immutable evidence. Sources: Memorii spec Sections 17.5-17.6 and 25; implementation rules, commit gating. | Required | Capability monitor and registry | Identical policy/evidence yields the same state transition; breach or stale evidence atomically enters evidence-only. | Boundary, fake-clock, race, outage, recovery, and independent sequential-decision tests. |
-| SIA-R16 | Declare one unambiguous initial dependency topology and certification set. Sources: Memorii spec Sections 16.25-16.27 and 25; storage-details local-first requirement; selected architecture decisions in Sections 3.3-3.5 implementing SIA-R05, SIA-R08, and SIA-R14. | Required | Deployment manifest and capability registry | One authoritative manifest binds every Python distribution, model/tokenizer asset, local runtime/ruleset, license, owner module, and optional remote adapter named by packaging, runtime, rollout, and certification. | Bidirectional manifest/module/package/asset consistency audit and missing/extra/duplicate/digest/license mutation tests. |
+| SIA-R16 | Declare one unambiguous initial dependency topology and certification set after `SIA-ED-TOPOLOGY-001` ownership/deployment approval. Sources: Memorii spec Sections 16.25-16.27 and 25; storage-details local-first requirement; selected architecture decisions in Sections 3.3-3.5 implementing SIA-R05, SIA-R08, and SIA-R14. | Required | External product/deployment owner, deployment manifest, resource-profile authority, and capability registry | One authoritative approved manifest and resource profile bind every selected distribution, model/tokenizer asset, local runtime/ruleset, license, owner module, capacity/deadline value, and optional remote adapter. This design does not select those values. | Approval-binding, bidirectional manifest/module/package/asset/profile consistency, unsupported-profile, and missing/extra/duplicate/digest/license mutation tests. |
 | SIA-R17 | Compare a pre-ingest expected ingestion graph with direct, scope-authorized structural observations, including terminal zero-mutation outcomes, never retrieval or production semantic helpers. Sources: Memorii spec Sections 16.27, 17, and 25; storage-details scoped-access requirement; implementation rules, commit gating. | Required | Acceptance-only oracle and graph observation API | One unique global operation/fence bijection is established before source/entity alignment; zero or multiple solutions fail. Production-only source-outcome integrity coordinates are independently checked against public production records before fixture equality. One-field, missing, and unexpected-record mutations fail at the first structural divergence; every expected operation aligns through one persisted introduction and terminal outcome; committed and non-committing outcomes have exact, disjoint effect shapes; cross-principal, cross-scope, mixed-seed, forged-cursor, and revoked access fail without record, digest, cohort, page, or existence disclosure. Hand-authored fixture semantics require current content-bound independent review evidence before ingest. | Static import boundary, reviewed-fixture evidence, global-bijection permutation/ambiguity tests, source-outcome consistency mutation tests, closed-world comparator, zero-mutation and mixed-outcome cohorts, fence alignment, view, revision, pagination, cross-principal/scope, cursor-integrity, and authorization-revocation tests through the production boundary. |
 | SIA-R18 | Preserve immutable historical truth, trust evolution, and entity lineage. Sources: Memorii spec Sections 7.2, 17, 18, and 25; canonical event model Sections 5-10. | Required | Graph compiler, projection scheduler, and persistence | Required current, historical, contested, and lineage views remain replayable after late arrival, policy migration, rekey, merge, and split. | Interval/trust/identity prefix matrices, migration races, and exact structural comparison. |
-| SIA-R19 | Activate semantic ingestion through the normal production provider composition. Source: engineering-hardening closure matrix C3. | Required | Provider factory, `ProviderMemoryService`, and ingestion coordinator | Default production builders route accepted and evidence-only sources through Steps 1-8 with no legacy writer or fallback authority. | Default-constructor integration tests over filesystem and in-memory supported configurations. |
-| SIA-R20 | Fence long-running work with renewable leases, bounded stale recovery, terminal exhaustion, and a separate stable allocation namespace. Source: engineering-hardening closure matrix C13. | Required | Operation repository, lease heartbeat, semantic ingestion coordinator, and identity/action planners | Only the current lease owner may persist or commit; reclaim preserves allocation namespace and byte-identical planned IDs; abandoned work recovers within the fixed budget and then becomes terminal. | Fake-clock, multiprocess token-fencing, crash/reclaim before and after planning, namespace substitution, slow-stage renewal, lost-acknowledgement, restart, stale-recovery, and exhaustion tests. |
-| SIA-R21 | Make semantic-ingestion admission, checkpoint progress, terminal-group persistence, and source finalization process-safe and crash-atomic; the filesystem/JSONL backend must publish each complete batch as one generation. Source: engineering-hardening closure matrix C12. | Required | Semantic-ingestion atomic-store protocol and filesystem storage adapter | Readers observe the prior state or one complete admission, progress checkpoint, group, or finalization transaction, never a subset. First visibility of every replay-authoritative artifact is atomic with the state that references it. A terminal-group transaction atomically publishes its group result and ingestion-observation delta and, only when committed, its graph delta/event batch. Every transaction validates its exact graph/control/observation/artifact revisions, artifact closure, lease, writer epoch, and idempotency fence. | Backend-neutral in-memory/filesystem conformance plus pre-planning/planned checkpoints, committed, zero-mutation, and mixed-outcome group transactions; deterministic artifact/index/state failpoints, multiprocess same/distinct delivery, failed replace, reopen, corruption, lost acknowledgement, and idempotent retry schedules. |
-| SIA-R22 | Preserve the complete pinned provider evolution lifecycle envelope while exposing the truthful semantic-ingestion terminal result without aliases or versioned APIs. Sources: current provider operation contract; implementation rules; normal production composition requirement C3. | Required | Provider service, operation repository, and semantic-result repository | Existing callers observe byte-identical canonical payloads for every field, enum, default, nullability, and validator case in the immutable baseline; semantic-aware callers retrieve one typed source result whose digest and lifecycle mapping agree with the same operation. Retryable group failure never becomes terminal committed state, and lease exhaustion retains its typed reason. | Independently captured baseline schema/fixture comparison, exhaustive lifecycle/result mapping, legacy-reader serialization, schema mutation, separate-accessor, mixed-process cutover, retryable partial-group resume, lease-exhaustion round trip, missing-result, and digest-substitution tests. |
-| SIA-R23 | Preserve public provider delivery identity through deterministic internal normalization, canonical structured source envelopes, and composite-hook replay. Source: engineering-hardening closure matrix C11 and the current provider boundary. | Required | Provider adapters, source-admission normalizer, and operation repository | Every public mutation rejects a blank normalized delivery ID. Structured snapshots/delegations produce one versioned canonical envelope. Accepted admission returns the complete immutable operation/namespace/writer handoff. Composite hooks derive reserved child IDs deterministically; restart and partial replay execute only missing children and never duplicate effects. | Public-operation blank-ID matrix, cross-adapter canonical-byte equality, envelope ordering/reference/version/limit mutations, admission-to-lease/lost-ack/replay, child-ID collision/determinism, process restart, conflicting replay, and every partial-child recovery permutation. |
+| SIA-R19 | Activate semantic ingestion through the normal production provider composition selected by `SIA-ED-TOPOLOGY-001`. Source: engineering-hardening closure matrix C3. | Required | Externally selected inference/writeback owner, provider factory, `ProviderMemoryService`, and ingestion coordinator | After ownership/deployment approval, normal production builders route governed accepted and evidence-only sources through the selected owner with no legacy writer or fallback authority; before approval they cannot claim active local promotion. | Owner-stripping and default-constructor integration tests over every externally approved filesystem/in-memory profile. |
+| SIA-R20 | Fence long-running work with renewable leases, bounded stale recovery, terminal exhaustion, and a separate stable allocation namespace. Source: engineering-hardening closure matrix C13. | Required | Operation repository, lease heartbeat, semantic ingestion coordinator, and identity/action planners | Only the current lease owner may persist or commit; reclaim preserves allocation namespace and byte-identical planned IDs. Fence/allocation coordinates derive only from the version-bound stable delivery identity, immutable admitted source coordinates, and operation ID; current authorization evidence is excluded. Abandoned work recovers within the fixed budget and then becomes terminal. | Fake-clock, session/scope/policy/trust/revocation rotation identity-stability, multiprocess token-fencing, crash/reclaim before and after planning, namespace substitution, slow-stage renewal, lost-acknowledgement, restart, stale-recovery, and exhaustion tests. |
+| SIA-R21 | Make semantic-ingestion admission, checkpoint progress, terminal-group persistence, and source finalization process-safe and crash-atomic; the filesystem/JSONL backend must publish each complete batch as one generation. Source: engineering-hardening closure matrix C12. | Required | Semantic-ingestion atomic-store protocol and filesystem storage adapter | Readers observe the prior state or one complete admission, progress checkpoint, group, or finalization transaction, never a subset. First visibility of every replay-authoritative artifact is atomic with the state that references it. A terminal-group transaction atomically publishes its group result and ingestion-observation delta and, only when committed, its graph delta/event batch. Every transaction validates its exact graph/control/observation/artifact revisions, artifact closure, lease, writer epoch, and stable idempotency fence; checkpoint/group/finalization equality excludes current authorization evidence and ingress context. | Backend-neutral in-memory/filesystem conformance plus pre-planning/planned checkpoints, committed, zero-mutation, and mixed-outcome group transactions; session/scope/policy/trust/revocation rotation with stable durable equality, deterministic artifact/index/state failpoints, multiprocess same/distinct delivery, failed replace, reopen, corruption, lost acknowledgement, and idempotent retry schedules. |
+| SIA-R22 | Preserve the complete pinned provider evolution lifecycle envelope while exposing the truthful semantic-ingestion terminal result without aliases or versioned APIs. Sources: current provider operation contract; implementation rules; normal production composition requirement C3. | Required | Provider service, result-access authorizer, protected admission authorization index, operation repository, and semantic-result repository | Existing callers observe byte-identical canonical payloads for every field, enum, default, nullability, and validator case in the immutable baseline; semantic-aware callers use only `SemanticIngestionOutcomeLookupRequest`, whose out-of-band authenticated principal, tenant, stable delivery key, fence binding, and server-derived complete current typed scope set authorize before any outcome/result/artifact lookup. Authorized results have exact digest/lifecycle/required-scope-set equality; every unavailable outcome is non-disclosing. Retryable group failure never becomes terminal committed state, and lease exhaustion retains its typed reason. | Independently captured baseline schema/fixture comparison, exhaustive lifecycle/result mapping, legacy-reader serialization, schema mutation, authenticated separate-accessor, static type/ownership checks for no result-access construction/import of `DeliveryAuthorizationRequest` and no alternate lookup route, identity-stability across current-set changes, mixed-scope zero/partial/exact/superset/stale/revoked and scope-set/session-evidence substitution coverage, two-principal same-ID, guessed operation, cross-tenant, delivery/fence substitution, authority/repository outage, valid caller, repository-spy assertions, mixed-process cutover, retryable partial-group resume, lease-exhaustion round trip, missing-result, and digest-substitution tests. |
+| SIA-R23 | Preserve public provider delivery identity through one owned versioned internal normalization contract, governed structured source envelopes, metadata-poor evidence retention, and composite-hook replay. Source: engineering-hardening closure matrix C11 and the current provider boundary. | Required | Ingestion contracts, delivery-coordinate migration owner, provider adapters, source-admission normalizer, and operation repository | Every public mutation validates one strict Unicode-scalar delivery ID, preserves its accepted scalar sequence and UTF-8 bytes exactly, and rejects empty/all-whitespace, invalid encoding/scalars, over-limit values, and non-public composite-coordinate injection. The normalization-contract version is part of `DeliveryIdentity`. Before activation, every current stripped public ID and raw child ID is mapped from preserved evidence into one complete content-addressed target generation; ambiguity/collision blocks activation absent an evidence-backed owner disposition. After activation only typed target coordinates are readable or writable. Governed snapshots/delegations produce one canonical internal envelope; current metadata-poor snapshot hooks retain exact evidence with no semantic projection or synthetic identity. Accepted admission returns the complete immutable authenticated operation/namespace/writer handoff. Composite hooks derive typed domain-separated child coordinates; restart, partial replay, and cross-cutover retry execute only missing children and never duplicate effects. | Cross-adapter independently authored golden vectors for normalization version, canonical-equivalent Unicode pairs, case, leading/trailing whitespace, non-ASCII, byte limit, invalid scalars/encoding, empty/all-whitespace, public/composite coordinate collision attempts; frozen migration fixtures for whitespace, NFC/NFD, delimiter-like IDs, partial fan-out, collision, crash/restart, rollback, cross-cutover retry, parent/child fan-out, admission-to-lease/lost-ack/replay, conflicting replay, and exactly-one-effect recovery permutations. |
+
+The following additions are part of the normative ledger rows above and take
+precedence over their shorter acceptance summaries:
+
+| Requirement | Revision closure |
+| --- | --- |
+| SIA-R01, SIA-R20, SIA-R21, SIA-R22, SIA-R23 | Admission, recovery, replay, leases, fences, allocations, finalization, and results bind one stable server-derived delivery-principal binding and key; volatile session authorization is separate. Cross-principal/tenant/scope same-ID, recovery, and result-disclosure attempts receive the non-disclosing mismatch outcome and make no mutation. |
+| SIA-R01, SIA-R04, SIA-R09, SIA-R22, SIA-R23 | A governed snapshot has exact per-message immutable semantic contexts. Current metadata-poor snapshot hooks retain evidence only and have no projection, promotion, remote egress, synthetic identity, or authority. |
+| SIA-R09 | The separately ACL-protected egress-governance control plane accepts only lifecycle-checked signed commands and monotonic activation records; provider transport revalidates current policy before serialization and denies any mismatch or control-plane outage with zero wire activity. |
+| SIA-R14, SIA-R15 | Statistical and monitoring policies have strict finite/domain invariants and require an independently approved content-bound baseline before activation or held-out evaluation; substantive values remain an external approval. |
+| SIA-R17 | A production-owned authenticated authorizer makes a pre-lookup decision and reauthorizes each page. Observation is one flattened canonical record stream with total bounded page size, a versioned positioned cursor, and typed non-disclosing invalid, stale, and revoked outcomes. |
+| SIA-R08, SIA-R16 | A typed approved local resource/admission profile governs startup, capacity, queueing, deadlines, and deterministic evidence-only/no-mutation overload outcomes. Profile values, host envelopes, and model assets are not selected here. |
+| SIA-R04, SIA-R20, SIA-R21, SIA-R22 | Both source-result variants and both transaction-group result variants carry the byte-identical admission-time `OperationFenceBinding`; all summaries, deltas, event/replay projections, finalization inputs, and lost-acknowledgement results validate exact equality before mutation or disclosure. |
+| SIA-R08, SIA-R13, SIA-R14, SIA-R15, SIA-R16 | Production-owned deployment authorization verifies serialized signed artifacts against production trust, revocation, and active-epoch state at every use point. Acceptance independently validates and publishes bytes, and neither side imports the other's schemas or trust objects. |
+| SIA-R03, SIA-R08, SIA-R10, SIA-R14, SIA-R15, SIA-R16, SIA-R18, SIA-R19, SIA-R21 | Section 1.5.2 exclusively registers the three unresolved external decisions under stable IDs with exact owners, artifacts, fail-closed behavior, and unblock conditions. |
+| SIA-R01, SIA-R09, SIA-R22, SIA-R23 | Semantic-result access uses only `SemanticIngestionOutcomeLookupRequest` plus trusted out-of-band ingress resolution and a protected admission-only index. It authorizes stable principal, tenant, complete required-scope set, delivery key, and fence before any outcome/result/artifact lookup; exact or authorized-superset current scope coverage may proceed, partial coverage has no projection fallback, and all failures share one non-disclosing unavailable shape. |
+| SIA-R13, SIA-R14, SIA-R16 | Acceptance independently signs and lifecycle-validates one baseline approval release. Its verified digest is required in baseline deployment-authorization issuance and signed into the production artifact; production imports no acceptance schema/verifier and trusts only deployment authorization. |
+| SIA-R02, SIA-R03, SIA-R04, SIA-R07, SIA-R10, SIA-R13, SIA-R17, SIA-R21, SIA-R22, SIA-R23 | Every digest/signature-bearing ingestion schema uses one owned versioned canonical typed-value profile and exact schema binding. Historical bytes verify under their original binding before deterministic upcast; graph observation has no local codec. |
+| SIA-R03 | Closed extraction covers every structural unit in Sections 1-5, ledger rows self-map, shared units retain complete many-to-many requirement mappings, and acceptance requires independent structure, coverage, trusted-evidence, and exact-revision passing-execution gates. |
+| SIA-R01, SIA-R04, SIA-R10, SIA-R12, SIA-R17 | Retained source, semantic projection, and segment-local text are three closed artifact-coordinate kinds. Structured-envelope fields carry canonical-pointer/field-bytes/decoded-content/projection/segment mapping proofs; no JSON offset is treated as a decoded-content offset. |
+| SIA-R02, SIA-R04, SIA-R15, SIA-R16 | Language routing and every proposal/analyzer/event/temporal/NLI/reconciliation capability binding are exact-segment and content-bound. Mixed-language segments may use distinct certified routes; an unresolved route makes only its segment evidence-only with zero learned call or graph effect. |
+| SIA-R01, SIA-R09, SIA-R22, SIA-R23 | The protected admission generation persists the canonical complete required-scope set derived from all segment governance. Complete-source outcome access requires current authorization for every represented scope before any result/artifact read and has no partial projection path. |
+| SIA-R01, SIA-R04, SIA-R09, SIA-R22, SIA-R23 | Before semantic admission, validated segment governance produces the canonical complete `RequiredOutcomeScopeSet`; same-tenant subset coverage by `AuthenticatedIngressContext.current_authorized_scopes` is required before Step 2, provider calls, reservations, or graph effects. The atomic admission stores an audit-only authorization proof, while current session/policy/trust/revocation values remain outside durable identity. |
+| SIA-R01, SIA-R20, SIA-R21, SIA-R22, SIA-R23 | Durable delivery, fence, allocation, checkpoint, result, recovery, and replay identity excludes `AuthenticatedIngressContext` and every current authorization value. Exact versioned preimages use only stable provider/principal/tenant binding, exact normalized delivery bytes or typed child coordinate, immutable admitted source coordinates, and operation ID. |
+| SIA-R01, SIA-R20, SIA-R21, SIA-R23 | `ingestion_contracts.py` exclusively owns `normalize_delivery_id` version 1 and typed public/composite delivery coordinates. Accepted strict UTF-8 bytes are unchanged; trimming, Unicode normalization, case folding, delimiter rewriting, raw child concatenation, structural look-alikes, and alternate adapter normalizers are forbidden. |
 
 CFP and ING identifiers below are non-normative rationale and regression
 labels. Their sole implementation authority is the owning SIA requirement in
@@ -269,11 +300,26 @@ A static audit expands every range above and fails on an absent or duplicate
 rationale ID, an unknown SIA ID, or a rationale row that claims independent
 completion authority.
 
+#### 1.5.2 Canonical external-decision register
+
+This is the sole normative register for unresolved external decisions. Stable
+`SIA-ED-*` identifiers name design dependencies, not review findings. Every
+normative reference must resolve to exactly one row; an undefined or duplicate
+identifier fails the traceability audit. Resolving one row does not resolve or
+weaken another.
+
+| Decision ID | External owner | Affected requirements | Required artifact | Fail-closed behavior while unresolved | Exact unblock condition |
+| --- | --- | --- | --- | --- | --- |
+| `SIA-ED-TOPOLOGY-001` | Product/spec/deployment owner | SIA-R08, SIA-R16, SIA-R19 | One signed, content-addressed `SemanticIngestionTopologyAuthorizationArtifact` naming inference and writeback owners, authenticated-host integration, ordinary factory composition, supported local assets and licenses, resource profiles and values, optional remote adapter policy, and rollback owner. | Ordinary composition is evidence-only with `profile_unapproved`; it performs no learned local stage, graph mutation, or implicit remote fallback. | The owner publishes the complete artifact, its exact bytes pass `DeploymentAuthorizationVerifier`, bidirectional manifest/package/asset/profile validation passes, and the ordinary constructor/rollback verification named by SIA-R08, SIA-R16, and SIA-R19 passes. |
+| `SIA-ED-REPLAY-001` | Event-model owner | SIA-R10, SIA-R18, SIA-R21 | One governing `EqualVersionReplayDecisionArtifact` plus a consistent update to `docs/design/event_model.md` defining exact duplicates, non-identical historical equal-version events, current-writer collisions, genesis replay, and checkpoint replay. | Exact duplicates remain idempotent and current-writer collisions reject; non-identical historical equal-version replay rejects before materialization or winner selection. | The event-model update and artifact select one genesis/checkpoint-consistent algebra and every arrival-order, checkpoint, upcast, and mixed-version permutation passes independently. |
+| `SIA-ED-POLICY-001` | Product/ML acceptance owner | SIA-R14, SIA-R15 | One signed, content-bound `InitialSemanticIngestionPolicyArtifact` containing all statistical thresholds, multiplicity allocation, cluster minima, unsupported cells, freshness deadlines, and monitoring limits. | Capability activation and local learned execution remain evidence-only; no implementation default, held-out-derived value, or runtime traffic may fill an absent value. | The complete artifact is deployment-authorized for the exact capability/dependency bundle and independent event-level recomputation validates every metric, cluster, bound, multiplicity, freshness, activation, and rollback rule. |
+
 ### 1.6 Scope
 
 In scope:
 
-- immutable source records and exact source offsets;
+- immutable source records and exact typed retained/projection/segment
+  coordinates with mapping proofs;
 - lossless text preparation and language routing;
 - source-data classification and provider-egress authorization;
 - a provider-neutral source-grounded semantic proposer with certified local and
@@ -320,9 +366,10 @@ For each retained source, the normal active path is:
    server-owned authority, scope, modality, bitemporal context, and a
    deny-by-default provider-egress decision. A denied source is retained but
    cannot cause a remote call.
-2. **Lossless text preparation** derives offsets, sentence boundaries, and
-   language metadata without discarding source content, then emits one
-   fingerprinted language-routing decision or an explicit unresolved result.
+2. **Lossless text preparation** derives typed projection/segment coordinates,
+   sentence boundaries, and language metadata without discarding source
+   content, then emits one content-bound language route for every exact segment
+   or an explicit segment-local unresolved result.
 3. **LLM semantic proposal** makes one structured-output inference per bounded
    segment through the capability-bound proposer. A local proposer runs from a
    pinned in-process model manifest without network access. A remote proposer
@@ -331,7 +378,7 @@ For each retained source, the normal active path is:
    contract.
 4. **Independent source analysis** runs pinned Stanza and spaCy dependency
    adapters, a parse-independent high-recall predicate-event detector, and a
-   pinned local Duckling temporal resolver over the same complete source,
+   pinned local Duckling temporal resolver over each exact routed segment,
    concurrently with Step 3. These components produce evidence, not truth.
 5. **Evidence normalization, identity resolution, and optional corroboration**
    deterministically aligns the independent lanes, requires one stable
@@ -453,7 +500,8 @@ store has durably accepted a delivery, every later failure retains that raw
 observation for reprocessing. An invalid envelope or a retention failure occurs
 before that invariant applies: it returns an explicit non-success admission and
 no semantic stage starts. A write whose durability is indeterminate is recovered
-by the same delivery ID before any caller may observe acceptance.
+by the same stable delivery identity plus newly valid authorization before any
+caller may observe acceptance.
 
 ### 2.4 Authority flow
 
@@ -569,14 +617,16 @@ benchmark answers or the independent parser's role decisions.
 
 ### 3.3 Run linguistic analysis independently, not as lossy LLM preprocessing
 
-Stanza and the LLM inspect the same complete source in parallel. Parser role
+Stanza and the LLM inspect the same exact routed segment text in parallel. Parser role
 answers are not inserted into the proposal prompt and then reused as
 "independent" verification.
 
-Safe tokenization and source offsets may be shared. Semantic conclusions must
+Safe tokenization and exact projection/segment coordinates may be shared.
+Semantic conclusions must
 remain independent enough to expose disagreements.
 
-The analyzer consumes only `PreparedSource` and its pinned analyzer manifest.
+Each analyzer consumes only one `SegmentAnalysisInput`, its exact
+`SegmentLanguageRoute`, and its pinned analyzer manifest.
 It never consumes proposal mentions, proposal spans, provider-local IDs, or
 provider-selected predicate anchors. A separate deterministic alignment stage
 runs only after both lanes complete and compares their independently produced
@@ -947,13 +997,12 @@ class SemanticIngestionDeploymentManifest(BaseModel):
     manifest_digest: str
 ```
 
-The initial manifest includes the Pydantic/runtime base; fastText runtime and
-`lid.176` asset; PyICU; English and Spanish Stanza and spaCy distributions and
-model assets; the local Duckling binary or sidecar image, client, rulesets, and
-locale map; `llama-cpp-python`, the selected GGUF model, tokenizer, and chat
-template; and Transformers, PyTorch, SentencePiece, and the pinned NLI assets
-when NLI is enabled or shadowed. The OpenAI SDK/adapter is listed only as an
-`optional_remote_adapter`, never as a default dependency or fallback.
+The initial manifest must enumerate every approved runtime distribution, local
+asset, tokenizer/template, optional remote adapter, license, and owner needed
+by the eventually selected topology. It does not select a local model asset,
+supported host profile, packaging envelope, or inference/writeback owner:
+those are external `SIA-ED-TOPOLOGY-001` decisions. An optional remote adapter is never a
+default dependency or fallback.
 
 The deployment lock supplies exact compatible versions. Runtime downloads,
 unmanifested executables, mutable model aliases, and network fallback are
@@ -1047,12 +1096,14 @@ combination fails model validation.
 Before global target-writer cutover, existing production writes are admitted only through an
 explicit `legacy_pre_cutover` binding issued by the store. Cutover first stops
 new legacy admissions, drains or durably terminalizes every operation admitted
-under the old epoch, proves that no old-epoch lease is active, and then
-atomically advances `writer_epoch` and activates the target writer. The
+under the old epoch, proves that no old-epoch lease is active, completes and
+independently certifies the finite delivery-coordinate migration in Section
+3.15.1, and then atomically publishes that target generation, advances
+`writer_epoch`, and activates the target writer. The
 legacy mode can never be reissued after that transition. Cutover and rollback
 both create a new monotonically increasing epoch; rollback enters
 `evidence_only` or a separately certified capability and never reactivates an
-old epoch. Per-capability rollout after target activation changes
+old epoch or coordinate path. Per-capability rollout after target activation changes
 capability-status epochs, not the global writer epoch. Unsupported or
 unpromoted capabilities remain evidence-only inside the one target
 coordinator; no old process receives writer authority for them. An in-flight
@@ -1070,11 +1121,14 @@ responsibilities are acceptance requirements.
 
 | Module | Required symbols and responsibility | Permitted dependencies | Forbidden dependencies |
 | --- | --- | --- | --- |
+| `memory_evolution/ingestion_contracts.py` | canonical ingestion types/codecs, `normalize_delivery_id` version 1, exact UTF-8 delivery-ID validation, typed public/composite delivery coordinates, stable delivery-identity preimages, and canonical source/provenance/span/scope contracts | Pydantic, standard-library strict UTF-8 codec, canonical typed-value profile | Adapter-local normalization, Unicode normalization/case folding/trimming, raw composite-ID concatenation, NLP libraries, provider SDK, benchmark fixtures |
 | `memory_evolution/source_admission.py` | `SourceAdmissionRequest`, `ProviderEventNormalizer`, closed provider-operation mapping, source/retention/pending-operation admission command | Current provider contracts, source governance, atomic-store protocol | NLP libraries, proposal output, benchmark code |
-| `memory_evolution/source_governance.py` | `SourceSemanticContext`, `ProviderEgressDecision`, `TrustPolicySnapshot`, `TemporalPolicySnapshot`, authenticated scope/modality/authority resolution, bitemporal metadata, and deny-by-default provider authorization | Existing source/provenance/security policies, Pydantic | NLP libraries, provider output, benchmark code |
+| `memory_evolution/source_governance.py` | invariant-only `SourceSemanticContext`, complete required-scope derivation, exact per-segment scope/modality/classification/authority/egress carriers, `ProviderEgressDecision`, `TrustPolicySnapshot`, `TemporalPolicySnapshot`, bitemporal metadata, and deny-by-default provider authorization | Existing source/provenance/security policies, Pydantic | NLP libraries, provider output, benchmark code |
+| `memory_evolution/delivery_coordinate_migration.py` | finite content-addressed legacy-coordinate inventory, evidence-backed public/composite mapping, collision and ambiguity detection, resumable target-generation writes, independent certificate verification, and writer-epoch activation | Ingestion contracts, operation/source/result/replay repositories, atomic-store and writer-admission protocols | Runtime legacy parsing, adapter fallbacks, aliases, dual reads, semantic inference, benchmark fixtures |
 | `memory_evolution/deployment_manifest.py` | `SemanticIngestionDeploymentManifest`, component ownership, digest/license validation, and packaging/runtime consistency audit | Packaging metadata, standard library, typed manifest contracts | Runtime model loading, semantic decisions, benchmark fixtures |
-| `memory_evolution/semantic_analysis/source_contracts.py` | `PreparedSource`, `LanguageRoutingDecision`, `LinguisticAnalysisBundle`, `TemporalResolution`, tokens, clauses, source mentions, and raw syntactic cues | Pydantic, standard library | Proposal contracts, concrete analyzers, OpenAI SDK, benchmark code |
-| `memory_evolution/semantic_analysis/language_router.py` | pinned fastText adapter, declared-language comparison, threshold/margin policy, and one typed routing decision | fastText model assets, source contracts, language capability registry | Proposal output, graph state, benchmark fixtures |
+| `memory_evolution/deployment_authorization.py` | production-owned `DeploymentAuthorizationArtifact`, deployment trust snapshot and revocation contracts, read-only `DeploymentAuthorizationVerifier`, canonical-byte validation, and active-epoch/use-time authorization | Production key-management port, server clock, deployment manifest and capability/profile contracts | Every `acceptance.*` or oracle module, acceptance schemas/keys/trust policy, benchmark fixtures, semantic inference |
+| `memory_evolution/semantic_analysis/source_contracts.py` | `PreparedSource`, `SegmentLanguageRouteSet`, segment-scoped linguistic bundles, `TemporalResolution`, typed text-artifact coordinates/mappings, tokens, clauses, source mentions, and raw syntactic cues | Pydantic, standard library | Proposal contracts, concrete analyzers, OpenAI SDK, benchmark code |
+| `memory_evolution/semantic_analysis/language_router.py` | pinned fastText adapter, declared-language comparison, threshold/margin policy, and one content-bound typed route per semantic segment | fastText model assets, source contracts, language capability registry | Proposal output, graph state, benchmark fixtures |
 | `memory_evolution/semantic_analysis/proposal_contracts.py` | `SemanticProposalAttempt`, `SemanticProposal`, `SemanticProposalRun`, and typed proposed facts/corrections/retractions/action-state/identity operations | Pydantic, standard library | Linguistic contracts, Stanza, Transformers, graph persistence, benchmark code |
 | `memory_evolution/semantic_analysis/decision_contracts.py` | `SourceNormalizationResult`, `GraphProposalAlignment`, `OperationCapabilitySelection`, `SemanticScopeAssessment`, `TypeEvidence`, `NliAssessment`, `SemanticAssessment`, closed accepted-operation IR/selectors, `SemanticCapability` | Source/proposal/state contracts, Pydantic, standard library | Concrete model libraries, live registry lookup, storage, benchmark code |
 | `memory_evolution/semantic_analysis/linguistic/protocol.py` | `LinguisticAnalyzer` protocol and typed result/failure values | Source contracts only | Proposal contracts, concrete NLP libraries |
@@ -1103,7 +1157,7 @@ responsibilities are acceptance requirements.
 | `memory_evolution/identity_lineage.py` | revisioned logical identity, rekey/merge/split validation, and evidence-backed reference-disposition plan | Existing graph/entity/storage contracts | NLP libraries, provider SDK, benchmark code |
 | `memory_evolution/reference_integrity.py` | mandatory physical/logical reference annotations, generated `ReferenceSchemaManifest`, typed-target atomic edge ledger, legacy bootstrap/catch-up activation, per-target audit certificate, closure proof, and index verification | Typed storage schemas, graph repositories, transaction layer | NLP libraries, provider SDK, benchmark fixtures |
 | `memory_evolution/semantic_compilation.py` | pure accepted-operation compiler over complete typed record snapshots, explicit action/retraction/bitemporal/trust/identity transitions, reference dispositions, typed after-records, and graph-revision delta | Existing graph/domain/lifecycle/governance contracts | Storage reads/retries, natural-language libraries, language strings, benchmark code |
-| `memory_evolution/transaction_coordinator.py` | `SemanticIngestionTransactionCoordinator`, base MVCC bundle, scope/fence/issuer-bound read-set extensions, sealed transaction context, planned identity/action reservations, atomic-store-backed immutable planning-artifact read views, fixed-point prefix planning, semantic-effect independence certificates, graph-validation attempts, bounded revalidation, and CAS commit | Deterministic normalization/reconciliation/compiler protocols, graph repositories, operation fence | Provider recall during retry, language interpretation, benchmark code |
+| `memory_evolution/transaction_coordinator.py` | `SemanticIngestionTransactionCoordinator`, base MVCC bundle, exact segment-binding/fence/issuer-bound read-set extensions, sealed transaction context, planned identity/action reservations, atomic-store-backed immutable planning-artifact read views, fixed-point prefix planning, semantic-effect independence certificates, graph-validation attempts, bounded revalidation, and CAS commit | Deterministic normalization/reconciliation/compiler protocols, graph repositories, operation fence | Provider recall during retry, language interpretation, benchmark code |
 | `memory_evolution/atomic_store.py` | `SemanticIngestionAtomicStore`, admission/checkpoint/terminal-group/finalization requests, atomic replay-artifact bytes/index/reference publication, discriminated pre-planning/planned progress, mixed graph/control/observation/artifact CAS semantics, and backend conformance protocol | Source, graph, operation, observation-ledger, event, result, lease, writer-admission, and storage contracts | NLP libraries, provider recall, benchmark orchestration or test hooks |
 | `memory_evolution/operation_lease.py` | store-owned work claims, renewable owner/token/epoch leases, bounded stale recovery, terminal exhaustion, and lease-bound durable-write authorization | Operation repository, server clock, process-safe CAS | Semantic interpretation, graph mutation, benchmark fixtures |
 | `memory_evolution/writer_admission.py` | store-owned global semantic-writer namespace, implementation admission, monotonic writer epochs, cutover/rollback CAS, governed-record manifest, and commit-binding validation | State store, graph schema contracts | Predicate/language capability selection, provider calls, NLP libraries, benchmark code |
@@ -1114,8 +1168,9 @@ responsibilities are acceptance requirements.
 | `memory_evolution/persistence.py` | source trace, discriminated committing/noncommitting group persistence, append-only source plan lineage, pregraph/graph-bound source summaries, attempt/plan/authorization-bound idempotent group results, and production-owned source-retention/group-commit time attestations | Storage/graph/fence/execution/clock contracts | Acceptance witnesses or keys, sentinel commit values, NLP libraries, provider SDK, benchmark fixtures |
 | `memory_evolution/security_authority.py` | revision-bound signing-authority snapshots, key validity/revocation semantics, and signature-policy verification for destructive graph operations | Existing key-management and graph read-set contracts | NLP libraries, provider SDK, benchmark fixtures |
 | `memory_evolution/graph_observation.py` | graph/observation-revision-bound structural current/historical/lineage read API, terminal-outcome-first cohort resolution, exact revision/logical references, and closed observation schemas | Graph, observation-ledger, storage, authorization, and reference-integrity contracts | NLP libraries, provider SDK, benchmark fixtures, expected IDs, source-text reconstruction |
+| `memory_evolution/result_access.py` | purpose-bound `SemanticIngestionOutcomeLookupRequest`, pre-repository `SemanticIngestionOutcomeAuthorizer`, opaque operation/delivery resolution, protected admission-index-only scope-set verification, complete fence/key/all-scope coverage, and one non-disclosing unavailable result | Authenticated ingress resolver/context, protected admission authorization index, operation/source-result/artifact repositories, server clock | Caller-selected principal/scope, partial result projection, any result/artifact lookup before authorization, acceptance/oracle code, NLP libraries, benchmark fixtures |
 | `memory_evolution/service.py` | dependency injection and orchestration of Steps 1-8 through the transaction coordinator | Protocols and production adapters | Hidden benchmark graph or fixture logic |
-| `provider/ingestion.py`, `provider/service.py`, `provider/factory.py`, and `filesystem_storage/bundle.py` | normal production composition root for semantic ingestion; construct the certified Steps 1-8 coordinator, operation lease, writer admission, supported storage transaction adapter, unchanged coarse lifecycle projection, and separate typed `semantic_ingestion_outcome` accessor | Public provider configuration, semantic-ingestion service protocols, supported backend bundles | Semantic-status aliases in the legacy envelope, versioned replacement APIs, legacy semantic writer authority, benchmark-only construction, hidden fallback |
+| `provider/ingestion.py`, `provider/service.py`, `provider/factory.py`, and `filesystem_storage/bundle.py` | normal production composition root for semantic ingestion; construct the certified Steps 1-8 coordinator, operation lease, writer admission, result-access authorizer, supported storage transaction adapter, unchanged coarse lifecycle projection, and separate typed `semantic_ingestion_outcome` accessor | Public provider configuration, authenticated ingress/result-access and semantic-ingestion service protocols, supported backend bundles | Scalar or unauthenticated semantic-result lookup, semantic-status aliases in the legacy envelope, versioned replacement APIs, legacy semantic writer authority, benchmark-only construction, hidden fallback |
 
 Acceptance code has a separate one-way ownership boundary:
 `acceptance/expected_ingestion_graph.py` owns the closed expected schema,
@@ -1129,6 +1184,10 @@ and their content-bound trust checks.
 `acceptance/statistical_certification.py` owns the immutable cluster table,
 predeclared gate manifest, independent bound/multiplicity computation, and
 signed certification decision.
+`acceptance/capability_baseline_approval.py` owns
+`CapabilityBaselineApprovalRelease`, its independent signature/lifecycle
+verifier, and the verified release digest passed to deployment-authorization
+issuance.
 `acceptance/registry_release.py` owns signed, independently reviewed releases
 for boundary-comparison and operation-effect registries plus the acceptance
 trust-store policy that authorizes those releases.
@@ -1136,6 +1195,76 @@ None of these packages is importable by production, and none may import
 production semantic, identity, policy, compiler, persistence, or
 observation-construction helpers. They may consume only public serialized
 contracts and simulator latent fixtures.
+Acceptance tooling may independently validate a deployment authorization and
+publish its exact serialized bytes to the deployment artifact repository, but
+it uses an acceptance-owned decoder and never supplies an in-process schema,
+verifier, key object, or trust store to production. Production parses and
+verifies those bytes only through `memory_evolution/deployment_authorization.py`.
+
+The acceptance-owned contract is:
+
+```python
+class CapabilityBaselineApprovalRelease(BaseModel):
+    schema_version: Literal[1]
+    approval_purpose: Literal["semantic_ingestion_capability_baseline_approval"]
+    approver_subject_id: str
+    target_approved_capability_baseline_artifact_digest: str
+    capability_fingerprint: str
+    capability_contract_digest: str
+    dependency_bundle_digest: str
+    coverage_manifest_digest: str
+    statistical_gate_manifest_digest: str
+    monitoring_policy_digest: str
+    unsupported_cells_digest: str
+    issued_at: datetime
+    expires_at: datetime
+    acceptance_authority_snapshot_digest: str
+    acceptance_release_epoch: int = Field(ge=1)
+    acceptance_release_sequence: int = Field(ge=1)
+    acceptance_signing_key_reference: str
+    lifecycle_state: Literal["active", "superseded", "revoked"]
+    supersedes_release_digest: str | None
+    revoked_at: datetime | None
+    compromise_effective_at: datetime | None
+    release_digest: str
+    signature: str
+
+class VerifiedCapabilityBaselineApproval(BaseModel):
+    release_digest: str
+    target_approved_capability_baseline_artifact_digest: str
+    acceptance_authority_snapshot_digest: str
+    acceptance_release_epoch: int
+    verified_at: datetime
+    verification_digest: str
+
+class CapabilityBaselineApprovalVerifier(Protocol):
+    def verify(
+        self,
+        release_bytes: bytes,
+        baseline_artifact_bytes: bytes,
+        evaluation_time: datetime,
+    ) -> VerifiedCapabilityBaselineApproval: ...
+```
+
+The release uses the canonical ingestion typed-value profile and its registered
+approval-release schema binding. `release_digest` excludes only
+`release_digest` and `signature`; the signature covers the domain-separated
+approval purpose, that digest, complete binding, and the same canonical content.
+Thus approver, target, policy coordinates, times, authority/release/key
+coordinates, and lifecycle state are signed rather than advisory metadata.
+
+This schema, verifier, acceptance keys, and lifecycle store remain acceptance-
+only. The verifier independently recomputes profile bytes, release and target
+digests, every capability/dependency/policy coordinate, purpose, approver/key
+authorization, authority snapshot, signature, issue/expiry interval, current
+release epoch and sequence, lifecycle state, supersession chain, revocation,
+and compromise-effective time. Approval use requires the unique current
+`active` release. `superseded` and `revoked` are immutable signed lifecycle
+records; rollback is a later sequence and cannot revive a revoked release or
+decrement the epoch. Missing, stale, expired, revoked, compromised,
+wrong-purpose, wrong-target, substituted, ambiguous, or rollback-invalid input
+produces no `VerifiedCapabilityBaselineApproval` and no deployment-
+authorization issuance request.
 
 Migration of existing modules is explicit:
 
@@ -1161,7 +1290,10 @@ Migration of existing modules is explicit:
 ### 3.15 Preserve source governance and bitemporal context end to end
 
 Source semantics include more than text. Every observation carries a
-server-owned `SourceSemanticContext` containing:
+server-owned `SourceSemanticContext` containing only source identity/digest,
+temporal/provenance, trigger, and policy-snapshot coordinates that are
+invariant across the entire source. The same contract family separately
+defines per-segment governance and egress authorities:
 
 ```python
 class ProviderEgressRule(BaseModel):
@@ -1196,6 +1328,8 @@ class ActiveProviderEgressPolicy(BaseModel):
 class ProviderEgressDecision(BaseModel):
     source_id: str
     source_digest: str
+    segment_id: str
+    message_semantic_context_digest: str
     decision: Literal["allow_verbatim", "deny"]
     data_classification: str
     matched_rule_id: str | None
@@ -1252,19 +1386,16 @@ TemporalReferenceEvidence = Annotated[
 class SourceSemanticContext(BaseModel):
     source_id: str
     source_digest: str
-    scope: MemoryScope
-    modality: SourceModality
     trigger_mode: ExtractionTriggerMode
-    source_data_classification: str
-    authority: SourceAuthority
+    provenance_digest: str
     temporal_references: tuple[TemporalReferenceEvidence, ...]
     received_at: datetime
     retained_at: datetime
     source_effective_interval_evidence: AuthenticatedSourceIntervalEvidence | None
-    provider_egress_policy: ProviderEgressPolicySnapshot
-    provider_egress: ProviderEgressDecision
+    provider_egress_policy_fingerprint: str
     governance_policy_fingerprint: str
     trust_policy_fingerprint: str
+    context_digest: str
 
 class SourceAuthority(BaseModel):
     authority_class: str
@@ -1706,16 +1837,20 @@ class TrustPolicyCutover(BaseModel):
     cutover_digest: str
 ```
 
-`ProviderEgressDecision` is resolved before any proposal request from
-authenticated source classification and the exact retained server-owned
-`ProviderEgressPolicySnapshot`. Rule IDs and rule digests are unique; rules are
+`ProviderEgressDecision` is resolved separately for each semantic segment
+before its proposal request from that segment's authenticated classification
+and the exact retained server-owned `ProviderEgressPolicySnapshot`. Rule IDs
+and rule digests are unique; rules are
 canonically ordered; two rules cannot match the same classification; and the
 snapshot's only default is deny. The transport independently recomputes the
-decision from the retained classification and snapshot immediately before a
-call rather than trusting a caller-created decision or detached digest. It also
-loads the store-owned `ActiveProviderEgressPolicy` and requires exact revision,
-epoch, and snapshot-digest equality. Expired, superseded, absent, or `deny_all`
-state causes zero remote calls. Active-policy changes use monotonic epochs and
+decision from the selected segment binding, retained classification, and
+snapshot immediately before a call rather than trusting a caller-created
+decision or detached digest. It also loads the store-owned
+`ActiveProviderEgressPolicy` and requires exact revision, epoch, and
+snapshot-digest equality. The decision's source, segment, and message-context
+coordinates must equal the selected `SegmentGovernanceBinding`; another
+segment's decision cannot authorize this one. Expired, superseded, absent, or
+`deny_all` state causes zero remote calls. Active-policy changes use monotonic epochs and
 compare-and-swap; an older still-cryptographically-valid snapshot cannot be
 replayed after revocation. The
 initial production contract deliberately has only `allow_verbatim` and `deny`:
@@ -1725,10 +1860,12 @@ region, zero-retention-equivalent processing mode, and prohibited training use;
 all fields must match one exact rule and the deployed provider client
 configuration. `deny` requires `matched_rule_id` and all provider fields to be
 null and causes no remote call. The
-decision digest covers the exact source digest and all policy/configuration
+decision digest covers the exact source and segment coordinates,
+message-context digest, classification, and all policy/configuration
 coordinates, is included in the semantic request fingerprint, and is retained
-for replay. A caller declaration, source text, prompt, or model output cannot
-elevate egress permission. A future redacted projection requires a separate
+through its exact segment carrier for replay. A caller declaration, source
+text, prompt, another segment, or model output cannot elevate egress permission.
+A future redacted projection requires a separate
 design with a lossless source-span mapping and its own certification; it is not
 an implicit third mode here.
 
@@ -2115,6 +2252,1372 @@ late arrival, and temporal-policy migration deterministic.
 Arrival-order permutations must produce equivalent valid-time projections when
 the same evidence and policy snapshots are supplied.
 
+#### 3.15.1 Admission, governance, observation, and resource closure
+
+This subsection is normative for the contracts named below. It amends the
+earlier illustrative fields in Sections 3.12, 3.15, 3.21, 4.1, 4.8, 5.4.3,
+5.6, and 5.6.1: an implementation must use these coordinates rather than an
+unqualified `delivery_id`, caller-selected scope, mutable egress policy, or
+multiple independently paged observation collections. It does not amend inference/writeback ownership
+(`SIA-ED-TOPOLOGY-001`) or the governing equal-version replay decision
+(`SIA-ED-REPLAY-001`).
+Any earlier reference to a selected local model, asset, or host profile is
+superseded as a normative choice and remains pending `SIA-ED-TOPOLOGY-001`
+ownership/deployment decision. Non-identical historical equal-version conflicts
+remain fail-closed pending `SIA-ED-REPLAY-001`. Neither
+external decision has an implementation default.
+
+**Canonical ingestion primitives.**
+`memory_evolution/ingestion_contracts.py` owns the following public persisted
+ingestion types and their codecs. No other package may define an ingestion
+homonym, serialize a structural look-alike, or accept one by duck typing.
+`CanonicalTypedValueProfile` below is the only encoding profile for
+every digest- or signature-bearing ingestion schema in Sections 1-5, including
+acceptance and deployment authorities, provider envelopes, source and
+governance carriers, proposals, plans, graph mutations/events, replay
+artifacts, observations, manifests, results, and traceability evidence. A
+contract cannot add a local datetime, collection, null, base64, enum, or map
+rule. A digest-bearing value rejects if its exact profile/schema binding is
+unknown or recomputation does not equal its declared digest. [SIA-I313]
+
+```python
+class CanonicalTypedValueProfile(BaseModel):
+    profile_id: Literal["semantic_ingestion_typed_value"]
+    profile_version: int = Field(ge=1)
+    grammar_revision: str
+    grammar_digest: str
+    profile_digest: str
+
+class CanonicalTypedValueProfileBinding(BaseModel):
+    profile_id: Literal["semantic_ingestion_typed_value"]
+    profile_version: int = Field(ge=1)
+    profile_digest: str
+    schema_id: str
+    schema_version: int = Field(ge=1)
+    binding_digest: str
+
+class CanonicalEncodedArtifact(BaseModel):
+    binding: CanonicalTypedValueProfileBinding
+    canonical_value_bytes: bytes
+    canonical_value_digest: str
+    artifact_digest: str
+
+class CanonicalTypedValueProfileRegistryEntry(BaseModel):
+    binding: CanonicalTypedValueProfileBinding
+    schema_fingerprint: str
+    enum_registry_digest: str
+    optional_field_policy_digest: str
+    numeric_encoding_spec_registry_digest: str
+    digest_signature_field_policy_digest: str
+    decoder_digest: str
+    upcast_target: CanonicalTypedValueProfileBinding | None
+    upcaster_digest: str | None
+    read_status: Literal["active", "replay_only", "retired"]
+    entry_digest: str
+
+class CanonicalTypedValueProfileRegistry(BaseModel):
+    profile: CanonicalTypedValueProfile
+    entries: tuple[CanonicalTypedValueProfileRegistryEntry, ...]
+    registry_digest: str
+
+class CanonicalFiniteBinary64(BaseModel):
+    ieee754_hex: str
+
+class CanonicalDecimalQuantity(BaseModel):
+    encoding_spec_id: str
+    fixed_scale_value: str
+```
+
+The profile first maps the schema-validated typed value recursively to the
+following tagged JSON value algebra and then applies RFC 8785 to that JSON
+value. Tag objects have exactly the shown keys; unknown or extra keys reject.
+Every decoder must decode and re-encode to byte-identical input before returning
+a value.
+
+- `None` is JSON `null`; `bool` is JSON `true|false` and is never accepted as an
+  integer. An integer is
+  `{"$type":"integer","value":"<decimal>"}` where the decimal is `0` or an
+  optional `-` followed by a nonzero digit and zero or more digits. `+`, leading
+  zeroes, `-0`, exponent form, and JSON numeric values reject. Integers are
+  mathematical integers; the owning schema supplies any narrower range.
+- A string is a JSON string containing its exact Unicode scalar sequence.
+  Input and output are strict UTF-8; unpaired surrogates and invalid UTF-8
+  reject. No NFC/NFD normalization, case folding, or replacement occurs.
+- Bytes are
+  `{"$type":"bytes","value":"<base64>"}` using RFC 4648 standard base64 with
+  the standard alphabet, no whitespace or line breaks, and required `=` padding
+  to a multiple of four when padding is needed. The empty byte string is `""`.
+  URL-safe alphabet, omitted or superfluous padding, nonzero unused bits, and
+  any form whose decode/re-encode differs reject.
+- A datetime is
+  `{"$type":"datetime","value":"YYYY-MM-DDTHH:MM:SS.ffffffZ"}`. The encoder
+  accepts only timezone-aware values, converts the represented instant to UTC,
+  and emits exactly six fractional digits and uppercase `T`/`Z` for years
+  `0001` through `9999`. Offset spellings, missing or additional fractional
+  digits, leap seconds, naive values, and conversion outside that range reject
+  on canonical decode.
+- A timedelta is
+  `{"$type":"duration_microseconds","value":"<decimal>"}` with exact integral
+  microseconds in the closed signed 64-bit range
+  `[-9223372036854775808, 9223372036854775807]`. The integer spelling follows
+  the rule above. Fractional microseconds, unit substitution, and arithmetic or
+  decode overflow reject before hashing.
+- An enum is
+  `{"$type":"enum","enum_type":"<registered-schema-qualified-id>",
+  "member":"<registered-member-id>"}`. The binding's immutable enum registry
+  maps each member one-to-one to its declared wire value. Unknown types or
+  members, aliases, implicit ordinal/numeric encodings, and a changed registry
+  under the same binding reject.
+- A list or tuple is respectively
+  `{"$type":"list","items":[...]}` or
+  `{"$type":"tuple","items":[...]}` in declared order. A set or frozenset is
+  respectively `{"$type":"set","items":[...]}` or
+  `{"$type":"frozenset","items":[...]}`; each member is recursively encoded to
+  its canonical RFC 8785 bytes, members are ordered by unsigned lexicographic
+  byte order, and duplicate canonical member bytes reject even if the source
+  runtime would have collapsed them.
+- A map is `{"$type":"map","entries":[[key,value],...]}`. Keys are strings
+  only, preserve their exact scalar sequence, are unique, and are ordered by
+  unsigned lexicographic order of their canonical UTF-8 JSON-string bytes.
+  Duplicate keys, non-string keys, and input not already canonical on decode
+  reject. Nested values apply this same algebra without depth-specific rules.
+
+Raw binary floating-point and decimal values, including finite values, NaN,
+infinities, and negative zero, are forbidden in the profile and in a bound
+schema. A domain that requires a real-valued quantity must define a distinct
+schema-owned tagged string type with an exact lexical grammar, scale, rounding,
+range, and unit; it is then encoded as that schema type, never as JSON number,
+runtime `float`, or runtime `Decimal`. `CanonicalFiniteBinary64` is the one
+schema-owned representation for finite model-output binary64 values:
+`ieee754_hex` is exactly 16 lowercase hexadecimal digits in network bit order;
+NaN, infinity, and negative zero reject; positive zero and every other finite
+bit pattern decode and re-encode exactly. `CanonicalDecimalQuantity` is the one representation for
+policy, metric, probability, and bound values: its registered
+`encoding_spec_id` fixes unit, inclusive/exclusive range, exact positive
+decimal scale, and `reject_inexact` rounding; `fixed_scale_value` uses optional
+`-`, one or more integer digits with no leading zero except `0`, `.`, and
+exactly that many fractional digits. Exponent, plus sign, negative zero,
+trailing-scale omission, and rounding reject. Each schema field names one
+encoding spec explicitly; there is no profile-wide default.
+
+Optionality is a schema rule, not a codec guess. Each binding's
+`optional_field_policy_digest` covers every field as `required`,
+`omittable_nonnull`, `required_nullable`, or `omittable_nullable`. Omission is
+the absence of a map entry and differs from an explicit `null`;
+`omittable_nonnull` rejects `null`, `required_nullable` rejects omission, and
+`omittable_nullable` preserves either state distinctly. No decoder supplies a
+default before digest verification, and sequence positions are never omitted.
+
+The canonical artifact preimage is the unambiguous length-prefixed byte
+concatenation of the ASCII domain
+`semantic-ingestion-canonical-artifact`, profile ID/version/digest, schema
+ID/version, binding digest, and `canonical_value_bytes`; each length is an unsigned
+big-endian 64-bit integer and every non-byte component is its strict UTF-8
+string (versions use the canonical unsigned decimal integer spelling).
+`canonical_value_digest` is SHA-256 of the canonical
+value bytes and `artifact_digest` is SHA-256 of that complete preimage.
+Schema-specific digest preimages prepend their own registered domain and include
+this complete binding plus canonical bytes with only the digest/signature fields
+that the schema registry explicitly excludes. A signature covers its registered
+purpose, complete binding, exact schema-specific preimage, and resulting digest.
+No digest or signature may rely on an ambient/current profile version.
+
+Registry entries are immutable and unique by
+`(profile_id, profile_version, schema_id, schema_version)`. Replay verifies an
+old artifact with the exact historical entry and original bytes before any
+conversion. A deterministic, registry-pinned upcaster may then transform the
+decoded typed tree through each adjacent declared target; it must not consult
+runtime policy, time, locale, or graph state. The upcast is emitted as a new
+derived artifact with a new binding and digest and never rewrites the original
+digest, signature, event identity, dedupe key, or replay evidence. Missing,
+ambiguous, cyclic, skipped-version, retired-without-replay-decoder, lossy, or
+nondeterministic paths fail closed. Cross-version replay compares materialized
+state only after every original artifact verifies and every required upcast
+chain produces byte-identical output in two independent implementations.
+`profile_digest` is the domain-separated SHA-256 of the profile ID/version,
+grammar revision, and exact published grammar bytes. `binding_digest` is the
+domain-separated SHA-256 of profile ID/version/digest, schema
+ID/version, schema fingerprint, enum registry digest, optional-field policy
+digest, numeric-encoding-spec registry digest, and digest/signature field-policy
+digest, each encoded by the length-prefix rule above. The registry entry must
+recompute that value; this definition has no entry/registry-digest cycle. The
+deployment manifest pins the complete registry digest and the independently
+published golden-vector digest, so changing a schema rule, exclusion, enum,
+numeric encoding, decoder, or upcaster under an existing binding fails before
+artifact decode.
+
+The complete binding is embedded in every `CanonicalEncodedArtifact` envelope
+and every signature preimage even when a conceptual schema listing omits the
+repeated envelope field for readability. A decoder receives envelope bytes and
+selects by that embedded binding before decoding value bytes; it never selects
+from a current-profile setting, filename, endpoint, or caller hint.
+
+Acceptance owns, and production cannot import, a
+`CanonicalTypedValueGoldenVectorManifest`. Each vector binds a unique vector
+ID, exact profile/schema binding and registry-entry digest, an independently
+specified typed-input fixture digest, expected canonical value bytes, expected
+canonical value/artifact digests, optional schema-specific digest/signature
+preimages and outputs, and either `accept` or one exact rejection code. The
+manifest contains boundary and nested vectors for every algebra variant,
+optional state, numeric wrapper, active/replay-only version, and upcast edge,
+plus every noncanonical and overflow case named in Section 5.13. Two codecs
+implemented without shared encoding/decoding code must independently reproduce
+every accepted byte/digest and the exact rejection class for every adversarial
+vector. A vector generated from either codec under test is not independent
+evidence.
+
+```python
+class SourceKind(StrEnum):
+    CONVERSATION_TURN = "conversation_turn"
+    CONVERSATION_SNAPSHOT = "conversation_snapshot"
+    EXPLICIT_MEMORY_WRITE = "explicit_memory_write"
+    DELEGATION_RESULT = "delegation_result"
+
+class RetainedSourceTextArtifact(BaseModel):
+    artifact_kind: Literal["retained_source_text"]
+    artifact_id: str
+    content_digest: str
+    unicode_scalar_length: int = Field(ge=0)
+    offset_unit: Literal["unicode_scalar"]
+    artifact_digest: str
+
+class SemanticProjectionTextArtifact(BaseModel):
+    artifact_kind: Literal["semantic_projection_text"]
+    artifact_id: str
+    content_digest: str
+    unicode_scalar_length: int = Field(ge=0)
+    offset_unit: Literal["unicode_scalar"]
+    artifact_digest: str
+
+class SegmentLocalTextArtifact(BaseModel):
+    artifact_kind: Literal["segment_local_text"]
+    artifact_id: str
+    projection_segment_id: str
+    content_digest: str
+    unicode_scalar_length: int = Field(ge=0)
+    offset_unit: Literal["unicode_scalar"]
+    artifact_digest: str
+
+TextArtifactDescriptor = Annotated[
+    RetainedSourceTextArtifact
+    | SemanticProjectionTextArtifact
+    | SegmentLocalTextArtifact,
+    Field(discriminator="artifact_kind"),
+]
+
+class RetainedSourceTextSpan(BaseModel):
+    artifact_kind: Literal["retained_source_text"]
+    artifact: RetainedSourceTextArtifact
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    substring_digest: str
+    span_digest: str
+
+class ProjectionTextSpan(BaseModel):
+    artifact_kind: Literal["semantic_projection_text"]
+    artifact: SemanticProjectionTextArtifact
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    substring_digest: str
+    span_digest: str
+
+class SegmentLocalTextSpan(BaseModel):
+    artifact_kind: Literal["segment_local_text"]
+    artifact: SegmentLocalTextArtifact
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    substring_digest: str
+    span_digest: str
+
+TextArtifactSpan = Annotated[
+    RetainedSourceTextSpan | ProjectionTextSpan | SegmentLocalTextSpan,
+    Field(discriminator="artifact_kind"),
+]
+
+class VerbatimTextArtifactMappingProof(BaseModel):
+    kind: Literal["verbatim_identity"]
+    retained_span: RetainedSourceTextSpan
+    projection_span: ProjectionTextSpan
+    segment_span: SegmentLocalTextSpan
+    proof_digest: str
+
+class EnvelopeFieldTextArtifactMappingProof(BaseModel):
+    kind: Literal["envelope_field"]
+    retained_artifact: RetainedSourceTextArtifact
+    canonical_json_pointer: str
+    canonical_encoded_field_value_bytes: bytes
+    canonical_encoded_field_value_digest: str
+    decoded_content_bytes: bytes
+    decoded_content_text_digest: str
+    projection_segment_id: str
+    projection_span: ProjectionTextSpan
+    segment_artifact: SegmentLocalTextArtifact
+    segment_span: SegmentLocalTextSpan
+    proof_digest: str
+
+TextArtifactMappingProof = Annotated[
+    VerbatimTextArtifactMappingProof | EnvelopeFieldTextArtifactMappingProof,
+    Field(discriminator="kind"),
+]
+
+class SourceProvenance(BaseModel):
+    source_kind: SourceKind
+    source_reference: str
+    retained_source_digest: str
+    producer_reference: str | None
+    occurred_at: datetime | None
+    recorded_at: datetime
+    provenance_digest: str
+
+class MemoryScope(BaseModel):
+    tenant_partition_id: str
+    user_id: str | None
+    session_id: str | None
+    task_id: str | None
+    scope_digest: str
+```
+
+The three text-artifact descriptors and three matching span variants are the
+closed ingestion coordinate algebra. Every span is half-open `[start, end)` in
+Unicode scalar values of exactly its named immutable artifact, not UTF-8 bytes,
+UTF-16 code units, grapheme clusters, normalized text, or another artifact.
+`start <= end <= artifact.unicode_scalar_length`; the artifact content digest
+must match the exact full text and `substring_digest` the exact scalar slice.
+Artifact kind, ID, content/artifact digest, length, offset unit, boundaries, and
+substring digest all enter `span_digest`. A span of one kind cannot deserialize
+as another, and equal text in two artifacts does not make their coordinates
+interchangeable. [SIA-I315]
+
+The retained source artifact is the exact `SourceObservation.original_text`,
+including canonical structured-envelope JSON. The semantic projection artifact
+is the exact concatenated `projection_text`. Each projection segment has a
+distinct segment-local artifact containing decoded semantic content only.
+Structured JSON character offsets are never used as decoded-content offsets.
+An envelope-field proof binds the exact retained artifact, canonical JSON
+pointer, canonical encoded field-value bytes/digest (including JSON string
+quoting and escaping), decoded UTF-8 content bytes/text digest, projection
+segment and projection span, and complete segment-local artifact/span.
+Reparsing the retained bytes, resolving the pointer, and decoding that exact
+field must reproduce all proof bytes and digests. A verbatim proof is permitted
+only when all three complete texts have identical scalar sequences; it still
+names three distinct artifact kinds and binds their three complete spans.
+Every `TextArtifactMappingProof` covers the complete projection segment and
+complete segment-local artifact. A `SourceSpanReference` may name a subspan only
+when both spans are contained in those complete proof spans, their relative
+starts/ends are equal, and their exact scalar slices and substring digests are
+equal. The projection offset is computed from the persisted segment projection
+start; it is never computed from the retained JSON pointer or field byte offset.
+
+`SourceProvenance.retained_source_digest` equals the retained artifact content
+digest. A projection is valid only when its ordered projection spans are
+non-overlapping, its declared separator and segment texts reproduce the
+projection artifact exactly, and every segment mapping proof validates against
+the same retained artifact. This `MemoryScope` is the only scope type usable in
+ingestion admission, source observations, semantic projections, operations,
+or persisted graph provenance. Its non-null tenant is authenticated authority,
+not a caller field; all non-null child coordinates must be authorized by that
+tenant and its digest binds the complete coordinate set.
+
+The existing `domain.enums.MemoryScope` is a coarse enum and
+`core.memory_evolution.models.MemoryScope` is a query/read-model structure.
+Neither is an ingestion serialization, persisted alias, or conversion target.
+The adapter may map an authenticated ingestion `MemoryScope` to a narrower
+existing read constraint only after the semantic write commits; that mapping
+is outside this ingestion design and cannot authorize admission or change a
+retained scope. `SourceObservation.source_type` remains the current runtime
+type until implementation; `SourceKind` is the closed ingestion contract and
+the adapter must map it explicitly without loss before durable admission.
+
+**Authenticated ingress and snapshot governance.** The hosting boundary
+supplies one out-of-band, non-caller-serializable
+`AuthenticatedIngressContext`; no public provider payload or envelope can
+supply or override it. The admission service derives one stable
+`DeliveryPrincipalBinding` from authenticated provider, principal subject, and
+tenant partition. It derives `delivery_key_digest` by domain-separated hashing
+of that binding digest and one typed, version-bound delivery coordinate.
+Session ID, authorized-scope membership, policy/trust revision,
+issue/expiry time, and revocation evidence are current authorization inputs
+only and are forbidden from the durable key, operation fence, allocation
+namespace, checkpoint, recovery index, replay identity, and result key.
+
+```python
+class DeliveryPrincipalBinding(BaseModel):
+    principal_subject_id: str
+    tenant_partition_id: str
+    provider_identity: str
+    binding_digest: str
+
+class NormalizedDeliveryId(BaseModel):
+    normalization_contract_version: Literal[1]
+    value: str
+    strict_utf8_bytes: bytes
+    utf8_byte_length: int = Field(ge=1, le=1024)
+    normalized_delivery_id_digest: str
+
+class PublicDeliveryCoordinate(BaseModel):
+    kind: Literal["public"]
+    normalized_delivery_id: NormalizedDeliveryId
+    coordinate_digest: str
+
+class CompositeChildDeliveryCoordinate(BaseModel):
+    kind: Literal["composite_child"]
+    normalized_parent_delivery_id: NormalizedDeliveryId
+    composite_namespace_version: Literal[1]
+    child_kind: str
+    coordinate_digest: str
+
+DeliveryCoordinate = Annotated[
+    PublicDeliveryCoordinate | CompositeChildDeliveryCoordinate,
+    Field(discriminator="kind"),
+]
+
+class CurrentAuthorizedScopeSet(BaseModel):
+    tenant_partition_id: str
+    scopes: tuple[MemoryScope, ...]
+    canonical_scope_digests: tuple[str, ...]
+    authorized_scope_set_digest: str
+
+class SessionAuthorizationEvidence(BaseModel):
+    delivery_principal_binding_digest: str
+    authorized_scope_set_digest: str
+    issuer_id: str
+    audience: str
+    authentication_session_id: str
+    ingress_policy_revision: str
+    trust_snapshot_digest: str
+    revocation_snapshot_digest: str
+    issued_at: datetime
+    expires_at: datetime
+    evidence_digest: str
+
+class AuthenticatedIngressContext(BaseModel):
+    delivery_principal_binding: DeliveryPrincipalBinding
+    current_authorized_scopes: CurrentAuthorizedScopeSet
+    session_authorization: SessionAuthorizationEvidence
+
+class AuthenticatedHostIngress(BaseModel):
+    authenticated_principal: object
+    authenticated_session: object
+    provider_identity: str
+    received_at: datetime
+
+class AuthenticatedIngressContextResolver(Protocol):
+    def resolve(
+        self,
+        host_ingress: AuthenticatedHostIngress,
+        server_time: datetime,
+    ) -> AuthenticatedIngressContext: ...
+
+class DeliveryIdentity(BaseModel):
+    delivery_principal_binding_digest: str
+    delivery_coordinate: DeliveryCoordinate
+    delivery_key_digest: str
+
+class DeliveryAuthorizationRequest(BaseModel):
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding: DeliveryPrincipalBinding
+    session_authorization: SessionAuthorizationEvidence
+    required_outcome_scopes: "RequiredOutcomeScopeSet"
+    purpose: Literal["admission", "recovery"]
+
+class GovernedMessageSemanticContext(BaseModel):
+    message_id: str
+    source_reference: str
+    effective_scope: MemoryScope
+    authority: SourceAuthority
+    data_classification: str
+    modality: SourceModality
+    remote_egress_eligible: bool
+    context_digest: str
+
+class SegmentGovernanceBinding(BaseModel):
+    source_id: str
+    segment_id: str
+    message_semantic_context_digest: str
+    effective_scope_digest: str
+    authority_digest: str
+    data_classification: str
+    modality: SourceModality
+    provider_egress_decision_digest: str
+    egress_disposition: Literal["allow_verbatim", "deny"]
+    binding_digest: str
+
+class SegmentGovernanceCarrierSet(BaseModel):
+    source_id: str
+    bindings: tuple[SegmentGovernanceBinding, ...]
+    carrier_set_digest: str
+
+class RequiredOutcomeScopeSet(BaseModel):
+    tenant_partition_id: str
+    scopes: tuple[MemoryScope, ...]
+    canonical_scope_digests: tuple[str, ...]
+    required_scope_set_digest: str
+
+class AdmissionScopeAuthorizationProof(BaseModel):
+    delivery_principal_binding_digest: str
+    required_outcome_scope_set_digest: str
+    current_authorized_scope_set_digest: str
+    session_authorization_evidence_digest: str
+    decision: Literal["authorized"]
+    authorized_at: datetime
+    proof_digest: str
+
+class MessageAdmissionIdentity(BaseModel):
+    delivery_principal_binding_digest: str
+    authenticated_source_reference: str
+    authenticated_source_reference_key_digest: str
+    message_bytes_digest: str
+    segment_governance_binding_digest: str
+    message_admission_key_digest: str
+
+class MessageAdmissionCarrierSet(BaseModel):
+    source_id: str
+    identities: tuple[MessageAdmissionIdentity, ...]
+    carrier_set_digest: str
+
+class GovernanceCarrierArtifact(BaseModel):
+    artifact_id: str
+    atomic_generation: int = Field(ge=1)
+    segment_governance: SegmentGovernanceCarrierSet
+    message_admissions: MessageAdmissionCarrierSet
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    canonical_payload: bytes
+    canonical_payload_digest: str
+    artifact_digest: str
+
+class AdmissionAuthorizationIndexEntry(BaseModel):
+    opaque_operation_reference_digest: str
+    opaque_delivery_reference_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    operation_id: str
+    operation_fence_binding_digest: str
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    governance_carrier_artifact_id: str | None
+    governance_carrier_artifact_digest: str | None
+    governance_carrier_atomic_generation: int | None
+    internal_result_key: str
+    entry_digest: str
+
+class MessageAdmissionIndexEntry(BaseModel):
+    message_admission_identity: MessageAdmissionIdentity
+    governance_carrier_artifact_id: str
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    governance_carrier_atomic_generation: int = Field(ge=1)
+    first_source_id: str
+    first_operation_fence_binding_digest: str
+    terminal_result_digest: str | None
+    entry_digest: str
+
+class LegacyDeliveryCoordinateEvidence(BaseModel):
+    legacy_record_id: str
+    legacy_writer_epoch: int = Field(ge=0)
+    delivery_principal_binding_digest: str
+    legacy_coordinate_kind: Literal["public", "raw_composite_child"]
+    legacy_normalized_value: str
+    legacy_normalized_utf8_bytes: bytes
+    original_value: str | None
+    original_utf8_bytes: bytes | None
+    authenticated_parent_legacy_record_id: str | None
+    registered_child_kind: str | None
+    persisted_fanout_record_digest: str | None
+    referenced_state_digests: tuple[str, ...]
+    evidence_digest: str
+
+class DeliveryCoordinateOwnerDisposition(BaseModel):
+    disposition_id: str
+    migration_plan_id: str
+    legacy_evidence_digest: str
+    authoritative_original_evidence_bytes: bytes
+    authoritative_original_evidence_digest: str
+    selected_coordinate: DeliveryCoordinate
+    owner_authority_id: str
+    owner_authority_revision: str
+    issued_at: datetime
+    disposition_digest: str
+
+class DeliveryCoordinateMigrationEntry(BaseModel):
+    migration_plan_id: str
+    legacy_evidence: LegacyDeliveryCoordinateEvidence
+    target_coordinate: DeliveryCoordinate
+    target_delivery_key_digest: str
+    owner_disposition: DeliveryCoordinateOwnerDisposition | None
+    migrated_state_digests: tuple[str, ...]
+    entry_digest: str
+
+class DeliveryCoordinateMigrationPlan(BaseModel):
+    migration_plan_id: str
+    source_writer_epoch: int = Field(ge=0)
+    target_writer_epoch: int = Field(ge=1)
+    legacy_snapshot_token: str
+    complete_legacy_record_ids: tuple[str, ...]
+    legacy_evidence_digests: tuple[str, ...]
+    entry_digests: tuple[str, ...]
+    canonical_plan_bytes: bytes
+    plan_digest: str
+
+class DeliveryCoordinateMigrationCheckpoint(BaseModel):
+    migration_plan_id: str
+    plan_digest: str
+    completed_entry_digests: tuple[str, ...]
+    target_generation: int = Field(ge=1)
+    checkpoint_digest: str
+
+class DeliveryCoordinateMigrationCertificate(BaseModel):
+    migration_plan_id: str
+    plan_digest: str
+    source_writer_epoch: int = Field(ge=0)
+    target_writer_epoch: int = Field(ge=1)
+    legacy_snapshot_token: str
+    complete_legacy_record_ids: tuple[str, ...]
+    verified_entry_digests: tuple[str, ...]
+    owner_disposition_digests: tuple[str, ...]
+    target_generation: int = Field(ge=1)
+    independent_verifier_fingerprint: str
+    certificate_digest: str
+
+class DeliveryCoordinateMigrationActivation(BaseModel):
+    migration_plan_digest: str
+    migration_certificate_digest: str
+    source_writer_epoch: int = Field(ge=0)
+    target_writer_epoch: int = Field(ge=1)
+    target_generation: int = Field(ge=1)
+    activation_digest: str
+
+class MetadataPoorSnapshotEvidence(BaseModel):
+    schema_version: Literal[1]
+    source_kind: Literal["conversation_snapshot"]
+    retained_source_digest: str
+    reason: Literal["missing_message_governance"]
+```
+
+`memory_evolution.ingestion_contracts.normalize_delivery_id` is the only
+delivery-ID validator and has contract version `1`. It accepts a Unicode scalar
+sequence, encodes it with strict UTF-8, and returns the same scalar sequence
+and byte sequence without trimming, Unicode normalization, case folding,
+whitespace rewriting, delimiter rewriting, or any other transformation. It
+rejects an empty or all-Unicode-whitespace sequence, an unpaired surrogate or
+other strict-encoding failure, and any encoding longer than 1,024 bytes.
+Leading or trailing whitespace in a non-all-whitespace value is accepted and
+preserved. For contract version `1`, "whitespace" is exactly the Unicode 15.1.0
+`White_Space` property table packaged with `ingestion_contracts.py`; host
+runtime Unicode tables cannot change the decision. Adapters may not deserialize
+`NormalizedDeliveryId` from callers or implement a local equivalent.
+`NormalizedDeliveryId.strict_utf8_bytes` must equal
+`value.encode("utf-8", errors="strict")`, and `utf8_byte_length` must equal the
+length of those bytes; either mismatch rejects.
+
+A public request always produces `PublicDeliveryCoordinate`. Composite fan-out
+accepts that validated public parent only at the server adapter boundary and
+produces `CompositeChildDeliveryCoordinate` from one registered, nonempty
+`child_kind`; it never manufactures a caller-visible child delivery string.
+The `kind` discriminator and composite namespace version are part of the
+coordinate digest, so a public ID containing `:`, a child literal, or text that
+resembles an older concatenated form remains a distinct public coordinate.
+Caller injection of a composite coordinate, an unregistered child kind,
+duplicate child kind, or a coordinate/digest mismatch is the reserved
+composite-namespace collision and rejects before source admission. There is no
+delimiter alias or legacy concatenation parser.
+
+All following preimages use the canonical typed-value profile's unambiguous
+length-prefixed encoding and SHA-256. The ordered field lists are exact;
+omitted fields are forbidden:
+
+- `DeliveryPrincipalBinding.binding_digest`: domain
+  `memorii.semantic-ingestion.delivery-principal-binding`, preimage version `1`,
+  `provider_identity`, `principal_subject_id`, and `tenant_partition_id`;
+- `NormalizedDeliveryId.normalized_delivery_id_digest`: domain
+  `memorii.semantic-ingestion.normalized-delivery-id`, preimage version `1`,
+  normalization contract version `1`, UTF-8 byte length, and exact strict UTF-8
+  bytes;
+- `PublicDeliveryCoordinate.coordinate_digest`: domain
+  `memorii.semantic-ingestion.public-delivery-coordinate`, preimage version
+  `1`, coordinate kind, and normalized-delivery-ID digest;
+- `CompositeChildDeliveryCoordinate.coordinate_digest`: domain
+  `memorii.semantic-ingestion.composite-child-delivery-coordinate`, preimage
+  version `1`, coordinate kind, normalized-parent-delivery-ID digest, composite
+  namespace version, and exact registered child-kind bytes;
+- `DeliveryIdentity.delivery_key_digest`: domain
+  `memorii.semantic-ingestion.delivery-key`, preimage version `1`,
+  delivery-principal-binding digest, and delivery-coordinate digest.
+
+No session, authorized-scope set or digest, authorization proof, policy/trust
+or revocation coordinate, issue/expiry/authorization time, lease coordinate,
+or `AuthenticatedIngressContext` value participates in those preimages.
+
+`memory_evolution.delivery_coordinate_migration` owns the only transition from
+persisted pre-target delivery identity into this algebra. Before target-writer
+activation it freezes new source-epoch admission, drains or terminalizes every
+source-epoch operation, takes one complete state-backed snapshot, and
+enumerates every persisted public delivery record, raw composite-child record,
+fan-out record, admission/recovery index, checkpoint, result, and replay
+reference reachable from that snapshot. The finite ordered enumeration and
+every migration entry are content-addressed in one
+`DeliveryCoordinateMigrationPlan`; no live adapter enumeration or heuristic
+scan can supplement it.
+
+For each legacy public record, `LegacyDeliveryCoordinateEvidence` preserves the
+persisted value and exact UTF-8 bytes after the old `strip_whitespace`
+validator. It also preserves the exact original value and bytes when retained
+request, journal, or authenticated provider evidence has them. Absence is
+represented by null fields, never by copying the stripped value into the
+original fields. A target public coordinate is derived only from independently
+verifiable original bytes. When those bytes are unavailable or conflicting,
+the mapping is non-invertible and target activation is blocked unless an
+explicit `DeliveryCoordinateOwnerDisposition` binds independently retained
+authoritative original-byte evidence and selects the corresponding
+version-1 coordinate. A disposition cannot contain an uncorroborated value,
+merge two effects, discard a reachable effect, or synthesize an identity.
+
+A legacy raw composite child is mapped to a
+`CompositeChildDeliveryCoordinate` only from a persisted fan-out relationship
+that names its parent legacy record and registered child kind. Delimiter
+parsing is forbidden: current `sync_turn` rows whose raw IDs resemble
+`<parent>:user` or `<parent>:assistant` become children only when their
+persisted fan-out state proves that relationship. A persisted public ID such as
+`X:user` remains public, while a child with the same raw legacy text remains
+composite. Missing parent
+or child state, duplicate child kinds, partial fan-out with an unenumerated
+persisted child, public/child ambiguity, two legacy records targeting one
+coordinate or key, one legacy record targeting multiple coordinates, and
+unequal referenced source/result/effect state are blocking collisions. NFC and
+NFD, case, whitespace, and delimiter-like byte sequences are compared exactly;
+no migration normalization repairs them.
+
+Migration writes one unpublished target generation. Each entry atomically
+writes its typed coordinate, target key/index rows, rewritten state references,
+entry bytes, and an idempotent checkpoint keyed by plan and entry digest.
+Restart reloads the plan and checkpoint, verifies already written bytes, and
+continues only missing entries; a mismatch blocks. An independent verifier
+re-enumerates the frozen snapshot, recomputes all evidence, coordinate, key,
+entry, state-reference, collision, fan-out, and plan digests, and issues a
+`DeliveryCoordinateMigrationCertificate` only for a complete bijection with no
+undisposed ambiguity. Partial child fan-out is complete only when each expected
+child is either represented by its existing state or proven not admitted by
+the persisted fan-out record; migration never creates a missing child effect.
+
+Target activation is one compare-and-set transaction over the still-drained
+source epoch, exact plan/certificate digests, unpublished target generation,
+and next writer epoch. It publishes that generation and advances the writer
+epoch together. Before activation, rollback discards or leaves unpublished the
+candidate generation and may resume only the unchanged source epoch. After
+activation, rollback is a forward target-epoch transition over the same typed
+coordinates; it never re-enables a legacy writer, legacy lookup, or old
+generation. Runtime then has exactly one target lookup/write path. Legacy
+values, stripped bytes, original-byte evidence, plan entries, and dispositions
+remain audit evidence only and are not an alias, parser, compatibility DTO,
+dual-read index, or retry fallback.
+
+A request spanning activation is admitted exactly once: pre-activation state
+is rewritten under its evidence-backed target coordinate, and the post-
+activation adapter computes that same coordinate from the retried original
+bytes. Admission/recovery CAS reloads the migrated source and result rather
+than creating another operation or graph effect. If exact original bytes cannot
+support that equality, activation remains blocked. [SIA-I318]
+
+Migration digests use the canonical typed-value profile's length-prefixed
+encoding and SHA-256. Their exact ordered preimages are:
+
+- `LegacyDeliveryCoordinateEvidence.evidence_digest`: domain
+  `memorii.semantic-ingestion.delivery-coordinate-migration-evidence`,
+  preimage version `1`, legacy record ID, source writer epoch, stable principal
+  binding digest, legacy coordinate kind, exact legacy normalized value/bytes,
+  nullable exact original value/bytes, nullable authenticated parent record ID,
+  nullable registered child-kind bytes, nullable persisted fan-out digest, and
+  ordered referenced-state digests;
+- `DeliveryCoordinateOwnerDisposition.disposition_digest`: domain
+  `memorii.semantic-ingestion.delivery-coordinate-owner-disposition`, preimage
+  version `1`, disposition ID, plan ID, legacy-evidence digest, canonical
+  authoritative-original-evidence bytes and digest, selected typed-coordinate
+  digest, owner authority ID/revision, and issue time;
+- `DeliveryCoordinateMigrationEntry.entry_digest`: domain
+  `memorii.semantic-ingestion.delivery-coordinate-migration-entry`, preimage
+  version `1`, plan ID, complete legacy-evidence digest, target-coordinate
+  digest, target delivery-key digest, nullable disposition digest, and ordered
+  migrated-state digests;
+- `DeliveryCoordinateMigrationPlan.plan_digest`: domain
+  `memorii.semantic-ingestion.delivery-coordinate-migration-plan`, preimage
+  version `1`, plan ID, source/target writer epochs, frozen snapshot token,
+  ordered complete legacy record IDs, ordered evidence digests, ordered entry
+  digests, and exact canonical plan bytes;
+- `DeliveryCoordinateMigrationCheckpoint.checkpoint_digest`: domain
+  `memorii.semantic-ingestion.delivery-coordinate-migration-checkpoint`,
+  preimage version `1`, plan ID/digest, ordered completed-entry digests, and
+  unpublished target generation;
+- `DeliveryCoordinateMigrationCertificate.certificate_digest`: domain
+  `memorii.semantic-ingestion.delivery-coordinate-migration-certificate`,
+  preimage version `1`, plan ID/digest, source/target writer epochs, frozen
+  snapshot token, ordered complete record IDs, ordered verified-entry and
+  disposition digests, target generation, and independent-verifier
+  fingerprint; and
+- `DeliveryCoordinateMigrationActivation.activation_digest`: domain
+  `memorii.semantic-ingestion.delivery-coordinate-migration-activation`,
+  preimage version `1`, plan/certificate digests, source/target writer epochs,
+  and published target generation.
+
+All ordered sets are canonical-byte-sorted and duplicate-free. An independent
+decoder recomputes each nested digest from loadable bytes; digest-only,
+missing, extra, reordered, duplicate, or cross-plan content blocks activation.
+`canonical_plan_bytes` is the canonical encoding of all plan fields except
+itself and `plan_digest`, so neither field creates a digest cycle.
+
+`GovernanceCarrierArtifact.canonical_payload` is the canonical encoding of its
+decoded segment-governance and message-admission carrier sets plus complete
+required-outcome scope set, not an encoding of the artifact envelope itself.
+Its payload digest must equal independently encoding those values;
+`artifact_digest` additionally binds artifact ID and atomic generation. Every
+index entry's artifact ID, digest, and generation must load that exact envelope
+before its identity can be reused.
+
+`CurrentAuthorizedScopeSet.scopes` is the server-derived,
+non-caller-serializable canonical-byte-sorted, duplicate-free set of complete
+`MemoryScope` values currently authorized for its tenant. Its digest binds its
+tenant, ordered complete scope bytes, and ordered scope digests. The resolver
+accepts no caller representation of this type, validates it against the
+current session, policy, trust, expiry, and revocation lifecycle, and binds its
+digest into `SessionAuthorizationEvidence`; a substituted set or digest
+mismatch rejects before lookup, mutation, or disclosure.
+
+`RequiredOutcomeScopeSet.scopes` is the canonical-byte-sorted, duplicate-free
+set of complete `MemoryScope` values resolved from every segment's authenticated
+semantic context. Its digest binds tenant, ordered complete scope bytes, and
+ordered scope digests. Segment-governance bindings are an exact many-to-one
+projection onto that set: every binding's `effective_scope_digest` equals
+exactly one member, and every member is reached by at least one binding. A
+source with no semantic segment has the canonical empty set for its admitted
+tenant; principal/delivery authorization still applies. The set and digest are
+derived before semantic admission and persisted atomically with the carrier
+artifact, source observation, protected
+authorization-index entry, and admission result. They are never reconstructed
+from terminal results or caller claims. [SIA-I317]
+
+For every non-null semantic projection, source governance validates all segment
+bindings and derives this complete set before constructing the atomic semantic
+admission request. Admission requires equal tenant partitions and requires
+`required_outcome_scopes.scopes` to be a subset of
+`context.current_authorized_scopes.scopes`, then verifies that the current scope
+set and `SessionAuthorizationEvidence` are byte-consistent and current for
+session, policy, trust, expiry, and revocation. Exact and strict-superset
+coverage authorize; partial, zero, cross-tenant, stale, or revoked coverage
+does not. A successful decision produces
+`AdmissionScopeAuthorizationProof`, whose digest binds the stable principal,
+complete required-set digest, current authorized-set digest, current session
+evidence digest, decision, and authorization time.
+
+The proof, current-set digest, session evidence digest, and authorization time
+are current-use and audit authority only. They are atomically persisted beside
+the observation and protected admission index but are not fields of that index
+and never contribute to delivery, operation, fence, allocation, checkpoint,
+result, recovery, or replay identity
+or equality. A governed source denied complete-set coverage returns
+`SourceAdmissionRejected` under the existing incompatible-scope policy and is
+not retained as an authorization-denial fallback. A source that the existing
+governance/trigger policy independently classifies as evidence-only may retain
+only after current authorization covers every scope it represents; a
+metadata-poor source represents the canonical empty set and creates no semantic
+segment. Neither path obtains authorization by downgrading a coverage denial.
+Missing or stale authorization rejects both paths before persistence. In every
+denied case no Step 2 work, provider call, local/resource reservation,
+operation lease, or graph effect occurs.
+
+The protected `AdmissionAuthorizationIndexEntry` contains no lifecycle status,
+source result, group result, or replay-artifact content. It is the only
+repository the result authorizer may read before authorization and resolves the
+opaque references to the stable principal/key/fence, complete required-scope
+set, immutable carrier generation, and internal result key.
+
+`GovernedConversationSnapshotInput` has an exact one-to-one, order-preserving
+mapping between messages and contexts. Each context is server-derived from the
+authenticated ingress context and policy, never from `role`, content, a caller
+scope, or a fabricated message reference. `SemanticProjectionSegment` carries
+the matching context digest and is eligible for semantic lanes only when that
+context is present and exact. This is an internal admission input and does not
+add an alias or versioned public provider API. A current metadata-poor `session_end` or
+`pre_compress` hook remains accepted as immutable retained evidence under the
+existing envelope shape, represented by `MetadataPoorSnapshotEvidence`; it
+creates neither a semantic projection nor a synthetic message identity,
+authority, scope, classification, or egress eligibility. It is permanently
+evidence-only for that admitted delivery, starts no active semantic promotion,
+and creates zero remote wire activity. This is not a legacy authority.
+
+The resolver is a production-owned dependency of `ProviderMemoryService`,
+injected by `provider/factory.py` and passed unchanged through
+`provider/ingestion.py` to admission. Provider adapters accept an
+`AuthenticatedHostIngress` only from their authenticated host boundary; they
+must not construct it from `sync_event` fields, headers supplied by a general
+caller, or a deserialized provider payload. The resolver verifies issuer,
+audience/provider identity, tenant membership, authorized scope set, session
+expiry, and session/key revocation against its current trust snapshot, then
+issues separate stable principal binding and bounded session-authorization
+evidence. `SessionAuthorizationEvidence.evidence_digest` includes issuer,
+stable binding digest, authorized-scope digest, session identifier,
+policy/trust/revocation snapshot, and issue/expiry times. It is not a durable
+identity coordinate, and `AuthenticatedIngressContext` has no aggregate digest
+that a durable schema can accidentally reuse. Admission, recovery, and result
+access revalidate fresh authorization evidence for the persisted stable binding
+at use time. Missing
+resolver, missing authenticated host ingress, unknown issuer, invalid or
+expired signature/session, unavailable revocation state, or any mismatch is a
+non-disclosing fail-closed admission rejection with no lookup, write, local
+reservation, or remote call. A host that cannot supply this boundary remains
+evidence-only under its existing coarse lifecycle and cannot enter semantic
+admission; no compatibility API or caller-selected substitute exists.
+
+Admission atomically creates one immutable `OperationFenceBinding` with the
+accepted delivery and no later lookup or recomputation:
+
+```python
+class OperationFenceBinding(BaseModel):
+    operation_id: str
+    operation_fence_id: str
+    source_id: str
+    source_digest: str
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    allocation_namespace_id: str
+    binding_digest: str
+```
+
+Its `operation_fence_id` is server-derived from the atomic admission request
+and is unique in the store. The exact `operation_fence_id` preimage is canonical
+typed-value encoding of domain
+`memorii.semantic-ingestion.operation-fence`, preimage version `1`,
+`DeliveryIdentity.delivery_key_digest`, immutable admitted `source_id`,
+immutable admitted `source_digest`, and immutable `operation_id`.
+The exact `allocation_namespace_id` preimage uses the same ordered fields with
+the distinct domain `memorii.semantic-ingestion.allocation-namespace` and
+preimage version `1`. `OperationFenceBinding.binding_digest` uses domain
+`memorii.semantic-ingestion.operation-fence-binding`, preimage version `1`, and
+every shown field except `binding_digest`, in declaration order. Session
+authorization evidence is retained beside admission for audit but is forbidden
+from this model, its digest, fence/operation/allocation derivation, and every
+durable identity index. The admission
+write persists the binding with the observation and pending operation under
+the same delivery-key compare-and-set. Every operation state, lease binding,
+atomic checkpoint/group/finalization request, source summary, local admission
+reservation/outcome, and source/group result carries the byte-identical binding
+directly. A source/group persistence request carries it through its exact
+`OperationLeaseBinding`. Event batches, observation deltas, replay-artifact
+publications, recovery indexes, and reducer inputs retain their contractually
+defined scalar projections and persisted association with that binding; they
+are valid only when every projection equals the enclosing binding. Every
+top-level durable, result, recovery, and replay handoff rejects a missing,
+different, or recomputed binding before mutation or disclosure. It replaces the
+ambiguous `delivery_fence_id`; that field is forbidden in all new or persisted
+contracts.
+
+Admission atomically binds the stable
+`DeliveryPrincipalBinding.binding_digest` and
+`DeliveryIdentity.delivery_key_digest` through
+`SourceObservation`, `SourceAdmissionAccepted`, `PendingSemanticOperation`,
+`OperationLeaseBinding`, `operation_fence_id`, `allocation_namespace_id`, all
+recovery/replay indexes, source finalization, and the typed source result.
+`operation_id`, fence, and allocation namespace are server-derived from the
+stable binding, delivery-key digest, and immutable source/admission bytes after
+excluding all session-authorization and audit fields. Every nested
+`DeliveryIdentity` reproduces the same binding digest; every retained
+identity-bearing contract carries both stable digests explicitly and rejects a
+missing or unequal copy. Authorization evidence is retained separately and can
+be renewed. Non-disclosing failure responses carry neither stable digest.
+Recovery reauthorizes the persisted binding/key rather than requiring the same
+session. A missing, forged, stale, cross-principal, cross-tenant, cross-scope,
+or mismatched request returns the same non-disclosing admission failure shape
+and performs no lookup result, mutation, or result disclosure.
+`SourceAdmissionRejected` and
+`SourceAdmissionRetryRequired` therefore carry only an opaque request
+correlation token and generic reason class, never an unqualified delivery ID.
+
+**Egress-policy control plane.** Egress policy storage is a separate
+authenticated governance control plane, not a semantic-writer or generic
+memory-writer capability. It accepts only canonical signed commands with a
+purpose `provider_egress_governance`, authenticated administrator subject,
+tenant partition, command nonce, issued/expiry times, target policy digest,
+expected active-record digest, and lifecycle-checked signing-key reference.
+The command algebra is closed to `install`, `activate`, `rotate`, `revoke`,
+and `rollback_to_previously_approved`; each command is authorized against the
+governance trust snapshot at command evaluation time. Policy snapshots are
+immutable; activation is append-only and monotonic in an unsigned integer
+activation sequence, and may only name an installed, valid, non-revoked,
+tenant-matching snapshot. Rollback writes a later activation record and never
+decrements sequence or revives a revoked snapshot.
+
+Every command, including `install`, carries the exact current active-record
+digest (the repository's immutable genesis `deny_all` record for first
+installation) and executes one atomic CAS against that record. The repository
+returns only `installed` for a first successful install, `transitioned` for a
+successful active-record change, `idempotent` when the same command digest has
+already produced the same record, and `stale` when its expected record differs;
+`stale` makes no policy or active-record change. A command may not use a
+nullable or wildcard CAS coordinate.
+
+The policy repository and its activation records have an ACL which excludes
+generic memory writers, semantic-writer bindings, provider adapters, and
+source-admission callers. Only the egress-governance service may mutate them.
+Admission snapshots the active policy into the source context, but transport
+re-loads the current active record immediately before serialization and
+recomputes the decision against the retained source digest, segment context,
+provider/model/region, and policy lifecycle. Any command/signature/lifecycle,
+tenant, source, segment, provider, model, region, digest, or active-record
+mismatch denies egress with zero wire activity. A control-plane outage also
+denies transport.
+
+**Graph observation authorization and paging.** Observation has a distinct
+authenticated caller boundary. `AuthenticatedGraphObservationContext` is
+out-of-band and contains authenticated subject, tenant partition, authorized
+scope set, session, and context digest. A production-owned
+`GraphObservationAuthorizer` evaluates one purpose-bound policy before cohort
+or storage lookup and returns either `authorized` with an immutable
+`GraphObservationAuthorizationDecision` (authorized scope identity, policy
+revision, decision digest, and expiry) or a single non-disclosing denial. The
+request never selects a scope: its scope field is a requested constraint which
+must be a subset of the decision. The authorizer, policy store, and decision
+issuer are not owned by the acceptance harness or graph reader.
+
+```python
+class EgressGovernanceCommand(BaseModel):
+    kind: Literal["install", "activate", "rotate", "revoke", "rollback_to_previously_approved"]
+    tenant_partition_id: str
+    administrator_subject_id: str
+    purpose: Literal["provider_egress_governance"]
+    target_policy_digest: str
+    expected_active_record_digest: str
+    command_nonce: str
+    issued_at: datetime
+    expires_at: datetime
+    signing_key_reference: str
+    signature: str
+
+class LocalExecutionResourceProfile(BaseModel):
+    profile_revision: str
+    deployment_manifest_digest: str
+    capability_fingerprint: str
+    startup_prerequisite_digests: tuple[str, ...]
+    disk_reservation_bytes: int = Field(gt=0)
+    memory_reservation_bytes: int = Field(gt=0)
+    maximum_concurrent_admissions: int = Field(gt=0)
+    maximum_queued_admissions: int = Field(gt=0)
+    stage_deadline: timedelta
+    queue_deadline: timedelta
+    deployment_authorization_digest: str
+    profile_digest: str
+
+LocalAdmissionDecision = Literal[
+    "admitted", "queue_full", "deadline_expired", "resource_unavailable", "profile_unapproved"
+]
+
+class LocalAdmissionOutcome(BaseModel):
+    decision: LocalAdmissionDecision
+    source_id: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    operation_fence_binding: OperationFenceBinding
+    resource_profile_digest: str | None
+    reason_codes: tuple[str, ...]
+    outcome_digest: str
+
+class ApprovedCapabilityBaselineArtifact(BaseModel):
+    capability_fingerprint: str
+    capability_contract_digest: str
+    coverage_manifest_digest: str
+    statistical_gate_manifest_digest: str
+    monitoring_policy_digest: str
+    unsupported_cells_digest: str
+    dependency_bundle_digest: str
+    deployment_authorization_digest: str
+    canonical_content_digest: str
+    artifact_digest: str
+
+class DeploymentAuthorizationArtifact(BaseModel):
+    schema_version: Literal[1]
+    purpose: Literal[
+        "semantic_ingestion_capability_baseline",
+        "semantic_ingestion_local_resource_profile",
+        "semantic_ingestion_topology",
+    ]
+    target_kind: Literal[
+        "capability_baseline",
+        "local_resource_profile",
+        "topology",
+    ]
+    target_artifact_digest: str
+    deployment_manifest_digest: str
+    capability_fingerprint: str | None
+    verified_capability_baseline_approval_release_digest: str | None
+    signer_subject_id: str
+    signing_key_reference: str
+    authority_snapshot_digest: str
+    active_epoch: int = Field(ge=1)
+    issued_at: datetime
+    expires_at: datetime
+    authorization_digest: str
+    signature: str
+
+class DeploymentAuthorizationIssuanceRequest(BaseModel):
+    purpose: Literal[
+        "semantic_ingestion_capability_baseline",
+        "semantic_ingestion_local_resource_profile",
+        "semantic_ingestion_topology",
+    ]
+    target_kind: Literal[
+        "capability_baseline",
+        "local_resource_profile",
+        "topology",
+    ]
+    target_artifact_digest: str
+    deployment_manifest_digest: str
+    capability_fingerprint: str | None
+    verified_capability_baseline_approval_release_digest: str | None
+    requested_active_epoch: int = Field(ge=1)
+    issuance_request_digest: str
+
+class DeploymentAuthorizationSigningKey(BaseModel):
+    signing_key_reference: str
+    signer_subject_id: str
+    public_key_fingerprint: str
+    allowed_purposes: frozenset[str]
+    valid_from: datetime
+    valid_until: datetime | None
+    status: Literal["active", "retired", "revoked"]
+    revoked_at: datetime | None
+    compromise_effective_at: datetime | None
+    key_state_digest: str
+
+class DeploymentAuthorizationTrustSnapshot(BaseModel):
+    snapshot_revision: int = Field(ge=1)
+    active_epoch: int = Field(ge=1)
+    keys: tuple[DeploymentAuthorizationSigningKey, ...]
+    revoked_authorization_digests: tuple[str, ...]
+    snapshot_digest: str
+
+class DeploymentAuthorizationUse(BaseModel):
+    purpose: str
+    target_kind: str
+    target_artifact_digest: str
+    deployment_manifest_digest: str
+    capability_fingerprint: str | None
+    use_point: Literal["startup", "activation", "admission", "stage_start"]
+    use_digest: str
+
+class DeploymentAuthorizationDecision(BaseModel):
+    decision: Literal["authorized", "denied"]
+    authorization_digest: str | None
+    trust_snapshot_digest: str
+    active_epoch: int
+    evaluated_at: datetime
+    decision_digest: str
+
+class DeploymentAuthorizationTrustStore(Protocol):
+    def load_current(self) -> DeploymentAuthorizationTrustSnapshot: ...
+
+class DeploymentAuthorizationVerifier(Protocol):
+    def verify(
+        self,
+        authorization_bytes: bytes,
+        use: DeploymentAuthorizationUse,
+        server_time: datetime,
+    ) -> DeploymentAuthorizationDecision: ...
+```
+
+The resolved cohort is the one canonical flattened
+`GraphObservationStreamRecord` stream defined in Section 5.4.3. It sorts by
+`(record_kind, primary_key)`, and every record participates
+exactly once. `total_page_size` bounds the whole stream page and is validated
+against the authorized page-policy snapshot. The cursor is a signed versioned
+payload containing cursor schema version, stream position (the count of
+preceding triples), page-policy revision,
+authenticated caller-context digest, authorization-decision digest and expiry,
+cohort/snapshot/revision/view/time coordinates, and the preceding triple when
+position is nonzero. It never contains a caller-selected offset. Invalid
+encoding/signature/version/position yields `invalid_cursor`; expired snapshot
+or revision yields `stale_cursor`; current authorization failure or revocation
+yields `revoked_access`. These outcomes have the same non-disclosing transport
+shape and disclose no page, cohort, cursor replacement, seed existence, digest,
+or record. The authorizer re-evaluates every page before cohort lookup; an
+authorization-policy outage denies likewise.
+
+**Policy and resource validity.** Every numeric input used by statistical,
+monitoring, resource, admission, queue, deadline, or overload policy is a
+finite number. Counts, byte limits, capacities, and concurrency limits are
+integers greater than zero; durations are positive finite durations; alpha and
+probability/budget fields are strictly greater than zero and at most one;
+bounds are finite with lower strictly less than upper; warning and breach
+thresholds are finite and ordered in the declared unsafe direction; all metric
+thresholds lie inside their declared finite bounds. Duplicate gates, empty
+gate sets, empty enabled-cell metrics, vacuous bounds, NaN, infinity, negative
+zero where a count is required, and over-budget alpha allocations reject the
+policy before evaluation.
+
+Before any implementation activation or held-out evaluation, each active
+capability requires one immutable, content-bound, independently approved
+baseline artifact. It binds the exact capability contract, coverage manifest,
+statistical-gate manifest, monitoring policy, unsupported cells, dependency
+bundle, policy digests, and canonical content digests. The separate
+`CapabilityBaselineApprovalRelease` binds approver identity, approval time, and
+acceptance lifecycle to that exact artifact digest. The baseline supplies the
+substantive statistical/monitoring thresholds, cluster minima, and freshness
+deadlines; this design deliberately does not choose them.
+
+Both deployment targets name one production-owned
+`DeploymentAuthorizationArtifact`. The artifact uses the canonical ingestion
+typed-value profile and its registered deployment-authorization schema binding;
+`authorization_digest` excludes only `signature`, and the signature covers the
+complete binding and those exact canonical bytes. Purpose, target kind and digest,
+signer and key, immutable authority snapshot, active epoch, issue/expiry times,
+deployment manifest, and capability fingerprint are therefore content-bound.
+The target's `deployment_authorization_digest` equals that
+`authorization_digest`. Its `target_artifact_digest` equals `profile_digest`
+for `local_resource_profile` and `artifact_digest` for `capability_baseline`;
+purpose and target kind must be the matching closed pair. No authorization may
+cover two targets or be reused across those purposes.
+
+There is no digest cycle: `LocalExecutionResourceProfile.profile_digest` and
+`ApprovedCapabilityBaselineArtifact.artifact_digest` are computed over their
+canonical target content with `deployment_authorization_digest` omitted. The
+baseline `canonical_content_digest` is likewise approval- and authorization-
+neutral. Acceptance signs the stable baseline `artifact_digest`; deployment
+authorization signs that same target digest plus the verified approval-release
+digest; only then is `deployment_authorization_digest` attached to the target
+envelope. Verification recomputes the stable target digest, authorization
+digest, and attachment equality independently. Changing any target content
+invalidates both approval and authorization, while changing only the attachment
+cannot retarget either signature.
+
+For `capability_baseline`, acceptance first validates the independently signed
+`CapabilityBaselineApprovalRelease` against the exact serialized
+`ApprovedCapabilityBaselineArtifact`. It places the resulting
+`VerifiedCapabilityBaselineApproval.release_digest` in
+`DeploymentAuthorizationIssuanceRequest.verified_capability_baseline_approval_release_digest`.
+The deployment-authorization issuer requires that field to be non-null for the
+baseline purpose and null for resource-profile and topology purposes, copies it
+unchanged into `DeploymentAuthorizationArtifact`, and includes it in
+`authorization_digest` and the signature. Missing approval, wrong purpose or
+target, coordinate substitution, or acceptance verification failure prevents
+issuance. The issuer consumes only the verified digest and issuance request; it
+does not import or invoke the acceptance schema, verifier, keys, or lifecycle
+store.
+
+The resulting deployment authorization expires no later than the approval
+release. Acceptance supersession, revocation, compromise, or rollback rejection
+must cause the deployment authority to revoke every authorization naming that
+release digest and advance its active epoch before publishing a replacement as
+active. The control plane does not acknowledge that acceptance lifecycle
+transition until the production revocation is durable. Production observes
+only the production trust-store transition and never consults acceptance state.
+
+`DeploymentAuthorizationVerifier` is a read-only production port backed by
+`DeploymentAuthorizationTrustStore`; neither interface can publish, activate,
+rotate, or revoke authority. At startup, capability activation, local
+admission, and immediately before each local learned stage, it loads the
+current production trust snapshot and requires exact schema, canonical bytes,
+digest, purpose, target, manifest/capability binding, authorized signer/key,
+signature, authority snapshot, current active epoch, issue/expiry interval,
+non-revocation, and non-compromise at the use time. A trust-store outage or any
+superseded, revoked, expired, unsigned, wrong-purpose, or substituted artifact
+denies authorization: capability activation and local admission are
+evidence-only with zero learned or graph mutation.
+
+Acceptance independently decodes and verifies the serialized authorization
+bytes before publishing them and before held-out evaluation, using only its own
+schemas and trust inputs. Production independently decodes the published bytes
+into its contract and imports no acceptance module, schema, key, verifier, or
+trust policy. Cross-decoder canonical-byte fixtures must agree; disagreement
+blocks publication and production use. At runtime production verifies only the
+resulting deployment authorization, including the signed approval-release
+digest; it never reads or trusts the acceptance release directly.
+
+`SIA-ED-POLICY-001` governs the substantive initial threshold, multiplicity,
+cluster, unsupported-cell, freshness, and monitoring values. The approval-
+release and deployment-authorization mechanism governs who approved exact
+bytes and whether those bytes may deploy; it supplies, infers, or defaults none
+of those values. Until the external policy artifact exists and is independently
+approved, deployment authorization cannot issue and the capability remains
+evidence-only. All three registered external decisions remain unresolved.
+
+Local execution is governed by a separately approved `LocalExecutionResourceProfile`
+bound to the deployment manifest and capability fingerprint. It declares only
+typed profile coordinates: startup prerequisites, disk and memory reservation,
+maximum concurrent admissions, maximum queued admissions, per-stage deadline,
+and queue deadline. `LocalAdmissionDecision` is one of `admitted`,
+`queue_full`, `deadline_expired`, `resource_unavailable`, or
+`profile_unapproved`. `admitted` requires the exact approved profile digest;
+`profile_unapproved` requires a null profile digest, and the other outcomes
+name the evaluated approved profile. Every outcome binds the accepted source
+and the stable principal/key pair plus separate admission-authorization
+evidence. A source result for a selected local capability must
+carry exactly one outcome; graph-bound local execution requires `admitted`.
+An explicitly selected remote capability carries null and remains governed by
+the egress decision instead. The latter four are evidence-only/no-mutation outcomes:
+they retain already accepted source evidence and terminal diagnostics but start
+no learned stage, create no graph delta, consume no remote fallback, and do not
+alter allocation, admission, writer, or lifecycle authority. No supported
+profile values, model assets, or host envelope are selected here; those remain
+blocked by `SIA-ED-TOPOLOGY-001`.
+
+`memory_evolution/local_admission.py` owns one store-resident
+`LocalAdmissionReservation`, created in the same atomic admission transaction
+as `OperationFenceBinding`, never in process-local memory:
+
+```python
+class LocalAdmissionReservation(BaseModel):
+    reservation_id: str
+    delivery_key_digest: str
+    operation_fence_binding: OperationFenceBinding
+    resource_profile_digest: str
+    queue_sequence: int = Field(ge=0)
+    state: Literal["queued", "reserved", "leased", "released", "expired"]
+    queued_at: datetime
+    queue_deadline_at: datetime
+    stage_deadline_at: datetime | None
+    lease_owner_id: str | None
+    lease_token: str | None
+    lease_expires_at: datetime | None
+    state_revision: int = Field(ge=0)
+    reservation_digest: str
+```
+
+The store assigns a monotonically increasing `queue_sequence` and derives all
+deadlines from its server clock and the verified profile. A delivery-key replay
+returns its exact existing reservation; it never consumes another slot.
+`queued -> reserved` occurs only by atomic profile-digest capacity CAS in queue
+order before `queue_deadline_at`; `reserved -> leased` binds the current
+operation lease; `leased -> released` occurs with terminal finalization; and
+expired queue, reservation, or lease states transition through atomic CAS to
+`expired` then `released`. Stale recovery may reclaim only an expired,
+fence-matching reservation and must preserve its delivery key, binding, profile,
+and queue sequence. Release is idempotent only for the same terminal binding;
+cross-delivery, profile, or fence substitution rejects. Queue full, expired,
+or unavailable transitions create the existing evidence-only outcome and no
+reservation that holds capacity. Crash recovery scans only server-clock-expired
+records, performs the same CAS, and cannot start semantic work until a current
+`leased` reservation and matching operation lease exist.
+
+**Revision closure and verification.** The following determinate corrections
+are normative and are verified against the assessment baseline named in this
+document. They do not alter the external-decision register:
+`SIA-ED-REPLAY-001`, `SIA-ED-TOPOLOGY-001`, and `SIA-ED-POLICY-001` remain
+unresolved and fail closed.
+
+| Review finding | Determinate closure | Required verification |
+| --- | --- | --- |
+| R1-F001 | `ingestion_contracts.py` owns closed source/provenance/span/scope types, the one versioned canonical typed-value profile, Unicode-scalar half-open spans, projection binding, and explicit read-model relationship. | Independent codec round trips; Unicode/non-normalization, typed-value, and boundary mutations; source/projection/scope substitution; digest vectors; ownership/import audit. |
+| R1-F002 | Resolver protocol, host-only authenticated input, factory/service/adapter injection, issuer/trust/session lifecycle, use-time revalidation, and non-disclosing failure are defined. | Forged caller fields; missing resolver; two-principal same ID; expired/revoked session; cross-tenant/scope recovery; ordinary factory composition. |
+| R1-F003 | Atomic admission creates one immutable `OperationFenceBinding`; every listed top-level durable/replay handoff carries it; lower-level fence projections validate against it; `delivery_fence_id` is forbidden. | Admission/replay byte equality; lost acknowledgement; lease reclaim; binding mutation in checkpoint/group/finalization/result/replay; static field-closure audit. |
+| R1-F005 | Baseline and profile approvals require purpose-bound, signed deployment authorization with epoch, expiry, revocation, and use-time checks. | Unsigned, wrong-purpose, expired, revoked, superseded, substituted, and rollback-authorization rejection before activation/admission. |
+| R1-F006 | Store-owned reservation state is atomic, delivery/fence/profile bound, server-clock ordered, lease/recovery/release controlled. | Two-process final-slot race; replay; crash while reserved; queue/deadline race; deterministic reclaim; zero semantic/graph effects when not admitted. |
+| R1-F007 | Every egress lifecycle command uses exact active-record CAS and has install/idempotent/stale outcomes. | Race two valid transitions; exactly one transition; duplicate idempotence; stale/revoked policy causes zero transport calls. |
+| R1-F010 | Current-owner, public-contract, persistence, composition, and test references are revalidated at `44cd7773a75ac8545ddcf799c76dc94c0240f788`. | Revision-bound static reference audit recording commit, design SHA-256, line count, cited symbol paths, and test paths. |
+| R2-F001 | All four terminal source/group result variants carry and validate the admission-time `OperationFenceBinding`. | Omission/substitution mutation tests for every variant, cross-carrier equality, lost-acknowledgement byte equality, and static carrier audit. |
+| R2-F002 | Production owns deployment authorization schemas, trust/revocation state, and read-only verification; acceptance only validates and publishes serialized bytes independently. | Bidirectional import audit, cross-decoder bytes, lifecycle mutations, trust-store outage, and zero learned/graph effects on denial. |
+| R2-F003 | Section 1.5.2 is the sole external-decision register and all normative dependencies use stable `SIA-ED-*` IDs. | Undefined/duplicate ID audit plus owner/artifact/requirements/fail-closed/unblock-column completeness. |
+| R3-F001 | Scalar semantic-result lookup is replaced by one authenticated, purpose-bound typed request and a pre-repository authorization decision. | Valid caller plus forged/missing/expired/revoked/cross-authority/key/fence/outage mutations; every denial is non-disclosing and mutation-free. |
+| R3-F002 | Acceptance owns a signed, lifecycle-checked baseline approval release whose verified digest is sealed into deployment-authorization issuance and signed production bytes. | Missing/wrong-purpose/wrong-target/stale/expired/revoked/compromised/substituted/rollback release tests plus import-boundary and production-use checks. |
+| DREV-001 | Durable delivery/fence/allocation/checkpoint/result/recovery/replay identity uses the exact stable versioned preimages in Section 3.15.1 and excludes `AuthenticatedIngressContext` plus every session/scope/policy/trust/revocation value. | Renewal, rotation, scope-change, checkpoint, reclaim, recovery, replay, and result tests preserve byte-identical durable coordinates; static field/preimage audits reject volatile inputs. |
+| DREV-002 | Validated segment governance derives one complete canonical required-scope set before semantic admission; same-tenant current subset coverage and one atomic audit-only `AdmissionScopeAuthorizationProof` are mandatory. | Exact/superset/partial/zero/cross-tenant/stale/revoked and substitution cases plus provider/repository/reservation/lease/graph spies. |
+| DREV-003 | `ingestion_contracts.py` owns version-1 byte-preserving `normalize_delivery_id` and typed domain-separated public/composite coordinates; no adapter-local transform or raw child concatenation exists. | Independent cross-adapter golden vectors, byte-limit/invalid-scalar boundaries, normalization/case/whitespace pairs, composite-coordinate collision tests, and restart/retry stability. |
+| R3-001 | One finite pre-activation migration rewrites evidence-backed stripped public IDs and persisted raw child fan-out into the typed target algebra; ambiguity or collision blocks activation, and target runtime has one path. | Frozen whitespace/NFC/NFD/delimiter/fan-out fixtures, independent plan/certificate recomputation, crash/restart, rollback, collision/disposition mutation, and cross-cutover retry with exactly one source/effect. |
+| R3-002 | `SourceSemanticContext` is invariant-only; complete required scopes plus exact segment carriers/artifact are the sole per-segment governance authorities throughout admission, execution, replay, and result access. | Mixed scope/classification/modality/authority/egress acceptance, provider routing, reconciliation, compiler, recovery/replay/result tests plus missing/extra/swapped/substituted carrier mutations. |
+
 ### 3.16 Separate syntax, alignment, and semantic scope
 
 The source-only linguistic adapter returns normalized syntax and raw cues. A
@@ -2335,7 +3838,7 @@ class IdentityBindingEvidence(BaseModel):
 
 class EntityResolutionSnapshot(BaseModel):
     graph_revision: str
-    authorized_scope: MemoryScope
+    required_outcome_scopes: RequiredOutcomeScopeSet
     binding_evidence: tuple[IdentityBindingEvidence, ...]
     lineage: IdentityLineageSnapshot
     snapshot_digest: str
@@ -2355,7 +3858,8 @@ class CanonicalEntityDecision(BaseModel):
 class GraphSemanticSnapshotBundle(BaseModel):
     snapshot_token: str
     graph_revision: str
-    authorized_scope: MemoryScope
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    segment_governance_binding_digests: tuple[str, ...]
     entity_resolution: EntityResolutionSnapshot
     type_evidence: TypeEvidenceLedgerSnapshot
     action_policy: ActionPolicySnapshot
@@ -2420,9 +3924,12 @@ The transaction coordinator invokes a server-owned `EntityIdentityPlanner`
 after source-local clustering and before reconciliation. The planner derives an
 idempotent allocation key from the authorized scope, source digest,
 source-local cluster ID, stable allocation namespace, and allocation-policy
-fingerprint. `allocation_namespace_id` is derived once from the normalized
-delivery identity and immutable `operation_id`; it never contains lease token,
-owner, lease expiry, state revision, or ownership epoch. The pending operation
+fingerprint. `allocation_namespace_id` is derived once from
+the exact versioned preimage defined with `OperationFenceBinding`: stable
+`DeliveryIdentity.delivery_key_digest`, immutable admitted `source_id` and
+`source_digest`, and immutable `operation_id`. It never contains current
+authorization, lease token, owner, lease expiry, state revision, or ownership
+epoch. The pending operation
 retains the namespace and the resulting planned revision and logical IDs.
 Retrying the same source operation therefore returns the same IDs, while a
 different operation cannot reuse the allocation key. The planner adds collision
@@ -2452,8 +3959,9 @@ decision logic.
 
 `GraphSemanticSnapshotBundle` is the only graph-derived input admitted to
 normalization and reconciliation. Its identity and type snapshots are read under
-one storage snapshot token and authorized scope; every embedded graph revision,
-base-read-set version, policy fingerprint, and digest must agree. A bundle is
+one storage snapshot token, complete required-scope set, and exact segment-
+binding set; every embedded graph revision, base-read-set version, policy
+fingerprint, and digest must agree. A bundle is
 immutable. Normalization and reconciliation may not refresh one member
 independently or query extra graph state. The transaction coordinator may
 acquire additional compiler dependencies only through snapshot-bound read-set
@@ -2514,9 +4022,11 @@ configuration may retain a second legacy semantic writer or silently select the
 old LLM-to-rule path. An explicitly disabled semantic capability remains
 evidence-only; it does not reactivate legacy mutation.
 
-The ordinary in-memory and filesystem builders select one active local
-`CertifiedProposalCapability` from the deployment manifest and start with
-network access denied. Remote proposal is selected only by explicit operator
+After `SIA-ED-TOPOLOGY-001` selects the owner/deployment envelope and approves the exact
+manifest and resource profiles, the selected ordinary composition uses one
+active local `CertifiedProposalCapability` and starts with network access
+denied. Before that approval, local execution returns
+`profile_unapproved` and cannot promote. Remote proposal is selected only by explicit operator
 configuration naming an active remote proposal capability and still requires
 the exact source-bound `allow_verbatim` decision for each request. Missing,
 invalid, unavailable, or revoked remote configuration yields a typed
@@ -2540,7 +4050,10 @@ store-owned renewable lease:
 class PendingSemanticOperation(BaseModel):
     kind: Literal["pending"]
     operation_id: str
-    delivery_id: str
+    operation_fence_binding: OperationFenceBinding
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
     allocation_namespace_id: str
     writer_namespace: Literal["semantic_ingestion"]
     admitted_writer_epoch: int = Field(ge=0)
@@ -2555,7 +4068,10 @@ class PendingSemanticOperation(BaseModel):
 class ActiveSemanticOperationLease(BaseModel):
     kind: Literal["active"]
     operation_id: str
-    delivery_id: str
+    operation_fence_binding: OperationFenceBinding
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
     allocation_namespace_id: str
     writer_namespace: Literal["semantic_ingestion"]
     admitted_writer_epoch: int = Field(ge=0)
@@ -2576,7 +4092,10 @@ class ActiveSemanticOperationLease(BaseModel):
 class TerminalSemanticOperation(BaseModel):
     kind: Literal["terminal"]
     operation_id: str
-    delivery_id: str
+    operation_fence_binding: OperationFenceBinding
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
     allocation_namespace_id: str
     writer_namespace: Literal["semantic_ingestion"]
     admitted_writer_epoch: int = Field(ge=0)
@@ -2608,6 +4127,10 @@ SemanticOperationState = Annotated[
 
 class OperationLeaseBinding(BaseModel):
     operation_id: str
+    operation_fence_binding: OperationFenceBinding
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
     allocation_namespace_id: str
     writer_namespace: Literal["semantic_ingestion"]
     admitted_writer_epoch: int = Field(ge=0)
@@ -2657,10 +4180,14 @@ missing, or cross-reservation authorization is a stale-owner conflict.
 
 `operation_fence_id` remains the immutable persisted identity that groups one
 operation's introductions, terminal outcomes, deltas, and acceptance
-observations. It is derived once from the normalized delivery and immutable
-operation ID and never rotates. `allocation_namespace_id` is a distinct,
-domain-separated digest of those same immutable coordinates used only by
-identity/action allocation. Neither value is an
+observations. It is derived once from the version-bound stable delivery key,
+immutable admitted source ID/digest, and immutable operation ID under the exact
+operation-fence preimage above, and never rotates.
+`allocation_namespace_id` is the distinct domain-separated digest of those
+same immutable coordinates used only by identity/action allocation. Neither
+value contains or compares session, current scope membership, policy, trust,
+revocation, issue/expiry time, authorization proof/time, or any aggregate
+authenticated-ingress digest. Neither value is an
 `OperationLeaseBinding`. Any implementation that aliases either stable value
 to `execution_token`, `ownership_epoch`, lease expiry, or state revision
 violates the contract.
@@ -2682,14 +4209,14 @@ acknowledgement first reloads the operation, operation fence, graph revision,
 event batch, and outcome; an already committed matching result is returned
 without recompilation. No retry or recovery loop is unbounded.
 
-Every public mutation first applies the current `normalize_delivery_id`
-contract and rejects empty or whitespace-only normalized values. Composite
-hooks reserve a closed child namespace and derive each child as
-`normalize_delivery_id(parent) + ":" + child_kind`, where `child_kind` is one
-of the adapter's registered literals such as `user` or `assistant`. Parent IDs
-that would collide with the reserved composite namespace are rejected at that
-adapter boundary. The normalized parent, ordered expected child kinds, and
-derived child IDs form one durable fan-out record. Restart reloads that record;
+Every public mutation first applies the sole
+`ingestion_contracts.normalize_delivery_id` version `1` contract and constructs
+a `PublicDeliveryCoordinate`. Composite hooks accept only that typed parent and
+derive each child as a `CompositeChildDeliveryCoordinate` with composite
+namespace version `1` and one adapter-registered `child_kind`, such as `user` or
+`assistant`. They never concatenate raw strings or reinterpret delimiters. The
+normalized parent coordinate, ordered expected child kinds, and derived typed
+child coordinates form one durable fan-out record. Restart reloads that record;
 partial replay invokes only children without matching terminal or active
 operations and returns the aggregate in original child order. It never
 renumbers, re-derives from content, or replays a completed child.
@@ -2717,7 +4244,476 @@ new snapshot-bound plan. Keeping only the latest plan was rejected because it
 erases the authority for already committed groups. Per-group lineage is the
 smallest representation that preserves both revalidation and auditability.
 
-### 3.23 Preserve the provider lifecycle contract
+### 3.23 Internal closure contracts
+
+This section is authoritative for the similarly named contracts in Sections
+3-5. It replaces only conflicting uses of an authentication-session digest as
+durable delivery identity, source-wide reconstruction of message governance,
+manually maintained execution-DAG renderings, and broad-row-only traceability.
+It does not select or weaken `SIA-ED-TOPOLOGY-001`,
+`SIA-ED-REPLAY-001`, or `SIA-ED-POLICY-001`.
+
+#### 3.23.1 Stable delivery identity and session authorization
+
+Durable delivery identity and current-use authorization are separate typed
+authorities. Admission derives and persists `DeliveryPrincipalBinding` once
+from authenticated provider, principal subject, and tenant partition. Its
+digest excludes current authorized-scope membership and digest, session ID,
+issue/expiry time, revocation snapshot, and ingress-policy revision.
+`DeliveryIdentity` is the domain-separated pair of that binding and one exact
+versioned public or composite delivery coordinate. A session can authorize the
+stable binding but can never
+change, reconstruct, or be embedded in its delivery key, fence, allocation,
+checkpoint, result, replay, or recovery identity. [SIA-I301]
+
+The foundational ingress contract above is the only declaration site for
+`DeliveryPrincipalBinding`, `NormalizedDeliveryId`, `DeliveryCoordinate` and
+its variants, `SessionAuthorizationEvidence`, `AuthenticatedIngressContext`,
+`DeliveryIdentity`, `DeliveryAuthorizationRequest`, and
+`AdmissionScopeAuthorizationProof`; downstream contracts reference those exact
+types and may not redeclare or structurally imitate them.
+
+The resolver validates provider, principal, tenant, the complete current typed
+authorized scope set, policy, expiry, and revocation before it performs a
+durable-key lookup. `DeliveryAuthorizationRequest` is admission/recovery-only:
+its complete `required_outcome_scopes` is server-derived from validated segment
+governance for admission or loaded from persisted admission state for recovery.
+The complete same-tenant subset check plus
+`AdmissionScopeAuthorizationProof` must succeed before the atomic admission.
+Recovery may proceed when current authorization is exact or a strict superset
+of its persisted required scopes without changing durable identity; partial,
+revoked, or otherwise denied current authorization is non-disclosing and
+mutation-free. A renewed session or policy/trust rotation therefore
+reauthorizes the same delivery identity; revoked, cross-principal,
+cross-tenant, and out-of-scope requests use the existing coordinate-free
+unavailable shape with no lookup, mutation, or disclosure. `OperationFenceBinding`, admission, leases, terminal
+results, recovery indexes, replay artifacts, and result authorizers persist
+`delivery_principal_binding_digest` and `delivery_key_digest`; an
+admission-time authorization-evidence digest is audit evidence only. [SIA-I302]
+
+Admission atomically persists the stable binding, identity, audit-only
+authorization evidence/proof, immutable source, fence, and pending operation.
+Neither authorization artifact participates in durable equality or identity.
+Recovery and result access use newly valid current authorization for that exact stable
+binding/key and return only byte-identical original admission/result bytes.
+The finite pre-activation migration in Section 3.15.1 is the only legacy
+transition. Its independently verified target generation is complete before
+the target writer epoch activates; afterward no runtime uniqueness bridge,
+alias, parser, dual read, or legacy-derived fallback exists. Ambiguous,
+mismatched, unavailable, or collision-producing evidence blocks activation
+unless an explicit owner disposition is itself backed by authoritative
+original-byte evidence. [SIA-I303]
+
+#### 3.23.2 Segment governance carrier closure
+
+`SourceSemanticContext` contains only source-wide identity/digest,
+temporal/provenance, trigger, and policy-snapshot coordinates that are valid for
+the entire source. It contains no scope, authority, classification, modality,
+or egress decision. Each projected governed message has one immutable
+admission-derived binding containing those exact segment-varying values.
+`RequiredOutcomeScopeSet`, the complete `SegmentGovernanceCarrierSet`, and its
+loadable `GovernanceCarrierArtifact` are their sole authorities.
+Its `context_digest` uses domain
+`memorii.semantic-ingestion.source-semantic-context`, preimage version `1`, and
+exactly source ID, source digest, trigger mode, provenance digest, ordered
+temporal-reference digests, received/retained times, nullable authenticated
+source-interval evidence digest, provider-egress-policy fingerprint,
+governance-policy fingerprint, and trust-policy fingerprint. No segment scope,
+authority, classification, modality, egress decision, first-segment value, or
+aggregate of those values may enter this digest.
+
+The foundational ingress contract is also the only declaration site for
+`SegmentGovernanceBinding`, `SegmentGovernanceCarrierSet`,
+`MessageAdmissionIdentity`, `MessageAdmissionCarrierSet`,
+`GovernanceCarrierArtifact`, and `MessageAdmissionIndexEntry`.
+
+`PreparedSegment`, `PreparedSource`, `SemanticProposalRequest`,
+`SemanticProposalAttempt`, `SemanticProposalRun`, `ReconciliationRequest`,
+`SemanticAssessment`, `AcceptedSemanticOperation`, `TransactionSemanticGroup`,
+`GraphCompilationRequest`, planning artifacts, terminal results, durable
+observation/event payloads, replay bundles, and result-access records carry the
+exact full binding or carrier set plus its loadable artifact for every
+represented segment/operation. A nested digest is valid only when that same
+atomic generation contains canonical carrier bytes; replay restores those
+bytes without source-wide reconstruction.
+Proposal transport accepts only one `allow_verbatim` binding for its segment.
+A denied segment creates no transport request. [SIA-I304]
+
+Every downstream stage selects the exact binding for each segment it processes;
+an operation spanning segments carries the ordered duplicate-free set of those
+bindings, and a transaction group carries the exact ordered union of its
+operations' bindings. Mixed scope, authority, classification, modality, or
+egress values are valid when each segment and operation retains its exact
+binding and applicable policy supports that combination. Provider routing is
+per segment, while reconciliation, planning, compilation, persistence,
+recovery, replay, and result access preserve the exact operation-to-binding
+relation. No representative, first-segment, union-valued, fallback, or
+reconstructed source-wide governance value exists. Missing, extra, swapped,
+cross-segment, or substituted bindings reject before the affected stage,
+reservation, mutation, or disclosure. [SIA-I305]
+
+`GraphSemanticSnapshotBundle.required_outcome_scopes` and
+`EntityResolutionSnapshot.required_outcome_scopes` equal the admitted complete
+set; the bundle's binding digests are an exact bijection with the admitted
+carrier set. `TransactionSnapshotContext` and `ReferenceClosureSnapshot` carry
+the exact required set and ordered binding-digest union for the transaction
+group they authorize, while `GraphCompilationRequest.accepted_operations`
+carry each operation's exact subset. `SourceTraceArtifact.provider_egress_results`
+is an ordered bijection with the distinct non-null egress-decision digests
+referenced by its segment carriers. Replay restores these exact relations;
+recovery cannot replace them with current policy output.
+
+#### 3.23.3 Cross-entry-point message admission
+
+Every semantically projectable turn and governed snapshot message has one
+server-derived `MessageAdmissionIdentity`, independent of its enclosing source
+delivery. It is domain-separated over stable delivery-principal binding,
+authenticated source reference, immutable message bytes, and exact segment
+governance binding, so the same bytes cannot be reused under another context.
+The `authenticated_source_reference_key_digest` is derived only from stable
+principal binding and authenticated source reference and is the unique CAS
+index key; the complete `message_admission_key_digest` binds that key to bytes
+and governance. An existing source-reference key with unequal bytes or
+governance rejects rather than allocating another identity.
+
+Turn, `pre_compress`, and `session_end` resolve eligible messages through one
+shared compare-and-set index in the same generation as source admission. Exact
+repeats reuse the first admission/result; changed bytes for the same
+authenticated source reference reject; snapshots retain complete evidence but
+schedule only unseen messages. Concurrent-process losers reload the same entry.
+Legacy cutover backfills only records with authenticated references, byte
+digests, and exact carriers; records lacking them remain evidence-only and
+cannot be projected or guessed into the index. [SIA-I306]
+
+#### 3.23.4 One execution graph and complete reverse traceability
+
+`CanonicalIngestionExecutionGraphTemplate` is the single declarative graph
+artifact. It contains every `IngestionStage` literal exactly once, every
+permitted scope, and every typed dependency edge/mode. The stage registry is
+its ordered keys, `IngestionExecutionGraph` its canonical serialization,
+`IngestionExecutionManifest` its instantiation, and Section 5.8 its
+deterministic rendering. Independent registry, edge list, prose DAG, and alias
+are forbidden; `proposal_alignment` is not a stage or alias. [SIA-I307]
+
+The template scopes `source_ingestion`, `source_governance`,
+`text_preparation`, `proposal_run_sealing`, `source_proposal_alignment`,
+`proposal_coverage`, `source_local_identity`, `source_trace_persistence`, and
+`source_summary_persistence` as source stages. It scopes
+`language_routing`, `provider_egress_authorization`, `llm_proposal`,
+`proposal_validation`, both linguistic analyses, `linguistic_consensus`,
+`predicate_event_detection`, `temporal_resolution`,
+`semantic_scope_consensus`, `temporal_attachment_consensus`, and
+`semantic_scope` as segment stages, with exactly one stage instance for every
+member of the source's ordered segment-route bijection and no source-level
+instance of those stages. Segment-stage instance identity includes the exact
+`segment_id` and selected route digest; a blocked route still has an
+`evidence_only` stage outcome but authorizes no learned call. Source-plan
+attempts contain `capability_selection`, `nli_corroboration`,
+`graph_proposal_alignment`, `canonical_identity_resolution`,
+`planned_identity_reservation`, `capability_status_binding_validation`,
+`type_evidence_resolution`, `claim_slot_construction`,
+`semantic_reconciliation`, `reference_closure`, and
+`transaction_group_expansion`; transaction-group attempts contain the same
+graph-bound stages except capability selection, NLI, and group expansion; and
+terminal groups contain `graph_compilation`, `temporal_projection`,
+`trust_arbitration`, `identity_lineage`, and
+`transaction_group_persistence`. [SIA-I308]
+
+The template defines the exact required edge closure already described in
+Section 4.8: ingress/governance/preparation/routing; governance egress;
+routing to proposal, analyses, detector, and resolver; remote egress to
+proposal; proposal validation/sealing; analyses to consensus; sealing,
+consensus, detector, and resolver to source alignment; source alignment with
+its dependent scope, coverage, identity, capability, NLI, graph-attempt,
+reconciliation, planning, compilation, terminal-persistence, trace, and source
+summary edges. It records each at its exact source/attempt/group scope;
+rendering cannot infer, omit, or collapse an edge. [SIA-I309]
+
+Reverse traceability is generated from document structure, not English words or
+exhaustive hand tagging. `SIA-I301` and later identifiers are optional explicit
+anchors for cross-unit invariants; they do not define or limit coverage.
+Two independent implementations parse the exact UTF-8 bytes from the `## 1.`
+heading through the byte immediately before the first same-level heading after
+`## 5.`, or through end of file when Section 5 is terminal, and emit one unit
+for every nonempty structural element under this closed grammar:
+
+1. each heading is a scope unit;
+2. each prose paragraph is one unit, including all continuation lines until a
+   blank line or another block begins;
+3. each ordered or unordered list item is one unit, including its indented
+   continuations and nested blocks; the containing list is also one unit;
+4. each non-separator table row is one unit, including header rows, and the
+   table is one unit whose children are the row IDs;
+5. each fenced block is one unit. A Python schema fence additionally emits one
+   unit for every class/type-alias declaration and every declared field or union
+   member, then emits each remaining nonempty logical line as `code_line` so no
+   method, validator, comment, or expression is omitted; other code fences emit
+   one unit per nonempty logical line; and
+6. each normative diagram fence is one unit plus one unit per nonempty node or
+   edge line after indentation folding.
+
+Blank lines, Markdown table separator rows, and fence delimiters are structural
+tokens and do not become units. Comments are units rather than being silently
+dropped. The parser does not inspect modal verbs, language, punctuation, or a
+normative-keyword allowlist. Therefore every represented contract is covered
+whether it is prose, schema, list, table, or diagram. An unknown Markdown block,
+unclosed fence, malformed table, or schema line that the closed grammar cannot
+classify fails generation instead of being ignored. [SIA-I310]
+
+Each unit's identity payload contains grammar revision, unit kind, fence
+language tag, payload, and ordered child content keys where applicable. Parent
+ID, heading path, and line coordinates are a separate location envelope and do
+not enter the content key. Structural payload preparation decodes UTF-8
+strictly, changes CRLF/CR to LF, normalizes Unicode to NFC, removes only
+grammar-classified Markdown indentation and trailing horizontal whitespace, and
+preserves all remaining scalar values and child order. It never case-folds,
+rewrites prose, sorts children, or normalizes schema identifiers. The prepared
+payload is encoded through the canonical typed-value profile with the registered
+normative-unit schema binding; the content key is SHA-256 over the
+domain-separated canonical artifact preimage. Units with the same content key
+receive a deterministic duplicate suffix equal to their zero-based occurrence
+among equal keys in document order; their manifest ID is
+`SIA-N-<content-key>-<occurrence>`. A move that preserves content keeps the key;
+duplicate insertion/removal changes the affected occurrence set and is detected
+by manifest equality. Optional `SIA-Ixxx` anchors map to one or more generated
+unit IDs and fail if duplicated or dangling.
+
+Traceability defaults are declared once per Section 1-5 heading, not per unit.
+The closed `SectionTraceabilityDefaultRegistry` has exactly one explicit entry
+for every extracted heading, including each child heading; inheritance and a
+catch-all default are forbidden. Each entry supplies the complete nonempty set
+of normally applicable `SIA-Rxx` requirements, with owner and assertion/test
+defaults copied from the ledger and assertion registry. A closed
+`StructuralRequirementMappingRuleRegistry` may add secondary requirements for
+specified heading-path hashes and structural unit kinds. Rules may select only
+closed parser outputs such as unit kind, parent/child relation, table identity,
+schema declaration identity, or a ledger-row ID parsed from the canonical
+requirements table; they cannot inspect prose words or use regex/semantic
+classification. The canonical requirements-ledger table is identified by its
+exact heading-path hash and column schema. Every extracted `SIA-Rxx` ledger-row
+unit is unconditionally mapped to its own row ID in addition to every other
+applicable requirement, so the ledger self-maps.
+
+The requirement set for a unit is the sorted set union of its heading default,
+all matching structural-rule additions, its ledger self-mapping when
+applicable, and explicit override additions. A
+`TraceabilityOverride` is permitted only for an exceptional exact generated
+unit ID; it may add mappings or replace a default assertion/test binding for an
+already mapped requirement, records a nonempty reason and reviewer evidence,
+and cannot remove a requirement, owner, unit, or ledger self-mapping. This
+heading-level default plus structural-rule union maps shared units to every
+applicable requirement without English heuristics or exhaustive per-line tags.
+
+Assertion templates are closed and measurable: schema units require
+production-schema canonical equality plus valid/invalid round trips;
+edge/table/list units require exact set and cardinality equality plus one-member
+mutations; prose and headings require a registered content-bound conformance
+assertion. Each unit-to-requirement pair resolves to exactly one versioned
+assertion binding and may share an assertion/evidence artifact with other units
+only when the evidence record enumerates and binds every unit content key.
+
+```python
+NormativeUnitKind = Literal[
+    "heading", "paragraph", "list", "list_item", "table", "table_row",
+    "fence", "schema_declaration", "schema_field", "schema_union_member",
+    "code_line", "diagram_node", "diagram_edge",
+]
+
+class ExtractedNormativeUnit(BaseModel):
+    invariant_id: str
+    content_key: str
+    duplicate_occurrence: int = Field(ge=0)
+    unit_kind: NormativeUnitKind
+    parent_invariant_id: str | None
+    heading_path_hash: str
+    source_start_line: int = Field(ge=1)
+    source_end_line: int = Field(ge=1)
+    canonical_payload_digest: str
+
+class SectionTraceabilityDefault(BaseModel):
+    heading_path_hash: str
+    sia_requirement_ids: tuple[str, ...]
+    assertion_defaults: tuple["RequirementAssertionDefault", ...]
+    default_digest: str
+
+class RequirementAssertionDefault(BaseModel):
+    sia_requirement_id: str
+    canonical_owner: str
+    assertion_template_id: str
+    assertion_template_version: int = Field(ge=1)
+    test_evidence_group: str
+
+class StructuralRequirementMappingRule(BaseModel):
+    rule_id: str
+    heading_path_hashes: tuple[str, ...]
+    unit_kinds: tuple[NormativeUnitKind, ...]
+    selector_kind: Literal[
+        "all_matching_kinds", "direct_children",
+        "named_schema_members", "named_table_rows",
+    ]
+    selector_values: tuple[str, ...]
+    added_sia_requirement_ids: tuple[str, ...]
+    rule_digest: str
+
+class TraceabilityOverride(BaseModel):
+    invariant_id: str
+    added_sia_requirement_ids: tuple[str, ...]
+    assertion_replacements: tuple["UnitRequirementMapping", ...]
+    reason: str
+    reviewer_evidence_digest: str
+    override_digest: str
+
+class UnitRequirementMapping(BaseModel):
+    sia_requirement_id: str
+    canonical_owner: str
+    assertion_id: str
+    assertion_version: int = Field(ge=1)
+    test_evidence_group: str
+    mapping_sources: tuple[str, ...]
+    mapping_digest: str
+
+class NormativeTraceabilityEntry(BaseModel):
+    invariant_id: str
+    content_key: str
+    requirement_mappings: tuple[UnitRequirementMapping, ...]
+    source_heading_path_hash: str
+    source_start_line: int
+    source_end_line: int
+    entry_digest: str
+
+class NormativeExecutionEvidenceRecord(BaseModel):
+    unit_content_keys: tuple[str, ...]
+    sia_requirement_ids: tuple[str, ...]
+    assertion_id: str
+    assertion_version: int = Field(ge=1)
+    test_evidence_group: str
+    test_or_evidence_artifact_digest: str
+    design_document_digest: str
+    implementation_revision: str
+    implementation_tree_digest: str
+    execution_id: str
+    execution_status: Literal["not_executed", "executed", "cancelled", "error"]
+    execution_result: Literal["pass", "fail", "indeterminate"]
+    result_artifact_digest: str | None
+    issued_at: datetime
+    issuer_id: str
+    issuance_purpose: Literal["semantic_ingestion_normative_evidence"]
+    trust_context_digest: str
+    expires_at: datetime | None
+    signature: bytes
+    evidence_digest: str
+
+class TraceabilityCoverageApprovalRecord(BaseModel):
+    heading_path_hash: str
+    approved_sia_requirement_ids: tuple[str, ...]
+    applicable_structural_rule_digests: tuple[str, ...]
+    design_document_digest: str
+    reviewer_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_coverage"]
+    issued_at: datetime
+    trust_context_digest: str
+    expires_at: datetime | None
+    signature: bytes
+    approval_digest: str
+
+class NormativeTraceabilityManifest(BaseModel):
+    grammar_revision: str
+    design_document_digest: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    section_defaults: tuple[SectionTraceabilityDefault, ...]
+    section_default_registry_digest: str
+    structural_mapping_rules: tuple[StructuralRequirementMappingRule, ...]
+    structural_mapping_rule_registry_digest: str
+    assertion_registry_artifact: CanonicalEncodedArtifact
+    units: tuple[ExtractedNormativeUnit, ...]
+    entries: tuple[NormativeTraceabilityEntry, ...]
+    overrides: tuple[TraceabilityOverride, ...]
+    explicit_anchor_bindings: tuple[tuple[str, tuple[str, ...]], ...]
+    coverage_approvals: tuple[TraceabilityCoverageApprovalRecord, ...]
+    evidence_records: tuple[NormativeExecutionEvidenceRecord, ...]
+    manifest_digest: str
+```
+
+The generator requires an exact one-to-one, order-preserving bijection between
+extracted units and entries. Every parent and Section 1-5 heading default must
+resolve; requirement mappings are nonempty, unique, and sorted by requirement
+ID; every mapped requirement must exist in the canonical ledger; every ledger
+row maps to itself; and every owner must equal that row's owner. Every structural
+rule, assertion/version, test/evidence group, override reviewer evidence,
+explicit anchor, and evidence artifact must be registered and content-loadable;
+no entry, mapping, override, or evidence record may survive without its exact
+unit and content key.
+The `section_defaults` and `structural_mapping_rules` tuples are canonical,
+complete registry contents, not digest-only references; their corresponding
+digests must recompute. The assertion registry artifact's canonical bytes are
+published atomically with the manifest and must decode to every referenced
+assertion/version. Evidence records, their test/evidence artifacts, result
+artifacts, and trust snapshots are likewise one content-addressed evidence
+generation: a digest whose bytes are absent from that generation or an earlier
+complete immutable generation fails before verification.
+
+The independently implemented structural checker shares only canonical design
+bytes, registry bytes, and the published grammar/profile revisions. It reparses
+without importing generator code, recomputes defaults, structural rules,
+self-mappings, secondary mappings, canonical bytes, and digests, rebuilds the
+structural manifest, and requires byte equality. This establishes structural
+extraction and mechanically expanded mappings only. Agreement between two
+parsers, even byte-identical agreement,
+never approves implementation or evidence.
+
+Coverage completeness is a separate independent gate. Every heading has exactly
+one trusted `TraceabilityCoverageApprovalRecord` whose approved requirement set
+equals its complete default and whose structural-rule digest set equals every
+rule applicable below that heading. The reviewer evaluates the heading-level
+requirement set and closed structural selectors, not every extracted line; the
+generator and checker deterministically expand that approved set to units. The
+coverage verifier recomputes the approval preimage, validates exact design
+digest, reviewer purpose/trust/signature/lifecycle/expiry, and rejects a missing,
+extra, removed, substituted, stale, or unapproved secondary mapping. Coverage
+approval cannot serve as implementation execution evidence.
+
+A separately implemented evidence verifier consumes the structurally verified
+manifest and independently loads each test/evidence and result artifact by
+digest. For every unit-to-requirement mapping it requires exactly one applicable
+evidence record whose unit set includes that exact content key and whose
+requirement set includes that exact `SIA-Rxx`, and whose assertion ID/version
+and evidence group equal the mapping. It recomputes the
+evidence digest and signature preimage through the canonical typed-value
+profile; validates issuer, purpose, key lifecycle, trust snapshot, revocation,
+compromise, supersession, issue time, and expiry when present; and requires
+`execution_status == "executed"` and `execution_result == "pass"`. The design
+digest must equal the exact accepted document bytes, and both implementation
+revision and tree digest must equal the immutable implementation under test.
+Unexecuted, cancelled, errored, failed, indeterminate, expired, untrusted,
+forged, unloadable, stale-content, stale-design, wrong-revision, wrong-tree, or
+result-digest-mismatched evidence cannot approve. Structural validity, complete
+mapping coverage, trusted evidence, and passing exact-revision execution are
+four independently reported gates; architecture acceptance requires all four.
+
+Missing, stale, duplicate, orphaned, reordered, unclassified, defaultless,
+owner-mismatched, requirement-incomplete, self-map-missing,
+secondary-map-missing, or content-digest-mismatched units fail closed. The
+manifest itself and all evidence records use the canonical typed-value profile;
+a coordinate or filename without loadable content and digest is never evidence.
+
+Mutation tests independently insert and remove every unit kind; duplicate and
+move identical units; alter one byte, heading, parent, field, union member,
+table cell, list item, and diagram edge; corrupt UTF-8/NFC, line ending,
+indentation, fence, or table structure in Sections 1, 2, 3, 4, and 5; delete or
+orphan a heading default, structural rule, override, anchor, parent, owner,
+assertion, test group, ledger self-map, or secondary requirement mapping; and
+mutate generator output without changing source. Evidence mutations substitute
+coverage-approval requirement/rule sets, reviewer/trust/signature/expiry,
+unit content keys, assertion ID/version, evidence or result artifact digest,
+design digest, implementation revision/tree, status/result, issuer, purpose,
+trust snapshot, signature, issue/expiry/revocation state, or remove required
+coverage. Each structural mutation must make a parser fail or make independent
+manifests differ; each evidence mutation must be rejected by the separate
+evidence verifier. Tests explicitly prove that two matching parser outputs
+paired with missing, forged, stale, failed, or unexecuted evidence cannot
+approve. [SIA-I314]
+
+### 3.24 Preserve the provider lifecycle contract
 
 The target semantic result lattice does not replace or alias the provider's
 existing pending/running/committed/failed operation lifecycle. The old
@@ -2764,29 +4760,48 @@ rewrite it.
 
 ```python
 class SourceAdmissionRequest(BaseModel):
-    delivery_id: str
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding: DeliveryPrincipalBinding
+    session_authorization: SessionAuthorizationEvidence
+    delivery_key_digest: str
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    segment_governance_carriers: SegmentGovernanceCarrierSet | None
+    message_admission_carriers: MessageAdmissionCarrierSet | None
+    governance_carrier_artifact: GovernanceCarrierArtifact | None
+    admission_scope_authorization_proof: AdmissionScopeAuthorizationProof
     source_kind: SourceKind
     original_text: str
     event_time: datetime | None
-    requested_scope: MemoryScope
-    declared_modality: SourceModality | None
     declared_language: str | None
     provenance: SourceProvenance
 ```
 
 Required invariants:
 
-- `delivery_id` is stable across caller retries.
+- `delivery_identity` preserves the exact versioned public or composite
+  coordinate across caller retries inside its server-derived principal binding;
+  `delivery_identity`, `delivery_principal_binding`, and
+  `delivery_key_digest` are server-derived and exact-equal, while
+  `session_authorization` is separately current and revalidated;
 - `original_text` is the caller-provided Unicode string, not normalized text.
 - supplied timestamps are timezone-aware;
 - a supplied `event_time` is only a claim until server governance authenticates
   its provenance and emits an `AuthenticatedEventTimeReference`;
-- requested scope, declared modality, and provenance are valid inputs to the
-  server-owned governance policy rather than trusted semantic conclusions;
+- provenance and declared language are inputs to server-owned policy and
+  routing, not trusted semantic conclusions; no scalar source-wide scope or
+  modality is accepted;
+- server governance derives every segment's scope, authority, classification,
+  modality, and egress decision, seals their complete carrier set and
+  `RequiredOutcomeScopeSet`, and performs complete-set authorization before
+  admission;
 - size and content-policy limits are checked explicitly.
 
-The current public `ProviderEvent` remains unchanged. Structured provider hooks
-must first construct one versioned, canonical source envelope:
+The public `ProviderEvent` field shape remains unchanged; its delivery-ID
+validator delegates to the owned version-1 contract and cannot retain the
+current adapter-local whitespace-stripping behavior. A governance-capable
+structured provider hook constructs one canonical internal source envelope;
+the current metadata-poor snapshot hooks follow the retained-evidence branch
+defined below and do not construct missing fields:
 
 ```python
 class ProviderEnvelopeMessage(BaseModel):
@@ -2801,11 +4816,12 @@ class VerbatimProviderSourceEnvelope(BaseModel):
     schema_version: Literal[1]
     content: str
 
-class ConversationSnapshotSourceEnvelope(BaseModel):
+class GovernedConversationSnapshotInput(BaseModel):
     kind: Literal["conversation_snapshot"]
     schema_version: Literal[1]
     session_id: str
     messages: tuple[ProviderEnvelopeMessage, ...]
+    message_contexts: tuple[GovernedMessageSemanticContext, ...]
     snapshot_source_reference: str
 
 class DelegationResultSourceEnvelope(BaseModel):
@@ -2820,25 +4836,28 @@ class DelegationResultSourceEnvelope(BaseModel):
 
 ProviderSourceEnvelope = Annotated[
     VerbatimProviderSourceEnvelope
-    | ConversationSnapshotSourceEnvelope
+    | GovernedConversationSnapshotInput
     | DelegationResultSourceEnvelope,
     Field(discriminator="kind"),
 ]
 
 class ProviderSourceEnvelopeManifest(BaseModel):
     schema_version: Literal[1]
-    canonical_json_profile: Literal["rfc8785-utf8"]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
     maximum_envelope_bytes: int = Field(gt=0)
     maximum_message_count: int = Field(gt=0)
     manifest_digest: str
 ```
 
-For a conversation snapshot, messages are unique by `message_id`, ordered by
-contiguous `sequence_number`, and carry explicit source references. For a
+For a governed conversation snapshot, messages are unique by `message_id`,
+ordered by contiguous `sequence_number`, and carry explicit source references.
+`message_contexts` is an exact order-preserving bijection by
+`(message_id, source_reference)` and every context is derived from the same
+authenticated ingress context. For a
 delegation result, task and result identities and references are distinct and
 required. Duplicate, missing, reordered, over-limit, or unsupported-version
-inputs reject before source admission. Adapters serialize the envelope as
-RFC 8785 canonical JSON encoded as UTF-8; `ProviderEvent.content` contains that
+inputs reject before source admission. Adapters serialize the envelope through
+the one canonical typed-value profile; `ProviderEvent.content` contains that
 exact JSON string for structured operations. Ordinary text operations preserve
 the original text directly in `ProviderEvent.content`; the verbatim envelope
 variant defines their internal typed interpretation without changing public
@@ -2847,26 +4866,37 @@ digest. Independent adapters given the same structured input must produce
 identical bytes, while any order, reference, version, or content mutation must
 change the digest.
 
-A server-owned `ProviderEventNormalizer` maps each closed
+A server-owned `ProviderEventNormalizer`, supplied the out-of-band
+`AuthenticatedIngressContext`, maps each closed
 `ProviderOperation` to exactly one `SourceAdmissionRequest`: `content` supplies
 verbatim text or the validated canonical structured envelope; operation and hook
 determine `source_kind`; authenticated session/task/user context and server
-policy determine requested scope and provenance; timestamp, language, and
-modality remain declared evidence. `role`, `target`, and `action` cannot grant
-scope, authority, or provenance. User turn, assistant turn, session end,
+policy derive the complete per-segment governance carriers, required scope set,
+and provenance; timestamp and language remain declared evidence. No request
+contains a source-wide requested scope or modality. `role`, `target`, and
+`action` cannot grant scope, authority, classification, modality, egress, or
+provenance. User turn, assistant turn, session end,
 pre-compress, each memory-write domain, and delegation result have one explicit
 mapping-table entry. An unknown operation or a missing operation-required field
 rejects before retention. Composite-hook child identity follows Section 3.21.
-Public `event_id` becomes internal `delivery_id` only after the shared
-`normalize_delivery_id` contract succeeds; no content-derived replacement ID is
-permitted.
+Public `event_id` becomes a `PublicDeliveryCoordinate` only after the shared
+`normalize_delivery_id` contract succeeds; the server then derives
+`DeliveryIdentity`. Composite fan-out substitutes only the typed child
+coordinate described in Section 3.21. No content-derived replacement ID or
+raw-string child ID is permitted. The
+normalizer copies the stable principal binding and current session
+authorization into the request and rejects any caller-provided or unequal
+copy.
 
-The mapping table is closed:
+The mapping table is closed. Its governance column identifies the policy input
+that derives each exact segment binding; it never supplies one representative
+source value:
 
-| Public operation | Internal source kind | Verbatim text | Effective-scope authority | Provenance authority |
+| Public operation | Internal source kind | Verbatim text | Segment-governance authority | Provenance authority |
 | --- | --- | --- | --- | --- |
 | `chat_user_turn`, `chat_assistant_turn` | `conversation_turn` | required `content` | authenticated user/session policy for the role | provider identity plus authenticated user/session/task context; role remains evidence |
-| `session_end`, `pre_compress` | `conversation_snapshot` | required canonical `ConversationSnapshotSourceEnvelope` | authenticated session/task policy | provider identity plus authenticated session/task context |
+| `session_end`, `pre_compress` with governed message metadata | `conversation_snapshot` | required canonical `GovernedConversationSnapshotInput` | per-message authenticated session/task policy | provider identity plus authenticated session/task context for each exact message |
+| current metadata-poor `session_end`, `pre_compress` | `conversation_snapshot` | retain exact received/adapter-produced bytes; no canonical governed envelope | none for semantic use | retained provider/hook provenance only; no synthetic message identity or authority |
 | `memory_write_longterm`, `memory_write_user`, `memory_write_dailylog` | `explicit_memory_write` | required `content` | fixed server policy for the operation's memory domain; caller `target` cannot broaden it | provider identity plus authenticated principal and validated write action |
 | `delegation_result` | `delegation_result` | required canonical `DelegationResultSourceEnvelope` | authenticated delegation/task policy | provider identity plus authenticated delegator/task context |
 | `prefetch_query`, `unknown` | none | not retained | none | reject before source admission |
@@ -2880,51 +4910,83 @@ normalization is rejection, not best-effort inference.
 ```python
 class SemanticProjectionSegment(BaseModel):
     segment_id: str
-    projected_span: TextSpan
+    projection_span: ProjectionTextSpan
+    segment_text_artifact: SegmentLocalTextArtifact
+    text_mapping_proof: TextArtifactMappingProof
     semantic_text: str
     source_variant: Literal[
         "verbatim_text",
         "conversation_message",
         "delegation_result_content",
     ]
-    envelope_json_pointer: str | None
     source_reference: str | None
+    message_semantic_context_digest: str | None
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
     segment_digest: str
 
 class SourceSemanticTextProjection(BaseModel):
     schema_version: Literal[1]
     retained_source_digest: str
+    retained_text_artifact: RetainedSourceTextArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    projection_text_artifact: SemanticProjectionTextArtifact
     projection_text: str
     separator: Literal["\n"]
     segments: tuple[SemanticProjectionSegment, ...]
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
     envelope_manifest_digest: str | None
     projection_digest: str
 
 class SourceSpanReference(BaseModel):
     source_id: str
-    source_digest: str
     projection_digest: str
     projection_segment_id: str
-    projected_span: TextSpan
-    segment_local_span: TextSpan
-    envelope_json_pointer: str | None
+    retained_text_artifact: RetainedSourceTextArtifact
+    projection_span: ProjectionTextSpan
+    segment_local_span: SegmentLocalTextSpan
+    text_mapping_proof: TextArtifactMappingProof
     source_reference: str | None
+    reference_digest: str
 
 class SourceObservation(BaseModel):
     source_id: str
-    delivery_id: str
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding_digest: str
+    admission_authorization_evidence_digest: str
+    admission_scope_authorization_proof: AdmissionScopeAuthorizationProof
+    delivery_key_digest: str
     original_text: str
     source_digest: str
+    retained_text_artifact: RetainedSourceTextArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
     source_kind: SourceKind
     declared_language: str | None
     provenance: SourceProvenance
     semantic_context: SourceSemanticContext
-    semantic_text_projection: SourceSemanticTextProjection
+    semantic_text_projection: SourceSemanticTextProjection | None
+    segment_governance_carriers: SegmentGovernanceCarrierSet | None
+    message_admission_carriers: MessageAdmissionCarrierSet | None
+    governance_carrier_artifact: GovernanceCarrierArtifact | None
+    metadata_poor_snapshot_evidence: MetadataPoorSnapshotEvidence | None
 
 class SourceAdmissionAccepted(BaseModel):
     kind: Literal["accepted"]
     observation: SourceObservation
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding_digest: str
+    admission_authorization_evidence_digest: str
+    admission_scope_authorization_proof: AdmissionScopeAuthorizationProof
+    delivery_key_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet | None
+    message_admission_carriers: MessageAdmissionCarrierSet | None
+    governance_carrier_artifact: GovernanceCarrierArtifact | None
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    admission_authorization_index_entry: AdmissionAuthorizationIndexEntry
+    message_admission_index_entries: tuple[MessageAdmissionIndexEntry, ...]
     operation_id: str
+    operation_fence_binding: OperationFenceBinding
     allocation_namespace_id: str
     writer_namespace: Literal["semantic_ingestion"]
     admitted_writer_epoch: int = Field(ge=0)
@@ -2936,13 +4998,13 @@ class SourceAdmissionAccepted(BaseModel):
 
 class SourceAdmissionRejected(BaseModel):
     kind: Literal["rejected"]
-    delivery_id: str
+    request_correlation_token: str
     reason_codes: tuple[str, ...]
     rejection_digest: str
 
 class SourceAdmissionRetryRequired(BaseModel):
     kind: Literal["retry_required"]
-    delivery_id: str
+    request_correlation_token: str
     durability: Literal["not_retained", "indeterminate"]
     reason_codes: tuple[str, ...]
     recovery_token: str
@@ -2956,7 +5018,9 @@ SourceAdmissionResult = Annotated[
 ```
 
 `source_digest` is computed over a canonical encoding of immutable source
-fields. `semantic_context` is resolved from authenticated provenance and a
+fields. It excludes admission authorization evidence/proof, current authorized
+scopes, session/policy/trust/revocation coordinates, and authorization time.
+`semantic_context` is resolved from authenticated provenance and a
 fingerprinted server policy. It contains authenticated temporal-reference
 evidence, receive and retain timestamps, effective scope, modality, trigger
 mode, source authority, and the exact
@@ -2973,7 +5037,8 @@ timestamp rejects the reference; policy decides whether the source may still be
 retained, but no rejected reference can influence semantics.
 
 `original_text` remains the exact caller text or canonical structured-envelope
-JSON retained under SIA-R01. `semantic_text_projection` is a deterministic,
+JSON retained under SIA-R01 and exactly matches `retained_text_artifact`.
+`semantic_text_projection` is a deterministic,
 versioned derivative and is the only text accepted by preparation, proposal,
 language routing, linguistic analysis, event detection, and temporal
 resolution. For verbatim sources it has one segment whose text and offsets
@@ -2982,25 +5047,79 @@ declared sequence; for delegation it contains only the result `content`.
 Message roles, IDs, source references, JSON keys, task IDs, result IDs, and
 result status are non-semantic metadata and never enter `projection_text`.
 
+A source observation has exactly one of these shapes:
+
+- a governed/verbatim/delegation source has a non-null
+  `semantic_text_projection`, both carrier sets, and carrier artifact, with null
+  `metadata_poor_snapshot_evidence`;
+- a current metadata-poor snapshot has null `semantic_text_projection` and one
+  `MetadataPoorSnapshotEvidence` whose `retained_source_digest` equals
+  `source_digest`; both carrier sets and artifact are null and the accepted
+  admission has an empty message-index-entry tuple.
+
+Every conversation-message projection segment has a non-null
+`message_semantic_context_digest` that resolves to exactly one context in the
+retained `GovernedConversationSnapshotInput`; a governed turn uses its one
+admission-derived message context. Every projection segment carries exactly one
+full `segment_governance` whose source/segment IDs and context digest equal the
+segment and retained context. The projection carrier-set bindings are an
+order-preserving bijection with projection segments. Every conversation turn or
+snapshot message also carries one full `message_admission_identity`; the
+message-admission carrier set is an order-preserving bijection with precisely
+those non-null identities. Other segment variants require the message context
+and message-admission identity to be null. A metadata-poor snapshot produces no segment and cannot
+enter Step 2, active capability selection, or provider transport. It may
+proceed only to the typed evidence-only source finalization path.
+
+For every non-null projection, `governance_carrier_artifact` is non-null and
+contains byte-equal decoded carrier sets, canonical payload bytes, and matching
+digests in the same atomic generation as the observation and message-admission
+index entries. `SourceObservation` and `SourceAdmissionAccepted` carry the same
+two sets, artifact, required scope set, and
+`AdmissionScopeAuthorizationProof` byte-for-byte. The proof's stable binding,
+required-set digest, current-set digest, and session-evidence digest must equal
+the admission inputs; its atomic association is audit evidence but it is
+excluded from the protected index, every durable operation/result/replay
+identity, and subsequent equality checks. Each index entry references that
+loadable artifact ID/digest and
+the exact identity it contains. Null projection requires null artifact and an
+empty index-entry tuple. Missing bytes, a digest-only reference, a different
+generation, duplicate/missing/extra/reordered carrier, or any unequal nested
+copy rejects admission before visibility.
+
 Segments are concatenated with one fixed newline separator. A valid semantic
 span lies wholly inside one segment and is represented by
-`SourceSpanReference`; separator-crossing spans are invalid. The reference maps
-the projected span reversibly to the segment's decoded content through its
-canonical JSON pointer, segment-local span, and authenticated source reference.
-Re-reading the retained envelope and applying that pointer must reproduce the
-same segment text and digest. Projection bytes, segment order/map, manifest,
-and digest are persisted atomically with the source. Replay never recomputes a
-projection under a newer adapter.
+`SourceSpanReference`; separator-crossing spans are invalid. The reference
+binds one projection span to one segment-local span and carries the complete
+mapping proof. For structured sources, re-reading the retained envelope,
+resolving the proof's canonical JSON pointer, verifying the exact canonical
+encoded field bytes, and decoding them must reproduce the segment artifact,
+both spans, and substring digest. No validator compares or equates retained
+JSON offsets with projection or decoded-content offsets. Projection bytes,
+segment order/map, proofs, manifest, and digests are persisted atomically with
+the source. Replay never recomputes a projection under a newer adapter.
 
 The semantic-ingestion atomic store persists one
 `SourceRetentionTimeAttestation` and one `PendingSemanticOperation` with the
 observation under the same delivery fence. Their digests are part of
 `SourceAdmissionAccepted`; neither the attestation nor the admission result
 contains an acceptance signature, key, or trust-policy reference.
-Only `SourceAdmissionAccepted` authorizes Step 2. `rejected` proves that the
+`SourceAdmissionAccepted.admission_digest` binds the immutable admission
+request digest and returned durable handoff only; it excludes the separate
+admission authorization evidence/proof fields. Those audit fields validate
+under their own digests and atomic-generation association.
+`SourceAdmissionAccepted` with a non-null governed semantic projection
+authorizes Step 2 only when its complete required set and admission scope proof
+are present, exact, and accepted under current authorization at the atomic
+admission boundary. An accepted metadata-poor
+snapshot instead finalizes evidence-only without Step 2. `rejected` proves that the
 input did not enter the source store. `retry_required` is not a terminal
 semantic result and cannot be converted to `accepted` from an in-memory write
-result: the coordinator must recover by `delivery_id` through the source store.
+result: the coordinator recovers only with the opaque `recovery_token`, the
+same `DeliveryIdentity`, and newly valid authorization for its persisted
+`DeliveryPrincipalBinding`. The signed token binds the stable delivery key and
+fence without disclosing either and authorizes only a non-disclosing equality
+check before lookup.
 If recovery finds the exact durable observation, it returns the same
 byte-identical `SourceAdmissionAccepted`, including operation ID, allocation
 namespace, writer coordinates, pending-operation digest, and admission digest.
@@ -3020,16 +5139,20 @@ Success means:
   accepted observation;
 - replay of the same delivery returns the same source identity;
 - the stored text compares exactly with the input text;
-- replay returns the same source-governance decision and fingerprint;
-- replay returns the same source-bound provider-egress policy snapshot and
-  decision;
+- replay returns the same invariant source context, complete required scopes,
+  and exact per-segment governance carriers;
+- replay returns each segment's same source/segment-bound provider-egress
+  policy decision;
 - downstream processing can reference stable source coordinates.
 
 Failure means:
 
 - the input violates source, scope, size, timestamp, or provenance contracts;
+- the validated complete required scope set lacks exact or strict-superset
+  same-tenant current authorization;
 - persistence cannot durably retain the observation;
-- the same delivery ID is reused with different immutable content.
+- the same authenticated delivery key is reused with different immutable
+  content.
 
 An invalid envelope or conflicting replay returns `SourceAdmissionRejected`.
 A proven prewrite failure or an indeterminate write returns
@@ -3060,10 +5183,26 @@ later failure retains the exact observation.
   compare its admission request with an independently authored mapping-table
   fixture; reject `prefetch_query`, `unknown`, missing required content, caller
   scope elevation, and provenance substitution before retention;
-- reject blank normalized delivery IDs for every public mutation. For composite
-  turns, prove reserved child-ID collision rejection, deterministic child IDs,
-  stable ordered fan-out across process restart, and every partial-child replay
-  permutation without duplicate source, operation, or graph effects;
+- run independently authored cross-adapter version-1 delivery-ID golden vectors
+  for empty/all-whitespace rejection; invalid scalar/strict-UTF-8 rejection;
+  1,024-byte acceptance and 1,025-byte rejection; byte-preserved leading and
+  trailing whitespace; case; composed/decomposed Unicode pairs; non-ASCII and
+  emoji; embedded colon/delimiter-like text; and retry/restart identity
+  stability. Assert that accepted values retain exact scalar and UTF-8 bytes.
+  For composite turns, prove public/composite discriminator collision
+  rejection, unregistered/duplicate child-kind rejection, deterministic typed
+  child coordinates, stable ordered fan-out across process restart, and every
+  partial-child replay permutation without duplicate source, operation, or
+  graph effects;
+- freeze representative current persisted delivery state and independently
+  build/verify the migration plan and certificate for stripped whitespace,
+  NFC/NFD, delimiter-like public IDs, complete and partial raw-child fan-out,
+  public/child and key collisions, and absent/conflicting original-byte
+  evidence. Crash/restart at every entry and activation boundary is idempotent;
+  pre-activation rollback leaves the old epoch intact; post-activation rollback
+  remains target-only; and a retry crossing activation produces exactly one
+  source, operation, result, and graph effect. Ambiguity without a valid
+  evidence-backed owner disposition blocks activation;
 - inject failure before and after each admission-store publication and
   acknowledgement boundary; an accepted observation, retention attestation,
   and pending operation are all visible with matching digests or all absent;
@@ -3072,16 +5211,43 @@ later failure retains the exact observation.
 - conflicting delivery replay fails without mutation;
 - Unicode, combining characters, emoji, and embedded null-policy cases retain
   exact text according to the accepted transport contract;
-- for verbatim, snapshot, and delegation sources, independently reconstruct the
-  expected semantic projection from the public envelope fixture and compare
-  projection bytes, ordered segments, JSON pointers, source references, and
-  digests. Facts stated only in content may proceed; identical relation-shaped
-  text in role, IDs, status, source references, or JSON keys must be
-  structurally unavailable to every semantic lane;
+- for verbatim, governed-snapshot, and delegation sources, independently
+  reconstruct the expected semantic projection from the retained input and
+  compare projection bytes, ordered segments, message-context digests, JSON
+  pointers, source references, and digests. Facts stated only in governed
+  content may proceed; identical relation-shaped text in role, IDs, status,
+  source references, or JSON keys must be structurally unavailable to every
+  semantic lane;
+- exercise both current metadata-poor hook shapes (`list[str]` and
+  role/content mappings); require byte-identical retention, null projection,
+  exact evidence marker, terminal evidence-only result, zero learned-stage
+  execution, zero provider transport, zero graph mutation, and replay equality
+  without synthesizing message IDs, references, contexts, scope, or authority;
 - mutate envelope order, escaping, duplicate content, path, reference, schema
-  version, projection separator, projected offsets, and segment-local offsets.
+  version, retained/projection/segment artifact kind, ID, digest, scalar length,
+  offset unit, canonical JSON pointer, canonical encoded field-value
+  bytes/digest, decoded content bytes/text digest, projection separator,
+  projection span, segment-local span, substring digest, and mapping-proof
+  digest.
   Replay either returns the byte-identical admitted projection or fails before
   preparation; it never rebuilds under current adapter code;
+- independently verify multi-message and delegation envelopes whose JSON
+  escaping/key prefixes make retained JSON offsets differ from decoded-content
+  offsets. Verbatim controls require the explicit identity proof. No test
+  helper may derive expected projection or segment offsets from the production
+  mapper;
+- permute, omit, duplicate, or substitute effective `MemoryScope` values and
+  segment scope digests; admission must either atomically persist the exact
+  canonical complete required-scope set in observation, carrier artifact,
+  protected index, and admission result or publish none of them;
+- exercise exact, strict-superset, partial, zero, cross-tenant, stale, and
+  revoked current authorization over multi-message governed sources. Admission
+  spies prove denied cases publish no source/operation/proof, start no Step 2
+  work, provider call, local/resource reservation, lease, or graph effect.
+  Current-set/session-evidence/proof substitution rejects. Session renewal,
+  policy/trust rotation, and scope expansion/contraction preserve byte-identical
+  delivery key, operation fence, allocation namespace, checkpoint/replay
+  identities, and admitted result coordinates;
 - invalid timestamps, scope, provenance, and oversized source fail before
   semantic execution;
 - unauthenticated caller event time produces no `TemporalReferenceEvidence` and
@@ -3090,6 +5256,10 @@ later failure retains the exact observation.
   copying production timestamp logic;
 - caller attempts to self-elevate authority, broaden scope, or override
   server-owned modality fail before semantic execution;
+- mutate either stable principal-binding digest or delivery-key digest at
+  admission, operation, lease, fence/allocation derivation, recovery, replay,
+  finalization, and result lookup; every mismatch uses the non-disclosing
+  failure and changes no source, operation, graph, result, or lifecycle state;
 - every source classification/provider/model/region/retention/training-use
   policy combination is tested; duplicate or ambiguous rules invalidate the
   snapshot, denied combinations make zero provider calls, and a changed source
@@ -3138,8 +5308,16 @@ metadata is a hint and is not silently rewritten.
 ```python
 class PreparedSegment(BaseModel):
     segment_id: str
-    owned_span: TextSpan
-    context_span: TextSpan
+    parent_projection_segment_id: str
+    owned_projection_span: ProjectionTextSpan
+    context_projection_span: ProjectionTextSpan
+    owned_segment_span: SegmentLocalTextSpan
+    context_segment_span: SegmentLocalTextSpan
+    text_mapping_proof: TextArtifactMappingProof
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
+    language_route: "SegmentLanguageRoute"
+    code_switch_spans: tuple[SegmentLocalTextSpan, ...]
     boundary_flags: frozenset[str]
 
 class LanguageCandidate(BaseModel):
@@ -3147,18 +5325,46 @@ class LanguageCandidate(BaseModel):
     probability_ppm: int = Field(ge=0, le=1_000_000)
     model_fingerprint: str
 
-class LanguageRoutingDecision(BaseModel):
+class SegmentLanguageResourceBinding(BaseModel):
+    selected_language: str
+    proposal_capability_fingerprint: str
+    stanza_analyzer_manifest_digest: str
+    spacy_analyzer_manifest_digest: str
+    predicate_event_manifest_digest: str
+    temporal_resolver_manifest_digest: str
+    resource_binding_digest: str
+
+class SegmentLanguageRoute(BaseModel):
     source_id: str
     source_digest: str
+    segment_id: str
+    segment_text_artifact_id: str
+    segment_text_artifact_digest: str
+    segment_text_content_digest: str
     declared_language: str | None
     candidates: tuple[LanguageCandidate, ...]
+    code_switch_spans: tuple[SegmentLocalTextSpan, ...]
     selected_language: str | None
-    decision: Literal["selected", "uncertain", "unsupported", "conflict"]
+    decision: Literal[
+        "selected",
+        "uncertain",
+        "unsupported",
+        "conflict",
+        "unresolved_code_switch",
+        "missing_resource",
+    ]
     minimum_probability_ppm: int = Field(ge=0, le=1_000_000)
     minimum_margin_ppm: int = Field(ge=0, le=1_000_000)
     routing_policy_fingerprint: str
     router_manifest_fingerprint: str
-    decision_digest: str
+    resource_binding: SegmentLanguageResourceBinding | None
+    route_digest: str
+
+class SegmentLanguageRouteSet(BaseModel):
+    source_id: str
+    source_digest: str
+    routes: tuple[SegmentLanguageRoute, ...]
+    route_set_digest: str
 
 class PreparedSource(BaseModel):
     source_id: str
@@ -3166,46 +5372,72 @@ class PreparedSource(BaseModel):
     semantic_text_projection: SourceSemanticTextProjection
     source_digest: str
     semantic_context: SourceSemanticContext
-    language_routing: LanguageRoutingDecision
-    sentence_spans: tuple[TextSpan, ...]
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    sentence_spans: tuple[SourceSpanReference, ...]
     segments: tuple[PreparedSegment, ...]
-    token_spans: tuple[TokenSpan, ...]
-    code_switch_spans: tuple[LanguageSpan, ...]
+    token_spans: tuple[SourceSpanReference, ...]
     preparation_fingerprint: str
     status: Literal["complete", "unsupported", "failed"]
     diagnostics: tuple[str, ...]
 ```
 
-Every span addresses `semantic_text` with Python character offsets and must lie
-within one projection segment. `semantic_text` equals
+Every projection span addresses `semantic_text` and every segment-local span
+addresses the exact parent segment artifact; each pair validates through its
+mapping proof and lies within one projection segment. `semantic_text` equals
 `semantic_text_projection.projection_text`; preparation cannot read semantic
 content from retained envelope metadata. Normalized token values are
 annotations, not replacement source text. The semantic context and projection
 must compare exactly with the retained observation; preparation cannot rebuild
-the projection or normalize governance fields.
+the projection or normalize governance fields. Each `PreparedSegment` copies
+the full governance binding and optional message-admission identity from its
+one projection segment. Prepared-source carrier sets are ordered bijections
+with those fields and byte-equal to the projection and loadable admission
+artifact. Its projection/local span pairs slice to identical scalar sequences
+while retaining distinct artifact kinds, IDs, and digests. Preparation may
+split text only by producing child segments that
+retain the same parent governance and message identity; it cannot combine
+different bindings. Every child-to-parent relation enters
+`preparation_fingerprint`. Missing artifact bytes, generation mismatch, or any
+unequal copy fails preparation.
+
+`SegmentLanguageRouteSet.routes` is an exact source-ordered bijection with
+`PreparedSource.segments`; route and segment IDs, source coordinates, segment
+artifact ID/digest/content digest, declared-language evidence, code-switch
+spans, and route copy are byte-equal. A `selected` route has exactly one
+non-null resource binding whose language and proposal/Stanza/spaCy/event/
+temporal resources are certified for that exact route. Every other decision
+requires `selected_language=None` and `resource_binding=None`. Within-segment
+unresolved code switching, uncertainty, unsupported/conflicting evidence, or a
+missing certified resource makes only that segment evidence-only: it creates no
+proposal, Stanza, spaCy, event-detector, temporal-resolver, NLI, or graph call.
+Source status is the deterministic ordered aggregation of segment outcomes and
+cannot authorize or repair a segment. [SIA-I316]
 
 #### 4.2.4 Success and failure
 
 Success means:
 
-- every span lies within projected semantic text, slices back to the expected
-  substring, and maps through one `SourceSpanReference` to exact retained
-  verbatim content;
+- every span lies within its named artifact, slices back to the expected
+  substring, and maps through one `SourceSpanReference` and mapping proof to
+  exact retained verbatim content or exact decoded envelope-field content;
 - no span crosses a projection separator or addresses structured-envelope
   metadata; path and segment-local-span mutation fails reverse mapping;
 - sources within the configured bound remain one segment;
-- segment `owned_span` values are disjoint, source ordered, and partition the
+- segment `owned_projection_span` values are disjoint, source ordered, and partition the
   complete source exactly once;
 - oversized sources use whole-sentence or whole-paragraph context windows whose
-  `context_span` may overlap, but each context contains its segment's
-  `owned_span`;
+  `context_projection_span` may overlap, but each context contains its
+  `owned_projection_span`;
 - no semantic marker is discarded;
 - the proposer receives the complete context span and may emit an operation only
   when its predicate anchor lies inside that segment's owned span;
-- the analyzer receives the complete prepared source and preserves the same
-  absolute coordinate system;
+- each analyzer receives the complete exact segment context and preserves both
+  segment-local and projection coordinate bindings;
 - preparation is deterministic for one source and policy fingerprint.
-- a `selected` route names exactly one enabled language whose probability and
+- each `selected` segment route names exactly one enabled language whose probability and
   lead over the runner-up meet the fingerprinted thresholds; a material
   declaration/model conflict cannot be `selected`.
 
@@ -3216,7 +5448,7 @@ Failure means:
 - an assertion candidate touches an unsafe segment boundary or requires context
   outside the declared overlap;
 - text or language metadata violates the supported preparation contract.
-- language evidence is insufficient, unsupported, or materially conflicts with
+- one segment's language evidence is insufficient, unsupported, or materially conflicts with
   an authenticated declaration.
 
 An unsupported or failed preparation retains the source but cannot promote an
@@ -3238,7 +5470,8 @@ unresolved rather than being reconstructed from partial proposals.
   model hash, adapter version, truncation policy, minimum source length,
   probability threshold, and margin threshold are part of the router manifest.
   Scores authorize routing only; they are never semantic truth evidence.
-- Python source-string offsets remain canonical across all components.
+- Unicode-scalar offsets are canonical only within the explicitly named text
+  artifact; mapping proofs connect artifact kinds.
 - BCP-47 tags represent declared language metadata.
 - Safe sentence and chunk boundaries may use deterministic Unicode-aware
   segmentation; no semantic role decision occurs here.
@@ -3247,7 +5480,8 @@ unresolved rather than being reconstructed from partial proposals.
 
 #### 4.2.6 Validation strategy
 
-- round-trip every produced span against the original source;
+- round-trip every produced span against its named artifact and independently
+  verify every retained-to-projection-to-segment mapping proof;
 - cover repeated substrings, combining marks, punctuation variants, emoji,
   multi-sentence updates, quotation, and parentheticals;
 - prove that adding whitespace or irrelevant independent sentences preserves
@@ -3261,10 +5495,12 @@ unresolved rather than being reconstructed from partial proposals.
 - use an independent interval-coverage assertion in tests rather than the
   production segment builder;
 - fuzz Unicode and boundary positions while requiring exact source recovery.
-- run native English and Spanish routing corpora plus short, mixed-language,
-  mislabeled, unsupported, and low-margin cases; mutate declarations, scores,
-  thresholds, model hashes, and candidate order and require either the same
-  unique decision or explicit non-promotion.
+- run native English and Spanish routing corpora plus multi-message mixed
+  English/Spanish sources, short, within-segment code-switched, mislabeled,
+  unsupported, low-margin, and missing-resource cases. Mutate segment/content
+  digest, declarations, code-switch spans, scores, thresholds, model/resource
+  hashes, route-to-segment order, and candidate order; only the affected exact
+  segment may receive one selected route or explicit evidence-only disposition.
 
 ### 4.3 Step 3: Capability-Bound Semantic Proposal
 
@@ -3326,11 +5562,13 @@ class SemanticProposalRequest(BaseModel):
     source_digest: str
     semantic_context_fingerprint: str
     segment_id: str
-    owned_span: TextSpan
-    context_span: TextSpan
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    owned_text: SourceSpanReference
+    context_text: SourceSpanReference
     segment_text: str
-    selected_language: str
-    language_routing_decision_digest: str
+    language_route: SegmentLanguageRoute
     provider_egress_decision_digest: str | None
     proposal_capability_fingerprint: str
     predicate_catalog: tuple[PredicatePromptContract, ...]
@@ -3540,8 +5778,12 @@ Provider execution first produces an attempt record:
 class SemanticProposalAttempt(BaseModel):
     source_id: str
     segment_id: str
-    owned_span: TextSpan
-    context_span: TextSpan
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    owned_text: SourceSpanReference
+    context_text: SourceSpanReference
+    language_route: SegmentLanguageRoute
     proposer_fingerprint: str
     proposer_manifest_digest: str
     prompt_registration_digest: str
@@ -3549,7 +5791,7 @@ class SemanticProposalAttempt(BaseModel):
     attempt_payload_fingerprint: str
     attempt_number: int
     raw_output_digest: str | None
-    status: Literal["complete", "partial", "abstained", "failed"]
+    status: Literal["complete", "partial", "abstained", "evidence_only", "failed"]
     diagnostics: tuple[str, ...]
 ```
 
@@ -3561,8 +5803,12 @@ class SemanticProposal(BaseModel):
     source_id: str
     source_digest: str
     segment_id: str
-    owned_span: TextSpan
-    context_span: TextSpan
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    owned_text: SourceSpanReference
+    context_text: SourceSpanReference
+    language_route: SegmentLanguageRoute
     proposer_fingerprint: str
     proposer_manifest_digest: str
     prompt_registration_digest: str
@@ -3578,14 +5824,34 @@ class SemanticProposal(BaseModel):
     status: Literal["complete", "abstained"]
     diagnostics: tuple[str, ...]
 
+class SegmentProposalOutcome(BaseModel):
+    segment_id: str
+    segment_language_route_digest: str
+    status: Literal["complete", "abstained", "evidence_only", "failed"]
+    proposal_digest: str | None
+    attempt_digest: str
+    reason_codes: tuple[str, ...]
+    outcome_digest: str
+
 class SemanticProposalRun(BaseModel):
     source_id: str
     source_digest: str
     preparation_fingerprint: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    segment_language_routes: SegmentLanguageRouteSet
     expected_segment_ids: tuple[str, ...]
     segment_attempts: tuple[SemanticProposalAttempt, ...]
     validated_segments: tuple[SemanticProposal, ...]
-    status: Literal["complete", "abstained", "incomplete", "failed"]
+    segment_outcomes: tuple[SegmentProposalOutcome, ...]
+    status: Literal[
+        "complete",
+        "evidence_only",
+        "abstained",
+        "incomplete",
+        "failed",
+    ]
     run_fingerprint: str
     diagnostics: tuple[str, ...]
 ```
@@ -3601,15 +5867,35 @@ Each `segment_id` is the digest of source digest, canonical owned/context
 start/end offsets, and preparation-policy fingerprint. `expected_segment_ids`
 is the stable, source-ordered tuple derived from every
 `PreparedSource.segments` entry.
+For each segment, `SemanticProposalRequest`, every attempt, and its validated
+proposal carry byte-equal `segment_governance`, message-admission identity, and
+governance artifact plus the complete selected `language_route` copied from
+that `PreparedSegment`; none may be reconstructed
+from source-wide context. `SemanticProposalRun.segment_governance_carriers` and
+`message_admission_carriers` are ordered bijections with its expected segments
+and equal the prepared source carrier sets; `segment_language_routes` is the
+same exact bijection as the prepared source. All nested artifacts have one
+artifact ID, digest, canonical payload, and atomic generation. A denied binding
+permits a retained blocked attempt but no request serialization or provider
+call. Missing, extra, duplicate, reordered, digest-only, or unequal carriers
+make run sealing fail.
 `proposal_id` is the digest of source digest, segment ID, semantic-request
 fingerprint, proposer-manifest digest, prompt-registration digest, and
 attempt-payload fingerprint. It is stable for byte-identical replay and changes
 when any behavior-affecting request authority changes.
-The run is `complete` only when every expected segment has exactly one terminal,
-validated result under the same source, preparation, proposer, prompt, and
-schema fingerprints. `abstained` means every segment completed and collectively
-proposed no operation. Missing, duplicate, failed, partial, or fingerprint-
-inconsistent segment outcomes make the run `incomplete` or `failed`.
+`segment_outcomes` is an exact ordered bijection with expected segments.
+`complete` requires every segment to have one terminal outcome and every
+route-selected segment to have one validated result under its exact source,
+preparation, route, proposer, prompt, and schema;
+non-selected segments have one `evidence_only` outcome with no proposal digest
+or learned call. `complete` may therefore aggregate valid selected-segment
+proposals while permanently excluding evidence-only segments from alignment,
+capability selection, planning, and graph effect. `evidence_only` means no
+segment is promotable; `abstained` means every route-selected segment completed
+and collectively proposed no operation. Missing, duplicate, partial, or
+fingerprint-inconsistent segment outcomes make the run `incomplete` or
+`failed`. Source status is only this deterministic ordered aggregation and
+cannot alter a segment outcome.
 
 Before sealing, absolute-span deduplication enforces ownership. An operation is
 eligible only from the segment whose owned span contains its predicate anchor.
@@ -3694,6 +5980,9 @@ remains non-committing.
 - source-run tests remove, duplicate, reorder, fingerprint-mutate, fail, and
   partially repair individual segments; only the exact complete segment set may
   seal, and every non-complete run has zero graph effect;
+- route tests swap segment IDs, segment text artifacts/digests, route digests,
+  selected language, proposal resource binding, retry route, or batch member;
+  the affected segment makes no proposer call and cannot seal a proposal;
 - overlap tests emit the same assertion from every context window, vary which
   owned span contains the predicate anchor, and require exactly one canonical
   operation; incompatible duplicate semantics fail the entire run;
@@ -3746,7 +6035,7 @@ remains non-committing.
 
 The source-analysis stage derives independently packaged syntactic views, a
 parse-independent high-recall predicate-event inventory, and source-only
-temporal candidates from the complete prepared source. Stanza is the primary
+temporal candidates from each exact routed prepared segment. Stanza is the primary
 parser and spaCy is the corroborating parser. The design does not claim that
 their training data or errors are statistically independent; diversity is used
 to expose disagreement, while held-out certification remains the authority for
@@ -3758,19 +6047,28 @@ durable graph truth, or hide parser failure behind an empty successful result.
 #### 4.4.2 Input contract
 
 ```python
+class SegmentAnalysisInput(BaseModel):
+    source_id: str
+    source_digest: str
+    segment_id: str
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    context_text: SourceSpanReference
+    segment_text: str
+    language_route: SegmentLanguageRoute
+    input_digest: str
+
 class LinguisticAnalysisRequest(BaseModel):
-    source: PreparedSource
-    language_routing: LanguageRoutingDecision
+    segment: SegmentAnalysisInput
     analyzer_manifest: AnalyzerManifest
 
 class PredicateEventDetectionRequest(BaseModel):
-    source: PreparedSource
-    language_routing: LanguageRoutingDecision
+    segment: SegmentAnalysisInput
     predicate_event_manifest: PredicateEventManifest
 
 class TemporalResolutionRequest(BaseModel):
-    source: PreparedSource
-    language_routing: LanguageRoutingDecision
+    segment: SegmentAnalysisInput
     resolver_manifest: TemporalResolverManifest
     reference_evidence: TemporalReferenceEvidence | None
 ```
@@ -3798,16 +6096,35 @@ binds the local Duckling image/binary hash, ruleset version, locale map,
 timezone policy, adapter schema, and supported temporal construction families.
 
 The initial active languages are English and Spanish. Every request requires
-the same `selected` `LanguageRoutingDecision`. A material
-language-identification disagreement produces unresolved promotion; it never
-silently routes the source to a different semantic authority.
+the exact segment's `selected` `SegmentLanguageRoute`; its manifest digest must
+equal the matching field of that route's resource binding. A material
+language-identification disagreement or resource substitution produces an
+evidence-only segment and no adapter call; it never routes another segment or
+the source aggregate to a different semantic authority. Batch execution is
+permitted only when every member has byte-equal language, route policy, and
+lane-specific resource binding. The batch result retains one separately
+digested result per segment and cannot merge spans, status, or evidence.
 
 #### 4.4.3 Output contract
 
 ```python
+class SegmentLanguageLaneOutcome(BaseModel):
+    lane: Literal[
+        "stanza", "spacy", "predicate_event_detection", "temporal_resolution"
+    ]
+    segment_id: str
+    segment_language_route_digest: str
+    resource_binding_digest: str | None
+    status: Literal["complete", "partial", "evidence_only", "unsupported", "failed"]
+    artifact_digest: str | None
+    reason_codes: tuple[str, ...]
+    outcome_digest: str
+
 class LinguisticAnalysis(BaseModel):
     source_id: str
     source_digest: str
+    segment_id: str
+    segment_language_route_digest: str
     analyzer_fingerprint: str
     language: str | None
     tokens: tuple[LinguisticToken, ...]
@@ -3817,21 +6134,35 @@ class LinguisticAnalysis(BaseModel):
     status: Literal["complete", "partial", "unsupported", "failed"]
     diagnostics: tuple[str, ...]
 
+class SegmentLinguisticAnalysisBundle(BaseModel):
+    source_id: str
+    source_digest: str
+    segment_id: str
+    segment_language_route_digest: str
+    primary: LinguisticAnalysis | None
+    corroborating: LinguisticAnalysis | None
+    lane_outcomes: tuple[SegmentLanguageLaneOutcome, ...]
+    status: Literal["complete", "partial", "evidence_only", "unsupported", "failed"]
+    bundle_fingerprint: str
+    diagnostics: tuple[str, ...]
+
 class LinguisticAnalysisBundle(BaseModel):
     source_id: str
     source_digest: str
-    language_routing_decision_digest: str
-    primary: LinguisticAnalysis
-    corroborating: LinguisticAnalysis
-    status: Literal["complete", "partial", "unsupported", "failed"]
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_bundles: tuple[SegmentLinguisticAnalysisBundle, ...]
+    segment_outcomes: tuple[SegmentLanguageLaneOutcome, ...]
+    status: Literal["complete", "partial", "evidence_only", "unsupported", "failed"]
     bundle_fingerprint: str
     diagnostics: tuple[str, ...]
 
 class PredicateEventCandidate(BaseModel):
     event_id: str
+    segment_id: str
+    segment_language_route_digest: str
     predicate_family: str
-    lexical_anchor_span: TextSpan
-    morphology_evidence_spans: tuple[TextSpan, ...]
+    lexical_anchor_span: ProjectionTextSpan
+    morphology_evidence_spans: tuple[ProjectionTextSpan, ...]
     detection_rule_id: str
     detection_manifest_fingerprint: str
     candidate_digest: str
@@ -3839,14 +6170,17 @@ class PredicateEventCandidate(BaseModel):
 class PredicateEventInventory(BaseModel):
     source_id: str
     source_digest: str
-    language_routing_decision_digest: str
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_outcomes: tuple[SegmentLanguageLaneOutcome, ...]
     candidates: tuple[PredicateEventCandidate, ...]
-    status: Literal["complete", "unsupported", "failed"]
+    status: Literal["complete", "evidence_only", "unsupported", "failed"]
     inventory_fingerprint: str
 
 class ResolvedTemporalCandidate(BaseModel):
     candidate_id: str
-    source_span: TextSpan
+    segment_id: str
+    segment_language_route_digest: str
+    source_span: ProjectionTextSpan
     exact_text: str
     value_kind: Literal["instant", "interval", "duration"]
     normalized_interval: TimeInterval | None
@@ -3861,13 +6195,21 @@ class ResolvedTemporalCandidate(BaseModel):
 class TemporalResolution(BaseModel):
     source_id: str
     source_digest: str
-    language_routing_decision_digest: str
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_outcomes: tuple[SegmentLanguageLaneOutcome, ...]
     candidates: tuple[ResolvedTemporalCandidate, ...]
-    ambiguous_spans: tuple[TextSpan, ...]
-    status: Literal["complete", "unsupported", "failed"]
+    ambiguous_spans: tuple[ProjectionTextSpan, ...]
+    status: Literal["complete", "evidence_only", "unsupported", "failed"]
     resolver_fingerprint: str
     diagnostics: tuple[str, ...]
 ```
+
+Each aggregate's segment outcomes are an exact ordered bijection with the
+prepared route set. A selected route requires the exact lane resource digest
+and one segment result; a blocked route requires `evidence_only`, null resource
+and artifact digests, and no adapter invocation. Candidates and analyses may
+reference only their own segment/route pair. Aggregate status is a total
+function of ordered segment statuses and grants no execution authority.
 
 `LinguisticToken` records original character offsets, lemma, UPOS,
 morphological features, sentence/word identity, and multi-word-token mapping.
@@ -3896,7 +6238,8 @@ proposal spans with this independent inventory and the normalized token graph.
 Success means:
 
 - the pinned model bundle loaded with valid checksums;
-- every token offset maps exactly to the original source;
+- every token offset maps exactly to its segment artifact and through the
+  persisted proof to the projection artifact;
 - every dependency endpoint and clause span is valid;
 - the required processors completed;
 - output is normalized into the language-neutral contract;
@@ -3910,9 +6253,11 @@ Failure or non-success means:
 - `failed`: model loading, checksum, timeout, inference, or normalization
   failed.
 
-Both parser analyses, the event inventory, and temporal resolution where the
-predicate requires textual time must be `complete` under one exact certified
-capability. Other statuses retain source and diagnostics. A complete parser
+For every promotable segment, both parser analyses, its event lane, and
+temporal resolution where a predicate requires textual time must be `complete`
+under that segment's exact certified route/resource bindings. Evidence-only
+segments have no lane artifact and cannot contribute an operation. Other
+statuses retain source and diagnostics. A complete parser
 bundle does not assert agreement; Step 5 derives and records exact
 construction-level role-assignment sets from each normalized parse. A
 `ParserConsensusAssessment` must bind the exact source, route, bundle, proposal,
@@ -3944,7 +6289,8 @@ Design choices:
   vocabulary.
 - parser assets are local, immutable, checksummed, and licensed explicitly;
 - one warmed pipeline exists per enabled language and process;
-- analysis is cached by `(source_digest, analyzer_fingerprint)`;
+- analysis is cached by `(segment_text_artifact_digest, route_digest,
+  analyzer_fingerprint)`;
 - NER is optional evidence and not required for domain argument discovery;
 - parser exceptions and empty required output are explicit failures.
 - The spaCy adapter loads one pinned `en_core_web_trf` or
@@ -3960,8 +6306,9 @@ Design choices:
   extra candidates cause explicit unresolved coverage obligations, never graph
   facts.
 - Duckling runs as a pinned local sidecar or embedded binary with network
-  egress disabled. The adapter converts returned byte offsets to canonical
-  Python character offsets and verifies every exact source slice. Relative
+  egress disabled. The adapter converts returned byte offsets to the exact
+  segment-local scalar coordinates, maps them to projection coordinates through
+  the persisted proof, and verifies every exact slice. Relative
   temporal expressions require an authenticated event/document reference time;
   `received_at` is not silently used as valid-time evidence. Multiple distinct
   normalized values for one span are retained as ambiguity and cannot promote.
@@ -3978,6 +6325,10 @@ Design choices:
 - arbitrary names and domain noun phrases replace benchmark entities;
 - malformed offsets, missing models, checksum mismatch, unsupported language,
   timeout, and partial processor output fail explicitly;
+- mixed-segment batch tests permit batching only for byte-equal route and
+  lane-resource bindings, retain one result per segment, and reject any
+  cross-segment route, span, result, retry, or replay substitution before an
+  adapter call or graph effect;
 - core reconciler tests consume hand-authored `LinguisticAnalysis` fixtures so
   they remain independent of Stanza internals;
 - model/library upgrades change the fingerprint and require conformance replay
@@ -4031,22 +6382,30 @@ class GraphEvidenceNormalizationRequest(BaseModel):
     identity_policy_registry: IdentityPolicyRegistry
 ```
 
-The source, proposal run, both analyses, predicate-event inventory, and temporal
-resolution must agree on source identity, digest, and language-routing decision.
-The run must be sealed `complete` or fully `abstained`, and its expected segment
-IDs must exactly equal the prepared source segment IDs. The proposal and
+The source, proposal run, analysis segment bundles, predicate-event inventory,
+and temporal resolution must agree on source identity/digest and the exact
+`SegmentLanguageRouteSet`. Each operation alignment names exactly one segment
+and route digest; cross-segment or source-aggregate route substitution rejects.
+The run must be terminal `complete`, `evidence_only`, or `abstained`, and its
+expected segment IDs must exactly
+equal the prepared source segment IDs. Alignment consumes only route-selected
+segments with validated proposals; evidence-only segments remain explicit
+coverage dispositions and cannot contribute an operation. The proposal and
 analysis dependency fingerprints must prove that neither was derived from the
 other. `SourceNormalizationRequest` is graph-free: its schema cannot contain a
 graph snapshot, graph revision, canonical entity ID, allocation namespace,
 operation lease, graph repository, or graph-derived policy. It produces the
 immutable source alignment once.
 
-Capability selection is closed in the source-scoped request. The selector uses only the
-sealed source alignment, exact language/predicate/construction/policy
+Capability selection is closed per aligned operation and its exact segment
+route within the source request. The selector uses only the sealed source
+alignment, exact segment route/language/predicate/construction/policy
 fingerprints, and `CapabilityRegistrySnapshot`. It emits exactly one
 `OperationCapabilitySelection` for every aligned operation before NLI starts.
 The selected semantic capability must list the exact
 `proposal_capability_fingerprint` sealed into that operation's proposal run.
+Its supported language and verifier resource must match the same segment route;
+no source-level route or another segment's capability may satisfy the check.
 No later component may look up a nearer capability, change `nli_mode`, or
 replace the selected status revision. Every operation in one atomic source
 semantic group must select the same capability fingerprint and NLI mode or the
@@ -4066,9 +6425,10 @@ transactionally read capability record.
 
 Only after the source alignment and capability selections are sealed may the
 coordinator create `GraphEvidenceNormalizationRequest`. Its snapshot bundle is
-produced from the authorized source scope and names one graph revision,
-snapshot token, identity snapshot, type-evidence snapshot, policy set, and base
-read set against which every graph-relative decision is made. Alias/type
+produced from the admitted complete required scopes and exact segment bindings
+and names one graph revision, snapshot token, identity snapshot, type-evidence
+snapshot, policy set, and base read set against which every graph-relative
+decision is made. Alias/type
 compatibility is evaluated only from the bundle's type evidence; graph
 normalization cannot issue a second type lookup. Planned first-observation
 identities are derived from the stable allocation namespace and authorized by
@@ -4089,6 +6449,7 @@ performs no hidden policy lookup.
 ```python
 class SourceProposalAlignment(BaseModel):
     source_id: str
+    segment_language_routes: SegmentLanguageRouteSet
     operation_alignments: tuple[OperationAlignment, ...]
     parser_consensus: tuple["ParserConsensusAssessment", ...]
     scope_consensus: tuple["SemanticScopeConsensus", ...]
@@ -4104,13 +6465,13 @@ class SourceProposalAlignment(BaseModel):
 
 class CanonicalRoleAssignment(BaseModel):
     role_id: str
-    argument_span: TextSpan
+    argument_span: ProjectionTextSpan
     endpoint_kind: Literal["subject", "object", "actor", "other"]
     assignment_digest: str
 
 class AnalyzerRoleInterpretation(BaseModel):
     analyzer_fingerprint: str
-    predicate_head_span: TextSpan
+    predicate_head_span: ProjectionTextSpan
     construction_family: ConstructionFamily
     assignments: tuple[CanonicalRoleAssignment, ...]
     interpretation_digest: str
@@ -4118,8 +6479,9 @@ class AnalyzerRoleInterpretation(BaseModel):
 class ParserConsensusAssessment(BaseModel):
     source_id: str
     source_digest: str
+    segment_id: str
     proposal_id: str
-    language_routing_decision_digest: str
+    segment_language_route_digest: str
     analysis_bundle_fingerprint: str
     primary_interpretation: AnalyzerRoleInterpretation
     corroborating_interpretation: AnalyzerRoleInterpretation
@@ -4131,27 +6493,28 @@ class ParserConsensusAssessment(BaseModel):
 class AnalyzerScopeInterpretation(BaseModel):
     analyzer_fingerprint: str
     proposal_id: str
-    predicate_head_span: TextSpan
-    governing_clause_spans: tuple[TextSpan, ...]
+    predicate_head_span: ProjectionTextSpan
+    governing_clause_spans: tuple[ProjectionTextSpan, ...]
     polarity: CheckResult
     commitment: CheckResult
     attribution: CheckResult
-    attribution_bearer_span: TextSpan | None
+    attribution_bearer_span: ProjectionTextSpan | None
     interpretation_digest: str
 
 class StableSemanticScope(BaseModel):
     polarity: Literal["positive", "negative"]
     commitment: Commitment
     attribution: Literal["speaker", "quoted_or_reported_source"]
-    attribution_bearer_span: TextSpan | None
-    governing_clause_spans: tuple[TextSpan, ...]
+    attribution_bearer_span: ProjectionTextSpan | None
+    governing_clause_spans: tuple[ProjectionTextSpan, ...]
     scope_digest: str
 
 class SemanticScopeConsensus(BaseModel):
     source_id: str
     source_digest: str
+    segment_id: str
     proposal_id: str
-    language_routing_decision_digest: str
+    segment_language_route_digest: str
     analysis_bundle_fingerprint: str
     primary_interpretation: AnalyzerScopeInterpretation
     corroborating_interpretation: AnalyzerScopeInterpretation
@@ -4163,14 +6526,16 @@ class SemanticScopeConsensus(BaseModel):
 class AnalyzerTemporalAttachment(BaseModel):
     analyzer_fingerprint: str
     proposal_id: str
-    predicate_head_span: TextSpan
+    predicate_head_span: ProjectionTextSpan
     candidate_ids: tuple[str, ...]
-    attachment_spans: tuple[TextSpan, ...]
+    attachment_spans: tuple[ProjectionTextSpan, ...]
     attachment_digest: str
 
 class TemporalAttachmentConsensus(BaseModel):
     source_id: str
     source_digest: str
+    segment_id: str
+    segment_language_route_digest: str
     proposal_id: str
     temporal_resolution_fingerprint: str
     primary_attachment: AnalyzerTemporalAttachment
@@ -4201,7 +6566,7 @@ class UnresolvedPredicateEvent(BaseModel):
         "unsupported_construction",
     ]
     related_proposal_ids: tuple[str, ...]
-    evidence_spans: tuple[TextSpan, ...]
+    evidence_spans: tuple[ProjectionTextSpan, ...]
     disposition_digest: str
 
 PredicateEventDisposition = Annotated[
@@ -4212,6 +6577,7 @@ PredicateEventDisposition = Annotated[
 class ProposalCoverageAudit(BaseModel):
     source_id: str
     source_digest: str
+    segment_language_routes: SegmentLanguageRouteSet
     proposal_run_fingerprint: str
     predicate_event_inventory_fingerprint: str
     dispositions: tuple[PredicateEventDisposition, ...]
@@ -4224,6 +6590,8 @@ class ProposalCoverageAudit(BaseModel):
 class OperationCapabilitySelection(BaseModel):
     operation_id: str
     source_dependency_group_id: str
+    segment_id: str
+    segment_language_route_digest: str
     proposal_capability_fingerprint: str
     capability_fingerprint: str
     capability_registry_snapshot_digest: str
@@ -4245,6 +6613,8 @@ class SourceNormalizationResult(BaseModel):
 class OperationCapabilityExecutionBinding(BaseModel):
     operation_id: str
     source_dependency_group_id: str
+    segment_id: str
+    segment_language_route_digest: str
     proposal_capability_fingerprint: str
     capability_fingerprint: str
     capability_selection_digest: str
@@ -4261,7 +6631,7 @@ class OperationCapabilityExecutionBinding(BaseModel):
 class CanonicalAttributionBearerBinding(BaseModel):
     proposal_id: str
     scope_consensus_digest: str
-    attribution_bearer_span: TextSpan
+    attribution_bearer_span: ProjectionTextSpan
     grounded_mention_ref: GroundedMentionRef
     source_local_cluster_id: str
     canonical_entity: "CanonicalEntityReference"
@@ -4297,6 +6667,8 @@ class SourceDependencyGroup(BaseModel):
     reason_codes: tuple[str, ...]
 
 class SemanticScopeAssessment(BaseModel):
+    segment_id: str
+    segment_language_route_digest: str
     proposal_id: str
     parser_consensus_digest: str
     scope_consensus_digest: str
@@ -4321,7 +6693,7 @@ class TemporalEvidenceAssessment(BaseModel):
         "atemporal",
         "unresolved",
     ]
-    evidence_spans: tuple[TextSpan, ...]
+    evidence_spans: tuple[ProjectionTextSpan, ...]
     temporal_policy_fingerprint: str
     temporal_policy_snapshot_digest: str
 ```
@@ -4528,11 +6900,12 @@ abstention, while positive entailment alone cannot approve durable truth.
 ```python
 class NliRequest(BaseModel):
     source_id: str
-    assertion_span: TextSpan
+    segment_id: str
+    segment_language_route: SegmentLanguageRoute
+    assertion_span: ProjectionTextSpan
     assertion_text: str
     proposal_id: str
     predicate_id: str
-    language: str
     positive_hypothesis: str
     role_swapped_hypothesis: str | None
     polarity_swapped_hypothesis: str | None
@@ -4556,20 +6929,29 @@ state, benchmark expectations, or any other graph-dependent read. This keeps
 learned corroboration reusable across a graph-conflict retry without allowing
 canonical graph decisions to leak into it.
 
+The request's segment ID and route digest equal its proposal,
+`OperationCapabilityExecutionBinding`, assertion span's projection segment, and
+selected verifier resource. A non-selected route, unresolved code switch,
+missing resource, or any route/content/resource substitution produces no NLI
+call. NLI batching requires byte-equal route and verifier resource bindings and
+retains separately digested per-segment assessments.
+
 #### 4.5.9 NLI output contract
 
 ```python
 class NliHypothesisAssessment(BaseModel):
     kind: Literal["positive", "role_swapped", "polarity_swapped"]
-    entailment_logit: float
-    neutral_logit: float
-    contradiction_logit: float
+    entailment_logit: CanonicalFiniteBinary64
+    neutral_logit: CanonicalFiniteBinary64
+    contradiction_logit: CanonicalFiniteBinary64
     calibrated_region: Literal[
         "supports", "counterevidence", "uncertain", "uncalibrated"
     ]
 
 class NliAssessment(BaseModel):
     source_id: str
+    segment_id: str
+    segment_language_route_digest: str
     proposal_id: str
     verifier_fingerprint: str
     hypotheses: tuple[NliHypothesisAssessment, ...]
@@ -4654,6 +7036,10 @@ class ReconciliationRequest(BaseModel):
     source: PreparedSource
     source_context: SourceSemanticContext
     proposal_run: SemanticProposalRun
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
     analyses: LinguisticAnalysisBundle
     alignment: GraphProposalAlignment
     parser_consensus: tuple[ParserConsensusAssessment, ...]
@@ -4675,6 +7061,21 @@ class ReconciliationRequest(BaseModel):
 All source IDs, digests, and immutable source-context fields must agree with the
 retained observation. Every supplied dependency has an exact fingerprint. The
 reconciler refuses unknown combinations rather than applying the nearest policy.
+The request's two carrier sets and full artifact are byte-equal to its prepared
+source and proposal run. Its route set is byte-equal to the prepared source,
+proposal run, analysis bundle, event inventory, and temporal resolution. Each
+proposal, consensus result, temporal candidate, NLI assessment, capability
+selection, and capability binding names the exact route digest of its segment;
+missing, duplicate, cross-segment, non-selected, or resource-substituted routes
+make that segment evidence-only before reconciliation. Each assessment enumerates exactly the governance
+bindings and message identities reached by that operation's source spans. Each
+accepted variant carries one `AcceptedOperationGovernanceCarrier` whose
+operation ID matches the variant and whose bindings/identities are an ordered,
+duplicate-free bijection with that assessment; the variant's direct
+`message_admission_identities` field exactly equals the envelope copy.
+Reconciliation rejects a
+dangling digest, unloaded artifact, cross-generation copy, missing/extra
+carrier, or operation whose evidence crosses incompatible contexts.
 The proposal run and analysis bundle must be independently produced;
 `alignment` is the first component allowed to reference both. The explicit
 parser, scope, and temporal-attachment consensus tuples must exactly equal the
@@ -4717,12 +7118,17 @@ polarity/commitment evidence.
 class CheckResult(BaseModel):
     status: Literal["pass", "fail", "unknown"]
     reason_code: str
-    evidence_spans: tuple[TextSpan, ...]
+    evidence_spans: tuple[ProjectionTextSpan, ...]
     diagnostics: tuple[str, ...]
 
 class SemanticAssessment(BaseModel):
     operation_id: str
     source_dependency_group_id: str
+    segment_id: str
+    segment_language_route_digest: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     provenance: CheckResult
     source_eligibility: CheckResult
     source_authority: CheckResult
@@ -4864,14 +7270,14 @@ class AcceptedTemporalEvidence(BaseModel):
         "certified_complementary_bounds",
         "atemporal",
     ]
-    evidence_spans: tuple[TextSpan, ...]
+    evidence_spans: tuple[ProjectionTextSpan, ...]
     temporal_policy_fingerprint: str
     temporal_policy_snapshot_digest: str
 
 class CertifiedTextEffectiveTime(BaseModel):
     kind: Literal["certified_text_time"]
     effective_at: datetime
-    evidence_spans: tuple[TextSpan, ...]
+    evidence_spans: tuple[ProjectionTextSpan, ...]
     temporal_policy_fingerprint: str
     temporal_policy_snapshot_digest: str
 
@@ -4894,10 +7300,20 @@ EffectiveTimeCoordinate = Annotated[
     Field(discriminator="kind"),
 ]
 
+class AcceptedOperationGovernanceCarrier(BaseModel):
+    operation_id: str
+    segment_language_route_digests: tuple[str, ...]
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    carrier_digest: str
+
 class AcceptedFact(BaseModel):
     kind: Literal["fact"]
     operation_id: str
     source_dependency_group_id: str
+    segment_governance: AcceptedOperationGovernanceCarrier
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
     fact: LanguageNeutralFact
     temporal_evidence: AcceptedTemporalEvidence
     assessment_digest: str
@@ -4906,6 +7322,8 @@ class AcceptedCorrection(BaseModel):
     kind: Literal["correction"]
     operation_id: str
     source_dependency_group_id: str
+    segment_governance: AcceptedOperationGovernanceCarrier
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
     corrected_fact: LanguageNeutralFactSelector
     target_temporal_selector: TemporalTargetSelector
     replacement_fact: LanguageNeutralFact
@@ -4918,6 +7336,8 @@ class AcceptedRetraction(BaseModel):
     kind: Literal["retraction"]
     operation_id: str
     source_dependency_group_id: str
+    segment_governance: AcceptedOperationGovernanceCarrier
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
     retracted_fact: LanguageNeutralFactSelector
     target_temporal_selector: TemporalTargetSelector
     effective_time: EffectiveTimeCoordinate
@@ -4981,6 +7401,8 @@ class AcceptedActionState(BaseModel):
     kind: Literal["action_state"]
     operation_id: str
     source_dependency_group_id: str
+    segment_governance: AcceptedOperationGovernanceCarrier
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
     action: LanguageNeutralActionReference
     role_bindings: tuple[AcceptedActionRoleBinding, ...]
     action_state: str
@@ -4996,6 +7418,8 @@ class AcceptedIdentityOperation(BaseModel):
     kind: Literal["identity"]
     operation_id: str
     source_dependency_group_id: str
+    segment_governance: AcceptedOperationGovernanceCarrier
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
     operation: Literal["alias", "rekey", "merge", "split"]
     predecessor_mentions: tuple[GroundedMentionRef, ...]
     successor_mentions: tuple[GroundedMentionRef, ...]
@@ -5018,6 +7442,10 @@ AcceptedSemanticOperation = Annotated[
 class ReconciliationResult(BaseModel):
     source_id: str
     proposal_run_fingerprint: str
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
     assessments: tuple[SemanticAssessment, ...]
     accepted_operations: tuple[AcceptedSemanticOperation, ...]
     status: Literal["complete", "abstained", "unresolved", "rejected", "failed"]
@@ -5028,6 +7456,12 @@ These are the sole accepted-operation intermediate representations. They are
 language-neutral, contain no display-name matching rule, and carry only
 canonical identity decisions already validated against the transaction
 snapshot. Their validators enforce:
+
+`ReconciliationResult.status` is the deterministic ordered aggregation of
+per-segment proposal, analysis, route, capability, NLI, and assessment
+dispositions. It cannot turn an evidence-only segment into an accepted
+operation, borrow another segment's route/resource, or suppress the blocked
+segment from trace, replay, or terminal source results.
 
 - entity and literal objects are a discriminated union and cannot coexist;
 - every canonical entity reference names one non-`unresolved`
@@ -5057,7 +7491,7 @@ snapshot. Their validators enforce:
 - identity predecessor/successor entity references bijectively cover their
   grounded mention clusters and satisfy the operation arity for alias, rekey,
   merge, or split; and
-- all source spans belong to the same immutable source and accepted semantic
+- all semantic spans belong to the named immutable projection artifacts and accepted semantic
   group.
 
 The compiler resolves a `LanguageNeutralFactSelector` and
@@ -5215,6 +7649,11 @@ occupies the proposed role.
 - negative and unsupported controls prove fail-closed behavior;
 - tests assert complete `SemanticAssessment` fields and graph effects rather
   than only the top-level decision;
+- mixed scope, classification, modality, authority, and egress fixtures pass
+  reconciliation with each assessment and accepted operation carrying exactly
+  the binding subset reached by its spans; missing, extra, swapped,
+  first-segment, representative, union, fallback, or source-context-substituted
+  bindings reject before acceptance;
 - no test calls Stanza or OpenAI unless it is explicitly an adapter test.
 
 ### 4.7 Step 7: Deterministic Graph Compilation
@@ -5245,7 +7684,7 @@ class GraphReadSet(BaseModel):
 class GraphReadSetExtension(BaseModel):
     snapshot_token: str
     graph_revision: str
-    authorized_scope_identity: str
+    segment_governance_binding_digests: tuple[str, ...]
     operation_fence_id: str
     issuer_repository_id: str
     issuer_contract_fingerprint: str
@@ -5266,7 +7705,8 @@ class GraphReadSetExtension(BaseModel):
 
 class TransactionSnapshotContext(BaseModel):
     base_bundle: GraphSemanticSnapshotBundle
-    authorized_scope_identity: str
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    segment_governance_binding_digests: tuple[str, ...]
     operation_fence_id: str
     extensions: tuple[GraphReadSetExtension, ...]
     effective_read_set: GraphReadSet
@@ -5284,6 +7724,9 @@ class TransactionSemanticGroup(BaseModel):
     transaction_group_id: str
     source_dependency_group_ids: tuple[str, ...]
     operation_ids: tuple[str, ...]
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     member_decisions: tuple[
         tuple[str, Literal["accepted", "rejected", "unresolved"]], ...
     ]
@@ -5305,6 +7748,9 @@ class PlannedGraphRevisionDelta(BaseModel):
 class PlanningCompilationArtifact(BaseModel):
     artifact_id: str
     transaction_group_id: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     compilation_request: "GraphCompilationRequest"
     reconciliation: ReconciliationResult
     dependency_closure: "ReferenceClosureSnapshot"
@@ -5349,6 +7795,9 @@ class TransactionSemanticGroupPlan(BaseModel):
     plan_id: str
     source_id: str
     snapshot_token: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
     groups: tuple[TransactionSemanticGroup, ...]
     planned_executions: tuple[PlannedTransactionGroupExecution, ...]
     independence_certificates: tuple[GroupIndependenceCertificate, ...]
@@ -5373,6 +7822,9 @@ class GraphCompilationRequest(BaseModel):
     source_id: str
     source_context: SourceSemanticContext
     proposal_run_fingerprint: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
     transaction_group: TransactionSemanticGroup
     accepted_operations: tuple[AcceptedSemanticOperation, ...]
     grounded_mentions: tuple[GroundedMention, ...]
@@ -5404,6 +7856,18 @@ class TrustReprojectionRequest(BaseModel):
 
 Every accepted operation references complete semantic assessments, one atomic
 semantic group, the sealed source-level proposal run, and exact source evidence.
+Each transaction group enumerates the ordered union of its members' exact
+governance bindings and message identities and embeds the same loadable
+artifact. Members may have different scope, authority, classification,
+modality, or egress values; those values remain attached to their exact
+segment/operation carriers and are never collapsed into one group value. The
+group plan, planning compilation artifact, and `GraphCompilationRequest` carry
+byte-equal sets/artifact; their operation membership and per-operation binding
+subsets are an exact bijection with the accepted-operation carrier envelopes.
+Planning references are valid only when
+their repository returns those canonical bytes from the same atomic generation
+as the referencing plan. Digest equality without loadable bytes cannot
+authorize compilation or persistence.
 All operations in one request must occur in its `transaction_group`.
 The transaction group must be `commit_eligible`, every `operation_id` must have
 an `accepted` member decision, and `accepted_operations` must cover those IDs
@@ -5427,12 +7891,13 @@ contracts for one dependency instance, or inconsistent metadata for one record
 key is a hard context-construction failure, never a last-writer or ordering
 choice.
 Every extension is issued by the repository under the base bundle's unchanged
-MVCC token, graph revision, authorized scope identity, and operation fence and
-names an allowlisted repository plus its deployed contract fingerprint. The
-context fields must reproduce the base scope and coordinator fence exactly.
-An extension from another token, revision, scope, fence, issuer contract, or
-unaccounted compiler dependency, or a non-canonical union invalidates the
-context. Once sealed for one transaction group, the context is immutable. The
+MVCC token, graph revision, exact operation segment-binding digests, and
+operation fence and names an allowlisted repository plus its deployed contract
+fingerprint. The context fields must reproduce the base complete required
+scopes, the transaction group's exact binding union, and coordinator fence.
+An extension from another token, revision, binding subset, fence, issuer
+contract, or unaccounted compiler dependency, or a non-canonical union
+invalidates the context. Once sealed for one transaction group, the context is immutable. The
 compiler, write-set constructor, and CAS all consume that same effective read
 set.
 
@@ -5809,7 +8274,8 @@ class ReferenceAuditCertificate(BaseModel):
 class ReferenceClosureSnapshot(BaseModel):
     snapshot_token: str
     graph_revision: str
-    authorized_scope: MemoryScope
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    segment_governance_binding_digests: tuple[str, ...]
     root_targets: tuple[ReferenceTarget, ...]
     reverse_references: tuple[ReverseReference, ...]
     base_records: tuple[SnapshotGraphRecord, ...]
@@ -5909,7 +8375,8 @@ and never performs storage reads, retries, grouping expansion, or semantic
 reconciliation. Those responsibilities belong to one
 `SemanticIngestionTransactionCoordinator`:
 
-1. acquire one MVCC `GraphSemanticSnapshotBundle` for the authorized scope;
+1. acquire one MVCC `GraphSemanticSnapshotBundle` for the complete admitted
+   scopes and exact segment-governance bindings;
 2. run normalization and deterministic reconciliation against that bundle,
    retaining provider and parser outputs as immutable inputs;
 3. acquire planned-identity collision checks, selected capability-status
@@ -6056,6 +8523,9 @@ class GraphRevisionDelta(BaseModel):
     source_ids: tuple[str, ...]
     operation_ids: tuple[str, ...]
     transaction_group_id: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     record_changes: tuple[GraphRecordChange, ...]
     read_set_digest: str
     write_set_digest: str
@@ -6073,7 +8543,12 @@ class CanonicalSourceIntroductionRecord(BaseModel):
     introduction_id: str
     source_id: str
     source_digest: str
-    mention_span: TextSpan
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    mention_span: SourceSpanReference
     entity_revision_id: str
     logical_entity_id: str
     independently_asserted_type_evidence_ids: tuple[str, ...]
@@ -6087,11 +8562,16 @@ class CanonicalOperationIntroductionRecord(BaseModel):
     operation_id: str
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     operation_fence_id: str
     transaction_group_id: str
     operation_kind: str
     predicate_id: str | None
-    owned_source_spans: tuple[TextSpan, ...]
+    owned_source_spans: tuple[SourceSpanReference, ...]
     record_digest: str
 
 class CanonicalOperationTerminalOutcomeRecord(BaseModel):
@@ -6100,6 +8580,11 @@ class CanonicalOperationTerminalOutcomeRecord(BaseModel):
     operation_id: str
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     operation_fence_id: str
     transaction_group_id: str
     final_status: Literal[
@@ -6117,6 +8602,12 @@ class CanonicalSourceTerminalOutcomeRecord(BaseModel):
     outcome_id: str
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
     operation_fence_id: str
     operation_ids: tuple[str, ...]
     final_status: Literal[
@@ -6154,6 +8645,9 @@ class IngestionObservationDelta(BaseModel):
     observation_revision_after: str
     source_id: str
     source_digest: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     operation_fence_id: str
     transaction_group_id: str
     operation_ids: tuple[str, ...]
@@ -6172,6 +8666,12 @@ class SourceFinalizationObservationDelta(BaseModel):
     observation_revision_after: str
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
     operation_fence_id: str
     operation_ids: tuple[str, ...]
     source_outcome: CanonicalSourceTerminalOutcomeRecord
@@ -6200,6 +8700,9 @@ class CompilationResult(BaseModel):
     transaction_group_id: str
     operation_ids: tuple[str, ...]
     source_id: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     canonical_entities: tuple[CanonicalEntityDecision, ...]
     claims: tuple[CompiledClaim, ...]
     actions: tuple[CompiledAction, ...]
@@ -6600,6 +9103,12 @@ Compilation failure applies no partial graph mutation.
   reference-assignment variant and prove local-ID, entity/literal, action
   identity/state/role/branch, source, canonical-decision, claim-key, and
   exact-selector invariants fail closed;
+- mixed-governance compiler tests place differently scoped, classified,
+  modal, authoritative, and egress-governed operations in one supported source
+  and transaction group, then require an exact operation-to-binding bijection
+  through plan, request, delta, event, observation, replay, and result.
+  Missing, extra, swapped, reconstructed, or source-wide substituted bindings
+  fail before reservations or graph mutation;
 - source-local identity properties generate mention universes and partitions,
   rejecting omissions, duplicate membership, overlap, and incompatible
   certified identities; planned-identity tests prove stable IDs across retry,
@@ -6775,6 +9284,7 @@ class IngestionStageSpec(BaseModel):
     allowed_scopes: frozenset[
         Literal[
             "source",
+            "segment",
             "source_plan_attempt",
             "transaction_group_attempt",
             "transaction_group",
@@ -6791,10 +9301,13 @@ class IngestionStageInstanceRef(BaseModel):
     stage: IngestionStage
     scope: Literal[
         "source",
+        "segment",
         "source_plan_attempt",
         "transaction_group_attempt",
         "transaction_group",
     ]
+    segment_id: str | None
+    segment_language_route_digest: str | None
     transaction_group_id: str | None
     attempt_id: str | None
 
@@ -6824,13 +9337,16 @@ class GraphDependentValidationAttempt(BaseModel):
         "related_version_conflict",
     ]
     transaction_group_id: str | None
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     attempt_index: int
     operation_lease_binding: OperationLeaseBinding
     supersedes_attempt_id: str | None
     base_snapshot_digest: str
     transaction_snapshot_context_digest: str
     source_alignment_digest: str
-    proposal_alignment_digest: str
+    graph_proposal_alignment_digest: str
     planned_identity_reservation_digests: tuple[str, ...]
     planned_action_reservation_digests: tuple[str, ...]
     reservation_use_authorization_digests: tuple[str, ...]
@@ -6847,6 +9363,10 @@ class GraphDependentValidationAttempt(BaseModel):
 
 class IngestionExecutionManifest(BaseModel):
     execution_graph_fingerprint: str
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
     capability_bindings: tuple[OperationCapabilityExecutionBinding, ...]
     source_outcomes: tuple[IngestionStageOutcome, ...]
     graph_validation_attempts: tuple[GraphDependentValidationAttempt, ...]
@@ -6859,14 +9379,17 @@ class IngestionExecutionManifest(BaseModel):
 class SourceTraceArtifact(BaseModel):
     source_id: str
     source_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
     source_context: SourceSemanticContext
     operation_lease_binding: OperationLeaseBinding
     proposal_attempts: tuple[SemanticProposalAttempt, ...]
     proposal_run: SemanticProposalRun | None
-    language_routing_result: LanguageRoutingDecision | None
-    provider_egress_result: ProviderEgressDecision | None
-    primary_linguistic_result: LinguisticAnalysis | None
-    corroborating_linguistic_result: LinguisticAnalysis | None
+    segment_language_routes: SegmentLanguageRouteSet | None
+    provider_egress_results: tuple[ProviderEgressDecision, ...]
+    linguistic_analysis_result: LinguisticAnalysisBundle | None
     linguistic_consensus_results: tuple[ParserConsensusAssessment, ...]
     semantic_scope_consensus_results: tuple[SemanticScopeConsensus, ...]
     temporal_attachment_consensus_results: tuple[
@@ -6926,6 +9449,12 @@ class ReplayArtifactPublication(BaseModel):
 class ReplayArtifactBundle(BaseModel):
     source_id: str
     source_digest: str
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    message_admission_index_entries: tuple[MessageAdmissionIndexEntry, ...]
     artifact_schema_registry_fingerprint: str
     publications: tuple[ReplayArtifactPublication, ...]
     required_artifact_digests: tuple[str, ...]
@@ -6938,6 +9467,9 @@ class CommittedTransactionGroupPersistenceRequest(BaseModel):
     source_digest: str
     transaction_group_id: str
     operation_ids: tuple[str, ...]
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     operation_lease_binding: OperationLeaseBinding
     authorizing_attempt_digest: str
     planning_authorization: GroupPlanningAuthorization
@@ -6960,6 +9492,9 @@ class NonCommittingTransactionGroupPersistenceRequest(BaseModel):
     source_digest: str
     transaction_group_id: str
     operation_ids: tuple[str, ...]
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     operation_lease_binding: OperationLeaseBinding
     authorizing_attempt_digest: str
     planning_authorization: GroupPlanningAuthorization | None
@@ -7040,6 +9575,9 @@ class SemanticMemoryEvent(BaseModel):
     provenance: EventProvenance
     transaction_group_id: str
     operation_fence_id: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     writer_epoch: int
     event_digest: str
 
@@ -7054,6 +9592,9 @@ class SemanticMemoryEventBatch(BaseModel):
     source_id: str
     transaction_group_id: str
     operation_fence_id: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     event_schema_registry_revision: int = Field(ge=1)
     event_schema_registry_digest: str
     graph_delta_digest: str
@@ -7099,6 +9640,21 @@ class SemanticReplayCheckpoint(BaseModel):
     checkpoint_digest: str
     signature: str
 ```
+
+Every segment-stage instance and outcome has non-null `segment_id` and
+`segment_language_route_digest` resolving to exactly one byte-equal member of
+`IngestionExecutionManifest.segment_language_routes`. Every source,
+source-plan-attempt, transaction-group-attempt, and transaction-group instance
+requires both fields null; its constituent capability-selection and NLI
+artifacts retain their own per-segment route coordinates. Transaction-group
+coordinates are required exactly for either transaction-group scope, and
+attempt coordinates exactly for either attempt scope. The manifest contains
+exactly one outcome for every instantiated template stage/scope key, rejects
+duplicate or unregistered keys, and cannot move a segment stage to source
+scope. Source aggregation outcomes are computed only from the ordered segment
+outcomes and cannot change any segment disposition. A blocked route emits
+`evidence_only` for every learned/linguistic lane without an artifact from that
+lane.
 
 The transaction coordinator derives one event from every typed record change in
 the compiler's `GraphRevisionDelta`; no caller supplies event payloads.
@@ -7195,15 +9751,12 @@ continuity contract are identical.
 The current semantic writer rejects two changes for the same
 `(record_kind, record_id, version)` before commit, whether their event IDs agree
 or differ. Duplicate `event_id` or `dedupe_key` with conflicting content is
-always corruption. For retained historical or mixed-schema streams governed by
-the canonical event model, replay performs conflict resolution before applying
-events: after validation and deterministic upcast, it groups events by
-`(record_kind, record_id, version)` and selects the lexicographically greatest
-`event_id`. Input order cannot affect the winner. It then applies the ordinary
-version rule: a materialized equal version is skipped, a lower version is
-ignored, and a higher version is applied. Identical duplicate envelopes are
-skipped. This compatibility rule cannot authorize a conflicting same-version
-write by the current semantic-ingestion path.
+always corruption. The rule for non-identical retained historical or
+mixed-schema events with equal version is the explicit `SIA-ED-REPLAY-001`
+event-model decision. Until that owner selects one genesis/checkpoint-consistent
+rule, replay of such a conflict is rejected and cannot materialize a winner.
+Identical duplicate envelopes are skipped. This does not authorize a
+conflicting same-version write by the current semantic-ingestion path.
 
 A `SemanticReplayCheckpoint` may be created only at a fully committed event-
 batch boundary and is stored with the immutable complete materialized memory
@@ -7252,6 +9805,10 @@ class SourceTransactionPlanLineage(BaseModel):
     repository_id: str
     source_id: str
     source_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
     initial_group_plan: TransactionSemanticGroupPlanReference
     entries: tuple[TransactionGroupPlanLineageEntry, ...]
     final_entry_digests: tuple[str, ...]
@@ -7266,7 +9823,15 @@ class PreGraphSourceIngestionSummaryRequest(BaseModel):
     kind: Literal["pre_graph_terminal"]
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
     operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    local_admission_outcome: LocalAdmissionOutcome | None
     execution_manifest: IngestionExecutionManifest
     final_status: Literal["evidence_only", "rejected", "unresolved", "failed"]
     failure_reason: Literal[
@@ -7280,7 +9845,15 @@ class GraphBoundSourceIngestionSummaryRequest(BaseModel):
     kind: Literal["graph_bound"]
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
     operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    local_admission_outcome: LocalAdmissionOutcome | None
     plan_lineage: SourceTransactionPlanLineageReference
     transaction_group_result_digests: tuple[str, ...]
     execution_manifest: IngestionExecutionManifest
@@ -7303,14 +9876,21 @@ SourceIngestionSummaryRequest = Annotated[
 ]
 
 class SourceAdmissionAtomicWriteRequest(BaseModel):
-    delivery_fence_id: str
-    normalized_request_digest: str
+    operation_fence_binding: OperationFenceBinding
+    delivery_principal_binding_digest: str
+    admission_authorization_evidence_digest: str
+    admission_scope_authorization_proof: AdmissionScopeAuthorizationProof
+    delivery_key_digest: str
+    immutable_admission_request_digest: str
+    governance_carrier_artifact: GovernanceCarrierArtifact | None
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    admission_authorization_index_entry: AdmissionAuthorizationIndexEntry
+    message_admission_index_entries: tuple[MessageAdmissionIndexEntry, ...]
     writer_commit_binding: SemanticWriterCommitBinding
     observation: SourceObservation
     retention_attestation: SourceRetentionTimeAttestation
     pending_operation: PendingSemanticOperation
     expected_delivery_state: Literal["absent", "matching_replay"]
-    request_digest: str
 
 class CommittedGroupAtomicWriteRequest(BaseModel):
     kind: Literal["committed"]
@@ -7321,6 +9901,7 @@ class CommittedGroupAtomicWriteRequest(BaseModel):
     expected_effective_read_set_digest: str
     expected_operation_state_revision: int
     operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
     writer_commit_binding: SemanticWriterCommitBinding
     expected_capability_status_digests: tuple[str, ...]
     request_digest: str
@@ -7332,6 +9913,7 @@ class NonCommittingGroupAtomicWriteRequest(BaseModel):
     expected_artifact_generation: int
     expected_operation_state_revision: int
     operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
     writer_commit_binding: SemanticWriterCommitBinding
     expected_capability_status_digests: tuple[str, ...]
     request_digest: str
@@ -7343,6 +9925,10 @@ TerminalGroupAtomicWriteRequest = Annotated[
 
 class SourceFinalizationAtomicWriteRequest(BaseModel):
     operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    required_outcome_scopes: RequiredOutcomeScopeSet
     writer_commit_binding: SemanticWriterCommitBinding
     expected_operation_state_revision: int
     expected_artifact_generation: int
@@ -7361,6 +9947,7 @@ class SourceFinalizationAtomicWriteRequest(BaseModel):
 
 class SourceCheckpointAtomicWriteRequest(BaseModel):
     operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
     writer_commit_binding: SemanticWriterCommitBinding
     expected_operation_state_revision: int
     expected_artifact_generation: int
@@ -7391,8 +9978,39 @@ class SemanticIngestionAtomicStore(Protocol):
 
 These are the only authoritative semantic-ingestion write boundaries.
 `admit_source` atomically publishes observation, retention attestation, and
-pending operation under one delivery fence and binds that operation to the
-writer epoch. Every method validates the complete writer binding at the common
+pending operation under one operation-fence binding and binds that operation to the
+writer epoch. Admission independently recomputes
+`DeliveryIdentity.delivery_key_digest`, the validated segment-governance
+closure, canonical `RequiredOutcomeScopeSet`, and
+`AdmissionScopeAuthorizationProof`. It requires same-tenant complete-set subset
+coverage by the current trusted authorized set and exact proof/evidence
+agreement, then atomically persists the proof as audit authority with the
+observation and protected index. A denial publishes none of the atomic request.
+`immutable_admission_request_digest` is SHA-256 over canonical typed-value
+encoding of domain `memorii.semantic-ingestion.immutable-admission-request`,
+preimage version `1`, delivery key digest, immutable source ID/digest,
+required-outcome-scope-set digest, nullable governance-carrier-artifact digest,
+operation ID, operation-fence-binding digest, allocation namespace ID,
+writer-commit-binding digest, retention-attestation digest, and
+pending-operation digest, in that order. It excludes admission authorization
+evidence/proof and every current authorization coordinate. Matching replay
+reauthorizes with fresh evidence, compares only this immutable digest and its
+listed fields, and returns the original admission bytes without replacing or
+comparing the admission-time audit proof.
+
+Checkpoint/group/finalization methods require only the stable delivery key,
+immutable source coordinates, operation ID, operation fence/allocation
+derivations, current lease/write authority where applicable, and durable
+content/revision preconditions to equal the admitted operation, source
+outcome/delta, summary, and typed source result. They never accept or compare an
+`AuthenticatedIngressContext`, current authorized-scope digest, session
+authorization evidence, admission authorization proof, policy/trust/revocation
+coordinate, or authorization time. A missing or unequal stable copy fails
+before lookup-visible mutation. The same check requires the complete
+required-scope set from admitted segment governance and requires
+byte-equal set/digest copies in the protected index, carrier artifact, replay
+bundle, source-finalization observation, source summary/result, and provider
+outcome. Every method validates the complete writer binding at the common
 store boundary before changing a revision. The ownership manifest makes generic
 semantic-record writes without that binding a contract error, including legacy
 `MemoryPlaneStore.apply_batch` calls. `persist_terminal_group` always
@@ -7434,9 +10052,15 @@ visible in the expected complete generation. Identical bytes already present
 are idempotent; an identity or digest collision is an integrity failure. Group
 and finalization requests carry the required closure and fail before visibility
 if any member is absent, undecodable, or from an uncommitted generation.
+The bundle's segment route set is byte-equal to the source trace and execution
+manifest; replay requires every proposal, lane result, capability binding, NLI
+assessment, and reconciliation artifact to resolve to its exact member.
+Evidence-only route outcomes remain explicit and cannot acquire an artifact or
+graph effect during replay.
 `ReplayArtifactPublication.canonical_payload` is the exact canonical encoded
-byte sequence for the declared schema, not an arbitrary serialized object; JSON
-transport uses canonical base64 without changing the hashed bytes. The active
+byte sequence for its declared profile/schema binding, not an arbitrary
+serialized object; JSON transport represents those bytes through the profile's
+single canonical base64 value without changing the hashed bytes. The active
 `ReplayArtifactSchemaRegistry` is part of the certified deployment manifest and
 has exactly one entry for every accepted `(artifact_kind,
 artifact_schema_fingerprint)` pair. Unknown, duplicate, oversized,
@@ -7461,6 +10085,15 @@ uses the generation manifest and request digest to distinguish prior, complete
 new, and corrupt state.
 
 Artifact bytes, artifact indexes, and referencing state are one generation.
+That generation also contains the full `GovernanceCarrierArtifact` and every
+message-admission index entry referenced by source observation, trace, attempt,
+plan, compilation, observation delta, event, replay bundle, terminal result,
+and result-access record. Source carriers are exact projection bijections;
+operation/group carriers are exact ordered unions of member carriers; every
+nested copy has byte-equal canonical payload and identity. A reader validates
+artifact ID, generation, payload digest, decoded sets, and every index back
+reference before using a digest. Missing bytes or a carrier/index cardinality
+mismatch makes the whole generation unavailable and non-committing.
 For every crash or lost acknowledgement during checkpoint publication, readers
 observe either the complete previous generation or the complete next
 generation. No recovery path reconstructs an acknowledged artifact from source
@@ -7641,9 +10274,13 @@ required.
 ```python
 class CommittedTransactionGroupExecutionResult(BaseModel):
     kind: Literal["committed"]
+    operation_fence_binding: OperationFenceBinding
     transaction_group_id: str
     operation_ids: tuple[str, ...]
     source_id: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     authorizing_plan_lineage_entry_digest: str
     authorizing_attempt_digest: str
     authorizing_group_plan: TransactionSemanticGroupPlanReference
@@ -7664,9 +10301,13 @@ class CommittedTransactionGroupExecutionResult(BaseModel):
 
 class NonCommittingTransactionGroupExecutionResult(BaseModel):
     kind: Literal["non_committing"]
+    operation_fence_binding: OperationFenceBinding
     transaction_group_id: str
     operation_ids: tuple[str, ...]
     source_id: str
+    segment_governance_bindings: tuple[SegmentGovernanceBinding, ...]
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     authorizing_plan_lineage_entry_digest: str
     authorizing_attempt_digest: str
     authorizing_group_plan: TransactionSemanticGroupPlanReference
@@ -7690,8 +10331,16 @@ TransactionGroupExecutionResult = Annotated[
 
 class PreGraphSourceIngestionResult(BaseModel):
     kind: Literal["pre_graph_terminal"]
+    operation_fence_binding: OperationFenceBinding
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    local_admission_outcome: LocalAdmissionOutcome | None
     final_status: Literal["evidence_only", "rejected", "unresolved", "failed"]
     failure_reason: Literal[
         "infrastructure_failure",
@@ -7703,8 +10352,16 @@ class PreGraphSourceIngestionResult(BaseModel):
 
 class GraphBoundSourceIngestionResult(BaseModel):
     kind: Literal["graph_bound"]
+    operation_fence_binding: OperationFenceBinding
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    local_admission_outcome: LocalAdmissionOutcome | None
     plan_lineage: SourceTransactionPlanLineageReference
     group_results: tuple[TransactionGroupExecutionResult, ...]
     final_status: Literal[
@@ -7788,6 +10445,30 @@ failure reason.
 
 `group_results` is a bijection with the plan lineage's final entries and is
 ordered by `(transaction_group_id, authorizing_plan_lineage_entry_digest)`.
+Every source and group result carries the byte-identical
+`OperationFenceBinding` persisted at admission. A group result's binding must
+equal the enclosing terminal-group atomic request, its current
+`OperationLeaseBinding.operation_fence_binding`, persistence request, planning
+lineage, ingestion-observation delta, event batch when committed, and replay
+artifact bundle association. A source result's binding must equal the terminal
+operation, source-finalization request, source summary, source-finalization
+delta, every nested terminal group result, and replay artifact bundle
+association. Every lower-level durable or replay record that projects an
+`operation_fence_id`, operation ID, delivery identity/digest, or allocation
+namespace must equal the corresponding field of that binding; a scalar fence
+projection never substitutes for the complete result binding.
+
+The canonical bytes of the complete binding participate in every group
+`result_digest`, the finalization request's `source_result_digest`, and each
+enclosing request digest. Validation independently
+recomputes the binding digest and all enclosing digests, then performs exact
+field equality before publishing, returning, recovering, or replaying a result.
+Omission, substitution, or mutation of the binding or any projected fence
+coordinate is an integrity failure with no graph/control/observation mutation
+and no mismatched result disclosure. Lost-acknowledgement recovery returns the
+stored byte-identical result and binding; it cannot reconstruct a binding from
+an operation ID or scalar fence ID.
+
 Each result's group ID, operation IDs, attempt digest, plan reference, and
 planning-authorization digest must exactly equal its final lineage entry. A
 null planning-authorization digest is allowed only when that exact terminal
@@ -7859,10 +10540,16 @@ not only its status field:
   `307921e7648fcaf5e11244200a7fb3c1f402e817`;
 - authoritative source SHA-256:
   `38b80a29a991ebfb1076cccc437c2406d43da031982a6c8fe57f755e1e58dbbd`;
-- canonical fixture profile: UTF-8 RFC 8785 JSON over the baseline model's
+- frozen compatibility fixture serialization: UTF-8 RFC 8785 JSON over the baseline model's
   public field names, with explicit nulls retained and enum values serialized
   as their existing strings;
 - allowed wire-schema change set during this migration: empty.
+
+That frozen serialization describes the byte-pinned preexisting provider
+payload only; it is not an ingestion digest/signature codec and is not available
+to any new ingestion schema. When such payload bytes are retained or hashed by
+ingestion, they are an opaque bytes value inside the canonical typed-value
+profile and the wrapper's profile/schema binding enters the digest preimage.
 
 The frozen field contract, in declaration order, is:
 
@@ -7910,17 +10597,139 @@ class ProviderSemanticIngestionOutcome(BaseModel):
     lifecycle_status: ProviderEvolutionLifecycleStatus
     source_result: SourceIngestionResult | None
     source_result_digest: str | None
+    segment_governance_carriers: SegmentGovernanceCarrierSet | None
+    message_admission_carriers: MessageAdmissionCarrierSet | None
+    governance_carrier_artifact: GovernanceCarrierArtifact | None
+    required_outcome_scopes: RequiredOutcomeScopeSet
     outcome_digest: str
+
+class SemanticIngestionOutcomeLookupRequest(BaseModel):
+    purpose: Literal["semantic_ingestion_outcome_lookup"]
+    request_correlation_token: str
+    opaque_operation_reference: str
+    opaque_delivery_reference: str
+    claimed_operation_fence_binding: OperationFenceBinding
+    request_digest: str
+
+class AuthorizedSemanticIngestionOutcomeLookup(BaseModel):
+    kind: Literal["authorized"]
+    internal_result_key: str
+    operation_fence_binding: OperationFenceBinding
+    delivery_principal_binding_digest: str
+    current_authorization_evidence: SessionAuthorizationEvidence
+    admission_authorization_index_entry_digest: str
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    authorization_decision_digest: str
+
+class SemanticIngestionOutcomeLookupSucceeded(BaseModel):
+    kind: Literal["succeeded"]
+    outcome: ProviderSemanticIngestionOutcome
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    authorization_decision_digest: str
+    lookup_digest: str
+
+class SemanticIngestionOutcomeLookupUnavailable(BaseModel):
+    kind: Literal["unavailable"]
+    request_correlation_token: str
+    retry_disposition: Literal["terminal", "retryable"]
+
+SemanticIngestionOutcomeLookupResult = Annotated[
+    SemanticIngestionOutcomeLookupSucceeded
+    | SemanticIngestionOutcomeLookupUnavailable,
+    Field(discriminator="kind"),
+]
+
+class SemanticIngestionOutcomeAuthorizer(Protocol):
+    def authorize(
+        self,
+        context: AuthenticatedIngressContext,
+        request: SemanticIngestionOutcomeLookupRequest,
+        server_time: datetime,
+    ) -> (
+        AuthorizedSemanticIngestionOutcomeLookup
+        | SemanticIngestionOutcomeLookupUnavailable
+    ): ...
 ```
+
+When `ProviderSemanticIngestionOutcome.source_result` is non-null, its two
+carrier sets and artifact are non-null and byte-equal to the source result;
+when source result is null, all three are null. Succeeded lookup records always
+carry the complete admission artifact and exact carrier sets, even when the
+lifecycle outcome has not yet produced a source result. The authorizer returns
+only the protected-index authorization decision; the service loads carrier and
+result bytes only after authorization. Caller-supplied carrier or scope data
+has no authority. The outcome, source result when present, carrier artifact,
+protected index, and authorized/succeeded records carry byte-equal
+`RequiredOutcomeScopeSet` values and digests.
 
 The existing lifecycle response schema is not extended with semantic statuses,
 aliases, or optional target-only fields. Existing callers continue to use the
-same method and deserialize the same payload. A separate additive
-`semantic_ingestion_outcome(operation_id)` provider method returns
-`ProviderSemanticIngestionOutcome` for semantic-aware callers; it is not a
-versioned replacement API. Its source result is loaded from the canonical
-source-summary repository by operation ID and verified by digest rather than
-reconstructed from the coarse status.
+same method and deserialize the same payload. The separate additive method is:
+
+```python
+def semantic_ingestion_outcome(
+    request: SemanticIngestionOutcomeLookupRequest,
+    *,
+    authenticated_host_ingress: AuthenticatedHostIngress,
+) -> SemanticIngestionOutcomeLookupResult: ...
+```
+
+There is no scalar `operation_id` overload, versioned alias, or caller-supplied
+`AuthenticatedIngressContext`. The host ingress is out-of-band and accepted
+only from the authenticated adapter boundary. The service first invokes the
+same production-owned `AuthenticatedIngressContextResolver` used by admission,
+including issuer, provider/audience, tenant, session expiry, key/session
+revocation, and current trust-policy checks. It then calls
+`SemanticIngestionOutcomeAuthorizer.authorize(context, request, server_time)`
+directly with that same `SemanticIngestionOutcomeLookupRequest` before any
+operation, source-result, outcome, carrier-artifact, or replay-artifact
+repository lookup. The authorizer may read only
+`AdmissionAuthorizationIndexEntry` to resolve the opaque references and its
+atomically embedded complete required-scope set; its denial path cannot read or
+disclose result or artifact state.
+
+Authorization requires the lookup purpose literal; current principal and tenant
+to equal the admitted stable authority; the index's complete required-scope
+set/digest to recompute canonically and equal the protected admission/carrier
+value; and `required_outcome_scopes.scopes` must be a subset of
+`context.current_authorized_scopes.scopes` under the same tenant. Exact coverage
+or a strict authorized superset may proceed; zero or partial coverage cannot.
+The freshly resolved stable principal binding and persisted delivery key must
+equal opaque delivery resolution and `OperationFenceBinding.delivery_key_digest`;
+the opaque operation resolution must equal `OperationFenceBinding.operation_id`.
+Stable binding equality compares only its immutable provider, principal, and
+tenant coordinates and binding digest; it never compares current authorized
+scope membership or its digest. The authorized decision returns one internal
+repository key, fence, required scope set, and index-entry digest. Only then
+may the service load `ProviderSemanticIngestionOutcome`; it
+revalidates result, digest index, lifecycle mapping, source result, and every
+nested fence/key coordinate, complete required-scope set/digest, and complete
+governance/message carrier artifact against that authorized binding before returning
+success. It never reconstructs a source result from coarse status.
+
+The existing lookup returns one complete source outcome. It has no partial
+scope filter, segment projection, carrier redaction, per-group fallback, or
+second lookup path. A caller lacking any represented scope receives no subset
+and cannot learn which scope failed.
+
+Missing or forged host ingress, resolver failure, expired or revoked session,
+unknown issuer, cross-principal/tenant access, zero/partial/stale/revoked scope
+coverage, required-scope-set or digest substitution, guessed opaque reference,
+mismatched delivery key or fence binding, missing result, authorization-policy
+or revocation-store outage, and repository outage all return the single
+`SemanticIngestionOutcomeLookupUnavailable` shape. Only an authority or
+repository outage may set `retry_disposition="retryable"`; all other failures
+are terminal. The shape carries no reason, existence bit, operation/delivery/
+fence coordinate, result, lifecycle, digest, replacement token, or timing
+detail beyond the ordinary transport envelope. Authorization and result lookup
+are instrumented internally, but externally indistinguishable failures use the
+same status and response size policy. No failed request mutates state.
+Independent repository-spy tests require zero operation-result, source-result,
+carrier-artifact, replay-artifact, and lifecycle reads for every denied case;
+only the protected admission authorization index may record a read.
 
 `SemanticOperationState` is a target-owned adjunct keyed by the same operation
 ID, not a reinterpretation of existing persisted `EvolutionOperation` rows.
@@ -8141,10 +10950,13 @@ service, or pass a test-only configuration field.
   digest, and dedupe key. Exercise creation, ordinary update, and logical
   retirement; substitute `link`, `unlink`, `version`, or the opposite mutation
   kind and require pre-commit failure;
-- present historical same-record/version events in both input orders and prove
-  deterministic greatest-`event_id` selection before version application;
-  require a materialized equal version to skip, and require the current writer
-  to reject any same-record/version collision before visibility;
+- present non-identical historical same-record/version events in every input
+  order and at genesis/checkpoint-tail boundaries; require one replay-integrity
+  failure before any partial state or winner is exposed pending
+  `SIA-ED-REPLAY-001`.
+  Separately require byte-identical duplicate envelopes to skip idempotently,
+  and require the current writer to reject any same-record/version collision
+  before visibility;
 - exhaustively cross the unchanged provider lifecycle statuses with every
   source-result status; require the exact allowed mapping, old-reader payload
   equality, separate-accessor digest agreement, retryability consistency,
@@ -8243,8 +11055,8 @@ Validation follows these principles:
 
 | Layer | Purpose | Dependencies | Required evidence |
 | --- | --- | --- | --- |
-| Static architecture checks | Enforce package ownership and forbidden imports | Source tree only | No benchmark imports in production; no NLP/model imports in compiler/reconciler; analyzer cannot import proposal contracts |
-| Contract tests | Validate every input/output model and status algebra | Pydantic fixtures | Invalid references, source-bound egress decisions, fixed-point language routes, dual-analyzer bundles, parser consensus, predicate-event inventories, temporal resolutions, accepted IR/selectors, action proposal catalog/transition evidence/policy/reservations, owned/context spans, source context, proposal-run manifests, transitive fingerprints, typed durable/pending planning state, mention partitions/planned identities, kind/plan/policy-bound migration entries/results/cutovers, snapshot extensions/effective read sets, group-plan/artifact/certificate authorizations, append-only graph-change closure, record-kind codec closure, reference annotations/bootstrap certificates/closure, scoped execution DAG/results, graph deltas, event/dedupe/record identity and schema-registry/upcast contracts, replay checkpoints and checkpoint trust policies, exact observed references, effect-complete oracle atomicity/field paths, and authority-verified acceptance-release bindings fail explicitly |
+| Static architecture checks | Enforce package ownership and forbidden imports | Source tree only | No benchmark imports in production; no NLP/model imports in compiler/reconciler; analyzer cannot import proposal contracts; only `ingestion_contracts.py` defines delivery normalization/coordinates; no volatile authorization field reaches durable delivery/fence/allocation/checkpoint/result/replay identity or equality |
+| Contract tests | Validate every input/output model and status algebra | Pydantic fixtures | Invalid references, byte-exact normalized delivery IDs and typed composite coordinates, complete admission scope authorization/proof, stable identity preimages, source-bound egress decisions, fixed-point language routes, dual-analyzer bundles, parser consensus, predicate-event inventories, temporal resolutions, accepted IR/selectors, action proposal catalog/transition evidence/policy/reservations, owned/context spans, source context, proposal-run manifests, transitive fingerprints, typed durable/pending planning state, mention partitions/planned identities, kind/plan/policy-bound migration entries/results/cutovers, snapshot extensions/effective read sets, group-plan/artifact/certificate authorizations, append-only graph-change closure, record-kind codec closure, reference annotations/bootstrap certificates/closure, scoped execution DAG/results, graph deltas, event/dedupe/record identity and schema-registry/upcast contracts, replay checkpoints and checkpoint trust policies, exact observed references, effect-complete oracle atomicity/field paths, and authority-verified acceptance-release bindings fail explicitly |
 | Deterministic component tests | Exercise governance and egress authorization, language routing, preparation, run sealing, independent analyses, parser consensus, parse-independent event detection, temporal resolution, alignment, source-local and graph identity, type resolution, scope, reconciliation, action-policy validation, transaction coordination, planning-artifact validation, compilation, trust/temporal reprojection, persistence, and graph observation | Hand-authored typed inputs and fake adapters | Positive, negative, unsupported, disagreement, overlap, omission, cardinality, action transition/allocation, trust, temporal, identity, closure, bounded concurrency, failure, and idempotency invariants |
 | Model-adapter conformance | Validate normalized fastText, Stanza, spaCy, Duckling, and NLI outputs | Packaged pinned local models and rulesets | Exact asset and adapter fingerprints, canonical offsets, routing margins, labels, normalized temporal intervals, failure behavior, and calibrated regions |
 | Captured replay | Reproduce previously observed failures | Sanitized recorded proposals/analyses | Same first divergence and no paid provider call |
@@ -8571,15 +11383,22 @@ ExpectedEffectiveTimeCoordinate = Annotated[
     Field(discriminator="kind"),
 ]
 
-class OracleTextSpan(BaseModel):
-    start_char: int = Field(ge=0)
-    end_char: int = Field(gt=0)
+class OracleProjectionTextSpan(BaseModel):
+    artifact_kind: Literal["semantic_projection_text"]
+    projection_artifact_id: str
+    projection_content_digest: str
+    projection_unicode_scalar_length: int = Field(ge=0)
+    offset_unit: Literal["unicode_scalar"]
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
     exact_text: str
+    substring_digest: str
+    expected_mapping_proof_digest: str
 
 class OracleSourceEvidence(BaseModel):
     source_id: str
     source_digest: str
-    span: OracleTextSpan
+    span: OracleProjectionTextSpan
 
 class OracleTypedLiteral(BaseModel):
     literal_type: str
@@ -8622,7 +11441,7 @@ class OracleOperationDefinition(BaseModel):
         "action_state",
     ]
     predicate_id: str | None
-    owned_source_spans: tuple[OracleTextSpan, ...]
+    owned_source_spans: tuple[OracleProjectionTextSpan, ...]
 
 AtomicDependencyKind = Literal[
     "correction_target_replacement",
@@ -8847,7 +11666,7 @@ class ExpectedCitationRecord(BaseModel):
     record_key: str
     cited_record_key: str
     source_id: str
-    source_span: OracleTextSpan
+    source_span: OracleProjectionTextSpan
     source_digest: str
     boundary: bool
 
@@ -8909,7 +11728,7 @@ class ExpectedSourceIntroduction(BaseModel):
     record_key: str
     source_id: str
     source_digest: str
-    mention_span: OracleTextSpan
+    mention_span: OracleProjectionTextSpan
     entity: OracleEntityReference
     independently_asserted_type_evidence_keys: tuple[str, ...]
     operation_key: str
@@ -8923,7 +11742,7 @@ class ExpectedOperationIntroduction(BaseModel):
     source_digest: str
     operation_kind: str
     predicate_id: str | None
-    owned_source_spans: tuple[OracleTextSpan, ...]
+    owned_source_spans: tuple[OracleProjectionTextSpan, ...]
     boundary: bool
 
 class ExpectedOperationTerminalOutcome(BaseModel):
@@ -9496,6 +12315,89 @@ This prevents a wrong ingestion graph from being misdiagnosed as retrieval.
 The production graph layer exposes a read-only typed surface:
 
 ```python
+GraphObservationRecordKind = Literal[
+    "entity_revision",
+    "alias_revision",
+    "type_evidence",
+    "claim_assertion",
+    "claim_projection",
+    "relation",
+    "action_revision",
+    "citation",
+    "provenance",
+    "temporal_transition",
+    "identity_transition",
+    "reference_disposition",
+    "source_introduction",
+    "operation_introduction",
+    "operation_terminal_outcome",
+    "source_terminal_outcome",
+]
+
+class AuthenticatedGraphObservationContext(BaseModel):
+    principal_subject_id: str
+    tenant_partition_id: str
+    authorized_scope_set_digest: str
+    authentication_session_id: str
+    context_digest: str
+
+class GraphObservationAuthorizationDecision(BaseModel):
+    kind: Literal["authorized"]
+    authorized_scope_identity: str
+    policy_revision: str
+    page_policy_revision: str
+    page_policy_digest: str
+    expires_at: datetime
+    decision_digest: str
+
+class GraphObservationPagePolicySnapshot(BaseModel):
+    policy_revision: str
+    minimum_total_page_size: int = Field(gt=0)
+    maximum_total_page_size: int = Field(gt=0)
+    cursor_schema_version: Literal[1]
+    snapshot_maximum_age: timedelta
+    policy_digest: str
+
+class GraphObservationCursorPayload(BaseModel):
+    schema_version: Literal[1]
+    stream_position: int = Field(ge=0)
+    preceding_record_kind: GraphObservationRecordKind | None
+    preceding_primary_key: str | None
+    preceding_record_digest: str | None
+    requested_total_page_size: int = Field(gt=0)
+    page_policy_revision: str
+    page_policy_digest: str
+    caller_context_digest: str
+    authorization_decision_digest: str
+    authorization_expires_at: datetime
+    cohort_digest: str
+    snapshot_token: str
+    graph_revision: str
+    observation_revision: str
+    view: Literal["current", "historical", "lineage"]
+    valid_at: datetime | None
+    system_as_of: datetime
+    signature: str
+
+class GraphObservationFailure(BaseModel):
+    kind: Literal["failure"]
+    reason: Literal[
+        "denied",
+        "invalid_cursor",
+        "stale_cursor",
+        "revoked_access",
+    ]
+    request_correlation_token: str
+
+class GraphObservationAuthorizer(Protocol):
+    def authorize(
+        self,
+        context: AuthenticatedGraphObservationContext,
+        purpose: Literal["graph_observation", "ingestion_time_attestation"],
+        scope_constraint: MemoryScope,
+        selector: "GraphObservationCohortSelector",
+    ) -> GraphObservationAuthorizationDecision | GraphObservationFailure: ...
+
 class GraphObservationCohortSelector(BaseModel):
     seed_source_ids: tuple[str, ...]
     seed_operation_ids: tuple[str, ...]
@@ -9523,29 +12425,35 @@ class ResolvedGraphObservationCohort(BaseModel):
     cohort_digest: str
 
 class GraphObservationRequest(BaseModel):
-    requested_scope: MemoryScope
+    scope_constraint: MemoryScope
     cohort_selector: GraphObservationCohortSelector
     view: Literal["current", "historical", "lineage"]
     expected_graph_revision: str
     expected_observation_revision: str
     valid_at: datetime | None
     system_as_of: datetime
-    page_size: int
+    total_page_size: int = Field(gt=0)
     cursor: str | None
 
 class IngestionTimeAttestationRequest(BaseModel):
-    requested_scope: MemoryScope
+    scope_constraint: MemoryScope
     cohort_selector: GraphObservationCohortSelector
     expected_graph_revision: str
     expected_observation_revision: str
-    page_size: int
+    total_page_size: int = Field(gt=0)
     cursor: str | None
 
 class IngestionTimeAttestationPage(BaseModel):
+    kind: Literal["page"]
     graph_revision: str
     observation_revision: str
     snapshot_token: str
     cohort: ResolvedGraphObservationCohort
+    page_policy_revision: str
+    page_policy_digest: str
+    total_page_size: int = Field(gt=0)
+    stream_start_position: int = Field(ge=0)
+    stream_end_position: int = Field(ge=0)
     attestations: tuple[ProductionIngestionTimeAttestation, ...]
     next_cursor: str | None
     page_digest: str
@@ -9678,7 +12586,7 @@ class ObservedCitationRecord(BaseModel):
     cited_record_kind: GraphRecordKind
     cited_record_id: str
     source_id: str
-    source_span: TextSpan
+    source_span: SourceSpanReference
     source_digest: str
     boundary: bool
     record_digest: str
@@ -9765,7 +12673,12 @@ class ObservedSourceIntroduction(BaseModel):
     introduction_id: str
     source_id: str
     source_digest: str
-    mention_span: TextSpan
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    mention_span: SourceSpanReference
     entity: ObservedEntityReference
     independently_asserted_type_evidence_ids: tuple[str, ...]
     operation_id: str
@@ -9778,11 +12691,16 @@ class ObservedOperationIntroduction(BaseModel):
     operation_id: str
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_binding_digests: tuple[str, ...]
+    message_admission_key_digests: tuple[str, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     operation_fence_id: str
     transaction_group_id: str
     operation_kind: str
     predicate_id: str | None
-    owned_source_spans: tuple[TextSpan, ...]
+    owned_source_spans: tuple[SourceSpanReference, ...]
     boundary: bool
     record_digest: str
 
@@ -9791,6 +12709,11 @@ class ObservedOperationTerminalOutcome(BaseModel):
     operation_id: str
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_binding_digests: tuple[str, ...]
+    message_admission_key_digests: tuple[str, ...]
+    governance_carrier_artifact: GovernanceCarrierArtifact
     operation_fence_id: str
     transaction_group_id: str
     final_status: Literal[
@@ -9804,6 +12727,12 @@ class ObservedSourceTerminalOutcome(BaseModel):
     outcome_id: str
     source_id: str
     source_digest: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    segment_governance_carrier_set_digest: str
+    message_admission_carrier_set_digest: str
+    required_outcome_scope_set_digest: str
+    governance_carrier_artifact: GovernanceCarrierArtifact
     operation_fence_id: str
     operation_ids: tuple[str, ...]
     final_status: Literal[
@@ -9820,6 +12749,10 @@ class ObservedSourceTerminalOutcome(BaseModel):
 
 class ObservedSourceOutcomeConsistencyAssessment(BaseModel):
     source_id: str
+    delivery_principal_binding_digest: str
+    delivery_key_digest: str
+    governance_carrier_artifact_digest: str
+    required_outcome_scope_set_digest: str
     source_outcome_record_digest: str
     source_result_digest: str
     operation_set_digest: str
@@ -9830,49 +12763,81 @@ class ObservedSourceOutcomeConsistencyAssessment(BaseModel):
     reason_codes: tuple[str, ...]
     assessment_digest: str
 
+GraphObservationRecordPayload = (
+    ObservedEntityRevision
+    | ObservedAliasRevision
+    | ObservedTypeEvidence
+    | ObservedClaimAssertion
+    | ObservedClaimProjection
+    | ObservedRelation
+    | ObservedActionRevision
+    | ObservedCitationRecord
+    | ObservedProvenanceRecord
+    | ObservedTemporalTransition
+    | ObservedIdentityTransition
+    | ObservedReferenceDisposition
+    | ObservedSourceIntroduction
+    | ObservedOperationIntroduction
+    | ObservedOperationTerminalOutcome
+    | ObservedSourceTerminalOutcome
+)
+
+class GraphObservationStreamRecord(BaseModel):
+    record_kind: GraphObservationRecordKind
+    primary_key: str
+    record_digest: str
+    payload: GraphObservationRecordPayload
+
 class GraphObservationPage(BaseModel):
+    kind: Literal["page"]
     graph_revision: str
     observation_revision: str
     snapshot_token: str
     cohort: ResolvedGraphObservationCohort
+    page_policy_revision: str
+    page_policy_digest: str
     view: Literal["current", "historical", "lineage"]
     valid_at: datetime | None
     system_as_of: datetime
-    entities: tuple[ObservedEntityRevision, ...]
-    aliases: tuple[ObservedAliasRevision, ...]
-    type_evidence: tuple[ObservedTypeEvidence, ...]
-    claims: tuple[ObservedClaimAssertion, ...]
-    projections: tuple[ObservedClaimProjection, ...]
-    relations: tuple[ObservedRelation, ...]
-    actions: tuple[ObservedActionRevision, ...]
-    citations: tuple[ObservedCitationRecord, ...]
-    provenance_records: tuple[ObservedProvenanceRecord, ...]
-    temporal_transitions: tuple[ObservedTemporalTransition, ...]
-    lineage: tuple[ObservedIdentityTransition, ...]
-    reference_dispositions: tuple[ObservedReferenceDisposition, ...]
-    source_introductions: tuple[ObservedSourceIntroduction, ...]
-    operation_introductions: tuple[ObservedOperationIntroduction, ...]
-    operation_terminal_outcomes: tuple[ObservedOperationTerminalOutcome, ...]
-    source_terminal_outcomes: tuple[ObservedSourceTerminalOutcome, ...]
+    total_page_size: int = Field(gt=0)
+    stream_start_position: int = Field(ge=0)
+    stream_end_position: int = Field(ge=0)
+    records: tuple[GraphObservationStreamRecord, ...]
     observation_schema_fingerprint: str
     next_cursor: str | None
     page_digest: str
+
+GraphObservationResponse = Annotated[
+    GraphObservationPage | GraphObservationFailure,
+    Field(discriminator="kind"),
+]
+
+IngestionTimeAttestationResponse = Annotated[
+    IngestionTimeAttestationPage | GraphObservationFailure,
+    Field(discriminator="kind"),
+]
 ```
 
 The API has no text query, ranking, semantic analyzer, LLM, benchmark fixture, or
-expected-ID input. The caller supplies only a `GraphObservationCohortSelector`
-containing production source and operation IDs returned by ingestion; it cannot
+expected-ID input. Its only identifier-bearing selector is
+`GraphObservationCohortSelector`, containing production source and operation
+IDs returned by ingestion; it cannot
 contain expected entity, claim, action, or relation IDs, opt out of referenced
 boundary entities, claim completeness, or provide a digest. The server resolves
 the selector under the operation fence and returns the signed
 `ResolvedGraphObservationCohort`. It returns production-owned typed records
 rather than recompiling or canonicalizing them for the test. Authorization
-derives from the authenticated principal and production policy; the request
-contains only a requested scope, and a benchmark cannot broaden the resolved
-scope. The server computes one typed authorization decision from principal,
-requested scope, seed IDs, policy revision, and request purpose before resolving
-membership. Its digest and policy revision are bound into the cohort and every
-page. Neither is caller-supplied.
+derives from the out-of-band `AuthenticatedGraphObservationContext` and
+production policy. The request's `scope_constraint` is only a narrowing
+constraint and must be a subset of the authorized scope; it is never identity
+or authority. Before any seed, cohort, index, or storage lookup, the
+production-owned `GraphObservationAuthorizer` computes one typed decision from
+authenticated context, scope constraint, seed IDs, policy revision, and request
+purpose. Its digest, expiry, authorized scope identity, and page-policy revision
+are bound into the cohort, snapshot, cursor, and every page. None is
+caller-supplied. Denial or authorizer/policy outage returns
+`GraphObservationFailure(kind="failure", reason="denied")` with only a fresh request
+correlation token.
 
 `IngestionTimeAttestationRequest` resolves the same authorized cohort and
 snapshot through a distinct request purpose. Its page contains exactly the
@@ -9880,9 +12845,11 @@ source-retention attestations and committed-group attestations reachable from
 that cohort's accepted source and group results, in canonical
 `(kind, source_id, operation_fence_id, transaction_group_id-or-empty,
 attestation_id)` order. It exposes no signing operation and no acceptance
-authority. Every page reauthorizes the principal and scope; a mixed-scope seed,
-forged cursor, changed policy revision, or revocation returns the same
-non-disclosing denial as graph observation.
+authority. Its `total_page_size`, start/end positions, cursor payload, and page
+policy obey the same total-stream rules, with `len(attestations)` replacing
+`len(records)`. Every page reauthorizes the principal and scope; a mixed-scope
+seed, forged cursor, changed policy revision, or revocation returns the same
+typed non-disclosing failure as graph observation.
 
 The cohort is closed-world for source and operation terminal outcomes and for
 graph records derived or transitioned by its source and operation IDs. It
@@ -9938,21 +12905,49 @@ ambiguous IDs, a missing source outcome or introduction/outcome pair, illegal gr
 observation/group-result mismatch, base/delta mismatch, ledger mismatch, or a
 selector whose exact cohort cannot be enumerated fails observation.
 
-All pages use the same immutable `snapshot_token`, cohort digest, graph revision,
-observation revision, `valid_at`, and `system_as_of`. A revision change, expired cursor, duplicate
-record, missing page, incomplete cohort, or inconsistent digest fails the
-observation rather than returning a partial success. Records use canonical
-ordering only for transport; the independent comparator treats sets and
-temporal relations structurally.
+The server flattens the complete cohort to exactly one
+`GraphObservationStreamRecord` per observed record and sorts the stream by
+`(record_kind, primary_key)`. `record_kind` and payload variant
+must match exactly, `primary_key` must equal the payload's canonical primary
+key, and the outer and payload record digests must be equal. No per-kind
+collection has independent paging or ordering authority.
 
-Every page request reauthorizes the authenticated principal against the current
-production policy. The authenticated cursor binds principal identity,
-authorized scope, authorization decision, policy revision, cohort digest,
-snapshot token, graph/observation revisions, view/time coordinates, and next offset. Cross-principal,
-cross-scope, mixed-authority seed, forged, replayed-after-revocation, or
-policy-stale cursors fail before cohort lookup or page construction. Denial uses
-one non-disclosing error shape and returns no page, cohort, record, boundary
-record, digest, cursor, or seed-existence signal.
+`total_page_size` is the maximum total number of stream records in one page,
+not a limit per kind. It must be within the inclusive minimum/maximum in the
+authorized `GraphObservationPagePolicySnapshot`; that policy requires
+`minimum_total_page_size <= maximum_total_page_size`, a positive finite
+snapshot age, and the supported cursor schema. An out-of-range size is an
+invalid request and returns the same non-disclosing `denied` shape before
+cohort lookup. The first page starts at position zero. Each nonempty page
+covers the half-open interval
+`[stream_start_position, stream_end_position)`, where end minus start equals
+`len(records)` and is at most `total_page_size`. An empty cohort has one final
+page at `[0, 0)`; a nonempty nonfinal page cannot be empty. The next cursor
+position equals the prior page's end, so concatenating pages yields the frozen
+stream exactly once.
+
+All pages use the same immutable `snapshot_token`, cohort digest, graph revision,
+observation revision, `valid_at`, `system_as_of`, total page size, page-policy
+revision, and authorization decision. A revision change, duplicate record,
+missing position, gap, overlap, incomplete cohort, or inconsistent digest
+fails the observation rather than returning partial success. Canonical stream
+ordering is transport authority; the independent comparator may treat record
+membership and temporal relations structurally only after validating the
+complete cursor chain.
+
+Every page request reauthorizes the authenticated caller context against the
+current production policy before cohort lookup. The opaque cursor must decode
+and verify as one `GraphObservationCursorPayload`. It binds cursor schema,
+exact next stream position, the complete preceding triple or three nulls at
+position zero, requested total page size, page-policy revision, caller-context
+digest, authorization decision/expiry, cohort/snapshot/revisions, and view/time
+coordinates. It contains no caller-selected offset. Invalid encoding,
+signature, schema, position, preceding triple, or request mismatch returns
+`invalid_cursor`; an expired snapshot or changed graph/observation/page policy
+returns `stale_cursor`; current authorization denial, expiry, or revocation
+returns `revoked_access`. All use `GraphObservationFailure` and return no page,
+cohort, record, boundary record, digest, replacement cursor, or seed-existence
+signal.
 
 View semantics are exact:
 
@@ -9979,6 +12974,9 @@ Before fixture comparison, the acceptance harness independently constructs one
 the public `SourceIngestionResult`, selected operation introductions and terminal
 outcomes, selected terminal-group observation deltas, and published group
 results. It recomputes, without production validators, that the outcome's
+stable delivery-principal-binding and delivery-key digests exactly equal those in
+the selected source/operation introductions, operation terminal outcomes,
+source-finalization delta, and public source result; that the outcome's
 operation fence partitions the exact operation set; its ordered group-result
 digests are a bijection with the public source result; its source-result digest
 matches canonical public result bytes; and its final status is the total result
@@ -9988,8 +12986,8 @@ acceptance before fixture equality. The assessment is acceptance evidence only
 and cannot be imported by production.
 
 The hidden `ExpectedSourceTerminalOutcome` deliberately contains no production
-fence ID, group-result digest, source-result digest, observation-delta digest,
-or assessment value. After consistency succeeds, direct fixture equality checks
+delivery-principal-binding digest, fence ID, group-result digest, source-result digest,
+observation-delta digest, or assessment value. After consistency succeeds, direct fixture equality checks
 only its pre-ingest-authorable source ID/digest, complete aligned operation-key
 set, and semantic final status. Thus production integrity coordinates are fully
 validated but never copied into, inferred by, or demanded from the fixture. The
@@ -10009,18 +13007,22 @@ relation, action, alias, type-evidence, assertion, lineage, and source-
 introduction references are checked against the corresponding disposition. A
 matching logical ID cannot hide an incorrect physical reference transition.
 
-The wire format is canonical UTF-8 JSON: field names follow schema order, map
-keys sort by Unicode code point, tuples preserve declared order unless the field
-contract declares set semantics, datetimes use UTC RFC 3339 with microseconds,
-and absent optional values serialize as JSON `null`. Floats are forbidden in
-observation identity. Each `record_digest` hashes the schema fingerprint,
-record-kind tag, primary key, and canonical record bytes with the
-`record_digest` field omitted. `page_digest` hashes
-the observation schema fingerprint, request coordinates, cohort digest,
-ordered `(record_kind, primary_key, record_digest)` triples, and next cursor.
+Every request, cursor, record, page, and transport signature uses the canonical
+ingestion typed-value profile in Section 3.15.1 with an exact registered
+observation schema binding. Observation defines no independent wire codec:
+schema field order does not affect map encoding, set/tuple/list distinctions
+come from the registered field type, and optional omission/null, datetime,
+duration, bytes, enum, integer, and nested-value behavior are exactly the
+profile rules. Each `record_digest` hashes the complete binding, schema
+fingerprint, record-kind tag, primary key, and canonical record bytes with only
+the `record_digest` field omitted. `page_digest` hashes
+the observation schema fingerprint, request coordinates, page-policy revision
+and digest,
+total page size, stream start/end positions, cohort digest, ordered
+`(record_kind, primary_key, record_digest)` triples, and next cursor.
 The `page_digest` and any transport signature are omitted from their own digest.
 The observation schema fingerprint changes whenever a required field, enum,
-canonical encoding rule, or digest rule changes.
+optional-field policy, profile/schema binding, or digest rule changes.
 
 The API is implemented and tested as a production graph audit, replay, migration
 verification, and diagnostic boundary. Ingestion tests consume that ordinary
@@ -10169,7 +13171,8 @@ alignment test oracle.
 
 Source-outcome tests independently decode the public source result, observation
 records, terminal-group deltas, and group results. They mutate the production
-fence partition, operation set, group-result ordering/membership, source-result
+stable principal-binding digest, delivery-key digest, fence partition, operation set,
+group-result ordering/membership, source-result
 bytes/digest, observation linkage, and aggregate status one coordinate at a
 time; each mutation must make
 `ObservedSourceOutcomeConsistencyAssessment.status="inconsistent"` before
@@ -10203,16 +13206,24 @@ remain outside comparison, proving that the contract, not private comparator
 code or fixture discretion, determines the surface.
 Schema mutations delete or alter every required field of every `Observed*`
 record, change a record-kind tag, primary key, boundary flag, canonical encoding
-rule, schema fingerprint, record digest, page digest, or cursor-chain member and
-must fail before semantic comparison. The test oracle parses the public schema
-and mutates serialized pages; it does not call the production page builder or
-digest implementation.
+rule, schema fingerprint, record digest, page digest, stream position, total
+page size, page-policy coordinate, or cursor-chain member and must fail before
+semantic comparison. Cross-kind pagination tests independently flatten the
+expected cohort, exercise minimum/maximum/out-of-range sizes, empty and final
+pages, and prove concatenation is ordered and exactly once with no gap,
+overlap, duplicate, or omitted record. Invalid signature/schema/position,
+stale snapshot/revision/policy, and between-page revocation must return the
+typed non-disclosing failure reason without a page or replacement cursor. The
+test oracle parses the public schema and mutates serialized pages; it does not
+call the production page builder or digest implementation.
 Authorization tests seed two principals and scopes through ordinary ingestion,
 then call the production graph-observation API and storage adapter. Authorized
 requests return the exact cohort. Cross-principal, cross-scope, mixed-authority
 seed, forged-cursor, cursor-replay-after-revocation, and policy-revision-change
-requests return the same non-disclosing denial with no page, cohort, record,
-boundary record, digest, cursor, or seed-existence signal. Tests paginate across
+requests return the same `GraphObservationFailure` shape with the contractually
+corresponding `denied`, `invalid_cursor`, `stale_cursor`, or `revoked_access`
+reason and no page, cohort, record, boundary record, digest, cursor, or
+seed-existence signal. Tests paginate across
 an authorization change and prove every page is reauthorized. The harness may
 not use a privileged bypass or construct expected authorization results with
 the production cohort resolver.
@@ -10456,11 +13467,11 @@ class CertificationMetricGate(BaseModel):
     metric_id: str
     estimand: Literal["cluster_any_failure", "cluster_macro_mean"]
     bound: Literal["upper", "lower"]
-    threshold: float
-    nominal_alpha: float
+    threshold: CanonicalDecimalQuantity
+    nominal_alpha: CanonicalDecimalQuantity
     test_method: Literal["exact_binomial", "weighted_hoeffding"]
-    cluster_value_lower_bound: float
-    cluster_value_upper_bound: float
+    cluster_value_lower_bound: CanonicalDecimalQuantity
+    cluster_value_upper_bound: CanonicalDecimalQuantity
 
 class CapabilityStatisticalGateManifest(BaseModel):
     capability_fingerprint: str
@@ -10474,10 +13485,19 @@ class CapabilityStatisticalGateManifest(BaseModel):
     diagnostic_bootstrap_replicates: int
     missing_data_policy: Literal["cluster_failure"]
     multiplicity_method: Literal["holm_bonferroni"]
-    family_wise_alpha: float
+    family_wise_alpha: CanonicalDecimalQuantity
     metric_gates: tuple[CertificationMetricGate, ...]
     manifest_digest: str
 ```
+
+No held-out evaluation or activation may begin until an
+`ApprovedCapabilityBaselineArtifact` content-binds this exact gate manifest,
+coverage manifest, capability/dependency contract, unsupported cells, and the
+monitoring policy. The external product/ML acceptance owner supplies and
+approves substantive thresholds, alpha allocation, cluster minima, and
+freshness deadlines. Their absence is a blocked dependency, not permission to
+use zero, infinity, an implementation default, or a value inferred from held-out
+labels.
 
 Metrics are predeclared by language, predicate family, and construction:
 
@@ -10626,7 +13646,7 @@ class CapabilityMonitoringPolicy(BaseModel):
     label_pipeline_outage_grace_period: timedelta
     stale_evidence_action: Literal["evidence_only"]
     metric_gates: tuple["MonitoringMetricGate", ...]
-    family_wise_alpha_budget: float
+    family_wise_alpha_budget: CanonicalDecimalQuantity
     sequential_test_manifest: "SequentialTestManifest"
     breach_action: Literal["evidence_only"]
     policy_digest: str
@@ -10634,17 +13654,17 @@ class CapabilityMonitoringPolicy(BaseModel):
 class MonitoringMetricGate(BaseModel):
     metric_id: str
     direction: Literal["upper", "lower"]
-    warning_threshold: float
-    breach_threshold: float
+    warning_threshold: CanonicalDecimalQuantity
+    breach_threshold: CanonicalDecimalQuantity
     minimum_independent_clusters: int
     maximum_label_delay: timedelta
-    alpha_budget: float
+    alpha_budget: CanonicalDecimalQuantity
     gate_digest: str
 
 class SequentialTestManifest(BaseModel):
     method: Literal["time_uniform_confidence_sequence"]
-    bounded_value_lower: float
-    bounded_value_upper: float
+    bounded_value_lower: CanonicalDecimalQuantity
+    bounded_value_upper: CanonicalDecimalQuantity
     spending_rule_id: str
     implementation_fingerprint: str
     manifest_digest: str
@@ -10652,10 +13672,10 @@ class SequentialTestManifest(BaseModel):
 class MonitoringMetricDecision(BaseModel):
     metric_id: str
     independent_cluster_count: int
-    estimate: float | None
-    lower_bound: float | None
-    upper_bound: float | None
-    alpha_spent: float
+    estimate: CanonicalDecimalQuantity | None
+    lower_bound: CanonicalDecimalQuantity | None
+    upper_bound: CanonicalDecimalQuantity | None
+    alpha_spent: CanonicalDecimalQuantity
     status: Literal["insufficient_data", "healthy", "warning", "breach"]
     decision_digest: str
 
@@ -10684,6 +13704,11 @@ class CapabilityEvidenceFreshness(BaseModel):
     status_revision: str
     evidence_digest: str
 ```
+
+The monitoring policy must be the exact policy named by the approved baseline
+artifact before activation. A missing, mismatched, or unapproved artifact makes
+the capability evidence-only; monitoring cannot fill missing values from the
+statistical manifest, runtime traffic, or implementation defaults.
 
 For each exact capability fingerprint, the system records privacy-bounded
 counts for proposal/analyzer disagreement, unsupported-event coverage,
@@ -10779,56 +13804,23 @@ stage.
 ### 5.8 Observability and failure attribution
 
 Every production ingestion operation records the complete execution DAG using
-the `IngestionStageOutcome` contract from Section 4.8. The following indentation
-shows dependency levels, not a required wall-clock sequence:
+the `IngestionStageOutcome` contract from Section 4.8. This section displays
+the deterministic renderer output of
+`CanonicalIngestionExecutionGraphTemplate`; it owns no stage, scope, edge, or
+alias. The renderer serializes the canonical template in topological order and
+prints each dependency with its declared scope and mode. Therefore the
+registry, canonical graph serialization, rendered diagram, and every execution
+manifest must be byte-for-byte equal after canonical encoding. A mismatch,
+missing/extra stage or edge, scope change, alias, cycle, or noncanonical order
+rejects before execution or persistence. [SIA-I311]
 
-```text
-source_ingestion -> source_governance -> text_preparation -> language_routing
-source_governance -> provider_egress_authorization
-language_routing -> llm_proposal -> proposal_validation -> proposal_run_sealing
-provider_egress_authorization -> llm_proposal [remote proposer only]
-language_routing -> primary_linguistic_analysis
-language_routing -> corroborating_linguistic_analysis
-language_routing -> predicate_event_detection
-language_routing -> temporal_resolution
-primary_linguistic_analysis + corroborating_linguistic_analysis
-    -> linguistic_consensus
-proposal_run_sealing + linguistic_consensus + predicate_event_detection
-    + temporal_resolution -> proposal_alignment
-proposal_alignment + linguistic_consensus -> semantic_scope_consensus
-proposal_alignment + linguistic_consensus + temporal_resolution
-    -> temporal_attachment_consensus
-proposal_alignment + semantic_scope_consensus + temporal_attachment_consensus
-    -> proposal_coverage
-proposal_alignment + semantic_scope_consensus + temporal_attachment_consensus
-    -> semantic_scope
-proposal_alignment -> source_local_identity -> canonical_identity_resolution
-proposal_alignment + semantic_scope -> nli_corroboration
-canonical_identity_resolution -> type_evidence_resolution
-proposal_coverage + semantic_scope + canonical_identity_resolution
-    + type_evidence_resolution -> claim_slot_construction
-claim_slot_construction [+ required NLI for that capability]
-    -> semantic_reconciliation
-semantic_reconciliation -> reference_closure
-semantic_reconciliation + reference_closure -> transaction_group_expansion
-transaction_group_expansion -> graph_compilation
-graph_compilation -> temporal_projection
-graph_compilation -> trust_arbitration
-graph_compilation -> identity_lineage
-any source-level terminal outcome -> source_trace_persistence
-temporal_projection + trust_arbitration + identity_lineage
-    -> transaction_group_persistence
-source_trace_persistence + all planned group terminal outcomes
-    -> source_summary_persistence
-```
-
-The fingerprinted `IngestionExecutionGraph` is normative where this compact
-rendering is ambiguous. In particular, proposal, parser, event-detection, and
-temporal lanes are concurrent after their governance dependencies, optional NLI
-is not implicitly required, and completed siblings are
-retained after another branch blocks. Every source-scoped stage appears once
-and every group-scoped stage appears once per planned transaction group in the
-final manifest, including `not_started` instances.
+Proposal, parser, event-detection, and temporal lanes remain concurrent after
+their declared governance dependencies; optional NLI is never inferred as a
+required edge, and completed siblings remain truthful after another branch
+blocks. The manifest contains every applicable source instance, every retained
+attempt instance, and every planned terminal-group instance, including
+`not_started` instances. Static equality tests cover normal, blocked, and
+`not_started` manifests independently of the renderer. [SIA-I312]
 `source_trace_persistence` is a terminal recording sink rather than a semantic
 success dependency, so it can retain an upstream rejected, unresolved, or
 failed source truthfully.
@@ -10857,7 +13849,8 @@ Failure categories remain orthogonal:
 - malformed proposal;
 - incomplete or inconsistent source-level proposal run;
 - source-grounding failure;
-- unsupported, uncertain, conflicting, or code-switched language route;
+- unsupported, uncertain, conflicting, missing-resource, or unresolved
+  within-segment language route;
 - primary/corroborating analyzer unavailable, partial, failed, or in material disagreement;
 - parse-independent certified predicate event uncovered;
 - temporal expression unsupported, ambiguous, or missing authenticated reference time;
@@ -10903,8 +13896,9 @@ including `historical_fact_lost`, `source_trust_decay`, and
 
 #### Gate B: Introduce contracts and traces
 
-- add language-neutral contracts, immutable `SourceSemanticContext`,
-  source-bound `ProviderEgressDecision`, fixed-point `LanguageRoutingDecision`,
+- add language-neutral contracts, invariant-only `SourceSemanticContext`,
+  source-and-segment-bound `ProviderEgressDecision`, fixed-point per-segment
+  `SegmentLanguageRouteSet`,
   registered prompt/proposer bindings, local and remote proposer manifests,
   dual-analyzer role/scope/temporal-attachment consensus contracts,
   parse-independent event inventory and typed event dispositions,
@@ -10927,12 +13921,12 @@ Exit: every component produces truthful typed outcomes and replay artifacts.
 #### Gate C: Qualify language and source-analysis adapters
 
 - validate the one `SemanticIngestionDeploymentManifest`, then pin and package
-  every mandatory component it names: fastText runtime/model, PyICU, English
-  and Spanish Stanza and spaCy distributions/models, local Duckling
-  runtime/client/rulesets, local llama.cpp proposer/runtime/assets, enabled NLI
-  dependencies/assets, and language-owned predicate-event manifests with their
-  licenses and content hashes. The optional OpenAI adapter remains absent from
-  the default image unless explicitly selected;
+  every mandatory component it names after the `SIA-ED-TOPOLOGY-001`
+  ownership/deployment
+  decision: the approved language, temporal, proposer, and optional NLI
+  runtime/assets plus language-owned predicate-event manifests, licenses, and
+  content hashes. The optional remote adapter remains absent from the default
+  image unless explicitly selected;
 - pass routing thresholds, canonical offsets, cross-analyzer normalization,
   disagreement, temporal-reference, event-recall, failure-injection, and
   Memorii-corpus analysis;
@@ -10977,8 +13971,10 @@ justifies veto-only authority.
   default-constructor integration tests must prove accepted and evidence-only
   sources traverse the new coordinator and that no legacy semantic writer or
   fallback remains reachable;
-- require those ordinary constructors to select the manifest's certified local
-  proposal capability with network denied. A remote proposal capability is
+- after `SIA-ED-TOPOLOGY-001` and resource-profile authorization, require the selected ordinary
+  composition to use the manifest's certified local proposal capability under
+  the approved profile with network denied. Before approval, require
+  `profile_unapproved` with zero mutation. A remote proposal capability is
   reachable only through explicit operator configuration plus exact active
   source-bound authorization, and an unavailable selected proposer never
   switches within the attempt;
@@ -11029,8 +14025,9 @@ justifies veto-only authority.
   mixed-outcome cohort resolution, observation-ledger genesis/checkpoint replay,
   duplicate/conflicting-dedupe/out-of-order/version/corruption handling,
   envelope/dedupe/record identity separation for every record kind,
-  current-writer same-version rejection, canonical historical same-version
-  precedence, supported and mixed event-schema decoding/upcast, genesis replay,
+  exact-duplicate idempotency, current-writer same-version rejection,
+  fail-closed non-identical historical equal-version conflicts pending
+  `SIA-ED-REPLAY-001`, supported and mixed event-schema decoding/upcast, genesis replay,
   and typed signed-checkpoint trust, rollback, mutation, and mid-stream resume
   tests;
 - prove the unchanged provider lifecycle envelope and separate typed semantic
@@ -11056,7 +14053,7 @@ justifies veto-only authority.
   downstream ingestion-pass handoff.
 
 Exit: every active edge traces through exact source evidence, immutable
-governance and egress context, selected language route, both analyzer outputs,
+governance and egress context, its exact selected segment language route, both analyzer outputs,
 parser consensus, parse-independent event coverage, resolved temporal evidence,
 complete alignment/scope/type assessments, one capability
 record, and one atomic compiler transaction per planned group; historical and
@@ -11069,7 +14066,8 @@ identity-lineage state remain independently observable.
 - remove production registration of the LLM-to-English-rule `hybrid` fallback;
 - bind production and certification to the exact `verified_semantic` path;
 - certify append-only graph retention, source plan lineage, the three event
-  identity domains, canonical same-version replay, graph-observation
+  identity domains, exact-duplicate replay and fail-closed non-identical
+  equal-version conflict handling pending `SIA-ED-REPLAY-001`, graph-observation
   authorization, and provider lifecycle/result composition as part of that
   exact path;
 - bind certification to the complete installable source tree, all selected
@@ -11183,7 +14181,7 @@ semantic correctness, integrity, or evidence gap.
 | ING-P2-14 signed ingestion acceptance does not bind the public boundary-profile registry | P2 | Closed | The expected graph, comparison digest, and signed `IngestionGraphPassed` all bind the exact independently released registry fingerprint and canonical content digest actually loaded by the comparator | Mutate registry content while preserving name/fingerprint fields; substitute schema/profile/order/content; mismatch expected graph, comparator load, comparison digest, or signed artifact; every case must fail without production logic |
 | ING-P2-15 parser ambiguity is asserted but cannot be observed | P2 | Closed | Each active capability binds independently packaged Stanza and spaCy manifests; normalized analyses are compared by a typed `ParserConsensusAssessment`, and stable role assignment requires one exact unique canonical assignment from both analyzers | Hold source and proposal fixed while mutating either parse, spans, roles, manifests, or traversal order; disagreement and partial analysis abstain, agreement is order-invariant, and neither parser receives the other's output |
 | ING-P2-16 proposal-coverage audit inherits dependency-parser blind spots | P2 | Closed | A language-owned, fingerprinted predicate-event detector derives a source event inventory without consuming either dependency parse or provider output; every certified event must be covered exactly once by a proposal or explicit unresolved disposition | Remove or corrupt each parser event while preserving text, omit proposals, mutate event manifests and spans, and use adversarial dynamic constructions; detector recall is measured independently and uncovered events block the complete source plan |
-| ING-P2-17 language routing has no typed decision authority | P2 | Closed | A pinned local fastText router emits a fixed-point, source-bound `LanguageRoutingDecision`; declared language is evidence rather than authority, and uncertainty, conflict, unsupported language, and code switching fail closed according to the certified capability | Native English/Spanish, short, noisy, code-switched, wrong-declaration, threshold/margin boundary, model-manifest, and canonical-digest mutations; selected-language adapters cannot run on another route |
+| ING-P2-17 language routing has no typed decision authority | P2 | Closed | A pinned local fastText router emits an exact fixed-point `SegmentLanguageRoute` for every content-bound segment; declared language is evidence rather than authority, and uncertainty, conflict, unsupported language, unresolved within-segment code switching, or missing resources makes only that segment evidence-only with zero learned call | Mixed English/Spanish segments, native English/Spanish, short, noisy, within-segment code switching, wrong declaration, threshold/margin boundary, model/resource manifest, batching, and route/content-digest mutations; selected-language adapters cannot run on another route |
 | ING-P2-18 signed external evidence is content-bound but not authority-lifecycle-bound | P2 | Closed | Acceptance witnesses, registry releases, and pass artifacts bind purpose-authorized lifecycle-checked keys and one immutable trust snapshot; store-owned active-release epochs advance monotonically and reject validly signed rollback releases | Rotate, retire, revoke, compromise, expire, substitute issuer/key/trust policy/release/snapshot, roll back active epochs, and replay signatures across purpose or revision; independently verify signatures and lifecycle at issuance and use time before comparison |
 
 The following canonical high-severity ingestion patterns remain closed and are
@@ -11218,6 +14216,31 @@ issue namespace:
 | Coverage repeats parser blind spots | P2 | ING-P2-16 | Language-owned event detector and source-plan validator | Parse-independent predicate-event inventory and source-plan completeness gate | B, C, D, F |
 | Language selection has no decision authority | P2 | ING-P2-17 | Language router and capability registry | Fixed-point, source-bound local route with fail-closed uncertainty and conflict | B, C, D, F |
 | External signatures ignore authority lifecycle | P2 | ING-P2-18 | Acceptance release verifier | Independently trusted signed releases and trust snapshots with rotation/revocation semantics | B, F, G |
+
+#### Revision-01 failure-pattern additions
+
+| Failure pattern | Primary component control | Independent validation |
+| --- | --- | --- |
+| Cross-principal delivery collision or recovery | Stable delivery-principal binding/key binds admission through result while current authorization is revalidated separately; mismatches are non-disclosing before lookup | Two-principal same-ID, forged recovery, session renewal/policy rotation, cross-tenant/scope, lost-acknowledgement, replay, and result-disclosure tests |
+| Metadata-poor snapshot attempts semantic escalation | Immutable evidence-only representation has no governed segment context | Current-hook compatibility, mixed-governance snapshot, zero-promotion, zero-egress, and replay-byte-equality tests |
+| Unauthorized or stale egress policy mutation | Signed lifecycle-checked governance command, monotonic activation, and dedicated ACL | Forged, stale, revoked, cross-tenant, unauthorized, rollback, and policy-store-outage zero-wire tests |
+| Observation page omits, duplicates, or leaks records | One flattened ordered stream with total bound, positioned signed cursor, and per-page authorization | Cross-kind concatenation, first/last/empty page, size-boundary, forged/stale cursor, and revocation-between-pages tests |
+| Vacuous policy or local saturation permits active mutation | Finite/domain validation, content-bound approved baseline, and typed local admission decision | NaN/infinity/range/alpha/empty-gate mutation plus queue, deadline, saturation, restart, and zero-mutation tests |
+
+#### Revision-02 failure-pattern additions
+
+| Failure pattern | Primary component control | Independent validation |
+| --- | --- | --- |
+| Authorization renewal changes durable operation identity | Exact versioned delivery/fence/allocation preimages exclude ingress context and every volatile authorization coordinate | Renewal, policy/trust/revocation rotation, scope expansion/contraction, checkpoint, reclaim, recovery, result, and replay byte-equality tests plus static preimage audit |
+| Scalar admission authorizes only part of a governed source | Complete required scopes derive from validated segment governance and receive one same-tenant subset decision before atomic admission | Multi-message exact/superset/partial/zero/cross-tenant/stale/revoked cases and zero-Step-2/provider/reservation/lease/graph-effect spies |
+| Adapters normalize or concatenate delivery IDs differently | One versioned byte-preserving validator and typed domain-separated public/composite coordinates | Independent cross-adapter Unicode/case/whitespace/limit/invalid-scalar golden vectors, collision injection, fan-out, restart, and retry tests |
+
+#### Revision-03 failure-pattern additions
+
+| Failure pattern | Primary component control | Independent validation |
+| --- | --- | --- |
+| A retry crossing activation receives a second delivery identity | Finite frozen-state migration preserves stripped/original evidence, derives typed public/child coordinates only from verifiable bytes and fan-out state, and publishes one complete certified target generation before epoch activation | Whitespace, NFC/NFD, delimiter-like public/child, partial fan-out, collision, owner-disposition, restart, rollback, and cross-cutover exactly-one-source/effect fixtures |
+| Source-wide governance substitutes one segment's authority for another | Invariant-only source context plus complete required scopes and exact segment/operation carrier subsets through every stage | Mixed scope/classification/modality/authority/egress admission, provider routing, reconciliation, compiler, recovery, replay, result access, and missing/extra/swapped/substituted carrier mutations |
 
 ### 5.11 New risks and residual fragility
 
@@ -11263,7 +14286,7 @@ issue namespace:
 | A retryable source failure occurs before any transaction plan exists | Discriminated pre-planning progress records exact next DAG stage and reusable artifact closure, then transitions atomically and only once to planned progress | Crashes before a provider response is acknowledged can still consume one bounded retry |
 | A retry result is attributed to the wrong plan or authorization | Append-only per-group plan lineage, immutable committed-group membership, one final lineage entry per terminal group, and result-to-entry equality checks | Late dependencies discovered after a partial commit can force remaining groups to terminate unresolved rather than regroup |
 | Event, retry, and record identities are conflated | Separate envelope `event_id`, logical `dedupe_key`, and payload record identity; bind only payload entity/record IDs to the compiler change | More identity coordinates increase audit and test surface |
-| Historical same-version events replay inconsistently | Reject current-writer collisions; deterministically select the greatest event ID before historical version application | Legacy conflicting events remain auditable but only the governing winner materializes |
+| Historical same-version events replay inconsistently | Reject current-writer collisions and reject non-identical historical equal-version conflicts pending `SIA-ED-REPLAY-001` | Replay remains blocked for that conflict class until the registered artifact selects a genesis/checkpoint-consistent outcome |
 | Graph-observation authorization leaks scope or existence | Bind principal-derived authorization evidence into cohorts/pages/cursors and reauthorize every page with a non-disclosing denial | Authorization-policy outages block acceptance observation |
 | Coarse provider lifecycle and typed semantic outcome diverge | Atomic terminal composition, a total status/result mapping, an unchanged old-reader envelope, a separate typed accessor, and digest-joined reload | Historical pre-cutover operations intentionally have no synthesized target semantic result |
 | Execution traces misstate concurrent failure | Fingerprinted stage DAG, complete manifest, dependency validation, and causal blocker tuples | Clock timestamps remain diagnostic rather than causal ordering evidence |
@@ -11271,6 +14294,11 @@ issue namespace:
 | Expected graph accidentally mirrors production or encodes one author's mistake | Closed acceptance-only schema, pre-ingest construction, exact foreign-key/count validation, independently released boundary profiles, signed time witnesses, import boundaries, mutation testing, signed authorship provenance, blinded commitments, and content-bound cross-domain adjudicated evidence for hand-authored fixtures | Independent domains can still share a semantic misconception; rotating held-out corpora and simulator-latent fixtures provide additional diversity |
 | Acceptance alignment is ambiguous or depends on later graph semantics | One unique global operation/fence bijection precedes source/entity alignment; zero or multiple solutions fail before witnesses or graph records are available | Fixtures with structurally indistinguishable operations must add independent source coordinates or remain untestable rather than use production IDs |
 | Runtime-only source integrity coordinates leak into the hidden oracle | An independent public-record consistency assessment validates fence, result, group, and observation bindings before fixture equality | The acceptance implementation remains a separate security-sensitive code path and requires import-boundary and mutation coverage |
+| A terminal source or group result is substituted across operations | Every result carries the complete admission-time `OperationFenceBinding`; finalization, persistence, observation, event/replay projections, digests, and lost-acknowledgement reload require exact equality | The larger result contract increases static field-closure and mutation-test surface |
+| A guessed operation or delivery reference discloses another principal's semantic result | Resolve trusted host ingress and authorize purpose, principal, tenant, scope, delivery key, and complete fence before result-repository lookup; all failures use one non-disclosing unavailable shape | Result-access authority and its protected admission index become security-critical and must fail closed during outages |
+| Deployment authorization reintroduces acceptance authority into production | Production owns a read-only verifier, canonical artifact schema, trust snapshot, revocation, and active epoch; acceptance only validates and publishes serialized bytes through an independent decoder | Two independent decoders can drift, so any canonical-byte disagreement blocks publication and activation |
+| Deployment authorization proves deployer approval but not independent ML acceptance | Acceptance signs and lifecycle-validates a target-bound baseline approval release; its verified digest is mandatory in baseline issuance and signed into deployment authorization | Revocation propagation spans two authorities, so replacement activation waits for durable production revocation and monotonic epoch advancement |
+| An external blocker is referenced through a stale review label | Section 1.5.2 is the only decision register and static checks reject undefined or duplicate `SIA-ED-*` references | Owner-approved artifacts still require deliberate governing-document updates and cannot be inferred from the register |
 | Acceptance oracle omits atomic effects or mirrors internal partition | An independent operation-effect cardinality registry and effect references derive complete must-co-commit coverage from public expected-graph keys while allowing safe production coalescing; authorship evidence binds the reviewed graph | A shared misconception across authorship review and source interpretation remains a residual human-label risk |
 | Terminal non-committing operations disappear from graph-only observation | A canonical atomic ingestion-observation ledger retains one introduction/outcome pair per terminal operation; cohort resolution starts there and follows graph deltas only for committed outcomes | The extra append-only ledger increases storage and replay audit cost |
 | Storage pressure encourages historical deletion | Semantic ingestion has no physical-delete contract; every lifecycle transition remains an append-only full-state update | Any future compaction protocol requires a separate governing design and cannot alter semantic history |
@@ -11282,8 +14310,10 @@ issue namespace:
 | A legacy or generic store path bypasses target writer admission | One ownership manifest classifies every semantic record and method; the shared storage boundary requires a current binding for admission, checkpoint, group, finalization, and generic writes; cutover drains the retiring epoch | Adding a new semantic record kind or storage method requires an atomic manifest update and conformance coverage before use |
 | Lease recovery changes deterministic entity or action identity | Domain-separated immutable allocation namespaces are persisted at admission while renewable lease bindings authorize writes only | Allocation namespace and lease coordinates increase schema surface and must be audited independently |
 | Equal event/document timestamps erase temporal provenance | One discriminated reference object is carried through source, resolver, accepted IR, durable graph, replay, expected/observed schemas, and exact comparison | Authenticating bad upstream metadata remains a governance risk and therefore fails closed when provenance is inconsistent |
-| Structured provider adapters serialize different source bytes | Versioned canonical envelopes define fields, ordering, references, limits, and RFC 8785 UTF-8 encoding before unchanged `ProviderEvent` normalization | New structured hook shapes require a reviewed envelope variant and manifest revision |
+| Structured provider adapters serialize different source bytes | Versioned canonical envelopes define fields, ordering, references, limits, and the one canonical typed-value profile binding before unchanged `ProviderEvent` normalization | New structured hook shapes require a reviewed envelope variant and manifest revision |
 | Lifecycle compatibility is inferred from the current checkout | The complete baseline model, source blob, schema, validators, canonical serialization, and independent fixture bytes are pinned with an empty allowed change set | A deliberate future lifecycle change requires a separately reviewed migration rather than silent compatibility drift |
+| Authenticated namespace or governance policy is misconfigured | Server-derived delivery keys, dedicated egress-policy ACL, lifecycle-checked signed commands, and pre-transport revalidation | Operational identity and policy configuration remain high-impact dependencies; failure denies rather than discloses or egresses |
+| Local capacity is unavailable or saturated | Authorized typed resource/admission profile returns deterministic evidence-only/no-mutation outcomes | Supported profile values and host/model envelope remain blocked by `SIA-ED-TOPOLOGY-001` |
 
 Unsupported areas intentionally remain unresolved:
 
@@ -11300,6 +14330,61 @@ Unsupported areas intentionally remain unresolved:
 ### 5.12 Prohibited shortcuts
 
 The following changes violate this design even if they improve a benchmark:
+
+- exposing `semantic_ingestion_outcome(operation_id)`, accepting a caller-built
+  `AuthenticatedIngressContext`, resolving an operation/result before trusted
+  host-context authorization, or returning different failure shapes, reasons,
+  coordinates, digests, lifecycle state, or existence signals for denied,
+  missing, mismatched, and outage cases;
+- issuing baseline deployment authorization without one independently verified
+  `CapabilityBaselineApprovalRelease` digest, failing to sign that digest into
+  the resulting artifact, parsing the acceptance release in production, or
+  treating approval machinery as permission to invent any
+  `SIA-ED-POLICY-001` value;
+- returning, persisting, recovering, or replaying a terminal source/group result
+  without the complete admission-time `OperationFenceBinding`, reconstructing
+  that binding from scalar IDs, or accepting any mismatch with its enclosing
+  request, lease, summary, delta, event/replay projection, or nested result;
+- importing `acceptance.*`, an acceptance schema/key/trust object, or an oracle
+  verifier into `memory_evolution/deployment_authorization.py` or any production
+  composition path, even when serialized authorization bytes are identical;
+- using a review-finding identifier as an external design decision, defining an
+  `SIA-ED-*` identifier outside Section 1.5.2, or treating an unresolved row as
+  permission to choose a default;
+- using a caller delivery ID, caller-selected scope, inferred principal, or
+  unqualified recovery lookup as an admission, fence, allocation, replay, or
+  result identity; or returning a mismatch shape that reveals whether another
+  principal's delivery exists;
+- embedding current authorized-scope membership or its digest in
+  `DeliveryPrincipalBinding`, `delivery_key_digest`, an operation fence,
+  allocation namespace, checkpoint, recovery/replay identity, or result
+  identity; deriving any such coordinate from `AuthenticatedIngressContext`,
+  session/policy/trust/revocation evidence, or authorization time; comparing
+  those volatile values during checkpoint/group/finalization/recovery/replay;
+  or treating strict current authorization expansion as a durable-binding
+  mismatch;
+- admitting a governed semantic projection after checking only one requested
+  scope, deriving `RequiredOutcomeScopeSet` after Step 2 starts, treating
+  partial/zero/cross-tenant/stale/revoked coverage as an evidence-only
+  authorization fallback, or starting a provider call, reservation, lease, or
+  graph effect before complete same-tenant subset authorization;
+- trimming, Unicode-normalizing, case-folding, delimiter-rewriting, replacing,
+  or adapter-locally interpreting a delivery ID; accepting an invalid scalar,
+  all-whitespace or over-limit value; constructing composite identity by raw
+  string concatenation; accepting a caller-built composite coordinate; or
+  exposing a normalization alias, legacy parser, or versioned public API;
+- promoting, assigning authority to, synthesizing identity for, or remotely
+  egressing a metadata-poor snapshot rather than retaining it as evidence-only;
+- mutating provider-egress policy through a generic memory/semantic writer,
+  non-monotonic activation, unsigned command, unchecked key lifecycle, or a
+  store path outside the governance ACL;
+- resolving graph-observation cohort membership before authenticated
+  authorization, accepting a caller-authoritative scope, paging per kind under
+  one cursor, treating page size as per-kind, or returning page/cursor detail
+  for invalid, stale, or revoked access;
+- accepting NaN, infinity, vacuous/empty statistical or monitoring policy,
+  unapproved baseline artifact, or local overload as a reason to fall back,
+  mutate graph state, or invent a supported host profile;
 
 - sending source text to a remote provider without the exact current
   source-bound egress decision, or silently substituting redaction, provider,
@@ -11530,6 +14615,11 @@ The following changes violate this design even if they improve a benchmark:
   write path without the current `SemanticWriterCommitBinding`, reissuing
   `legacy_pre_cutover` after activation, or advancing the writer epoch while a
   retiring-epoch operation or lease remains nonterminal;
+- activating the target writer before the complete delivery-coordinate
+  migration certificate is valid; inferring missing original bytes, parsing a
+  raw child delimiter, tolerating a collision or incomplete fan-out, or keeping
+  a legacy alias, uniqueness bridge, compatibility DTO, dual read, fallback
+  parser, or old-coordinate writer after activation;
 - deriving planned identity from a lease token, owner, expiry, state revision,
   or ownership epoch; rotating `allocation_namespace_id` on reclaim; or using
   the stable operation/allocation identity as write authorization;
@@ -11540,6 +14630,27 @@ The following changes violate this design even if they improve a benchmark:
 - constructing structured snapshot/delegation bytes ad hoc inside the
   normalizer, sorting away declared message order, omitting source references,
   or extending `ProviderEvent` to avoid the canonical envelope contract;
+- reusing retained-JSON offsets for decoded projection/segment text, accepting
+  an evidence span without one exact text-artifact kind, or retaining an
+  envelope-field mapping as a pointer/digest without loadable canonical field
+  and decoded-content bytes;
+- authorizing a learned or linguistic call from source-level language status,
+  applying one segment's route/resource binding to another, or allowing
+  unresolved within-segment code switching to reach proposal, analysis, NLI,
+  reconciliation, planning, or graph effect;
+- placing scope, modality, classification, authority, or egress authority in
+  `SourceSemanticContext` or a scalar `SourceAdmissionRequest` field; selecting
+  a representative/first segment, unioning values into a source scalar,
+  reconstructing from source-wide policy, or accepting missing, extra, swapped,
+  or substituted per-segment/operation carriers at any downstream stage;
+- reading outcome/result/carrier/replay-artifact state before complete
+  required-scope authorization, returning a partial mixed-scope source result,
+  or filtering/redacting segments to make an under-authorized lookup succeed;
+- constructing, importing, adapting, or accepting `DeliveryAuthorizationRequest`
+  on any result-access path; adding a result-access purpose to that DTO,
+  caller-supplied scope or scope-set authority, an authorizer overload, alias,
+  or alternate lookup route; or reading any repository other than
+  `AdmissionAuthorizationIndexEntry` before lookup approval;
 - claiming legacy lifecycle compatibility from status literals alone,
   regenerating both sides of the compatibility oracle with target code, or
   changing any pinned field/default/enum/validator/canonical byte under this
@@ -11555,8 +14666,134 @@ The architecture is implementation-ready when:
 
 - every workflow component has the contracts and ownership described in
   Section 4;
-- the exact selected libraries, model assets, and runtime call topology are
-  reflected in dependency and deployment plans;
+- the external-decision audit finds exactly the three Section 1.5.2 definitions,
+  every normative `SIA-ED-*` reference resolves to one of them, every row has
+  owner/requirements/artifact/fail-closed/unblock fields, and no review-finding
+  identifier appears in normative text;
+- deployment-authorization tests prove production imports no `acceptance.*` or
+  oracle module, acceptance imports no production verifier/schema/trust object,
+  independent decoders accept identical canonical bytes, and wrong-purpose,
+  wrong-target, wrong-authority-snapshot, bad-signature, stale-epoch, expired,
+  revoked, compromised, substituted, rollback, and trust-store-outage cases
+  remain evidence-only with zero learned or graph effects;
+- baseline-approval tests independently recompute acceptance release bytes,
+  target and policy coordinates, signature, approver/key authority, active
+  release epoch/sequence, expiry, revocation, compromise time, supersession, and
+  rollback ordering. Missing, wrong-purpose, wrong-target, stale, expired,
+  revoked, compromised, substituted, ambiguous, or rollback-invalid releases
+  emit no issuance request; a valid release digest appears unchanged in the
+  issuance request, deployment authorization digest/signature, and production
+  authorization. Production imports no acceptance release schema or verifier
+  and never uses the release directly;
+- semantic-result lookup tests exercise one valid caller plus missing/forged
+  host ingress, guessed operation/delivery references, expired/revoked session,
+  unknown issuer, cross-principal/tenant access, mixed-scope zero/partial/exact/
+  authorized-superset/stale/revoked coverage, key/fence/scope-set mutation,
+  missing result, authority/revocation/repository outages, and result-digest,
+  scope-set, or lifecycle mismatch. Static type/ownership tests prove that
+  result access neither constructs nor imports `DeliveryAuthorizationRequest`,
+  `SemanticIngestionOutcomeLookupRequest` is the only public lookup and
+  authorizer request, and no overload, alias, or alternate lookup route exists.
+  Identity-stability tests change current authorized-scope membership while
+  preserving provider/principal/tenant and prove byte-identical durable
+  binding/key/fence/allocation/result identity. Current-set/session-evidence
+  substitution tests reject. Repository-spy tests prove exact and strict
+  superset authorization can read results only after protected-index approval,
+  while partial, zero, stale, revoked, and cross-tenant cases have only the
+  protected-index read and no outcome/result/carrier/replay-artifact read.
+  Partial coverage has no filtering or projection fallback. Every failure
+  returns the same coordinate-free unavailable schema and status/size policy,
+  only outages are retryable, and no failure mutates state;
+- authenticated ingress namespace, governed snapshot, egress-governance,
+  graph-observation authorization/page-stream, finite policy, approved baseline,
+  and local admission contracts pass their independent adversarial tests;
+- canonical typed-value profile tests run two independently implemented codecs
+  against published golden canonical bytes and digest/signature preimages for
+  every primitive and recursively nested combination, every active and
+  replay-only profile/schema binding, and graph observation. They prove exact
+  datetime UTC/fixed-microsecond spelling, signed duration boundaries and
+  overflow rejection, canonical padded base64, enum registry binding, exact
+  Unicode scalar preservation, integer/boolean separation, raw
+  float/decimal rejection, list/tuple distinction, sorted set/frozenset member
+  bytes with duplicate rejection, string-keyed map order, and omission/null
+  distinction. Adversarial vectors cover noncanonical equivalent spellings,
+  invalid UTF-8/surrogates, reordered or duplicate members/keys, unknown tags,
+  nested substitutions, profile/schema-version substitution, digest/signature
+  field exclusion errors, unknown/ambiguous/lossy upcasts, and cross-version
+  replay; both codecs must independently reject or emit byte-identical output
+  without importing a common codec implementation;
+- independent two-process identity tests prove that a retry after session
+  renewal, policy/trust/revocation-snapshot rotation, and current-scope
+  expansion/contraction reauthorizes and returns byte-identical original
+  delivery key, operation/fence/allocation coordinates, checkpoint/replay
+  identities, admission/result, and one graph effect. Static schema/preimage
+  tests prove no `AuthenticatedIngressContext`, authorization proof/evidence,
+  session, current-scope, policy, trust, revocation, or authorization-time field
+  enters those identities or their equality checks. Revoked, cross-principal,
+  cross-tenant, and out-of-scope retry or result-access requests are
+  non-disclosing and mutation-free;
+- delivery-coordinate migration tests freeze the current stripped-ID/raw-child
+  state and independently reproduce the complete plan and certificate. They
+  cover leading/trailing and all-whitespace inputs, NFC/NFD pairs,
+  delimiter-like public IDs, complete and partial child fan-out, missing
+  parent/child evidence, public/child and key collisions, evidence-backed owner
+  dispositions, crash after every entry/checkpoint/activation boundary,
+  restart, pre-activation rollback, forward post-activation rollback, and
+  retries crossing activation. Ambiguous or non-invertible evidence blocks
+  activation; every accepted cutover exposes only the typed target path and
+  preserves exactly one admitted source, operation, result, and graph effect;
+- execution-graph tests prove exact canonical equality of template, registry,
+  serialization, renderer, and normal/blocked/`not_started` manifests; every
+  required stage, scope, and edge is present and `proposal_alignment` has no
+  accepted alias;
+- text-coordinate tests independently verify retained-source, semantic-
+  projection, and segment-local descriptors/spans plus verbatim and envelope-
+  field mapping proofs. Multi-message/delegation fixtures require JSON and
+  decoded offsets to differ; mutating artifact kind/ID/digest/length/unit,
+  pointer, canonical field bytes/digest, decoded bytes/text digest, separator,
+  projection/segment span or substring, source reference, or proof digest fails
+  admission, replay, persistence, observation, and oracle comparison;
+- segment-language tests cover mixed English/Spanish messages, within-segment
+  code switching, declaration conflict, uncertainty, unsupported language,
+  missing lane/NLI resource, route/content/resource substitution, compatible
+  and incompatible batches, retries, and replay. Every request and sealed
+  result must name its exact segment route; a blocked segment makes zero learned
+  or linguistic calls and zero graph effect while source status remains only
+  the deterministic aggregation of immutable segment outcomes;
+- mixed-scope, classification, authority, modality, and egress tests prove
+  immutable segment-governance carrier equality through preparation, proposal,
+  reconciliation, accepted operation, group, compilation, durable event,
+  recovery, replay, and result access; provider spies prove each segment routes
+  from only its own egress binding, and reconciliation/compiler tests accept
+  supported mixed-governance sources and groups without constructing any
+  source-wide governance scalar. They also prove the canonical complete required-
+  scope set/digest is byte-equal through protected admission, carrier artifact,
+  source result/outcome, replay, and lookup authorization. Exact and strict
+  scope supersets accept; partial, zero, cross-tenant, stale, and revoked
+  authorization denies without mutation. Missing, extra, swapped,
+  first-segment, representative, union, fallback, and reconstructed binding
+  mutations fail at admission or the first consuming stage; denied segments
+  make zero calls;
+- independent cross-process turn-to-`pre_compress` and turn-to-`session_end`
+  tests prove one message admission/effect set, fresh-only snapshot scheduling,
+  exact per-message governance replay reuse, and changed-byte or carrier
+  rejection;
+- normative-traceability tests prove independent parser/checker byte equality
+  and complete structural-unit coverage over Sections 1-5, while a separately
+  implemented verifier proves complete many-to-many requirement coverage and
+  trusted passing execution at the exact design revision and implementation
+  revision/tree. Every ledger row self-maps and shared units retain every
+  default, structural-rule, and override-added requirement. Missing, stale,
+  duplicate, orphaned, unclassified, reordered, defaultless, self-map-missing,
+  secondary-map-missing, owner/assertion/version/test-group mismatched, or
+  content-digest-mismatched units fail; coordinate-only, unloadable,
+  unexecuted, cancelled, errored, failed, indeterminate, stale-content,
+  stale-design, wrong-revision/tree, expired, revoked, compromised,
+  wrong-purpose, forged-signature, or result-digest-mismatched evidence fails
+  even when both parsers produce identical manifests;
+- after `SIA-ED-TOPOLOGY-001` is resolved, the externally approved libraries, model assets,
+  runtime call topology, and supported local resource profiles are reflected in
+  dependency and deployment plans; this design supplies no defaults for them;
 - every normative SIA-R01 through SIA-R23 requirement has its named owner,
   implementation, measurable acceptance, and independent completion evidence
   passing;
@@ -11566,8 +14803,9 @@ The architecture is implementation-ready when:
 - ordinary provider and filesystem constructors exercise the exact certified
   Steps 1-8 composition for accepted and evidence-only sources, with no
   benchmark-only construction, legacy semantic writer, or hidden fallback;
-- ordinary constructors select the certified local proposal capability with
-  network denied; remote use requires explicit configuration and exact egress
+- after that approval, ordinary constructors select the certified local
+  proposal capability under an approved resource profile with network denied;
+  remote use requires explicit configuration and exact egress
   authorization, and mixed-family operations retain both the proposal
   capability that executed and compatible semantic capability that promoted;
 - operation-lease tests prove renewal through slow stages, owner/token/epoch
@@ -11575,21 +14813,42 @@ The architecture is implementation-ready when:
   recall, immutable terminal exhaustion, and interaction with writer admission
   and graph CAS; exhaustion round-trips one typed reason through terminal
   operation, semantic source result, and unchanged failed coarse lifecycle;
+- static carrier closure and mutation tests prove
+  `PreGraphSourceIngestionResult`, `GraphBoundSourceIngestionResult`,
+  `CommittedTransactionGroupExecutionResult`, and
+  `NonCommittingTransactionGroupExecutionResult` each require the complete
+  byte-identical admission binding; omission or one-field substitution fails
+  before mutation/disclosure, every nested and projected fence coordinate is
+  equal, result digests change, and lost-acknowledgement replay returns the
+  original result bytes;
 - allocation tests prove crash/reclaim before and after planning preserves
   byte-identical namespaces, reservations, entity/action IDs, and digests while
   stale leases fail and cross-delivery/operation namespace substitution is
-  rejected;
+  rejected. Independent preimage vectors prove fence and allocation domains
+  are distinct while both bind only stable delivery key, immutable admitted
+  source ID/digest, operation ID, and explicit preimage version;
 - source-admission tests distinguish invalid-envelope rejection, proven
   prewrite failure, indeterminate durability, write-before-acknowledgement
-  recovery, accepted replay, and conflicting replay; only the accepted variant
-  starts Step 2, its complete operation/namespace/writer handoff constructs
-  lease acquisition without inference, and every later failure preserves its
-  byte-identical source;
-- provider-normalization and C11 tests cover every public operation, blank IDs,
-  reserved child-ID collisions, restart-stable child fan-out, conflicting
-  replay, every partial-child recovery permutation, and canonical
-  snapshot/delegation envelope equality plus order/reference/version/limit
-  mutations;
+  recovery, accepted replay, and conflicting replay; only an accepted source
+  with a governed non-null projection, canonical complete required set, and
+  exact `AdmissionScopeAuthorizationProof` starts Step 2, while an accepted
+  policy-declared metadata-poor snapshot finalizes evidence-only. Multi-message
+  exact and strict-superset current authorization accept; partial, zero,
+  cross-tenant, stale, revoked, or substituted set/evidence/proof rejects with
+  no persisted admission, Step 2 work, provider call, reservation, lease, or
+  graph effect. The complete handoff binds the stable principal/key pair and
+  immutable source/fence/allocation/writer coordinates without embedding
+  current authorization, and every later failure preserves its byte-identical
+  source;
+- provider-normalization and C11 tests cover every public operation using
+  independently authored cross-adapter version-1 golden vectors: strict UTF-8
+  scalar preservation, composed/decomposed Unicode distinction, case
+  distinction, preserved leading/trailing whitespace, non-ASCII/emoji,
+  1,024/1,025-byte boundary, empty/all-whitespace and invalid-scalar rejection,
+  typed public/composite collision rejection, no raw delimiter concatenation,
+  restart-stable child fan-out, conflicting replay, every partial-child
+  recovery permutation, and canonical snapshot/delegation envelope equality
+  plus order/reference/version/limit mutations;
 - the filesystem/JSONL memory-plane store passes the real-process semantic-
   ingestion atomic-batch conformance suite, so graph, delta, canonical events,
   canonical introductions/outcomes, idempotency, trace, and outcome are all
@@ -11706,8 +14965,8 @@ The architecture is implementation-ready when:
   distinguish envelope `event_id`, logical `dedupe_key`, and payload record
   identity, require
   `entity_id == record_id == GraphRecordMutation.record_id`, reject current-writer
-  same-version collisions, and apply greatest-`event_id` historical precedence
-  deterministically before ordinary version replay; create, update, and logical
+  same-version collisions, and reject non-identical historical equal-version
+  conflicts pending `SIA-ED-REPLAY-001`; create, update, and logical
   retirement consume one identical mutation kind through delta, event identity,
   dedupe, payload, and replay;
 - ingestion-observation tests prove one immutable operation introduction and
@@ -11729,9 +14988,11 @@ The architecture is implementation-ready when:
   ingestion verdict;
 - graph-observation authorization tests use two ordinarily ingested principals
   and scopes through the production API/storage boundary; cross-principal,
-  cross-scope, mixed-seed, forged-cursor, page-after-revocation, and
-  policy-revision-change requests disclose no page, cohort, record, boundary
-  record, digest, cursor, or seed existence;
+  cross-scope, mixed-seed, forged/invalid/stale cursor, page-after-revocation,
+  and policy-revision-change requests return the typed non-disclosing failure
+  reason and disclose no page, cohort, record, boundary record, digest, cursor,
+  or seed existence; minimum/maximum total page sizes and cross-kind page
+  concatenation prove one ordered exactly-once stream;
 - structural comparison proves exact closed-world equality inside a
   terminal-outcome/graph-delta/ledger-derived source/operation cohort while excluding unrelated
   records, observes exact revision and logical IDs for every entity reference,

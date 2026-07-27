@@ -2,182 +2,171 @@
 
 ## Review Metadata
 
-- Review ID: `semantic-ingestion-round-02`
+- Review ID: `semantic-ingestion-2026-07-26-restart-round-02`
 - Review mode: `full`
-- Review outcome: `Changes required`
-- Design path: `docs/design/semantic_ingestion_architecture.md`
-- Design baseline: SHA-256
-  `dc676c8943a3ef5e3d1e7be8d2e26e391ce0710ed8936f82e54dab759a2defe5`
-- Implementation baseline: `f76850fc45f09d21a40b5a7302d173ce642ec9d6`
-- Review date: 2026-07-26
-- Reviewers: independent spec-audit lane (`Beauvoir`), correctness lane
-  (`Ptolemy`), dedicated `test_reviewer` (`Aristotle`), coordinator validation
-- Scope: complete semantic-ingestion design; retrieval redesign and production
-  implementation remain excluded
-
-The dedicated `spec_auditor` and `correctness_reviewer` roles again failed
-before repository access because their fixed `gpt-5.6` model is unavailable for
-this account. Fresh `gpt-5.4` agents executed those exact independent mandates.
-The dedicated `test_reviewer` ran normally. No reviewer saw another lane's
-findings before completing.
+- Review outcome: `Blocked`
+- Design baseline SHA-256:
+  `22fa2e5688d5cae027a843b29e7cd4a5fca2c90acb9e3e5a470a29ea4146818a`
+- Implementation baseline:
+  `44cd7773a75ac8545ddcf799c76dc94c0240f788`
+- Reviewers: fresh independent `spec_auditor`, `correctness_reviewer`, and
+  `test_reviewer`, followed by coordinator validation
+- Scope: complete ingestion design, not only revision 01
 
 ## Executive Assessment
 
-Revision 01 closes all fifteen round-01 findings. The provider topology, prompt
-authority, dual-analyzer consensus, event coverage, temporal algebra, canonical
-event emission, writer admission, acceptance authority, statistics, and
-monitoring contracts are materially stronger and internally coherent.
+Revision 01 closes the foundational primitive, ingress-resolver, local
+reservation, egress CAS, and implementation-baseline gaps. The operation-fence
+correction is incomplete in typed result contracts. The approval-lifecycle
+correction violates the design's production/acceptance isolation invariant.
+Revision-local DREV identifiers also collide with the external-decision names,
+making the remaining blockers ambiguous.
 
-Approval remains blocked by four P1 and three P2 findings. Three P1 findings
-preserve explicit C3, C12, and C13 hardening obligations in the replacement
-architecture. The fourth closes an undefined record-version source in canonical
-event replay. The P2 findings remove an oracle contradiction and make the
-requirements ledger genuinely canonical and independently traceable.
+Three expected external blockers remain: production topology and ownership,
+equal-version replay semantics, and initial statistical/monitoring policy.
 
 ## Confirmed Findings
 
-### DREV-016: Normal production composition is not acceptance-bound
+### DREV-R2-001: Operation fence is still absent from terminal typed results
 
-- Severity: High / P1
-- Governing requirement: C3
-- Evidence: the owner map names `memory_evolution/service.py`, but neither it
-  nor Gate F identifies `ProviderMemoryService` /
-  `ProviderIngestionCoordinator` as the normal composition root or requires a
-  default-constructor integration test.
-- Root cause: the design specifies the new subsystem composition but does not
-  bind the ordinary provider entrypoint to it.
-- Impact: direct construction tests may pass while default production
-  composition still invokes legacy ingestion.
-- Required correction: add a stable requirement and name the normal production
-  composition root, dependency ownership, and cutover invariant.
-- Completion evidence: default filesystem/provider builders exercise accepted
-  and evidence-only sources through Steps 1-8, writer admission, canonical
-  events, and persistence; legacy writer/fallback is unreachable.
+- Product priority: `P1`
+- Approval disposition: `changes_required`
+- Finding type: contract composition, transaction integrity
+- Affected scenario and prevalence evidence: every ordinary graph-bound or
+  pre-graph terminal ingestion returns a `SourceIngestionResult`; this is a
+  mainstream path.
+- Evidence: lines 2307-2331 require every group result and source result to
+  carry the byte-identical `OperationFenceBinding`. Lines 8274-8315 define
+  `PreGraphSourceIngestionResult` and `GraphBoundSourceIngestionResult` without
+  the binding. The `TransactionGroupExecutionResult` variants also omit it.
+- Root cause: revision 01 updated requests and operation state but did not run a
+  complete typed field-closure audit over every promised result variant.
+- Impact: a terminal result cannot independently prove it belongs to the
+  admitted operation/fence, and substitution can survive schema validation.
+- Smallest complete correction: add the binding to both source-result variants
+  and both transaction-group result variants; require exact equality with the
+  admitted operation, group persistence, summaries, deltas, and replay records.
+- Verification: static field-closure audit plus binding omission/substitution
+  mutations across every result variant and lost-acknowledgement replay.
 
-### DREV-017: Lease ownership, stale recovery, and exhaustion are absent
+### DREV-R2-002: Acceptance authority leaks into production activation
 
-- Severity: High / P1
-- Governing requirement: C13
-- Evidence: the design defines operation fences, writer epochs, attempts, CAS,
-  and replay but no owner token, ownership epoch, lease expiry/renewal, reclaim
-  rule, bounded recovery count, or terminal exhaustion state. Current
-  `operation_models.py` and `operation_lease.py` already carry these semantics.
-- Root cause: the replacement coordinator retained transaction fencing but
-  omitted the durable work-ownership lifecycle surrounding long-running stages.
-- Impact: stale workers may commit after transfer, abandoned work may never
-  recover, or recovery may continue indefinitely.
-- Required correction: define one typed lease contract bound to every durable
-  stage write, attempt, group persistence request, and CAS.
-- Completion evidence: fake-clock and two-process tests cover renewal during
-  slow stages, stale reclaim, token/epoch fencing, restart without learned-stage
-  recall, lost acknowledgement, bounded recovery, and terminal exhaustion.
+- Product priority: `Not applicable`
+- Approval disposition: `changes_required`
+- Finding type: security and architecture
+- Evidence: SIA-R13 and the production/acceptance ownership table forbid
+  production imports of acceptance schemas, keys, and trust policy. Lines
+  2506-2517 instead require a production verifier to load
+  `acceptance/registry_release.py` releases and trust snapshots.
+- Root cause: the revision reused an acceptance-only implementation instead of
+  defining a production-owned deployment authorization boundary.
+- Impact: implementation must either violate package ownership or skip
+  lifecycle verification.
+- Smallest complete correction: define a production-owned, read-only
+  `DeploymentAuthorizationVerifier` and serialized signed authorization
+  artifact/trust-store contract. Acceptance may independently verify and
+  publish authorized bytes, but production imports no acceptance or oracle
+  module.
+- Verification: bidirectional static import tests; valid authorization enables
+  the named baseline/profile; wrong-purpose, revoked, expired, substituted, or
+  rollback authorization produces evidence-only behavior and zero learned or
+  graph effects.
 
-### DREV-018: Supported stores lack semantic-ingestion atomic-batch conformance
+### DREV-R2-003: Review findings and external decisions share conflicting IDs
 
-- Severity: High / P1
-- Governing requirement: C12
-- Evidence: Step 8 requires graph, event, delta, idempotency, and outcome
-  atomicity, but the validation strategy does not require each supported
-  backend, especially filesystem/JSONL, to pass that multi-record contract
-  under real processes and reopen.
-- Root cause: the design states the atomic invariant at the abstract repository
-  boundary without binding it to backend conformance.
-- Impact: in-memory tests can pass while the supported filesystem store exposes
-  a partial semantic group after crash or concurrency.
-- Required correction: define a semantic-ingestion atomic-batch store protocol
-  and require every supported backend to pass one conformance suite.
-- Completion evidence: multiprocess same/distinct delivery, failed replace,
-  lost acknowledgement, reopen, corruption, and retry tests observe either the
-  previous snapshot or one complete graph/event/outcome set.
+- Product priority: `Not applicable`
+- Approval disposition: `changes_required`
+- Finding type: governance and traceability
+- Evidence: DREV-001 and DREV-002 name external topology/replay decisions at
+  lines 220-222 and 2141-2147, but lines 2585-2586 reuse them for completed
+  primitive/resolver findings. Lines 2579-2581 reference DREV-004, DREV-008, and
+  DREV-009 without a canonical external-decision register.
+- Root cause: ephemeral review-finding identifiers became durable design
+  decision identifiers.
+- Impact: implementers cannot unambiguously identify the owner, artifact, or
+  unblock condition for deployment, replay, and statistical policy.
+- Smallest complete correction: replace durable `DREV-*` references with one
+  canonical external-decision register using stable design IDs. Keep review
+  finding IDs only in review reports and revision history.
+- Verification: static traceability audit rejects undefined, duplicate, or
+  conflicting decision IDs and verifies each decision's owner, artifact,
+  affected requirements, fail-closed behavior, and unblock condition.
 
-### DREV-019: Canonical event versions have no durable source
+### DREV-R2-004: Default production ownership and topology remain unselected
 
-- Severity: High / P1
-- Governing requirement: SIA-R10; canonical event model Sections 8-10
-- Evidence: `MemoryEventMetadata.version`, event-ID derivation, and replay use a
-  record version, while the canonical record/change contracts expose only
-  digests.
-- Root cause: revision 01 introduced canonical event replay without adding a
-  monotonic version to the durable record envelope and delta.
-- Impact: create/update/delete ordering and same-version conflict behavior are
-  left to implementer invention.
-- Required correction: add a store-owned monotonic `record_version` to durable
-  records, snapshot/change preconditions, tombstones, and events; define exact
-  advancement semantics.
-- Completion evidence: create/update/delete, duplicate, reorder, regression,
-  same-version conflict, tombstone, and checkpoint replay tests.
+- Product priority: `Not applicable`
+- Approval disposition: `blocks_approval`
+- Finding type: external architecture decision
+- Requirements: SIA-R08, SIA-R16, SIA-R19.
+- Evidence: the design deliberately leaves the inference/writeback owner,
+  authenticated-host integration, local assets, licenses, supported profiles,
+  capacity/deadline values, ordinary factory composition, and rollback owner
+  unresolved. Before selection, local promotion is `profile_unapproved`.
+- Required decision: product/spec/deployment owner supplies one signed,
+  content-addressed topology and ownership artifact.
+- Verification after decision: owner stripping, authenticated host adapter,
+  ordinary constructors with networking denied, package/asset/profile
+  consistency, unsupported-profile, and explicit remote-opt-in tests.
 
-### DREV-020: Cohort selection contradicts safe production coalescing
+### DREV-R2-005: Equal-version replay semantics remain unresolved
 
-- Severity: Medium / P2
-- Governing requirement: SIA-R17; ING-P2-11 rationale
-- Evidence: the oracle must not predict the production transaction partition,
-  but the observation request must already contain the complete co-committed
-  source/operation closure.
-- Root cause: the selector confuses independent seed identity with the
-  server-resolved production cohort.
-- Impact: a legal larger production group either forces the oracle to learn
-  planner output or causes a false failure.
-- Required correction: make the request carry independently authored seed IDs;
-  the server returns the complete co-committed closure and its proof.
-- Completion evidence: safe coalescing and split-group tests prove independence,
-  while unexpected extra semantic effects still fail closed-world comparison.
+- Product priority: `P2`
+- Approval disposition: `blocks_approval`
+- Finding type: external event-model decision
+- Affected scenario and prevalence evidence: divergent historical collisions
+  are important replay/recovery cases but not the dominant ingest path.
+- Evidence: `event_model.md:218-287` remains internally contradictory; the
+  target correctly fails closed rather than inventing a winner.
+- Required decision: event-model owner selects one genesis/checkpoint-consistent
+  rule and updates the governing event model.
+- Verification after decision: every permutation of exact duplicates,
+  non-identical equal-version events, current-writer collisions, checkpoints,
+  upcasts, and mixed-version history.
 
-### DREV-021: Requirement namespaces compete for implementation authority
+### DREV-R2-006: Initial statistical and monitoring policy remains absent
 
-- Severity: Medium / P2
-- Governing requirement: `.agent/PLANS.md` design completion contract
-- Evidence: Section 1 calls SIA-R normative, while Section 5.13 independently
-  requires every CFP and ING item to be implemented and passing.
-- Root cause: historical findings remain phrased as a second completion ledger.
-- Impact: implementation can drift among overlapping SIA, CFP, and ING rows.
-- Required correction: make SIA-R the sole normative namespace; map every CFP
-  and ING rationale row to owning SIA-R requirements.
-- Completion evidence: a static traceability audit has no unmapped rationale
-  row and Section 5.13 gates only on SIA-R completion.
+- Product priority: `Not applicable`
+- Approval disposition: `blocks_approval`
+- Finding type: external ML acceptance decision
+- Requirements: SIA-R14, SIA-R15.
+- Evidence: the design deliberately does not choose thresholds, multiplicity
+  allocation, cluster minima, freshness deadlines, unsupported cells, or
+  substantive monitoring limits.
+- Required decision: product/ML acceptance owner supplies one signed,
+  content-bound initial policy artifact.
+- Verification after decision: independent event-level recomputation of every
+  metric, cluster, confidence bound, multiplicity adjustment, freshness rule,
+  and activation/rollback transition.
 
-### DREV-022: Several SIA requirements cite only internal or vague sources
+## Round-01 Closure Audit
 
-- Severity: Medium / P2
-- Governing requirement: source precedence in `agents.md`; review-design
-  traceability contract
-- Evidence: SIA-R05, R06, R11, R13-R15, R17, and R18 cite CFP/ING labels or
-  broad descriptions rather than stable document sections.
-- Root cause: the first ledger was reconstructed from review findings without
-  fully replacing review-local references with governing-source locators.
-- Impact: future reviewers cannot independently reconstruct material
-  requirements without this document's historical inventory.
-- Required correction: cite concrete governing document sections for every
-  SIA row and retain CFP/ING only as secondary rationale.
-- Completion evidence: every SIA row has at least one stable governing source;
-  no requirement depends solely on an internal finding label.
+| Round-01 finding | Round-02 status |
+| --- | --- |
+| DREV-001 primitives | closed |
+| DREV-002 ingress resolver | closed at target-design level; concrete host adapter is part of external topology |
+| DREV-003 operation fence | partial; DREV-R2-001 |
+| DREV-004 replay | external blocker; DREV-R2-005 |
+| DREV-005 approval lifecycle | regressed isolation; DREV-R2-002 |
+| DREV-006 local reservation | closed |
+| DREV-007 egress CAS | closed |
+| DREV-008 topology | external blocker; DREV-R2-004 |
+| DREV-009 statistical policy | external blocker; DREV-R2-006 |
+| DREV-010 implementation baseline | closed |
 
-## Rejected Findings
+## Required Revision Before Final Review
 
-- Missing semantic/unit/held-out verification: rejected; Sections 5.2-5.6
-  specify independent minimal-pair, mutation, metamorphic, replay, structural,
-  and statistical evidence.
-- Mirrored hidden oracle: rejected; expected state is pre-ingest, production
-  semantic imports are forbidden, and field/key/page mutations prove closure.
-- Unsound statistical activation: rejected; independent scenario clusters,
-  constrained exact-binomial use, weighted Hoeffding, Holm-Bonferroni, frozen
-  manifests, and independent recomputation are explicit.
-- NLI acceptance bypass: rejected; NLI cannot approve and remains
-  capability-bound veto/shadow evidence.
-- Universal language or long-range discourse coverage: rejected as explicitly
-  unsupported, fail-closed behavior.
+The same sole design writer must make only these determinate corrections:
 
-## Residual Risks
+1. close operation-fence fields across every terminal result variant;
+2. replace acceptance-module use with a production-owned deployment
+   authorization verifier and artifact boundary;
+3. create a stable external-decision register and remove ambiguous `DREV-*`
+   references from normative design text.
 
-- Human-authored expected semantics still require independent review.
-- Learned lanes can share unseen common-mode errors before delayed labels
-  arrive; monitoring limits duration and blast radius but cannot prevent the
-  first novel error.
-- The architecture has high operational complexity. Approval depends on keeping
-  the typed ownership boundaries and conformance suites intact during
-  implementation.
+The writer must not choose the three external decisions.
 
-## Outcome
+## Final Outcome
 
-`Changes required`. Resolve DREV-016 through DREV-022, freeze a new checksum,
-and run a fresh whole-design review with new reviewer instances.
+**Blocked.** One P1 determinate defect, two governance corrections, one P2
+external blocker, and two `Not applicable` external blockers remain. One final
+revision and fresh round-03 review are available within the budget.

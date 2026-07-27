@@ -2,120 +2,192 @@
 
 ## Review Metadata
 
-- Review ID: `semantic-ingestion-round-04`
+- Review ID: `semantic-ingestion-2026-07-26-restart-round-04`
 - Review mode: `full`
 - Review outcome: `Changes required; revision budget exhausted`
-- Design path: `docs/design/semantic_ingestion_architecture.md`
-- Design baseline: SHA-256
-  `82e21dc7fb2670c8649149b58e8dd61c2e614de7480e0e7eccc9ae21bb3ed320`
-- Implementation baseline: `f76850fc45f09d21a40b5a7302d173ce642ec9d6`
-- Review date: 2026-07-26
-- Reviewers: independent spec-audit lane (`Euler`), correctness lane
-  (`Lorentz`), dedicated `test_reviewer` (`Kant`), coordinator validation
-- Scope: complete semantic-ingestion design; retrieval redesign and production
-  implementation remain excluded
-
-The dedicated `spec_auditor` and `correctness_reviewer` roles failed before
-repository access because their fixed `gpt-5.6` model is unavailable for this
-account. Fresh `gpt-5.4` high-reasoning agents executed those exact independent
-mandates. The dedicated `test_reviewer` ran normally. All three reviewed the
-complete frozen design without seeing another lane's findings.
+- Design baseline SHA-256:
+  `c80a83e3281e020cdcaf971f5ef3c95fa36ed96a26542b90f882dee7e7ed833e`
+- Design size: 13,046 lines
+- Implementation baseline:
+  `44cd7773a75ac8545ddcf799c76dc94c0240f788`
+- Reviewers: fresh independent `spec_auditor`, `correctness_reviewer`, and
+  `test_reviewer`, followed by coordinator validation
 
 ## Executive Assessment
 
-Revision 03 closes DREV-023 through DREV-027. The spec-audit and test lanes
-approved the complete design with no blocking, high, or medium findings. The
-correctness lane found one P1 and one P2 contract contradiction. The coordinator
-validated both directly against the frozen design and governing event and
-implementation rules.
+Revision 03 closes authenticated semantic-result lookup and independent
+baseline-approval evidence. The fresh whole-design review nevertheless found
+three internal gaps that prevent approval: the normative execution DAG
+contradicts its closed stage registry, governed message semantics are not
+carried through downstream contracts, and detailed normative clauses are not
+covered by an authoritative reverse traceability audit.
 
-The design is not approved. Three revision rounds have already been used, so
-the workflow stops without modifying the frozen revision-03 baseline.
+The coordinator rejected findings whose only evidence is that the proposed
+architecture and target tests have not yet been implemented. Implementation
+absence is expected before an implementation WorkPlan and is not an internal
+design defect where the design already specifies the required production
+boundary and independent oracle.
 
-## Confirmed Unresolved Findings
+Three registered external decisions also remain unresolved. Because all three
+permitted design revisions have been used, this report closes the workflow as
+not converged. The canonical design is not approved and is not
+implementation-ready.
 
-### DREV-028: Delete events are not full-state replay records
+## Confirmed Internal Findings
 
-- Severity: High / P1
-- Governing requirement: canonical event model Sections 5.1-5.2; SIA-R10
-- Evidence: `DeletedMemoryRecordSnapshot` contains only record identity, prior
-  digest, deletion authorization digest, and `deleted=True`, while the design
-  calls it a tombstone full-state payload. The governing event model requires
-  every event entity to contain the complete state needed to reconstruct the
-  object and forbids prior in-memory state or implicit defaults.
-- Root cause: the delete variant models evidence that a deletion happened, not
-  the complete durable deleted-object state required by the chosen full-
-  snapshot event model.
-- Impact: genesis, checkpoint, and mixed-schema replay must invent whether to
-  load the prior object, synthesize omitted tombstone fields, or consult
-  non-event storage.
-- Exact architectural change needed: make the delete event carry a complete
-  typed deleted-memory-record snapshot, including the canonical prior record
-  payload, record kind and ID, prior record digest and version, tombstone record
-  version, deletion authorization digest, and `deleted=True`. Its event digest,
-  logical-mutation digest, schema upcasters, and checkpoint replay must cover
-  that complete snapshot. No replay path may consult prior in-memory or
-  non-event state to materialize the tombstone.
-- Completion evidence: genesis, signed-checkpoint, mixed-schema, and isolated
-  post-checkpoint delete replay reconstruct the exact tombstone; removing or
-  mutating any deleted-record field fails before state exposure.
+### DREV-R4-001: Normative execution DAG contradicts the closed stage registry
 
-### DREV-029: Source summaries cannot represent per-attempt plan lineage
+- Product priority: `P1`
+- Approval disposition: `changes_required`
+- Requirements: SIA-R03 and SIA-R04
+- Evidence: the `IngestionStage` union at lines 7533-7569 contains distinct
+  `source_proposal_alignment` and `graph_proposal_alignment` literals. Lines
+  8318-8352 prohibit a generic `proposal_alignment` alias and require every
+  registered stage at its declared scope. The normative rendering at lines
+  11914-11945 nevertheless uses `proposal_alignment` and omits mandatory
+  stages including `capability_selection`, `planned_identity_reservation`,
+  `graph_proposal_alignment`, and
+  `capability_status_binding_validation`.
+- Violated invariant: one fingerprinted, typed execution graph must define the
+  exact stage set, scopes, and dependencies used by execution, persistence,
+  retry, and certification.
+- Failure scenario: every ordinarily promoted source reaches alignment, but an
+  implementation cannot emit the rendered DAG through the closed type. It must
+  accept a forbidden alias, omit required stages, or invent stage mappings and
+  edges. Trace persistence, causal blocking, retry replay, and certification
+  can therefore disagree about work that occurred.
+- Root cause: the compact observability rendering was maintained independently
+  from the closed execution-graph contract.
+- Exact architectural change required: define one authoritative typed
+  execution-graph template; mechanically derive the Section 5.8 rendering from
+  it; include every mandatory stage with its permitted scope and exact
+  dependencies; reject aliases and missing stages.
+- Completion evidence: a static exact equality check proves the canonical
+  template, closed registry, rendered DAG, and emitted trace manifests have the
+  same stage instances, scopes, and edges, including blocked/not-started
+  instances.
 
-- Severity: Medium / P2
-- Governing requirement: SIA-R04; `docs/IMPLEMENTATION_RULES.md` explicit,
-  typed, auditable semantics
-- Evidence: each graph-dependent retry rematerializes a group plan and
-  authorizes the group under that newly referenced plan.
-  `TransactionGroupExecutionResult` carries no plan, attempt, or planning-
-  authorization reference, while `GraphBoundSourceIngestionResult` and its
-  persistence request expose one global transaction-group plan and require all
-  group results to be a bijection with it.
-- Root cause: the source terminal contract assumes one immutable plan while the
-  retry contract permits a lineage of attempt-specific plans.
-- Impact: after one group commits and another replans, an auditor cannot recover
-  which exact plan and authorization produced each terminal result without
-  inference.
-- Exact architectural change needed: introduce a typed source plan-lineage
-  artifact that retains the initial source plan and every superseding
-  attempt-specific plan reference. Add exact `authorizing_attempt_digest`,
-  `authorizing_group_plan`, and `planning_authorization_digest` fields to every
-  terminal group result. Aggregate source status over those explicit
-  per-result bindings and define invariants that committed groups cannot be
-  regrouped, removed, or semantically changed by later plans. Replace the
-  ambiguous single-plan bijection with a lineage validation proving every
-  terminal group has exactly one eligible authorizing attempt and that the
-  terminal result set covers the final unresolved/committed source partition.
-- Completion evidence: a deterministic run where group A commits, group B
-  encounters a related conflict and replans, and the terminal summary
-  independently identifies the exact plan, attempt, authorization, and result
-  for both groups; missing, duplicate, stale, regrouped, or cross-plan bindings
-  fail validation.
+### DREV-R4-002: Governed message semantics are lost after source admission
 
-## Approved Lanes And Rejected Concerns
+- Product priority: `P2`
+- Approval disposition: `changes_required`
+- Requirements: SIA-R01, SIA-R04, SIA-R09, SIA-R22, and SIA-R23
+- Evidence: lines 2352-2360 permit per-message scope, authority,
+  classification, modality, and egress eligibility; lines 2369-2374 and
+  3754-3759 require each conversation segment to reference its exact message
+  context. Downstream contracts instead retain a source-wide
+  `SourceSemanticContext`: `PreparedSource` at lines 3958-3969,
+  `ReconciliationRequest` at lines 5448-5468, and
+  `GraphCompilationRequest` at lines 6167-6187. `SemanticProposalRequest` at
+  lines 4119-4133 carries a source-bound egress-decision digest but no immutable
+  message-governance binding, although transport at lines 2478-2483 must
+  revalidate the segment context.
+- Violated invariant: exact authenticated message scope, authority,
+  classification, and egress semantics must survive promotion, persistence,
+  replay, and result disclosure without source-wide inference.
+- Failure scenario: a governed snapshot contains messages with different
+  scopes or egress eligibility. A proposal or accepted operation can be
+  compiled under the wrong source-wide scope, or a source-level allow decision
+  can authorize transport of a denied segment.
+- Root cause: the design defines message governance at projection time but no
+  typed, immutable carrier closure through proposal, reconciliation,
+  compilation, persistence, replay, and terminal results.
+- Exact architectural change required: introduce one immutable
+  segment-governance binding keyed by
+  `message_semantic_context_digest`, including the bound egress decision, and
+  carry it through every downstream request, attempt, accepted operation,
+  transaction group, compiler input, event/replay artifact, and terminal
+  result. Reject cross-context semantic operations unless a separately
+  specified and certified multi-context operation exists.
+- Completion evidence: positive single-context tests and adversarial
+  mixed-scope, mixed-authority, mixed-classification, and mixed-egress snapshot
+  tests prove exact carrier equality, no wrong-scope graph mutation, zero wire
+  activity for denied segments, replay preservation, and non-disclosing result
+  access.
 
-- The independent spec-audit lane found no remaining scope, traceability,
-  consistency, compatibility, or failure-recovery blocker.
-- The dedicated test-review lane found measurable, independent verification for
-  SIA-R01 through SIA-R21, including schema evolution, dedupe/restart,
-  checkpoint trust, filesystem crash atomicity, oracle isolation, and
-  statistical gates.
-- Retrieval redesign, production implementation absence, and broader language
-  expansion remain outside this review and were not admitted as findings.
+### DREV-R4-003: Detailed normative clauses lack complete reverse traceability
 
-## Stop Condition
+- Product priority: `P2`
+- Approval disposition: `changes_required`
+- Requirement: SIA-R03
+- Evidence: SIA-R03 at line 215 requires every material requirement to have a
+  source, owner, acceptance rule, and verification path. The ledger covers the
+  broad SIA-R01-SIA-R23 rows, and lines 260-299 map historical rationale labels,
+  but material normative clauses in Sections 3-5 do not have stable clause IDs
+  and an authoritative reverse mapping. The acceptance rule at lines
+  12781-12786 audits only SIA rows and rationale labels.
+- Violated invariant: no material normative clause may be silently omitted by
+  implementation, verification, or evidence collection.
+- Failure scenario: an implementation omits a mandatory atomicity,
+  installed-artifact isolation, security, migration, or recovery clause while
+  marking its broad SIA parent complete; the stated traceability audit still
+  passes.
+- Root cause: detailed executable requirements expanded without a closed
+  clause-to-requirement/test/evidence index.
+- Exact architectural change required: assign stable invariant IDs to every
+  material normative clause in Sections 3-5 and maintain an authoritative
+  reverse ledger to its SIA requirement, owner, measurable assertion, named
+  test group, and evidence artifact. The audit must fail for an unmapped clause,
+  stale owner, missing test/evidence group, or orphaned test group.
+- Completion evidence: mutation tests independently remove each mapping,
+  owner, test group, and evidence coordinate and prove the audit fails; adding
+  an unindexed normative clause must fail before implementation completion can
+  be claimed.
 
-The workflow did not converge within three revision rounds.
+## External Blockers
 
-Resumption requires an explicit decision authorizing one additional bounded
-revision containing only DREV-028 and DREV-029, followed by a fresh full review.
-The required architectural choices are fixed in the findings above: full typed
-delete snapshots and explicit per-group authorizing-plan lineage. No external
-product semantics or retrieval decision is required.
+### SIA-ED-TOPOLOGY-001
 
-## Outcome
+- Product priority: `Not applicable`
+- Approval disposition: `blocks_approval`
+- Required action: the product/spec/deployment owner publishes the signed,
+  content-addressed topology and resource-profile authorization named in the
+  external-decision register. Its exact bytes must pass production deployment
+  authorization, bidirectional package/asset/profile validation, ordinary
+  constructor no-network verification, unsupported-host behavior, and rollback
+  verification.
 
-`Changes required; blocked by revision budget`. The frozen revision-03 design
-must not be treated as approved or implementation-ready until DREV-028 and
-DREV-029 are corrected and a fresh whole-design review approves the new
-baseline.
+### SIA-ED-REPLAY-001
+
+- Product priority: `Not applicable`
+- Approval disposition: `blocks_approval`
+- Required action: the event-model owner updates
+  `docs/design/event_model.md` and publishes the governing signed artifact that
+  selects one genesis/checkpoint-consistent algebra for exact duplicates,
+  non-identical historical equal-version events, and current-writer collisions.
+  Arrival-order, checkpoint, upcast, and mixed-version permutations must pass.
+
+### SIA-ED-POLICY-001
+
+- Product priority: `Not applicable`
+- Approval disposition: `blocks_approval`
+- Required action: the product/ML acceptance owner publishes the signed,
+  content-bound initial statistical and monitoring policy with every threshold,
+  multiplicity allocation, cluster minimum, unsupported cell, freshness
+  deadline, and monitoring limit. Independent event-level recomputation must
+  validate the complete artifact for the exact capability/dependency bundle.
+
+## Rejected Findings
+
+- The current production implementation does not yet implement the proposed
+  architecture. This is an implementation-planning concern, not a defect in a
+  proposed design that already makes implementation and conformance tests an
+  explicit future gate.
+- The current benchmark oracle uses alias/type fallback. It cannot serve as
+  target acceptance evidence, but the design already retires that behavior in
+  favor of the authorized structural observation API and a unique
+  source-introduction bijection. No additional design correction is required.
+- The stale active WorkPlan baseline was a P3 review-record defect. It is
+  corrected by this report and the linked WorkPlan updates, not by changing the
+  architecture.
+- No retrieval/query or agent-integration finding is admitted.
+
+## Final Outcome
+
+**Changes required; revision budget exhausted.** The workflow ends with one P1
+and two P2 internal design findings plus three registered external blockers.
+Approval requires a new user-authorized design-revision operation that closes
+DREV-R4-001 through DREV-R4-003, followed by a fresh whole-design review of the
+new exact baseline. External approval additionally requires resolution of
+SIA-ED-TOPOLOGY-001, SIA-ED-REPLAY-001, and SIA-ED-POLICY-001. No further edits
+are permitted under this WorkPlan.
