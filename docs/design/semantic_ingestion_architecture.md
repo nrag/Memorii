@@ -232,7 +232,7 @@ because a related CFP or ING row is marked closed.
 | SIA-R19 | Activate semantic ingestion through the normal production provider composition selected by `SIA-ED-TOPOLOGY-001`. Source: engineering-hardening closure matrix C3. | Required | Externally selected inference/writeback owner, provider factory, `ProviderMemoryService`, and ingestion coordinator | After ownership/deployment approval, normal production builders route governed accepted and evidence-only sources through the selected owner with no legacy writer or fallback authority; before approval they cannot claim active local promotion. | Owner-stripping and default-constructor integration tests over every externally approved filesystem/in-memory profile. |
 | SIA-R20 | Fence long-running work with renewable leases, bounded stale recovery, terminal exhaustion, and a separate stable allocation namespace. Source: engineering-hardening closure matrix C13. | Required | Operation repository, lease heartbeat, semantic ingestion coordinator, and identity/action planners | Only the current lease owner may persist or commit; reclaim preserves allocation namespace and byte-identical planned IDs. Fence/allocation coordinates derive only from the version-bound stable delivery identity, immutable admitted source coordinates, and operation ID; current authorization evidence is excluded. Abandoned work recovers within the fixed budget and then becomes terminal. | Fake-clock, session/scope/policy/trust/revocation rotation identity-stability, multiprocess token-fencing, crash/reclaim before and after planning, namespace substitution, slow-stage renewal, lost-acknowledgement, restart, stale-recovery, and exhaustion tests. |
 | SIA-R21 | Make semantic-ingestion admission, checkpoint progress, terminal-group persistence, and source finalization process-safe and crash-atomic; the filesystem/JSONL backend must publish each complete batch as one generation. Source: engineering-hardening closure matrix C12. | Required | Semantic-ingestion atomic-store protocol and filesystem storage adapter | Readers observe the prior state or one complete admission, progress checkpoint, group, or finalization transaction, never a subset. First visibility of every replay-authoritative artifact is atomic with the state that references it. A terminal-group transaction atomically publishes its group result and ingestion-observation delta and, only when committed, its graph delta/event batch. Every transaction validates its exact graph/control/observation/artifact revisions, artifact closure, lease, writer epoch, and stable idempotency fence; checkpoint/group/finalization equality excludes current authorization evidence and ingress context. | Backend-neutral in-memory/filesystem conformance plus pre-planning/planned checkpoints, committed, zero-mutation, and mixed-outcome group transactions; session/scope/policy/trust/revocation rotation with stable durable equality, deterministic artifact/index/state failpoints, multiprocess same/distinct delivery, failed replace, reopen, corruption, lost acknowledgement, and idempotent retry schedules. |
-| SIA-R22 | Preserve the complete pinned provider evolution lifecycle envelope while exposing the truthful semantic-ingestion terminal result without aliases or versioned APIs. Sources: current provider operation contract; implementation rules; normal production composition requirement C3. | Required | Provider service, result-access authorizer, protected admission authorization index, operation repository, and semantic-result repository | Existing callers observe byte-identical canonical payloads for every field, enum, default, nullability, and validator case in the immutable baseline; semantic-aware callers use only `SemanticIngestionOutcomeLookupRequest`, whose out-of-band authenticated principal, tenant, stable delivery key, fence binding, and server-derived complete current typed scope set authorize before any outcome/result/artifact lookup. Authorized results have exact digest/lifecycle/required-scope-set equality; every unavailable outcome is non-disclosing. Retryable group failure never becomes terminal committed state, and lease exhaustion retains its typed reason. | Independently captured baseline schema/fixture comparison, exhaustive lifecycle/result mapping, legacy-reader serialization, schema mutation, authenticated separate-accessor, static type/ownership checks for no result-access construction/import of `DeliveryAuthorizationRequest` and no alternate lookup route, identity-stability across current-set changes, mixed-scope zero/partial/exact/superset/stale/revoked and scope-set/session-evidence substitution coverage, two-principal same-ID, guessed operation, cross-tenant, delivery/fence substitution, authority/repository outage, valid caller, repository-spy assertions, mixed-process cutover, retryable partial-group resume, lease-exhaustion round trip, missing-result, and digest-substitution tests. |
+| SIA-R22 | Preserve the complete pinned provider evolution lifecycle envelope while exposing the truthful semantic-ingestion terminal result without aliases or versioned APIs. Sources: current provider operation contract; implementation rules; normal production composition requirement C3. | Required | Provider service, result-access authorizer, protected admission authorization index, operation repository, and semantic-result repository | Existing callers observe byte-identical declaration-order legacy payload bytes for every field, enum, default, nullability, and validator case in the immutable baseline; semantic-aware callers use only `SemanticIngestionOutcomeLookupRequest`, whose out-of-band authenticated principal, tenant, stable delivery key, fence binding, and server-derived complete current typed scope set authorize before any outcome/result/artifact lookup. Authorized results have exact digest/lifecycle/required-scope-set equality; every unavailable outcome is non-disclosing. Retryable group failure never becomes terminal committed state, and lease exhaustion retains its typed reason. | Independently captured baseline schema/fixture comparison, exhaustive lifecycle/result mapping, legacy-reader serialization, schema mutation, authenticated separate-accessor, static type/ownership checks for no result-access construction/import of `DeliveryAuthorizationRequest` and no alternate lookup route, identity-stability across current-set changes, mixed-scope zero/partial/exact/superset/stale/revoked and scope-set/session-evidence substitution coverage, two-principal same-ID, guessed operation, cross-tenant, delivery/fence substitution, authority/repository outage, valid caller, repository-spy assertions, mixed-process cutover, retryable partial-group resume, lease-exhaustion round trip, missing-result, and digest-substitution tests. |
 | SIA-R23 | Preserve public provider delivery identity through one owned versioned internal normalization contract, governed structured source envelopes, metadata-poor evidence retention, and composite-hook replay. Source: engineering-hardening closure matrix C11 and the current provider boundary. | Required | Ingestion contracts, delivery-coordinate migration owner, provider adapters, source-admission normalizer, and operation repository | Every public mutation validates one strict Unicode-scalar delivery ID, preserves its accepted scalar sequence and UTF-8 bytes exactly, and rejects empty/all-whitespace, invalid encoding/scalars, over-limit values, and non-public composite-coordinate injection. The normalization-contract version is part of `DeliveryIdentity`. Before activation, every current stripped public ID and raw child ID is mapped from preserved evidence into one complete content-addressed target generation; ambiguity/collision blocks activation absent an evidence-backed owner disposition. After activation only typed target coordinates are readable or writable. Governed snapshots/delegations produce one canonical internal envelope; current metadata-poor snapshot hooks retain exact evidence with no semantic projection or synthetic identity. Accepted admission returns the complete immutable authenticated operation/namespace/writer handoff. Composite hooks derive typed domain-separated child coordinates; restart, partial replay, and cross-cutover retry execute only missing children and never duplicate effects. | Cross-adapter independently authored golden vectors for normalization version, canonical-equivalent Unicode pairs, case, leading/trailing whitespace, non-ASCII, byte limit, invalid scalars/encoding, empty/all-whitespace, public/composite coordinate collision attempts; frozen migration fixtures for whitespace, NFC/NFD, delimiter-like IDs, partial fan-out, collision, crash/restart, rollback, cross-cutover retry, parent/child fan-out, admission-to-lease/lost-ack/replay, conflicting replay, and exactly-one-effect recovery permutations. |
 
 The following additions are part of the normative ledger rows above and take
@@ -11279,16 +11279,46 @@ not only its status field:
   `307921e7648fcaf5e11244200a7fb3c1f402e817`;
 - authoritative source SHA-256:
   `38b80a29a991ebfb1076cccc437c2406d43da031982a6c8fe57f755e1e58dbbd`;
-- frozen compatibility fixture serialization: UTF-8 RFC 8785 JSON over the baseline model's
-  public field names, with explicit nulls retained and enum values serialized
-  as their existing strings;
+- frozen legacy public-payload serialization: the isolated baseline runtime
+  evaluates `model_dump(mode="json", exclude_none=False)` and serializes the
+  resulting value as UTF-8 JSON with `ensure_ascii=False`, `allow_nan=False`,
+  `sort_keys=False`, and compact separators `(",", ":")`; model-object members
+  retain baseline declaration order, ordinary mapping members retain the
+  baseline-produced insertion order, explicit nulls remain present, and enum
+  values use their existing strings;
+- outer compatibility-capture serialization: the corpus and manifest use
+  RFC 8785 JSON; their object-key ordering has no authority over member order
+  inside an embedded legacy payload;
 - allowed wire-schema change set during this migration: empty.
 
-That frozen serialization describes the byte-pinned preexisting provider
-payload only; it is not an ingestion digest/signature codec and is not available
-to any new ingestion schema. When such payload bytes are retained or hashed by
-ingestion, they are an opaque bytes value inside the canonical typed-value
-profile and the wrapper's profile/schema binding enters the digest preimage.
+These are disjoint byte domains. `LegacyProviderPayloadBytes` are the exact
+preexisting public bytes produced by the pinned baseline serializer above.
+They are not RFC 8785, are not an ingestion digest/signature codec, and are not
+available to any new ingestion schema. Declaration order is compatibility
+behavior in this domain: sorting `ProviderEvolutionOutcome` would place
+`attempt_count` before `operation_id` and is therefore a byte-breaking change.
+When retained or hashed by ingestion, the complete legacy payload is one opaque
+bytes value inside the canonical typed-value profile and the wrapper's
+profile/schema binding enters the digest preimage.
+
+`ProviderEnvelopeCaptureCorpusBytes` and
+`ProviderEnvelopeCaptureManifestBytes` are separate outer artifacts. Their
+parsed values are serialized as UTF-8 RFC 8785 JSON and those exact outer bytes
+are content-addressed. The corpus carries each legacy payload in a designated
+`*_bytes` JSON string. Decoding that outer string and encoding its scalar value
+as UTF-8 must reproduce the captured `LegacyProviderPayloadBytes` exactly; the
+outer encoder and every verifier are forbidden to parse or reserialize the
+embedded JSON text. The corpus digest therefore binds the embedded byte strings
+transitively while the manifest binds the corpus digest and immutable capture
+inputs. The manifest does not contain its own digest; an independent verifier
+hashes its complete RFC 8785 bytes. Changing outer object order is normalized by
+RFC 8785, while changing an embedded payload's declaration order changes the
+string value, corpus digest, and compatibility verdict.
+
+Only the designated `accepted_outcome_bytes`, `sync_case_bytes`,
+`service_public_bytes`, and `hermes_public_bytes` values are exact public-byte
+oracles. Parsed outcome/schema/matrix values in the outer corpus support
+coverage and diagnostics but cannot replace or regenerate those byte oracles.
 
 The frozen field contract, in declaration order, is:
 
@@ -11314,11 +11344,14 @@ matching provider and final-source provenance; unused fallback forbids a
 provider; committed outcomes forbid `failure_code`; failed outcomes require
 one. Before implementation, an acceptance fixture extractor runs against the
 pinned blob in an isolated environment and records every enum member, model JSON
-schema, canonical valid fixture, and canonical invalid fixture. The migration
-test consumes those independently captured bytes; it does not regenerate the
-oracle through the target serializer. Any field, order, alias, type, enum,
-default, nullability, extra-field, validation, or canonical-byte difference
-blocks activation.
+schema, declaration-order valid payload byte fixture, and invalid-input
+verdict. The migration test consumes those independently captured bytes; it
+does not regenerate the oracle through the target serializer. Any field, order,
+alias, type, enum, default, nullability, extra-field, validation, or legacy
+payload byte difference blocks activation. Separate tests independently
+recompute RFC 8785 corpus and manifest bytes, reject non-canonical outer bytes
+or digest substitution, and prove that outer canonicalization never parses or
+reorders an embedded payload string.
 
 The existing `ProviderEvolutionOutcome.status` remains the coarse operation
 lifecycle contract:

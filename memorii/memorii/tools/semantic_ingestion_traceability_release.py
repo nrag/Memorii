@@ -56,6 +56,23 @@ class VerifierHeldTrustMaterial:
     provisioned_successor_root_bytes: tuple[bytes, ...] = ()
 
 
+@dataclass
+class TraceabilityReleaseWatermark:
+    """Acceptance-owned monotonic coordinate for the active release channel."""
+
+    epoch: int = 0
+    sequence: int = 0
+    release_digest: str | None = None
+
+
+@dataclass(frozen=True)
+class AcceptanceTrustStore:
+    """Composition-owned trust channel; it is deliberately not request data."""
+
+    material: VerifierHeldTrustMaterial
+    watermark: TraceabilityReleaseWatermark
+
+
 @dataclass(frozen=True)
 class CoverageApproval:
     heading_path_hash: str
@@ -210,15 +227,15 @@ def _validate_lifecycle(root: dict[str, Any], *, authority_id: str, bootstrap: d
     active: dict[tuple[str, str], tuple[str, str, datetime, datetime | None]] = {
         bootstrap_coordinate: (anchor_profile, anchor_key, initial_start, initial_expiry)
     }
-    # Recovery roots are separately provisioned policy members.  They are
-    # eligible until lifecycle replay explicitly revokes, compromises, or
-    # expires them; they do not need a self-authorizing activation record.
+    # Recovery roots are a purpose-separated channel: they are never ordinary
+    # release/pointer/policy signers.  They can authorize only ``recover``.
+    recovery_active: dict[tuple[str, str], tuple[str, str, datetime, datetime | None]] = {}
     for digest, recovery in recovery_roots.items():
         kind, root_id, _, profile, key = _root_coordinate(recovery)
         if kind != "recovery_root":
             raise ValueError("recovery_root_kind_invalid")
         start, expiry = _root_window(recovery)
-        active[(root_id, digest)] = (profile, key, start, expiry)
+        recovery_active[(root_id, digest)] = (profile, key, start, expiry)
     intervals: dict[tuple[str, str], tuple[str, str, datetime, datetime | None]] = dict(active)
     previous_digest: str | None = None
     previous_recorded: datetime | None = None
@@ -258,7 +275,7 @@ def _validate_lifecycle(root: dict[str, Any], *, authority_id: str, bootstrap: d
                 kind, root_id, _, root_profile, root_key = _root_coordinate(recovery)
                 if kind != "recovery_root" or (root_profile, root_key) != (profile, key):
                     raise ValueError("recovery_signer_root_binding_invalid")
-                root_interval = active.get((root_id, root_digest))
+                root_interval = recovery_active.get((root_id, root_digest))
                 if root_interval is None or not _interval_contains(root_interval, effective):
                     raise ValueError("recovery_root_not_lifecycle_eligible")
                 if root_digest in eligible_recovery_digests:
@@ -279,7 +296,8 @@ def _validate_lifecycle(root: dict[str, Any], *, authority_id: str, bootstrap: d
             raise ValueError("lifecycle_signer_not_eligible")
         replacement_id, replacement_digest = record.get("replacement_target_id"), record.get("replacement_target_digest")
         target_active = active.get((target_id, target_digest))
-        if action in {"rotate", "recover", "revoke", "compromise"} and target_active is None:
+        recovery_target = recovery_active.get((target_id, target_digest))
+        if action in {"rotate", "recover", "revoke", "compromise"} and target_active is None and recovery_target is None:
             raise ValueError("lifecycle_target_not_active")
         if action in {"rotate", "recover"}:
             if not isinstance(replacement_id, str) or not isinstance(replacement_digest, str):
@@ -295,22 +313,26 @@ def _validate_lifecycle(root: dict[str, Any], *, authority_id: str, bootstrap: d
             replacement_start, replacement_expiry = _root_window(replacement)
             if replacement_start > effective or (replacement_expiry is not None and replacement_expiry < effective):
                 raise ValueError("lifecycle_replacement_time_invalid")
-            if target_active is None:
-                raise ValueError("lifecycle_target_not_active")
-            active[(target_id, target_digest)] = (target_active[0], target_active[1], target_active[2], effective)
-            intervals[(target_id, target_digest)] = active[(target_id, target_digest)]
-            active.pop((target_id, target_digest))
+            if target_active is not None:
+                active[(target_id, target_digest)] = (target_active[0], target_active[1], target_active[2], effective)
+                intervals[(target_id, target_digest)] = active[(target_id, target_digest)]
+                active.pop((target_id, target_digest))
+            elif recovery_target is not None:
+                recovery_active[(target_id, target_digest)] = (recovery_target[0], recovery_target[1], recovery_target[2], effective)
+                recovery_active.pop((target_id, target_digest))
             successor = (replacement_profile, replacement_key, effective, replacement_expiry)
             active[(replacement_id, replacement_digest)] = successor
             intervals[(replacement_id, replacement_digest)] = successor
         elif action in {"revoke", "compromise"}:
             if replacement_id is not None or replacement_digest is not None:
                 raise ValueError("terminal_lifecycle_action_has_replacement")
-            if target_active is None:
-                raise ValueError("lifecycle_target_not_active")
-            active[(target_id, target_digest)] = (target_active[0], target_active[1], target_active[2], effective)
-            intervals[(target_id, target_digest)] = active[(target_id, target_digest)]
-            active.pop((target_id, target_digest))
+            if target_active is not None:
+                active[(target_id, target_digest)] = (target_active[0], target_active[1], target_active[2], effective)
+                intervals[(target_id, target_digest)] = active[(target_id, target_digest)]
+                active.pop((target_id, target_digest))
+            elif recovery_target is not None:
+                recovery_active[(target_id, target_digest)] = (recovery_target[0], recovery_target[1], recovery_target[2], effective)
+                recovery_active.pop((target_id, target_digest))
         elif action == "activate":
             target = provisioned_roots.get((target_id, target_digest))
             # Genesis records authenticate the already independently
@@ -397,7 +419,7 @@ def verify_active_release_pointer(*, releases: tuple[dict[str, Any], ...], activ
     return prior
 
 
-def verify_release_gate(*, registry: TraceabilityRegistry, bootstrap_artifact: bytes | None, recovery_artifact: bytes | None, lifecycle_artifact: bytes | None, release_artifact: bytes | None, verifier_material: VerifierHeldTrustMaterial | None = None, active_pointer_artifact: bytes | None = None, release_history_artifact: bytes | None = None, recovery_artifacts: tuple[bytes, ...] | None = None, now: datetime | None = None) -> TraceabilityGateResult:
+def verify_release_gate(*, registry: TraceabilityRegistry, bootstrap_artifact: bytes | None, recovery_artifact: bytes | None, lifecycle_artifact: bytes | None, release_artifact: bytes | None, verifier_material: VerifierHeldTrustMaterial | None = None, active_pointer_artifact: bytes | None = None, release_history_artifact: bytes | None = None, recovery_artifacts: tuple[bytes, ...] | None = None, watermark: TraceabilityReleaseWatermark | None = None, now: datetime | None = None) -> TraceabilityGateResult:
     for name, artifact in (("bootstrap", bootstrap_artifact), ("recovery", recovery_artifact), ("lifecycle", lifecycle_artifact), ("release", release_artifact), ("active_pointer", active_pointer_artifact), ("release_history", release_history_artifact)):
         if artifact is None:
             return TraceabilityGateUnavailable(reason=f"{name}_unavailable")
@@ -479,6 +501,14 @@ def verify_release_gate(*, registry: TraceabilityRegistry, bootstrap_artifact: b
         current_expires = current.get("expires_at")
         if current_issued > verification_time.astimezone(UTC) or (current_expires is not None and verification_time.astimezone(UTC) > _time(current_expires, "release")):
             raise ValueError("current_release_time_window_invalid")
+        if watermark is not None:
+            coordinate = (int(current["epoch"]), int(current["sequence"]))
+            prior = (watermark.epoch, watermark.sequence)
+            if coordinate < prior:
+                raise ValueError("active_pointer_watermark_rewind")
+            if coordinate == prior and watermark.release_digest not in {None, current["release_digest"]}:
+                raise ValueError("active_pointer_watermark_substitution")
+            watermark.epoch, watermark.sequence, watermark.release_digest = (*coordinate, str(current["release_digest"]))
         return TraceabilityGateAuthorized(
             release_id=str(release["release_id"]),
             release_digest=release_digest,

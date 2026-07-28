@@ -20,6 +20,7 @@ from memorii.tools.semantic_ingestion_traceability_release import (
     TraceabilityGateAuthorized,
     TraceabilityGateRejected,
     TraceabilityGateUnavailable,
+    TraceabilityReleaseWatermark,
     VerifierHeldTrustMaterial,
     verify_active_release_pointer,
     verify_release_gate,
@@ -128,6 +129,32 @@ def test_sia_t03_release_gate_accepts_complete_genesis_and_signed_pointer() -> N
     artifacts, material = _trusted_artifacts()
     result = verify_release_gate(registry=load_registry(_registry_path()), bootstrap_artifact=artifacts["bootstrap"], recovery_artifact=artifacts["recovery"], lifecycle_artifact=artifacts["lifecycle"], release_artifact=artifacts["release"], release_history_artifact=artifacts["history"], active_pointer_artifact=artifacts["pointer"], verifier_material=material, now=datetime(2026, 1, 2, tzinfo=UTC))
     assert isinstance(result, TraceabilityGateAuthorized)
+
+
+def test_sia_t03_recovery_root_cannot_sign_an_ordinary_release_or_pointer() -> None:
+    artifacts, material = _trusted_artifacts()
+    release = json.loads(artifacts["release"])
+    body = {key: value for key, value in release.items() if key not in {"release_digest", "signature"}}
+    artifacts["release"] = _signed(
+        {**body, "issuer_key_or_certificate_digest": "recovery-key"},
+        domain=b"memorii:sia-traceability-release:v1", digest_field="release_digest", key="recovery-key",
+    )
+    pointer = json.loads(artifacts["pointer"])
+    pointer_body = {key: value for key, value in pointer.items() if key not in {"active_pointer_digest", "signature"}}
+    artifacts["pointer"] = _signed(
+        {**pointer_body, "release_digest": json.loads(artifacts["release"])["release_digest"], "issuer_key_or_certificate_digest": "recovery-key"},
+        domain=b"memorii:sia-traceability-active-release-pointer:v1", digest_field="active_pointer_digest", key="recovery-key",
+    )
+    artifacts["history"] = canonical_document({"releases": [json.loads(artifacts["release"])]})
+    result = verify_release_gate(registry=load_registry(_registry_path()), bootstrap_artifact=artifacts["bootstrap"], recovery_artifact=artifacts["recovery"], lifecycle_artifact=artifacts["lifecycle"], release_artifact=artifacts["release"], release_history_artifact=artifacts["history"], active_pointer_artifact=artifacts["pointer"], verifier_material=material, now=datetime(2026, 1, 2, tzinfo=UTC))
+    assert isinstance(result, TraceabilityGateRejected)
+
+
+def test_sia_t03_acceptance_owned_watermark_rejects_history_replay() -> None:
+    artifacts, material = _trusted_artifacts()
+    watermark = TraceabilityReleaseWatermark(epoch=1, sequence=2, release_digest="newer")
+    result = verify_release_gate(registry=load_registry(_registry_path()), bootstrap_artifact=artifacts["bootstrap"], recovery_artifact=artifacts["recovery"], lifecycle_artifact=artifacts["lifecycle"], release_artifact=artifacts["release"], release_history_artifact=artifacts["history"], active_pointer_artifact=artifacts["pointer"], verifier_material=material, watermark=watermark, now=datetime(2026, 1, 2, tzinfo=UTC))
+    assert isinstance(result, TraceabilityGateRejected)
 
 
 def test_sia_t03_release_gate_requires_complete_history_and_signed_pointer() -> None:

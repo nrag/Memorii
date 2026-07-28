@@ -19,7 +19,11 @@ from memorii.tools.semantic_ingestion_traceability_registry import (
     canonical_document,
     load_registry,
 )
-from memorii.tools.semantic_ingestion_traceability_release import VerifierHeldTrustMaterial
+from memorii.tools.semantic_ingestion_traceability_release import (
+    AcceptanceTrustStore,
+    TraceabilityReleaseWatermark,
+    VerifierHeldTrustMaterial,
+)
 
 
 def _registry_path() -> Path:
@@ -98,7 +102,8 @@ def _approve(inputs: dict[str, object]) -> dict[str, object]:
     assert isinstance(release, bytes)
     assert isinstance(pointer, bytes)
     assert isinstance(history, bytes)
-    return verify_registered_approval_execution(registry_bytes=registry_bytes, registry=registry, group_id=group_id, report_bytes=report_bytes, artifacts=artifacts, implementation_revision=revision, implementation_tree_digest=tree_digest, environment_observation_bytes=environment_bytes, bootstrap_artifact=bootstrap, recovery_artifact=recovery, lifecycle_artifact=lifecycle, release_artifact=release, active_pointer_artifact=pointer, release_history_artifact=history, verifier_material=material, now=now)
+    authority = AcceptanceTrustStore(material=material, watermark=TraceabilityReleaseWatermark())
+    return verify_registered_approval_execution(registry_bytes=registry_bytes, registry=registry, group_id=group_id, report_bytes=report_bytes, artifacts=artifacts, implementation_revision=revision, implementation_tree_digest=tree_digest, environment_observation_bytes=environment_bytes, bootstrap_artifact=bootstrap, recovery_artifact=recovery, lifecycle_artifact=lifecycle, release_artifact=release, active_pointer_artifact=pointer, release_history_artifact=history, authority=authority, now=now)
 
 
 @pytest.mark.parametrize("group_id", ["semantic-ingestion-r03", "semantic-ingestion-r13"])
@@ -125,3 +130,14 @@ def test_registered_normative_approval_rejects_root_report_profile_and_lifecycle
         inputs["environment_observation_bytes"] = canonical_document(environment)
     with pytest.raises(ExecutionEvidenceError):
         _approve(inputs)
+
+
+def test_sia_r03_acceptance() -> None:
+    """Registered R03 coordinate: approve a complete signed generation."""
+    assert _approve(_approval_inputs("semantic-ingestion-r03"))["command_id"] == "pytest-sia-r03-v1"
+
+
+def test_sia_r13_acceptance() -> None:
+    """Registered R13 coordinate: trust is composition-owned, never request-owned."""
+    inputs = _approval_inputs("semantic-ingestion-r13")
+    assert _approve(inputs)["command_id"] == "pytest-sia-r13-v1"

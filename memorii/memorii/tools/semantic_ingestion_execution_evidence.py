@@ -17,8 +17,8 @@ from memorii.tools.semantic_ingestion_traceability import UnitRequirementMapping
 from memorii.tools.semantic_ingestion_traceability_checker import load_independent_registry_bytes
 from memorii.tools.semantic_ingestion_traceability_registry import TraceabilityRegistry, canonical_document
 from memorii.tools.semantic_ingestion_traceability_release import (
+    AcceptanceTrustStore,
     TraceabilityGateAuthorized,
-    VerifierHeldTrustMaterial,
     verify_release_gate,
 )
 
@@ -86,10 +86,15 @@ def verify_registered_approval_execution(
     release_artifact: bytes,
     active_pointer_artifact: bytes,
     release_history_artifact: bytes,
-    verifier_material: VerifierHeldTrustMaterial,
+    authority: AcceptanceTrustStore,
     now: datetime,
 ) -> dict[str, object]:
-    """The sole approval entry point; caller-supplied trust/group objects cannot authorize it."""
+    """The sole approval entry point.
+
+    ``authority`` is constructed at composition time.  Candidate generations
+    contain only bytes; callers cannot supply a verifier callback, root channel,
+    or watermark and therefore cannot install self-signed authority.
+    """
     source = load_independent_registry_bytes(registry_bytes)
     if getattr(registry, "canonical_bytes", None) != registry_bytes:
         raise ExecutionEvidenceError("registry object does not equal the approval raw bytes")
@@ -105,7 +110,7 @@ def verify_registered_approval_execution(
         registry=registry, bootstrap_artifact=bootstrap_artifact, recovery_artifact=recovery_artifact,
         lifecycle_artifact=lifecycle_artifact, release_artifact=release_artifact,
         active_pointer_artifact=active_pointer_artifact, release_history_artifact=release_history_artifact,
-        verifier_material=verifier_material, now=now,
+        verifier_material=authority.material, watermark=authority.watermark, now=now,
     )
     if not isinstance(release, TraceabilityGateAuthorized) or release.root_bindings is None:
         raise ExecutionEvidenceError("release gate did not authorize the complete durable generation")
