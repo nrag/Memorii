@@ -65,9 +65,10 @@ def _evidence() -> tuple[ExecutionEvidenceRecord, EvidenceInputs]:
     return record, inputs
 
 
-def test_sia_t03_evidence_accepts_trusted_passing_exact_revision_record() -> None:
+def test_sia_t03_legacy_caller_hmac_cannot_authorize_evidence() -> None:
     _, inputs = _evidence()
-    inputs.verify()
+    with pytest.raises(ExecutionEvidenceError, match="not approval-capable"):
+        inputs.verify()
 
 
 @pytest.mark.parametrize("field,value", [("execution_status", "not_executed"), ("execution_result", "fail"), ("design_document_digest", "x" * 64), ("implementation_revision", "other"), ("implementation_tree_digest", "x" * 64), ("trust_context_digest", "other"), ("signature", "forged")])
@@ -91,10 +92,13 @@ def test_sia_t03_evidence_rejects_unexecuted_failed_stale_or_forged_records(fiel
         replace(inputs, records=(mutated,)).verify()
 
 
-def test_sia_t03_evidence_rejects_expired_and_unloadable_artifacts() -> None:
+def test_sia_t03_legacy_caller_hmac_is_rejected_before_record_details() -> None:
     record, inputs = _evidence()
-    with pytest.raises(ExecutionEvidenceError):
+    with pytest.raises(ExecutionEvidenceError, match="not approval-capable"):
         replace(inputs, records=(replace(record, expires_at=datetime(2026, 1, 1, tzinfo=UTC)),)).verify()
-    _, inputs = _evidence()
-    with pytest.raises(ExecutionEvidenceError):
-        replace(inputs, artifacts={}).verify()
+
+
+def test_sia_t03_release_bound_helper_is_not_a_public_approval_api() -> None:
+    import memorii.tools.semantic_ingestion_execution_evidence as evidence
+
+    assert not hasattr(evidence, "verify_release_bound_execution")

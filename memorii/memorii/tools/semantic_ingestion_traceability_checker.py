@@ -92,8 +92,37 @@ def load_independent_registry_bytes(raw: bytes) -> dict[str, Any]:
         for item in bindings
     ):
         raise TraceabilityCoverageError("registry has an unresolved assertion or evidence group")
+    if [item.get("test_evidence_group") for item in bindings] != [item.get("group_id") for item in groups]:
+        raise TraceabilityCoverageError("registry evidence group order differs from ordered bindings")
+    schemas = source["report_schemas"]
+    profiles = source["runner_environment_profiles"]
+    if not all(isinstance(item, dict) for item in schemas + profiles):
+        raise TraceabilityCoverageError("registry schema/profile collections contain an invalid item")
+    schema_coordinates = [(item.get("schema_id"), item.get("schema_version")) for item in schemas]
+    profile_coordinates = [(item.get("profile_id"), item.get("profile_version")) for item in profiles]
+    if len(set(schema_coordinates)) != len(schemas) or len(set(profile_coordinates)) != len(profiles):
+        raise TraceabilityCoverageError("registry schema/profile coordinates are duplicate")
+    if any(not isinstance(item.get("schema_document"), dict) or item["schema_document"].get("additionalProperties") is not False for item in schemas):
+        raise TraceabilityCoverageError("registry report schema is not closed")
+    expected_profile_keys = {
+        "canonical_profile_id", "configuration_policy", "dependency_policy", "environment_policy", "import_path_policy",
+        "interpreter_policy", "locale_timezone_policy", "network_policy", "plugin_policy", "profile_id", "profile_version",
+        "runner_policy", "startup_customization_policy",
+    }
+    if any(set(item) != expected_profile_keys for item in profiles):
+        raise TraceabilityCoverageError("registry runner profile is not closed")
+    schema_digests = [sha256(b"memorii:sia-report-schema:v1\0" + _canonical(item) + b"\n").hexdigest() for item in schemas]
+    profile_digests = [sha256(b"memorii:sia-runner-environment-profile:v1\0" + _canonical(item) + b"\n").hexdigest() for item in profiles]
     for group in groups:
-        if not group.get("selected_tests") or not isinstance(group.get("expected_report_schema_digest"), str) or not isinstance(group.get("expected_runner_environment_profile_digest"), str):
+        schema_coordinate = (group.get("report_schema_id"), group.get("report_schema_version"))
+        profile_coordinate = (group.get("runner_environment_profile_id"), group.get("runner_environment_profile_version"))
+        if (
+            not group.get("selected_tests")
+            or schema_coordinate not in schema_coordinates
+            or profile_coordinate not in profile_coordinates
+            or group.get("expected_report_schema_digest") != schema_digests[schema_coordinates.index(schema_coordinate)]
+            or group.get("expected_runner_environment_profile_digest") != profile_digests[profile_coordinates.index(profile_coordinate)]
+        ):
             raise TraceabilityCoverageError("registry evidence group is incomplete")
     nodes = source["artifact_dag"]
     node_ids = [item.get("node_id") for item in nodes if isinstance(item, dict)]
@@ -426,11 +455,27 @@ def rebuild_structural_manifest_bytes(*, design_bytes: bytes, registry: Any, reg
                 "test_evidence_group": binding["test_evidence_group"],
                 "mapping_sources": sources,
             })
-    root_digests = (
-        {key: sha256(b"memorii:sia-traceability-registry-root:" + key.encode() + b":v1\0" + _canonical(source[key])).hexdigest()
-         for key in _REGISTRY_ROOTS - {"design_path", "format", "grammar_revision", "registry_id"}}
-        if registry_bytes is not None else registry.root_digests
-    )
+    if registry_bytes is None:
+        root_digests = registry.root_digests
+    else:
+        root_digests = {
+            key: sha256(
+                b"memorii:sia-traceability-registry-root:" + key.encode() + b":v1\0" + _canonical(source[key])
+            ).hexdigest()
+            for key in _REGISTRY_ROOTS - {"design_path", "format", "grammar_revision", "registry_id", "report_schemas", "runner_environment_profiles"}
+        }
+        root_digests["report_schemas"] = sha256(
+            b"memorii:sia-report-schema-registry:v1\0" + _canonical([
+                sha256(b"memorii:sia-report-schema:v1\0" + _canonical(item) + b"\n").hexdigest()
+                for item in source["report_schemas"]
+            ]) + b"\n"
+        ).hexdigest()
+        root_digests["runner_environment_profiles"] = sha256(
+            b"memorii:sia-runner-environment-profile-registry:v1\0" + _canonical([
+                sha256(b"memorii:sia-runner-environment-profile:v1\0" + _canonical(item) + b"\n").hexdigest()
+                for item in source["runner_environment_profiles"]
+            ]) + b"\n"
+        ).hexdigest()
     body = {
         "design_document_digest": sha256(design_bytes).hexdigest(),
         "registry_source_identity": sha256(b"memorii:sia-traceability-source:v1\0" + (registry_bytes if registry_bytes is not None else registry.canonical_bytes)).hexdigest(),

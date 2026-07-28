@@ -16,6 +16,7 @@ _ROOTS = (
     "runner_environment_profiles", "structural_rules", "test_evidence_groups",
 )
 _ARRAY_ROOTS = frozenset(_ROOTS) - {"design_path", "format", "grammar_revision", "registry_id"}
+_SPECIAL_ROOTS = frozenset({"report_schemas", "runner_environment_profiles"})
 
 
 class RegistryValidationError(ValueError):
@@ -101,6 +102,17 @@ class TraceabilityRegistry:
     root_digests: dict[str, str]
 
 
+def _item_digest(domain: bytes, item: dict[str, Any]) -> str:
+    """Digest a registered schema/profile without permitting self-reference."""
+    return sha256(domain + canonical_document(item)).hexdigest()
+
+
+def _special_root_digest(domain: bytes, item_digests: list[str]) -> str:
+    # The ordered digest tuple is a typed value in the canonical profile.  A
+    # JSON array is its canonical representation for this source package.
+    return sha256(domain + canonical_document(item_digests)).hexdigest()
+
+
 def _validate_references(source: dict[str, Any]) -> None:
     bindings = source["requirement_bindings"]
     requirements = _id_set(bindings, "requirement_id", "requirement_bindings")
@@ -108,9 +120,43 @@ def _validate_references(source: dict[str, Any]) -> None:
         raise RegistryValidationError("requirement bindings must be exactly SIA-R01 through SIA-R23")
     templates = _id_set(source["assertion_templates"], "template_id", "assertion_templates")
     groups = _id_set(source["test_evidence_groups"], "group_id", "test_evidence_groups")
+    group_order = [item["group_id"] for item in source["test_evidence_groups"]]
     for binding in bindings:
         if binding["assertion_template_id"] not in templates or binding["test_evidence_group"] not in groups:
             raise RegistryValidationError("requirement binding has an unresolved template or group")
+    if [binding["test_evidence_group"] for binding in bindings] != group_order:
+        raise RegistryValidationError("test evidence group order must match ordered requirement bindings")
+    schema_items = source["report_schemas"]
+    profile_items = source["runner_environment_profiles"]
+    schema_coordinates = {(item.get("schema_id"), item.get("schema_version")) for item in schema_items if isinstance(item, dict)}
+    profile_coordinates = {(item.get("profile_id"), item.get("profile_version")) for item in profile_items if isinstance(item, dict)}
+    if len(schema_coordinates) != len(schema_items) or len(profile_coordinates) != len(profile_items):
+        raise RegistryValidationError("report schema or runner profile coordinates are duplicate or malformed")
+    if any(not isinstance(item.get("schema_document"), dict) or item["schema_document"].get("additionalProperties") is not False for item in schema_items):
+        raise RegistryValidationError("report schemas must be closed complete documents")
+    if any(not isinstance(item, dict) or set(item) != {
+        "canonical_profile_id", "configuration_policy", "dependency_policy", "environment_policy", "import_path_policy",
+        "interpreter_policy", "locale_timezone_policy", "network_policy", "plugin_policy", "profile_id", "profile_version",
+        "runner_policy", "startup_customization_policy",
+    } for item in profile_items):
+        raise RegistryValidationError("runner environment profiles must use the closed v1 shape")
+    schema_digests = [_item_digest(b"memorii:sia-report-schema:v1\0", item) for item in schema_items]
+    profile_digests = [_item_digest(b"memorii:sia-runner-environment-profile:v1\0", item) for item in profile_items]
+    for group in source["test_evidence_groups"]:
+        if not isinstance(group, dict):
+            raise RegistryValidationError("test evidence group is malformed")
+        if (group.get("report_schema_id"), group.get("report_schema_version")) not in schema_coordinates or (
+            group.get("runner_environment_profile_id"), group.get("runner_environment_profile_version")
+        ) not in profile_coordinates:
+            raise RegistryValidationError("test evidence group has an unresolved schema or runner profile")
+        schema_index = [(item.get("schema_id"), item.get("schema_version")) for item in schema_items].index(
+            (group.get("report_schema_id"), group.get("report_schema_version"))
+        )
+        profile_index = [(item.get("profile_id"), item.get("profile_version")) for item in profile_items].index(
+            (group.get("runner_environment_profile_id"), group.get("runner_environment_profile_version"))
+        )
+        if group.get("expected_report_schema_digest") != schema_digests[schema_index] or group.get("expected_runner_environment_profile_digest") != profile_digests[profile_index]:
+            raise RegistryValidationError("test evidence group has a stale specialized item digest")
     headings = source["heading_defaults"]
     paths = _id_set(headings, "heading_path", "heading_defaults")
     if len(paths) != 144 or any(not item["requirements"] for item in headings):
@@ -165,6 +211,14 @@ def load_registry(path: Path) -> TraceabilityRegistry:
     identity = sha256(b"memorii:sia-traceability-source:v1\0" + canonical).hexdigest()
     roots = {
         root: sha256(b"memorii:sia-traceability-registry-root:" + root.encode() + b":v1\0" + canonical_json(source[root])).hexdigest()
-        for root in _ARRAY_ROOTS
+        for root in _ARRAY_ROOTS - _SPECIAL_ROOTS
     }
+    roots["report_schemas"] = _special_root_digest(
+        b"memorii:sia-report-schema-registry:v1\0",
+        [_item_digest(b"memorii:sia-report-schema:v1\0", item) for item in source["report_schemas"]],
+    )
+    roots["runner_environment_profiles"] = _special_root_digest(
+        b"memorii:sia-runner-environment-profile-registry:v1\0",
+        [_item_digest(b"memorii:sia-runner-environment-profile:v1\0", item) for item in source["runner_environment_profiles"]],
+    )
     return TraceabilityRegistry(source, canonical, identity, roots)

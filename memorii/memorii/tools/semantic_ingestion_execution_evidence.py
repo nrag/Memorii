@@ -8,13 +8,19 @@ from __future__ import annotations
 
 import hmac
 import json
+import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha256
 
 from memorii.tools.semantic_ingestion_traceability import UnitRequirementMapping
-from memorii.tools.semantic_ingestion_traceability_registry import canonical_document
-from memorii.tools.semantic_ingestion_traceability_release import TraceabilityGateAuthorized
+from memorii.tools.semantic_ingestion_traceability_checker import load_independent_registry_bytes
+from memorii.tools.semantic_ingestion_traceability_registry import TraceabilityRegistry, canonical_document
+from memorii.tools.semantic_ingestion_traceability_release import (
+    TraceabilityGateAuthorized,
+    VerifierHeldTrustMaterial,
+    verify_release_gate,
+)
 
 
 class ExecutionEvidenceError(ValueError):
@@ -64,7 +70,59 @@ def observation_digest(observation_bytes: bytes) -> str:
     return sha256(b"memorii:sia-traceability-runner-observation:v1\0" + observation_bytes).hexdigest()
 
 
-def verify_release_bound_execution(
+def verify_registered_approval_execution(
+    *,
+    registry_bytes: bytes,
+    registry: TraceabilityRegistry,
+    group_id: str,
+    report_bytes: bytes,
+    artifacts: dict[str, bytes],
+    implementation_revision: str,
+    implementation_tree_digest: str,
+    environment_observation_bytes: bytes,
+    bootstrap_artifact: bytes,
+    recovery_artifact: bytes,
+    lifecycle_artifact: bytes,
+    release_artifact: bytes,
+    active_pointer_artifact: bytes,
+    release_history_artifact: bytes,
+    verifier_material: VerifierHeldTrustMaterial,
+    now: datetime,
+) -> dict[str, object]:
+    """The sole approval entry point; caller-supplied trust/group objects cannot authorize it."""
+    source = load_independent_registry_bytes(registry_bytes)
+    if getattr(registry, "canonical_bytes", None) != registry_bytes:
+        raise ExecutionEvidenceError("registry object does not equal the approval raw bytes")
+    groups = [item for item in source["test_evidence_groups"] if item.get("group_id") == group_id]
+    if len(groups) != 1:
+        raise ExecutionEvidenceError("registered evidence group is unavailable or ambiguous")
+    group = groups[0]
+    schemas = [item for item in source["report_schemas"] if (item.get("schema_id"), item.get("schema_version")) == (group.get("report_schema_id"), group.get("report_schema_version"))]
+    profiles = [item for item in source["runner_environment_profiles"] if (item.get("profile_id"), item.get("profile_version")) == (group.get("runner_environment_profile_id"), group.get("runner_environment_profile_version"))]
+    if len(schemas) != 1 or len(profiles) != 1:
+        raise ExecutionEvidenceError("registered schema or environment profile is unavailable or ambiguous")
+    release = verify_release_gate(
+        registry=registry, bootstrap_artifact=bootstrap_artifact, recovery_artifact=recovery_artifact,
+        lifecycle_artifact=lifecycle_artifact, release_artifact=release_artifact,
+        active_pointer_artifact=active_pointer_artifact, release_history_artifact=release_history_artifact,
+        verifier_material=verifier_material, now=now,
+    )
+    if not isinstance(release, TraceabilityGateAuthorized) or release.root_bindings is None:
+        raise ExecutionEvidenceError("release gate did not authorize the complete durable generation")
+    roots = release.root_bindings
+    return _verify_release_bound_execution(
+        report_bytes=report_bytes, artifacts=artifacts, group=group,
+        registry_source_identity=roots["registry_source_identity"],
+        structural_manifest_digest=roots["structural_manifest_digest"],
+        design_document_digest=roots["design_document_digest"],
+        implementation_revision=implementation_revision,
+        implementation_tree_digest=implementation_tree_digest, release=release,
+        environment_observation_bytes=environment_observation_bytes, report_schema=schemas[0],
+        runner_environment_profile=profiles[0],
+    )
+
+
+def _verify_release_bound_execution(
     *,
     report_bytes: bytes,
     artifacts: dict[str, bytes],
@@ -76,15 +134,30 @@ def verify_release_bound_execution(
     implementation_tree_digest: str,
     release: TraceabilityGateAuthorized | None,
     environment_observation_bytes: bytes,
+    report_schema: dict[str, object] | None = None,
+    runner_environment_profile: dict[str, object] | None = None,
 ) -> dict[str, object]:
-    """Approval-capable evidence entry point.
-
-    No caller key, HMAC, or ad-hoc success record can authorize this path: a
-    lifecycle-verified release and the registered immutable runner report are
-    both required before its report is returned to coverage verification.
-    """
+    """Internal release-bound report verifier; never an approval boundary."""
     if release is None:
         raise ExecutionEvidenceError("release authority is unavailable")
+    roots = release.root_bindings
+    if roots is None:
+        raise ExecutionEvidenceError("release lacks verified root bindings")
+    for name, supplied in {
+        "registry_source_identity": registry_source_identity,
+        "structural_manifest_digest": structural_manifest_digest,
+        "design_document_digest": design_document_digest,
+    }.items():
+        if roots.get(name) != supplied:
+            raise ExecutionEvidenceError("caller root does not equal the authorized release")
+    if report_schema is None or runner_environment_profile is None:
+        raise ExecutionEvidenceError("registered report schema and runner profile are required")
+    # Artifact digests are domain separated in the registry, unlike normal
+    # report artifacts; recompute the exact registered coordinate here.
+    if sha256(b"memorii:sia-report-schema:v1\0" + canonical_document(report_schema)).hexdigest() != group.get("expected_report_schema_digest"):
+        raise ExecutionEvidenceError("registered report schema bytes are not authorized")
+    if sha256(b"memorii:sia-runner-environment-profile:v1\0" + canonical_document(runner_environment_profile)).hexdigest() != group.get("expected_runner_environment_profile_digest"):
+        raise ExecutionEvidenceError("registered runner profile bytes are not authorized")
     report = verify_registered_runner_report(
         report_bytes=report_bytes,
         artifacts=artifacts,
@@ -94,13 +167,109 @@ def verify_release_bound_execution(
         design_document_digest=design_document_digest,
         implementation_revision=implementation_revision,
         implementation_tree_digest=implementation_tree_digest,
+        report_schema=report_schema,
     )
     observation_artifact = report.get("runner_environment_observation_artifact_digest")
     if not isinstance(observation_artifact, str) or artifacts.get(observation_artifact) != environment_observation_bytes:
         raise ExecutionEvidenceError("runner environment observation bytes are unavailable")
     if report.get("runner_environment_observation_digest") != observation_digest(environment_observation_bytes):
         raise ExecutionEvidenceError("runner environment observation digest is invalid")
+    _verify_environment_observation(environment_observation_bytes, runner_environment_profile)
     return report
+
+
+def _verify_environment_observation(raw: bytes, profile: dict[str, object]) -> None:
+    """Reject partial observations before a passing report can become evidence."""
+    try:
+        observed = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ExecutionEvidenceError("runner environment observation is not JSON") from exc
+    if not isinstance(observed, dict) or canonical_document(observed) != raw:
+        raise ExecutionEvidenceError("runner environment observation is not canonical")
+    # The observation is deliberately explicit rather than trusting the runner's
+    # digest: all policy-bearing categories must be present for comparison.
+    required = {"interpreter", "runner", "plugins", "configuration", "dependencies", "import_paths", "startup", "environment", "locale_timezone", "network"}
+    if set(observed) != required or any(not isinstance(observed[key], (dict, list, str)) for key in required):
+        raise ExecutionEvidenceError("runner environment observation is incomplete")
+    comparisons = {
+        "interpreter": "interpreter_policy",
+        "runner": "runner_policy",
+        "plugins": "plugin_policy",
+        "configuration": "configuration_policy",
+        "dependencies": "dependency_policy",
+        "import_paths": "import_path_policy",
+        "startup": "startup_customization_policy",
+        "environment": "environment_policy",
+        "locale_timezone": "locale_timezone_policy",
+        "network": "network_policy",
+    }
+    for observation_key, profile_key in comparisons.items():
+        if observed[observation_key] != profile.get(profile_key):
+            raise ExecutionEvidenceError(f"runner environment {observation_key} differs from the registered profile")
+
+
+def _validate_schema(value: object, schema: object, *, path: str = "report") -> None:
+    """Small closed validator for the frozen report-schema dialect."""
+    if not isinstance(schema, dict):
+        raise ExecutionEvidenceError("registered report schema is malformed")
+    any_of = schema.get("anyOf")
+    if isinstance(any_of, list):
+        if not any(_schema_accepts(value, candidate, path=path) for candidate in any_of):
+            raise ExecutionEvidenceError(f"{path} does not match the registered schema")
+        return
+    if "const" in schema and value != schema["const"]:
+        raise ExecutionEvidenceError(f"{path} differs from the registered schema constant")
+    kind = schema.get("type")
+    valid_type = {
+        "object": lambda: isinstance(value, dict),
+        "array": lambda: isinstance(value, list),
+        "string": lambda: isinstance(value, str),
+        "integer": lambda: isinstance(value, int) and not isinstance(value, bool),
+        "null": lambda: value is None,
+    }
+    if kind in valid_type and not valid_type[kind]():
+        raise ExecutionEvidenceError(f"{path} has the wrong registered schema type")
+    if isinstance(value, dict):
+        properties = schema.get("properties", {})
+        required = schema.get("required", [])
+        if not isinstance(properties, dict) or not isinstance(required, list) or any(name not in value for name in required):
+            raise ExecutionEvidenceError(f"{path} misses a registered schema field")
+        if schema.get("additionalProperties") is False and set(value) != set(properties):
+            raise ExecutionEvidenceError(f"{path} has an unknown registered schema field")
+        for name, child_schema in properties.items():
+            if name in value:
+                _validate_schema(value[name], child_schema, path=f"{path}.{name}")
+    elif isinstance(value, list):
+        minimum = schema.get("minItems")
+        if isinstance(minimum, int) and len(value) < minimum:
+            raise ExecutionEvidenceError(f"{path} is shorter than the registered schema")
+        if schema.get("uniqueItems") is True and len({canonical_document(item) for item in value}) != len(value):
+            raise ExecutionEvidenceError(f"{path} has duplicate registered-schema items")
+        if "items" in schema:
+            for index, item in enumerate(value):
+                _validate_schema(item, schema["items"], path=f"{path}[{index}]")
+    elif isinstance(value, str):
+        minimum = schema.get("minLength")
+        if isinstance(minimum, int) and len(value) < minimum:
+            raise ExecutionEvidenceError(f"{path} is shorter than the registered schema")
+        pattern = schema.get("pattern")
+        if isinstance(pattern, str) and re.fullmatch(pattern, value) is None:
+            raise ExecutionEvidenceError(f"{path} does not match the registered schema pattern")
+        if schema.get("format") == "date-time":
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ExecutionEvidenceError(f"{path} is not an RFC3339 date-time") from exc
+            if parsed.tzinfo is None:
+                raise ExecutionEvidenceError(f"{path} is a naive date-time")
+
+
+def _schema_accepts(value: object, schema: object, *, path: str) -> bool:
+    try:
+        _validate_schema(value, schema, path=path)
+    except ExecutionEvidenceError:
+        return False
+    return True
 
 
 def verify_registered_runner_report(
@@ -113,6 +282,7 @@ def verify_registered_runner_report(
     design_document_digest: str,
     implementation_revision: str,
     implementation_tree_digest: str,
+    report_schema: dict[str, object],
 ) -> dict[str, object]:
     """Verify immutable report bytes against the registry, before evidence can use it.
 
@@ -126,6 +296,8 @@ def verify_registered_runner_report(
         raise ExecutionEvidenceError("runner report is not UTF-8 JSON") from exc
     if not isinstance(report, dict) or canonical_document(report) != report_bytes:
         raise ExecutionEvidenceError("runner report is not canonical immutable bytes")
+    schema_document = report_schema.get("schema_document")
+    _validate_schema(report, schema_document)
     command = group.get("command")
     selected = group.get("selected_tests")
     if not isinstance(command, dict) or not isinstance(selected, list):
@@ -158,6 +330,10 @@ def verify_registered_runner_report(
     }
     if set(report) != required:
         raise ExecutionEvidenceError("runner report has unknown or missing fields")
+    # Schema ID and version are normative coordinates before the report's
+    # individual bindings are consumed.
+    if (report["schema_id"], report["schema_version"]) != (group.get("report_schema_id"), group.get("report_schema_version")):
+        raise ExecutionEvidenceError("runner report schema coordinate is not registered")
     expected_ids = [item.get("test_id") for item in selected if isinstance(item, dict)]
     expected_nodes = [item.get("pytest_node_id") for item in selected if isinstance(item, dict)]
     if (report["command_id"], report["argv"], report["working_directory"]) != (
@@ -190,6 +366,15 @@ def verify_registered_runner_report(
     }
     if any(report.get(key) != value for key, value in bindings.items()):
         raise ExecutionEvidenceError("runner report root binding differs from registered value")
+    if report["runner_id"] != "cpython-pytest" or not isinstance(report["runner_version"], str):
+        raise ExecutionEvidenceError("runner identity is not registered")
+    try:
+        started = datetime.fromisoformat(str(report["started_at"]).replace("Z", "+00:00")).astimezone(UTC)
+        finished = datetime.fromisoformat(str(report["finished_at"]).replace("Z", "+00:00")).astimezone(UTC)
+    except ValueError as exc:
+        raise ExecutionEvidenceError("runner report time is invalid") from exc
+    if started > finished:
+        raise ExecutionEvidenceError("runner report time order is invalid")
     for digest in [
         report["stdout_artifact_digest"],
         report["stderr_artifact_digest"],
@@ -214,7 +399,28 @@ def verify_execution_evidence(
     trusted_issuers: dict[str, bytes],
     now: datetime,
 ) -> None:
-    """Require one fresh, trusted, passing record for every mapping."""
+    """Legacy record verifier retained for diagnostics only, never approval.
+
+    The old API accepted caller-selected HMAC keys and therefore cannot create
+    acceptance authority.  Approval must enter through
+    :func:`verify_release_bound_execution` after release and report validation.
+    """
+    raise ExecutionEvidenceError("legacy caller-HMAC evidence is not approval-capable")
+
+
+def _verify_legacy_execution_evidence(
+    *,
+    mappings: tuple[UnitRequirementMapping, ...],
+    records: tuple[ExecutionEvidenceRecord, ...],
+    artifacts: dict[str, bytes],
+    expected_design_digest: str,
+    expected_implementation_revision: str,
+    expected_implementation_tree_digest: str,
+    expected_trust_context_digest: str,
+    trusted_issuers: dict[str, bytes],
+    now: datetime,
+) -> None:
+    """Non-exported diagnostic implementation for migrating old fixtures."""
 
     if now.tzinfo is None:
         raise ExecutionEvidenceError("verification time must be timezone-aware")
