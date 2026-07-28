@@ -1,0 +1,8 @@
+{
+  "capture_payload_sha256": "8ddb952d20df7c320a29574c9a4c0b7d583350e0cd97d290029d86c9eda497ef",
+  "corpus_sha256": "8bb1abc3b6b213ebd7b4e87c4c8b18dbd2eeb1d782638ff010c8b753a8fa255b",
+  "fixture_digests": {
+    "ProviderEvolutionOutcome.baseline.py": "38b80a29a991ebfb1076cccc437c2406d43da031982a6c8fe57f755e1e58dbbd",
+    "provider_evolution_outcome.json": "8bb1abc3b6b213ebd7b4e87c4c8b18dbd2eeb1d782638ff010c8b753a8fa255b"
+  }
+}

@@ -248,7 +248,7 @@ precedence over their shorter acceptance summaries:
 | SIA-R08, SIA-R16 | A typed approved local resource/admission profile governs startup, capacity, queueing, deadlines, and deterministic evidence-only/no-mutation overload outcomes. Profile values, host envelopes, and model assets are not selected here. |
 | SIA-R04, SIA-R20, SIA-R21, SIA-R22 | Both source-result variants and both transaction-group result variants carry the byte-identical admission-time `OperationFenceBinding`; all summaries, deltas, event/replay projections, finalization inputs, and lost-acknowledgement results validate exact equality before mutation or disclosure. |
 | SIA-R08, SIA-R13, SIA-R14, SIA-R15, SIA-R16 | Production-owned deployment authorization verifies serialized signed artifacts against production trust, revocation, and active-epoch state at every use point. Acceptance independently validates and publishes bytes, and neither side imports the other's schemas or trust objects. |
-| SIA-R03, SIA-R08, SIA-R10, SIA-R14, SIA-R15, SIA-R16, SIA-R18, SIA-R19, SIA-R21 | Section 1.5.2 exclusively registers the three unresolved external decisions under stable IDs with exact owners, artifacts, fail-closed behavior, and unblock conditions. |
+| SIA-R03, SIA-R08, SIA-R10, SIA-R13, SIA-R14, SIA-R15, SIA-R16, SIA-R18, SIA-R19, SIA-R21 | Section 1.5.2 exclusively registers the four unresolved external decisions under stable IDs with exact owners, artifacts, fail-closed behavior, and unblock conditions. |
 | SIA-R01, SIA-R09, SIA-R22, SIA-R23 | Semantic-result access uses only `SemanticIngestionOutcomeLookupRequest` plus trusted out-of-band ingress resolution and a protected admission-only index. It authorizes stable principal, tenant, complete required-scope set, delivery key, and fence before any outcome/result/artifact lookup; exact or authorized-superset current scope coverage may proceed, partial coverage has no projection fallback, and all failures share one non-disclosing unavailable shape. |
 | SIA-R13, SIA-R14, SIA-R16 | Acceptance independently signs and lifecycle-validates one baseline approval release. Its verified digest is required in baseline deployment-authorization issuance and signed into the production artifact; production imports no acceptance schema/verifier and trusts only deployment authorization. |
 | SIA-R02, SIA-R03, SIA-R04, SIA-R07, SIA-R10, SIA-R13, SIA-R17, SIA-R21, SIA-R22, SIA-R23 | Every digest/signature-bearing ingestion schema uses one owned versioned canonical typed-value profile and exact schema binding. Historical bytes verify under their original binding before deterministic upcast; graph observation has no local codec. |
@@ -313,6 +313,7 @@ weaken another.
 | `SIA-ED-TOPOLOGY-001` | Product/spec/deployment owner | SIA-R08, SIA-R16, SIA-R19 | One signed, content-addressed `SemanticIngestionTopologyAuthorizationArtifact` naming inference and writeback owners, authenticated-host integration, ordinary factory composition, supported local assets and licenses, resource profiles and values, optional remote adapter policy, and rollback owner. | Ordinary composition is evidence-only with `profile_unapproved`; it performs no learned local stage, graph mutation, or implicit remote fallback. | The owner publishes the complete artifact, its exact bytes pass `DeploymentAuthorizationVerifier`, bidirectional manifest/package/asset/profile validation passes, and the ordinary constructor/rollback verification named by SIA-R08, SIA-R16, and SIA-R19 passes. |
 | `SIA-ED-REPLAY-001` | Event-model owner | SIA-R10, SIA-R18, SIA-R21 | One governing `EqualVersionReplayDecisionArtifact` plus a consistent update to `docs/design/event_model.md` defining exact duplicates, non-identical historical equal-version events, current-writer collisions, genesis replay, and checkpoint replay. | Exact duplicates remain idempotent and current-writer collisions reject; non-identical historical equal-version replay rejects before materialization or winner selection. | The event-model update and artifact select one genesis/checkpoint-consistent algebra and every arrival-order, checkpoint, upcast, and mixed-version permutation passes independently. |
 | `SIA-ED-POLICY-001` | Product/ML acceptance owner | SIA-R14, SIA-R15 | One signed, content-bound `InitialSemanticIngestionPolicyArtifact` containing all statistical thresholds, multiplicity allocation, cluster minima, unsupported cells, freshness deadlines, and monitoring limits. | Capability activation and local learned execution remain evidence-only; no implementation default, held-out-derived value, or runtime traffic may fill an absent value. | The complete artifact is deployment-authorized for the exact capability/dependency bundle and independent event-level recomputation validates every metric, cluster, bound, multiplicity, freshness, activation, and rollback rule. |
+| `SIA-ED-TRACEABILITY-001` | Traceability approval authority and independently provisioned trust-root owner | SIA-R03, SIA-R13 | Separately authenticated `TraceabilityBootstrapTrustAnchor` and `TraceabilityRecoveryTrustRoot` artifacts provisioned outside the release channel; one signed `TraceabilityRecoveryTrustPolicy`; the signed append-only `TraceabilityTrustLifecycleRoot`; and one signed `SemanticIngestionTraceabilityRelease` conforming to Section 3.23.4 and naming the qualified coverage reviewers, normative-evidence issuers, their public keys and trust snapshot, and the initial active release. These artifacts fix purpose/target, signer eligibility, canonical/signature profiles, key or certificate digests, effective/recorded times, predecessors, monotonic sequences, activation, rotation, revocation, compromise, recovery, and historical-verification coordinates. | No registry source package, release-contained trust snapshot, coverage approval, execution evidence, or caller-supplied signature is bootstrap or recovery authority; an absent, ambiguous, backdated, expired, revoked, compromised, wrong-purpose/profile, rollback, same-coordinate-substituted, or self-authorizing root/record makes every traceability gate fail closed. | The root owner independently provisions and authenticates the complete bootstrap and recovery roots before release retrieval; publishes the signed recovery policy and lifecycle root; the release authority publishes the complete signed all-root release and trust snapshot; and independent lifecycle, release, coverage, and execution-evidence verifiers accept the exact topologically constructed bytes and every activation, rotation, revocation, compromise, recovery, and historical check. |
 
 ### 1.6 Scope
 
@@ -3594,9 +3595,9 @@ records, performs the same CAS, and cannot start semantic work until a current
 
 **Revision closure and verification.** The following determinate corrections
 are normative and are verified against the assessment baseline named in this
-document. They do not alter the external-decision register:
-`SIA-ED-REPLAY-001`, `SIA-ED-TOPOLOGY-001`, and `SIA-ED-POLICY-001` remain
-unresolved and fail closed.
+document. They do not alter the substance of the external decisions:
+`SIA-ED-REPLAY-001`, `SIA-ED-TOPOLOGY-001`, `SIA-ED-POLICY-001`, and
+`SIA-ED-TRACEABILITY-001` remain unresolved and fail closed.
 
 | Review finding | Determinate closure | Required verification |
 | --- | --- | --- |
@@ -4512,6 +4513,284 @@ assertion. Each unit-to-requirement pair resolves to exactly one versioned
 assertion binding and may share an assertion/evidence artifact with other units
 only when the evidence record enumerates and binds every unit content key.
 
+#### 3.23.4.1 Canonical registry source and release boundary
+
+`docs/design/semantic_ingestion/traceability_registry/registry-v1.json` is the
+sole checked-in source package for grammar revision `sia-traceability-v1`. It
+is normative input, not an example or a generator fixture. Its ordered
+`heading_defaults` array contains exactly one direct numeric heading path for
+every heading emitted by the closed Sections 1-5 parser. Every array member is
+an explicit mapping selected by the design author; the parser never derives a
+mapping from words, regular expressions, a parent default, a wildcard, or a
+catch-all rule. Its `requirement_bindings`, `assertion_templates`,
+`structural_rules`, `overrides`, `anchor_bindings`, `artifact_dag`, `report_schemas`,
+`runner_environment_profiles`, and `test_evidence_groups` are complete
+registry roots. An empty root is spelled
+`[]` and means exactly no members; omission,
+`null`, and an unknown root are invalid. `registry-v1.json` is intentionally
+unapproved: it contains no authority identity, key, signature, trust snapshot,
+coverage approval, or execution evidence.
+
+Source serialization uses the closed `memorii-sia-canonical-json-v1` profile:
+strict UTF-8 without BOM; NFC strings; exactly one JSON value followed by one
+LF; recursively Unicode-scalar-ordered object member names; `:` and `,` with
+no surrounding whitespace; shortest base-10 integers without leading zero;
+lowercase `true`, `false`, and `null`; and JSON string escaping only for quote,
+backslash, and control scalars, with lowercase four-hex-digit control escapes.
+Floats, decimals, non-integer JSON numbers, duplicate object names, lone
+surrogates, non-NFC strings, and any bytes before the value or after the final
+LF are invalid. Arrays preserve declared order and are never sorted. A strict
+duplicate-aware decoder rejects duplicates before canonicalization, and the
+checked-in raw bytes must equal a fresh recursive canonical serialization
+byte-for-byte. A source identity is
+`SHA-256("memorii:sia-traceability-source:v1\\0" || canonical_bytes)`. Heading
+identity is its direct numeric path (for example `"3.23.4"`) and is converted
+to the existing heading-path hash only by the registered unit-identity
+preimage. The checker rejects a reordered source array even when an ordinary
+JSON parser would consider it equivalent. Requirement IDs are ordered by
+numeric suffix; template and test-group IDs use bytewise Unicode order. A
+duplicate ID/path, missing root, unresolved reference, unknown key, changed
+content hash, or a source package with a heading not present exactly once in
+the design fails before manifest construction.
+
+The source package is expanded only after the exact design bytes are frozen.
+Each report-schema artifact digest is
+`SHA-256("memorii:sia-report-schema:v1\\0" || canonical_schema_artifact_bytes)`;
+each runner-environment profile digest is
+`SHA-256("memorii:sia-runner-environment-profile:v1\\0" ||
+canonical_profile_artifact_bytes)`. Each byte sequence is that item's recursive
+canonical JSON value plus its one terminating LF; neither artifact contains its
+own digest. The report-schema registry root is
+`SHA-256("memorii:sia-report-schema-registry:v1\\0" ||
+CanonicalTypedValueEncode(ordered_item_digests,
+"TraceabilityReportSchemaRegistryDigestTuple.v1"))`; the runner-environment
+profile registry root uses domain
+`memorii:sia-runner-environment-profile-registry:v1\\0` and binding
+`TraceabilityRunnerEnvironmentProfileRegistryDigestTuple.v1`. The tuple order
+is the source-array order and duplicate item coordinates reject. Every test
+group carries the expected item digests, and source validation recomputes them
+before structural expansion.
+
+`NormativeTraceabilityStructuralManifest` is the one immutable structural
+artifact. Its body contains the exact design digest, registry source identity,
+grammar/profile bindings, every source-root digest, extracted units, expanded
+unit mappings, and assertion bindings. It contains no coverage approval,
+execution record, coverage root, execution root, release, or active pointer.
+Its digest is exactly
+`SHA-256("memorii:sia-traceability-structural-manifest:v1\\0" ||
+CanonicalTypedValueEncode(body,
+"NormativeTraceabilityStructuralManifestBody.v1"))`; `body` means every field
+of `NormativeTraceabilityStructuralManifestBody` in the schema below and no
+digest field. There is no optional exclusion list.
+
+Coverage approvals and execution evidence separately bind the immutable
+`structural_manifest_digest`. A coverage-root digest is
+`SHA-256("memorii:sia-traceability-coverage-root:v1\\0" ||
+CanonicalTypedValueEncode(TraceabilityCoverageEvidenceRootBody,
+"TraceabilityCoverageEvidenceRootBody.v1"))`; an execution-root digest uses
+the corresponding `memorii:sia-traceability-execution-root:v1` domain and
+`TraceabilityExecutionEvidenceRootBody.v1` binding. Each root body contains
+the structural-manifest digest and its complete ordered records but excludes
+its own digest. Neither later root is embedded in or can change the structural
+manifest.
+
+The source package's `artifact_dag` is the closed machine-readable dependency
+list for these artifacts. Each node ID appears once, dependencies are unique
+known node IDs, and array order is the required topological order. An
+independent Kahn topological sort uses source-array order as its deterministic
+ready-node tie-break, must consume every node exactly once, and must emit that
+same order; a self-edge, back-edge, unknown dependency, duplicate edge,
+dependency appearing after its consumer, or unconsumed node is a
+cycle/ambiguity failure.
+
+For `artifact_dag`, `requirement_bindings`, `assertion_templates`,
+`test_evidence_groups`, `heading_defaults`, `structural_rules`, `overrides`,
+and `anchor_bindings`, the root digest is
+`SHA-256("memorii:sia-traceability-registry-root:" || root_name || ":v1\\0" ||
+CanonicalTypedValueEncode(complete_root_value,
+"TraceabilityRegistryRoot." || root_name || ".v1"))`. `complete_root_value`
+is the exact source value with array order preserved; no field or member is
+excluded. The report-schema and runner-environment roots use their specialized
+item/root formulas above. These digests plus the source identity cover every
+top-level source member; scalar metadata is also carried directly in the
+structural manifest.
+
+A `SemanticIngestionTraceabilityRelease` is
+a distinct, signed canonical artifact that binds: release ID, purpose
+`semantic_ingestion_traceability_release`, registry source identity and every
+derived registry-root digest, exact design digest, structural-manifest digest,
+grammar/profile bindings, assertion artifact digest, test-evidence-group
+registry digest, report-schema registry digest, runner-environment-profile
+registry digest,
+coverage root digest, execution root digest, bootstrap trust
+anchor identity/digest/rotation sequence, trust-snapshot digest, monotonic
+epoch and sequence, issuer,
+issue/expiry times, lifecycle state, predecessor/supersession coordinate, and
+signature. Its lifecycle is exactly `active`, `superseded`, `revoked`, or
+`compromised`; an active release has no successor and a non-active release
+cannot authorize new acceptance. A release is valid only after its signature
+is verified for the exact traceability-release purpose and canonical/signature
+profile against a separately provisioned, independently authenticated
+`TraceabilityBootstrapTrustAnchor`. The verifier loads that anchor from its
+bootstrap channel before fetching the initial release and rejects any release
+that supplies, replaces, or self-authorizes its own bootstrap root. Only after
+that check may the release-bound trust snapshot qualify coverage reviewers and
+evidence issuers for their distinct purposes. Anchor rotation is an
+append-only, higher-sequence certificate signed by the currently active root,
+binds predecessor and successor identities plus activation time, and cannot
+retroactively authorize an older release. Revoked, compromised, expired,
+ambiguous, wrong-purpose/profile, skipped-predecessor, stale-sequence, or
+rollback roots fail closed. Emergency recovery uses the release-bound policy
+whose roots were separately provisioned and authenticated, and it advances
+sequence through the append-only lifecycle log; it never accepts a
+release-contained replacement root. The design does not select
+any external root, identity, key, or release value:
+`SIA-ED-TRACEABILITY-001` is their sole authority boundary.
+
+`release_digest` is
+`SHA-256("memorii:sia-traceability-release:v1\\0" ||
+CanonicalTypedValueEncode(release_body,
+"SemanticIngestionTraceabilityReleaseBody.v1"))`; the release signature is
+over that digest
+under the bootstrap anchor's exact signature profile. Thus the signature binds
+all registry, structural, coverage, execution, trust, schema, environment, and
+lifecycle roots without digest self-reference.
+
+Construction and publication use this exact topological order: (1) load the
+independently provisioned bootstrap and recovery roots plus lifecycle log;
+(2) freeze design bytes and canonical registry-source bytes; (3) recompute all
+registry item/root digests, including report schemas and runner environments;
+(4) independently extract units/mappings and publish one immutable structural
+manifest; (5) create coverage approvals and conforming execution reports that
+bind that structural digest, then independently publish the coverage and
+execution roots; (6) sign one release binding the structural, coverage,
+execution, trust, and registry roots; (7) verify every immutable byte and DAG
+edge with the second implementation; and only then (8) atomically advance one
+durable active-release pointer from sequence `n` to `n+1`. Steps 5's two roots
+may be constructed in either order but neither may reference the other.
+Recovery reads either the prior complete pointer or the new complete pointer,
+validates the complete generation again, and never reconstructs a partial
+generation. Reusing a lower sequence, activating two releases for one purpose,
+or activating a release whose predecessor/epoch is not the durable active
+coordinate is rollback corruption and fails closed. Rollback requires a newly
+signed higher-sequence release that explicitly supersedes the active release;
+it is not pointer rewinding.
+
+The registry's closed `test_evidence_groups` root gives every group its exact
+group ID, registered command ID and argv, selected test IDs and pytest node
+coordinates, report schema ID/version, minimum runner/runtime requirements,
+network/environment restrictions, immutable artifact/result policy, expected
+report-schema artifact digest, and expected runner-environment profile digest.
+The content-addressed report-schema root contains the complete closed JSON
+report grammar, required fields, variants, and unknown-field behavior; an ID or
+version without byte-equal schema content is invalid. A test
+marked `required_not_yet_evidenced` is a normative implementation obligation:
+collection failure or absence prevents passing evidence and is never reported
+as an executed pass. `repository_evidenced` means only that the named test
+coordinate exists in the current repository; it is not acceptance evidence.
+Every requirement binding resolves to exactly one group, every selected test
+is defined exactly once within that group, and no undeclared command, test,
+runner, report schema, deselection, skip, xfail, or result policy is accepted.
+
+The runner-environment profile is also complete source data. It fixes the
+interpreter implementation and allowed version interval plus an independently
+observed executable digest; pytest/runner distribution and version plus
+distribution-tree digest; the closed plugin list with autoload disabled; every
+loaded configuration path, canonical bytes digest, and effective option in
+order; the project metadata and dependency-lock status plus a sorted installed
+distribution name/version/tree-digest fingerprint; the normalized import path;
+`sitecustomize` and `usercustomize` absence or exact bytes digests; the closed
+allowlisted environment-variable map; locale and timezone; and the enforced
+network-denial mechanism and observation digest. The revision-3 profile binds
+the repository-evidenced `memorii/pyproject.toml` digest, requires no lockfile
+to be silently inferred, disables pytest plugin autoload, admits no plugins,
+uses only the declared `-q` option plus selected node IDs, requires import path
+`<implementation-root>`, requires both startup customization modules absent,
+and fixes `PYTHONNOUSERSITE=1`, `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`,
+`LC_ALL=C.UTF-8`, `LANG=C.UTF-8`, and `TZ=UTC`; every other environment
+variable is removed before launch except the runner's explicitly named
+content-addressed artifact-output coordinates.
+
+Environment observation normalizes paths by resolving symlinks, requiring
+containment in the immutable implementation root, and replacing that exact
+prefix with `<implementation-root>`; paths outside it reject. Distribution and
+plugin tuples sort by normalized package name then version and reject duplicate
+names. Options and import paths preserve order. Environment names sort by
+Unicode scalar order and values remain exact NFC strings. Locale/timezone use
+their exact declared strings. File, executable, configuration, customization,
+dependency, and network-mechanism digests are lowercase 64-hex SHA-256 over raw
+bytes; absence is the typed `absent` variant, never an empty digest. The
+environment observation artifact is canonicalized under
+`memorii-sia-canonical-json-v1`; conformance compares every observed field to
+the loaded expected profile. Its immutable artifact digest is SHA-256 over the
+exact canonical bytes including the final LF. Its semantic observation digest
+is `SHA-256("memorii:sia-runner-environment-observation:v1\\0" ||
+canonical_observation_bytes)`. The runner report carries both digests, and
+verification rejects noncanonical bytes, unequal recomputation, a missing
+artifact, or two byte sequences at one coordinate.
+
+The execution-evidence root contains only conforming runner reports. Each
+record binds a registered command and test selection, runner implementation
+identity/version, immutable report bytes and digest, result bytes and digest,
+the exact implementation revision and complete tree digest, design digest,
+registry source identity, structural-manifest digest, assertion ID/version, test
+group, and every covered unit/requirement pair. The independent verifier parses
+the report only from bytes whose independently loaded schema digest equals the
+group's expected schema digest; it also requires the loaded environment-profile
+digest to equal the group expectation and independently recomputes the complete
+environment-observation digest before accepting the runner report. The report
+and evidence record both carry all three digests. The independent verifier parses
+the report under its registered report schema, recomputes those bindings from
+its immutable bytes, and requires an executed passing selected test result.
+A signature over arbitrary success-shaped bytes, an unregistered command, a
+missing selected test, or a report that does not bind the exact roots is never
+execution evidence.
+
+A finite round-trip test constructs the artifact DAG once in the declared
+eight steps: two implementations independently produce byte-identical
+structural-manifest bodies/digests, fixture approvals and runner reports bind
+that digest, the two later roots are each encoded once, and a fixture release
+binds all three. The verifier performs one topological load, decode, canonical
+re-encode, digest recomputation, and edge comparison per node, then requires
+the same bytes and terminal release verdict. It records each node as visited
+exactly once and rejects any back-edge, self-edge, repeated construction,
+fixed-point loop, or digest-field exclusion not named above. Mutating each edge
+or swapping construction order across a dependency must fail; swapping the two
+independent step-5 siblings must preserve the same release inputs.
+
+Independent acceptance consists of four separately implemented checks: source
+syntax/root and canonical-byte validation; structural reconstruction from
+design bytes and source roots; signed release/coverage lifecycle validation;
+and conforming execution-report validation. Mutation suites delete, duplicate,
+reorder, substitute, or alter each source/release root; each heading default;
+every rule selector; every assertion/version/test group, group digest, command,
+selected test, report-schema bytes/digest, runner-environment profile/digest,
+interpreter/pytest/runner/plugin/config/option/dependency/import-path/startup-
+customization/environment/locale/timezone/network observation, and
+artifact/result policy;
+every override and anchor; every bootstrap root identity/key/certificate,
+purpose/profile, validity, rotation/predecessor, revocation/compromise and
+recovery coordinate; every release coordinate/state; and every report command, selection,
+runner, result byte, implementation root, and design/registry binding. They
+must reject deterministically, except a byte-identical canonical re-encoding
+which must produce the same source identity. Whitespace, CRLF, BOM,
+object-member reorder, duplicate-key, escape-spelling, trailing-byte, and array
+reorder mutations are rejected or, only for a semantically equivalent
+noncanonical input supplied to a diagnostic canonicalizer, canonicalize to the
+one published byte sequence without being accepted as source bytes. Bootstrap
+tests reject release self-authorization, release-contained root substitution,
+wrong-purpose/profile roots, expired/revoked/compromised roots, skipped or
+rollback rotation, stale-root replay, and recovery through any coordinate not
+independently provisioned. Runner mutations replace schema bytes under the same
+ID/version; alter pytest options, config bytes/path, plugin set/autoload,
+interpreter or runner bytes/version, dependency fingerprint/lock status,
+`PYTHONPATH` or normalized import path, `sitecustomize`, `usercustomize`, an
+allowlisted or extra environment variable, locale, timezone, or network
+enforcement; or substitute expected/observed digests. Every mutation rejects
+before a report can count as passing. A synthetic mapping or evidence
+constructed by a test without the checked-in source identity and an active
+qualified release cannot satisfy any gate.
+
 ```python
 NormativeUnitKind = Literal[
     "heading", "paragraph", "list", "list_item", "table", "table_row",
@@ -4581,6 +4860,160 @@ class NormativeTraceabilityEntry(BaseModel):
     source_end_line: int
     entry_digest: str
 
+TraceabilityTestImplementationStatus = Literal[
+    "repository_evidenced", "required_not_yet_evidenced",
+]
+
+class TraceabilitySelectedTest(BaseModel):
+    test_id: str
+    pytest_node_id: str
+    implementation_status: TraceabilityTestImplementationStatus
+    behavioral_assertion: str
+
+class TraceabilityRegisteredCommand(BaseModel):
+    command_id: str
+    argv: tuple[str, ...]
+    working_directory: Literal["memorii"]
+
+class TraceabilityRunnerRequirements(BaseModel):
+    runner_kind: Literal["cpython_pytest"]
+    minimum_python_version: str
+    minimum_pytest_version: str
+    network_policy: Literal["denied"]
+    environment_policy: Literal["clean_allowlisted"]
+    selection_policy: Literal["all_selected_collected_no_skip_xfail_deselect"]
+    exit_policy: Literal["zero_and_every_selected_test_passed"]
+
+class TraceabilityArtifactResultPolicy(BaseModel):
+    report_bytes: Literal["required_immutable_content_addressed"]
+    result_bytes: Literal["required_immutable_content_addressed"]
+    stdout_stderr: Literal["content_addressed_or_explicit_empty"]
+    report_binding: Literal["exact_command_selection_runner_roots_and_results"]
+
+class TraceabilityReportSchemaArtifact(BaseModel):
+    schema_id: Literal["memorii.semantic_ingestion.pytest_report"]
+    schema_version: Literal[1]
+    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+    media_type: Literal["application/schema+json"]
+    schema_document: dict[str, object]
+
+class TraceabilityInterpreterPolicy(BaseModel):
+    implementation: Literal["CPython"]
+    minimum_version: str
+    maximum_version_exclusive: str
+    invocation: tuple[str, ...]
+    executable_sha256: Literal["independently_observed_required"]
+
+class TraceabilityRunnerPolicy(BaseModel):
+    distribution: Literal["pytest"]
+    minimum_version: str
+    maximum_version_exclusive: str
+    distribution_tree_sha256: Literal["independently_observed_required"]
+    selected_test_policy: Literal["all_collected_no_skip_xfail_deselect"]
+
+class TraceabilityPluginPolicy(BaseModel):
+    autoload: Literal["disabled"]
+    allowed_third_party_plugins: tuple[str, ...]
+    builtin_plugin_set: Literal["bound_by_pytest_distribution_tree_digest"]
+
+class TraceabilityConfigurationFilePolicy(BaseModel):
+    path: Literal["pyproject.toml"]
+    sha256: str
+
+class TraceabilityPytestIniPolicy(BaseModel):
+    testpaths: tuple[Literal["tests"], ...]
+    pythonpath: tuple[Literal["."], ...]
+    markers: tuple[str, ...]
+
+class TraceabilityConfigurationPolicy(BaseModel):
+    config_discovery: Literal["exact_only"]
+    command_options: tuple[Literal["-q"], ...]
+    files: tuple[TraceabilityConfigurationFilePolicy, ...]
+    pytest_ini_options: TraceabilityPytestIniPolicy
+
+class TraceabilityProjectMetadataPolicy(BaseModel):
+    path: Literal["pyproject.toml"]
+    sha256: str
+
+class TraceabilityLockfilePolicy(BaseModel):
+    path: None
+    state: Literal["absent"]
+    state_must_be_observed: Literal[True]
+
+class TraceabilityInstalledDistributionFingerprintPolicy(BaseModel):
+    fields: tuple[str, ...]
+    ordering: Literal["normalized_name_then_version"]
+    required: Literal[True]
+
+class TraceabilityDependencyPolicy(BaseModel):
+    project_metadata: TraceabilityProjectMetadataPolicy
+    lockfile: TraceabilityLockfilePolicy
+    installed_distribution_fingerprint: (
+        TraceabilityInstalledDistributionFingerprintPolicy
+    )
+
+class TraceabilityImportPathPolicy(BaseModel):
+    normalized_paths: tuple[Literal["<implementation-root>"], ...]
+    outside_root: Literal["reject"]
+    pythonpath_environment: Literal["absent"]
+    symlinks: Literal["resolve_then_require_root_containment"]
+
+class TraceabilityStartupCustomizationPolicy(BaseModel):
+    sitecustomize: Literal["absent"]
+    usercustomize: Literal["absent"]
+
+class TraceabilityFixedEnvironmentVariables(BaseModel):
+    LANG: Literal["C.UTF-8"]
+    LC_ALL: Literal["C.UTF-8"]
+    PYTEST_DISABLE_PLUGIN_AUTOLOAD: Literal["1"]
+    PYTHONNOUSERSITE: Literal["1"]
+    TZ: Literal["UTC"]
+
+class TraceabilityEnvironmentVariablePolicy(BaseModel):
+    fixed_variables: TraceabilityFixedEnvironmentVariables
+    dynamic_artifact_coordinate_variables: tuple[str, ...]
+    other_variables: Literal["removed"]
+
+class TraceabilityLocaleTimezonePolicy(BaseModel):
+    lang: Literal["C.UTF-8"]
+    lc_all: Literal["C.UTF-8"]
+    timezone: Literal["UTC"]
+
+class TraceabilityNetworkPolicy(BaseModel):
+    enforcement: Literal["denied"]
+    outbound_and_listen: Literal["forbidden"]
+    enforcement_observation_digest: Literal["required"]
+
+class TraceabilityRunnerEnvironmentProfile(BaseModel):
+    profile_id: Literal["memorii.semantic_ingestion.runner_environment"]
+    profile_version: Literal[1]
+    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+    interpreter_policy: TraceabilityInterpreterPolicy
+    runner_policy: TraceabilityRunnerPolicy
+    plugin_policy: TraceabilityPluginPolicy
+    configuration_policy: TraceabilityConfigurationPolicy
+    dependency_policy: TraceabilityDependencyPolicy
+    import_path_policy: TraceabilityImportPathPolicy
+    startup_customization_policy: TraceabilityStartupCustomizationPolicy
+    environment_policy: TraceabilityEnvironmentVariablePolicy
+    locale_timezone_policy: TraceabilityLocaleTimezonePolicy
+    network_policy: TraceabilityNetworkPolicy
+
+class TraceabilityTestEvidenceGroup(BaseModel):
+    group_id: str
+    command: TraceabilityRegisteredCommand
+    selected_tests: tuple[TraceabilitySelectedTest, ...]
+    report_schema_id: Literal["memorii.semantic_ingestion.pytest_report"]
+    report_schema_version: Literal[1]
+    expected_report_schema_digest: str
+    runner_environment_profile_id: Literal[
+        "memorii.semantic_ingestion.runner_environment"
+    ]
+    runner_environment_profile_version: Literal[1]
+    expected_runner_environment_profile_digest: str
+    runner_requirements: TraceabilityRunnerRequirements
+    artifact_result_policy: TraceabilityArtifactResultPolicy
+
 class NormativeExecutionEvidenceRecord(BaseModel):
     unit_content_keys: tuple[str, ...]
     sia_requirement_ids: tuple[str, ...]
@@ -4588,7 +5021,20 @@ class NormativeExecutionEvidenceRecord(BaseModel):
     assertion_version: int = Field(ge=1)
     test_evidence_group: str
     test_or_evidence_artifact_digest: str
+    runner_report_schema_id: str
+    runner_report_schema_version: int = Field(ge=1)
+    loaded_report_schema_digest: str
+    runner_report_artifact_digest: str
+    registered_command_id: str
+    selected_test_ids: tuple[str, ...]
+    runner_id: str
+    runner_version: str
+    loaded_runner_environment_profile_digest: str
+    runner_environment_observation_artifact_digest: str
+    runner_environment_observation_digest: str
     design_document_digest: str
+    registry_source_identity: str
+    structural_manifest_digest: str
     implementation_revision: str
     implementation_tree_digest: str
     execution_id: str
@@ -4608,6 +5054,8 @@ class TraceabilityCoverageApprovalRecord(BaseModel):
     approved_sia_requirement_ids: tuple[str, ...]
     applicable_structural_rule_digests: tuple[str, ...]
     design_document_digest: str
+    registry_source_identity: str
+    structural_manifest_digest: str
     reviewer_id: str
     issuance_purpose: Literal["semantic_ingestion_traceability_coverage"]
     issued_at: datetime
@@ -4616,47 +5064,330 @@ class TraceabilityCoverageApprovalRecord(BaseModel):
     signature: bytes
     approval_digest: str
 
-class NormativeTraceabilityManifest(BaseModel):
+TraceabilityReleaseState = Literal[
+    "active", "superseded", "revoked", "compromised",
+]
+
+class TraceabilityBootstrapTrustAnchorBody(BaseModel):
+    anchor_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_release_root"]
+    target_purpose: Literal["semantic_ingestion_traceability_release"]
+    target_authority_id: str
+    signer_eligibility_profile_digest: str
+    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+    signature_profile_id: str
+    public_key_or_root_certificate_digest: str
+    provisioned_channel_id: str
+    rotation_sequence: int = Field(ge=1)
+    predecessor_anchor_id: str | None
+    predecessor_anchor_digest: str | None
+    effective_at: datetime
+    recorded_at: datetime
+    expires_at: datetime | None
+    lifecycle_root_coordinate: str
+
+class TraceabilityBootstrapTrustAnchor(
+    TraceabilityBootstrapTrustAnchorBody
+):
+    anchor_digest: str
+
+class TraceabilityRecoveryTrustRootBody(BaseModel):
+    recovery_root_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_recovery_root"]
+    target_authority_id: str
+    signer_eligibility_profile_digest: str
+    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+    signature_profile_id: str
+    public_key_or_root_certificate_digest: str
+    provisioned_channel_id: str
+    rotation_sequence: int = Field(ge=1)
+    predecessor_recovery_root_id: str | None
+    predecessor_recovery_root_digest: str | None
+    effective_at: datetime
+    recorded_at: datetime
+    expires_at: datetime | None
+    lifecycle_root_coordinate: str
+
+class TraceabilityRecoveryTrustRoot(
+    TraceabilityRecoveryTrustRootBody
+):
+    recovery_root_digest: str
+
+class TraceabilityRecoveryTrustPolicyBody(BaseModel):
+    policy_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_recovery_policy"]
+    target_authority_id: str
+    bootstrap_anchor_id: str
+    bootstrap_anchor_digest: str
+    eligible_recovery_root_digests: tuple[str, ...]
+    minimum_distinct_signatures: int = Field(ge=1)
+    signer_separation_rule_digest: str
+    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+    signature_profile_id: str
+    effective_at: datetime
+    recorded_at: datetime
+    sequence: int = Field(ge=1)
+    predecessor_policy_digest: str | None
+    expires_at: datetime | None
+    policy_signer_id: str
+    policy_signer_eligibility_digest: str
+    policy_signer_key_or_certificate_digest: str
+
+class TraceabilityRecoveryTrustPolicy(
+    TraceabilityRecoveryTrustPolicyBody
+):
+    signature: bytes
+    recovery_policy_digest: str
+
+TraceabilityTrustLifecycleAction = Literal[
+    "activate", "rotate", "revoke", "compromise", "recover",
+]
+
+class TraceabilityTrustLifecycleSignerBinding(BaseModel):
+    signer_id: str
+    signer_eligibility_snapshot_digest: str
+    signer_key_or_certificate_digest: str
+    signature_profile_id: str
+
+class TraceabilityTrustLifecycleRecordBody(BaseModel):
+    record_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_trust_lifecycle"]
+    target_kind: Literal["bootstrap_anchor", "recovery_root"]
+    target_id: str
+    target_digest: str
+    action: TraceabilityTrustLifecycleAction
+    replacement_target_id: str | None
+    replacement_target_digest: str | None
+    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+    effective_at: datetime
+    recorded_at: datetime
+    sequence: int = Field(ge=1)
+    predecessor_record_digest: str | None
+    recovery_policy_digest: str | None
+    signer_bindings: tuple[TraceabilityTrustLifecycleSignerBinding, ...]
+
+class TraceabilityTrustLifecycleRecord(
+    TraceabilityTrustLifecycleRecordBody
+):
+    signatures: tuple[bytes, ...]
+    record_digest: str
+
+class TraceabilityTrustLifecycleRootBody(BaseModel):
+    authority_id: str
+    records: tuple[TraceabilityTrustLifecycleRecord, ...]
+
+class TraceabilityTrustLifecycleRoot(
+    TraceabilityTrustLifecycleRootBody
+):
+    lifecycle_root_digest: str
+
+class TraceabilityArtifactDagNode(BaseModel):
+    node_id: str
+    depends_on: tuple[str, ...]
+
+class SemanticIngestionTraceabilityReleaseBody(BaseModel):
+    release_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_release"]
+    registry_source_identity: str
+    design_document_digest: str
+    structural_manifest_digest: str
+    grammar_revision: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    artifact_dag_digest: str
+    requirement_binding_registry_digest: str
+    assertion_registry_digest: str
+    test_evidence_group_registry_digest: str
+    report_schema_registry_digest: str
+    runner_environment_profile_registry_digest: str
+    section_default_registry_digest: str
+    structural_mapping_rule_registry_digest: str
+    override_registry_digest: str
+    anchor_binding_registry_digest: str
+    coverage_root_digest: str
+    execution_root_digest: str
+    bootstrap_anchor_id: str
+    bootstrap_anchor_digest: str
+    bootstrap_rotation_sequence: int = Field(ge=1)
+    recovery_trust_policy_digest: str
+    recovery_trust_root_digests: tuple[str, ...]
+    trust_lifecycle_root_digest: str
+    trust_snapshot_digest: str
+    epoch: int = Field(ge=1)
+    sequence: int = Field(ge=1)
+    state: TraceabilityReleaseState
+    predecessor_release_id: str | None
+    supersedes_release_id: str | None
+    issuer_id: str
+    issued_at: datetime
+    expires_at: datetime | None
+
+class SemanticIngestionTraceabilityRelease(
+    SemanticIngestionTraceabilityReleaseBody
+):
+    signature: bytes
+    release_digest: str
+
+class NormativeTraceabilityStructuralManifestBody(BaseModel):
     grammar_revision: str
     design_document_digest: str
+    registry_source_identity: str
+    artifact_dag: tuple[TraceabilityArtifactDagNode, ...]
+    artifact_dag_digest: str
     canonical_profile_binding: CanonicalTypedValueProfileBinding
+    requirement_binding_registry_digest: str
     section_defaults: tuple[SectionTraceabilityDefault, ...]
     section_default_registry_digest: str
     structural_mapping_rules: tuple[StructuralRequirementMappingRule, ...]
     structural_mapping_rule_registry_digest: str
     assertion_registry_artifact: CanonicalEncodedArtifact
+    assertion_registry_digest: str
+    test_evidence_groups: tuple[TraceabilityTestEvidenceGroup, ...]
+    test_evidence_group_registry_digest: str
+    report_schemas: tuple[TraceabilityReportSchemaArtifact, ...]
+    report_schema_registry_digest: str
+    runner_environment_profiles: tuple[
+        TraceabilityRunnerEnvironmentProfile, ...
+    ]
+    runner_environment_profile_registry_digest: str
     units: tuple[ExtractedNormativeUnit, ...]
     entries: tuple[NormativeTraceabilityEntry, ...]
     overrides: tuple[TraceabilityOverride, ...]
+    override_registry_digest: str
     explicit_anchor_bindings: tuple[tuple[str, tuple[str, ...]], ...]
-    coverage_approvals: tuple[TraceabilityCoverageApprovalRecord, ...]
+    anchor_binding_registry_digest: str
+
+class NormativeTraceabilityStructuralManifest(
+    NormativeTraceabilityStructuralManifestBody
+):
+    structural_manifest_digest: str
+
+class TraceabilityCoverageEvidenceRootBody(BaseModel):
+    structural_manifest_digest: str
+    approvals: tuple[TraceabilityCoverageApprovalRecord, ...]
+
+class TraceabilityCoverageEvidenceRoot(
+    TraceabilityCoverageEvidenceRootBody
+):
+    coverage_root_digest: str
+
+class TraceabilityExecutionEvidenceRootBody(BaseModel):
+    structural_manifest_digest: str
     evidence_records: tuple[NormativeExecutionEvidenceRecord, ...]
-    manifest_digest: str
+
+class TraceabilityExecutionEvidenceRoot(
+    TraceabilityExecutionEvidenceRootBody
+):
+    execution_root_digest: str
 ```
+
+Bootstrap anchors and recovery roots are canonical content-addressed artifacts
+authenticated through their separately provisioned channels; equal IDs or
+coordinates with unequal canonical bytes/digests are corruption. A recovery
+policy is signed by the currently active bootstrap anchor, names every eligible
+recovery-root digest and the exact distinct-signer threshold/separation rule,
+and cannot authorize its own signer or a root absent from independent
+provisioning. Bootstrap, recovery-root, and policy successors increment their
+own sequence by exactly one and bind both predecessor ID and digest.
+
+`anchor_digest`, `recovery_root_digest`, and `recovery_policy_digest` are,
+respectively:
+
+1. `SHA-256("memorii:sia-traceability-bootstrap-anchor:v1\\0" ||
+   CanonicalTypedValueEncode(anchor_body,
+   "TraceabilityBootstrapTrustAnchorBody.v1"))`;
+2. `SHA-256("memorii:sia-traceability-recovery-root:v1\\0" ||
+   CanonicalTypedValueEncode(recovery_root_body,
+   "TraceabilityRecoveryTrustRootBody.v1"))`; and
+3. `SHA-256("memorii:sia-traceability-recovery-policy:v1\\0" ||
+   CanonicalTypedValueEncode(recovery_policy_body,
+   "TraceabilityRecoveryTrustPolicyBody.v1"))`.
+
+The recovery-policy signature is over `recovery_policy_digest`.
+Independently provisioned anchor/root authentication binds their exact
+canonical bytes, purpose, target, eligibility profile, key/certificate and
+signature/canonical profiles, effective/recorded times, sequence, predecessor,
+expiry, and lifecycle coordinate before either artifact is usable. The
+bootstrap anchor does not contain or depend on the later recovery policy; the
+policy names the exact active bootstrap-anchor ID/digest and eligible recovery
+roots.
+
+For each `TraceabilityTrustLifecycleRecord`, `record_digest` is
+`SHA-256("memorii:sia-traceability-trust-lifecycle-record:v1\\0" ||
+CanonicalTypedValueEncode(record_body,
+"TraceabilityTrustLifecycleRecordBody.v1"))`. The body contains every
+non-signature field, including the ordered signer IDs, eligibility snapshots,
+key/certificate digests, and signature profiles; it contains no signature
+bytes or digest field. The `signatures` tuple has exactly the same cardinality
+and index order as `signer_bindings`, and each signer signs `record_digest`
+under its bound profile. Signer IDs are unique and canonically ordered,
+ordinary actions require exactly one signer/signature, and recovery requires
+the policy's exact threshold. The
+lifecycle-root digest is
+`SHA-256("memorii:sia-traceability-trust-lifecycle-root:v1\\0" ||
+CanonicalTypedValueEncode(root_body,
+"TraceabilityTrustLifecycleRootBody.v1"))`, where `root_body` contains the
+authority ID and complete record tuple and no digest field. Records are
+append-only in strict sequence; sequence
+one has no predecessor and every later record names the immediately preceding
+record digest. `recorded_at` strictly increases, `effective_at` is not earlier
+than the predecessor's `recorded_at` and not later than its own `recorded_at`,
+and one target/sequence/action has exactly one canonical record. Rotation and
+recovery name both old and new ID/digest; revoke and compromise forbid a
+replacement; activation targets independently provisioned bytes.
+
+Ordinary activation/rotation/revocation/compromise records require a signer
+eligible under the currently active bootstrap anchor. Recovery requires the
+exact active recovery policy, its threshold of distinct uncompromised recovery
+roots, and a new higher-sequence bootstrap anchor; a recovery root may not sign
+its own activation, replacement, or policy. A compromised or revoked recovery
+root is ineligible immediately at the lifecycle record's effective time, and
+if the threshold is no longer met recovery fails closed. Same-coordinate
+substitution, a missing/duplicate sequence, two records with the same
+predecessor, backdated effective or recorded time, skipped predecessor,
+ambiguous action order, stale-root replay, and any sequence/pointer rollback
+reject the whole trust view.
+
+Historical verification replays the one lifecycle log from genesis to the
+recorded-time cutoff, then evaluates the artifact's issuance time against the
+resulting effective intervals. Activation authorizes only signatures issued at
+or after its effective time; rotation ends the predecessor interval at the
+successor's effective time; revocation and compromise invalidate signatures at
+or after their effective times; signatures before that boundary remain
+historically verifiable only under their original release, trust snapshot,
+schema/profile roots, and immutable lifecycle prefix. A later record cannot
+backdate or rewrite that prefix. Verification at a later wall clock always
+loads the current complete lifecycle root first, so a newly recorded
+revocation/compromise can deny affected historical evidence but no release can
+carry an alternate historical log.
 
 The generator requires an exact one-to-one, order-preserving bijection between
 extracted units and entries. Every parent and Section 1-5 heading default must
 resolve; requirement mappings are nonempty, unique, and sorted by requirement
 ID; every mapped requirement must exist in the canonical ledger; every ledger
 row maps to itself; and every owner must equal that row's owner. Every structural
-rule, assertion/version, test/evidence group, override reviewer evidence,
+rule, assertion/version, test/evidence group and its command/selection/report/
+runner/artifact policy, override reviewer evidence,
 explicit anchor, and evidence artifact must be registered and content-loadable;
 no entry, mapping, override, or evidence record may survive without its exact
 unit and content key.
-The `section_defaults` and `structural_mapping_rules` tuples are canonical,
+The `section_defaults`, `structural_mapping_rules`, `test_evidence_groups`,
+`report_schemas`, and `runner_environment_profiles` tuples are canonical,
 complete registry contents, not digest-only references; their corresponding
-digests must recompute. The assertion registry artifact's canonical bytes are
-published atomically with the manifest and must decode to every referenced
-assertion/version. Evidence records, their test/evidence artifacts, result
-artifacts, and trust snapshots are likewise one content-addressed evidence
-generation: a digest whose bytes are absent from that generation or an earlier
-complete immutable generation fails before verification.
+item and root digests must recompute. The
+assertion registry artifact's canonical bytes are
+published atomically with the structural manifest and must decode to every
+referenced assertion/version. Coverage approvals, evidence records, and their
+test/report/environment/result artifacts are later content-addressed
+generations: a digest whose bytes are absent from its generation or an earlier
+complete immutable generation fails before verification. No later generation
+is embedded in or changes the structural manifest.
 
 The independently implemented structural checker shares only canonical design
 bytes, registry bytes, and the published grammar/profile revisions. It reparses
 without importing generator code, recomputes defaults, structural rules,
-self-mappings, secondary mappings, canonical bytes, and digests, rebuilds the
-structural manifest, and requires byte equality. This establishes structural
+report-schema and environment-profile item/root digests, self-mappings,
+secondary mappings, canonical bytes, and digests, rebuilds the structural
+manifest body once, and requires byte equality. This establishes structural
 extraction and mechanically expanded mappings only. Agreement between two
 parsers, even byte-identical agreement,
 never approves implementation or evidence.
@@ -4667,14 +5398,17 @@ equals its complete default and whose structural-rule digest set equals every
 rule applicable below that heading. The reviewer evaluates the heading-level
 requirement set and closed structural selectors, not every extracted line; the
 generator and checker deterministically expand that approved set to units. The
-coverage verifier recomputes the approval preimage, validates exact design
-digest, reviewer purpose/trust/signature/lifecycle/expiry, and rejects a missing,
+coverage verifier first requires the immutable structural-manifest digest,
+recomputes the approval and coverage-root preimages, validates exact design and
+registry-source digests, reviewer purpose/trust/signature/lifecycle/expiry, and rejects a missing,
 extra, removed, substituted, stale, or unapproved secondary mapping. Coverage
 approval cannot serve as implementation execution evidence.
 
 A separately implemented evidence verifier consumes the structurally verified
-manifest and independently loads each test/evidence and result artifact by
-digest. For every unit-to-requirement mapping it requires exactly one applicable
+manifest and independently loads each report schema, environment profile and
+observation, test/evidence, and result artifact by digest. It requires the
+execution root and every record to bind the same structural-manifest digest.
+For every unit-to-requirement mapping it requires exactly one applicable
 evidence record whose unit set includes that exact content key and whose
 requirement set includes that exact `SIA-Rxx`, and whose assertion ID/version
 and evidence group equal the mapping. It recomputes the
@@ -4682,7 +5416,8 @@ evidence digest and signature preimage through the canonical typed-value
 profile; validates issuer, purpose, key lifecycle, trust snapshot, revocation,
 compromise, supersession, issue time, and expiry when present; and requires
 `execution_status == "executed"` and `execution_result == "pass"`. The design
-digest must equal the exact accepted document bytes, and both implementation
+digest must equal the exact accepted document bytes; loaded and observed
+report-schema/environment digests must equal the group's expected digests; and both implementation
 revision and tree digest must equal the immutable implementation under test.
 Unexecuted, cancelled, errored, failed, indeterminate, expired, untrusted,
 forged, unloadable, stale-content, stale-design, wrong-revision, wrong-tree, or
@@ -4693,7 +5428,8 @@ four independently reported gates; architecture acceptance requires all four.
 Missing, stale, duplicate, orphaned, reordered, unclassified, defaultless,
 owner-mismatched, requirement-incomplete, self-map-missing,
 secondary-map-missing, or content-digest-mismatched units fail closed. The
-manifest itself and all evidence records use the canonical typed-value profile;
+structural manifest, later roots, release, and all evidence records use their
+declared canonical profile;
 a coordinate or filename without loadable content and digest is never evidence.
 
 Mutation tests independently insert and remove every unit kind; duplicate and
@@ -4707,8 +5443,11 @@ coverage-approval requirement/rule sets, reviewer/trust/signature/expiry,
 unit content keys, assertion ID/version, evidence or result artifact digest,
 design digest, implementation revision/tree, status/result, issuer, purpose,
 trust snapshot, signature, issue/expiry/revocation state, or remove required
-coverage. Each structural mutation must make a parser fail or make independent
-manifests differ; each evidence mutation must be rejected by the separate
+coverage. Artifact-DAG mutations add a structural-to-evidence back-edge, embed
+a later root in the structural body, omit or swap any structural/coverage/
+execution edge, alter a digest domain/schema binding, or change publication
+order across a dependency. Each structural mutation must make a parser fail or
+make independent structural manifests differ; each evidence mutation must be rejected by the separate
 evidence verifier. Tests explicitly prove that two matching parser outputs
 paired with missing, forged, stale, failed, or unexecuted evidence cannot
 approve. [SIA-I314]
@@ -10528,7 +11267,7 @@ committed group cannot apply the same delta twice. Replaying a non-committing
 terminal result cannot invent a delta. Rebuilding a source summary cannot alter
 any group result.
 
-##### Provider lifecycle compatibility
+##### 4.8.4.1 Provider lifecycle compatibility
 
 Legacy lifecycle compatibility is pinned to the complete authoritative model,
 not only its status field:
@@ -13881,7 +14620,7 @@ Raw source and model traces follow source-data privacy and retention controls.
 
 ### 5.9 Rollout and migration gates
 
-#### Gate A: Freeze evidence
+#### 5.9.1 Gate A: Freeze evidence
 
 - capture sanitized production and benchmark regression exemplars;
 - author independent expected semantic decisions, source-governance inputs,
@@ -13894,7 +14633,7 @@ reaches its expected first divergence,
 including `historical_fact_lost`, `source_trust_decay`, and
 `entity_rekey_lost`.
 
-#### Gate B: Introduce contracts and traces
+#### 5.9.2 Gate B: Introduce contracts and traces
 
 - add language-neutral contracts, invariant-only `SourceSemanticContext`,
   source-and-segment-bound `ProviderEgressDecision`, fixed-point per-segment
@@ -13918,7 +14657,7 @@ including `historical_fact_lost`, `source_trust_decay`, and
 
 Exit: every component produces truthful typed outcomes and replay artifacts.
 
-#### Gate C: Qualify language and source-analysis adapters
+#### 5.9.3 Gate C: Qualify language and source-analysis adapters
 
 - validate the one `SemanticIngestionDeploymentManifest`, then pin and package
   every mandatory component it names after the `SIA-ED-TOPOLOGY-001`
@@ -13939,7 +14678,7 @@ routing, analyzer disagreement, uncovered certified events, and ambiguous
 temporal expressions fail closed with stable reason codes; source-role failures
 are reproduced from normalized outputs.
 
-#### Gate D: Implement deterministic evidence normalization and reconciliation
+#### 5.9.4 Gate D: Implement deterministic evidence normalization and reconciliation
 
 - introduce one predicate/construction family at a time;
 - implement proposal alignment, parser-consensus role assignment,
@@ -13956,7 +14695,7 @@ Exit: historical wrong proposals reject or abstain, corresponding supported
 positive controls accept, unsupported forms abstain, and neither parser nor the
 proposer can hide a certified predicate event from coverage.
 
-#### Gate E: Evaluate NLI in shadow
+#### 5.9.5 Gate E: Evaluate NLI in shadow
 
 - pin the local model and verbalizers;
 - collect held-out incremental detection and abstention evidence.
@@ -13964,7 +14703,7 @@ proposer can hide a certified predicate event from coverage.
 Exit: NLI remains telemetry unless a separately reviewed capability manifest
 justifies veto-only authority.
 
-#### Gate F: Production composition and narrow cutover
+#### 5.9.6 Gate F: Production composition and narrow cutover
 
 - make the ordinary `build_provider_memory_service_from_env` and
   `build_filesystem_provider` roots construct the certified Steps 1-8 path;
@@ -14059,7 +14798,7 @@ complete alignment/scope/type assessments, one capability
 record, and one atomic compiler transaction per planned group; historical and
 identity-lineage state remain independently observable.
 
-#### Gate G: Remove legacy authority and certify
+#### 5.9.7 Gate G: Remove legacy authority and certify
 
 - remove string-frame promotion for cut-over capabilities;
 - retain it only in the isolated rule benchmark if still useful;
@@ -14217,7 +14956,7 @@ issue namespace:
 | Language selection has no decision authority | P2 | ING-P2-17 | Language router and capability registry | Fixed-point, source-bound local route with fail-closed uncertainty and conflict | B, C, D, F |
 | External signatures ignore authority lifecycle | P2 | ING-P2-18 | Acceptance release verifier | Independently trusted signed releases and trust snapshots with rotation/revocation semantics | B, F, G |
 
-#### Revision-01 failure-pattern additions
+#### 5.10.1 Revision-01 failure-pattern additions
 
 | Failure pattern | Primary component control | Independent validation |
 | --- | --- | --- |
@@ -14227,7 +14966,7 @@ issue namespace:
 | Observation page omits, duplicates, or leaks records | One flattened ordered stream with total bound, positioned signed cursor, and per-page authorization | Cross-kind concatenation, first/last/empty page, size-boundary, forged/stale cursor, and revocation-between-pages tests |
 | Vacuous policy or local saturation permits active mutation | Finite/domain validation, content-bound approved baseline, and typed local admission decision | NaN/infinity/range/alpha/empty-gate mutation plus queue, deadline, saturation, restart, and zero-mutation tests |
 
-#### Revision-02 failure-pattern additions
+#### 5.10.2 Revision-02 failure-pattern additions
 
 | Failure pattern | Primary component control | Independent validation |
 | --- | --- | --- |
@@ -14235,7 +14974,7 @@ issue namespace:
 | Scalar admission authorizes only part of a governed source | Complete required scopes derive from validated segment governance and receive one same-tenant subset decision before atomic admission | Multi-message exact/superset/partial/zero/cross-tenant/stale/revoked cases and zero-Step-2/provider/reservation/lease/graph-effect spies |
 | Adapters normalize or concatenate delivery IDs differently | One versioned byte-preserving validator and typed domain-separated public/composite coordinates | Independent cross-adapter Unicode/case/whitespace/limit/invalid-scalar golden vectors, collision injection, fan-out, restart, and retry tests |
 
-#### Revision-03 failure-pattern additions
+#### 5.10.3 Revision-03 failure-pattern additions
 
 | Failure pattern | Primary component control | Independent validation |
 | --- | --- | --- |
@@ -14666,7 +15405,7 @@ The architecture is implementation-ready when:
 
 - every workflow component has the contracts and ownership described in
   Section 4;
-- the external-decision audit finds exactly the three Section 1.5.2 definitions,
+- the external-decision audit finds exactly the four Section 1.5.2 definitions,
   every normative `SIA-ED-*` reference resolves to one of them, every row has
   owner/requirements/artifact/fail-closed/unblock fields, and no review-finding
   identifier appears in normative text;
@@ -14782,7 +15521,10 @@ The architecture is implementation-ready when:
   and complete structural-unit coverage over Sections 1-5, while a separately
   implemented verifier proves complete many-to-many requirement coverage and
   trusted passing execution at the exact design revision and implementation
-  revision/tree. Every ledger row self-maps and shared units retain every
+  revision/tree. A finite artifact-DAG round trip constructs the registry roots,
+  evidence-free structural manifest, structural-bound coverage and execution
+  roots, and all-root signed release exactly once in topological order, with no
+  fixed-point iteration or unnamed digest exclusion. Every ledger row self-maps and shared units retain every
   default, structural-rule, and override-added requirement. Missing, stale,
   duplicate, orphaned, unclassified, reordered, defaultless, self-map-missing,
   secondary-map-missing, owner/assertion/version/test-group mismatched, or
@@ -14790,7 +15532,15 @@ The architecture is implementation-ready when:
   unexecuted, cancelled, errored, failed, indeterminate, stale-content,
   stale-design, wrong-revision/tree, expired, revoked, compromised,
   wrong-purpose, forged-signature, or result-digest-mismatched evidence fails
-  even when both parsers produce identical manifests;
+  even when both parsers produce identical structural manifests. Report-schema
+  or runner-profile byte substitution and interpreter, pytest/runner, plugin,
+  config/option, dependency, import-path, `sitecustomize`, `usercustomize`,
+  allowlisted-environment, locale/timezone, or network-policy mutations fail
+  before execution can count. Trust tests replay typed bootstrap, recovery, and
+  signed append-only lifecycle records from genesis and reject same-coordinate
+  substitution, backdating, ambiguity, rollback, ineligible signers, and
+  compromised recovery roots while preserving the specified historical
+  verification boundary;
 - after `SIA-ED-TOPOLOGY-001` is resolved, the externally approved libraries, model assets,
   runtime call topology, and supported local resource profiles are reflected in
   dependency and deployment plans; this design supplies no defaults for them;
