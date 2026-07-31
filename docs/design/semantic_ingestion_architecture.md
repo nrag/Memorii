@@ -2382,6 +2382,15 @@ a value.
   unsigned lexicographic order of their canonical UTF-8 JSON-string bytes.
   Duplicate keys, non-string keys, and input not already canonical on decode
   reject. Nested values apply this same algebra without depth-specific rules.
+- A schema-bound model is encoded as the same map algebra. Its entries are the
+  fields declared by the exact registered schema version, keyed by declared
+  field name; map ordering, not source-language declaration order, determines
+  the bytes. Unknown fields reject. Required fields are present, optional
+  fields follow the registered optional-field policy, and defaults are never
+  materialized before verification. A union value must have exactly one
+  registered discriminator and validate exactly one member. Inheritance is
+  flattened into the registered field set before fingerprinting; it does not
+  introduce a second wire form.
 
 Raw binary floating-point and decimal values, including finite values, NaN,
 infinities, and negative zero, are forbidden in the profile and in a bound
@@ -2452,6 +2461,21 @@ and every signature preimage even when a conceptual schema listing omits the
 repeated envelope field for readability. A decoder receives envelope bytes and
 selects by that embedded binding before decoding value bytes; it never selects
 from a current-profile setting, filename, endpoint, or caller hint.
+
+**Traceability encoding boundary.** `memorii-sia-canonical-json-v1` is used
+only for the checked-in `registry-v1.json` source package and the explicitly
+named raw JSON report/profile artifacts in Section 3.23.4.1; it is not an
+alternative digest or signature codec. Every traceability trust, lifecycle,
+approval, evidence-root, release, pointer, and generation artifact is a
+`CanonicalEncodedArtifact` under its listed
+`CanonicalTypedValueProfileBinding`. Its typed body is encoded by
+`CanonicalTypedValueEncode`, the registered schema-specific preimage excludes
+only the fields named in this section, and its outer serialized envelope is
+the same typed-value profile. A raw canonical-JSON digest named by the registry
+is an input byte artifact, not a typed traceability envelope. The complete
+binding for every body and envelope is therefore part of both the digest and
+signature preimage; a `canonical_profile_id` string in a legacy conceptual
+listing denotes the raw-source profile only and cannot select a verifier.
 
 Acceptance owns, and production cannot import, a
 `CanonicalTypedValueGoldenVectorManifest`. Each vector binds a unique vector
@@ -4553,6 +4577,20 @@ duplicate ID/path, missing root, unresolved reference, unknown key, changed
 content hash, or a source package with a heading not present exactly once in
 the design fails before manifest construction.
 
+The raw design document is the exact repository blob at
+`docs/design/semantic_ingestion_architecture.md`. It must be nonempty strict
+UTF-8 without BOM, NUL, carriage return, trailing bytes after one final LF, or
+an invalid Unicode scalar; no normalization or Markdown reserialization is
+permitted. Its identity is exactly
+`SHA-256("semantic-ingestion-traceability\\0" || raw_design_bytes)`.
+That value is simultaneously the raw `design_document` generation member's
+`artifact_digest` and coordinate suffix and every
+`design_document_digest` in the structural manifest, coverage approvals,
+execution evidence, release, and generation manifest. Each verifier loads the
+raw member once, recomputes this preimage, and requires byte equality to the
+document parsed for structural reconstruction. A Git blob ID, path, normalized
+text, decoded/re-encoded string, or unqualified SHA-256 is not this digest.
+
 The source package is expanded only after the exact design bytes are frozen.
 Each report-schema artifact digest is
 `SHA-256("memorii:sia-report-schema:v1\\0" || canonical_schema_artifact_bytes)`;
@@ -4615,20 +4653,101 @@ item/root formulas above. These digests plus the source identity cover every
 top-level source member; scalar metadata is also carried directly in the
 structural manifest.
 
+The eight component bindings are closed as follows. Schema coordinate
+`TraceabilityRegistryRoot.requirement_bindings.v1` means
+`TraceabilityRegistryRootRequirementBindings`;
+`assertion_templates`, `heading_defaults`, `structural_rules`, `overrides`,
+`anchor_bindings`, `artifact_dag`, and `test_evidence_groups` map respectively
+to the identically suffixed `TraceabilityRegistryRoot*` classes declared
+below. The wrapper field `items` is the complete source array and is not an
+additional source object key. Requirement bindings preserve source order and
+have unique `requirement_id`; assertion templates preserve source order and
+have unique `(template_id, version)`; heading defaults preserve source order
+and have unique `heading_path`; structural rules preserve source order and
+have unique `rule_id`; overrides preserve source order and have unique
+`invariant_id`; anchor bindings preserve source order and have unique `anchor`;
+artifact-DAG nodes preserve source topological order and have unique `node_id`;
+test-evidence groups preserve source order and have unique `group_id`.
+Duplicate keys reject before encoding. Every root except overrides is
+nonempty. Overrides is exactly empty for registry v1 and may become nonempty
+only in a new registry version. Cardinality must equal the corresponding
+source array and no default, inferred, or omitted member is permitted.
+
+Within each record, model field declaration order is the CTV field order;
+tuple order is the declared source-array order except fields explicitly
+specified elsewhere as sorted sets. Any set-like tuple must be Unicode-scalar
+bytewise sorted and unique. The eight root digest domains remain exactly
+`memorii:sia-traceability-registry-root:<root_name>:v1\\0`, followed by CTV
+encoding under the matching dotted schema coordinate. A wrapper-name,
+record-type, order, cardinality, or duplicate-policy mismatch rejects before
+digest comparison.
+
+`TraceabilityReportSchemaRegistryDigestTuple.v1` is the declared-order tuple
+of `TraceabilityReportSchemaDigestCoordinate` records containing exactly
+`schema_id`, positive `schema_version`, and `schema_digest`.
+`TraceabilityRunnerEnvironmentProfileRegistryDigestTuple.v1` is the
+declared-order tuple of
+`TraceabilityRunnerEnvironmentProfileDigestCoordinate` records containing
+exactly `profile_id`, positive `profile_version`, and `profile_digest`.
+Both tuples are nonempty; duplicate `(id, version)` coordinates reject, each
+digest is lowercase 64-hex, order is the corresponding registry source-array
+order, and cardinality is identical to that source array. Reordering,
+deduplication, sorting, or digest-only projection rejects.
+
+`TraceabilityCanonicalContentBoundary` is the only open-content boundary.
+`content_bytes` is the exact canonical payload represented by padded canonical
+RFC 4648 base64 in JSON/CTV, not a decoded ambient object. It is nonempty,
+strictly decodes, re-encodes byte-identically, has byte length exactly
+`content_size`, and validates under the declared `content_schema_id`,
+positive `content_schema_version`, `media_type`, and `canonical_profile_id`.
+Its digest is
+`SHA-256("memorii:sia-canonical-content:v1\\0" ||
+LP(content_schema_id) || LP(decimal_schema_version) || LP(media_type) ||
+LP(canonical_profile_id) || LP(content_bytes))`. The lowercase 64-hex result
+must equal `content_digest`. For report schemas the bytes are canonical
+`application/schema+json` under `memorii-sia-canonical-json-v1`; for golden
+typed inputs they are the exact CTV bytes under the fixture's declared target
+schema and body binding. Empty bytes, noncanonical base64, unknown media or
+profile identity, size mismatch, digest mismatch, decoded dict/object
+substitution, or a payload that fails its declared canonical decoder rejects.
+
+Migration from the open v1 source fields is fail-closed: no previously encoded
+`schema_document` object or `typed_input_value` object is wire-compatible.
+Design tooling must decode the legacy source value once, canonically encode it
+into the new content bytes, populate every boundary field, recompute all item,
+root, generation, and release bindings, and publish a newly identified
+package. Readers do not auto-wrap, infer identities, preserve old digests, or
+accept both shapes. Production and C1 remain unchanged by this design-only
+migration.
+
+For the C2 v1 migration, the two authored golden typed-input occurrences are
+closed without inference. Occurrence 1 targets
+`TraceabilityBootstrapTrustAnchorBody.v1`, uses that registered body binding,
+and contains the complete canonical CTV value selected by primitive
+`fixture-01-bootstrap_anchor`. Occurrence 2 targets
+`TraceabilityRunnerReportBody.v1`, uses that registered body binding, and
+contains the complete canonical CTV value selected by primitive
+`fixture-14-runner_report`. Both boundaries use media type
+`application/vnd.memorii.ctv+json;version=1`; `content_bytes` is the canonical
+CTV-v1 JSON plus one LF. If embedding either occurrence under its original
+owner would introduce a dependency cycle, the occurrence remains assigned to
+the same target but is owned by the earliest acyclic fixture in existing
+topological order. Target identity or value substitution is forbidden.
+
 A `SemanticIngestionTraceabilityRelease` is
 a distinct, signed canonical artifact that binds: release ID, purpose
 `semantic_ingestion_traceability_release`, registry source identity and every
 derived registry-root digest, exact design digest, structural-manifest digest,
 grammar/profile bindings, assertion artifact digest, test-evidence-group
 registry digest, report-schema registry digest, runner-environment-profile
-registry digest,
+registry digest, golden-vector manifest digest,
 coverage root digest, execution root digest, bootstrap trust
 anchor identity/digest/rotation sequence, trust-snapshot digest, monotonic
 epoch and sequence, issuer,
-issue/expiry times, lifecycle state, predecessor/supersession coordinate, and
-signature. Its lifecycle is exactly `active`, `superseded`, `revoked`, or
-`compromised`; an active release has no successor and a non-active release
-cannot authorize new acceptance. A release is valid only after its signature
+issue/expiry times, issuance state, predecessor/supersession coordinate, and
+signature. Every immutable release is issued as `active`; its later
+`superseded`, `revoked`, or `compromised` state exists only in the closed
+`TraceabilityReleaseHistory` defined below. A release is valid only after its signature
 is verified for the exact traceability-release purpose and canonical/signature
 profile against a separately provisioned, independently authenticated
 `TraceabilityBootstrapTrustAnchor`. The verifier loads that anchor from its
@@ -4651,22 +4770,582 @@ any external root, identity, key, or release value:
 `SHA-256("memorii:sia-traceability-release:v1\\0" ||
 CanonicalTypedValueEncode(release_body,
 "SemanticIngestionTraceabilityReleaseBody.v1"))`; the release signature is
-over that digest
-under the bootstrap anchor's exact signature profile. Thus the signature binds
+over the exact
+`SemanticIngestionTraceabilityReleaseSignaturePreimage.v1` bytes under the
+purpose-scoped signer coordinate. Thus the signature binds
 all registry, structural, coverage, execution, trust, schema, environment, and
 lifecycle roots without digest self-reference.
 
-Construction and publication use this exact topological order: (1) load the
-independently provisioned bootstrap and recovery roots plus lifecycle log;
-(2) freeze design bytes and canonical registry-source bytes; (3) recompute all
-registry item/root digests, including report schemas and runner environments;
-(4) independently extract units/mappings and publish one immutable structural
-manifest; (5) create coverage approvals and conforming execution reports that
-bind that structural digest, then independently publish the coverage and
-execution roots; (6) sign one release binding the structural, coverage,
-execution, trust, and registry roots; (7) verify every immutable byte and DAG
-edge with the second implementation; and only then (8) atomically advance one
-durable active-release pointer from sequence `n` to `n+1`. Steps 5's two roots
+#### 3.23.4.2 Release-bound trust snapshot, signed lifecycle root, and active pointer
+
+`TraceabilityReleaseTrustSnapshot` is a distinct immutable acceptance artifact,
+not a projection inferred from release fields. Its closed body names exactly
+one release coordinate and the qualified issuers that may sign coverage and
+normative execution evidence for that release. It contains the purpose,
+issuer ID, key/certificate digest, signature profile, eligibility-snapshot
+digest, eligible issue interval, and the allowed coverage/evidence purposes
+for every signer. Each issuer ID/key/purpose coordinate appears exactly once;
+the tuples are Unicode-scalar ordered; empty eligibility, overlapping
+incompatible intervals, an issuer without a lifecycle-qualified key, or any
+unknown/omitted field rejects. The snapshot binds the bootstrap-anchor,
+recovery-policy, and lifecycle-root digests from which eligibility was
+evaluated, its exact release ID/epoch/sequence, and the recorded-time cutoff.
+It is valid only if independently replaying that lifecycle prefix produces the
+same active/revoked/compromised state at every listed issue interval. A release
+must name the snapshot digest and the independently loaded snapshot must name
+that exact release coordinate; neither artifact may authorize the other by
+itself. `trust_snapshot_digest` is
+`SHA-256("memorii:sia-traceability-release-trust-snapshot:v1\\0" ||
+CanonicalTypedValueEncode(snapshot_body,
+"TraceabilityReleaseTrustSnapshotBody.v1"))`. The release signature covers
+that digest; the snapshot has no self-signature and cannot introduce an
+authority absent from the independently provisioned lifecycle view.
+Each qualified issuer's `eligibility_derivation` is the explicit replay result,
+not an opaque snapshot digest: its lifecycle-root/terminal-record digests and
+interval must equal the inherited signer coordinate and the deterministic
+state derived from the complete histories. Any unequal duplicate field or
+derivation that cannot be reproduced rejects.
+Every `TraceabilityCoverageApprovalRecordBody` and
+`NormativeExecutionEvidenceRecordBody` carries `trust_snapshot_digest`, never
+an opaque trust-context digest. It must equal the digest in the listed active
+release and the independently loaded `TraceabilityReleaseTrustSnapshot`.
+The record signer coordinate must equal one qualified-issuer entry for that
+exact purpose/key/profile and its `issued_at` must fall inside both that entry's
+derived lifecycle interval and the artifact's own expiry interval. Missing,
+different, transitive-only, or caller-supplied snapshot coordinates reject.
+
+`TraceabilityTrustLifecycleRoot` is a signed envelope. Its body is the exact
+authority ID, canonical typed-value binding, and complete ordered record tuple;
+it excludes `lifecycle_root_digest`, `signer_coordinates`, and
+`signatures`. `lifecycle_root_digest` is the existing domain-separated body
+digest. `signer_coordinates` is a tuple of the owner-specific closed union
+`TraceabilityLifecycleRootSignerProvenance =
+TraceabilityLifecycleRootGenesisSignerProvenance |
+TraceabilitySignerCoordinate`; no other artifact owner accepts the genesis
+member. A terminal sequence-one root has exactly one genesis member, which
+names the independently provisioned bootstrap anchor and cannot name a
+lifecycle root or record. A terminal sequence greater than one has only the
+existing prior-verified-lifecycle-root coordinate members; it cannot use the
+genesis member. The envelope signer rule is determined solely by the final record:
+`revoke` and `compromise` use exactly the signer eligible immediately before
+the final record's `effective_at`, and each signer coordinate names that exact
+pre-transition lifecycle root and terminal record; `recover` uses exactly the
+pre-transition recovery policy's threshold of distinct uncompromised recovery
+roots in policy tuple order; every other final action uses exactly the
+post-transition active bootstrap signer. No final-time active-signer shortcut
+or alternate signer set is permitted. Each signature preimage is
+the lifecycle-root digest plus the complete root-body binding, issuance purpose
+`semantic_ingestion_traceability_lifecycle_root`, and the complete selected
+root-signer provenance value. For genesis, verification resolves the exact
+independently provisioned bootstrap anchor and requires its authority/channel,
+anchor ID/digest, issuer/key/profile, purpose, and interval to match; for a
+successor it replays the named prior root and terminal record. A root envelope
+whose signer is not eligible when the root closes,
+whose binding/signature cardinality or profile does not match the final action, or whose
+body does not re-encode byte-identically rejects. The root signature attests
+the complete append-only log; individual record signatures never substitute
+for it.
+
+`TraceabilityActiveReleasePointer` is the sole durable mutable acceptance
+coordinate. Its signed body contains `pointer_id`, purpose
+`semantic_ingestion_traceability_active_release_pointer`, target authority ID,
+complete typed-value binding, `generation_id`, `generation_manifest_digest`,
+release ID/digest/epoch/sequence, predecessor pointer digest, monotonically
+increasing pointer sequence, `published_at`, and issuer ID/key/certificate
+digest/signature profile. It contains no active-pointer digest or signature.
+`active_pointer_digest` is
+`SHA-256("memorii:sia-traceability-active-release-pointer:v1\\0" ||
+CanonicalTypedValueEncode(pointer_body,
+"TraceabilityActiveReleasePointerBody.v1"))`; its signature is over that
+digest under the release's lifecycle-qualified release-authority key. Pointer
+sequence starts at one with a null predecessor. Every successor increments by
+exactly one, names the immediately prior pointer digest, advances to a
+strictly higher `(epoch, sequence)` release coordinate, and names a generation
+manifest that contains exactly that release. Equal or lower release coordinates,
+pointer rewind, a fork, stale CAS writer, same-coordinate unequal bytes, or a
+signature/key not qualified for the target release rejects.
+
+Acceptance owns the pointer repository and its compare-and-set transaction;
+production receives neither its schema nor a pointer repository interface.
+The repository writes all immutable generation members under their content
+digests, validates their closure with the independent verifier, durably writes
+the signed candidate pointer, fsyncs its generation directory, and atomically
+advances the current index plus independent monotonic fence only if their
+expected predecessor digests, generation, token, and pointer digest match. It
+fsyncs every required failure domain before acknowledging the advance. On
+restart it reads the index/fence pair, rejects a generation below the
+independently durable minimum, and verifies pointer signature, generation
+closure, predecessor chain, and release monotonicity before use; a torn file,
+missing member, ambiguous pointer, or failed fsync outcome is typed
+`TraceabilityApprovalUnavailable`, not a reconstructed or guessed pointer.
+A well-formed but invalid signature, schema, lifecycle, generation, or
+monotonicity condition is typed `TraceabilityApprovalRejected`. Concurrent
+writers receive `TraceabilityApprovalRejected(reason="stale_pointer_cas")`;
+readers observe only the prior complete pointer/generation or the next complete
+pointer/generation. Rollback publishes a new valid higher pointer and release
+that explicitly supersede the active coordinate; repository recovery never
+rewinds or silently promotes an unpublished candidate.
+
+#### 3.23.4.3 Complete acceptance generation
+
+The selected alternative is one signed-pointer-bound
+`TraceabilityApprovalGenerationManifest`, rather than a pointer-bound tuple
+of independent coordinates. A tuple would have fewer bytes but would duplicate
+the complete-member list in every pointer reader and offers no immutable proof
+that the independently loaded closure was the one atomically published. The
+manifest provides one content-addressed, topologically ordered membership/DAG
+record while leaving the pointer as the minimal mutable CAS coordinate. Its
+cost is one additional immutable artifact; this is necessary enabling state
+for R03/R13, not a second authority system.
+
+The manifest body contains exactly: generation ID; purpose
+`semantic_ingestion_traceability_approval_generation`; complete typed-value
+binding; design digest; registry source identity; complete ordered artifact
+members; and the active pointer's intended release/pointer coordinates. A
+member contains a unique `artifact_kind`, stable `artifact_coordinate`, exact
+content digest, body schema ID/version/binding digest, and ordered dependency
+coordinates. The required members are: raw design-document bytes, raw canonical
+registry-source bytes, complete bootstrap-anchor/recovery-root/recovery-policy
+histories and every artifact they contain, signed lifecycle root, release-bound trust snapshot,
+normative structural manifest, every coverage approval and coverage root,
+every execution evidence record and its required report/environment/test/result/
+stdout/stderr
+artifacts, execution root, complete release history, active release, prior
+pointer history, pinned golden-vector manifest and all referenced typed-input
+fixtures, and candidate active
+pointer intent. The member list is the authoritative complete generation; the
+registry `artifact_dag` remains authoritative for registry-derived structural
+nodes, while this manifest adds the publication DAG for trust and evidence
+bytes. It must include every digest transitively named by any listed member
+except raw external provisioned bytes already named as bootstrap/recovery
+members. Unknown, omitted, duplicate, dangling, cross-generation, later-only,
+or unordered members reject.
+
+`generation_manifest_digest` is
+`SHA-256("memorii:sia-traceability-approval-generation:v1\\0" ||
+CanonicalTypedValueEncode(manifest_body,
+"TraceabilityApprovalGenerationManifestBody.v1"))`; it excludes only its own
+digest. The manifest is signed by the same lifecycle-qualified release
+authority as its release, over that digest and complete binding, and is loaded
+by exact digest from the candidate pointer. Dependencies must appear earlier;
+an independent Kahn sort using declared member order as tie-break must consume
+the list once and emit exactly that order. The candidate pointer is included
+as an `active_pointer_intent`, which is the complete pointer body except
+`generation_id`, `generation_manifest_digest`, and signature/digest fields.
+The verifier input is the pointer bytes selected by the atomic repository
+coordinate; after loading the manifest it reconstructs the omitted fields from
+the manifest and compares every pointer field, digest, and signature. This
+avoids a fixed-point digest cycle: the pointer names the already-published
+manifest digest, while the manifest binds only the independently chosen pointer
+transition intent. The repository publishes the immutable manifest before
+signing/persisting the pointer.
+
+The public approval gate independently loads the pointer bytes, manifest bytes,
+and each listed member by exact digest; decodes and canonical re-encodes each
+under its embedded binding; recomputes every body digest and signature;
+reconstructs structural bytes from design/registry bytes; reconstructs coverage
+and execution roots from their complete records; replays lifecycle eligibility;
+recomputes release and pointer preimages; and compares every DAG edge and
+cross-reference. It accepts only a byte-equal complete generation. Production
+cannot call this gate or import its schemas; it receives only a serialized
+acceptance outcome/attestation through the existing production boundary.
+
+Generation publication writes immutable members in topological order to an
+unpublished generation directory, verifies all bytes using the independent
+reader, fsyncs every member and directory, then atomically exposes the
+generation and advances the pointer CAS. A crash before pointer replacement
+leaves an unreachable candidate that readers ignore; a crash after replacement
+must expose the complete verified generation or return unavailable. Garbage
+collection may remove only unreachable candidates after a durable retention
+watermark and never rewrites a published member. Mixed-version readers load
+the pointer first and reject any member that is not in that pointer's manifest;
+they never combine old pointer/manifest bytes with new members.
+
+#### 3.23.4.4 Closed histories, member coordinates, and durable retention
+
+Release envelopes are immutable issuance facts. Every
+`SemanticIngestionTraceabilityReleaseBody.issued_state` is `active`; its state
+never changes in place. `TraceabilityReleaseHistory` is the sole source of
+current release state. Its entries are an append-only sequence of release
+digests and state transitions: the genesis entry activates one issued release;
+each later entry increments sequence by one, names the prior entry digest,
+names exactly one newly issued higher `(epoch, sequence)` release, and records
+that the prior active release became `superseded`, `revoked`, or `compromised`.
+Thus R1's signed bytes continue to say `issued_state=active`, while the R2
+history entry is authoritative that R1 is now superseded and R2 is current.
+No release envelope is re-signed or rewritten to express a later state.
+Each `entry_digest` is
+`SHA-256("memorii:sia-traceability-release-history-entry:v1\\0" ||
+CanonicalTypedValueEncode(entry_body,
+"TraceabilityReleaseHistoryEntryBody.v1"))` and excludes only
+`entry_digest`.
+`release_history_digest` is
+`SHA-256("memorii:sia-traceability-release-history:v1\\0" ||
+CanonicalTypedValueEncode(history_body,
+"TraceabilityReleaseHistoryBody.v1"))`. The history body excludes only its
+digest and is signed over the exact typed
+`TraceabilityReleaseHistorySignaturePreimage.v1` bytes.
+
+Bootstrap anchors, recovery roots, and recovery policies have equivalent
+complete ordered histories. Each history begins with the independently
+provisioned genesis artifact, increments its own sequence exactly once per
+entry, binds prior entry and artifact digests, and contains every artifact
+needed to replay eligibility at any release, evidence-issuance, or pointer time.
+The lifecycle root names all three exact history digests. A current-only anchor,
+root, or policy set cannot validate a release; missing, pruned, reordered, or
+forked history is rejected. External provisioning authenticates the bytes and
+values but does not replace these content-addressed replay histories.
+Their digest domains/body bindings are, respectively,
+`memorii:sia-traceability-bootstrap-anchor-history:v1\\0` /
+`TraceabilityBootstrapAnchorHistoryBody.v1`,
+`memorii:sia-traceability-recovery-root-history:v1\\0` /
+`TraceabilityRecoveryRootHistoryBody.v1`, and
+`memorii:sia-traceability-recovery-policy-history:v1\\0` /
+`TraceabilityRecoveryPolicyHistoryBody.v1`; each digest is SHA-256 of the
+domain followed by its `CanonicalTypedValueEncode` body and excludes only the
+declared history digest.
+
+For the raw registry generation member, `artifact_digest` and coordinate suffix
+are exactly the previously defined `registry_source_identity`. The loaded bytes
+must equal the canonical `registry-v1.json` source bytes and that identity must
+equal every structural-manifest, coverage/evidence, release, and generation
+reference; a plain file SHA-256 or typed-envelope digest is not substitutable.
+
+Generation coordinates have the exact ASCII grammar
+`sia-traceability/v1/<artifact-kind>/<sha256>`, where `<artifact-kind>` is one
+literal from `TraceabilityGenerationArtifactKind` and `<sha256>` is 64 lowercase
+hexadecimal digits equal to the member's `artifact_digest`. Slashes, percent
+escapes, aliases, case variants, semantic names, and caller-selected coordinates
+reject. The discriminated member union below is closed. Raw design and registry
+members use schema IDs `memorii.raw.design_document.v1` and
+`memorii.raw.traceability_registry_source.v1`, binding digest
+`raw-sha256-bytes-v1`, and their already specified raw-byte digest formulas;
+all other members use their exact typed schema binding and artifact digest.
+Singleton kinds occur once; plural kinds occur once per unique digest; cardinality
+is otherwise derived exactly from the release, roots, histories, and evidence
+records. Reuse from an earlier generation is permitted only by listing the same
+coordinate and byte-equal digest in the new manifest; implicit cross-generation
+lookup is forbidden.
+The kind-to-schema map is exact: each typed kind uses the same-named body/envelope
+schema declared in this section (`bootstrap_anchor` uses
+`TraceabilityBootstrapTrustAnchor`, `recovery_root` uses
+`TraceabilityRecoveryTrustRoot`, `recovery_policy` uses
+`TraceabilityRecoveryTrustPolicy`, history kinds use their closed history
+envelopes, `trust_lifecycle_root`, `trust_snapshot`, `structural_manifest`,
+`coverage_approval`, `coverage_root`, `execution_evidence`, `execution_root`,
+`release`, `pointer_history`, and `golden_vector_manifest` use their exact named
+schemas). Report/schema/environment/test/result kinds use the binding already
+named by the owning test-evidence group or evidence record; a different schema
+ID/version/binding for the same kind rejects. Singleton kinds are raw design,
+raw registry, all three histories, lifecycle root, trust snapshot, structural
+manifest, both evidence roots, release history, active release, pointer
+history, and golden-vector manifest. The plural cardinality for every other
+kind must equal
+the complete distinct digest set transitively named by those singletons.
+
+`report_schema` and `runner_environment_profile` members are raw canonical-JSON
+members, not typed-envelope members. Their exact bytes, item digests, schema
+ID/version, source-array ordinal, and registry-root membership are derived from
+the loaded registry item and owning test-evidence group; member metadata cannot
+override them. `runner_environment_observation` and `runner_report` are
+`CanonicalEncodedArtifact` envelopes whose inner bodies are respectively
+`TraceabilityRunnerEnvironmentObservationBody.v1` and
+`TraceabilityRunnerReportBody.v1` under their exact registered bindings; their
+member digest is the envelope `artifact_digest`.
+The evidence record's loaded schema/profile/observation/report digests must
+equal those members.
+
+**C2 artifact encoding and membership map.** The preceding shorthand is closed
+as follows. Every non-raw row is a `CanonicalEncodedArtifact.v1` encoded under
+the registered `CanonicalEncodedArtifact.v1` binding. Its
+`canonical_value_bytes` are the registered body schema's CTV bytes under the
+listed body binding; `canonical_value_digest` is SHA-256 of those body bytes;
+and its `artifact_digest` is the generic outer-envelope digest from Section
+3.15.1. A member's `artifact_digest` is always that outer digest. A raw member
+uses its expressly named raw digest as both artifact digest and coordinate
+suffix. `body digest` is never an alias for an envelope digest.
+
+| Kind(s) | Registered body schema/binding | Body digest | Signature and direct dependencies |
+| --- | --- | --- | --- |
+| `design_document`, `registry_source` | exact raw bytes / `raw-sha256-bytes-v1` | respective raw design/source identity | no signature; design `[]`, registry `[design_document]` |
+| `report_schema`, `runner_environment_profile`, `test_artifact`, `result_artifact`, `stdout_artifact`, `stderr_artifact` | exact owning raw canonical-JSON or raw-blob/stream domain binding | respective named raw-item/blob/stream digest | no signature; dependencies exactly as their member fields and owning group require |
+| `bootstrap_anchor`, `recovery_root`, their histories, `recovery_policy`, its history | exact corresponding `Traceability*Body.v1` listed in the member union | declared `anchor`/`root`/`policy`/`history` digest | only recovery policy has `TraceabilityRecoveryPolicySignaturePreimage.v1`; histories depend on every contained member |
+| `trust_lifecycle_root`, `trust_snapshot` | `TraceabilityTrustLifecycleRootBody.v1`, `TraceabilityReleaseTrustSnapshotBody.v1` | `lifecycle_root_digest`, `trust_snapshot_digest` | lifecycle record/root preimages and signatures live in root; snapshot has none; snapshot depends on lifecycle root and all trust histories |
+| `structural_manifest`, `coverage_approval`, `coverage_root` | `NormativeTraceabilityStructuralManifestBody.v1`, `TraceabilityCoverageApprovalRecordBody.v1`, `TraceabilityCoverageEvidenceRootBody.v1` | their declared domain digest | approval preimage/signature lives in approval; structural -> raw design/registry/report/environment; approval -> structural/snapshot; root -> approvals |
+| `runner_environment_observation`, `runner_report` | `TraceabilityRunnerEnvironmentObservationBody.v1`, `TraceabilityRunnerReportBody.v1` (not caller-selected) | inner `canonical_value_digest` | no signature; outer envelope is the member; dependencies are the owning profile/evidence fields |
+| `execution_evidence`, `execution_root` | `NormativeExecutionEvidenceRecordBody.v1`, `TraceabilityExecutionEvidenceRootBody.v1` | `evidence_digest`, execution-root digest | normative-evidence preimage/signature in evidence; evidence -> structural/snapshot/its report inputs, root -> all evidence |
+| `release`, `release_history`, `pointer_history` | exact corresponding release/history body binding | `release_digest`, `release_history_digest`, `pointer_history_digest` | exact named release/history/pointer-history preimage and signature in body; all explicitly named trust/structural/evidence/predecessor members are direct dependencies |
+| `golden_typed_input_fixture`, `golden_vector_manifest` | `TraceabilityGoldenTypedInputFixtureBody.v1`, `TraceabilityApprovalGoldenVectorManifestBody.v1` | fixture and golden-manifest digest | no signature; fixture -> raw design/registry, manifest -> every fixture |
+
+The C2-only `active_release_pointer`, `current_pointer_index`,
+`current_pointer_fence`, `retention_watermark`, `reader_authorization_request`,
+`reader_lease`, and `monotonic_time_witness` use their identically named
+`*Body.v1` binding plus this generic outer-envelope binding. Their declared
+digest fields are body digests; their persisted artifact is the outer envelope.
+The corresponding `*SignaturePreimage.v1` is stored only in independent golden
+fixtures/evidence and the resulting signature is a field of the typed body.
+`active_pointer_intent` has no envelope, digest, coordinate, or signature: it
+is embedded in the manifest body to avoid a manifest/pointer cycle. A verifier
+must use only the body's named references and `depends_on_coordinates`; missing,
+extra, or later dependencies reject rather than becoming implicit edges.
+
+`test_artifact` and `result_artifact` are opaque raw byte blobs. Their digests
+are respectively
+`SHA-256("memorii:sia-traceability-test-artifact:v1\\0" || raw_bytes)` and
+`SHA-256("memorii:sia-traceability-result-artifact:v1\\0" || raw_bytes)`;
+empty bytes are allowed only when the group's artifact policy explicitly names
+the exact empty digest. Their schema ID/version and binding-domain literal are
+fixed by `TraceabilityRawEvidenceBlobGenerationMember`, and
+`owning_evidence_digest` must be the exact record that names the blob. The
+member coordinate, kind, schema, binding, digest, and dependencies are derived
+from registry group plus evidence record after both verify; caller-provided
+metadata is comparison input only. Substituting a report for a result, a raw
+blob for a typed envelope, or one group's artifact under another group's
+metadata rejects.
+
+`stdout_artifact` and `stderr_artifact` are separate closed raw-stream kinds.
+Their member `stream`, kind, schema ID, and binding domain must be the matching
+stdout or stderr tuple; cross-stream substitution rejects. Digests are
+`SHA-256("memorii:sia-traceability-stdout:v1\\0" || raw_stream_bytes)` and
+`SHA-256("memorii:sia-traceability-stderr:v1\\0" || raw_stream_bytes)`, and
+coordinates use the corresponding kind plus that digest. Each selected runner
+report contributes exactly one member of each kind and both members depend on
+that report and its owning evidence record. Explicit empty output is represented
+by `explicit_empty=True` plus the domain-separated digest of exactly zero bytes,
+never by omission, null, an empty coordinate, or the other stream's empty
+digest. A stream coordinate may be shared across reports only when raw bytes,
+stream kind, schema/binding, and digest are identical and every owning group's
+artifact policy explicitly permits exact-byte content-addressed sharing; the
+member then lists every owning report/evidence dependency. Otherwise each
+report has a distinct member even for equal bytes. Cardinality and ownership
+are derived from the complete runner-report set, not caller metadata.
+
+Each golden `typed_input_fixture_digest` names one
+`TraceabilityGoldenTypedInputFixture`. Its digest is
+`SHA-256("memorii:sia-traceability-golden-typed-input-fixture:v1\\0" ||
+CanonicalTypedValueEncode(body,
+"TraceabilityGoldenTypedInputFixtureBody.v1"))`; its member coordinate uses
+kind `golden_typed_input_fixture` and that digest, schema identity
+`TraceabilityGoldenTypedInputFixtureBody.v1`, and the registered binding for
+that body. Fixtures are Unicode-scalar ordered by unique `fixture_id`, owned
+only by the independent vector author, and every vector references exactly one
+fixture whose target kind/schema/binding equals the vector. One member exists
+per distinct fixture digest, lists every owning vector ID, and depends on the
+raw design/registry bytes. Unreferenced fixtures,
+missing members, caller-authored values, unequal same-ID bytes, or cross-schema
+reuse reject.
+
+Dependencies are closed by kind: raw design and registry have none; structural
+manifest depends on both; bootstrap/recovery/policy histories depend on every
+ordered artifact they contain; lifecycle root depends on those histories;
+trust snapshot depends on lifecycle and all trust histories; coverage approvals
+depend on structural manifest and trust snapshot, and coverage root depends on
+all approvals; execution records depend on structural manifest, trust snapshot,
+and their exact report/schema/environment/test/result/stdout/stderr members,
+and execution
+root depends on all execution records; release depends on structural, coverage,
+execution, lifecycle, trust snapshot, and all trust histories; release history
+depends on every release and its prior release-history prefix; the golden-vector
+manifest depends on raw design/registry bytes and every fixture it contains;
+generation
+manifest depends on every listed member; the pointer depends on generation
+manifest, active release, release history, lifecycle root, and prior pointer
+history. `active_pointer_intent` is inline manifest body data, never a generation
+member and never independently addressed.
+
+Every signed artifact except a sequence-one lifecycle-root envelope uses a
+purpose-scoped `TraceabilitySignerCoordinate`. The lifecycle-root envelope uses
+its closed `TraceabilityLifecycleRootSignerProvenance` union only: its genesis
+member is the independently provisioned bootstrap-anchor attestation, and its
+successor member is this existing coordinate. The generic coordinate fixes
+purpose, issuer ID, key/certificate digest, signature
+profile, lifecycle-root digest, lifecycle-record digest, and inclusive eligible
+interval. Verification independently replays the named lifecycle and trust
+histories and requires issuance time inside that exact interval. A signer
+eligible for release signing cannot sign coverage, evidence, lifecycle roots,
+generation manifests, pointers, histories, retention watermarks, or reader
+leases unless each purpose is explicitly present in its release-bound snapshot
+or independently provisioned root policy. Issuer ID alone is never authority.
+
+For release, lifecycle-root, generation-manifest, pointer, coverage approval,
+execution evidence, and history signatures, the signature input is exactly
+`CanonicalTypedValueEncode(signature_preimage,
+"<Artifact>SignaturePreimage.v1")`. Each closed preimage contains the literal
+issuance purpose, complete body binding, the already recomputed body digest,
+one exact signer provenance value and no signature bytes. For every owner other
+than lifecycle root, that value is exactly `TraceabilitySignerCoordinate`; for
+lifecycle root it is exactly `TraceabilityLifecycleRootSignerProvenance`. The signature
+profile receives those exact bytes, not the ASCII digest spelling. The body
+digest domains and bindings are respectively:
+`memorii:sia-traceability-release:v1\\0` /
+`SemanticIngestionTraceabilityReleaseBody.v1`;
+`memorii:sia-traceability-trust-lifecycle-root:v1\\0` /
+`TraceabilityTrustLifecycleRootBody.v1`;
+`memorii:sia-traceability-approval-generation:v1\\0` /
+`TraceabilityApprovalGenerationManifestBody.v1`;
+`memorii:sia-traceability-active-release-pointer:v1\\0` /
+`TraceabilityActiveReleasePointerBody.v1`;
+`memorii:sia-traceability-coverage-approval:v1\\0` /
+`TraceabilityCoverageApprovalRecordBody.v1`; and
+`memorii:sia-traceability-execution-evidence:v1\\0` /
+`NormativeExecutionEvidenceRecordBody.v1`. Each body excludes exactly its
+envelope digest and signature and nothing else.
+
+The independent vectors contain one accepted and one wrong-signer rejection
+for each final-action class: pre-transition `revoke`, pre-transition
+`compromise`, exact-threshold pre-transition `recover`, and post-transition
+ordinary activation/rotation. Revoke/compromise vectors also substitute the
+post-transition root/record reference; recovery vectors delete, duplicate,
+reorder, and substitute threshold signers; ordinary vectors substitute the
+pre-transition signer. Each mutation must return `signature_invalid`. The
+transition becomes effective only after record body/signatures and root
+body/signatures all verify, preventing the disabled signer from authorizing
+anything issued at or after the transition.
+
+The acceptance store keeps immutable `TraceabilityActiveReleasePointerHistory`
+objects plus one mutable `TraceabilityCurrentPointerIndex` and an independently
+durable monotonic `TraceabilityCurrentPointerFence`. The index body contains
+its stable ID, exact canonical binding, generation, predecessor-index digest,
+store-issued fence token, pointer ID/digest/sequence, and pointer-history
+digest. Genesis generation is one with null predecessors; each successful
+advance increments generation and pointer sequence by exactly one and names the
+immediate prior index digest. Its digest is
+`SHA-256("memorii:sia-traceability-current-pointer-index:v1\\0" ||
+CanonicalTypedValueEncode(index_body,
+"TraceabilityCurrentPointerIndexBody.v1"))`.
+The fence body binds that exact index digest, equal generation and token, and
+the prior fence digest. Its digest is
+`SHA-256("memorii:sia-traceability-current-pointer-fence:v1\\0" ||
+CanonicalTypedValueEncode(fence_body,
+"TraceabilityCurrentPointerFenceBody.v1"))`.
+Every pointer-history object contains
+the complete ordered pointer envelopes through its sequence and is loaded and
+verified before the index can select its tail. A same-candidate retry with the
+same expected predecessor and byte-identical pointer, manifest, and history is
+idempotent success even after lost acknowledgement; a different candidate or
+bytes at that coordinate is `stale_pointer_cas`. Restart scans no directory to
+infer current state: it loads the one index, its exact history, tail pointer,
+manifest, complete generation, and independent fence, or returns unavailable.
+`pointer_history_digest` uses domain
+`memorii:sia-traceability-pointer-history:v1\\0` and body binding
+`TraceabilityActiveReleasePointerHistoryBody.v1`; its signature uses the
+closed pointer-history signature preimage containing its exact purpose, body
+binding, digest, and signer coordinate. Index and fence are content-addressed
+atomic storage records rather than authority and carry no signatures.
+
+The acceptance store is their sole writer. One backend transaction, or one
+documented equivalent linearizable compare-and-advance primitive, compares the
+expected prior index digest, prior fence digest, generation, token, pointer
+digest, and pointer-history digest; persists the new immutable index and fence
+bytes; advances the independently stored monotonic minimum generation; and
+then exposes the new current-index coordinate. The fence/minimum-generation
+record is stored in an anti-rollback failure domain independent of index and
+history backup restoration. A backend that cannot atomically couple these
+effects must return `persistence_outcome_indeterminate` and may not acknowledge
+or select either candidate until recovery proves one complete outcome.
+On every read and restart, the loaded index and fence must have equal
+generation/token/index digest, must extend both immediate predecessors, and
+must be at least the independently read monotonic minimum generation. Restoring
+a byte-valid older index, pointer history, and fence below that minimum is
+`active_pointer_monotonicity`; missing, torn, or mutually indeterminate state
+is unavailable. The acceptance vectors include a committed G2 control followed
+by restoration of valid G1 index/history/fence bytes and require rejection,
+plus lost-ack replay of the byte-identical G2 transaction and require
+idempotent success without generation increment.
+
+Successor-generation closure is finite. Pointer history embeds each prior
+pointer's complete canonical bytes and digest and verifies every signature,
+sequence, predecessor-pointer digest, release coordinate, and history chain.
+For a prior pointer, its `generation_manifest_digest` is a terminal historical
+coordinate already authenticated by that pointer and the earlier successful
+publication; it is explicitly exempt from transitive expansion into the current
+generation's member set. The verifier must nevertheless load the exact prior
+manifest bytes from the immutable acceptance repository, recompute its body
+digest and signature, and require its generation ID/release/pointer intent to
+equal the prior pointer. Missing, substituted, mutable, same-coordinate unequal,
+or unverifiable historical manifest bytes reject restart/current approval.
+The verifier does not recursively import that prior manifest's members into the
+current manifest and does not follow its pointer-history member. The exact load
+counts are: G1 loads one total/current manifest and zero historical manifests;
+G2 loads two total manifests (current G2 plus historical G1) and one historical
+manifest; G3 loads three total manifests (current G3 plus historical G1 and G2)
+and two historical manifests. All three perform zero ordinary historical-member
+traversals.
+Every manifest referenced by retained pointer history is itself retained
+regardless of generation-member GC. Members of an older generation may be
+collected only below the signed watermark with no reader lease and after its
+manifest/pointer/history proof remains durable; historical manifests and pointer
+bytes are never reconstructed from remaining members.
+The independent vector source contains at least: accepted G1 genesis, accepted
+G2 with one terminal G1 manifest coordinate, accepted G3 with terminal G1 and
+G2 coordinates, unavailable G2 with missing G1 manifest bytes, rejected G3
+with substituted G2 manifest bytes, rejected G3 with a predecessor pointer or
+manifest-intent mismatch, rejected recursive expansion of a prior manifest,
+and rejected collection while a retained history or reader lease pins the
+generation. The G1, G2, and G3 acceptance vectors bind exactly `1/0`, `2/1`,
+and `3/2` total/historical manifest loads respectively and zero ordinary
+historical-member traversals.
+
+`TraceabilityRetentionWatermark` is a signed monotonic artifact binding the
+current pointer-history digest, minimum retained pointer sequence, minimum
+retained release/lifecycle/trust-history prefixes, and issue time. It advances
+only by signed CAS over the exact expected predecessor-watermark and current
+pointer-history digests and cannot exceed the lowest sequence pinned by any
+unexpired `TraceabilityGenerationReaderLease`. The acceptance store is the sole
+writer and signer of pointer indices/histories, reader leases, watermarks, and
+time witnesses; callers submit no pre-signed substitute.
+
+A reader submits one closed `TraceabilityReaderAuthorizationRequest` binding
+authenticated principal/reader IDs, read purpose, nonce, expected current
+pointer/index/history/generation coordinates, requested bounded duration, and
+time-witness digest. The store authorizes that principal under its local
+acceptance access policy, recomputes the request digest with domain
+`memorii:sia-traceability-reader-authorization-request:v1\\0` and binding
+`TraceabilityReaderAuthorizationRequestBody.v1`, reloads the expected current
+index, and only then CAS-creates a store-signed lease. The lease binds that
+request digest, exact generation/pointer/history coordinates, nonce,
+issue/expiry, time witness, and a store signer coordinate whose purpose is
+`semantic_ingestion_traceability_reader_lease`; stale expectation, unauthorized
+principal, excessive duration, duplicate nonce with unequal bytes, or
+cross-purpose signer rejects. It then rechecks the current index before reading.
+Garbage collection loads the watermark and all unexpired leases, preserves
+every transitively referenced member/history prefix, and deletes only unreachable
+candidate generations below the safe watermark. Lease expiry uses an acceptance-
+owned monotonic time witness. Each
+`TraceabilityMonotonicTimeWitness` is content-addressed under domain
+`memorii:sia-traceability-monotonic-time-witness:v1\\0`, binding
+`TraceabilityMonotonicTimeWitnessBody.v1`, and the exact typed signature
+preimage; it binds clock authority, strictly increasing sequence, UTC instant,
+predecessor digest, and a purpose-qualified store signer. Missing predecessor,
+non-increasing sequence/time, clock rollback, ambiguous restart state, or
+unavailable monotonic-clock evidence returns unavailable and cannot expire a
+lease or advance a watermark. Crash or uncertainty during index, watermark,
+lease, or deletion operations is unavailable; it never authorizes deletion or
+selects a fallback pointer. Process-restart and concurrent reader/writer/GC
+tests must prove old-or-new visibility and no collected pinned generation.
+Watermark and lease body digests use domains
+`memorii:sia-traceability-retention-watermark:v1\\0` and
+`memorii:sia-traceability-reader-lease:v1\\0` with bindings
+`TraceabilityRetentionWatermarkBody.v1` and
+`TraceabilityGenerationReaderLeaseBody.v1`; their signatures use the same
+closed four-field preimage shape with their exact purpose, body binding, body
+digest, and signer coordinate.
+
+Construction and publication use this exact topological order: (1) load and
+verify complete independently provisioned bootstrap/recovery/policy histories
+plus lifecycle history/root; (2) freeze raw design bytes and canonical
+registry-source bytes; (3) recompute all registry item/root digests, including
+report schemas and runner environments; (4) independently extract
+units/mappings and publish one immutable structural manifest; (5) create
+coverage approvals and conforming execution reports that bind that structural
+digest, then independently publish the coverage and execution roots; (6) build
+the release-bound trust snapshot and sign one release binding structural,
+coverage, execution, trust, history, and registry roots; (7) append and sign the
+release history; (8) construct the closed generation manifest including the
+prior pointer-history prefix and inline candidate-pointer intent; (9) verify
+every immutable byte and DAG edge with the second implementation; and only then
+(10) sign/persist the candidate pointer, append signed pointer history, and
+atomically CAS the durable current index from sequence `n` to `n+1`. Step 5's two roots
 may be constructed in either order but neither may reference the other.
 Recovery reads either the prior complete pointer or the new complete pointer,
 validates the complete generation again, and never reconstructs a partial
@@ -4888,14 +5567,26 @@ class TraceabilityArtifactResultPolicy(BaseModel):
     report_bytes: Literal["required_immutable_content_addressed"]
     result_bytes: Literal["required_immutable_content_addressed"]
     stdout_stderr: Literal["content_addressed_or_explicit_empty"]
+    stream_sharing: Literal[
+        "forbidden", "exact_bytes_all_owners_explicitly_permit",
+    ]
     report_binding: Literal["exact_command_selection_runner_roots_and_results"]
+
+class TraceabilityCanonicalContentBoundary(BaseModel):
+    content_schema_id: str
+    content_schema_version: int = Field(ge=1)
+    media_type: str
+    canonical_profile_id: str
+    content_bytes: bytes
+    content_size: int = Field(ge=1)
+    content_digest: str
 
 class TraceabilityReportSchemaArtifact(BaseModel):
     schema_id: Literal["memorii.semantic_ingestion.pytest_report"]
     schema_version: Literal[1]
     canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
     media_type: Literal["application/schema+json"]
-    schema_document: dict[str, object]
+    schema_document: TraceabilityCanonicalContentBoundary
 
 class TraceabilityInterpreterPolicy(BaseModel):
     implementation: Literal["CPython"]
@@ -5014,7 +5705,210 @@ class TraceabilityTestEvidenceGroup(BaseModel):
     runner_requirements: TraceabilityRunnerRequirements
     artifact_result_policy: TraceabilityArtifactResultPolicy
 
-class NormativeExecutionEvidenceRecord(BaseModel):
+TraceabilitySignaturePurpose = Literal[
+    "semantic_ingestion_traceability_release",
+    "semantic_ingestion_traceability_recovery_policy",
+    "semantic_ingestion_traceability_lifecycle_record",
+    "semantic_ingestion_traceability_lifecycle_root",
+    "semantic_ingestion_traceability_approval_generation",
+    "semantic_ingestion_traceability_active_release_pointer",
+    "semantic_ingestion_traceability_coverage",
+    "semantic_ingestion_normative_evidence",
+    "semantic_ingestion_traceability_release_history",
+    "semantic_ingestion_traceability_pointer_history",
+    "semantic_ingestion_traceability_retention_watermark",
+    "semantic_ingestion_traceability_reader_lease",
+    "semantic_ingestion_traceability_monotonic_time_witness",
+    "semantic_ingestion_traceability_generation_verification",
+]
+
+class TraceabilitySignerCoordinate(BaseModel):
+    source_kind: Literal["prior_verified_lifecycle_root"]
+    signature_purpose: TraceabilitySignaturePurpose
+    issuer_id: str
+    key_or_certificate_digest: str
+    signature_profile_id: str
+    trust_lifecycle_root_digest: str
+    lifecycle_record_digest: str
+    eligible_not_before: datetime
+    eligible_not_after: datetime | None
+
+class TraceabilityProvisionedTrustArtifactGenesisProvenance(BaseModel):
+    source_kind: Literal["independently_provisioned_genesis"]
+    authority_id: str
+    provisioned_channel_id: str
+    provisioned_authorization_artifact_digest: str
+    provisioned_signature_purpose: TraceabilitySignaturePurpose
+    provisioned_signature_profile_id: str
+    provisioned_key_or_certificate_digest: str
+    eligible_not_before: datetime
+    eligible_not_after: datetime | None
+
+class TraceabilityProvisionedTrustArtifactSuccessorProvenance(BaseModel):
+    source_kind: Literal["prior_verified_lifecycle_root"]
+    authority_id: str
+    trust_lifecycle_root_digest: str
+    lifecycle_record_digest: str
+    eligible_not_before: datetime
+    eligible_not_after: datetime | None
+
+TraceabilityProvisionedTrustArtifactProvenance = (
+    TraceabilityProvisionedTrustArtifactGenesisProvenance
+    | TraceabilityProvisionedTrustArtifactSuccessorProvenance
+)
+
+class TraceabilityRecoveryPolicyGenesisSignerProvenance(BaseModel):
+    source_kind: Literal["independently_provisioned_bootstrap_anchor"]
+    signature_purpose: Literal["semantic_ingestion_traceability_recovery_policy"]
+    authority_id: str
+    provisioned_channel_id: str
+    bootstrap_anchor_digest: str
+    issuer_id: str
+    key_or_certificate_digest: str
+    signature_profile_id: str
+    eligible_not_before: datetime
+    eligible_not_after: datetime | None
+
+TraceabilityRecoveryPolicySignerProvenance = (
+    TraceabilityRecoveryPolicyGenesisSignerProvenance | TraceabilitySignerCoordinate
+)
+
+class TraceabilityLifecycleRootGenesisSignerProvenance(BaseModel):
+    source_kind: Literal["independently_provisioned_bootstrap_anchor"]
+    signature_purpose: Literal["semantic_ingestion_traceability_lifecycle_root"]
+    authority_id: str
+    provisioned_channel_id: str
+    bootstrap_anchor_id: str
+    bootstrap_anchor_digest: str
+    issuer_id: str
+    key_or_certificate_digest: str
+    signature_profile_id: str
+    eligible_not_before: datetime
+    eligible_not_after: datetime | None
+
+TraceabilityLifecycleRootSignerProvenance = (
+    TraceabilityLifecycleRootGenesisSignerProvenance | TraceabilitySignerCoordinate
+)
+
+class SemanticIngestionTraceabilityReleaseSignaturePreimage(BaseModel):
+    issuance_purpose: Literal["semantic_ingestion_traceability_release"]
+    body_binding: CanonicalTypedValueProfileBinding
+    release_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityTrustLifecycleRootSignaturePreimage(BaseModel):
+    issuance_purpose: Literal["semantic_ingestion_traceability_lifecycle_root"]
+    body_binding: CanonicalTypedValueProfileBinding
+    lifecycle_root_digest: str
+    signer_coordinate: TraceabilityLifecycleRootSignerProvenance
+
+class TraceabilityApprovalGenerationSignaturePreimage(BaseModel):
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_approval_generation"
+    ]
+    body_binding: CanonicalTypedValueProfileBinding
+    generation_manifest_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityRunnerEnvironmentObservationBody(BaseModel):
+    observation_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    runner_environment_profile_id: Literal[
+        "memorii.semantic_ingestion.runner_environment"
+    ]
+    runner_environment_profile_version: Literal[1]
+    loaded_runner_environment_profile_digest: str
+    observed_at: datetime
+    interpreter_digest: str
+    runner_distribution_digest: str
+    configuration_digest: str
+    dependency_digest: str
+    import_path_digest: str
+    network_enforcement_observation_digest: str
+    environment_digest: str
+
+class TraceabilityRunnerReportBody(BaseModel):
+    report_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    report_schema_id: Literal["memorii.semantic_ingestion.pytest_report"]
+    report_schema_version: Literal[1]
+    loaded_report_schema_digest: str
+    registered_command_id: str
+    selected_test_ids: tuple[str, ...]
+    runner_environment_observation_artifact_digest: str
+    execution_id: str
+    execution_status: Literal["executed", "cancelled", "error"]
+    execution_result: Literal["pass", "fail", "indeterminate"]
+    report_bytes_digest: str
+    result_artifact_digest: str | None
+    stdout_artifact_digest: str
+    stderr_artifact_digest: str
+    completed_at: datetime
+
+class TraceabilityActiveReleasePointerSignaturePreimage(BaseModel):
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_active_release_pointer"
+    ]
+    body_binding: CanonicalTypedValueProfileBinding
+    active_pointer_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityCoverageApprovalSignaturePreimage(BaseModel):
+    issuance_purpose: Literal["semantic_ingestion_traceability_coverage"]
+    body_binding: CanonicalTypedValueProfileBinding
+    approval_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class NormativeExecutionEvidenceSignaturePreimage(BaseModel):
+    issuance_purpose: Literal["semantic_ingestion_normative_evidence"]
+    body_binding: CanonicalTypedValueProfileBinding
+    evidence_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityReleaseHistorySignaturePreimage(BaseModel):
+    issuance_purpose: Literal["semantic_ingestion_traceability_release_history"]
+    body_binding: CanonicalTypedValueProfileBinding
+    release_history_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityPointerHistorySignaturePreimage(BaseModel):
+    issuance_purpose: Literal["semantic_ingestion_traceability_pointer_history"]
+    body_binding: CanonicalTypedValueProfileBinding
+    pointer_history_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityRetentionWatermarkSignaturePreimage(BaseModel):
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_retention_watermark"
+    ]
+    body_binding: CanonicalTypedValueProfileBinding
+    retention_watermark_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityReaderLeaseSignaturePreimage(BaseModel):
+    issuance_purpose: Literal["semantic_ingestion_traceability_reader_lease"]
+    body_binding: CanonicalTypedValueProfileBinding
+    reader_lease_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityRecoveryPolicySignaturePreimage(BaseModel):
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_recovery_policy"
+    ]
+    body_binding: CanonicalTypedValueProfileBinding
+    recovery_policy_digest: str
+    signer_provenance: TraceabilityRecoveryPolicySignerProvenance
+
+class TraceabilityMonotonicTimeWitnessSignaturePreimage(BaseModel):
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_monotonic_time_witness"
+    ]
+    body_binding: CanonicalTypedValueProfileBinding
+    time_witness_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class NormativeExecutionEvidenceRecordBody(BaseModel):
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
     unit_content_keys: tuple[str, ...]
     sia_requirement_ids: tuple[str, ...]
     assertion_id: str
@@ -5023,6 +5917,7 @@ class NormativeExecutionEvidenceRecord(BaseModel):
     test_or_evidence_artifact_digest: str
     runner_report_schema_id: str
     runner_report_schema_version: int = Field(ge=1)
+    runner_report_binding_digest: str
     loaded_report_schema_digest: str
     runner_report_artifact_digest: str
     registered_command_id: str
@@ -5030,6 +5925,11 @@ class NormativeExecutionEvidenceRecord(BaseModel):
     runner_id: str
     runner_version: str
     loaded_runner_environment_profile_digest: str
+    runner_environment_observation_schema_id: Literal[
+        "memorii.semantic_ingestion.runner_environment_observation"
+    ]
+    runner_environment_observation_schema_version: Literal[1]
+    runner_environment_observation_binding_digest: str
     runner_environment_observation_artifact_digest: str
     runner_environment_observation_digest: str
     design_document_digest: str
@@ -5042,39 +5942,46 @@ class NormativeExecutionEvidenceRecord(BaseModel):
     execution_result: Literal["pass", "fail", "indeterminate"]
     result_artifact_digest: str | None
     issued_at: datetime
-    issuer_id: str
     issuance_purpose: Literal["semantic_ingestion_normative_evidence"]
-    trust_context_digest: str
+    trust_snapshot_digest: str
     expires_at: datetime | None
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class NormativeExecutionEvidenceRecord(
+    NormativeExecutionEvidenceRecordBody
+):
     signature: bytes
     evidence_digest: str
 
-class TraceabilityCoverageApprovalRecord(BaseModel):
+class TraceabilityCoverageApprovalRecordBody(BaseModel):
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
     heading_path_hash: str
     approved_sia_requirement_ids: tuple[str, ...]
     applicable_structural_rule_digests: tuple[str, ...]
     design_document_digest: str
     registry_source_identity: str
     structural_manifest_digest: str
-    reviewer_id: str
     issuance_purpose: Literal["semantic_ingestion_traceability_coverage"]
     issued_at: datetime
-    trust_context_digest: str
+    trust_snapshot_digest: str
     expires_at: datetime | None
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityCoverageApprovalRecord(
+    TraceabilityCoverageApprovalRecordBody
+):
     signature: bytes
     approval_digest: str
 
-TraceabilityReleaseState = Literal[
-    "active", "superseded", "revoked", "compromised",
-]
+TraceabilityReleaseState = Literal["active", "superseded", "revoked", "compromised"]
 
 class TraceabilityBootstrapTrustAnchorBody(BaseModel):
     anchor_id: str
     issuance_purpose: Literal["semantic_ingestion_traceability_release_root"]
     target_purpose: Literal["semantic_ingestion_traceability_release"]
     target_authority_id: str
-    signer_eligibility_profile_digest: str
-    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+    authorized_signature_purposes: tuple[TraceabilitySignaturePurpose, ...]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
     signature_profile_id: str
     public_key_or_root_certificate_digest: str
     provisioned_channel_id: str
@@ -5084,7 +5991,7 @@ class TraceabilityBootstrapTrustAnchorBody(BaseModel):
     effective_at: datetime
     recorded_at: datetime
     expires_at: datetime | None
-    lifecycle_root_coordinate: str
+    provenance: TraceabilityProvisionedTrustArtifactProvenance
 
 class TraceabilityBootstrapTrustAnchor(
     TraceabilityBootstrapTrustAnchorBody
@@ -5095,8 +6002,8 @@ class TraceabilityRecoveryTrustRootBody(BaseModel):
     recovery_root_id: str
     issuance_purpose: Literal["semantic_ingestion_traceability_recovery_root"]
     target_authority_id: str
-    signer_eligibility_profile_digest: str
-    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+    authorized_signature_purposes: tuple[TraceabilitySignaturePurpose, ...]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
     signature_profile_id: str
     public_key_or_root_certificate_digest: str
     provisioned_channel_id: str
@@ -5106,7 +6013,7 @@ class TraceabilityRecoveryTrustRootBody(BaseModel):
     effective_at: datetime
     recorded_at: datetime
     expires_at: datetime | None
-    lifecycle_root_coordinate: str
+    provenance: TraceabilityProvisionedTrustArtifactProvenance
 
 class TraceabilityRecoveryTrustRoot(
     TraceabilityRecoveryTrustRootBody
@@ -5122,16 +6029,13 @@ class TraceabilityRecoveryTrustPolicyBody(BaseModel):
     eligible_recovery_root_digests: tuple[str, ...]
     minimum_distinct_signatures: int = Field(ge=1)
     signer_separation_rule_digest: str
-    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
-    signature_profile_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
     effective_at: datetime
     recorded_at: datetime
     sequence: int = Field(ge=1)
     predecessor_policy_digest: str | None
     expires_at: datetime | None
-    policy_signer_id: str
-    policy_signer_eligibility_digest: str
-    policy_signer_key_or_certificate_digest: str
+    signer_provenance: TraceabilityRecoveryPolicySignerProvenance
 
 class TraceabilityRecoveryTrustPolicy(
     TraceabilityRecoveryTrustPolicyBody
@@ -5139,26 +6043,79 @@ class TraceabilityRecoveryTrustPolicy(
     signature: bytes
     recovery_policy_digest: str
 
+class TraceabilityBootstrapAnchorHistoryBody(BaseModel):
+    history_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    anchors: tuple[TraceabilityBootstrapTrustAnchor, ...]
+
+class TraceabilityBootstrapAnchorHistory(
+    TraceabilityBootstrapAnchorHistoryBody
+):
+    history_digest: str
+
+class TraceabilityRecoveryRootHistoryBody(BaseModel):
+    history_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    recovery_roots: tuple[TraceabilityRecoveryTrustRoot, ...]
+
+class TraceabilityRecoveryRootHistory(TraceabilityRecoveryRootHistoryBody):
+    history_digest: str
+
+class TraceabilityRecoveryPolicyHistoryBody(BaseModel):
+    history_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    policies: tuple[TraceabilityRecoveryTrustPolicy, ...]
+
+class TraceabilityRecoveryPolicyHistory(
+    TraceabilityRecoveryPolicyHistoryBody
+):
+    history_digest: str
+
 TraceabilityTrustLifecycleAction = Literal[
     "activate", "rotate", "revoke", "compromise", "recover",
 ]
 
+class TraceabilityLifecycleEligibilityReference(BaseModel):
+    source_kind: Literal[
+        "independently_provisioned_genesis",
+        "prior_verified_lifecycle_root",
+    ]
+    authority_id: str
+    eligibility_purpose: Literal[
+        "semantic_ingestion_traceability_lifecycle_record"
+    ]
+    source_artifact_digest: str
+    prior_lifecycle_root_digest: str | None
+    prior_lifecycle_record_digest: str | None
+    prior_lifecycle_sequence: int = Field(ge=0)
+    target_id: str
+    target_digest: str
+    eligible_not_before: datetime
+    eligible_not_after: datetime | None
+    provisioned_channel_id: str | None
+
 class TraceabilityTrustLifecycleSignerBinding(BaseModel):
+    signature_purpose: Literal[
+        "semantic_ingestion_traceability_lifecycle_record"
+    ]
     signer_id: str
-    signer_eligibility_snapshot_digest: str
     signer_key_or_certificate_digest: str
     signature_profile_id: str
+    eligibility_reference: TraceabilityLifecycleEligibilityReference
+    recovery_root_digest: str | None
 
 class TraceabilityTrustLifecycleRecordBody(BaseModel):
     record_id: str
-    issuance_purpose: Literal["semantic_ingestion_traceability_trust_lifecycle"]
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_lifecycle_record"
+    ]
     target_kind: Literal["bootstrap_anchor", "recovery_root"]
     target_id: str
     target_digest: str
     action: TraceabilityTrustLifecycleAction
     replacement_target_id: str | None
     replacement_target_digest: str | None
-    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
     effective_at: datetime
     recorded_at: datetime
     sequence: int = Field(ge=1)
@@ -5172,18 +6129,496 @@ class TraceabilityTrustLifecycleRecord(
     signatures: tuple[bytes, ...]
     record_digest: str
 
+class TraceabilityTrustLifecycleRecordSignaturePreimage(BaseModel):
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_lifecycle_record"
+    ]
+    body_binding: CanonicalTypedValueProfileBinding
+    record_digest: str
+    signer_binding: TraceabilityTrustLifecycleSignerBinding
+
 class TraceabilityTrustLifecycleRootBody(BaseModel):
     authority_id: str
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_lifecycle_root"
+    ]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    bootstrap_anchor_history_digest: str
+    recovery_root_history_digest: str
+    recovery_policy_history_digest: str
     records: tuple[TraceabilityTrustLifecycleRecord, ...]
 
 class TraceabilityTrustLifecycleRoot(
     TraceabilityTrustLifecycleRootBody
 ):
+    signer_coordinates: tuple[TraceabilityLifecycleRootSignerProvenance, ...]
+    signatures: tuple[bytes, ...]
     lifecycle_root_digest: str
+
+class TraceabilityLifecycleEligibilityDerivation(BaseModel):
+    trust_lifecycle_root_digest: str
+    terminal_record_digest: str
+    terminal_sequence: int = Field(ge=1)
+    target_id: str
+    target_digest: str
+    eligible_not_before: datetime
+    eligible_not_after: datetime | None
+
+class TraceabilityQualifiedIssuerBinding(TraceabilitySignerCoordinate):
+    eligibility_derivation: TraceabilityLifecycleEligibilityDerivation
+
+class TraceabilityReleaseTrustSnapshotBody(BaseModel):
+    snapshot_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_release_trust_snapshot"]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    release_id: str
+    release_epoch: int = Field(ge=1)
+    release_sequence: int = Field(ge=1)
+    bootstrap_anchor_digest: str
+    recovery_policy_digest: str
+    trust_lifecycle_root_digest: str
+    lifecycle_recorded_time_cutoff: datetime
+    qualified_issuers: tuple[TraceabilityQualifiedIssuerBinding, ...]
+    created_at: datetime
+
+class TraceabilityReleaseTrustSnapshot(
+    TraceabilityReleaseTrustSnapshotBody
+):
+    trust_snapshot_digest: str
+
+TraceabilityGenerationArtifactKind = Literal[
+    "design_document", "registry_source",
+    "bootstrap_anchor", "bootstrap_anchor_history", "recovery_root",
+    "recovery_root_history", "recovery_policy", "recovery_policy_history",
+    "trust_lifecycle_root", "trust_snapshot", "structural_manifest",
+    "coverage_approval", "coverage_root", "report_schema",
+    "runner_environment_profile", "runner_environment_observation",
+    "runner_report", "test_artifact", "result_artifact", "stdout_artifact",
+    "stderr_artifact", "execution_evidence",
+    "execution_root", "release", "release_history", "pointer_history",
+    "golden_vector_manifest", "golden_typed_input_fixture",
+]
+class TraceabilityGenerationMemberBase(BaseModel):
+    artifact_coordinate: str
+    artifact_digest: str
+    depends_on_coordinates: tuple[str, ...]
+
+class TraceabilityRawDesignGenerationMember(
+    TraceabilityGenerationMemberBase
+):
+    artifact_kind: Literal["design_document"]
+    schema_id: Literal["memorii.raw.design_document.v1"]
+    schema_version: Literal[1]
+    binding_digest: Literal["raw-sha256-bytes-v1"]
+
+class TraceabilityRawRegistryGenerationMember(
+    TraceabilityGenerationMemberBase
+):
+    artifact_kind: Literal["registry_source"]
+    schema_id: Literal["memorii.raw.traceability_registry_source.v1"]
+    schema_version: Literal[1]
+    binding_digest: Literal["raw-sha256-bytes-v1"]
+
+class TraceabilityReportSchemaGenerationMember(
+    TraceabilityGenerationMemberBase
+):
+    artifact_kind: Literal["report_schema"]
+    schema_id: str
+    schema_version: int = Field(ge=1)
+    binding_digest: str
+    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+
+class TraceabilityRunnerEnvironmentProfileGenerationMember(
+    TraceabilityGenerationMemberBase
+):
+    artifact_kind: Literal["runner_environment_profile"]
+    schema_id: str
+    schema_version: int = Field(ge=1)
+    binding_digest: str
+    canonical_profile_id: Literal["memorii-sia-canonical-json-v1"]
+
+class TraceabilityTestArtifactGenerationMember(
+    TraceabilityGenerationMemberBase
+):
+    artifact_kind: Literal["test_artifact"]
+    schema_id: Literal["memorii.raw.traceability_test_artifact.v1"]
+    schema_version: Literal[1]
+    binding_digest: Literal["memorii:sia-traceability-test-artifact:v1"]
+    owning_evidence_digest: str
+
+class TraceabilityResultArtifactGenerationMember(
+    TraceabilityGenerationMemberBase
+):
+    artifact_kind: Literal["result_artifact"]
+    schema_id: Literal["memorii.raw.traceability_result_artifact.v1"]
+    schema_version: Literal[1]
+    binding_digest: Literal["memorii:sia-traceability-result-artifact:v1"]
+    owning_evidence_digest: str
+
+class TraceabilityStdoutGenerationMember(
+    TraceabilityGenerationMemberBase
+):
+    artifact_kind: Literal["stdout_artifact"]
+    stream: Literal["stdout"]
+    schema_id: Literal["memorii.raw.traceability_stdout.v1"]
+    schema_version: Literal[1]
+    binding_digest: Literal["memorii:sia-traceability-stdout:v1"]
+    owning_runner_report_digests: tuple[str, ...]
+    owning_evidence_digests: tuple[str, ...]
+    sharing_policy: Literal[
+        "single_report", "exact_bytes_all_owners_explicitly_permit",
+    ]
+    explicit_empty: bool
+
+class TraceabilityStderrGenerationMember(
+    TraceabilityGenerationMemberBase
+):
+    artifact_kind: Literal["stderr_artifact"]
+    stream: Literal["stderr"]
+    schema_id: Literal["memorii.raw.traceability_stderr.v1"]
+    schema_version: Literal[1]
+    binding_digest: Literal["memorii:sia-traceability-stderr:v1"]
+    owning_runner_report_digests: tuple[str, ...]
+    owning_evidence_digests: tuple[str, ...]
+    sharing_policy: Literal[
+        "single_report", "exact_bytes_all_owners_explicitly_permit",
+    ]
+    explicit_empty: bool
+
+class TraceabilityGoldenTypedInputFixtureGenerationMember(
+    TraceabilityGenerationMemberBase
+):
+    artifact_kind: Literal["golden_typed_input_fixture"]
+    schema_id: Literal["TraceabilityGoldenTypedInputFixtureBody.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityGoldenTypedInputFixtureBody.v1"]
+    binding_digest: str
+    fixture_id: str
+    owning_golden_vector_ids: tuple[str, ...]
+
+class TraceabilityBootstrapAnchorGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["bootstrap_anchor"]
+    schema_id: Literal["TraceabilityBootstrapTrustAnchor.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityBootstrapTrustAnchor.v1"]
+    binding_digest: str
+
+class TraceabilityBootstrapAnchorHistoryGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["bootstrap_anchor_history"]
+    schema_id: Literal["TraceabilityBootstrapAnchorHistory.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityBootstrapAnchorHistoryBody.v1"]
+    binding_digest: str
+
+class TraceabilityRecoveryRootGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["recovery_root"]
+    schema_id: Literal["TraceabilityRecoveryTrustRoot.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityRecoveryTrustRoot.v1"]
+    binding_digest: str
+
+class TraceabilityRecoveryRootHistoryGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["recovery_root_history"]
+    schema_id: Literal["TraceabilityRecoveryRootHistory.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityRecoveryRootHistoryBody.v1"]
+    binding_digest: str
+
+class TraceabilityRecoveryPolicyGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["recovery_policy"]
+    schema_id: Literal["TraceabilityRecoveryTrustPolicy.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityRecoveryTrustPolicyBody.v1"]
+    binding_digest: str
+
+class TraceabilityRecoveryPolicyHistoryGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["recovery_policy_history"]
+    schema_id: Literal["TraceabilityRecoveryPolicyHistory.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityRecoveryPolicyHistoryBody.v1"]
+    binding_digest: str
+
+class TraceabilityLifecycleRootGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["trust_lifecycle_root"]
+    schema_id: Literal["TraceabilityTrustLifecycleRoot.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityTrustLifecycleRootBody.v1"]
+    binding_digest: str
+
+class TraceabilityTrustSnapshotGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["trust_snapshot"]
+    schema_id: Literal["TraceabilityReleaseTrustSnapshot.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityReleaseTrustSnapshotBody.v1"]
+    binding_digest: str
+
+class TraceabilityStructuralManifestGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["structural_manifest"]
+    schema_id: Literal["NormativeTraceabilityStructuralManifest.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["NormativeTraceabilityStructuralManifestBody.v1"]
+    binding_digest: str
+
+class TraceabilityCoverageApprovalGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["coverage_approval"]
+    schema_id: Literal["TraceabilityCoverageApprovalRecord.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityCoverageApprovalRecordBody.v1"]
+    binding_digest: str
+
+class TraceabilityCoverageRootGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["coverage_root"]
+    schema_id: Literal["TraceabilityCoverageEvidenceRoot.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityCoverageEvidenceRootBody.v1"]
+    binding_digest: str
+
+class TraceabilityRunnerObservationGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["runner_environment_observation"]
+    schema_id: Literal["CanonicalEncodedArtifact.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityRunnerEnvironmentObservationBody.v1"]
+    binding_digest: str
+
+class TraceabilityRunnerReportGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["runner_report"]
+    schema_id: Literal["CanonicalEncodedArtifact.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityRunnerReportBody.v1"]
+    binding_digest: str
+
+class TraceabilityExecutionEvidenceGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["execution_evidence"]
+    schema_id: Literal["NormativeExecutionEvidenceRecord.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["NormativeExecutionEvidenceRecordBody.v1"]
+    binding_digest: str
+
+class TraceabilityExecutionRootGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["execution_root"]
+    schema_id: Literal["TraceabilityExecutionEvidenceRoot.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityExecutionEvidenceRootBody.v1"]
+    binding_digest: str
+
+class TraceabilityReleaseGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["release"]
+    schema_id: Literal["SemanticIngestionTraceabilityRelease.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["SemanticIngestionTraceabilityReleaseBody.v1"]
+    binding_digest: str
+
+class TraceabilityReleaseHistoryGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["release_history"]
+    schema_id: Literal["TraceabilityReleaseHistory.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityReleaseHistoryBody.v1"]
+    binding_digest: str
+
+class TraceabilityPointerHistoryGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["pointer_history"]
+    schema_id: Literal["TraceabilityActiveReleasePointerHistory.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityActiveReleasePointerHistoryBody.v1"]
+    binding_digest: str
+
+class TraceabilityGoldenVectorManifestGenerationMember(TraceabilityGenerationMemberBase):
+    artifact_kind: Literal["golden_vector_manifest"]
+    schema_id: Literal["TraceabilityApprovalGoldenVectorManifest.v1"]
+    schema_version: Literal[1]
+    binding_id: Literal["TraceabilityApprovalGoldenVectorManifestBody.v1"]
+    binding_digest: str
+
+TraceabilityGenerationMember = Annotated[
+    TraceabilityRawDesignGenerationMember
+    | TraceabilityRawRegistryGenerationMember
+    | TraceabilityReportSchemaGenerationMember
+    | TraceabilityRunnerEnvironmentProfileGenerationMember
+    | TraceabilityTestArtifactGenerationMember
+    | TraceabilityResultArtifactGenerationMember
+    | TraceabilityStdoutGenerationMember
+    | TraceabilityStderrGenerationMember
+    | TraceabilityGoldenTypedInputFixtureGenerationMember
+    | TraceabilityBootstrapAnchorGenerationMember
+    | TraceabilityBootstrapAnchorHistoryGenerationMember
+    | TraceabilityRecoveryRootGenerationMember
+    | TraceabilityRecoveryRootHistoryGenerationMember
+    | TraceabilityRecoveryPolicyGenerationMember
+    | TraceabilityRecoveryPolicyHistoryGenerationMember
+    | TraceabilityLifecycleRootGenerationMember
+    | TraceabilityTrustSnapshotGenerationMember
+    | TraceabilityStructuralManifestGenerationMember
+    | TraceabilityCoverageApprovalGenerationMember
+    | TraceabilityCoverageRootGenerationMember
+    | TraceabilityRunnerObservationGenerationMember
+    | TraceabilityRunnerReportGenerationMember
+    | TraceabilityExecutionEvidenceGenerationMember
+    | TraceabilityExecutionRootGenerationMember
+    | TraceabilityReleaseGenerationMember
+    | TraceabilityReleaseHistoryGenerationMember
+    | TraceabilityPointerHistoryGenerationMember
+    | TraceabilityGoldenVectorManifestGenerationMember,
+    Field(discriminator="artifact_kind"),
+]
+
+class TraceabilityActivePointerIntent(BaseModel):
+    pointer_id: str
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_active_release_pointer"
+    ]
+    target_authority_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    release_id: str
+    release_digest: str
+    release_epoch: int = Field(ge=1)
+    release_sequence: int = Field(ge=1)
+    release_history_digest: str
+    predecessor_pointer_history_digest: str | None
+    predecessor_active_pointer_digest: str | None
+    pointer_sequence: int = Field(ge=1)
+    published_at: datetime
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityApprovalGenerationManifestBody(BaseModel):
+    generation_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_approval_generation"]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    design_document_digest: str
+    registry_source_identity: str
+    members: tuple[TraceabilityGenerationMember, ...]
+    active_pointer_intent: TraceabilityActivePointerIntent
+
+class TraceabilityApprovalGenerationManifest(
+    TraceabilityApprovalGenerationManifestBody
+):
+    signer_coordinate: TraceabilitySignerCoordinate
+    signature: bytes
+    generation_manifest_digest: str
+
+class TraceabilityActiveReleasePointerBody(BaseModel):
+    pointer_id: str
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_active_release_pointer"
+    ]
+    target_authority_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    generation_id: str
+    generation_manifest_digest: str
+    release_id: str
+    release_digest: str
+    release_epoch: int = Field(ge=1)
+    release_sequence: int = Field(ge=1)
+    release_history_digest: str
+    predecessor_pointer_history_digest: str | None
+    predecessor_active_pointer_digest: str | None
+    pointer_sequence: int = Field(ge=1)
+    published_at: datetime
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityActiveReleasePointer(TraceabilityActiveReleasePointerBody):
+    signature: bytes
+    active_pointer_digest: str
+
+TraceabilityApprovalUnavailableReason = Literal[
+    "external_root_unavailable", "artifact_bytes_unavailable",
+    "atomic_pointer_torn", "persistence_outcome_indeterminate",
+    "historical_manifest_unavailable",
+]
+TraceabilityApprovalRejectedReason = Literal[
+    "schema_invalid", "canonical_bytes_invalid", "digest_mismatch",
+    "signature_invalid", "lifecycle_ineligible", "generation_incomplete",
+    "generation_dependency_invalid", "cross_generation_member",
+    "active_pointer_monotonicity", "stale_pointer_cas",
+    "historical_manifest_substituted", "historical_recursive_expansion",
+    "historical_predecessor_mismatch", "generation_gc_pinned",
+    "stream_kind_mismatch", "stream_alias_forbidden",
+]
+
+class TraceabilityApprovalUnavailable(BaseModel):
+    kind: Literal["unavailable"]
+    reason: TraceabilityApprovalUnavailableReason
+
+class TraceabilityApprovalRejected(BaseModel):
+    kind: Literal["rejected"]
+    reason: TraceabilityApprovalRejectedReason
 
 class TraceabilityArtifactDagNode(BaseModel):
     node_id: str
     depends_on: tuple[str, ...]
+
+class TraceabilityRequirementBindingSource(BaseModel):
+    requirement_id: str
+    assertion_template_id: str
+    assertion_version: int = Field(ge=1)
+    test_evidence_group: str
+
+class TraceabilityAssertionTemplateSource(BaseModel):
+    template_id: str
+    version: int = Field(ge=1)
+    unit_kinds: tuple[NormativeUnitKind, ...]
+    acceptance: str
+
+class TraceabilityHeadingDefaultSource(BaseModel):
+    heading_path: str
+    requirements: tuple[str, ...]
+
+class TraceabilityStructuralRuleSource(BaseModel):
+    rule_id: str
+    heading_path: str
+    selector_kind: Literal["named_table_rows"]
+    selector_values: tuple[str, ...]
+    effect: Literal["add_matching_ledger_requirement"]
+
+class TraceabilityOverrideSource(BaseModel):
+    invariant_id: str
+    added_sia_requirement_ids: tuple[str, ...]
+    assertion_replacements: tuple[UnitRequirementMapping, ...]
+    reason: str
+    reviewer_evidence_digest: str
+
+class TraceabilityAnchorBindingSource(BaseModel):
+    anchor: str
+    heading_path: str
+
+class TraceabilityRegistryRootRequirementBindings(BaseModel):
+    items: tuple[TraceabilityRequirementBindingSource, ...]
+
+class TraceabilityRegistryRootAssertionTemplates(BaseModel):
+    items: tuple[TraceabilityAssertionTemplateSource, ...]
+
+class TraceabilityRegistryRootHeadingDefaults(BaseModel):
+    items: tuple[TraceabilityHeadingDefaultSource, ...]
+
+class TraceabilityRegistryRootStructuralRules(BaseModel):
+    items: tuple[TraceabilityStructuralRuleSource, ...]
+
+class TraceabilityRegistryRootOverrides(BaseModel):
+    items: tuple[TraceabilityOverrideSource, ...]
+
+class TraceabilityRegistryRootAnchorBindings(BaseModel):
+    items: tuple[TraceabilityAnchorBindingSource, ...]
+
+class TraceabilityRegistryRootArtifactDag(BaseModel):
+    items: tuple[TraceabilityArtifactDagNode, ...]
+
+class TraceabilityRegistryRootTestEvidenceGroups(BaseModel):
+    items: tuple[TraceabilityTestEvidenceGroup, ...]
+
+class TraceabilityReportSchemaDigestCoordinate(BaseModel):
+    schema_id: str
+    schema_version: int = Field(ge=1)
+    schema_digest: str
+
+class TraceabilityReportSchemaRegistryDigestTuple(BaseModel):
+    items: tuple[TraceabilityReportSchemaDigestCoordinate, ...]
+
+class TraceabilityRunnerEnvironmentProfileDigestCoordinate(BaseModel):
+    profile_id: str
+    profile_version: int = Field(ge=1)
+    profile_digest: str
+
+class TraceabilityRunnerEnvironmentProfileRegistryDigestTuple(BaseModel):
+    items: tuple[TraceabilityRunnerEnvironmentProfileDigestCoordinate, ...]
 
 class SemanticIngestionTraceabilityReleaseBody(BaseModel):
     release_id: str
@@ -5199,6 +6634,7 @@ class SemanticIngestionTraceabilityReleaseBody(BaseModel):
     test_evidence_group_registry_digest: str
     report_schema_registry_digest: str
     runner_environment_profile_registry_digest: str
+    golden_vector_manifest_digest: str
     section_default_registry_digest: str
     structural_mapping_rule_registry_digest: str
     override_registry_digest: str
@@ -5207,19 +6643,22 @@ class SemanticIngestionTraceabilityReleaseBody(BaseModel):
     execution_root_digest: str
     bootstrap_anchor_id: str
     bootstrap_anchor_digest: str
+    bootstrap_anchor_history_digest: str
     bootstrap_rotation_sequence: int = Field(ge=1)
     recovery_trust_policy_digest: str
+    recovery_policy_history_digest: str
     recovery_trust_root_digests: tuple[str, ...]
+    recovery_root_history_digest: str
     trust_lifecycle_root_digest: str
     trust_snapshot_digest: str
     epoch: int = Field(ge=1)
     sequence: int = Field(ge=1)
-    state: TraceabilityReleaseState
+    issued_state: Literal["active"]
     predecessor_release_id: str | None
     supersedes_release_id: str | None
-    issuer_id: str
     issued_at: datetime
     expires_at: datetime | None
+    signer_coordinate: TraceabilitySignerCoordinate
 
 class SemanticIngestionTraceabilityRelease(
     SemanticIngestionTraceabilityReleaseBody
@@ -5227,10 +6666,335 @@ class SemanticIngestionTraceabilityRelease(
     signature: bytes
     release_digest: str
 
+class TraceabilityReleaseHistoryEntryBody(BaseModel):
+    entry_id: str
+    sequence: int = Field(ge=1)
+    predecessor_entry_digest: str | None
+    release_id: str
+    release_digest: str
+    release_epoch: int = Field(ge=1)
+    release_sequence: int = Field(ge=1)
+    prior_active_release_digest: str | None
+    prior_release_terminal_state: Literal[
+        "superseded", "revoked", "compromised",
+    ] | None
+    effective_at: datetime
+
+class TraceabilityReleaseHistoryEntry(TraceabilityReleaseHistoryEntryBody):
+    entry_digest: str
+
+class TraceabilityReleaseHistoryBody(BaseModel):
+    history_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_release_history"]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    entries: tuple[TraceabilityReleaseHistoryEntry, ...]
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityReleaseHistory(TraceabilityReleaseHistoryBody):
+    signature: bytes
+    release_history_digest: str
+
+class TraceabilityActiveReleasePointerHistoryBody(BaseModel):
+    history_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_pointer_history"]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    pointers: tuple[TraceabilityActiveReleasePointer, ...]
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityActiveReleasePointerHistory(
+    TraceabilityActiveReleasePointerHistoryBody
+):
+    signature: bytes
+    pointer_history_digest: str
+
+class TraceabilityCurrentPointerIndexBody(BaseModel):
+    schema_version: Literal[1]
+    index_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    index_generation: int = Field(ge=1)
+    predecessor_index_digest: str | None
+    store_fence_token: str
+    pointer_id: str
+    active_pointer_digest: str
+    pointer_sequence: int = Field(ge=1)
+    pointer_history_digest: str
+
+class TraceabilityCurrentPointerIndex(
+    TraceabilityCurrentPointerIndexBody
+):
+    current_pointer_index_digest: str
+
+class TraceabilityCurrentPointerFenceBody(BaseModel):
+    schema_version: Literal[1]
+    fence_id: str
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    index_generation: int = Field(ge=1)
+    current_pointer_index_digest: str
+    predecessor_fence_digest: str | None
+    store_fence_token: str
+
+class TraceabilityCurrentPointerFence(
+    TraceabilityCurrentPointerFenceBody
+):
+    current_pointer_fence_digest: str
+
+class TraceabilityRetentionWatermarkBody(BaseModel):
+    watermark_id: str
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_retention_watermark"
+    ]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    pointer_history_digest: str
+    minimum_retained_pointer_sequence: int = Field(ge=1)
+    minimum_retained_release_history_sequence: int = Field(ge=1)
+    minimum_retained_lifecycle_sequence: int = Field(ge=1)
+    minimum_retained_trust_history_sequences: tuple[tuple[str, int], ...]
+    predecessor_watermark_digest: str | None
+    expected_predecessor_watermark_digest: str | None
+    expected_current_pointer_history_digest: str
+    time_witness_digest: str
+    issued_at: datetime
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityRetentionWatermark(TraceabilityRetentionWatermarkBody):
+    signature: bytes
+    retention_watermark_digest: str
+
+class TraceabilityReaderAuthorizationRequestBody(BaseModel):
+    request_id: str
+    reader_principal_id: str
+    reader_id: str
+    requested_purpose: Literal["traceability_generation_read"]
+    nonce: str
+    expected_active_pointer_digest: str
+    expected_pointer_sequence: int = Field(ge=1)
+    expected_pointer_history_digest: str
+    requested_generation_id: str
+    requested_generation_manifest_digest: str
+    requested_lease_duration_microseconds: int = Field(ge=1)
+    time_witness_digest: str
+
+class TraceabilityReaderAuthorizationRequest(
+    TraceabilityReaderAuthorizationRequestBody
+):
+    reader_authorization_request_digest: str
+
+class TraceabilityMonotonicTimeWitnessBody(BaseModel):
+    witness_id: str
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_monotonic_time_witness"
+    ]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    clock_authority_id: str
+    monotonic_sequence: int = Field(ge=1)
+    observed_utc: datetime
+    predecessor_time_witness_digest: str | None
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityMonotonicTimeWitness(
+    TraceabilityMonotonicTimeWitnessBody
+):
+    signature: bytes
+    time_witness_digest: str
+
+class TraceabilityGenerationReaderLeaseBody(BaseModel):
+    lease_id: str
+    issuance_purpose: Literal["semantic_ingestion_traceability_reader_lease"]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    reader_id: str
+    nonce: str
+    reader_authorization_request_digest: str
+    generation_id: str
+    generation_manifest_digest: str
+    active_pointer_digest: str
+    pointer_sequence: int = Field(ge=1)
+    pointer_history_digest: str
+    time_witness_digest: str
+    issued_at: datetime
+    expires_at: datetime
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityGenerationReaderLease(TraceabilityGenerationReaderLeaseBody):
+    signature: bytes
+    reader_lease_digest: str
+
+TraceabilityGoldenVectorVerdict = Literal[
+    "accept", "reject", "unavailable",
+]
+TraceabilityGoldenVectorArtifactKind = (
+    TraceabilityGenerationArtifactKind
+    | Literal[
+        "trust_lifecycle_record", "active_release_pointer",
+        "current_pointer_index", "current_pointer_fence",
+        "retention_watermark",
+        "reader_authorization_request", "reader_lease",
+        "monotonic_time_witness", "approval_generation_manifest",
+    ]
+)
+
+class TraceabilityGoldenTypedInputFixtureBody(BaseModel):
+    fixture_id: str
+    owner: Literal["acceptance_independent_vector_author"]
+    target_artifact_kind: TraceabilityGoldenVectorArtifactKind
+    target_schema_id: str
+    target_schema_version: int = Field(ge=1)
+    target_body_binding: CanonicalTypedValueProfileBinding
+    typed_input_value: TraceabilityCanonicalContentBoundary
+
+class TraceabilityGoldenTypedInputFixture(
+    TraceabilityGoldenTypedInputFixtureBody
+):
+    typed_input_fixture_digest: str
+
+class TraceabilityApprovalGoldenVector(BaseModel):
+    vector_id: str
+    artifact_kind: TraceabilityGoldenVectorArtifactKind
+    schema_id: str
+    schema_version: int = Field(ge=1)
+    body_binding: CanonicalTypedValueProfileBinding
+    typed_input_fixture_digest: str
+    expected_body_bytes: bytes
+    expected_body_digest: str
+    signer_coordinates: tuple[TraceabilitySignerCoordinate, ...]
+    expected_signature_preimage_bytes: tuple[bytes, ...]
+    expected_signatures: tuple[bytes, ...]
+    expected_envelope_bytes: bytes
+    expected_artifact_digest: str
+    expected_artifact_coordinate: str | None
+    expected_verdict: TraceabilityGoldenVectorVerdict
+    expected_reason: (
+        TraceabilityApprovalRejectedReason
+        | TraceabilityApprovalUnavailableReason
+        | None
+    )
+
+class TraceabilityApprovalGoldenVectorManifestBody(BaseModel):
+    manifest_id: str
+    manifest_version: Literal[1]
+    source_path: Literal[
+        "docs/design/semantic_ingestion/traceability_golden_vectors/v1.json"
+    ]
+    owner: Literal["acceptance_independent_vector_author"]
+    authority_use: Literal["verification_fixture_not_runtime_authority"]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    design_document_digest: str
+    registry_source_identity: str
+    fixtures: tuple[TraceabilityGoldenTypedInputFixture, ...]
+    vectors: tuple[TraceabilityApprovalGoldenVector, ...]
+
+class TraceabilityApprovalGoldenVectorManifest(
+    TraceabilityApprovalGoldenVectorManifestBody
+):
+    golden_vector_manifest_digest: str
+
+class TraceabilityGenerationVerificationPackageBody(BaseModel):
+    package_id: str
+    package_version: Literal[1]
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_generation_verification"
+    ]
+    authority_use: Literal[
+        "post_activation_verification_only_not_activation_authority"
+    ]
+    canonical_profile_binding: CanonicalTypedValueProfileBinding
+    design_document_digest: str
+    registry_source_identity: str
+    release_id: str
+    release_digest: str
+    generation_id: str
+    generation_manifest_digest: str
+    active_pointer_digest: str
+    pinned_golden_vector_manifest_digest: str
+    fixtures: tuple[TraceabilityGoldenTypedInputFixture, ...]
+    vectors: tuple[TraceabilityApprovalGoldenVector, ...]
+    created_at: datetime
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityGenerationVerificationPackageSignaturePreimage(BaseModel):
+    issuance_purpose: Literal[
+        "semantic_ingestion_traceability_generation_verification"
+    ]
+    body_binding: CanonicalTypedValueProfileBinding
+    generation_verification_package_digest: str
+    signer_coordinate: TraceabilitySignerCoordinate
+
+class TraceabilityGenerationVerificationPackage(
+    TraceabilityGenerationVerificationPackageBody
+):
+    signature: bytes
+    generation_verification_package_digest: str
+
+TraceabilityGoldenSourceMutationKind = Literal[
+    "none", "delete_field", "duplicate_field", "reorder_tuple",
+    "substitute_reference", "replace_bytes", "restore_prior_index",
+    "idempotent_lost_ack_replay",
+    "recursive_historical_member_traversal", "collect_pinned_generation",
+    "alias_forbidden_stream", "cross_stream_substitution",
+]
+
+class TraceabilityGoldenVectorSourceFixture(BaseModel):
+    fixture_id: str
+    target_artifact_kind: TraceabilityGoldenVectorArtifactKind
+    inner_body_schema_id: str
+    inner_body_schema_version: Literal[1]
+    inner_body_binding_id: str
+    inner_body_binding_digest: str
+    outer_envelope_schema_id: Literal["CanonicalEncodedArtifact.v1"] | None
+    outer_envelope_schema_version: Literal[1] | None
+    outer_envelope_binding_id: Literal["CanonicalEncodedArtifact.v1"] | None
+    outer_envelope_binding_digest: str | None
+    typed_input_bytes_base64: str
+    expected_body_bytes_base64: str
+    expected_body_digest: str
+    signer_coordinate_references: tuple[str, ...]
+    expected_signature_preimage_bytes_base64: tuple[str, ...]
+    expected_signatures_base64: tuple[str, ...]
+    expected_envelope_bytes_base64: str
+    expected_artifact_digest: str
+    expected_artifact_coordinate: str | None
+    depends_on_coordinates: tuple[str, ...]
+    exact_reference_coordinates: tuple[str, ...]
+    expected_total_manifest_loads: int = Field(ge=0)
+    expected_historical_manifest_loads: int = Field(ge=0)
+    expected_ordinary_historical_member_traversals: Literal[0]
+
+class TraceabilityGoldenVectorSourceCase(BaseModel):
+    vector_id: str
+    fixture_id: str
+    mutation_kind: TraceabilityGoldenSourceMutationKind
+    mutation_target: str | None
+    replacement_bytes_base64: str | None
+    replacement_reference: str | None
+    expected_verdict: TraceabilityGoldenVectorVerdict
+    expected_reason: (
+        TraceabilityApprovalRejectedReason
+        | TraceabilityApprovalUnavailableReason
+        | None
+    )
+
+class TraceabilityGoldenVectorSourcePackage(BaseModel):
+    format: Literal[
+        "memorii-sia-traceability-golden-vector-source-v1"
+    ]
+    manifest_id: str
+    manifest_version: Literal[1]
+    owner: Literal["acceptance_independent_vector_author"]
+    source_path: Literal[
+        "docs/design/semantic_ingestion/traceability_golden_vectors/v1.json"
+    ]
+    fixtures: tuple[TraceabilityGoldenVectorSourceFixture, ...]
+    vectors: tuple[TraceabilityGoldenVectorSourceCase, ...]
+
 class NormativeTraceabilityStructuralManifestBody(BaseModel):
     grammar_revision: str
     design_document_digest: str
     registry_source_identity: str
+    derivation_ledger_schema_id: Literal[
+        "TraceabilityStructuralManifestDerivationLedger.v1"
+    ]
+    derivation_ledger_schema_version: Literal[1]
+    derivation_ledger_digest: str
+    derivation_ledger_coordinate: str
     artifact_dag: tuple[TraceabilityArtifactDagNode, ...]
     artifact_dag_digest: str
     canonical_profile_binding: CanonicalTypedValueProfileBinding
@@ -5280,6 +7044,34 @@ class TraceabilityExecutionEvidenceRoot(
     execution_root_digest: str
 ```
 
+The release-pinned `TraceabilityApprovalGoldenVectorManifest` excludes every
+fixture/vector whose final bytes depend on the generation manifest, active
+pointer, current index/fence, or pointer history being verified. Those cases
+are owned by acceptance and published only after the corresponding generation
+has activated in a separately content-addressed
+`TraceabilityGenerationVerificationPackage`. Its body digest is
+`SHA-256("memorii:sia-traceability-generation-verification:v1\\0" ||
+CanonicalTypedValueEncode(body,
+"TraceabilityGenerationVerificationPackageBody.v1"))`; its signature covers
+the exact registered
+`TraceabilityGenerationVerificationPackageSignaturePreimage.v1` under the
+purpose-qualified release authority. The serialized artifact uses the generic
+`CanonicalEncodedArtifact.v1` outer envelope.
+
+The package is stored in the acceptance-owned verification repository by its
+outer artifact digest only after pointer activation. It is not a generation
+member, release field, pointer field, registry root, trust input, activation
+prerequisite, retention pin, or fallback authority. Readers may discover it
+only through the post-activation verification index keyed by the already
+verified `(release_digest, generation_manifest_digest, active_pointer_digest)`
+tuple. Missing, stale, or invalid package bytes can fail verification reporting
+but cannot revoke, authorize, activate, select, or replace a generation. The
+pinned golden manifest retains all acyclic trust, structure, coverage,
+execution, raw-member, and stream cases. The post-activation package contains
+only the excluded generation/pointer/index/fence/history fixtures and cases,
+plus the pinned golden-manifest digest needed to prove the split; no fixture or
+vector appears in both packages.
+
 Bootstrap anchors and recovery roots are canonical content-addressed artifacts
 authenticated through their separately provisioned channels; equal IDs or
 coordinates with unequal canonical bytes/digests are corruption. A recovery
@@ -5302,7 +7094,16 @@ respectively:
    CanonicalTypedValueEncode(recovery_policy_body,
    "TraceabilityRecoveryTrustPolicyBody.v1"))`.
 
-The recovery-policy signature is over `recovery_policy_digest`.
+The recovery-policy signature input is exactly the raw
+`CanonicalTypedValueEncode(preimage,
+"TraceabilityRecoveryPolicySignaturePreimage.v1")` bytes. The preimage binds
+purpose `semantic_ingestion_traceability_recovery_policy`, complete body
+binding, recomputed `recovery_policy_digest`, and the exact
+`TraceabilityRecoveryPolicySignerProvenance` from the body. A sequence-one
+policy uses its independently-provisioned-bootstrap-anchor variant; a later
+policy uses `TraceabilitySignerCoordinate` rooted in the immediately prior
+verified lifecycle state. The selected variant binds all issuer/key/profile
+fields and is part of the preimage; no signer metadata exists outside it.
 Independently provisioned anchor/root authentication binds their exact
 canonical bytes, purpose, target, eligibility profile, key/certificate and
 signature/canonical profiles, effective/recorded times, sequence, predecessor,
@@ -5315,18 +7116,51 @@ For each `TraceabilityTrustLifecycleRecord`, `record_digest` is
 `SHA-256("memorii:sia-traceability-trust-lifecycle-record:v1\\0" ||
 CanonicalTypedValueEncode(record_body,
 "TraceabilityTrustLifecycleRecordBody.v1"))`. The body contains every
-non-signature field, including the ordered signer IDs, eligibility snapshots,
+non-signature field, including the ordered signer IDs, prior eligibility references,
 key/certificate digests, and signature profiles; it contains no signature
 bytes or digest field. The `signatures` tuple has exactly the same cardinality
 and index order as `signer_bindings`, and each signer signs `record_digest`
-under its bound profile. Signer IDs are unique and canonically ordered,
+under its bound profile. More exactly, each signature input is the raw
+`CanonicalTypedValueEncode(preimage,
+"TraceabilityTrustLifecycleRecordSignaturePreimage.v1")` bytes; the preimage
+contains purpose `semantic_ingestion_traceability_lifecycle_record`, the body
+binding, recomputed record digest, and that exact signer binding. It never signs
+an ASCII/hex digest spelling. A non-genesis signer binding references only the
+immediately prior independently verified lifecycle-root/terminal-record
+digests and eligibility interval; it cannot reference the record being signed
+or the root that will contain it. The sequence-one genesis binding instead has
+`source_kind="independently_provisioned_genesis"`, prior sequence zero and null
+prior root/record digests, and binds the independently authenticated bootstrap
+anchor digest and provisioned-channel ID. Any other genesis shape rejects.
+Signer IDs are unique and canonically ordered,
 ordinary actions require exactly one signer/signature, and recovery requires
 the policy's exact threshold. The
 lifecycle-root digest is
 `SHA-256("memorii:sia-traceability-trust-lifecycle-root:v1\\0" ||
 CanonicalTypedValueEncode(root_body,
 "TraceabilityTrustLifecycleRootBody.v1"))`, where `root_body` contains the
-authority ID and complete record tuple and no digest field. Records are
+authority ID, complete typed-value binding, and complete record tuple and no
+digest field. The root envelope's `signer_coordinates` and each
+`TraceabilityTrustLifecycleRootSignaturePreimage.signer_coordinate` use only
+`TraceabilityLifecycleRootSignerProvenance`. For the sequence-one root, the
+tuple has exactly one `independently_provisioned_bootstrap_anchor` member whose
+purpose is `semantic_ingestion_traceability_lifecycle_root`; it names the exact
+independently authenticated bootstrap-anchor ID/digest, authority ID,
+provisioned channel, issuer/key/profile, and eligibility interval. It contains
+no lifecycle-root or lifecycle-record digest. The verifier resolves that anchor
+outside candidate/release bytes and requires equality to the root body authority
+and the complete member before verifying the signature. For every sequence-two
+or later root, every member is the existing
+`prior_verified_lifecycle_root` `TraceabilitySignerCoordinate`, whose exact
+prior root/terminal record is replayed under the final-action rule. The
+verified history entry must belong to the root-body authority, and the
+coordinate's issuer, key/certificate digest, signature profile, purpose, and
+both eligibility endpoints must equal one final-action-authorized signer
+coordinate from that entry. Root issuance must fall within that exact
+eligibility interval. A
+sequence-one successor coordinate, sequence-two genesis member, mixed member,
+wrong purpose, mismatched envelope/preimage member, or bootstrap-anchor
+self-reference rejects before signature verification. Records are
 append-only in strict sequence; sequence
 one has no predecessor and every later record names the immediately preceding
 record digest. `recorded_at` strictly increases, `effective_at` is not earlier
@@ -5336,16 +7170,26 @@ recovery name both old and new ID/digest; revoke and compromise forbid a
 replacement; activation targets independently provisioned bytes.
 
 Ordinary activation/rotation/revocation/compromise records require a signer
-eligible under the currently active bootstrap anchor. Recovery requires the
+eligible in that prior verified state. Recovery requires the
 exact active recovery policy, its threshold of distinct uncompromised recovery
 roots, and a new higher-sequence bootstrap anchor; a recovery root may not sign
 its own activation, replacement, or policy. A compromised or revoked recovery
+root is eligible to authenticate its own revoke/compromise transition only
+under the pre-transition reference; it is ineligible for every artifact or
+later lifecycle record issued at or after that record's effective time.
+A compromised or revoked recovery
 root is ineligible immediately at the lifecycle record's effective time, and
 if the threshold is no longer met recovery fails closed. Same-coordinate
 substitution, a missing/duplicate sequence, two records with the same
 predecessor, backdated effective or recorded time, skipped predecessor,
 ambiguous action order, stale-root replay, and any sequence/pointer rollback
 reject the whole trust view.
+
+For every signed traceability artifact, the artifact body's issuance purpose,
+signature-preimage purpose, signer-coordinate purpose, and purpose selected by
+the lifecycle/release trust policy must be byte-equal. Cross-purpose aliases,
+subsets, inherited defaults, or a coordinate whose purpose differs at any one
+layer reject before signature verification.
 
 Historical verification replays the one lifecycle log from genesis to the
 recorded-time cutoff, then evaluates the artifact's issuance time against the
@@ -5451,6 +7295,3244 @@ make independent structural manifests differ; each evidence mutation must be rej
 evidence verifier. Tests explicitly prove that two matching parser outputs
 paired with missing, forged, stale, failed, or unexecuted evidence cannot
 approve. [SIA-I314]
+
+The R03/R13 acceptance suite additionally constructs a complete byte-backed
+generation from independently authored fixture bytes and verifies it through
+the public approval gate without importing the generator or acceptance writer.
+It mutates every trust-snapshot field, qualified issuer/key/purpose/interval,
+lifecycle-root envelope issuer/profile/signature, record ordering and
+predecessor, release-to-snapshot pairing, pointer body/signature/predecessor/
+sequence/CAS expectation, generation member coordinate/digest/schema/binding/
+dependency/order, and pointer-intent field. It deletes each required member;
+substitutes equal coordinates with unequal bytes; mixes one previous-generation
+member; adds an unlisted member; swaps every dependency; changes an outer
+canonical typed binding while retaining body-looking JSON; and proves that each
+case returns `TraceabilityApprovalRejected` or, when bytes/atomic persistence
+are absent or torn, `TraceabilityApprovalUnavailable` before any approval
+attestation is emitted. Tests include publication failpoints before each fsync,
+between immutable-generation exposure and pointer replacement, and after
+replacement; process restart from each point; two writer processes racing the
+same predecessor CAS; readers racing publication; duplicate idempotent retry;
+mixed-version reader/writer attempts; release rollback/recovery; retention
+watermark garbage collection; and historical lifecycle verification after
+rotation, revocation, compromise, and recovery. The observable pass signal is
+one exact approved generation or one typed non-approval result, never a
+partial artifact set, a fallback prior pointer chosen after corruption, or a
+production import of acceptance types.
+
+An acceptance-owned, independently authored
+`TraceabilityApprovalGoldenVectorManifest` supplies exact typed body bytes,
+body digests, signature-preimage bytes, signatures, envelope bytes, artifact
+coordinates, and expected verdicts for every new body/envelope declared in
+Sections 3.23.4.2-3.23.4.4. Neither generator nor verifier may generate its
+expected values. Accepted vectors cover genesis and successor histories,
+ordinary rotation, revoke, compromise, threshold recovery, R1-to-R2
+supersession, same-candidate lost-ack retry, reader pin, watermark advance, and
+cycle-free manifest/pointer construction. For every field and every signature
+preimage, tamper vectors delete, null, duplicate, reorder, substitute, change
+type/binding/domain/purpose/signer coordinate, alter one byte, or replay across
+artifact kinds; member vectors exercise every kind, exact coordinate grammar,
+cardinality, dependency, reuse, raw design/registry bytes, and inline pointer
+intent. Its sole source is
+`docs/design/semantic_ingestion/traceability_golden_vectors/v1.json`; version is
+exactly one, vectors are strictly Unicode-scalar ordered by unique `vector_id`,
+and its canonical typed body uses
+`TraceabilityApprovalGoldenVectorManifestBody.v1`. Its digest is
+`SHA-256("memorii:sia-traceability-approval-golden-vectors:v1\\0" ||
+CanonicalTypedValueEncode(body,
+"TraceabilityApprovalGoldenVectorManifestBody.v1"))`. The release and
+generation member both pin that digest and exact body binding. It is authored
+outside both codecs, is not signer eligibility or runtime authority, and cannot
+authorize an artifact or substitute for independently provisioned trust.
+Every vector contains exact body, preimage, signature, envelope and coordinate
+bytes plus one `accept|reject|unavailable` verdict and exact reason; null reason
+is permitted only for `accept`. The two independent implementations must
+reproduce every accepted byte and exact rejection/unavailable code. [SIA-I319]
+
+The file at that source path is the canonical JSON encoding of
+`TraceabilityGoldenVectorSourcePackage`, not a runtime registry or authority.
+Its top-level keys and every nested object are closed to the schema above;
+fixtures and vectors are strictly Unicode-scalar ordered by unique
+`fixture_id` and `vector_id`, every vector names exactly one fixture, and null
+reason is permitted only for `accept`. There is no generic `source_value` or
+free-form scenario protocol. Every fixture binds the exact inner body
+schema/version/binding and, for typed artifacts, the independently explicit
+`CanonicalEncodedArtifact.v1` outer schema/version/binding. Raw artifacts set
+all four outer-envelope fields to null and have no envelope bytes; typed
+artifacts set none of those fields to null. Every fixture also records the
+distinct Unicode-scalar-sorted direct `depends_on_coordinates` DAG edge set.
+`exact_reference_coordinates` is the distinct Unicode-scalar-sorted complete
+reference set visible in body, preimage, signature, or envelope bytes; it may
+be a strict superset of direct dependencies and must never be used to infer an
+edge. Every fixture binds independently authored typed-input, body,
+signature-preimage, signature, envelope and coordinate bytes, artifact
+digests, and total/historical/traversal load counts. Every case names one
+closed mutation kind plus exact byte or reference
+replacement where applicable and one exact verdict/reason. Base64 fields decode
+canonically or the source package rejects.
+
+The acceptance vector author, using an implementation independent of both
+production and the verifier under test, elaborates each source fixture into
+the byte-equal fields of `TraceabilityApprovalGoldenVectorManifest`; no value
+is left for the implementation under test to synthesize. An accepted fixture
+must reproduce every recorded byte/digest/coordinate/reference and load count
+before its mutation cases run. Implementations may consume the source package
+only as test input and must never infer an expected value or outcome from their
+own encoder or verifier.
+
+The v1 source package includes the finite G1/G2/G3 successor cases specified in
+Section 3.23.4.4 and explicit stdout/stderr cases: accepted domain-separated
+empty output for each stream, rejected stdout-as-stderr substitution, and
+rejected cross-report aliasing when any owning group forbids sharing. A source
+package with an unknown field, duplicate or unsorted ID, dangling fixture,
+unrecognized reason, source-path mismatch, or unequal bytes at the recorded
+content identity is invalid before vector execution. Its exact canonical bytes
+are content addressed by raw
+`SHA-256("memorii:sia-traceability-golden-vector-source:v1\\0" ||
+source_bytes)`. That source identity is recorded in the linked design WorkPlan
+when the design baseline is frozen; it is verification provenance only and is
+not signer eligibility, release authority, or a substitute for the typed
+golden-vector-manifest digest pinned by a release.
+
+**C2 source completeness inventory.** The exact source fixture inventory has
+57 Unicode-scalar-sorted IDs: `fixture-01-bootstrap_anchor`,
+`fixture-02-bootstrap_anchor_history`, `fixture-03-recovery_root`,
+`fixture-04-recovery_root_history`, `fixture-05-recovery_policy`,
+`fixture-06-recovery_policy_history`, `fixture-07-trust_lifecycle_record`,
+`fixture-08-trust_lifecycle_root`, `fixture-09-trust_snapshot`,
+`fixture-10-structural_manifest`, `fixture-11-coverage_approval`,
+`fixture-12-coverage_root`, `fixture-13-runner_environment_observation`,
+`fixture-14-runner_report`, `fixture-15-stdout_artifact`,
+`fixture-16-stderr_artifact`, `fixture-17-execution_evidence`,
+`fixture-18-execution_root`, `fixture-19-release`,
+`fixture-20-release_history`, `fixture-21-active_release_pointer`,
+`fixture-22-current_pointer_index`, `fixture-23-current_pointer_fence`,
+`fixture-24-reader_lease`, `fixture-25-retention_watermark`,
+`fixture-26-pointer_history`, `fixture-27-reader_authorization_request`,
+`fixture-28-monotonic_time_witness`, `fixture-29-design_document`,
+`fixture-30-registry_source`, `fixture-31-report_schema`,
+`fixture-32-runner_environment_profile`, `fixture-33-test_artifact`,
+`fixture-34-result_artifact`, `fixture-35-golden_typed_input_fixture`,
+`fixture-36-golden_vector_manifest`,
+`fixture-37-approval_generation_manifest`,
+`fixture-38-bootstrap_anchor_2`,
+`fixture-39-bootstrap_anchor_history_2`,
+`fixture-40-recovery_root_2`,
+`fixture-41-recovery_policy_history_1`,
+`fixture-42-trust_lifecycle_record_2`,
+`fixture-43-trust_lifecycle_record_3`,
+`fixture-44-trust_lifecycle_record_4`,
+`fixture-45-trust_lifecycle_root_2`,
+`fixture-46-trust_lifecycle_root_3`,
+`fixture-47-trust_lifecycle_root_4`,
+`fixture-48-trust_lifecycle_root_5`,
+`fixture-49-approval_generation_manifest_G2`,
+`fixture-50-approval_generation_manifest_G3`,
+`fixture-51-active_release_pointer_G2`,
+`fixture-52-active_release_pointer_G3`,
+`fixture-53-current_pointer_index_G2`,
+`fixture-54-current_pointer_index_G3`,
+`fixture-55-current_pointer_fence_G2`,
+`fixture-56-current_pointer_fence_G3`, and
+`fixture-57-pointer_history_G1`. Each repeated kind is a distinct typed
+body, digest, envelope, coordinate, and generation member. Fixtures 01/38 are
+bootstrap anchors 1/2; 02/39 are bootstrap histories 1/2; 03/40 are recovery
+roots 1/2; 06/41 are policy histories 0/1; 07 and 42-44 are lifecycle records
+1-4; 08 and 45-48 are lifecycle roots 1-5. Fixtures 37/49/50 are generation
+manifests G1/G2/G3; 21/51/52 are their pointers; 22/53/54 are their indexes;
+23/55/56 are their fences; 57 is pointer history through G1 and 26 is pointer
+history through G2. G1, G2, and G3 are complete
+recorded states constructed from these fixture bytes. `active_pointer_intent`
+has no standalone fixture because it has no independent envelope, digest, or
+coordinate; its byte-level coverage is an explicitly named inline-field case
+of fixture 37. The 25 closed mutation cases remain unchanged and reference
+these fixtures as required.
+
+**Normative finite fixture recipe.** The sole design-authority input for C2
+materialization is
+`docs/design/semantic_ingestion/traceability_golden_vectors/recipe-v1.json`,
+format `memorii-sia-c2-normative-fixture-recipe-v1`. It is canonical compact
+ASCII JSON plus one LF and is distinct from the derived `v1.json` package.
+Its v2 closed roots are `authority_use`, `checked_fixture_outputs`,
+`fixed_signers`, `format`, `primitive_authority`, `primitive_fixtures`,
+`nested_substitution_cases`, and `vector_cases`. It
+contains exactly
+57 sorted fixture recipes, the four fixed RFC 8032 test signer coordinates,
+25 sorted top-level vector cases, and 29 sorted nested-substitution cases.
+
+Each fixture recipe explicitly carries the complete tagged CTV body value (or
+the exact raw-byte value), exact inner and generic outer binding coordinates,
+body/artifact/envelope digests and bytes, all signature-preimage and signature
+bytes, signer coordinates, direct dependencies, complete reference closure,
+artifact coordinate, and total/historical/ordinary-traversal load counts.
+These values are nonoperational design fixtures and may not be replaced by a
+factory default, field-name-derived value, random value, runtime observation,
+or production object. G1/G2/G3 membership, sequence, pointer/history/index/
+fence relationships, and `1/0`, `2/1`, `3/2` load counts are read only from
+the explicit recipes. Runner environment/report and test/result/stdout/stderr
+bytes are likewise exact recipe values, never captured from the validating
+machine.
+
+Each nested-substitution case names one fixture, exact JSON path, mutation
+kind, replacement bytes/reference/value, earliest validation boundary, and
+exact reason. An elaborator or verifier must dynamically apply all 25 top-level
+cases and all 29 nested cases; static comparison with their expected labels is
+not execution evidence. The recipe's raw SHA-256 is frozen in the linked design
+WorkPlan. Elaboration reads only this recipe, the frozen design, and the raw
+registry source; `v1.json` is output and cannot be an input oracle. A change to
+any recipe byte requires a new frozen recipe identity and fresh review.
+
+**Historical current-pin C2 authority correction (2026-07-30).** The preceding
+v1/eight-root contract is retained solely as migration provenance. It consumed the v2 CTV profile,
+the 56-root inventory, and complete 240-row v2 enum registry in Section
+3.23.4.2.1. The later paragraphs labelled primitive recipe authority v2
+through v9, and every checked-in recipe using
+`memorii-sia-c2-oracle-free-elaboration-input-v[2-9]`, are historical
+provenance only. They must not be parsed, validated, repinned, or used as an
+input oracle for a current C2 result. In particular, it cannot be used to
+derive, validate, or pin fixture 35 after the scenario-first correction below.
+
+The eight roots are closed. `authority_use` is exactly
+`nonoperational_design_fixture_authority_only`; `format` is exactly
+`memorii-sia-c2-normative-fixture-recipe-v1`. `fixed_signers` carries only the
+four test signer seeds, public keys, coordinates, reference messages,
+reference signatures, and purpose sets. `primitive_authority` carries only
+finite non-operational scalars and the G1/G2/G3 transition table.
+`checked_fixture_outputs` is derived comparison output, never elaborator
+input. Profile and binding digests, CTV/body/preimage/signature/envelope bytes,
+digests, coordinates, all roots, releases, pointer/history values, leaf
+denominators, and expected verdicts are derived exactly once from v2 plus the
+named primitive values; none is primitive authority.
+
+`primitive_authority.primitive_body_inputs` is a closed 49-entry map keyed by
+fixture ID. Its value is the existing schema ID/version and only explicit
+non-derived scalar, collection, and fixture-reference fields. A closed,
+per-schema/per-field primitive-versus-derived path ledger in the recipe
+classifies every CTV leaf exactly once. It is the sole classifier: field-name
+tokens are not a derivation rule. In particular, the recovery threshold and
+ordered signer eligibility, purpose, key, profile, and channel facts remain
+primitive even where a field name includes a historical `signature` or
+`profile` token. Only the ledger-designated v2 profile/binding, body digest,
+preimage, signature bytes, envelope, coordinate, root, and dependent identity
+leaves are derived. An unclassified leaf or an ambiguous non-CTV authority
+object rejects migration. The elaborator reconstructs each excluded field
+solely from the v2 profile, current binding table, and already materialized
+dependency identities.
+
+**Scenario-first C2 authority correction (2026-07-30, superseding the
+preceding recipe-only correction).** The sole current semantic authority for
+non-operational C2 extraction fixtures is
+`docs/design/semantic_ingestion/traceability_golden_vectors/scenario-first-v1.json`,
+under the closed contract in
+`docs/design/semantic_ingestion/scenario_first_fixture_authority.md`.
+`recipe-v1.json`, every legacy v1 typed-input occurrence, and fixture 35's
+legacy CTV-v1 content are historical provenance only; a current C2 boundary
+must reject them before decoding. The scenario authority is not operational
+trust and can neither activate a release nor satisfy
+`SIA-ED-TRACEABILITY-001`.
+
+Scenario entities, claims, relationships, polarity, modality, attribution,
+half-open UTC temporal bounds, scope, provenance, and stable IDs are primitive
+semantic cause. A closed renderer maps only admitted turns to source bytes and
+an exact source/span map. The normal provider ingress/composition path receives
+those bytes and no scenario truth; its run, terminal status, normalized
+proposal, spans, and persisted outcome are derived evidence. Only an isolated
+comparator may read hidden scenario truth. It must reject missing or extra
+claims, role/object-literal substitution, duplicate cardinality, different
+predicate/polarity/modality/attribution, timestamps, scope, source
+type/identity/quote/byte offsets, terminal status, and any unexpected effect.
+Two equal-evidence duplicates are cardinality errors, not ambiguity; ambiguity
+requires distinct values for the same declared single-valued semantic key.
+
+Fixture 35 is a current CTV-v2 `TraceabilityGoldenTypedInputFixtureBody.v1`
+whose canonical body contains the scenario ID, pinned scenario/renderer/checker
+identities, rendered interaction bytes, source/span-map digest, extractor and
+composition identities, run artifact coordinate, normalized extraction digest,
+and comparator-result digest. Its dependencies are the scenario artifact,
+renderer/checker artifacts, run artifact, and structural-source identities; it
+contains no v1 media type or primitive expected output. The structural manifest,
+coverage approval/root, runner environment/report, test/result/stdout/stderr,
+execution evidence/root, and G1/G2/G3 manifests and pointer histories derive
+topologically from those actual run bytes plus the fixed non-operational
+administrative state. Generated values are not recipe inputs. Implementations
+must provide two independently authored full elaborators which agree on all
+member bytes and CTV-v2 envelopes, not merely manifest hashes.
+
+The generator is fail-closed with declared limits for scenario/turn count,
+source/member bytes, total spool bytes, wall time, and retry count. It records
+timeout/failure/retry/rollback evidence, never truncates, and leaves no active
+operational pointer. CI pins the scenario, renderer, checker, design, registry,
+and CTV profile identities; a scenario mutation, v1 input, hidden-oracle
+leakage, or one-field run/normalization mutation fails. ID permutation, turn
+permutation, unrelated no-evidence insertion, safe chunking, and arbitrary
+names are mandatory metamorphic cases.
+
+Derivation validates the raw scenario, design, registry, renderer, checker,
+and run pins; then derives fixture 35, structural, coverage, execution, and
+G1/G2/G3 members in dependency order. It evaluates a mutation by rebuilding
+the affected closure. The historical 57-fixture denominator is not a
+scenario-first denominator and is not used by this authority.
+
+The elaborators may share only those raw pinned inputs and the JSON/SHA-256
+specifications. They must not import each other, production code, a shared
+codec, `recipe-v1.json`, `v1.json`, or a derived member. A structural member
+may be streamed or spooled before its digest and ordered manifest identity are
+checked; its complete generated byte stream is mandatory before dependents
+derive.
+
+The scenario-first root set is closed: the raw scenario document; the raw
+renderer/checker/ingress-runner source files; actual public-ingress run bytes;
+raw design and registry sources; and the explicit non-operational
+administrator domain string. Every root and member envelope is SHA-256 pinned
+before a dependent member is elaborated. A changed root makes a new fixture
+generation; it is never silently updated. Historical recipe roots are absent.
+
+**Primitive recipe authority (v2).** Format
+`memorii-sia-c2-primitive-recipe-v2` supersedes the v1 interpretation above.
+Only `primitive_authority`, `fixed_signers`, `vector_cases`, and
+`nested_substitution_cases` are authority inputs. `checked_fixture_outputs`
+contains the prior fully materialized package solely as a mismatch oracle.
+Neither elaborator may read a checked digest, binding, body byte string,
+envelope, signature, coordinate, or edge while deriving an artifact. After
+independent derivation, every checked output must match exactly; inequality
+rejects. Removing the checked outputs must not change any derived byte.
+
+`primitive_authority` fixes the exact authority/channel IDs, two bootstrap
+anchors and rotations, two recovery roots, recovery policy and ordered
+threshold roots, four lifecycle records, five lifecycle roots, release and
+snapshot, executed/pass runner observation and report values, three generation
+manifests and their ordered member fixture IDs, three pointers, three indexes,
+three fences, two pointer histories, and G1/G2/G3 load counts. Null predecessor
+values are valid only for the named genesis entries. Every other predecessor
+is the exact prior primitive ID and is resolved to its independently derived
+digest during elaboration. Integers are the explicit sequences in the recipe,
+not a schema default. No fixture-ID-plus-field-name string is an admissible
+primitive scalar.
+
+Each fixed signer record carries the exact 32-byte seed, 32-byte public key,
+key digest, signer coordinate, reference message and signature, signature
+profile, and closed ordered purpose list. The key digest and coordinate are
+recomputed from the public key. The public key is recomputed from the seed.
+The reference signature is recomputed before artifact signing. A preimage is
+constructed only from its declared schema fields in declaration order after
+resolving body binding, independently derived body digest, exact issuance
+purpose, and exact signer coordinate. The purpose must be both the preimage
+literal and an allowed purpose for that signer. Wrong signer, purpose, public
+key, key digest, coordinate, field order, body digest, or binding rejects
+before accepting the artifact signature.
+
+**Strict CTV elaboration contract.** Both elaborators independently parse the
+closed schema inventory and declared field types from the design. Decode and
+re-encode are inverse checks, not a permissive JSON conversion:
+
+- integers use `0` or `-?[1-9][0-9]*`; `-0`, leading zeroes, plus signs,
+  whitespace, decimal points, and exponents reject;
+- datetimes are real proleptic-Gregorian calendar instants in exact
+  `YYYY-MM-DDTHH:MM:SS.ffffffZ` form; invalid month/day/leap-day/time values,
+  offsets, leap seconds, and alternate precision reject;
+- strings contain only Unicode scalar values; lone surrogates and invalid
+  UTF-8 reject before normalization, and no normalization is performed;
+- literals and enums match the closed registered member set exactly;
+- lists preserve declared order; tuples have their exact declared arity and
+  order; sets use unique elements in canonical encoded-byte order; maps use
+  unique string keys in canonical key-byte order;
+- tagged values have exactly their declared tag fields; model maps have every
+  required field, no unknown field, and the exact nullable/omittable state;
+  duplicate keys, duplicate set elements, noncanonical ordering, unknown tags,
+  and implicit coercions reject.
+
+An accepted value must decode under the declared schema, re-encode to bytes
+identical to the supplied canonical bytes, and produce the independently
+derived binding and digest. JSON parser behavior, host integer/date types,
+runtime models, and production codecs are not authority.
+
+**Graph and lifecycle validation.** Artifact references form a directed graph
+from each artifact to its prerequisites. Validation resolves every reference,
+rejects dangling/self/duplicate edges, performs a full color-marked traversal
+that detects two-node and longer cycles, and requires every dependency to
+precede its consumer in the unique materialization order. Generation members
+are closed, unique, kind/schema/binding-consistent, and equal to the primitive
+member-ID list. No member may name its generation or a descendant.
+
+Lifecycle validation reconstructs records 1 through 4 by sequence. It requires
+one immediate predecessor for every non-genesis record, exact target/action
+compatibility, monotonic timestamps, active eligibility before use, policy
+existence before recovery, exact threshold signers in recipe order, and the
+declared replacement transition from bootstrap anchor 1 to anchor 2. Roots 1
+through 5 must commit exact prefixes and terminal sequences. Pointer, index,
+fence, and history chains require sequences/generations 1, 2, 3, exact
+immediate predecessors, matching generation IDs, append-only history, and load
+counts `1/0/0`, `2/1/0`, `3/2/0`.
+
+**Executable mutation semantics.** A verifier copies the decoded artifact set
+and graph, applies the named mutation to that copy, then runs the same ordered
+validation pipeline used for an unmodified package. It may not select an
+answer from `mutation_kind`. The first failing boundary and reason are
+observations compared with recipe expectations:
+
+| Mutation family | Applied state change | Earliest required boundary / reason |
+| --- | --- | --- |
+| malformed tag, integer, datetime, Unicode, order, duplicate, field | replace exact nested bytes/value | canonical or typed-domain validation / exact syntax, order, duplicate, or schema reason |
+| wrong signer, purpose, key, coordinate, preimage field | replace the exact signature input | provenance/signature validation / exact signer, purpose, key, coordinate, or preimage mismatch |
+| dangling, self, two-node, descendant edge | replace graph edge(s) | dependency closure / dangling reference or cycle |
+| skipped/duplicate sequence or wrong predecessor | replace lifecycle/pointer/index/fence scalar/reference | lifecycle policy / sequence or predecessor mismatch |
+| missing/duplicate/wrong generation member | mutate copied member list | generation closure / member-set mismatch |
+| stream alias/substitution | replace copied stream reference | typed semantic validation / stream kind or alias violation |
+| unmodified or idempotent replay | no semantic state change | acceptance / no reason |
+
+All 25 top-level vectors, 29 nested substitutions, and the direct negative
+matrix for wrong signer/purpose/key; dangling, self, two-node, and descendant
+cycles; sequence/predecessor errors; and member errors are mandatory.
+
+Design-side validators accept explicit `--recipe`, `--design`, `--registry`,
+and optional `--checked-outputs` paths. They have no checked-in source-path or
+digest global. Implementation verification runs A and B in separate empty
+temporary directories with only those copied inputs, mutates each input class
+one at a time, and proves the exact output bytes or exact first rejection.
+
+Approval requires: canonical recipe bytes; complete primitive field sets;
+four reproduced signer reference vectors; 57 independently derived fixtures;
+A/A stability; A/B byte equality; checked-output equality without reading
+checked outputs during derivation; all 25 + 29 + direct-negative cases applied
+and observed; full graph/lifecycle reconstruction; parameterized-path tests;
+supported-Python hermetic repository test; Python compilation, Ruff, Pyright,
+and diff checks. Design review establishes only that this contract is
+determinate and implementable; it is not evidence that these implementation
+gates pass.
+
+**Oracle-free elaboration input (v3).** Format
+`memorii-sia-c2-oracle-free-elaboration-input-v3` replaces v2. Its exact roots
+are `authority_use`, `direct_negative_cases`, `field_coverage_ledger`,
+`fixed_signers`, `format`, `nested_substitution_cases`,
+`primitive_authority`, `primitive_fixtures`, and `vector_cases`. It contains
+no checked output, expected digest, envelope, signature, artifact coordinate,
+or derived edge.
+
+Each of the 57 `primitive_fixtures` is closed and names its fixture ID, target
+kind, exact inner schema/version, raw-byte or typed-template body input,
+primitive dependency fixture IDs, and signer IDs. Typed templates contain
+explicit nonoperational semantic scalars or a closed `$derive` record naming
+one deterministic design rule. Raw design and registry bodies select the exact
+supplied input bytes; other raw bodies carry exact literal base64. `$derive`
+is allowed only for a binding, body/artifact digest, coordinate, signature
+preimage/signature, or another field whose governing schema explicitly defines
+that derivation. It may not manufacture an ID, timestamp, action, sequence,
+nonce, token, duration, command, test ID, status/result, stream, policy choice,
+or signer selection.
+
+`field_coverage_ledger` has one row per fixture and one row per leaf in its
+body input. Every leaf appears exactly once as `primitive` or
+`deterministic_derivation`; no unknown, duplicate, uncovered, or multiply
+sourced field is valid. Schema expansion during implementation must prove that
+the ledger covers every declared transitive field, not merely every JSON leaf.
+
+The lifecycle authority is exactly:
+
+1. record 1 `activate`s bootstrap anchor 1, sequence 1, with null predecessor,
+   policy, and replacement;
+2. record 2 `activate`s recovery root 1, sequence 2, immediately after record
+   1, with null policy and replacement;
+3. record 3 `activate`s recovery root 2, sequence 3, immediately after record
+   2, with null policy and replacement;
+4. record 4 `recover`s bootstrap anchor 1 to bootstrap anchor 2, sequence 4,
+   immediately after record 3, under recovery policy 1.
+
+Roots 1, 2, 3, 4, and 5 commit terminal sequences 1, 2, 3, 3, and 4
+respectively; root 4 additionally binds the active recovery policy and root 5
+binds the completed recovery. `replace` is not an alias for `recover`.
+
+The direct-negative denominator is exactly 12: wrong signer, wrong purpose,
+wrong public key, dangling edge, self-cycle, two-node cycle, descendant cycle,
+sequence error, predecessor error, missing member, duplicate member, and
+wrong-kind member. Each record carries an exact target, replacement, earliest
+boundary, and reason. Together with 25 top-level vectors and 29 nested cases,
+the closed mutation denominator is 66. No-open acceptance means that every
+case is either observed with its exact expected first outcome or the run
+rejects; unrecognized, skipped, dynamically discovered, or denominator-changing
+cases cannot be reported as success.
+
+The two-node cycle case replaces fixture 19's selected dependency with
+`fixture-37-approval_generation_manifest`, whose unmodified dependency set
+directly contains fixture 19, and the validator must prove that exact
+one-edge return path before mutation. The distinct descendant-cycle case uses
+`fixture-22-current_pointer_index`, whose shortest unmodified path back to
+fixture 19 is exactly
+`fixture-22-current_pointer_index -> fixture-21-active_release_pointer ->
+fixture-19-release`; the validator must prove a return path of length at least
+two before mutation. Any replacement without the declared return-path length
+is invalid test authority rather than cycle evidence.
+
+The previous `v1.json` bytes are retained only as
+`rejected_historical_output`, explicitly linked to the superseding recipe
+digest. They are not checked outputs, implementation inputs, review evidence,
+or expected bytes. New checked outputs may be created only by the future linked
+implementation operation after isolated A/B derivation agrees. Consequently,
+all earlier M1-M3 execution, stability, equality, vector, and checked-output
+claims are invalidated for v3.
+
+**Round-4 oracle-free authority (v4).** Format
+`memorii-sia-c2-oracle-free-elaboration-input-v4` resolves the v3
+non-convergence findings. An ancestry, lifecycle, runner, generation, pointer,
+index, fence, or history fixture carries
+`exact_body_from_primitive_authority(section, selector)` as its sole body
+source. This is a projection, not a fallback: elaboration expands the selected
+closed authority record field-for-field under the fixture's declared schema.
+The fixture body and its embedded record/member scalars therefore cannot
+diverge from authority. G1/G2/G3 member tuples are sorted unique fixture IDs;
+generation, pointer, index, and fence sequences are exactly 1/2/3 with exact
+immediate predecessor IDs. Artifact coordinates never occur in the input.
+References remain fixture IDs until every body is derived, after which
+coordinates are resolved and dependents are re-elaborated.
+
+All mutation records use one typed target:
+
+```text
+MutationTarget := {
+  scope: primitive_input | fixed_signer | derived_body | preimage | graph,
+  owner_id: FixtureId | SignerId,
+  path: (Field(name) | Index(index) | MapKey(name))*,
+}
+Replacement := Scalar | Bytes | FixtureReference | SignerReference |
+               InvalidClosedValue | ScalarOrReference
+propagation := re_elaborate_target_and_all_dependents
+```
+
+The target is resolved against the declared scope type before mutation.
+Unknown owners, fields, indexes, map keys, replacement variants, or
+scope/replacement combinations reject as invalid test authority. A mutation
+copies the selected scope, applies exactly one replacement, discards every
+derived value reachable from the target, and re-elaborates the target and all
+dependents before ordinary validation. No case-specific dispatcher or expected
+reason participates in application.
+
+The exact denominator is 66 actual mutations: 25 top-level, 29 nested, and 12
+direct-negative. There are no baseline/no-op rows. A formerly accepting vector
+is expressed as a concrete invalid closed-value replacement with its first
+typed-domain rejection; acceptance baselines are verified separately and are
+not counted as mutations. The recipe is incomplete if any mutation kind is
+`none`, any target does not resolve through the common grammar, any derived
+coordinate occurs, any member is not a fixture ID, or any body projection
+differs from its authority record.
+
+**Round-5 schema-complete authority and mutation roots (v5).** Format
+`memorii-sia-c2-oracle-free-elaboration-input-v5` closes every remaining
+authority-bearing typed template. `primitive_authority.authority_bodies`
+contains a unique schema/version/value record for structural manifest,
+coverage, execution, snapshot, release/history, reader/lease/watermark/time
+witness, golden input/manifest, and every anchor/root/policy history fixture.
+The corresponding fixture is only a field-for-field authority projection; no
+parallel generic template remains.
+
+Anchor histories select the exact ordered anchor authority records. Recovery
+root history selects both exact roots. Each recovery-policy history selects
+the single exact policy with threshold 2 and ordered roots
+`fixture-recovery-1`, `fixture-recovery-2`; an embedded policy copy with a
+different threshold, root order, predecessor, or scalar rejects. Snapshot,
+release/history, evidence/coverage, and all other embedded entries are expanded
+from their named authority selector before schema encoding.
+
+Every mutation path is relative to an explicit `Root` segment. `$` is never a
+field name. Each scope has one closed root object:
+
+- `primitive_input`: body input, dependencies, signer selections, and authority
+  projection;
+- `fixed_signer`: the complete fixed-signer record;
+- `derived_body`: the declared body-schema root;
+- `preimage`: the declared signature-preimage-schema root;
+- `graph`: typed dependency edges, generation members, generation/predecessor
+  IDs, pointer/index/fence predecessors, active-pointer intent, and streams.
+
+A graph edge is exactly `(from_fixture_id, to_fixture_id, edge_kind)` where
+`edge_kind` is `dependency`, `member`, or `predecessor`. A generation member is
+exactly `(generation_fixture_id, member_fixture_id, ordinal)`. Path resolution
+starts at the scope root and resolves each typed field/index/map-key segment
+against that closed object. Mutation then invalidates and re-elaborates the
+target and every graph-dependent artifact.
+
+Vectors 21 and 23 use the exact generation references
+`fixture-generation-1` and `fixture-generation-2`. Vector 21 restores G1 into
+the G2 pointer state and rejects at lifecycle/monotonic validation. The
+idempotent G2 lost-ack replay is an explicit accepting baseline outside the
+mutation denominator. Vector 22 is instead a concrete invalid G3 index
+predecessor mutation. Every one of the 66 mutation cases carries explicit
+`reject`, earliest boundary, and reason; the separate baseline carries explicit
+`accept` and no rejection reason.
+
+**Round-6 materialized selector expansion (v6).** Format
+`memorii-sia-c2-oracle-free-elaboration-input-v6` carries
+`expanded_typed_values` for all 49 typed fixtures. Each expansion names the
+exact inner schema/version and the complete tagged CTV value produced by its
+authority selector. Recursive validation matches every declared transitive
+schema field to exactly one authority scalar or named deterministic output and
+then exactly one expanded scalar leaf. Missing, extra, renamed, duplicate,
+wrong-schema, ambiguous, or opaque `$derive` leaves reject with fixture ID and
+path. Expansion is a design-authority witness, never a checked digest or
+artifact output.
+
+Recovery-policy history 0 is uniquely
+`fixture-recovery-policy-history-0`, has an empty policy tuple, null threshold,
+empty roots, and no policy dependency. Recovery-policy history 1 is uniquely
+`fixture-recovery-policy-history-1`, contains only policy 1, binds threshold 2
+and roots `fixture-recovery-1`, `fixture-recovery-2` in that order, and depends
+on the policy fixture. The histories are not aliases.
+
+All 12 direct negatives resolve through declared scope roots: signer selection
+uses `primitive_input.signer_ids`; purpose uses
+`preimage.issuance_purpose`; key replacement uses the fixed signer public key;
+cycles and dangling edges use `graph.dependencies`; member cases use
+`graph.members`; sequence and predecessor cases use authority projection
+fields. Vector 23 changes the G3 predecessor from correct G2 to distinct G1,
+so the mutation is reachable and produces the declared mismatch.
+
+**Round-7 recursive validation contract (v7).** Format
+`memorii-sia-c2-oracle-free-elaboration-input-v7` freezes 2,081 expanded
+scalar leaves. Expansion evaluation overlays every primitive-authority scalar
+onto its selected schema record before tagged encoding; policy history 0
+materializes an empty policy tuple and history 1 materializes exactly one
+policy. Stored expansion bytes are accepted only when an independent recursive
+evaluation produces the same field names, types, tags, collection shapes, and
+scalar values.
+
+The design-side validator binds caller-supplied design and registry bytes to
+explicit expected SHA-256 identities, parses the marked Python schema classes,
+and checks every expanded top-level field set. Recursion validates canonical
+integer lexemes, real calendar datetimes, known tags, sorted unique map keys,
+tuple/list items, schema identity, the exact field ledger, and common authority
+scalar equality. Any missing/extra/renamed field, invalid tag/value, leaf-count
+change, opaque derivation, or incompatible design/registry identity fails with
+fixture/path diagnostics.
+
+Mutation resolution constructs the declared scope root for each of the 66
+cases, verifies the owner and scope, walks every typed path segment against the
+actual primitive, expanded body, preimage, signer, or graph object, records the
+resolved terminal type, and rejects an equal/no-op replacement. Boundary and
+reason values remain closed recipe literals. Design-side adversarial mode must
+prove fail-closed behavior for bad integer/datetime/map encoding, missing
+field, invalid index, scalar mismatch, leaf add/remove, incompatible source
+hashes, missing owner, invalid path/type, and no-op replacement.
+
+**Round-8 complete selector and typed mutation contract (v8).** Format
+`memorii-sia-c2-oracle-free-elaboration-input-v8` freezes the full recursive
+selector materialization for all 49 typed fixtures and 2,082 scalar leaves.
+The selector evaluator output and stored expansion must be identical complete
+CTV trees, including field names, tags, collection shape/order, and scalars.
+Fixture 41 embeds policy ID `fixture-recovery-policy-1`, threshold 2, both
+ordered recovery-root digests, null predecessor, and the exact policy
+signature; any unequal embedded scalar rejects.
+
+CTV validation covers every grammar tag: padded canonical RFC 4648 bytes;
+signed-int64 microsecond durations; canonical unique encoded-byte ordering for
+set/frozenset; schema-qualified registered enums; Unicode scalar strings;
+canonical integers and calendar datetimes; and closed list, tuple, and map
+shapes. Schema inventory membership and parsed recursive declared types govern
+field/tag compatibility.
+
+Every mutation records expected terminal type and category. Resolution checks
+owner/scope compatibility, the complete typed path, terminal/replacement
+compatibility, replacement-variant membership, reference family/existence,
+mutation-kind legality, and the closed `(kind, boundary, reason)` outcome
+matrix. Equal replacements reject as no-ops. Adversarial self-test mode covers
+malformed values across tags, source-hash mismatches, scalar/leaf changes,
+owner/path/index/key/type errors, unknown or incompatible replacements, bad
+references, no-ops, and outcome mismatches.
+
+**Round-9 single-authority materialization (v9).** Format
+`memorii-sia-c2-oracle-free-elaboration-input-v9` removes
+`selector_materializations`. Each of the 49 typed fixtures selects exactly one
+schema-complete value in `primitive_authority.authority_bodies`. The validator
+independently deep-copies and encodes that selected authority value and compares
+the complete result with `expanded_typed_values`; the latter is a derived
+review witness, never a second authored source. Complete-tree equality includes
+every nested field, tag, collection shape, order, and scalar.
+
+Traversal computes and freezes separate denominators: 2,068 typed expansion
+leaves, 14 raw-input leaves, and 2,082 total. Any coordinated drift of an
+expansion without its sole authority body still rejects. Generation/pointer/
+index mutation addressing resolves through the exact declared chain-state
+authority rather than fields absent from the encoded body schema.
+
+Terminal type/category and replacement validation are closed by scope,
+mutation kind, reference family, boundary, and reason. Fixture, signer, and
+generation references must resolve in their exact family. A replacement must
+have the declared variant shape, be compatible with the terminal category,
+and differ from the current value. Full adversarial validation mutates temporary
+copies of recipe, design, and registry and requires the ordinary validator to
+fail at the expected diagnostic for every required family.
+
+The 29 nested cases cover 29 distinct typed inner schemas and 29 distinct
+non-root paths. Each path resolves to a nested declared CTV type tag and
+replaces that tag with the exact ASCII value `c2-invalid-type-tag`, whose bytes
+are carried separately. The observed earliest boundary is
+`typed_domain_semantic_validation` and the reason is
+`schema_invalid_type_tag`. A root `$.body_value.$type` substitution, a raw-byte
+fixture, a duplicate path, a duplicate inner schema, or a replacement that is
+itself a valid CTV type tag is invalid recipe authority.
+
+**Round-10 closed validation authority (v9).** This paragraph supersedes every
+earlier statement of the current C2 validation state. The marked CTV enum
+registry is parsed as closed data and governs exact enum schema/member
+acceptance. Duration has the sole exact representation
+`{"$type":"duration_microseconds","value":<canonical signed-int64 string>}`;
+the former `duration`/`microseconds` shape is unknown and rejects. Map keys
+must themselves be Unicode-scalar strings before sorted/unique comparison.
+
+The ordinary validator accumulates leaves while traversing accepted typed and
+raw fixture inputs and compares the observed 2,068/14/2,082 counts with all
+three metadata fields. `validate_candidate(...)` accepts complete caller bytes,
+runs the same ordinary validation in an isolated temporary directory, and
+returns structured acceptance, return-code, stdout, and stderr diagnostics.
+Adversarial self-test deep-copies and mutates complete candidate inputs for
+metadata drift, owner resolution, no-op replacement, and incompatible source
+identity, in addition to malformed nodes from every CTV tag family.
+
+**Nonoperational fixture authority and independently authorable bytes.**
+The golden source above is incomplete unless its profile, bindings, signatures,
+and trust ancestry can be elaborated without production code. The following is
+the sole design authority for those inputs. It is test-only verification data,
+never an operational root, release, acceptance decision, or production
+default. Production packages, production dependency closure, and runtime
+configuration must not import it.
+
+The v1 fixture authority has four disjoint byte domains:
+
+1. `sia-ctv-grammar-v1` is the exact content bytes of the fenced `text` block
+   between the unique standalone inline-code marker lines
+   `[SIA-CTV-GRAMMAR-V1-BEGIN]` and `[SIA-CTV-GRAMMAR-V1-END]`. Marker and fence
+   lines are excluded. The included ASCII bytes use LF and end in one LF.
+2. `sia-traceability-schema-inventory-v1` is the exact content bytes of the
+   correspondingly marked fenced `text` block under the same rules. It is a
+   closed list, not a search over source or runtime reflection.
+3. `sia-test-signature-profile-v1` is the exact Ed25519 profile and key table
+   below.
+4. `sia-test-trust-ancestry-v1` is the finite artifact recipe and scalar table
+   below. No clock, random generator, locale, environment variable,
+   implementation default, or operational trust object participates.
+
+`[SIA-CTV-GRAMMAR-V1-BEGIN]`
+```text
+profile_id=semantic_ingestion_typed_value
+profile_version=1
+outer_serialization=RFC8785
+model=closed_schema_map
+map_key_order=unsigned_lexicographic_canonical_utf8_json_string_bytes
+tuple=tagged_declared_order
+list=tagged_declared_order
+set=tagged_unsigned_lexicographic_member_bytes_unique
+frozenset=tagged_unsigned_lexicographic_member_bytes_unique
+integer=tagged_canonical_signed_decimal
+boolean=json_boolean_not_integer
+string=strict_utf8_unicode_scalars_no_normalization
+bytes=tagged_rfc4648_standard_base64_required_padding
+datetime=tagged_utc_six_fractional_digits
+duration=tagged_signed_int64_microseconds
+enum=tagged_schema_qualified_type_and_registered_member
+null=json_null_governed_by_field_policy
+float=forbidden
+decimal=forbidden_except_registered_fixed_scale_string_wrapper
+decoder=decode_then_reencode_byte_equal
+unknown_fields=reject
+union=exactly_one_registered_discriminator_and_member
+```
+`[SIA-CTV-GRAMMAR-V1-END]`
+
+For C2 there is no implicit interpretation of the grammar names above. The
+exact JSON token algebra is:
+
+| Declared value | Exact JSON value |
+| --- | --- |
+| null, boolean, string | the corresponding JSON primitive |
+| integer | `{"$type":"integer","value":"<canonical signed decimal>"}` |
+| bytes | `{"$type":"bytes","value":"<RFC4648 standard base64 with required padding>"}` |
+| UTC datetime | `{"$type":"datetime","value":"YYYY-MM-DDTHH:MM:SS.ffffffZ"}` |
+| duration | `{"$type":"duration_microseconds","value":"<canonical signed decimal>"}` |
+| tuple | `{"$type":"tuple","items":[<values in declared order>]}` |
+| list | `{"$type":"list","items":[<values in declared order>]}` |
+| set | `{"$type":"set","items":[<unique values ordered by their complete encoded bytes>]}` |
+| frozenset | `{"$type":"frozenset","items":[<unique values ordered by their complete encoded bytes>]}` |
+| enum | `{"$type":"enum","schema":"<qualified registered enum schema>","member":"<registered member>"}` |
+| model/map | `{"$type":"map","entries":[["<key>",<value>],...]}` |
+
+The only keys in each tagged object are those shown. Model/map entries are
+ordered by the unsigned lexicographic sequence of the strict UTF-8 bytes of
+their Unicode-scalar key; duplicate keys, invalid scalars, unequal order, or
+an unknown tag rejects. Canonical signed decimal is `0` or an optional `-`
+followed by a nonzero ASCII digit and zero or more ASCII digits; `-0` and
+leading zeroes reject. A datetime is always the tagged form, always UTC,
+always ends in `Z`, always has exactly six fractional digits, and rejects a
+leap-second or out-of-calendar value. A decoder validates the declared schema,
+constructs the typed value, re-encodes it, and accepts only when the resulting
+bytes are byte-equal to the input. The outer JSON serialization is compact
+ASCII JSON with keys sorted inside tagged objects, no insignificant
+whitespace, and no final LF; source-package JSON alone has one final LF.
+
+`grammar_digest` is
+`SHA-256("memorii:sia-ctv-grammar:v1\\0" || grammar_bytes)`.
+`profile_digest` is exactly
+`SHA-256("memorii:sia-ctv-profile:v1\\0" ||
+LP("semantic_ingestion_typed_value") || LP("1") ||
+LP("sia-ctv-grammar-v1") || LP(grammar_digest) || LP(grammar_bytes))`, where
+`LP` is the unsigned-64-bit-length-prefix operation defined below. An equal
+ID/version with unequal grammar or digest rejects.
+
+For each registered typed body schema `S`, its body digest is exactly
+`SHA-256("memorii:sia-ctv-body:" || ASCII(S) || ":v1\\0" ||
+body_bytes)`. The generic envelope artifact digest remains the separately
+defined canonical-artifact digest over its full profile binding and body
+bytes. A plain `SHA-256(body_bytes)`, a domain selected by artifact kind, or a
+domain not containing the exact registered schema ID rejects.
+
+`[SIA-TRACEABILITY-SCHEMA-INVENTORY-V1-BEGIN]`
+```text
+CanonicalEncodedArtifact.v1
+NormativeExecutionEvidenceRecordBody.v1
+NormativeExecutionEvidenceSignaturePreimage.v1
+NormativeTraceabilityStructuralManifestBody.v1
+SemanticIngestionTraceabilityReleaseBody.v1
+SemanticIngestionTraceabilityReleaseSignaturePreimage.v1
+TraceabilityActiveReleasePointerBody.v1
+TraceabilityActiveReleasePointerHistoryBody.v1
+TraceabilityActiveReleasePointerSignaturePreimage.v1
+TraceabilityApprovalGenerationManifestBody.v1
+TraceabilityApprovalGenerationSignaturePreimage.v1
+TraceabilityApprovalGoldenVectorManifestBody.v1
+TraceabilityBootstrapAnchorHistoryBody.v1
+TraceabilityBootstrapTrustAnchorBody.v1
+TraceabilityCoverageApprovalRecordBody.v1
+TraceabilityCoverageApprovalSignaturePreimage.v1
+TraceabilityCoverageEvidenceRootBody.v1
+TraceabilityCurrentPointerFenceBody.v1
+TraceabilityCurrentPointerIndexBody.v1
+TraceabilityExecutionEvidenceRootBody.v1
+TraceabilityGenerationReaderLeaseBody.v1
+TraceabilityGenerationVerificationPackageBody.v1
+TraceabilityGenerationVerificationPackageSignaturePreimage.v1
+TraceabilityGoldenTypedInputFixtureBody.v1
+TraceabilityMonotonicTimeWitnessBody.v1
+TraceabilityMonotonicTimeWitnessSignaturePreimage.v1
+TraceabilityPointerHistorySignaturePreimage.v1
+TraceabilityReaderAuthorizationRequestBody.v1
+TraceabilityReaderLeaseSignaturePreimage.v1
+TraceabilityRecoveryPolicyHistoryBody.v1
+TraceabilityRecoveryPolicySignaturePreimage.v1
+TraceabilityRecoveryRootHistoryBody.v1
+TraceabilityRecoveryTrustPolicyBody.v1
+TraceabilityRecoveryTrustRootBody.v1
+TraceabilityRegistryRoot.anchor_bindings.v1
+TraceabilityRegistryRoot.artifact_dag.v1
+TraceabilityRegistryRoot.assertion_templates.v1
+TraceabilityRegistryRoot.heading_defaults.v1
+TraceabilityRegistryRoot.overrides.v1
+TraceabilityRegistryRoot.requirement_bindings.v1
+TraceabilityRegistryRoot.structural_rules.v1
+TraceabilityRegistryRoot.test_evidence_groups.v1
+TraceabilityReleaseHistoryBody.v1
+TraceabilityReleaseHistoryEntryBody.v1
+TraceabilityReleaseHistorySignaturePreimage.v1
+TraceabilityReleaseTrustSnapshotBody.v1
+TraceabilityReportSchemaRegistryDigestTuple.v1
+TraceabilityRetentionWatermarkBody.v1
+TraceabilityRetentionWatermarkSignaturePreimage.v1
+TraceabilityRunnerEnvironmentObservationBody.v1
+TraceabilityRunnerEnvironmentProfileRegistryDigestTuple.v1
+TraceabilityRunnerReportBody.v1
+TraceabilityTrustLifecycleRecordBody.v1
+TraceabilityTrustLifecycleRecordSignaturePreimage.v1
+TraceabilityTrustLifecycleRootBody.v1
+TraceabilityTrustLifecycleRootSignaturePreimage.v1
+```
+`[SIA-TRACEABILITY-SCHEMA-INVENTORY-V1-END]`
+
+`[SIA-CTV-ENUM-REGISTRY-V1-BEGIN]`
+```json
+{
+  "CanonicalTypedValueProfileBinding.profile_id": [
+    "semantic_ingestion_typed_value"
+  ],
+  "NormativeTraceabilityStructuralManifestBody.derivation_ledger_schema_id": [
+    "TraceabilityStructuralManifestDerivationLedger.v1"
+  ],
+  "NormativeTraceabilityStructuralManifestBody.derivation_ledger_schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "NormativeExecutionEvidenceRecordBody.execution_result": [
+    "pass",
+    "fail",
+    "indeterminate"
+  ],
+  "NormativeExecutionEvidenceRecordBody.execution_status": [
+    "not_executed",
+    "executed",
+    "cancelled",
+    "error"
+  ],
+  "NormativeExecutionEvidenceRecordBody.issuance_purpose": [
+    "semantic_ingestion_normative_evidence"
+  ],
+  "NormativeExecutionEvidenceRecordBody.runner_environment_observation_schema_id": [
+    "memorii.semantic_ingestion.runner_environment_observation"
+  ],
+  "NormativeExecutionEvidenceRecordBody.runner_environment_observation_schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "NormativeExecutionEvidenceSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_normative_evidence"
+  ],
+  "NormativeUnitKind": [
+    "heading",
+    "paragraph",
+    "list",
+    "list_item",
+    "table",
+    "table_row",
+    "fence",
+    "schema_declaration",
+    "schema_field",
+    "schema_union_member",
+    "code_line",
+    "diagram_node",
+    "diagram_edge"
+  ],
+  "SemanticIngestionTraceabilityReleaseBody.issuance_purpose": [
+    "semantic_ingestion_traceability_release"
+  ],
+  "SemanticIngestionTraceabilityReleaseBody.issued_state": [
+    "active"
+  ],
+  "SemanticIngestionTraceabilityReleaseSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_release"
+  ],
+  "StructuralRequirementMappingRule.selector_kind": [
+    "all_matching_kinds",
+    "direct_children",
+    "named_schema_members",
+    "named_table_rows"
+  ],
+  "TraceabilityActivePointerIntent.issuance_purpose": [
+    "semantic_ingestion_traceability_active_release_pointer"
+  ],
+  "TraceabilityActiveReleasePointerBody.issuance_purpose": [
+    "semantic_ingestion_traceability_active_release_pointer"
+  ],
+  "TraceabilityActiveReleasePointerHistoryBody.issuance_purpose": [
+    "semantic_ingestion_traceability_pointer_history"
+  ],
+  "TraceabilityActiveReleasePointerSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_active_release_pointer"
+  ],
+  "TraceabilityApprovalGenerationManifestBody.issuance_purpose": [
+    "semantic_ingestion_traceability_approval_generation"
+  ],
+  "TraceabilityApprovalGenerationSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_approval_generation"
+  ],
+  "TraceabilityApprovalGoldenVectorManifestBody.authority_use": [
+    "verification_fixture_not_runtime_authority"
+  ],
+  "TraceabilityApprovalGoldenVectorManifestBody.manifest_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityApprovalGoldenVectorManifestBody.owner": [
+    "acceptance_independent_vector_author"
+  ],
+  "TraceabilityApprovalGoldenVectorManifestBody.source_path": [
+    "docs/design/semantic_ingestion/traceability_golden_vectors/v1.json"
+  ],
+  "TraceabilityApprovalRejectedReason": [
+    "schema_invalid",
+    "canonical_bytes_invalid",
+    "digest_mismatch",
+    "signature_invalid",
+    "lifecycle_ineligible",
+    "generation_incomplete",
+    "generation_dependency_invalid",
+    "cross_generation_member",
+    "active_pointer_monotonicity",
+    "stale_pointer_cas",
+    "historical_manifest_substituted",
+    "historical_recursive_expansion",
+    "historical_predecessor_mismatch",
+    "generation_gc_pinned",
+    "stream_kind_mismatch",
+    "stream_alias_forbidden"
+  ],
+  "TraceabilityApprovalUnavailableReason": [
+    "external_root_unavailable",
+    "artifact_bytes_unavailable",
+    "atomic_pointer_torn",
+    "persistence_outcome_indeterminate",
+    "historical_manifest_unavailable"
+  ],
+  "TraceabilityArtifactResultPolicy.report_binding": [
+    "exact_command_selection_runner_roots_and_results"
+  ],
+  "TraceabilityArtifactResultPolicy.report_bytes": [
+    "required_immutable_content_addressed"
+  ],
+  "TraceabilityArtifactResultPolicy.result_bytes": [
+    "required_immutable_content_addressed"
+  ],
+  "TraceabilityArtifactResultPolicy.stdout_stderr": [
+    "content_addressed_or_explicit_empty"
+  ],
+  "TraceabilityArtifactResultPolicy.stream_sharing": [
+    "forbidden",
+    "exact_bytes_all_owners_explicitly_permit"
+  ],
+  "TraceabilityBootstrapAnchorGenerationMember.artifact_kind": [
+    "bootstrap_anchor"
+  ],
+  "TraceabilityBootstrapAnchorGenerationMember.binding_id": [
+    "TraceabilityBootstrapTrustAnchor.v1"
+  ],
+  "TraceabilityBootstrapAnchorGenerationMember.schema_id": [
+    "TraceabilityBootstrapTrustAnchor.v1"
+  ],
+  "TraceabilityBootstrapAnchorGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityBootstrapAnchorHistoryGenerationMember.artifact_kind": [
+    "bootstrap_anchor_history"
+  ],
+  "TraceabilityBootstrapAnchorHistoryGenerationMember.binding_id": [
+    "TraceabilityBootstrapAnchorHistoryBody.v1"
+  ],
+  "TraceabilityBootstrapAnchorHistoryGenerationMember.schema_id": [
+    "TraceabilityBootstrapAnchorHistory.v1"
+  ],
+  "TraceabilityBootstrapAnchorHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityBootstrapTrustAnchorBody.issuance_purpose": [
+    "semantic_ingestion_traceability_release_root"
+  ],
+  "TraceabilityBootstrapTrustAnchorBody.target_purpose": [
+    "semantic_ingestion_traceability_release"
+  ],
+  "TraceabilityConfigurationFilePolicy.path": [
+    "pyproject.toml"
+  ],
+  "TraceabilityConfigurationPolicy.command_options": [
+    "-q"
+  ],
+  "TraceabilityConfigurationPolicy.config_discovery": [
+    "exact_only"
+  ],
+  "TraceabilityCoverageApprovalGenerationMember.artifact_kind": [
+    "coverage_approval"
+  ],
+  "TraceabilityCoverageApprovalGenerationMember.binding_id": [
+    "TraceabilityCoverageApprovalRecordBody.v1"
+  ],
+  "TraceabilityCoverageApprovalGenerationMember.schema_id": [
+    "TraceabilityCoverageApprovalRecord.v1"
+  ],
+  "TraceabilityCoverageApprovalGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityCoverageApprovalRecordBody.issuance_purpose": [
+    "semantic_ingestion_traceability_coverage"
+  ],
+  "TraceabilityCoverageApprovalSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_coverage"
+  ],
+  "TraceabilityCoverageRootGenerationMember.artifact_kind": [
+    "coverage_root"
+  ],
+  "TraceabilityCoverageRootGenerationMember.binding_id": [
+    "TraceabilityCoverageEvidenceRootBody.v1"
+  ],
+  "TraceabilityCoverageRootGenerationMember.schema_id": [
+    "TraceabilityCoverageEvidenceRoot.v1"
+  ],
+  "TraceabilityCoverageRootGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityCurrentPointerFenceBody.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityCurrentPointerIndexBody.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityEnvironmentVariablePolicy.other_variables": [
+    "removed"
+  ],
+  "TraceabilityExecutionEvidenceGenerationMember.artifact_kind": [
+    "execution_evidence"
+  ],
+  "TraceabilityExecutionEvidenceGenerationMember.binding_id": [
+    "NormativeExecutionEvidenceRecordBody.v1"
+  ],
+  "TraceabilityExecutionEvidenceGenerationMember.schema_id": [
+    "NormativeExecutionEvidenceRecord.v1"
+  ],
+  "TraceabilityExecutionEvidenceGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityExecutionRootGenerationMember.artifact_kind": [
+    "execution_root"
+  ],
+  "TraceabilityExecutionRootGenerationMember.binding_id": [
+    "TraceabilityExecutionEvidenceRootBody.v1"
+  ],
+  "TraceabilityExecutionRootGenerationMember.schema_id": [
+    "TraceabilityExecutionEvidenceRoot.v1"
+  ],
+  "TraceabilityExecutionRootGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityFixedEnvironmentVariables.LANG": [
+    "C.UTF-8"
+  ],
+  "TraceabilityFixedEnvironmentVariables.LC_ALL": [
+    "C.UTF-8"
+  ],
+  "TraceabilityFixedEnvironmentVariables.PYTEST_DISABLE_PLUGIN_AUTOLOAD": [
+    "1"
+  ],
+  "TraceabilityFixedEnvironmentVariables.PYTHONNOUSERSITE": [
+    "1"
+  ],
+  "TraceabilityFixedEnvironmentVariables.TZ": [
+    "UTC"
+  ],
+  "TraceabilityGenerationReaderLeaseBody.issuance_purpose": [
+    "semantic_ingestion_traceability_reader_lease"
+  ],
+  "TraceabilityGenerationVerificationPackageBody.authority_use": [
+    "post_activation_verification_only_not_activation_authority"
+  ],
+  "TraceabilityGenerationVerificationPackageBody.issuance_purpose": [
+    "semantic_ingestion_traceability_generation_verification"
+  ],
+  "TraceabilityGenerationVerificationPackageBody.package_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityGenerationVerificationPackageSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_generation_verification"
+  ],
+  "TraceabilityGoldenTypedInputFixtureBody.owner": [
+    "acceptance_independent_vector_author"
+  ],
+  "TraceabilityGoldenTypedInputFixtureGenerationMember.artifact_kind": [
+    "golden_typed_input_fixture"
+  ],
+  "TraceabilityGoldenTypedInputFixtureGenerationMember.binding_id": [
+    "TraceabilityGoldenTypedInputFixtureBody.v1"
+  ],
+  "TraceabilityGoldenTypedInputFixtureGenerationMember.schema_id": [
+    "TraceabilityGoldenTypedInputFixtureBody.v1"
+  ],
+  "TraceabilityGoldenTypedInputFixtureGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityGoldenVectorArtifactKind": [
+    "design_document",
+    "registry_source",
+    "bootstrap_anchor",
+    "bootstrap_anchor_history",
+    "recovery_root",
+    "recovery_root_history",
+    "recovery_policy",
+    "recovery_policy_history",
+    "trust_lifecycle_root",
+    "trust_snapshot",
+    "structural_manifest",
+    "coverage_approval",
+    "coverage_root",
+    "report_schema",
+    "runner_environment_profile",
+    "runner_environment_observation",
+    "runner_report",
+    "test_artifact",
+    "result_artifact",
+    "stdout_artifact",
+    "stderr_artifact",
+    "execution_evidence",
+    "execution_root",
+    "release",
+    "release_history",
+    "pointer_history",
+    "golden_vector_manifest",
+    "golden_typed_input_fixture",
+    "trust_lifecycle_record",
+    "active_release_pointer",
+    "current_pointer_index",
+    "current_pointer_fence",
+    "retention_watermark",
+    "reader_authorization_request",
+    "reader_lease",
+    "monotonic_time_witness",
+    "approval_generation_manifest"
+  ],
+  "TraceabilityGoldenVectorManifestGenerationMember.artifact_kind": [
+    "golden_vector_manifest"
+  ],
+  "TraceabilityGoldenVectorManifestGenerationMember.binding_id": [
+    "TraceabilityApprovalGoldenVectorManifestBody.v1"
+  ],
+  "TraceabilityGoldenVectorManifestGenerationMember.schema_id": [
+    "TraceabilityApprovalGoldenVectorManifest.v1"
+  ],
+  "TraceabilityGoldenVectorManifestGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityGoldenVectorVerdict": [
+    "accept",
+    "reject",
+    "unavailable"
+  ],
+  "TraceabilityImportPathPolicy.normalized_paths": [
+    "<implementation-root>"
+  ],
+  "TraceabilityImportPathPolicy.outside_root": [
+    "reject"
+  ],
+  "TraceabilityImportPathPolicy.pythonpath_environment": [
+    "absent"
+  ],
+  "TraceabilityImportPathPolicy.symlinks": [
+    "resolve_then_require_root_containment"
+  ],
+  "TraceabilityInstalledDistributionFingerprintPolicy.ordering": [
+    "normalized_name_then_version"
+  ],
+  "TraceabilityInstalledDistributionFingerprintPolicy.required": [
+    true
+  ],
+  "TraceabilityInterpreterPolicy.executable_sha256": [
+    "independently_observed_required"
+  ],
+  "TraceabilityInterpreterPolicy.implementation": [
+    "CPython"
+  ],
+  "TraceabilityLifecycleEligibilityReference.eligibility_purpose": [
+    "semantic_ingestion_traceability_lifecycle_record"
+  ],
+  "TraceabilityLifecycleEligibilityReference.source_kind": [
+    "independently_provisioned_genesis",
+    "prior_verified_lifecycle_root"
+  ],
+  "TraceabilityProvisionedTrustArtifactGenesisProvenance.source_kind": [
+    "independently_provisioned_genesis"
+  ],
+  "TraceabilityProvisionedTrustArtifactSuccessorProvenance.source_kind": [
+    "prior_verified_lifecycle_root"
+  ],
+  "TraceabilityRecoveryPolicyGenesisSignerProvenance.source_kind": [
+    "independently_provisioned_bootstrap_anchor"
+  ],
+  "TraceabilityRecoveryPolicyGenesisSignerProvenance.signature_purpose": [
+    "semantic_ingestion_traceability_recovery_policy"
+  ],
+  "TraceabilitySignerCoordinate.source_kind": [
+    "prior_verified_lifecycle_root"
+  ],
+  "TraceabilityLifecycleRootGenerationMember.artifact_kind": [
+    "trust_lifecycle_root"
+  ],
+  "TraceabilityLifecycleRootGenerationMember.binding_id": [
+    "TraceabilityTrustLifecycleRootBody.v1"
+  ],
+  "TraceabilityLifecycleRootGenerationMember.schema_id": [
+    "TraceabilityTrustLifecycleRoot.v1"
+  ],
+  "TraceabilityLifecycleRootGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityLocaleTimezonePolicy.lang": [
+    "C.UTF-8"
+  ],
+  "TraceabilityLocaleTimezonePolicy.lc_all": [
+    "C.UTF-8"
+  ],
+  "TraceabilityLocaleTimezonePolicy.timezone": [
+    "UTC"
+  ],
+  "TraceabilityLockfilePolicy.state": [
+    "absent"
+  ],
+  "TraceabilityLockfilePolicy.state_must_be_observed": [
+    true
+  ],
+  "TraceabilityMonotonicTimeWitnessBody.issuance_purpose": [
+    "semantic_ingestion_traceability_monotonic_time_witness"
+  ],
+  "TraceabilityMonotonicTimeWitnessSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_monotonic_time_witness"
+  ],
+  "TraceabilityNetworkPolicy.enforcement": [
+    "denied"
+  ],
+  "TraceabilityNetworkPolicy.enforcement_observation_digest": [
+    "required"
+  ],
+  "TraceabilityNetworkPolicy.outbound_and_listen": [
+    "forbidden"
+  ],
+  "TraceabilityPluginPolicy.autoload": [
+    "disabled"
+  ],
+  "TraceabilityPluginPolicy.builtin_plugin_set": [
+    "bound_by_pytest_distribution_tree_digest"
+  ],
+  "TraceabilityPointerHistoryGenerationMember.artifact_kind": [
+    "pointer_history"
+  ],
+  "TraceabilityPointerHistoryGenerationMember.binding_id": [
+    "TraceabilityActiveReleasePointerHistoryBody.v1"
+  ],
+  "TraceabilityPointerHistoryGenerationMember.schema_id": [
+    "TraceabilityActiveReleasePointerHistory.v1"
+  ],
+  "TraceabilityPointerHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityPointerHistorySignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_pointer_history"
+  ],
+  "TraceabilityProjectMetadataPolicy.path": [
+    "pyproject.toml"
+  ],
+  "TraceabilityPytestIniPolicy.pythonpath": [
+    "."
+  ],
+  "TraceabilityPytestIniPolicy.testpaths": [
+    "tests"
+  ],
+  "TraceabilityRawDesignGenerationMember.artifact_kind": [
+    "design_document"
+  ],
+  "TraceabilityRawDesignGenerationMember.binding_digest": [
+    "raw-sha256-bytes-v1"
+  ],
+  "TraceabilityRawDesignGenerationMember.schema_id": [
+    "memorii.raw.design_document.v1"
+  ],
+  "TraceabilityRawDesignGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRawRegistryGenerationMember.artifact_kind": [
+    "registry_source"
+  ],
+  "TraceabilityRawRegistryGenerationMember.binding_digest": [
+    "raw-sha256-bytes-v1"
+  ],
+  "TraceabilityRawRegistryGenerationMember.schema_id": [
+    "memorii.raw.traceability_registry_source.v1"
+  ],
+  "TraceabilityRawRegistryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityReaderAuthorizationRequestBody.requested_purpose": [
+    "traceability_generation_read"
+  ],
+  "TraceabilityReaderLeaseSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_reader_lease"
+  ],
+  "TraceabilityRecoveryPolicyGenerationMember.artifact_kind": [
+    "recovery_policy"
+  ],
+  "TraceabilityRecoveryPolicyGenerationMember.binding_id": [
+    "TraceabilityRecoveryTrustPolicyBody.v1"
+  ],
+  "TraceabilityRecoveryPolicyGenerationMember.schema_id": [
+    "TraceabilityRecoveryTrustPolicy.v1"
+  ],
+  "TraceabilityRecoveryPolicyGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRecoveryPolicyHistoryGenerationMember.artifact_kind": [
+    "recovery_policy_history"
+  ],
+  "TraceabilityRecoveryPolicyHistoryGenerationMember.binding_id": [
+    "TraceabilityRecoveryPolicyHistoryBody.v1"
+  ],
+  "TraceabilityRecoveryPolicyHistoryGenerationMember.schema_id": [
+    "TraceabilityRecoveryPolicyHistory.v1"
+  ],
+  "TraceabilityRecoveryPolicyHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRecoveryPolicySignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_recovery_policy"
+  ],
+  "TraceabilityRecoveryRootGenerationMember.artifact_kind": [
+    "recovery_root"
+  ],
+  "TraceabilityRecoveryRootGenerationMember.binding_id": [
+    "TraceabilityRecoveryTrustRoot.v1"
+  ],
+  "TraceabilityRecoveryRootGenerationMember.schema_id": [
+    "TraceabilityRecoveryTrustRoot.v1"
+  ],
+  "TraceabilityRecoveryRootGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRecoveryRootHistoryGenerationMember.artifact_kind": [
+    "recovery_root_history"
+  ],
+  "TraceabilityRecoveryRootHistoryGenerationMember.binding_id": [
+    "TraceabilityRecoveryRootHistoryBody.v1"
+  ],
+  "TraceabilityRecoveryRootHistoryGenerationMember.schema_id": [
+    "TraceabilityRecoveryRootHistory.v1"
+  ],
+  "TraceabilityRecoveryRootHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRecoveryTrustPolicyBody.issuance_purpose": [
+    "semantic_ingestion_traceability_recovery_policy"
+  ],
+  "TraceabilityRecoveryTrustRootBody.issuance_purpose": [
+    "semantic_ingestion_traceability_recovery_root"
+  ],
+  "TraceabilityRegisteredCommand.working_directory": [
+    "memorii"
+  ],
+  "TraceabilityReleaseGenerationMember.artifact_kind": [
+    "release"
+  ],
+  "TraceabilityReleaseGenerationMember.binding_id": [
+    "SemanticIngestionTraceabilityReleaseBody.v1"
+  ],
+  "TraceabilityReleaseGenerationMember.schema_id": [
+    "SemanticIngestionTraceabilityRelease.v1"
+  ],
+  "TraceabilityReleaseGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityReleaseHistoryBody.issuance_purpose": [
+    "semantic_ingestion_traceability_release_history"
+  ],
+  "TraceabilityReleaseHistoryEntryBody.prior_release_terminal_state": [
+    "superseded",
+    "revoked",
+    "compromised"
+  ],
+  "TraceabilityReleaseHistoryGenerationMember.artifact_kind": [
+    "release_history"
+  ],
+  "TraceabilityReleaseHistoryGenerationMember.binding_id": [
+    "TraceabilityReleaseHistoryBody.v1"
+  ],
+  "TraceabilityReleaseHistoryGenerationMember.schema_id": [
+    "TraceabilityReleaseHistory.v1"
+  ],
+  "TraceabilityReleaseHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityReleaseHistorySignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_release_history"
+  ],
+  "TraceabilityReleaseTrustSnapshotBody.issuance_purpose": [
+    "semantic_ingestion_traceability_release_trust_snapshot"
+  ],
+  "TraceabilityReportSchemaArtifact.canonical_profile_id": [
+    "memorii-sia-canonical-json-v1"
+  ],
+  "TraceabilityReportSchemaArtifact.media_type": [
+    "application/schema+json"
+  ],
+  "TraceabilityReportSchemaArtifact.schema_id": [
+    "memorii.semantic_ingestion.pytest_report"
+  ],
+  "TraceabilityReportSchemaArtifact.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityReportSchemaGenerationMember.artifact_kind": [
+    "report_schema"
+  ],
+  "TraceabilityReportSchemaGenerationMember.canonical_profile_id": [
+    "memorii-sia-canonical-json-v1"
+  ],
+  "TraceabilityResultArtifactGenerationMember.artifact_kind": [
+    "result_artifact"
+  ],
+  "TraceabilityResultArtifactGenerationMember.binding_digest": [
+    "memorii:sia-traceability-result-artifact:v1"
+  ],
+  "TraceabilityResultArtifactGenerationMember.schema_id": [
+    "memorii.raw.traceability_result_artifact.v1"
+  ],
+  "TraceabilityResultArtifactGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRetentionWatermarkBody.issuance_purpose": [
+    "semantic_ingestion_traceability_retention_watermark"
+  ],
+  "TraceabilityRetentionWatermarkSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_retention_watermark"
+  ],
+  "TraceabilityRunnerEnvironmentObservationBody.runner_environment_profile_id": [
+    "memorii.semantic_ingestion.runner_environment"
+  ],
+  "TraceabilityRunnerEnvironmentObservationBody.runner_environment_profile_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerEnvironmentProfile.canonical_profile_id": [
+    "memorii-sia-canonical-json-v1"
+  ],
+  "TraceabilityRunnerEnvironmentProfile.profile_id": [
+    "memorii.semantic_ingestion.runner_environment"
+  ],
+  "TraceabilityRunnerEnvironmentProfile.profile_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerEnvironmentProfileGenerationMember.artifact_kind": [
+    "runner_environment_profile"
+  ],
+  "TraceabilityRunnerEnvironmentProfileGenerationMember.canonical_profile_id": [
+    "memorii-sia-canonical-json-v1"
+  ],
+  "TraceabilityRunnerObservationGenerationMember.artifact_kind": [
+    "runner_environment_observation"
+  ],
+  "TraceabilityRunnerObservationGenerationMember.binding_id": [
+    "TraceabilityRunnerEnvironmentObservationBody.v1"
+  ],
+  "TraceabilityRunnerObservationGenerationMember.schema_id": [
+    "CanonicalEncodedArtifact.v1"
+  ],
+  "TraceabilityRunnerObservationGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerPolicy.distribution": [
+    "pytest"
+  ],
+  "TraceabilityRunnerPolicy.distribution_tree_sha256": [
+    "independently_observed_required"
+  ],
+  "TraceabilityRunnerPolicy.selected_test_policy": [
+    "all_collected_no_skip_xfail_deselect"
+  ],
+  "TraceabilityRunnerReportBody.execution_result": [
+    "pass",
+    "fail",
+    "indeterminate"
+  ],
+  "TraceabilityRunnerReportBody.execution_status": [
+    "executed",
+    "cancelled",
+    "error"
+  ],
+  "TraceabilityRunnerReportBody.report_schema_id": [
+    "memorii.semantic_ingestion.pytest_report"
+  ],
+  "TraceabilityRunnerReportBody.report_schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerReportGenerationMember.artifact_kind": [
+    "runner_report"
+  ],
+  "TraceabilityRunnerReportGenerationMember.binding_id": [
+    "TraceabilityRunnerReportBody.v1"
+  ],
+  "TraceabilityRunnerReportGenerationMember.schema_id": [
+    "CanonicalEncodedArtifact.v1"
+  ],
+  "TraceabilityRunnerReportGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerRequirements.environment_policy": [
+    "clean_allowlisted"
+  ],
+  "TraceabilityRunnerRequirements.exit_policy": [
+    "zero_and_every_selected_test_passed"
+  ],
+  "TraceabilityRunnerRequirements.network_policy": [
+    "denied"
+  ],
+  "TraceabilityRunnerRequirements.runner_kind": [
+    "cpython_pytest"
+  ],
+  "TraceabilityRunnerRequirements.selection_policy": [
+    "all_selected_collected_no_skip_xfail_deselect"
+  ],
+  "TraceabilitySignaturePurpose": [
+    "semantic_ingestion_traceability_release",
+    "semantic_ingestion_traceability_recovery_policy",
+    "semantic_ingestion_traceability_lifecycle_record",
+    "semantic_ingestion_traceability_lifecycle_root",
+    "semantic_ingestion_traceability_approval_generation",
+    "semantic_ingestion_traceability_active_release_pointer",
+    "semantic_ingestion_traceability_coverage",
+    "semantic_ingestion_normative_evidence",
+    "semantic_ingestion_traceability_release_history",
+    "semantic_ingestion_traceability_pointer_history",
+    "semantic_ingestion_traceability_retention_watermark",
+    "semantic_ingestion_traceability_reader_lease",
+    "semantic_ingestion_traceability_monotonic_time_witness",
+    "semantic_ingestion_traceability_generation_verification"
+  ],
+  "TraceabilityStartupCustomizationPolicy.sitecustomize": [
+    "absent"
+  ],
+  "TraceabilityStartupCustomizationPolicy.usercustomize": [
+    "absent"
+  ],
+  "TraceabilityStderrGenerationMember.artifact_kind": [
+    "stderr_artifact"
+  ],
+  "TraceabilityStderrGenerationMember.binding_digest": [
+    "memorii:sia-traceability-stderr:v1"
+  ],
+  "TraceabilityStderrGenerationMember.schema_id": [
+    "memorii.raw.traceability_stderr.v1"
+  ],
+  "TraceabilityStderrGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityStderrGenerationMember.sharing_policy": [
+    "single_report",
+    "exact_bytes_all_owners_explicitly_permit"
+  ],
+  "TraceabilityStderrGenerationMember.stream": [
+    "stderr"
+  ],
+  "TraceabilityStdoutGenerationMember.artifact_kind": [
+    "stdout_artifact"
+  ],
+  "TraceabilityStdoutGenerationMember.binding_digest": [
+    "memorii:sia-traceability-stdout:v1"
+  ],
+  "TraceabilityStdoutGenerationMember.schema_id": [
+    "memorii.raw.traceability_stdout.v1"
+  ],
+  "TraceabilityStdoutGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityStdoutGenerationMember.sharing_policy": [
+    "single_report",
+    "exact_bytes_all_owners_explicitly_permit"
+  ],
+  "TraceabilityStdoutGenerationMember.stream": [
+    "stdout"
+  ],
+  "TraceabilityStructuralManifestGenerationMember.artifact_kind": [
+    "structural_manifest"
+  ],
+  "TraceabilityStructuralManifestGenerationMember.binding_id": [
+    "NormativeTraceabilityStructuralManifestBody.v1"
+  ],
+  "TraceabilityStructuralManifestGenerationMember.schema_id": [
+    "NormativeTraceabilityStructuralManifest.v1"
+  ],
+  "TraceabilityStructuralManifestGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityStructuralRuleSource.effect": [
+    "add_matching_ledger_requirement"
+  ],
+  "TraceabilityStructuralRuleSource.selector_kind": [
+    "named_table_rows"
+  ],
+  "TraceabilityTestArtifactGenerationMember.artifact_kind": [
+    "test_artifact"
+  ],
+  "TraceabilityTestArtifactGenerationMember.binding_digest": [
+    "memorii:sia-traceability-test-artifact:v1"
+  ],
+  "TraceabilityTestArtifactGenerationMember.schema_id": [
+    "memorii.raw.traceability_test_artifact.v1"
+  ],
+  "TraceabilityTestArtifactGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityTestEvidenceGroup.report_schema_id": [
+    "memorii.semantic_ingestion.pytest_report"
+  ],
+  "TraceabilityTestEvidenceGroup.report_schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityTestEvidenceGroup.runner_environment_profile_id": [
+    "memorii.semantic_ingestion.runner_environment"
+  ],
+  "TraceabilityTestEvidenceGroup.runner_environment_profile_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityTestImplementationStatus": [
+    "repository_evidenced",
+    "required_not_yet_evidenced"
+  ],
+  "TraceabilityTrustLifecycleAction": [
+    "activate",
+    "rotate",
+    "revoke",
+    "compromise",
+    "recover"
+  ],
+  "TraceabilityTrustLifecycleRecordBody.issuance_purpose": [
+    "semantic_ingestion_traceability_lifecycle_record"
+  ],
+  "TraceabilityTrustLifecycleRecordBody.target_kind": [
+    "bootstrap_anchor",
+    "recovery_root"
+  ],
+  "TraceabilityTrustLifecycleRecordSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_lifecycle_record"
+  ],
+  "TraceabilityTrustLifecycleRootBody.issuance_purpose": [
+    "semantic_ingestion_traceability_lifecycle_root"
+  ],
+  "TraceabilityTrustLifecycleRootSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_lifecycle_root"
+  ],
+  "TraceabilityTrustLifecycleSignerBinding.signature_purpose": [
+    "semantic_ingestion_traceability_lifecycle_record"
+  ],
+  "TraceabilityTrustSnapshotGenerationMember.artifact_kind": [
+    "trust_snapshot"
+  ],
+  "TraceabilityTrustSnapshotGenerationMember.binding_id": [
+    "TraceabilityReleaseTrustSnapshotBody.v1"
+  ],
+  "TraceabilityTrustSnapshotGenerationMember.schema_id": [
+    "TraceabilityReleaseTrustSnapshot.v1"
+  ],
+  "TraceabilityTrustSnapshotGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ]
+}
+```
+`[SIA-CTV-ENUM-REGISTRY-V1-END]`
+
+The current block is the newly declared
+`semantic_ingestion_typed_value/v1-baseline-2026-07-28`. Its marked JSON
+payload raw SHA-256 is
+`2920db6d459a29a2a411723c9cae77bdcfc6a166d82a02625acb3f918a62ba26`;
+its canonical compact-JSON-plus-LF SHA-256 is
+`87e0b38fe1db6505bc0b736f3a7d0fbabcbe028c49c9da702413ae73a048d8a5`.
+The prior historical bytes were never preserved, so this baseline makes no
+historical byte-restoration, pre-baseline compatibility, persisted-artifact,
+operational-artifact, or certification claim. From this declaration forward
+the v1 marker bytes are immutable. V2 consumes only its separate v2 marker and
+may diverge.
+`[SIA-CTV-ENUM-REGISTRY-V2-BEGIN]`
+```json
+{
+  "TraceabilityLifecycleRootGenesisSignerProvenance.source_kind": [
+    "independently_provisioned_bootstrap_anchor"
+  ],
+  "TraceabilityLifecycleRootGenesisSignerProvenance.signature_purpose": [
+    "semantic_ingestion_traceability_lifecycle_root"
+  ],
+  "CanonicalTypedValueProfileBinding.profile_id": [
+    "semantic_ingestion_typed_value"
+  ],
+  "NormativeTraceabilityStructuralManifestBody.derivation_ledger_schema_id": [
+    "TraceabilityStructuralManifestDerivationLedger.v1"
+  ],
+  "NormativeTraceabilityStructuralManifestBody.derivation_ledger_schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "NormativeExecutionEvidenceRecordBody.execution_result": [
+    "pass",
+    "fail",
+    "indeterminate"
+  ],
+  "NormativeExecutionEvidenceRecordBody.execution_status": [
+    "not_executed",
+    "executed",
+    "cancelled",
+    "error"
+  ],
+  "NormativeExecutionEvidenceRecordBody.issuance_purpose": [
+    "semantic_ingestion_normative_evidence"
+  ],
+  "NormativeExecutionEvidenceRecordBody.runner_environment_observation_schema_id": [
+    "memorii.semantic_ingestion.runner_environment_observation"
+  ],
+  "NormativeExecutionEvidenceRecordBody.runner_environment_observation_schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "NormativeExecutionEvidenceSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_normative_evidence"
+  ],
+  "NormativeUnitKind": [
+    "heading",
+    "paragraph",
+    "list",
+    "list_item",
+    "table",
+    "table_row",
+    "fence",
+    "schema_declaration",
+    "schema_field",
+    "schema_union_member",
+    "code_line",
+    "diagram_node",
+    "diagram_edge"
+  ],
+  "SemanticIngestionTraceabilityReleaseBody.issuance_purpose": [
+    "semantic_ingestion_traceability_release"
+  ],
+  "SemanticIngestionTraceabilityReleaseBody.issued_state": [
+    "active"
+  ],
+  "SemanticIngestionTraceabilityReleaseSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_release"
+  ],
+  "StructuralRequirementMappingRule.selector_kind": [
+    "all_matching_kinds",
+    "direct_children",
+    "named_schema_members",
+    "named_table_rows"
+  ],
+  "TraceabilityActivePointerIntent.issuance_purpose": [
+    "semantic_ingestion_traceability_active_release_pointer"
+  ],
+  "TraceabilityActiveReleasePointerBody.issuance_purpose": [
+    "semantic_ingestion_traceability_active_release_pointer"
+  ],
+  "TraceabilityActiveReleasePointerHistoryBody.issuance_purpose": [
+    "semantic_ingestion_traceability_pointer_history"
+  ],
+  "TraceabilityActiveReleasePointerSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_active_release_pointer"
+  ],
+  "TraceabilityApprovalGenerationManifestBody.issuance_purpose": [
+    "semantic_ingestion_traceability_approval_generation"
+  ],
+  "TraceabilityApprovalGenerationSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_approval_generation"
+  ],
+  "TraceabilityApprovalGoldenVectorManifestBody.authority_use": [
+    "verification_fixture_not_runtime_authority"
+  ],
+  "TraceabilityApprovalGoldenVectorManifestBody.manifest_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityApprovalGoldenVectorManifestBody.owner": [
+    "acceptance_independent_vector_author"
+  ],
+  "TraceabilityApprovalGoldenVectorManifestBody.source_path": [
+    "docs/design/semantic_ingestion/traceability_golden_vectors/v1.json"
+  ],
+  "TraceabilityApprovalRejectedReason": [
+    "schema_invalid",
+    "canonical_bytes_invalid",
+    "digest_mismatch",
+    "signature_invalid",
+    "lifecycle_ineligible",
+    "generation_incomplete",
+    "generation_dependency_invalid",
+    "cross_generation_member",
+    "active_pointer_monotonicity",
+    "stale_pointer_cas",
+    "historical_manifest_substituted",
+    "historical_recursive_expansion",
+    "historical_predecessor_mismatch",
+    "generation_gc_pinned",
+    "stream_kind_mismatch",
+    "stream_alias_forbidden"
+  ],
+  "TraceabilityApprovalUnavailableReason": [
+    "external_root_unavailable",
+    "artifact_bytes_unavailable",
+    "atomic_pointer_torn",
+    "persistence_outcome_indeterminate",
+    "historical_manifest_unavailable"
+  ],
+  "TraceabilityArtifactResultPolicy.report_binding": [
+    "exact_command_selection_runner_roots_and_results"
+  ],
+  "TraceabilityArtifactResultPolicy.report_bytes": [
+    "required_immutable_content_addressed"
+  ],
+  "TraceabilityArtifactResultPolicy.result_bytes": [
+    "required_immutable_content_addressed"
+  ],
+  "TraceabilityArtifactResultPolicy.stdout_stderr": [
+    "content_addressed_or_explicit_empty"
+  ],
+  "TraceabilityArtifactResultPolicy.stream_sharing": [
+    "forbidden",
+    "exact_bytes_all_owners_explicitly_permit"
+  ],
+  "TraceabilityBootstrapAnchorGenerationMember.artifact_kind": [
+    "bootstrap_anchor"
+  ],
+  "TraceabilityBootstrapAnchorGenerationMember.binding_id": [
+    "TraceabilityBootstrapTrustAnchor.v1"
+  ],
+  "TraceabilityBootstrapAnchorGenerationMember.schema_id": [
+    "TraceabilityBootstrapTrustAnchor.v1"
+  ],
+  "TraceabilityBootstrapAnchorGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityBootstrapAnchorHistoryGenerationMember.artifact_kind": [
+    "bootstrap_anchor_history"
+  ],
+  "TraceabilityBootstrapAnchorHistoryGenerationMember.binding_id": [
+    "TraceabilityBootstrapAnchorHistoryBody.v1"
+  ],
+  "TraceabilityBootstrapAnchorHistoryGenerationMember.schema_id": [
+    "TraceabilityBootstrapAnchorHistory.v1"
+  ],
+  "TraceabilityBootstrapAnchorHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityBootstrapTrustAnchorBody.issuance_purpose": [
+    "semantic_ingestion_traceability_release_root"
+  ],
+  "TraceabilityBootstrapTrustAnchorBody.target_purpose": [
+    "semantic_ingestion_traceability_release"
+  ],
+  "TraceabilityConfigurationFilePolicy.path": [
+    "pyproject.toml"
+  ],
+  "TraceabilityConfigurationPolicy.command_options": [
+    "-q"
+  ],
+  "TraceabilityConfigurationPolicy.config_discovery": [
+    "exact_only"
+  ],
+  "TraceabilityCoverageApprovalGenerationMember.artifact_kind": [
+    "coverage_approval"
+  ],
+  "TraceabilityCoverageApprovalGenerationMember.binding_id": [
+    "TraceabilityCoverageApprovalRecordBody.v1"
+  ],
+  "TraceabilityCoverageApprovalGenerationMember.schema_id": [
+    "TraceabilityCoverageApprovalRecord.v1"
+  ],
+  "TraceabilityCoverageApprovalGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityCoverageApprovalRecordBody.issuance_purpose": [
+    "semantic_ingestion_traceability_coverage"
+  ],
+  "TraceabilityCoverageApprovalSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_coverage"
+  ],
+  "TraceabilityCoverageRootGenerationMember.artifact_kind": [
+    "coverage_root"
+  ],
+  "TraceabilityCoverageRootGenerationMember.binding_id": [
+    "TraceabilityCoverageEvidenceRootBody.v1"
+  ],
+  "TraceabilityCoverageRootGenerationMember.schema_id": [
+    "TraceabilityCoverageEvidenceRoot.v1"
+  ],
+  "TraceabilityCoverageRootGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityCurrentPointerFenceBody.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityCurrentPointerIndexBody.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityEnvironmentVariablePolicy.other_variables": [
+    "removed"
+  ],
+  "TraceabilityExecutionEvidenceGenerationMember.artifact_kind": [
+    "execution_evidence"
+  ],
+  "TraceabilityExecutionEvidenceGenerationMember.binding_id": [
+    "NormativeExecutionEvidenceRecordBody.v1"
+  ],
+  "TraceabilityExecutionEvidenceGenerationMember.schema_id": [
+    "NormativeExecutionEvidenceRecord.v1"
+  ],
+  "TraceabilityExecutionEvidenceGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityExecutionRootGenerationMember.artifact_kind": [
+    "execution_root"
+  ],
+  "TraceabilityExecutionRootGenerationMember.binding_id": [
+    "TraceabilityExecutionEvidenceRootBody.v1"
+  ],
+  "TraceabilityExecutionRootGenerationMember.schema_id": [
+    "TraceabilityExecutionEvidenceRoot.v1"
+  ],
+  "TraceabilityExecutionRootGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityFixedEnvironmentVariables.LANG": [
+    "C.UTF-8"
+  ],
+  "TraceabilityFixedEnvironmentVariables.LC_ALL": [
+    "C.UTF-8"
+  ],
+  "TraceabilityFixedEnvironmentVariables.PYTEST_DISABLE_PLUGIN_AUTOLOAD": [
+    "1"
+  ],
+  "TraceabilityFixedEnvironmentVariables.PYTHONNOUSERSITE": [
+    "1"
+  ],
+  "TraceabilityFixedEnvironmentVariables.TZ": [
+    "UTC"
+  ],
+  "TraceabilityGenerationReaderLeaseBody.issuance_purpose": [
+    "semantic_ingestion_traceability_reader_lease"
+  ],
+  "TraceabilityGenerationVerificationPackageBody.authority_use": [
+    "post_activation_verification_only_not_activation_authority"
+  ],
+  "TraceabilityGenerationVerificationPackageBody.issuance_purpose": [
+    "semantic_ingestion_traceability_generation_verification"
+  ],
+  "TraceabilityGenerationVerificationPackageBody.package_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityGenerationVerificationPackageSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_generation_verification"
+  ],
+  "TraceabilityGoldenTypedInputFixtureBody.owner": [
+    "acceptance_independent_vector_author"
+  ],
+  "TraceabilityGoldenTypedInputFixtureGenerationMember.artifact_kind": [
+    "golden_typed_input_fixture"
+  ],
+  "TraceabilityGoldenTypedInputFixtureGenerationMember.binding_id": [
+    "TraceabilityGoldenTypedInputFixtureBody.v1"
+  ],
+  "TraceabilityGoldenTypedInputFixtureGenerationMember.schema_id": [
+    "TraceabilityGoldenTypedInputFixtureBody.v1"
+  ],
+  "TraceabilityGoldenTypedInputFixtureGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityGoldenVectorArtifactKind": [
+    "design_document",
+    "registry_source",
+    "bootstrap_anchor",
+    "bootstrap_anchor_history",
+    "recovery_root",
+    "recovery_root_history",
+    "recovery_policy",
+    "recovery_policy_history",
+    "trust_lifecycle_root",
+    "trust_snapshot",
+    "structural_manifest",
+    "coverage_approval",
+    "coverage_root",
+    "report_schema",
+    "runner_environment_profile",
+    "runner_environment_observation",
+    "runner_report",
+    "test_artifact",
+    "result_artifact",
+    "stdout_artifact",
+    "stderr_artifact",
+    "execution_evidence",
+    "execution_root",
+    "release",
+    "release_history",
+    "pointer_history",
+    "golden_vector_manifest",
+    "golden_typed_input_fixture",
+    "trust_lifecycle_record",
+    "active_release_pointer",
+    "current_pointer_index",
+    "current_pointer_fence",
+    "retention_watermark",
+    "reader_authorization_request",
+    "reader_lease",
+    "monotonic_time_witness",
+    "approval_generation_manifest"
+  ],
+  "TraceabilityGoldenVectorManifestGenerationMember.artifact_kind": [
+    "golden_vector_manifest"
+  ],
+  "TraceabilityGoldenVectorManifestGenerationMember.binding_id": [
+    "TraceabilityApprovalGoldenVectorManifestBody.v1"
+  ],
+  "TraceabilityGoldenVectorManifestGenerationMember.schema_id": [
+    "TraceabilityApprovalGoldenVectorManifest.v1"
+  ],
+  "TraceabilityGoldenVectorManifestGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityGoldenVectorVerdict": [
+    "accept",
+    "reject",
+    "unavailable"
+  ],
+  "TraceabilityImportPathPolicy.normalized_paths": [
+    "<implementation-root>"
+  ],
+  "TraceabilityImportPathPolicy.outside_root": [
+    "reject"
+  ],
+  "TraceabilityImportPathPolicy.pythonpath_environment": [
+    "absent"
+  ],
+  "TraceabilityImportPathPolicy.symlinks": [
+    "resolve_then_require_root_containment"
+  ],
+  "TraceabilityInstalledDistributionFingerprintPolicy.ordering": [
+    "normalized_name_then_version"
+  ],
+  "TraceabilityInstalledDistributionFingerprintPolicy.required": [
+    true
+  ],
+  "TraceabilityInterpreterPolicy.executable_sha256": [
+    "independently_observed_required"
+  ],
+  "TraceabilityInterpreterPolicy.implementation": [
+    "CPython"
+  ],
+  "TraceabilityLifecycleEligibilityReference.eligibility_purpose": [
+    "semantic_ingestion_traceability_lifecycle_record"
+  ],
+  "TraceabilityLifecycleEligibilityReference.source_kind": [
+    "independently_provisioned_genesis",
+    "prior_verified_lifecycle_root"
+  ],
+  "TraceabilityProvisionedTrustArtifactGenesisProvenance.source_kind": [
+    "independently_provisioned_genesis"
+  ],
+  "TraceabilityProvisionedTrustArtifactSuccessorProvenance.source_kind": [
+    "prior_verified_lifecycle_root"
+  ],
+  "TraceabilityRecoveryPolicyGenesisSignerProvenance.source_kind": [
+    "independently_provisioned_bootstrap_anchor"
+  ],
+  "TraceabilityRecoveryPolicyGenesisSignerProvenance.signature_purpose": [
+    "semantic_ingestion_traceability_recovery_policy"
+  ],
+  "TraceabilitySignerCoordinate.source_kind": [
+    "prior_verified_lifecycle_root"
+  ],
+  "TraceabilityLifecycleRootGenerationMember.artifact_kind": [
+    "trust_lifecycle_root"
+  ],
+  "TraceabilityLifecycleRootGenerationMember.binding_id": [
+    "TraceabilityTrustLifecycleRootBody.v1"
+  ],
+  "TraceabilityLifecycleRootGenerationMember.schema_id": [
+    "TraceabilityTrustLifecycleRoot.v1"
+  ],
+  "TraceabilityLifecycleRootGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityLocaleTimezonePolicy.lang": [
+    "C.UTF-8"
+  ],
+  "TraceabilityLocaleTimezonePolicy.lc_all": [
+    "C.UTF-8"
+  ],
+  "TraceabilityLocaleTimezonePolicy.timezone": [
+    "UTC"
+  ],
+  "TraceabilityLockfilePolicy.state": [
+    "absent"
+  ],
+  "TraceabilityLockfilePolicy.state_must_be_observed": [
+    true
+  ],
+  "TraceabilityMonotonicTimeWitnessBody.issuance_purpose": [
+    "semantic_ingestion_traceability_monotonic_time_witness"
+  ],
+  "TraceabilityMonotonicTimeWitnessSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_monotonic_time_witness"
+  ],
+  "TraceabilityNetworkPolicy.enforcement": [
+    "denied"
+  ],
+  "TraceabilityNetworkPolicy.enforcement_observation_digest": [
+    "required"
+  ],
+  "TraceabilityNetworkPolicy.outbound_and_listen": [
+    "forbidden"
+  ],
+  "TraceabilityPluginPolicy.autoload": [
+    "disabled"
+  ],
+  "TraceabilityPluginPolicy.builtin_plugin_set": [
+    "bound_by_pytest_distribution_tree_digest"
+  ],
+  "TraceabilityPointerHistoryGenerationMember.artifact_kind": [
+    "pointer_history"
+  ],
+  "TraceabilityPointerHistoryGenerationMember.binding_id": [
+    "TraceabilityActiveReleasePointerHistoryBody.v1"
+  ],
+  "TraceabilityPointerHistoryGenerationMember.schema_id": [
+    "TraceabilityActiveReleasePointerHistory.v1"
+  ],
+  "TraceabilityPointerHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityPointerHistorySignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_pointer_history"
+  ],
+  "TraceabilityProjectMetadataPolicy.path": [
+    "pyproject.toml"
+  ],
+  "TraceabilityPytestIniPolicy.pythonpath": [
+    "."
+  ],
+  "TraceabilityPytestIniPolicy.testpaths": [
+    "tests"
+  ],
+  "TraceabilityRawDesignGenerationMember.artifact_kind": [
+    "design_document"
+  ],
+  "TraceabilityRawDesignGenerationMember.binding_digest": [
+    "raw-sha256-bytes-v1"
+  ],
+  "TraceabilityRawDesignGenerationMember.schema_id": [
+    "memorii.raw.design_document.v1"
+  ],
+  "TraceabilityRawDesignGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRawRegistryGenerationMember.artifact_kind": [
+    "registry_source"
+  ],
+  "TraceabilityRawRegistryGenerationMember.binding_digest": [
+    "raw-sha256-bytes-v1"
+  ],
+  "TraceabilityRawRegistryGenerationMember.schema_id": [
+    "memorii.raw.traceability_registry_source.v1"
+  ],
+  "TraceabilityRawRegistryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityReaderAuthorizationRequestBody.requested_purpose": [
+    "traceability_generation_read"
+  ],
+  "TraceabilityReaderLeaseSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_reader_lease"
+  ],
+  "TraceabilityRecoveryPolicyGenerationMember.artifact_kind": [
+    "recovery_policy"
+  ],
+  "TraceabilityRecoveryPolicyGenerationMember.binding_id": [
+    "TraceabilityRecoveryTrustPolicyBody.v1"
+  ],
+  "TraceabilityRecoveryPolicyGenerationMember.schema_id": [
+    "TraceabilityRecoveryTrustPolicy.v1"
+  ],
+  "TraceabilityRecoveryPolicyGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRecoveryPolicyHistoryGenerationMember.artifact_kind": [
+    "recovery_policy_history"
+  ],
+  "TraceabilityRecoveryPolicyHistoryGenerationMember.binding_id": [
+    "TraceabilityRecoveryPolicyHistoryBody.v1"
+  ],
+  "TraceabilityRecoveryPolicyHistoryGenerationMember.schema_id": [
+    "TraceabilityRecoveryPolicyHistory.v1"
+  ],
+  "TraceabilityRecoveryPolicyHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRecoveryPolicySignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_recovery_policy"
+  ],
+  "TraceabilityRecoveryRootGenerationMember.artifact_kind": [
+    "recovery_root"
+  ],
+  "TraceabilityRecoveryRootGenerationMember.binding_id": [
+    "TraceabilityRecoveryTrustRoot.v1"
+  ],
+  "TraceabilityRecoveryRootGenerationMember.schema_id": [
+    "TraceabilityRecoveryTrustRoot.v1"
+  ],
+  "TraceabilityRecoveryRootGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRecoveryRootHistoryGenerationMember.artifact_kind": [
+    "recovery_root_history"
+  ],
+  "TraceabilityRecoveryRootHistoryGenerationMember.binding_id": [
+    "TraceabilityRecoveryRootHistoryBody.v1"
+  ],
+  "TraceabilityRecoveryRootHistoryGenerationMember.schema_id": [
+    "TraceabilityRecoveryRootHistory.v1"
+  ],
+  "TraceabilityRecoveryRootHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRecoveryTrustPolicyBody.issuance_purpose": [
+    "semantic_ingestion_traceability_recovery_policy"
+  ],
+  "TraceabilityRecoveryTrustRootBody.issuance_purpose": [
+    "semantic_ingestion_traceability_recovery_root"
+  ],
+  "TraceabilityRegisteredCommand.working_directory": [
+    "memorii"
+  ],
+  "TraceabilityReleaseGenerationMember.artifact_kind": [
+    "release"
+  ],
+  "TraceabilityReleaseGenerationMember.binding_id": [
+    "SemanticIngestionTraceabilityReleaseBody.v1"
+  ],
+  "TraceabilityReleaseGenerationMember.schema_id": [
+    "SemanticIngestionTraceabilityRelease.v1"
+  ],
+  "TraceabilityReleaseGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityReleaseHistoryBody.issuance_purpose": [
+    "semantic_ingestion_traceability_release_history"
+  ],
+  "TraceabilityReleaseHistoryEntryBody.prior_release_terminal_state": [
+    "superseded",
+    "revoked",
+    "compromised"
+  ],
+  "TraceabilityReleaseHistoryGenerationMember.artifact_kind": [
+    "release_history"
+  ],
+  "TraceabilityReleaseHistoryGenerationMember.binding_id": [
+    "TraceabilityReleaseHistoryBody.v1"
+  ],
+  "TraceabilityReleaseHistoryGenerationMember.schema_id": [
+    "TraceabilityReleaseHistory.v1"
+  ],
+  "TraceabilityReleaseHistoryGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityReleaseHistorySignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_release_history"
+  ],
+  "TraceabilityReleaseTrustSnapshotBody.issuance_purpose": [
+    "semantic_ingestion_traceability_release_trust_snapshot"
+  ],
+  "TraceabilityReportSchemaArtifact.canonical_profile_id": [
+    "memorii-sia-canonical-json-v1"
+  ],
+  "TraceabilityReportSchemaArtifact.media_type": [
+    "application/schema+json"
+  ],
+  "TraceabilityReportSchemaArtifact.schema_id": [
+    "memorii.semantic_ingestion.pytest_report"
+  ],
+  "TraceabilityReportSchemaArtifact.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityReportSchemaGenerationMember.artifact_kind": [
+    "report_schema"
+  ],
+  "TraceabilityReportSchemaGenerationMember.canonical_profile_id": [
+    "memorii-sia-canonical-json-v1"
+  ],
+  "TraceabilityResultArtifactGenerationMember.artifact_kind": [
+    "result_artifact"
+  ],
+  "TraceabilityResultArtifactGenerationMember.binding_digest": [
+    "memorii:sia-traceability-result-artifact:v1"
+  ],
+  "TraceabilityResultArtifactGenerationMember.schema_id": [
+    "memorii.raw.traceability_result_artifact.v1"
+  ],
+  "TraceabilityResultArtifactGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRetentionWatermarkBody.issuance_purpose": [
+    "semantic_ingestion_traceability_retention_watermark"
+  ],
+  "TraceabilityRetentionWatermarkSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_retention_watermark"
+  ],
+  "TraceabilityRunnerEnvironmentObservationBody.runner_environment_profile_id": [
+    "memorii.semantic_ingestion.runner_environment"
+  ],
+  "TraceabilityRunnerEnvironmentObservationBody.runner_environment_profile_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerEnvironmentProfile.canonical_profile_id": [
+    "memorii-sia-canonical-json-v1"
+  ],
+  "TraceabilityRunnerEnvironmentProfile.profile_id": [
+    "memorii.semantic_ingestion.runner_environment"
+  ],
+  "TraceabilityRunnerEnvironmentProfile.profile_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerEnvironmentProfileGenerationMember.artifact_kind": [
+    "runner_environment_profile"
+  ],
+  "TraceabilityRunnerEnvironmentProfileGenerationMember.canonical_profile_id": [
+    "memorii-sia-canonical-json-v1"
+  ],
+  "TraceabilityRunnerObservationGenerationMember.artifact_kind": [
+    "runner_environment_observation"
+  ],
+  "TraceabilityRunnerObservationGenerationMember.binding_id": [
+    "TraceabilityRunnerEnvironmentObservationBody.v1"
+  ],
+  "TraceabilityRunnerObservationGenerationMember.schema_id": [
+    "CanonicalEncodedArtifact.v1"
+  ],
+  "TraceabilityRunnerObservationGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerPolicy.distribution": [
+    "pytest"
+  ],
+  "TraceabilityRunnerPolicy.distribution_tree_sha256": [
+    "independently_observed_required"
+  ],
+  "TraceabilityRunnerPolicy.selected_test_policy": [
+    "all_collected_no_skip_xfail_deselect"
+  ],
+  "TraceabilityRunnerReportBody.execution_result": [
+    "pass",
+    "fail",
+    "indeterminate"
+  ],
+  "TraceabilityRunnerReportBody.execution_status": [
+    "executed",
+    "cancelled",
+    "error"
+  ],
+  "TraceabilityRunnerReportBody.report_schema_id": [
+    "memorii.semantic_ingestion.pytest_report"
+  ],
+  "TraceabilityRunnerReportBody.report_schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerReportGenerationMember.artifact_kind": [
+    "runner_report"
+  ],
+  "TraceabilityRunnerReportGenerationMember.binding_id": [
+    "TraceabilityRunnerReportBody.v1"
+  ],
+  "TraceabilityRunnerReportGenerationMember.schema_id": [
+    "CanonicalEncodedArtifact.v1"
+  ],
+  "TraceabilityRunnerReportGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityRunnerRequirements.environment_policy": [
+    "clean_allowlisted"
+  ],
+  "TraceabilityRunnerRequirements.exit_policy": [
+    "zero_and_every_selected_test_passed"
+  ],
+  "TraceabilityRunnerRequirements.network_policy": [
+    "denied"
+  ],
+  "TraceabilityRunnerRequirements.runner_kind": [
+    "cpython_pytest"
+  ],
+  "TraceabilityRunnerRequirements.selection_policy": [
+    "all_selected_collected_no_skip_xfail_deselect"
+  ],
+  "TraceabilitySignaturePurpose": [
+    "semantic_ingestion_traceability_release",
+    "semantic_ingestion_traceability_recovery_policy",
+    "semantic_ingestion_traceability_lifecycle_record",
+    "semantic_ingestion_traceability_lifecycle_root",
+    "semantic_ingestion_traceability_approval_generation",
+    "semantic_ingestion_traceability_active_release_pointer",
+    "semantic_ingestion_traceability_coverage",
+    "semantic_ingestion_normative_evidence",
+    "semantic_ingestion_traceability_release_history",
+    "semantic_ingestion_traceability_pointer_history",
+    "semantic_ingestion_traceability_retention_watermark",
+    "semantic_ingestion_traceability_reader_lease",
+    "semantic_ingestion_traceability_monotonic_time_witness",
+    "semantic_ingestion_traceability_generation_verification"
+  ],
+  "TraceabilityStartupCustomizationPolicy.sitecustomize": [
+    "absent"
+  ],
+  "TraceabilityStartupCustomizationPolicy.usercustomize": [
+    "absent"
+  ],
+  "TraceabilityStderrGenerationMember.artifact_kind": [
+    "stderr_artifact"
+  ],
+  "TraceabilityStderrGenerationMember.binding_digest": [
+    "memorii:sia-traceability-stderr:v1"
+  ],
+  "TraceabilityStderrGenerationMember.schema_id": [
+    "memorii.raw.traceability_stderr.v1"
+  ],
+  "TraceabilityStderrGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityStderrGenerationMember.sharing_policy": [
+    "single_report",
+    "exact_bytes_all_owners_explicitly_permit"
+  ],
+  "TraceabilityStderrGenerationMember.stream": [
+    "stderr"
+  ],
+  "TraceabilityStdoutGenerationMember.artifact_kind": [
+    "stdout_artifact"
+  ],
+  "TraceabilityStdoutGenerationMember.binding_digest": [
+    "memorii:sia-traceability-stdout:v1"
+  ],
+  "TraceabilityStdoutGenerationMember.schema_id": [
+    "memorii.raw.traceability_stdout.v1"
+  ],
+  "TraceabilityStdoutGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityStdoutGenerationMember.sharing_policy": [
+    "single_report",
+    "exact_bytes_all_owners_explicitly_permit"
+  ],
+  "TraceabilityStdoutGenerationMember.stream": [
+    "stdout"
+  ],
+  "TraceabilityStructuralManifestGenerationMember.artifact_kind": [
+    "structural_manifest"
+  ],
+  "TraceabilityStructuralManifestGenerationMember.binding_id": [
+    "NormativeTraceabilityStructuralManifestBody.v1"
+  ],
+  "TraceabilityStructuralManifestGenerationMember.schema_id": [
+    "NormativeTraceabilityStructuralManifest.v1"
+  ],
+  "TraceabilityStructuralManifestGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityStructuralRuleSource.effect": [
+    "add_matching_ledger_requirement"
+  ],
+  "TraceabilityStructuralRuleSource.selector_kind": [
+    "named_table_rows"
+  ],
+  "TraceabilityTestArtifactGenerationMember.artifact_kind": [
+    "test_artifact"
+  ],
+  "TraceabilityTestArtifactGenerationMember.binding_digest": [
+    "memorii:sia-traceability-test-artifact:v1"
+  ],
+  "TraceabilityTestArtifactGenerationMember.schema_id": [
+    "memorii.raw.traceability_test_artifact.v1"
+  ],
+  "TraceabilityTestArtifactGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityTestEvidenceGroup.report_schema_id": [
+    "memorii.semantic_ingestion.pytest_report"
+  ],
+  "TraceabilityTestEvidenceGroup.report_schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityTestEvidenceGroup.runner_environment_profile_id": [
+    "memorii.semantic_ingestion.runner_environment"
+  ],
+  "TraceabilityTestEvidenceGroup.runner_environment_profile_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ],
+  "TraceabilityTestImplementationStatus": [
+    "repository_evidenced",
+    "required_not_yet_evidenced"
+  ],
+  "TraceabilityTrustLifecycleAction": [
+    "activate",
+    "rotate",
+    "revoke",
+    "compromise",
+    "recover"
+  ],
+  "TraceabilityTrustLifecycleRecordBody.issuance_purpose": [
+    "semantic_ingestion_traceability_lifecycle_record"
+  ],
+  "TraceabilityTrustLifecycleRecordBody.target_kind": [
+    "bootstrap_anchor",
+    "recovery_root"
+  ],
+  "TraceabilityTrustLifecycleRecordSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_lifecycle_record"
+  ],
+  "TraceabilityTrustLifecycleRootBody.issuance_purpose": [
+    "semantic_ingestion_traceability_lifecycle_root"
+  ],
+  "TraceabilityTrustLifecycleRootSignaturePreimage.issuance_purpose": [
+    "semantic_ingestion_traceability_lifecycle_root"
+  ],
+  "TraceabilityTrustLifecycleSignerBinding.signature_purpose": [
+    "semantic_ingestion_traceability_lifecycle_record"
+  ],
+  "TraceabilityTrustSnapshotGenerationMember.artifact_kind": [
+    "trust_snapshot"
+  ],
+  "TraceabilityTrustSnapshotGenerationMember.binding_id": [
+    "TraceabilityReleaseTrustSnapshotBody.v1"
+  ],
+  "TraceabilityTrustSnapshotGenerationMember.schema_id": [
+    "TraceabilityReleaseTrustSnapshot.v1"
+  ],
+  "TraceabilityTrustSnapshotGenerationMember.schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
+  ]
+}
+```
+`[SIA-CTV-ENUM-REGISTRY-V2-END]`
+
+
+For the v1 baseline only, this closed marked registry is the sole enum
+authority for the v1 CTV profile.
+The validator parses these bytes, rejects unknown schemas or members, and never
+uses Python inheritance, aliases, ambient symbol lookup, or open-string
+fallback. Its canonical JSON payload digest is
+`SHA-256("memorii:sia-ctv-enum-registry:v1\\0" || payload_bytes)`. The CTV
+profile preimage appends `LP("sia-ctv-enum-registry-v1")`,
+`LP(enum_registry_digest)`, and `LP(payload_bytes)` after the grammar fields.
+Every recipe source identity binds that enum-registry digest in addition to
+the complete design and registry byte identities.
+
+Every reachable inline `Literal[...]` declaration is also a registered enum
+schema. Its schema ID is exactly
+`<fully-qualified-declaring-class>.<field_name>`. The declaring class is the
+class whose body contains the annotation; inherited fields retain that
+original declaring owner at every use site. A named union or Literal alias uses
+its exact marked alias ID instead. Registry members are the exact Literal
+values in declaration order after type-sensitive duplicate rejection. Equal member sets do
+not coalesce, no short name or use-site alias is accepted, and no inheritance,
+fallback, or ambient symbol lookup participates in decoding. Every value in a
+registered Literal/enum field is encoded as
+`{"$type":"enum","schema":schema_id,"member":member}`; a bare string rejects.
+`member` is a `CanonicalLiteralScalar`: an exact Unicode-scalar string,
+boolean, canonical CTV integer token, or null. Containers, floats,
+stringification, numeric/boolean coercion, and aliases reject. Registry and
+token identity is `(schema, typed member)`; boolean `true`, integer `1`, string
+`"1"`, and string `"true"` are four distinct members.
+
+#### 3.23.4.2.1 C2-only canonical typed-value profile v2
+
+All preceding v1 profile text remains legacy authority and is not amended by
+this subsection. C2 artifacts use profile ID
+`semantic_ingestion_typed_value`, version `2`, exclusively. A v1 binding,
+decoder, fingerprint, digest, or encoded value is never interchangeable with
+v2 and must fail before body decoding when presented as C2 authority.
+
+`[SIA-CTV-GRAMMAR-V2-BEGIN]`
+```text
+profile_id=semantic_ingestion_typed_value
+profile_version=2
+null=json-null
+boolean=json-boolean
+integer=tagged-canonical-base10-unbounded
+string=unicode-scalar-string
+bytes=tagged-canonical-padded-rfc4648-base64
+datetime=tagged-utc-microseconds-z
+duration=tagged-signed-int64-microseconds
+list=tagged-ordered-list
+tuple=tagged-ordered-tuple
+set=tagged-canonical-encoded-byte-order-unique-set
+frozenset=tagged-canonical-encoded-byte-order-unique-frozenset
+map=tagged-unicode-scalar-key-order-unique-map
+enum=tagged-schema-and-canonical-literal-scalar-member
+enum_member=string|boolean|tagged-canonical-integer|null
+unknown_tag=reject
+unknown_schema=reject
+unknown_enum_schema_or_member=reject
+```
+`[SIA-CTV-GRAMMAR-V2-END]`
+
+V2 tokens are independent of v1. JSON `null`, `true`, `false`, and Unicode
+scalar strings are the only untagged tokens. Integer is exactly
+`{"$type":"integer","value":<string>}` where the string matches
+`0|-?[1-9][0-9]*`. Bytes, datetime, and duration are respectively exact
+two-key objects using tags `bytes`, `datetime`, and
+`duration_microseconds` plus key `value`; values are canonical padded RFC 4648
+base64, `YYYY-MM-DDTHH:MM:SS.ffffffZ` denoting a real UTC instant, and a
+canonical signed-int64 integer string. List, tuple, set, and frozenset are exact
+two-key objects with their same-name `$type` and `items` array. Lists and
+tuples preserve declared order. Sets and frozensets contain unique values
+ordered by their complete canonical encoded bytes. Map is exactly
+`{"$type":"map","entries":[[key,value],...]}`; every entry is a two-element
+array, keys are Unicode scalar strings, and entries are strictly
+Unicode-scalar-byte ordered with no duplicate key. Model values use that map
+form with exactly the declared fields in declaration order before map
+canonicalization. Enum is exactly
+`{"$type":"enum","schema":<Unicode scalar string>,"member":<literal scalar>}`;
+integer members use the tagged integer form.
+
+Canonical serialization is strict UTF-8 JSON without BOM, NFC-normalizes
+nothing, uses sorted object keys, `:` and `,` without whitespace, JSON escaping
+only as required for quote, backslash, and controls, and exactly one terminal
+LF. Floats, duplicate JSON names, surrogates, noncanonical escapes, CRLF,
+leading/trailing whitespace, and trailing bytes reject. Optional means a
+declared union with null and encodes null explicitly. Omitted fields are
+forbidden. Defaults do not authorize omission: the exact field and its
+validated value are always encoded. Unknown or extra fields reject.
+
+The v2 enum registry is the complete transitive registry under
+`[SIA-CTV-ENUM-REGISTRY-V2-BEGIN]` and
+`[SIA-CTV-ENUM-REGISTRY-V2-END]`; only those v2-marked bytes are interpreted
+by the v2 rules here, and they do not retroactively amend the separately marked
+v1 baseline. Its digest is
+`SHA-256("memorii:sia-ctv-enum-registry:v2\\0" ||
+canonical_enum_registry_bytes)`.
+
+The v2 profile preimage is
+`"memorii:sia-ctv-profile:v2\\0" || LP(profile_id) || LP("2") ||
+LP("sia-ctv-grammar-v2") || LP(grammar_digest) || LP(grammar_bytes) ||
+LP("sia-ctv-enum-registry-v2") || LP(enum_registry_digest) ||
+LP(canonical_enum_registry_bytes)`. The profile digest is SHA-256 of that
+preimage.
+
+Each of the exact 56 coordinates in
+`[SIA-TRACEABILITY-SCHEMA-INVENTORY-V1-BEGIN]` maps one-to-one to a declared
+root. Recursive normalization resolves annotations by declaring owner and
+field order; expands named aliases, unions, collections, nullability, and
+model references; preserves tuple position; sorts union alternatives by their
+canonical normalized bytes; and rejects unresolved forward references,
+unsupported annotations, recursion without a finite named-model edge, or
+ambient runtime lookup. A schema fingerprint is
+`SHA-256("memorii:sia-ctv-schema-fingerprint:v2\\0" ||
+LP(schema_coordinate) || LP(normalized_recursive_graph_bytes))`.
+
+For v2 authority compilation, a parseable Python fence containing at least one
+module-level class declaration is a schema fence and is a closed static
+declaration language, not executable Python. Its module body contains only
+undecorated direct class declarations with at most one direct-name base and
+single-name declarative aliases composed from names, literal constants,
+collections, subscripts, `|` unions, signed literal scalars, and `Field(...)`
+metadata. Imports, functions, type-alias statements, annotated, destructuring,
+augmented, or dynamic namespace assignments, deletion, expressions, control
+flow, context managers, exception handlers, pattern matching, and every other
+executable or unsupported module statement reject. Non-schema example fences
+do not contribute declarations. No `globals()`, `vars()`, attribute, subscript,
+import, star-import, or other dynamic namespace mechanism can declare or
+replace `BaseModel` or another schema symbol.
+Class and alias identifiers share one global namespace across all schema
+fences. Every identifier is declared exactly once: class/class, alias/alias,
+and class/alias collisions reject even when the duplicate syntax or value is
+byte-identical. In particular, none of the 28
+`TraceabilityGenerationMember` alternative model names may be rebound by an
+alias before tagged-union validation or normalization.
+
+The CTV projection is exactly the 56 inventory roots plus declarations and
+aliases reached transitively from those roots. A projected model class body
+contains only simple-name annotated fields; methods, nested classes,
+unannotated assignments, decorators, validators, expressions, control flow,
+dynamic `__annotations__`, `globals()`, `vars()`, `setattr()`, and every other
+class-body form reject. The seven direct-`Protocol` declarations
+`AuthenticatedIngressContextResolver`,
+`CapabilityBaselineApprovalVerifier`,
+`DeploymentAuthorizationTrustStore`,
+`DeploymentAuthorizationVerifier`,
+`GraphObservationAuthorizer`,
+`SemanticIngestionAtomicStore`, and
+`SemanticIngestionOutcomeAuthorizer` remain normative interface declarations
+outside CTV. They contain only undecorated synchronous method stubs with
+static annotated signatures and an ellipsis body. `SourceKind` is the sole
+direct-`StrEnum` declaration and contains only simple-name literal-string
+members. Any `Protocol` or `StrEnum` entering the 56-root transitive projection
+rejects rather than normalizing as an empty model.
+
+Local model inheritance is part of that transitive closure: every traversed
+local parent is projected, its fields retain the parent as declaring owner, and
+its field presence, defaults, constraints, normalized graph, fingerprint, and
+binding effects are identical to directly declared projected fields.
+
+CTV is a projection of declared value domain, field presence, integer
+constraints, and canonical literal default metadata; it does not claim full
+Pydantic runtime equivalence. A projected field has no default expression or
+one exact `Field(...)` call with no positional arguments and only unique
+keywords from `default`, `ge`, `gt`, and `le`. The three constraint values are
+integer literals excluding booleans. `default` is null, a string, boolean, or
+integer canonical literal scalar and is included in the normalized graph;
+it never authorizes omission because CTV model values still encode every
+declared field. Unknown or duplicate keywords, `**kwargs`, `default_factory`,
+`alias`, `discriminator`, unsupported constraints, nonliteral values, and
+every other default call reject. The current three `Field(default=None)`
+declarations are outside the 56-root transitive projection; if a future
+reachable field uses that supported form, its literal-null default changes the
+schema fingerprint and binding.
+
+Projected `Annotated[T, ...]` metadata is validated before the wrapper is
+removed. The current reachable inventory contains exactly one form:
+`TraceabilityGenerationMember = Annotated[..., Field(discriminator="artifact_kind")]`.
+That exact single, no-positional-argument, discriminator-only call is routing
+metadata for selecting the already declared tagged-union alternative; it does
+not alter the CTV value domain and therefore is authorized without adding a
+second fingerprint component. The wrapped type must be the exact ordered
+28-model union declared in `TraceabilityGenerationMember` above. Every
+alternative must resolve directly to its declared model, expose exactly one
+`artifact_kind` field whose annotation is a one-string `Literal`, and have a
+unique discriminator value; the ordered `(model, discriminator)` pairs in that
+declaration are the complete frozen set. A scalar, Literal, nonunion, alias,
+unknown or nonmodel member, missing or multi-valued tag, duplicate tag, removed
+alternative, added alternative, or reordered alternative rejects. Direct,
+quoted-forward-reference, and
+alias-expanded annotations use the same check. Any default, factory, alias,
+validation alias, constraint, unknown or duplicate keyword, `**kwargs`,
+positional argument, arbitrary call or name, or multiple/unsupported metadata
+item rejects rather than being silently stripped. Literal-alias resolution
+validates every nested `Annotated` wrapper before its Literal fast path
+unwraps it. Even `Field(discriminator="artifact_kind")` rejects on a literal
+alias or any owner other than the exact `TraceabilityGenerationMember` union.
+
+Every JSON block consumed as CTV design authority, including both marked enum
+registries and the checked binding-authority artifact, uses a duplicate-name
+rejecting object parser before canonicalization. Duplicate object names reject
+even when both complete values are byte-identical, including duplicate
+top-level authority names and names nested inside a schema row.
+
+For each coordinate, the binding preimage is
+`"memorii:sia-ctv-binding:v2\\0" || LP(profile_id) || LP("2") ||
+LP(profile_digest) || LP(schema_coordinate) || LP("1") ||
+LP(schema_fingerprint)`. Its SHA-256 is the binding digest.
+`docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json`
+is the sole machine-readable enumeration of the grammar digest, enum digest,
+profile digest, 56 normalized graph digests, fingerprints, preimage inputs,
+and binding digests. It is derived only from marked design authority. Corpus,
+fixture, package, signer, lifecycle, and mutation data are forbidden inputs.
+Its `source_design_sha256` is the SHA-256 of the complete design bytes after
+replacing only the payload of the separately marked v1 enum baseline with the
+exact ASCII line `<v1-baseline-excluded-from-v2-authority>\n`. This preserves
+v2 sensitivity to its own grammar, registry, inventory, and declarations while
+making a v1-only baseline mutation incapable of changing v2 authority.
+
+The inventory is Unicode-scalar sorted and contains every independently bound
+top-level typed body, signature preimage, registry root, and digest tuple needed
+by M0A accepted vectors. Nested models, unions, enums, and shared coordinates
+are fingerprinted transitively through their owning top-level schema and do not
+receive a second ambient binding.
+Raw design, registry, report, environment, stdout, stderr, test, and result
+members retain their separately specified raw-byte bindings. An inventory
+change requires a new profile-registry version.
+
+For each inventory coordinate `S = (schema_id, 1)`, the v1 registry entry is
+derived from six exact component source objects. Each object is serialized with
+`memorii-sia-canonical-json-v1`, including its terminal LF. The substituted
+`schema_inventory_digest` is lowercase hex of
+`SHA-256("memorii:sia-traceability-schema-inventory:v1\\0" ||
+schema_inventory_bytes)`.
+
+```json
+{"component":"schema_fingerprint","design_document_digest":"<design_document_digest>","policy":"closed_declared_schema_and_transitive_types","profile_id":"semantic_ingestion_typed_value","profile_version":1,"schema_id":"<S.schema_id>","schema_inventory_digest":"<schema_inventory_digest>","schema_version":1}
+{"component":"enum_registry","design_document_digest":"<design_document_digest>","policy":"exact_literal_and_enum_members_in_registered_schema","profile_id":"semantic_ingestion_typed_value","profile_version":1,"schema_id":"<S.schema_id>","schema_inventory_digest":"<schema_inventory_digest>","schema_version":1}
+{"component":"optional_field_policy","design_document_digest":"<design_document_digest>","policy":"exact_required_omittable_nullable_state_in_registered_schema","profile_id":"semantic_ingestion_typed_value","profile_version":1,"schema_id":"<S.schema_id>","schema_inventory_digest":"<schema_inventory_digest>","schema_version":1}
+{"component":"numeric_encoding_spec_registry","design_document_digest":"<design_document_digest>","policy":"exact_field_constraints_and_no_ambient_numeric_default","profile_id":"semantic_ingestion_typed_value","profile_version":1,"schema_id":"<S.schema_id>","schema_inventory_digest":"<schema_inventory_digest>","schema_version":1}
+{"component":"digest_signature_field_policy","design_document_digest":"<design_document_digest>","policy":"exclude_only_the_named_outer_digest_and_signature_fields","profile_id":"semantic_ingestion_typed_value","profile_version":1,"schema_id":"<S.schema_id>","schema_inventory_digest":"<schema_inventory_digest>","schema_version":1}
+{"component":"decoder","design_document_digest":"<design_document_digest>","policy":"strict_schema_decode_then_profile_reencode_byte_equal","profile_id":"semantic_ingestion_typed_value","profile_version":1,"schema_id":"<S.schema_id>","schema_inventory_digest":"<schema_inventory_digest>","schema_version":1}
+```
+
+Angle-bracket tokens are substitutions, not literal output. The design digest
+is the exact raw-design digest defined in Section 3.23.4.1. It conservatively
+binds every schema entry to the complete frozen declaration source, so any
+field, type, constraint, enum, optionality, exclusion, or transitive shared-type
+change changes every v1 entry rather than relying on a partial Python-schema
+interpreter. The six domains
+are, in object order:
+`memorii:sia-ctv-schema-fingerprint:v1\\0`,
+`memorii:sia-ctv-enum-registry:v1\\0`,
+`memorii:sia-ctv-optional-field-policy:v1\\0`,
+`memorii:sia-ctv-numeric-spec-registry:v1\\0`,
+`memorii:sia-ctv-digest-signature-field-policy:v1\\0`, and
+`memorii:sia-ctv-decoder:v1\\0`. Each component digest is SHA-256 of its
+domain followed by its complete source-object bytes. The binding digest uses
+the exact preimage
+`"memorii:sia-ctv-binding:v1\\0" || LP(profile_id) ||
+LP(profile_version_decimal) || LP(profile_digest) || LP(schema_id) ||
+LP(schema_version_decimal) || LP(schema_fingerprint) ||
+LP(enum_registry_digest) || LP(optional_field_policy_digest) ||
+LP(numeric_encoding_spec_registry_digest) ||
+LP(digest_signature_field_policy_digest)`. The decoder digest is deliberately
+excluded from the binding digest and included in the registry-entry digest,
+matching the profile contract above. Every v1 entry has null `upcast_target`
+and `upcaster_digest` and `read_status="active"`.
+
+Registry bootstrap must not require a registry-selected codec. Define `LP(x)`
+as the existing unsigned-64-bit-length-prefixed exact bytes operation. For a v1
+entry, `entry_digest` is SHA-256 of
+`"memorii:sia-ctv-registry-entry:v1\\0" || LP(profile_id) ||
+LP(profile_version_decimal) || LP(profile_digest) || LP(schema_id) ||
+LP(schema_version_decimal) || LP(binding_digest) || LP(schema_fingerprint) ||
+LP(enum_registry_digest) || LP(optional_field_policy_digest) ||
+LP(numeric_encoding_spec_registry_digest) ||
+LP(digest_signature_field_policy_digest) || LP(decoder_digest) || LP("") ||
+LP("") || LP("active")`; the two empty values encode the null upcast target
+and null upcaster digest. `registry_digest` is SHA-256 of
+`"memorii:sia-ctv-profile-registry:v1\\0" || LP(profile_id) ||
+LP(profile_version_decimal) || LP(grammar_revision) || LP(grammar_digest) ||
+LP(profile_digest) || LP(entry_count_decimal) || LP(entry_digest_1) || ... ||
+LP(entry_digest_n)` in inventory order. These primitive preimages are the only
+bootstrap encoding of the profile registry; after verification, ordinary
+typed artifacts use the registered canonical profile. A hand-entered digest,
+partial schema list, implementation-reflected schema, or unequal component
+source rejects.
+
+The test signature profile is exactly Ed25519 RFC 8032 PureEdDSA with SHA-512,
+profile ID `memorii.test.ed25519.rfc8032.v1`, empty context, no prehash, no
+external randomness, 32-byte seed, 32-byte compressed public key, and 64-byte
+`R || S` signature. The message is the exact canonical signature-preimage
+bytes. Canonical point/scalar checks are required. The first three keys are
+published RFC 8032 vectors. The successor-bootstrap seed is the SHA-256 bytes
+of exact ASCII
+`memorii:sia-test-ed25519-seed:fixture-bootstrap-2:v1`; its public key and
+one-byte reference signature are fixed below.
+
+| Signer | Private seed hex | Public key hex | Reference message hex | Reference signature hex |
+| --- | --- | --- | --- | --- |
+| `fixture-bootstrap-1` | `9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60` | `d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a` | empty | `e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b` |
+| `fixture-bootstrap-2` | `c0e0bcc3a021871dc779b17af8fc864f8a745573b140725f9652caa0d5ab9388` | `30526b2d745e0bdffd9d0f60d8215221a924203660c7582d9f952300419638ed` | `00` | `6159255e0eeae506279343929715b780ab3ba35268991c697df0bb9f64e806fe738a3bbd7232b5b68f0c1068787614bdc7a6d655b7cb9662840279e64eecb00b` |
+| `fixture-recovery-1` | `4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb` | `3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c` | `72` | `92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00` |
+| `fixture-recovery-2` | `c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7` | `fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025` | `af82` | `6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a` |
+
+The four signer coordinates and their complete allowed purposes are fixed:
+
+| Signer | Coordinate | Allowed signature purposes |
+| --- | --- | --- |
+| `fixture-bootstrap-1` | `sia-test-signer/v1/fixture-bootstrap-1/d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a` | lifecycle root, coverage approval, normative execution evidence, release, release history, active pointer, reader lease, retention watermark, pointer history, monotonic time witness, approval generation |
+| `fixture-bootstrap-2` | `sia-test-signer/v1/fixture-bootstrap-2/30526b2d745e0bdffd9d0f60d8215221a924203660c7582d9f952300419638ed` | successor bootstrap and recovery replacement only |
+| `fixture-recovery-1` | `sia-test-signer/v1/fixture-recovery-1/3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c` | recovery lifecycle record share 1 only |
+| `fixture-recovery-2` | `sia-test-signer/v1/fixture-recovery-2/fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025` | recovery lifecycle record share 2 only |
+
+The signature-purpose strings are the exact registered
+`TraceabilitySignaturePurpose` members carried by the corresponding preimage;
+the prose labels in the table select those members and never create aliases.
+Recovery lifecycle record 4 contains two signatures in recovery-signer table
+order. Every other signed C2 fixture, including recovery policy, contains one
+`fixture-bootstrap-1` signature. A signer outside this table, a
+purpose-coordinate mismatch, or a per-fixture derived key rejects before
+signature verification.
+
+Hex decodes to exact bytes and is not signed text. The key digest is
+`SHA-256("memorii:sia-test-ed25519-public-key:v1\\0" || public_key_bytes)`.
+Every elaborator must reproduce the three RFC 8032 signatures, derive the
+successor seed/public key, and reproduce its reference signature. Private seeds
+are checked-in test data and production import/dependency tests must prove they
+are unreachable. Operational keys and randomly generated fixture keys are
+forbidden.
+
+The non-authoritative trust ancestry fixes these scalar values:
+
+| Coordinate | Fixed value |
+| --- | --- |
+| authority/channel | `sia-fixture-authority-v1` / `sia-fixture-offline-channel-v1` |
+| bootstrap anchors | `fixture-bootstrap-1`, rotation sequence 1; `fixture-bootstrap-2`, rotation sequence 2 |
+| recovery roots | `fixture-recovery-1`, `fixture-recovery-2`, rotation sequence 1 each |
+| recovery policy | `fixture-recovery-policy-1`, sequence 1, threshold 2, roots ordered by ID |
+| lifecycle roots | `fixture-lifecycle-root-1` through `fixture-lifecycle-root-5` |
+| release/snapshot | `fixture-release-1`, epoch 1, sequence 1, active / `fixture-trust-snapshot-1` |
+| generation/pointer | `fixture-generation-1` / `fixture-pointer-1`, pointer sequence 1 |
+| initial/root-1/root-2/policy time | `2024-01-01T00:00:00.000000Z` / `2024-01-01T00:00:01.000000Z` / `2024-01-01T00:00:02.000000Z` / `2024-01-01T00:00:03.000000Z` |
+| recovery time | `2024-01-01T00:00:03.500000Z` |
+| release/generation time | `2024-01-01T00:00:04.000000Z` / `2024-01-01T00:00:05.000000Z` |
+| common expiry | `2034-01-01T00:00:00.000000Z` |
+
+All trust bodies use target authority `sia-fixture-authority-v1`, provisioned
+channel `sia-fixture-offline-channel-v1`, `recorded_at == effective_at`, the
+common expiry, and null predecessor ID/digest for their sequence-one object.
+Every anchor/root key digest uses the public-key formula above and every
+signature profile is exactly `memorii.test.ed25519.rfc8032.v1`. The bootstrap
+anchor issuance purpose is `semantic_ingestion_traceability_release_root`, its
+target purpose is `semantic_ingestion_traceability_release`, and its authorized
+signature-purpose tuple is the complete Unicode-scalar-sorted
+`TraceabilitySignaturePurpose` set. Each recovery root authorizes only
+`semantic_ingestion_traceability_lifecycle_record`. The fixed lifecycle log
+coordinate carried by provisioned roots is
+`sia-fixture-offline-lifecycle-log-v1`; it is a channel coordinate, not a
+future content digest.
+
+History IDs are `fixture-bootstrap-history-1`,
+`fixture-recovery-root-history-1`, `fixture-recovery-policy-history-0`, and
+`fixture-recovery-policy-history-1`. Bootstrap history 1 contains only
+bootstrap anchor 1; bootstrap history 2 contains anchors 1 and 2 in rotation
+order. The empty policy history has zero policies; history 1 contains exactly
+policy 1. Lifecycle record IDs are
+`fixture-lifecycle-record-1` through `fixture-lifecycle-record-4`; actions are
+respectively bootstrap-1 `activate`, recovery-root-1 `activate`, recovery-root-2
+`activate`, and bootstrap-1-to-bootstrap-2 `recover`. Sequences are 1 through 4, each
+non-genesis record names the immediately prior record digest, and only the
+recover record names the policy digest and replacement bootstrap-2 coordinate.
+The policy's root tuple is ordered `fixture-recovery-1`, then
+`fixture-recovery-2`. Its separation-rule digest is
+`SHA-256("memorii:sia-test-recovery-separation-rule:v1\\0" ||
+"two-distinct-key-digests-and-signer-ids")` over the exact ASCII bytes after
+the separator. No other policy, history, record, or ordering choice is valid.
+
+The topological order is bootstrap anchor and history; recovery roots 1 and 2
+and their history; an empty recovery-policy history; bootstrap activation
+record 1 and lifecycle root 1; recovery-root-1 activation record 2 and
+lifecycle root 2; recovery-root-2 activation record 3 and lifecycle root 3;
+recovery policy 1 signed against root 3; policy history 1; lifecycle root 4
+binding that policy history and the unchanged three-record prefix; bootstrap
+anchor 2 and bootstrap history 2; optional two-root recovery record 4 and
+lifecycle root 5; then trust snapshot,
+structural/coverage/execution fixture roots, release, release history,
+golden-vector manifest, generation manifest, pointer, and pointer history.
+Every non-genesis record therefore names an already materialized prior root and
+terminal record; the policy has an already materialized lifecycle eligibility
+source; and no body names a descendant digest. Root 4 is the unique root for
+the no-recovery accepted generation, while root 5 is the unique root for the
+recovery vector. A root with the same record prefix but a different policy
+history is not interchangeable.
+
+Each node uses its exact registered body binding and recomputed predecessor
+digests. Genesis names the independently provisioned anchor and channel.
+Root activations and recovery policy use `fixture-bootstrap-1`; recovery uses
+both recovery keys in table order. Lifecycle roots, release, release history,
+generation, pointer, and pointer history use `fixture-bootstrap-1` under
+distinct exact purposes. Coverage and normative evidence use distinct
+purpose-qualified coordinates over that same public key; purpose aliases are
+forbidden.
+
+Runner fixture 13 has inner schema
+`TraceabilityRunnerEnvironmentObservationBody.v1`; runner fixture 14 has inner
+schema `TraceabilityRunnerReportBody.v1`. Both use
+`CanonicalEncodedArtifact.v1` only as the outer envelope. Fixture kind and
+inner schema are a closed pair and an envelope schema used as an inner schema
+rejects.
+The normative recipe carries their exact binding digests, artifact
+coordinates, and complete downstream reference closure. Embedding those
+design-bound digests in this document would create a self-referential digest
+definition and is forbidden.
+
+For every ancestry node the golden source records complete schema binding,
+typed-input bytes, body bytes, digest-preimage bytes, body digest, signer
+coordinates, signature-preimage bytes, signatures, envelope bytes, artifact
+digest and coordinate, dependencies, and verdict. Schematic bodies, prose
+aliases such as `lifecycle:pre-transition`, placeholder signatures, omitted
+ancestry bytes, or values derived from production models are invalid. Existing
+schematic aliases must be replaced before the source is complete.
+
+Two independent elaborators start only from the marked grammar and inventory
+bytes, RFC 8032 constants, fixed ancestry table, exact schema declarations,
+and raw design/registry bytes. At least one imports neither Memorii, Pydantic,
+the production encoder, the acceptance verifier, nor the other elaborator.
+They must produce byte-identical profile, component, binding, ancestry, and
+golden artifacts. Disagreement blocks M0A. The resulting content-addressed
+package is pinned in the WorkPlan and remains verification provenance; it
+cannot satisfy `SIA-ED-TRACEABILITY-001` or authorize production.
+
+Acceptance mutates every component source, inventory coordinate, binding,
+decoder digest, key/profile parameter, signer purpose, ancestry timestamp,
+predecessor, threshold/order, body, preimage, signature, and envelope. Each
+mutation must reject at the earliest boundary. Production-boundary tests prove
+that test seeds, fixture IDs, and fixture package paths are absent from
+production.
 
 ### 3.24 Preserve the provider lifecycle contract
 
@@ -15854,3 +20936,198 @@ requirements.
 - [Google LangExtract](https://github.com/google/langextract) provides
   LLM-based structured extraction and source grounding; in this design it is a
   potential proposer implementation, not a semantic truth oracle.
+
+## 6. Canonical Genesis And Structural Contract Correction
+
+### 6.1 Genesis provenance and lifecycle legality (CGS-01 through CGS-03)
+
+The three provenance contracts are distinct and closed:
+`TraceabilityProvisionedTrustArtifactProvenance` belongs only to bootstrap
+anchor (BA) and recovery-root (RR) bodies;
+`TraceabilityRecoveryPolicySignerProvenance` belongs only to the recovery-policy
+(RP) body and signature preimage; and `TraceabilityLifecycleEligibilityReference`
+belongs only to a lifecycle signer binding. A decoder rejects a variant at any
+other owner, including a signer coordinate on a BA/RR genesis body or a lifecycle
+reference in an RP signature preimage.
+
+| Owner and legal state | Required fields | Forbidden fields and verifier-held lookup |
+| --- | --- | --- |
+| BA/RR, sequence one, no predecessor | genesis provenance: authority ID, provisioned channel ID, external provision-authorization-artifact digest, provision signature purpose/profile/key, eligibility interval | predecessor ID/digest and lifecycle root/record. Verifier resolves configured independent trust, verifies its signature and digest, and compares every copied field. External digest is a channel authorization artifact, never the self-referential BA/RR body digest. |
+| BA/RR, sequence greater than one | successor provenance: authority ID, prior verified lifecycle-root digest, prior lifecycle-record digest, eligibility interval; body predecessor ID/digest | provisioned channel/external authorization fields. Verifier replays named root and record and rejects forward/self reference. |
+| RP, sequence one, no predecessor | genesis signer provenance: recovery-policy purpose, authority ID, provisioned channel ID, exact bootstrap-anchor digest, issuer/key/profile, eligibility interval | lifecycle root/record and predecessor policy. Verifier resolves independent BA; digest, target authority, purpose, profile, key, issuer, and interval must equal provenance and body. |
+| RP, sequence greater than one | `TraceabilitySignerCoordinate`: purpose, issuer/key/profile, prior verified lifecycle root/record, eligibility interval; body predecessor policy digest | independent-bootstrap fields. Verifier replays coordinate and requires current BA. |
+| lifecycle record signer | existing `TraceabilityLifecycleEligibilityReference` in `TraceabilityTrustLifecycleSignerBinding` | BA/RR and RP provenance types. Existing lifecycle rules remain sole authority. |
+| lifecycle-root envelope, sequence one | `TraceabilityLifecycleRootGenesisSignerProvenance`: lifecycle-root purpose, authority ID, provisioned channel ID, exact bootstrap-anchor ID/digest, issuer/key/profile, eligibility interval | lifecycle root/record fields. Verifier resolves the independently provisioned bootstrap anchor and requires every copied field to equal that anchor and the root body authority. |
+| lifecycle-root envelope, sequence greater than one | `TraceabilitySignerCoordinate`: lifecycle-root purpose, issuer/key/profile, prior verified lifecycle root/terminal record, eligibility interval | independent-bootstrap fields. Verifier replays the exact prior root/record under the same authority, requires exact equality to one final-action-authorized signer coordinate, and requires root issuance within that coordinate's unchanged interval. |
+
+The BA/RR body digest covers its selected provenance. RP's body digest covers
+`signer_provenance`, and its signature preimage repeats the exact typed value;
+both use the registered CTV binding and never a hand-assembled subset. BA/RR
+are independently channel-authenticated rather than self-signed, so no BA/RR
+signature preimage is invented. The RP preimage includes recomputed body digest
+and the complete provenance variant.
+
+Validation performs typed decode and required/forbidden-field checks, recomputes
+the body digest, resolves verifier-held provisioning material or named historical
+lifecycle view, validates interval/purpose/profile/key and target-authority
+equality, then verifies a signature where one exists. Lifecycle-root envelope
+validation additionally requires the genesis variant exactly when the terminal
+record sequence is one and the successor coordinate exactly when it is greater
+than one; it compares the complete selected provenance value in the envelope and
+the signature preimage before signature verification. It rejects unknown tags,
+field smuggling, genesis after target activation/replacement, successor before
+activation, stale/revoked coordinate, replay under different authority/channel/
+purpose/profile, or a candidate-held lookup result. Provisioning roots, channel
+bindings, and authorization dispatch are deployment configuration, never release
+members or candidate bytes.
+
+#### Binding version, migration, and rollback
+
+No durable or released CTV v2 artifact uses incomplete fields: existing v2 is an
+unshippable M0 fixture contract and is corrected in place. This retains affected
+schema/version labels at v2 only until the first externally published artifact.
+If an artifact under the prior profile is found, activation stops; it is not
+silently reinterpreted. The next change requires new schema/binding version,
+authority profile, and migration record.
+
+| Input generation | Reader behavior | Authorization dispatch | Activation and rollback |
+| --- | --- | --- | --- |
+| pre-correction v2 bytes | `TraceabilityLegacyDiagnosticReader` only reports non-authorizing diagnostic | always reject `legacy_incomplete_provenance` | cannot activate or become rollback target |
+| corrected v2 before publication | current typed reader requires contracts above | current v2 only; a generation is entirely corrected-v2 | select only after full closure verification; rollback may select prior fully verified corrected-v2 generation |
+| future versioned migration | version-specific typed reader and migration verifier | exact version dispatch; mixed members/roots/references reject | pointer transaction selects one verified generation; failed migration leaves prior pointer; rollback appends pointer/history and never rewrites roots, records, or watermarks |
+
+### 6.2 Full structural-manifest reconstruction (CGS-04 through CGS-10)
+
+The canonical machine-readable field ledger is
+`docs/design/semantic_ingestion/traceability_golden_vectors/structural_manifest_derivation_ledger-v1.json`.
+It is validator-owned normative input: compiler/verifier load exact ledger version
+named by `grammar_revision`, not implementation inferred from prose. It contains
+every body field, source record, CTV type, order, digest domain, and ownership.
+The ledger is a raw immutable generation input with coordinate
+`structural_manifest_derivation_ledger/<ledger_schema_id>/<ledger_schema_version>/<ledger_digest>`.
+Its raw member depends only on the raw design and raw registry members, and the
+structural-manifest generation member depends directly on all three raw members.
+Generation closure, authorization, historical replay, and A/B comparison must
+load the named raw ledger bytes, recompute its digest, and require those four
+ledger fields in the structural body to match. A release cannot substitute a
+same-version ledger, an unsigned path lookup, or a ledger fetched after replay.
+
+Inputs are exact raw design bytes, exact registry bytes, frozen CTV authority.
+Design must be nonempty UTF-8 NFC without BOM/NUL/CR and exactly one final LF.
+Registry must be duplicate-key-aware canonical JSON, depth <= 256, numeric token
+<= 1024 bytes, source arrays in source order. Parser rejects, never repairs.
+
+| # | Body field | Source, type, and exact order |
+| --- | --- | --- |
+| 1 | `grammar_revision` | literal ledger revision `structural-manifest-derivation-v1` |
+| 2 | `design_document_digest` | exact raw-design bytes under exact domain ID `raw_design` |
+| 3 | `registry_source_identity` | exact raw-registry bytes under exact domain ID `raw_registry` |
+| 4 | `derivation_ledger_schema_id` | literal `TraceabilityStructuralManifestDerivationLedger.v1` from raw ledger |
+| 5 | `derivation_ledger_schema_version` | literal positive ledger version from raw ledger |
+| 6 | `derivation_ledger_digest` | domain-derived digest over raw ledger bytes under exact domain ID `ledger` |
+| 7 | `derivation_ledger_coordinate` | `structural_manifest_derivation_ledger/<schema>/<version>/<domain-derived digest>` |
+| 8 | `artifact_dag` | closed registry dependency nodes in Kahn order; ties registry array ordinal |
+| 9 | `artifact_dag_digest` | existing artifact-DAG domain over CTV field 8 |
+| 10 | `canonical_profile_binding` | exact registered binding for body |
+| 11 | `requirement_binding_registry_digest` | registry requirement bindings, numeric suffix then source ordinal |
+| 12 | `section_defaults` | registry heading defaults in design heading order |
+| 13 | `section_default_registry_digest` | exact domain for CTV field 12 |
+| 14 | `structural_mapping_rules` | registry source order |
+| 15 | `structural_mapping_rule_registry_digest` | exact domain for CTV field 14 |
+| 16 | `assertion_registry_artifact` | registered `CanonicalEncodedArtifact.v1`, no rewrap |
+| 17 | `assertion_registry_digest` | field 16 outer artifact digest, never body digest |
+| 18 | `test_evidence_groups` | registry source order |
+| 19 | `test_evidence_group_registry_digest` | exact domain for CTV field 18 |
+| 20 | `report_schemas` | registry source order |
+| 21 | `report_schema_registry_digest` | exact domain for CTV field 20 |
+| 22 | `runner_environment_profiles` | registry source order |
+| 23 | `runner_environment_profile_registry_digest` | exact domain for CTV field 22 |
+| 24 | `units` | parser depth-first design-byte order |
+| 25 | `entries` | unit order then mapping ordinal |
+| 26 | `overrides` | registry source order |
+| 27 | `override_registry_digest` | exact domain for CTV field 26 |
+| 28 | `explicit_anchor_bindings` | anchor byte order; exactly one enclosing unit |
+| 29 | `anchor_binding_registry_digest` | exact domain ID `anchor_binding_root` over CTV field 28 |
+
+Ledger also declares exact domain IDs `unit_requirement_mapping` for entry
+mappings and `normative_entry` for entries. Each digest is
+`SHA-256(domain || U64BE(len(CTV(value))) || CTV(value))`; values exclude own
+digest field. Structural body has no structural digest field. Its body digest
+uses exact domain ID `structural_body`; persisted `CanonicalEncodedArtifact.v1`
+has separate exact envelope domain ID `outer_envelope`. Consumers may not
+exchange or embed them.
+
+Independent reconstruction validates transport; parses units; resolves defaults,
+rules, owners, report semantics, mappings, overrides, anchor links; performs Kahn
+traversal; computes all digests; builds 29-field body; recomputes body digest;
+wraps envelope; compares body, body digest, envelope bytes, envelope digest. A
+may be production/reference compiler; B is clean-room and cannot import A,
+production derivation, or mapping/normalization helpers. A/B is credible only
+with full-body/full-envelope/structural-spool equality import gate plus corpus.
+
+Frozen caps: design <= 8 MiB; registry <= 8 MiB; parser <= 30 seconds;
+reconstruction <= 60 seconds; zero automatic retries; nesting <= 256; numeric
+token <= 1024 bytes; units <= 100,000; entry mappings <= 250,000; anchors <=
+100,000; CTV body <= 64 MiB. Cap exceedance yields
+`structural_derivation_unavailable`, writes no release/pointer/lifecycle/watermark,
+and has no retry path.
+
+Six/seven-field wrapper is `TraceabilityLegacyDiagnosticReader` projection only.
+It is not this body, cannot rewrap/default a field, and rejects at authorization,
+activation, rollback, and independent-reconstruction boundaries.
+
+### 6.3 Verification and attack matrix
+
+Adversarial corpus mutates every provenance variant, purpose, profile, key,
+channel, target authority, interval, prior root/record, preimage/body digest,
+signature, and provisioned artifact. It includes post-activation genesis downgrade,
+successor-before-activation, cross-authority/channel replay, lifecycle/root order
+and DAG-edge substitution, structural field omission/duplicate/order, all digest
+domain swaps, body/envelope swap, report-item/member confusion, anchor-to-heading
+substitution, resolver/watermark races, cap/timeout exhaustion, interrupted
+migration, legacy input, mixed generation, and rollback to unverified predecessor.
+Each rejects before authorization or leaves verified pointer/watermark unchanged.
+Deterministic tests prove contract; A/B full comparison proves reconstruction;
+fake-oracle execution is not provider success.
+
+The frozen raw ledger SHA-256 is
+`085921e6c4e995f0d6259c9f6f6eabeec3f1455bba344105ef0e16d24eb81671`.
+The current domain-derived `derivation_ledger_digest` is
+`3e15e60d3a89de6a9b11ab3996cd9c103aa76852f3660069bbc3fc70a63922de`
+under exact domain ID `ledger`. The current `derivation_ledger_coordinate` is
+`structural_manifest_derivation_ledger/TraceabilityStructuralManifestDerivationLedger.v1/1/3e15e60d3a89de6a9b11ab3996cd9c103aa76852f3660069bbc3fc70a63922de`.
+The normative CGS matrix
+is `cgs_verification_attack_matrix-v1.json`, raw SHA-256
+`a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604`.
+The dependency-free lifecycle-root semantic witness is
+`lifecycle-root-signer-provenance-witness-v1.json`, raw SHA-256
+`d3c1dce10624365647cbb00926f63b6deabe681e51a138bc3de88d7c60faef69`.
+Its design-owned stdlib validator executes exactly two accepted witnesses:
+sequence-one independent-bootstrap genesis and sequence-two prior-root
+successor. Its 33 root negative witnesses independently mutate every
+anchor authority/channel/ID/digest/issuer/key/profile/purpose/interval endpoint,
+mixed union fields, both sequence substitutions, RP/BA/RR/lifecycle-record
+owner substitution, envelope/preimage inequality, successor authority,
+issuer/key/profile/purpose/interval equality, and self/forward root and record
+references. The successor witness history names the verified root authority and
+its final-action-authorized signer coordinate; acceptance requires exact
+coordinate equality and issuance-time containment. Before that equality check,
+one shared structural validator checks both the presented successor coordinate
+and the historical authorized coordinate: issuer and profile are non-empty
+strings; key, root, and record coordinates are valid SHA-256 digests; purpose is
+exact; interval endpoints are timestamps in strictly increasing order; and the
+enclosing root/history authority is a non-empty string with valid root/record
+digests. Four persisted historical-coordinate negatives exercise malformed
+issuer, key, profile, and interval order. Eight persisted boundary
+witnesses execute the inclusive interval rule for both genesis and successor:
+issuance exactly at either endpoint accepts, while one microsecond before or
+after rejects. Including the two canonical roots, the executed corpus therefore
+reports six accepted and 41 rejected witnesses. The semantic checker
+requires Python isolated mode, an externally supplied SHA-256 pin over its own
+bytes, one-to-one case-ID inclusion in the normative matrix, two byte-identical
+isolated executions, and rejection of fixture, deleted-boundary, matrix,
+checker-identity, and non-isolated-invocation mutations. Declarative matrix
+presence without this execution is not LRG-05 evidence.
+The design-owned prototype's complete known-answer body/envelope bytes and
+digests are pinned by the current static-tooling command rather than this raw
+design input, avoiding a self-referential design digest.

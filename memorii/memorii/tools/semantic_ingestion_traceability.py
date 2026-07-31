@@ -6,6 +6,7 @@ import ast
 import json
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
 
@@ -52,18 +53,54 @@ def _prepare(lines: list[str]) -> str:
     return "\n".join(unicodedata.normalize("NFC", item.rstrip(" \t")) for item in lines)
 
 
-def _window(document_bytes: bytes) -> tuple[list[str], int]:
+def _window(
+    document_bytes: bytes, *, check: Callable[[], None] | None = None
+) -> tuple[list[str], int]:
+    if check is not None:
+        check()
     try:
-        lines = document_bytes.decode("utf-8", "strict").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        text = document_bytes.decode("utf-8", "strict")
     except UnicodeDecodeError as exc:
         raise TraceabilityStructureError("design bytes must be valid UTF-8") from exc
-    starts = [index for index, line in enumerate(lines) if line.startswith("## 1.")]
+    if check is not None:
+        check()
+    lines: list[str] = []
+    cursor = 0
+    while cursor <= len(text):
+        if check is not None:
+            check()
+        end = text.find("\n", cursor)
+        if end < 0:
+            lines.append(text[cursor:])
+            break
+        lines.append(text[cursor:end])
+        cursor = end + 1
+    starts = []
+    for index, line in enumerate(lines):
+        if check is not None:
+            check()
+        if line.startswith("## 1."):
+            starts.append(index)
     if len(starts) != 1:
         raise TraceabilityStructureError("design must contain exactly one Section 1 heading")
-    end_five = next((index for index in range(starts[0], len(lines)) if lines[index].startswith("## 5.")), None)
+    end_five = None
+    for index in range(starts[0], len(lines)):
+        if check is not None:
+            check()
+        if lines[index].startswith("## 5."):
+            end_five = index
+            break
     if end_five is None:
         raise TraceabilityStructureError("design must contain a Section 5 heading")
-    stop = next((index for index in range(end_five + 1, len(lines)) if lines[index].startswith("## ")), len(lines))
+    stop = len(lines)
+    for index in range(end_five + 1, len(lines)):
+        if check is not None:
+            check()
+        if lines[index].startswith("## "):
+            stop = index
+            break
+    if check is not None:
+        check()
     return lines[starts[0] : stop], starts[0] + 1
 
 
@@ -115,8 +152,12 @@ def _schema_units(body: list[str]) -> list[tuple[str, str, int]]:
     return out
 
 
-def extract_normative_units(document_bytes: bytes) -> tuple[NormativeUnit, ...]:
-    lines, offset = _window(document_bytes)
+def extract_normative_units(
+    document_bytes: bytes, *, check: Callable[[], None] | None = None
+) -> tuple[NormativeUnit, ...]:
+    lines, offset = _window(document_bytes, check=check)
+    if check is not None:
+        check()
     raw: list[tuple[str, str, str | None, str, int, int, tuple[str, ...]]] = []
     # A heading path is a content identity, not an occurrence identity.  Keep
     # the raw emission index on the stack so repeated sibling/nested headings
@@ -124,6 +165,8 @@ def extract_normative_units(document_bytes: bytes) -> tuple[NormativeUnit, ...]:
     stack: list[tuple[int, str, int]] = []
     index = 0
     while index < len(lines):
+        if check is not None:
+            check()
         line = lines[index]
         if not line.strip():
             index += 1
@@ -149,6 +192,8 @@ def extract_normative_units(document_bytes: bytes) -> tuple[NormativeUnit, ...]:
             index += 1
             body: list[str] = []
             while index < len(lines) and not lines[index].startswith("```"):
+                if check is not None:
+                    check()
                 body.append(lines[index])
                 index += 1
             if index == len(lines):
@@ -180,6 +225,8 @@ def extract_normative_units(document_bytes: bytes) -> tuple[NormativeUnit, ...]:
         if _TABLE.match(line):
             begin, rows = index, []
             while index < len(lines) and _TABLE.match(lines[index]):
+                if check is not None:
+                    check()
                 cells = [cell.strip() for cell in lines[index].strip().strip("|").split("|")]
                 if len(cells) < 2:
                     raise TraceabilityStructureError(f"malformed table at line {offset + index}")
@@ -205,11 +252,15 @@ def extract_normative_units(document_bytes: bytes) -> tuple[NormativeUnit, ...]:
             while index < len(lines) and (
                 not lines[index].strip() or _LIST.match(lines[index]) or lines[index].startswith((" ", "\t"))
             ):
+                if check is not None:
+                    check()
                 if _LIST.match(lines[index]):
                     item_start = index
                     item = [lines[index]]
                     index += 1
                     while index < len(lines) and lines[index].startswith((" ", "\t")) and not _LIST.match(lines[index]):
+                        if check is not None:
+                            check()
                         item.append(lines[index])
                         index += 1
                     items.append((item_start, item))
@@ -244,18 +295,24 @@ def extract_normative_units(document_bytes: bytes) -> tuple[NormativeUnit, ...]:
             and not _TABLE.match(lines[index])
             and not _LIST.match(lines[index])
         ):
+            if check is not None:
+                check()
             paragraph.append(lines[index])
             index += 1
         raw.append(("paragraph", _prepare(paragraph), parent, path, offset + begin, offset + index - 1, ()))
     occurrences: dict[str, int] = {}
     provisional: list[tuple[str, str, int, str, str | None, str, int, int]] = []
     for kind, payload, parent, path, begin, end, children in raw:
+        if check is not None:
+            check()
         key = _digest({"grammar_revision": GRAMMAR_REVISION, "kind": kind, "payload": payload, "children": children})
         occurrence = occurrences.get(key, 0)
         occurrences[key] = occurrence + 1
         provisional.append((f"SIA-N-{key}-{occurrence}", key, occurrence, kind, parent, path, begin, end))
     units: list[NormativeUnit] = []
     for raw_index, (invariant_id, key, occurrence, kind, parent, path, begin, end) in enumerate(provisional):
+        if check is not None:
+            check()
         if parent is None:
             resolved_parent = None
         elif parent.startswith("@"):

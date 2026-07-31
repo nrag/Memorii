@@ -1,0 +1,628 @@
+{
+  "format": "memorii-sia-lifecycle-root-signer-provenance-witness-v1",
+  "authority_anchor": {
+    "authority_id": "authority-1",
+    "provisioned_channel_id": "channel-1",
+    "bootstrap_anchor_id": "anchor-1",
+    "bootstrap_anchor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "issuer_id": "issuer-1",
+    "key_or_certificate_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "signature_profile_id": "ed25519-v1",
+    "signature_purpose": "semantic_ingestion_traceability_lifecycle_root",
+    "eligible_not_before": "2026-01-01T00:00:00Z",
+    "eligible_not_after": "2027-01-01T00:00:00Z"
+  },
+  "accepted_roots": [
+    {
+      "witness_id": "sequence-one-genesis",
+      "owner": "lifecycle_root",
+      "authority_id": "authority-1",
+      "sequence": 1,
+      "issued_at": "2026-01-01T00:00:00Z",
+      "lifecycle_root_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+      "terminal_record_digest": "0101010101010101010101010101010101010101010101010101010101010101",
+      "signer_coordinates": [
+        {
+          "source_kind": "independently_provisioned_bootstrap_anchor",
+          "authority_id": "authority-1",
+          "provisioned_channel_id": "channel-1",
+          "bootstrap_anchor_id": "anchor-1",
+          "bootstrap_anchor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "issuer_id": "issuer-1",
+          "key_or_certificate_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signature_profile_id": "ed25519-v1",
+          "signature_purpose": "semantic_ingestion_traceability_lifecycle_root",
+          "eligible_not_before": "2026-01-01T00:00:00Z",
+          "eligible_not_after": "2027-01-01T00:00:00Z"
+        }
+      ],
+      "preimage_signer_coordinates": [
+        {
+          "source_kind": "independently_provisioned_bootstrap_anchor",
+          "authority_id": "authority-1",
+          "provisioned_channel_id": "channel-1",
+          "bootstrap_anchor_id": "anchor-1",
+          "bootstrap_anchor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "issuer_id": "issuer-1",
+          "key_or_certificate_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signature_profile_id": "ed25519-v1",
+          "signature_purpose": "semantic_ingestion_traceability_lifecycle_root",
+          "eligible_not_before": "2026-01-01T00:00:00Z",
+          "eligible_not_after": "2027-01-01T00:00:00Z"
+        }
+      ]
+    },
+    {
+      "witness_id": "sequence-two-successor",
+      "owner": "lifecycle_root",
+      "authority_id": "authority-1",
+      "sequence": 2,
+      "issued_at": "2026-06-01T00:00:00Z",
+      "lifecycle_root_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+      "terminal_record_digest": "0202020202020202020202020202020202020202020202020202020202020202",
+      "signer_coordinates": [
+        {
+          "source_kind": "prior_verified_lifecycle_root",
+          "signature_purpose": "semantic_ingestion_traceability_lifecycle_root",
+          "issuer_id": "issuer-1",
+          "key_or_certificate_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signature_profile_id": "ed25519-v1",
+          "trust_lifecycle_root_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+          "lifecycle_record_digest": "0101010101010101010101010101010101010101010101010101010101010101",
+          "eligible_not_before": "2026-01-01T00:00:00Z",
+          "eligible_not_after": "2027-01-01T00:00:00Z"
+        }
+      ],
+      "preimage_signer_coordinates": [
+        {
+          "source_kind": "prior_verified_lifecycle_root",
+          "signature_purpose": "semantic_ingestion_traceability_lifecycle_root",
+          "issuer_id": "issuer-1",
+          "key_or_certificate_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signature_profile_id": "ed25519-v1",
+          "trust_lifecycle_root_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+          "lifecycle_record_digest": "0101010101010101010101010101010101010101010101010101010101010101",
+          "eligible_not_before": "2026-01-01T00:00:00Z",
+          "eligible_not_after": "2027-01-01T00:00:00Z"
+        }
+      ]
+    }
+  ],
+  "successor_history": [
+    {
+      "authority_id": "authority-1",
+      "sequence": 1,
+      "lifecycle_root_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+      "terminal_record_digest": "0101010101010101010101010101010101010101010101010101010101010101",
+      "final_action_authorized_signer_coordinates": [
+        {
+          "source_kind": "prior_verified_lifecycle_root",
+          "signature_purpose": "semantic_ingestion_traceability_lifecycle_root",
+          "issuer_id": "issuer-1",
+          "key_or_certificate_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "signature_profile_id": "ed25519-v1",
+          "trust_lifecycle_root_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+          "lifecycle_record_digest": "0101010101010101010101010101010101010101010101010101010101010101",
+          "eligible_not_before": "2026-01-01T00:00:00Z",
+          "eligible_not_after": "2027-01-01T00:00:00Z"
+        }
+      ]
+    }
+  ],
+  "boundary_witnesses": [
+    {
+      "case_id": "lifecycle-root-genesis-issued-at-not-before",
+      "base": "sequence-one-genesis",
+      "issued_at": "2026-01-01T00:00:00Z",
+      "expected_verdict": "accept",
+      "expected_reason": null
+    },
+    {
+      "case_id": "lifecycle-root-genesis-issued-at-not-after",
+      "base": "sequence-one-genesis",
+      "issued_at": "2027-01-01T00:00:00Z",
+      "expected_verdict": "accept",
+      "expected_reason": null
+    },
+    {
+      "case_id": "lifecycle-root-genesis-issued-before-not-before",
+      "base": "sequence-one-genesis",
+      "issued_at": "2025-12-31T23:59:59.999999Z",
+      "expected_verdict": "reject",
+      "expected_reason": "genesis_issued_at_ineligible"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-issued-after-not-after",
+      "base": "sequence-one-genesis",
+      "issued_at": "2027-01-01T00:00:00.000001Z",
+      "expected_verdict": "reject",
+      "expected_reason": "genesis_issued_at_ineligible"
+    },
+    {
+      "case_id": "lifecycle-root-successor-issued-at-not-before",
+      "base": "sequence-two-successor",
+      "issued_at": "2026-01-01T00:00:00Z",
+      "expected_verdict": "accept",
+      "expected_reason": null
+    },
+    {
+      "case_id": "lifecycle-root-successor-issued-at-not-after",
+      "base": "sequence-two-successor",
+      "issued_at": "2027-01-01T00:00:00Z",
+      "expected_verdict": "accept",
+      "expected_reason": null
+    },
+    {
+      "case_id": "lifecycle-root-successor-issued-before-not-before",
+      "base": "sequence-two-successor",
+      "issued_at": "2025-12-31T23:59:59.999999Z",
+      "expected_verdict": "reject",
+      "expected_reason": "successor_issued_at_ineligible"
+    },
+    {
+      "case_id": "lifecycle-root-successor-issued-after-not-after",
+      "base": "sequence-two-successor",
+      "issued_at": "2027-01-01T00:00:00.000001Z",
+      "expected_verdict": "reject",
+      "expected_reason": "successor_issued_at_ineligible"
+    }
+  ],
+  "history_negative_cases": [
+    {
+      "case_id": "lifecycle-root-history-issuer-malformed",
+      "base": "successor-history",
+      "operation": "replace",
+      "path": [
+        "final_action_authorized_signer_coordinates",
+        0,
+        "issuer_id"
+      ],
+      "value": "",
+      "expected_reason": "history_issuer_invalid"
+    },
+    {
+      "case_id": "lifecycle-root-history-key-malformed",
+      "base": "successor-history",
+      "operation": "replace",
+      "path": [
+        "final_action_authorized_signer_coordinates",
+        0,
+        "key_or_certificate_digest"
+      ],
+      "value": "not-a-digest",
+      "expected_reason": "history_key_invalid"
+    },
+    {
+      "case_id": "lifecycle-root-history-profile-malformed",
+      "base": "successor-history",
+      "operation": "replace",
+      "path": [
+        "final_action_authorized_signer_coordinates",
+        0,
+        "signature_profile_id"
+      ],
+      "value": "",
+      "expected_reason": "history_profile_invalid"
+    },
+    {
+      "case_id": "lifecycle-root-history-interval-order-malformed",
+      "base": "successor-history",
+      "operation": "replace",
+      "path": [
+        "final_action_authorized_signer_coordinates",
+        0,
+        "eligible_not_before"
+      ],
+      "value": "2028-01-01T00:00:00Z",
+      "expected_reason": "history_interval_invalid"
+    }
+  ],
+  "negative_cases": [
+    {
+      "case_id": "lifecycle-root-genesis-authority-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "authority_id"
+      ],
+      "value": "authority-2",
+      "expected_reason": "anchor_authority_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-channel-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "provisioned_channel_id"
+      ],
+      "value": "channel-2",
+      "expected_reason": "anchor_channel_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-anchor-id-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "bootstrap_anchor_id"
+      ],
+      "value": "anchor-2",
+      "expected_reason": "anchor_id_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-anchor-digest-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "bootstrap_anchor_digest"
+      ],
+      "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "expected_reason": "anchor_digest_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-issuer-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "issuer_id"
+      ],
+      "value": "issuer-2",
+      "expected_reason": "anchor_issuer_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-key-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "key_or_certificate_digest"
+      ],
+      "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "expected_reason": "anchor_key_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-profile-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "signature_profile_id"
+      ],
+      "value": "ed448-v1",
+      "expected_reason": "anchor_profile_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-purpose-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "signature_purpose"
+      ],
+      "value": "semantic_ingestion_traceability_recovery_policy",
+      "expected_reason": "purpose_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-not-before-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "eligible_not_before"
+      ],
+      "value": "2025-12-31T23:59:59Z",
+      "expected_reason": "anchor_not_before_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-not-after-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "eligible_not_after"
+      ],
+      "value": "2027-01-01T00:00:01Z",
+      "expected_reason": "anchor_not_after_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-genesis-mixed-union-fields",
+      "base": "sequence-one-genesis",
+      "operation": "add",
+      "path": [
+        "signer_coordinates",
+        0,
+        "trust_lifecycle_root_digest"
+      ],
+      "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "expected_reason": "genesis_fields_invalid"
+    },
+    {
+      "case_id": "lifecycle-root-sequence-one-successor",
+      "base": "sequence-one-genesis",
+      "operation": "replace_coordinate",
+      "path": [
+        "signer_coordinates",
+        0
+      ],
+      "value": {
+        "source_kind": "prior_verified_lifecycle_root",
+        "signature_purpose": "semantic_ingestion_traceability_lifecycle_root",
+        "issuer_id": "issuer-1",
+        "key_or_certificate_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signature_profile_id": "ed25519-v1",
+        "trust_lifecycle_root_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+        "lifecycle_record_digest": "0101010101010101010101010101010101010101010101010101010101010101",
+        "eligible_not_before": "2026-01-01T00:00:00Z",
+        "eligible_not_after": "2027-01-01T00:00:00Z"
+      },
+      "expected_reason": "sequence_one_requires_genesis"
+    },
+    {
+      "case_id": "lifecycle-root-successor-genesis-downgrade",
+      "base": "sequence-two-successor",
+      "operation": "replace_coordinate",
+      "path": [
+        "signer_coordinates",
+        0
+      ],
+      "value": {
+        "source_kind": "independently_provisioned_bootstrap_anchor",
+        "authority_id": "authority-1",
+        "provisioned_channel_id": "channel-1",
+        "bootstrap_anchor_id": "anchor-1",
+        "bootstrap_anchor_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "issuer_id": "issuer-1",
+        "key_or_certificate_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "signature_profile_id": "ed25519-v1",
+        "signature_purpose": "semantic_ingestion_traceability_lifecycle_root",
+        "eligible_not_before": "2026-01-01T00:00:00Z",
+        "eligible_not_after": "2027-01-01T00:00:00Z"
+      },
+      "expected_reason": "successor_requires_prior_root"
+    },
+    {
+      "case_id": "lifecycle-root-successor-authority-substitution",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "authority_id"
+      ],
+      "value": "authority-2",
+      "expected_reason": "successor_authority_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-successor-issuer-substitution",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "issuer_id"
+      ],
+      "value": "issuer-2",
+      "expected_reason": "successor_issuer_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-successor-key-substitution",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "key_or_certificate_digest"
+      ],
+      "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "expected_reason": "successor_key_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-successor-profile-substitution",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "signature_profile_id"
+      ],
+      "value": "ed448-v1",
+      "expected_reason": "successor_profile_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-successor-purpose-substitution",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "signature_purpose"
+      ],
+      "value": "semantic_ingestion_traceability_recovery_policy",
+      "expected_reason": "purpose_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-successor-not-before-substitution",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "eligible_not_before"
+      ],
+      "value": "2025-12-31T23:59:59Z",
+      "expected_reason": "successor_not_before_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-successor-not-after-substitution",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "eligible_not_after"
+      ],
+      "value": "2027-01-01T00:00:01Z",
+      "expected_reason": "successor_not_after_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-successor-issuer-malformed",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "issuer_id"
+      ],
+      "value": "",
+      "expected_reason": "successor_issuer_invalid"
+    },
+    {
+      "case_id": "lifecycle-root-successor-key-malformed",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "key_or_certificate_digest"
+      ],
+      "value": "not-a-digest",
+      "expected_reason": "successor_key_invalid"
+    },
+    {
+      "case_id": "lifecycle-root-successor-profile-malformed",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "signature_profile_id"
+      ],
+      "value": "",
+      "expected_reason": "successor_profile_invalid"
+    },
+    {
+      "case_id": "lifecycle-root-successor-interval-order-malformed",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "eligible_not_before"
+      ],
+      "value": "2028-01-01T00:00:00Z",
+      "expected_reason": "successor_interval_invalid"
+    },
+    {
+      "case_id": "lifecycle-root-rp-owner-cross-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "owner"
+      ],
+      "value": "recovery_policy",
+      "expected_reason": "wrong_owner"
+    },
+    {
+      "case_id": "lifecycle-root-ba-owner-cross-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "owner"
+      ],
+      "value": "bootstrap_anchor",
+      "expected_reason": "wrong_owner"
+    },
+    {
+      "case_id": "lifecycle-root-rr-owner-cross-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "owner"
+      ],
+      "value": "recovery_root",
+      "expected_reason": "wrong_owner"
+    },
+    {
+      "case_id": "lifecycle-root-record-owner-cross-substitution",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "owner"
+      ],
+      "value": "lifecycle_record",
+      "expected_reason": "wrong_owner"
+    },
+    {
+      "case_id": "lifecycle-root-envelope-preimage-mismatch",
+      "base": "sequence-one-genesis",
+      "operation": "replace",
+      "path": [
+        "preimage_signer_coordinates",
+        0,
+        "issuer_id"
+      ],
+      "value": "issuer-2",
+      "expected_reason": "envelope_preimage_mismatch"
+    },
+    {
+      "case_id": "lifecycle-root-successor-self-root-reference",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "trust_lifecycle_root_digest"
+      ],
+      "value": "2222222222222222222222222222222222222222222222222222222222222222",
+      "expected_reason": "successor_self_reference"
+    },
+    {
+      "case_id": "lifecycle-root-successor-self-record-reference",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "lifecycle_record_digest"
+      ],
+      "value": "0202020202020202020202020202020202020202020202020202020202020202",
+      "expected_reason": "successor_self_reference"
+    },
+    {
+      "case_id": "lifecycle-root-successor-forward-root-reference",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "trust_lifecycle_root_digest"
+      ],
+      "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "expected_reason": "successor_reference_unverified"
+    },
+    {
+      "case_id": "lifecycle-root-successor-forward-record-reference",
+      "base": "sequence-two-successor",
+      "operation": "replace",
+      "path": [
+        "signer_coordinates",
+        0,
+        "lifecycle_record_digest"
+      ],
+      "value": "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0",
+      "expected_reason": "successor_reference_unverified"
+    }
+  ]
+}

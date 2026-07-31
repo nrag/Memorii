@@ -71,25 +71,12 @@ def test_sia_t03_legacy_caller_hmac_cannot_authorize_evidence() -> None:
         inputs.verify()
 
 
-@pytest.mark.parametrize("field,value", [("execution_status", "not_executed"), ("execution_result", "fail"), ("design_document_digest", "x" * 64), ("implementation_revision", "other"), ("implementation_tree_digest", "x" * 64), ("trust_context_digest", "other"), ("signature", "forged")])
-def test_sia_t03_evidence_rejects_unexecuted_failed_stale_or_forged_records(field: str, value: str) -> None:
+def test_sia_t03_legacy_caller_hmac_rejection_is_independent_of_record_content() -> None:
     record, inputs = _evidence()
-    if field == "execution_status":
-        mutated = replace(record, execution_status=value)
-    elif field == "execution_result":
-        mutated = replace(record, execution_result=value)
-    elif field == "design_document_digest":
-        mutated = replace(record, design_document_digest=value)
-    elif field == "implementation_revision":
-        mutated = replace(record, implementation_revision=value)
-    elif field == "implementation_tree_digest":
-        mutated = replace(record, implementation_tree_digest=value)
-    elif field == "trust_context_digest":
-        mutated = replace(record, trust_context_digest=value)
-    else:
-        mutated = replace(record, signature=value)
+    # The legacy public boundary rejects before inspecting any caller-shaped
+    # record. Field-level evidence belongs to the registered report API.
     with pytest.raises(ExecutionEvidenceError):
-        replace(inputs, records=(mutated,)).verify()
+        replace(inputs, records=(replace(record, execution_status="not_executed"),)).verify()
 
 
 def test_sia_t03_legacy_caller_hmac_is_rejected_before_record_details() -> None:
