@@ -2601,6 +2601,14 @@ def _commit_verified_release(
     return _candidate_authorization(candidate)
 
 
+# Public owner-module names for the execution boundary. The implementation
+# remains centralized here; consumers must not import cross-module privates.
+VerifiedReleaseCandidate = _VerifiedReleaseCandidate
+validate_release_candidate = _validate_release_candidate
+candidate_authorization = _candidate_authorization
+commit_verified_release = _commit_verified_release
+
+
 def verify_release_gate(
     *,
     registry: TraceabilityRegistry,

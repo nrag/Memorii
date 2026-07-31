@@ -43,10 +43,10 @@ from memorii.tools.semantic_ingestion_traceability_release import (
     AcceptanceTrustStore,
     IndependentGenerationVerificationResult,
     TraceabilityGateAuthorized,
-    _candidate_authorization,
-    _commit_verified_release,
-    _validate_release_candidate,
-    _VerifiedReleaseCandidate,
+    VerifiedReleaseCandidate,
+    candidate_authorization,
+    commit_verified_release,
+    validate_release_candidate,
 )
 from memorii.tools.semantic_ingestion_trust_resolver import AcceptanceTrustResolver
 
@@ -339,7 +339,7 @@ def _verify_registered_approval_execution(
     ]
     if len(schemas) != 1 or len(profiles) != 1:
         raise ExecutionEvidenceError("registered schema or environment profile is unavailable or ambiguous")
-    candidate = _validate_release_candidate(
+    candidate = validate_release_candidate(
         registry=registry,
         bootstrap_artifact=bootstrap_artifact,
         recovery_artifact=recovery_artifact,
@@ -353,9 +353,9 @@ def _verify_registered_approval_execution(
         expected_release_roots=authority.expected_release_roots,
         now=now,
     )
-    if not isinstance(candidate, _VerifiedReleaseCandidate):
+    if not isinstance(candidate, VerifiedReleaseCandidate):
         raise ExecutionEvidenceError(f"release gate did not authorize: {candidate.reason}")
-    release = _candidate_authorization(candidate)
+    release = candidate_authorization(candidate)
     if release.root_bindings is None:
         raise ExecutionEvidenceError("validated release lacks root bindings")
     roots = release.root_bindings
@@ -409,7 +409,7 @@ def _verify_registered_approval_execution(
         report_schema=schemas[0],
         runner_environment_profile=profiles[0],
     )
-    committed = _commit_verified_release(
+    committed = commit_verified_release(
         candidate,
         authority.watermark_store,
         publication_store=authority.publication_store,

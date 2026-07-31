@@ -6,8 +6,6 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
-
 from memorii.domain.enums import (
     ExtractionFailureCode,
     ExtractionRunStatus,
@@ -16,6 +14,14 @@ from memorii.domain.enums import (
     MemoryDomain,
     ProviderAttemptStatus,
     SourceModality,
+)
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    TypeAdapter,
+    model_validator,
 )
 
 PrefetchDecisionT = TypeVar("PrefetchDecisionT", bound=BaseModel)
