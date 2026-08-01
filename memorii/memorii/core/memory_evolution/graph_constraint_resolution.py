@@ -297,6 +297,19 @@ def _resolve_unstructured_pattern(
         if state.claim_key.predicate_id == analysis.predicate_id
         and _state_matches_temporal_frame(state, temporal_frame)
     ]
+    if analysis.predicate_id == "owner" and _contains_phrase(query, "owned by"):
+        mentioned_object_ids = {
+            object_entity_id
+            for state in eligible
+            if (object_entity_id := entity_by_link_id.get(state.object_link_id or "")) is not None
+            and any(_contains_phrase(query, name) for name in entity_names.get(object_entity_id, ()))
+        }
+        if mentioned_object_ids:
+            eligible = [
+                state
+                for state in eligible
+                if entity_by_link_id.get(state.object_link_id or "") in mentioned_object_ids
+            ]
     explicit_subjects = {subject_entity_id} if subject_entity_id is not None else set()
     if explicit_subjects:
         eligible = [state for state in eligible if subject_by_claim_id[state.claim_id] in explicit_subjects]

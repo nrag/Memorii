@@ -252,6 +252,7 @@ For every review round, record:
 * findings
 * coordinator disposition
 * evidence supporting the disposition
+* product-impact evidence and remediation eligibility
 * resulting actions
 
 Use these finding dispositions:
@@ -327,6 +328,48 @@ Review findings do not automatically become requirements.
 
 The coordinator must validate each finding before changing the plan or
 implementation.
+
+### Product-Impact Remediation Gate
+
+Design and implementation remediation is reserved for validated `P1` or `P2`
+product defects. Before a finding can consume a remediation round, the
+coordinator must record:
+
+* the supported production scenario that is broken
+* direct evidence of wrong or absent behavior through the canonical path
+* why the scenario is mainstream (`P1`) or important (`P2`)
+* the governing requirement violated
+* the smallest in-scope correction and behavioral failure signal
+
+Do not infer `P1` or `P2` from:
+
+* `blocks_approval` or `changes_required`
+* the importance of an invariant, subsystem, or trust boundary
+* a missing or weak test by itself
+* a malformed, unsupported, or hypothetical input that cannot reach a
+  supported trust boundary
+* an evidence-maturity, documentation, governance, or process gap without a
+  demonstrated product-behavior defect
+
+Use one of these remediation-eligibility values in the Review Log:
+
+| Value | Meaning |
+| ----- | ------- |
+| `eligible_p1_p2` | A validated P1/P2 product defect enters bounded remediation |
+| `evidence_action` | Required proof is missing; gather the predefined evidence without changing product semantics |
+| `record_only` | P3, unsupported, duplicate, or nonblocking governance observation |
+| `external_blocker` | A missing authority or semantic decision prevents determinate work; stop instead of iterating |
+
+Approval disposition remains independent. A non-P1/P2 finding may require an
+explicit evidence action or may stop approval, but it must not trigger repeated
+design or implementation edits. A required evidence action must be bounded by
+the existing validation matrix or completion contract; reviewers may not
+expand it round by round.
+
+When a review produces no newly validated P1/P2 defect, do not open another
+product-remediation round. Close the milestone if its predefined completion
+evidence is satisfied, record nonblocking follow-ups, or stop once with the
+exact external blocker.
 
 ## Evidence Standards
 
@@ -474,8 +517,10 @@ A design is complete only when:
 * failure, security, operational, migration, rollback, and compatibility
   concerns are addressed where applicable
 * the verification strategy covers every in-scope requirement
-* no confirmed design finding with `blocks_approval` or `changes_required`
-  remains
+* no validated `P1` or `P2` design defect remains
+* no unresolved external authority or semantic decision prevents approval
+* predefined verification evidence is complete, or unavailable evidence is
+  recorded without inflating it into a product defect
 * assumptions and remaining limitations are visible
 * the specification is sufficient to create an implementation WorkPlan without
   relying on hidden conversational context
@@ -599,8 +644,10 @@ Implementation is complete only when:
 * all required deterministic checks pass
 * required live or external certification is identified separately and bound
   to the exact reviewed revision
-* no confirmed implementation finding with `blocks_approval` or
-  `changes_required` remains
+* no validated `P1` or `P2` implementation defect remains
+* no unresolved external authority or semantic decision prevents completion
+* predefined verification evidence is complete, or unavailable evidence is
+  recorded without inflating it into a product defect
 * no accidental stubs, skipped tests, ignored errors, undocumented TODOs, or
   incomplete fallback paths remain
 * a final review has inspected the entire branch against the design baseline,

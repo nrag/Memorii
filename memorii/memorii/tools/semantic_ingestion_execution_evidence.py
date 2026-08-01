@@ -607,7 +607,7 @@ _GENERATION_CTV_BINDINGS = {
         "51670d26f287456abce92872559a294c68175315f62e2f2898c8966957ffa885",
     ),
 }
-_M0_GENERATION_ORDER = (
+_CURRENT_GENERATION_ORDER = (
     "design_document",
     "registry_source",
     "structural_manifest_derivation_ledger",
@@ -627,7 +627,7 @@ _M0_GENERATION_ORDER = (
     "release_history",
     "pointer_history",
 )
-_M0_GENERATION_DEPENDENCIES = {
+_CURRENT_GENERATION_DEPENDENCIES = {
     "design_document": (),
     "registry_source": ("design_document",),
     "structural_manifest_derivation_ledger": (),
@@ -802,7 +802,7 @@ def _verify_generation_admission(
         _verify_ctv_transport_shape(raw, budget)
     return budget
 
-_M0_NONCYCLIC_BODY_FIELDS = {
+_CURRENT_GENERATION_NONCYCLIC_BODY_FIELDS = {
     "bootstrap_anchor": frozenset(
         {
             "anchor_id", "issuance_purpose", "target_purpose", "target_authority_id",
@@ -931,7 +931,7 @@ _M0_NONCYCLIC_BODY_FIELDS = {
         }
     ),
 }
-_M0_NONEMPTY_COLLECTION_FIELDS = {
+_CURRENT_GENERATION_NONEMPTY_COLLECTION_FIELDS = {
     "bootstrap_anchor_history": ("anchors",),
     "recovery_root_history": ("recovery_roots",),
     "recovery_policy_history": ("policies",),
@@ -942,14 +942,14 @@ _M0_NONEMPTY_COLLECTION_FIELDS = {
 }
 
 
-def _verify_m0_registered_body_shape(kind: str, body: dict[str, object]) -> None:
+def _verify_current_generation_body_shape(kind: str, body: dict[str, object]) -> None:
     """Fail closed on aliases, omitted fields, and placeholder registered bodies."""
-    expected_fields = _M0_NONCYCLIC_BODY_FIELDS.get(kind)
+    expected_fields = _CURRENT_GENERATION_NONCYCLIC_BODY_FIELDS.get(kind)
     if expected_fields is None:
         return
     if set(body) != expected_fields:
         raise ExecutionEvidenceError(f"generation {kind} body fields are invalid")
-    for field in _M0_NONEMPTY_COLLECTION_FIELDS.get(kind, ()):
+    for field in _CURRENT_GENERATION_NONEMPTY_COLLECTION_FIELDS.get(kind, ()):
         value = body[field]
         if not isinstance(value, list) or not value:
             raise ExecutionEvidenceError(
@@ -989,10 +989,10 @@ def _verify_optional_generation_closure(
     retry_count: int = 0,
     independent_verifier: Any = None,
 ) -> None:
-    """Verify byte-addressed C2 closure before durable release acceptance.
+    """Verify byte-addressed generation closure before durable release acceptance.
 
-    The legacy request shape predates C2 and remains explicitly unavailable as
-    a generation input.  Once any C2 byte is supplied the complete package is
+    The legacy request shape predates the current generation contract and remains
+    explicitly unavailable as a generation input. Once any generation byte is supplied, the complete package is
     mandatory; this prevents a caller from adding a synthetic root beside an
     otherwise legacy artifact bag.
     """
@@ -1002,7 +1002,7 @@ def _verify_optional_generation_closure(
         not isinstance(key, str) or not isinstance(value, bytes) for key, value in generation_member_bytes.items()
     ):
         raise ExecutionEvidenceError("generation member bytes are invalid")
-    if len(generation_member_bytes) != len(_M0_GENERATION_ORDER):
+    if len(generation_member_bytes) != len(_CURRENT_GENERATION_ORDER):
         raise ExecutionEvidenceError("generation member count exceeds or misses the closed contract")
     budget = _verify_generation_admission(
         generation_manifest_bytes=generation_manifest_bytes,
@@ -1175,7 +1175,7 @@ def _verify_optional_generation_closure(
     members = manifest["members"]
     if not isinstance(members, list) or not members:
         raise ExecutionEvidenceError("generation members are invalid")
-    _verify_m0_manifest_graph(members, generation_member_bytes, budget)
+    _verify_current_generation_graph(members, generation_member_bytes, budget)
     coordinates: set[str] = set()
     member_bodies: dict[str, list[dict[str, object]]] = {}
     member_coordinates_by_kind: dict[str, list[str]] = {}
@@ -1284,7 +1284,7 @@ def _verify_optional_generation_closure(
                 != (release_registered or registered)
             ):
                 raise ExecutionEvidenceError("generation member binding differs from envelope")
-            _verify_m0_registered_body_shape(kind, decoded)
+            _verify_current_generation_body_shape(kind, decoded)
             member_bodies.setdefault(kind, []).append(decoded)
     if any(kinds.count(kind) != 1 for kind in _GENERATION_SINGLETON_KINDS):
         raise ExecutionEvidenceError("generation member set is incomplete")
@@ -1387,7 +1387,7 @@ def _verify_optional_generation_closure(
         bodies=member_bodies.get("execution_root", []),
         release_roots=release_roots,
     )
-    _verify_m0_pointer_history(
+    _verify_current_generation_pointer_history(
         bodies=member_bodies.get("pointer_history", []),
         active_pointer=pointer,
         lifecycle_artifact=expected_member_bytes.get("trust_lifecycle_root"),
@@ -1395,7 +1395,7 @@ def _verify_optional_generation_closure(
         verify_signature=verify_signature,
         now=now,
     )
-    _verify_m0_generation_cross_references(
+    _verify_current_generation_cross_references(
         member_bodies=member_bodies,
         release_roots=release_roots,
         expected_member_bytes=expected_member_bytes,
@@ -1405,7 +1405,7 @@ def _verify_optional_generation_closure(
     )
 
 
-def _verify_m0_pointer_history(
+def _verify_current_generation_pointer_history(
     *,
     bodies: list[dict[str, object]],
     active_pointer: dict[str, object],
@@ -1582,7 +1582,7 @@ def _verify_m0_pointer_history(
         raise ExecutionEvidenceError("generation pointer history predecessor is invalid")
 
 
-def _verify_m0_manifest_graph(
+def _verify_current_generation_graph(
     members: list[object],
     generation_member_bytes: dict[str, bytes],
     budget: _GenerationVerificationBudget | None = None,
@@ -1622,7 +1622,7 @@ def _verify_m0_manifest_graph(
         coordinates.add(coordinate)
         coordinate_by_kind[kind] = coordinate
         kinds.append(kind)
-    if set(generation_member_bytes) != coordinates or tuple(kinds) != _M0_GENERATION_ORDER:
+    if set(generation_member_bytes) != coordinates or tuple(kinds) != _CURRENT_GENERATION_ORDER:
         raise ExecutionEvidenceError("generation member set is incomplete")
     for member in members:
         if not isinstance(member, dict):
@@ -1630,7 +1630,7 @@ def _verify_m0_manifest_graph(
         kind = member["artifact_kind"]
         if not isinstance(kind, str):
             raise ExecutionEvidenceError("generation member metadata is invalid")
-        expected = sorted(coordinate_by_kind[dependency_kind] for dependency_kind in _M0_GENERATION_DEPENDENCIES[kind])
+        expected = sorted(coordinate_by_kind[dependency_kind] for dependency_kind in _CURRENT_GENERATION_DEPENDENCIES[kind])
         if member["depends_on_coordinates"] != expected:
             raise ExecutionEvidenceError("generation dependency closure is invalid")
     declared_index = {
@@ -1658,7 +1658,7 @@ def _verify_m0_manifest_graph(
         raise ExecutionEvidenceError("generation member order is not canonical")
 
 
-def _verify_m0_generation_cross_references(
+def _verify_current_generation_cross_references(
     *,
     member_bodies: dict[str, list[dict[str, object]]],
     release_roots: dict[str, str],

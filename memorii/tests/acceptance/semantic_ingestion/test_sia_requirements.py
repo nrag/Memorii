@@ -32,12 +32,6 @@ from memorii.tools.semantic_ingestion_execution_evidence import (
     observation_digest,
     structural_verification_spool,
 )
-from memorii.tools.semantic_ingestion_scenario_test_trust import (
-    ExplicitTestIndependentGenerationVerifier,
-)
-from memorii.tools.semantic_ingestion_scenario_test_trust import (
-    build_generation_package as build_current_generation_package,
-)
 from memorii.tools.semantic_ingestion_structural_ledger import (
     load_checked_in_frozen_structural_manifest_ledger,
 )
@@ -50,6 +44,12 @@ from memorii.tools.semantic_ingestion_traceability_release import (
     AcceptanceTrustStore,
     IndependentGenerationVerificationResult,
     VerifierHeldTrustMaterial,
+)
+from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
+    ExplicitTestIndependentGenerationVerifier,
+)
+from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
+    build_generation_package as build_current_generation_package,
 )
 
 
@@ -1683,6 +1683,29 @@ def _parser_hostile_registry_bytes() -> tuple[tuple[str, bytes], ...]:
     )
 
 
+@pytest.mark.parametrize(
+    ("case_id", "mutate"),
+    (
+        ("trailing_space_without_final_lf", lambda raw: raw + b" "),
+        ("extra_line_feed", lambda raw: raw + b"\n"),
+        ("utf8_bom", lambda raw: b"\xef\xbb\xbf" + raw),
+    ),
+)
+def test_public_acceptance_rejects_noncanonical_registry_bytes_before_durable_state(
+    tmp_path: Path, case_id: str, mutate: object
+) -> None:
+    inputs = _approval_inputs("semantic-ingestion-r03")
+    raw = inputs["registry_bytes"]
+    assert isinstance(raw, bytes) and callable(mutate)
+    inputs["registry_bytes"] = mutate(raw)
+    path = tmp_path / f"{case_id}-watermark.json"
+    authority, record_before, seal_before = _provisioned_authority(inputs, path)
+    with pytest.raises(TraceabilityCoverageError):
+        _registered_call(inputs, authority)
+    assert path.read_bytes() == record_before
+    assert path.with_name(f"{path.name}.bootstrap-seal").read_bytes() == seal_before
+
+
 @pytest.mark.parametrize(("case_id", "registry_bytes"), _parser_hostile_registry_bytes())
 def test_public_acceptance_rejects_parser_hostile_registry_before_durable_state(
     tmp_path: Path, case_id: str, registry_bytes: bytes
@@ -1801,6 +1824,11 @@ def test_public_acceptance_rejects_closed_registry_duplicate_policy_before_water
     "mutation",
     (
         "unknown_requirement_binding",
+        "unknown_assertion_template",
+        "unknown_heading_default",
+        "unknown_structural_rule",
+        "unknown_anchor",
+        "unknown_artifact_node",
         "unknown_test_group",
         "assertion_version_mismatch",
         "requirement_binding_order",
@@ -1825,10 +1853,17 @@ def test_public_acceptance_rejects_closed_v1_registry_mutations_before_durable_s
     templates = source["assertion_templates"]
     groups = source["test_evidence_groups"]
     nodes = source["artifact_dag"]
-    if mutation == "unknown_requirement_binding":
-        bindings[0]["unknown_v1_member"] = "forbidden"
-    elif mutation == "unknown_test_group":
-        groups[0]["unknown_v1_member"] = "forbidden"
+    unknown_member_roots = {
+        "unknown_requirement_binding": "requirement_bindings",
+        "unknown_assertion_template": "assertion_templates",
+        "unknown_heading_default": "heading_defaults",
+        "unknown_structural_rule": "structural_rules",
+        "unknown_anchor": "anchor_bindings",
+        "unknown_artifact_node": "artifact_dag",
+        "unknown_test_group": "test_evidence_groups",
+    }
+    if mutation in unknown_member_roots:
+        source[unknown_member_roots[mutation]][0]["unknown_v1_member"] = "forbidden"
     elif mutation == "assertion_version_mismatch":
         bindings[0]["assertion_version"] = 2
     elif mutation == "requirement_binding_order":
@@ -1855,6 +1890,47 @@ def test_public_acceptance_rejects_closed_v1_registry_mutations_before_durable_s
         nodes[0]["depends_on"] = ["recovery_trust_roots"]
     inputs["registry_bytes"] = canonical_document(source)
     path = tmp_path / f"{mutation}-watermark.json"
+    authority, record_before, seal_before = _provisioned_authority(inputs, path)
+    with pytest.raises(TraceabilityCoverageError):
+        _registered_call(inputs, authority)
+    assert path.read_bytes() == record_before
+    assert path.with_name(f"{path.name}.bootstrap-seal").read_bytes() == seal_before
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "missing",
+        "duplicate_heading",
+        "empty_requirements",
+        "unknown_requirement",
+        "duplicate_requirement",
+        "requirement_order",
+    ),
+)
+def test_public_acceptance_rejects_closed_heading_defaults_before_durable_state(
+    tmp_path: Path, mutation: str
+) -> None:
+    inputs = _approval_inputs("semantic-ingestion-r03")
+    raw = inputs["registry_bytes"]
+    assert isinstance(raw, bytes)
+    source = json.loads(raw)
+    defaults = source["heading_defaults"]
+    if mutation == "missing":
+        defaults.pop()
+    elif mutation == "duplicate_heading":
+        defaults.append(defaults[0].copy())
+    elif mutation == "empty_requirements":
+        defaults[0]["requirements"] = []
+    elif mutation == "unknown_requirement":
+        defaults[0]["requirements"] = ["SIA-R99"]
+    elif mutation == "duplicate_requirement":
+        defaults[0]["requirements"] = ["SIA-R01", "SIA-R01"]
+    else:
+        target = next(item for item in defaults if len(item["requirements"]) > 1)
+        target["requirements"] = list(reversed(target["requirements"]))
+    inputs["registry_bytes"] = canonical_document(source)
+    path = tmp_path / f"heading-default-{mutation}-watermark.json"
     authority, record_before, seal_before = _provisioned_authority(inputs, path)
     with pytest.raises(TraceabilityCoverageError):
         _registered_call(inputs, authority)

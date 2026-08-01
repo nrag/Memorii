@@ -1,7 +1,12 @@
-"""Tests for the non-default scenario C2 trust fixture."""
+"""Tests for the non-default scenario fixture authority."""
 
 from __future__ import annotations
 
+import ast
+import os
+import subprocess
+import sys
+import zipfile
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime
@@ -24,23 +29,13 @@ from memorii.tools.semantic_ingestion_acceptance_watermark_store import (
 from memorii.tools.semantic_ingestion_execution_evidence import (
     ExecutionEvidenceError,
     RegisteredApprovalExecutor,
-    _verify_m0_pointer_history,
+    _verify_current_generation_pointer_history,
 )
 from memorii.tools.semantic_ingestion_release_persistence import (
     FileMonotonicFenceStore,
 )
 from memorii.tools.semantic_ingestion_release_persistence import (
     FileTraceabilityReleasePublicationStore as _FileTraceabilityReleasePublicationStore,
-)
-from memorii.tools.semantic_ingestion_scenario_test_trust import (
-    CURRENT_GENERATION_MEMBER_ORDER,
-    TEST_BOOTSTRAP_KEY,
-    TEST_RECOVERY_KEY,
-    ExplicitTestIndependentGenerationVerifier,
-    _binding,
-    build_generation_package,
-    build_scenario_test_authority,
-    verifier,
 )
 from memorii.tools.semantic_ingestion_traceability_release import (
     AcceptanceTrustStore,
@@ -51,6 +46,16 @@ from tests.fixtures.semantic_ingestion.current_release_chain import (
     _current_chain,
     bind_chain_to_generation,
     current_chain_successor,
+)
+from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
+    CURRENT_GENERATION_MEMBER_ORDER,
+    TEST_BOOTSTRAP_KEY,
+    TEST_RECOVERY_KEY,
+    ExplicitTestIndependentGenerationVerifier,
+    _binding,
+    build_generation_package,
+    build_scenario_test_authority,
+    verifier,
 )
 
 ROOT = Path(__file__).parents[4]
@@ -190,7 +195,7 @@ def _successor_inputs() -> tuple[dict[str, Any], bytes, dict[str, bytes]]:
     return built, generation, members
 
 
-def test_scenario_test_trust_is_a_distinct_signed_ctv_authority() -> None:
+def test_scenario_fixture_authority_is_a_distinct_signed_ctv_authority() -> None:
     built = _inputs()
     typed = built["typed"]
     assert isinstance(typed, dict)
@@ -204,11 +209,85 @@ def test_scenario_test_trust_is_a_distinct_signed_ctv_authority() -> None:
     assert verifier("deterministic-v1", TEST_BOOTSTRAP_KEY, b"x", b"bad") is False
 
 
-def test_scenario_test_trust_is_deterministic() -> None:
+def test_scenario_fixture_authority_is_deterministic() -> None:
     first = _inputs()
     second = _inputs()
     assert first["release_digest"] == second["release_digest"]
     assert first["report_bytes"] == second["report_bytes"]
+
+
+def test_scenario_fixture_authority_is_test_only_in_source_and_wheel(tmp_path: Path) -> None:
+    """Fixture authority must remain unavailable to production package users."""
+    production = ROOT / "memorii" / "memorii"
+    test_imports: list[str] = []
+    for source in production.rglob("*.py"):
+        tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = (alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                names = (node.module,)
+            else:
+                continue
+            test_imports.extend(
+                f"{source}:{name}"
+                for name in names
+                if name == "tests" or name.startswith("tests.")
+            )
+    assert test_imports == []
+
+    wheel_dir = tmp_path / "wheel"
+    wheel_dir.mkdir()
+    environment = {**os.environ, "PIP_NO_INDEX": "1", "PIP_DISABLE_PIP_VERSION_CHECK": "1"}
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            ".",
+            "--no-deps",
+            "--no-build-isolation",
+            "--wheel-dir",
+            str(wheel_dir),
+        ],
+        cwd=ROOT / "memorii",
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    wheels = list(wheel_dir.glob("memorii-*.whl"))
+    assert len(wheels) == 1
+    wheel = wheels[0]
+    with zipfile.ZipFile(wheel) as archive:
+        assert not any(
+            "scenario_fixture_authority" in name or name.startswith(("tests/", "memorii/tests/"))
+            for name in archive.namelist()
+        )
+    site_dir = tmp_path / "site"
+    subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--no-deps", "--target", str(site_dir), str(wheel)],
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import memorii.tools.semantic_ingestion_execution_evidence; "
+                "import memorii.tools.semantic_ingestion_traceability_release"
+            ),
+        ],
+        cwd=tmp_path,
+        env={**environment, "PYTHONPATH": str(site_dir)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
 
 
 def test_scenario_generation_uses_the_current_18_member_raw_ledger_closure() -> None:
@@ -219,7 +298,7 @@ def test_scenario_generation_uses_the_current_18_member_raw_ledger_closure() -> 
     assert member_kinds == CURRENT_GENERATION_MEMBER_ORDER
 
 
-def test_scenario_test_trust_passes_only_when_installed_as_explicit_authority() -> None:
+def test_scenario_fixture_authority_passes_only_when_installed_as_explicit_authority() -> None:
     built = _inputs()
     generation, members = _generation_package()
     typed = built["typed"]
@@ -525,7 +604,7 @@ def test_pointer_history_rejects_malformed_truncated_reordered_and_unsigned_entr
     unsigned_pointers[0]["signature"] = ""
     for candidate in (malformed, truncated, reordered, unsigned):
         with pytest.raises(ExecutionEvidenceError):
-            _verify_m0_pointer_history(
+            _verify_current_generation_pointer_history(
                 bodies=[reseal(candidate)],
                 active_pointer=active,
                 lifecycle_artifact=lifecycle_artifact,

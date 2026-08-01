@@ -1,4 +1,4 @@
-"""Focused tests for exact C2 generation membership and dependency closure."""
+"""Focused tests for exact current-generation membership and dependency closure."""
 
 from __future__ import annotations
 
@@ -19,22 +19,22 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     serialize_artifact,
 )
 from memorii.tools.semantic_ingestion_execution_evidence import (
-    _M0_GENERATION_DEPENDENCIES,
-    _M0_GENERATION_ORDER,
+    _CURRENT_GENERATION_DEPENDENCIES,
+    _CURRENT_GENERATION_ORDER,
     ExecutionEvidenceError,
-    _verify_m0_manifest_graph,
-    _verify_m0_registered_body_shape,
+    _verify_current_generation_body_shape,
+    _verify_current_generation_graph,
     _verify_optional_generation_closure,
-)
-from memorii.tools.semantic_ingestion_scenario_test_trust import (
-    ExplicitTestIndependentGenerationVerifier,
 )
 from memorii.tools.semantic_ingestion_traceability_registry import load_registry_bytes
 from memorii.tools.semantic_ingestion_traceability_release import VerifierHeldTrustMaterial
-from tests.unit.tools.test_scenario_test_trust import (
+from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
+    ExplicitTestIndependentGenerationVerifier,
+)
+from tests.unit.tools.test_scenario_fixture_authority import (
     _generation_package as current_generation_package,
 )
-from tests.unit.tools.test_scenario_test_trust import (
+from tests.unit.tools.test_scenario_fixture_authority import (
     _inputs as current_inputs,
 )
 
@@ -46,7 +46,7 @@ CTV_AUTHORITY = ROOT / "docs/design/semantic_ingestion/traceability_golden_vecto
 
 def _synthetic_graph() -> tuple[list[dict[str, object]], dict[str, bytes]]:
     coordinates = {
-        kind: f"sia-traceability/v1/{kind}/{sha256(kind.encode()).hexdigest()}" for kind in _M0_GENERATION_ORDER
+        kind: f"sia-traceability/v1/{kind}/{sha256(kind.encode()).hexdigest()}" for kind in _CURRENT_GENERATION_ORDER
     }
     members = [
         {
@@ -54,13 +54,13 @@ def _synthetic_graph() -> tuple[list[dict[str, object]], dict[str, bytes]]:
             "artifact_coordinate": coordinates[kind],
             "artifact_digest": sha256(kind.encode()).hexdigest(),
             "depends_on_coordinates": sorted(
-                coordinates[dependency] for dependency in _M0_GENERATION_DEPENDENCIES[kind]
+                coordinates[dependency] for dependency in _CURRENT_GENERATION_DEPENDENCIES[kind]
             ),
             "schema_id": f"synthetic.{kind}",
             "schema_version": 1,
             "binding_digest": "0" * 64,
         }
-        for kind in _M0_GENERATION_ORDER
+        for kind in _CURRENT_GENERATION_ORDER
     ]
     return members, {str(member["artifact_coordinate"]): b"x" for member in members}
 
@@ -233,11 +233,11 @@ def test_manifest_graph_preflight_rejects_before_member_decoding(
         members.remove(omitted)
         del member_bytes[str(omitted["artifact_coordinate"])]
     else:
-        left = _M0_GENERATION_ORDER.index("bootstrap_anchor")
-        right = _M0_GENERATION_ORDER.index("recovery_root")
+        left = _CURRENT_GENERATION_ORDER.index("bootstrap_anchor")
+        right = _CURRENT_GENERATION_ORDER.index("recovery_root")
         members[left], members[right] = members[right], members[left]
     with pytest.raises(ExecutionEvidenceError):
-        _verify_m0_manifest_graph(cast(list[object], members), member_bytes)
+        _verify_current_generation_graph(cast(list[object], members), member_bytes)
 
 
 _BODY_SHAPE_CASES = {
@@ -301,7 +301,7 @@ _BODY_SHAPE_CASES = {
 
 @pytest.mark.parametrize("kind", sorted(_BODY_SHAPE_CASES))
 @pytest.mark.parametrize("mutation", ["missing", "extra", "empty"])
-def test_registered_m0_body_shape_rejects_required_extra_and_placeholder_fields(
+def test_registered_generation_body_shape_rejects_required_extra_and_placeholder_fields(
     kind: str, mutation: str
 ) -> None:
     body = deepcopy(_BODY_SHAPE_CASES[kind])
@@ -312,7 +312,7 @@ def test_registered_m0_body_shape_rejects_required_extra_and_placeholder_fields(
     else:
         body = {}
     with pytest.raises(ExecutionEvidenceError, match="body fields"):
-        _verify_m0_registered_body_shape(kind, body)
+        _verify_current_generation_body_shape(kind, body)
 
 
 @pytest.mark.parametrize(
@@ -324,17 +324,17 @@ def test_registered_m0_body_shape_rejects_required_extra_and_placeholder_fields(
         ("trust_snapshot", "qualified_issuers"),
     ],
 )
-def test_registered_m0_body_shape_rejects_empty_semantic_collections(
+def test_registered_generation_body_shape_rejects_empty_semantic_collections(
     kind: str, field: str
 ) -> None:
     body = deepcopy(_BODY_SHAPE_CASES[kind])
     body[field] = []
     with pytest.raises(ExecutionEvidenceError, match="non-empty canonical collection"):
-        _verify_m0_registered_body_shape(kind, body)
+        _verify_current_generation_body_shape(kind, body)
 
 
 def test_registered_golden_body_allows_empty_closed_collections() -> None:
-    _verify_m0_registered_body_shape(
+    _verify_current_generation_body_shape(
         "golden_vector_manifest",
         deepcopy(_BODY_SHAPE_CASES["golden_vector_manifest"]),
     )

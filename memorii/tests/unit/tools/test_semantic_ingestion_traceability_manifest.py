@@ -14,7 +14,7 @@ from memorii.tools.semantic_ingestion_traceability_manifest import StructuralMan
 from memorii.tools.semantic_ingestion_traceability_registry import canonical_document, load_registry
 
 
-def test_sia_t03_structural_manifest_is_deterministic_and_registry_expanded() -> None:
+def test_structural_manifest_is_deterministic_and_registry_expanded() -> None:
     root = Path(__file__).parents[4]
     design = (root / "docs" / "design" / "semantic_ingestion_architecture.md").read_bytes()
     registry = load_registry(root / "docs" / "design" / "semantic_ingestion" / "traceability_registry" / "registry-v1.json")
@@ -45,7 +45,7 @@ def test_sia_t03_structural_manifest_is_deterministic_and_registry_expanded() ->
     ],
     ids=("bom", "nul", "cr", "invalid_utf8", "missing_final_lf", "double_final_lf"),
 )
-def test_sia_t03_both_structural_paths_reject_noncanonical_raw_design_bytes(
+def test_both_structural_paths_reject_noncanonical_raw_design_bytes(
     mutation: object,
 ) -> None:
     root = Path(__file__).parents[4]
@@ -63,7 +63,7 @@ def test_sia_t03_both_structural_paths_reject_noncanonical_raw_design_bytes(
         )
 
 
-def test_sia_t03_independent_manifest_rejects_published_byte_mutation() -> None:
+def test_independent_manifest_rejects_published_byte_mutation() -> None:
     root = Path(__file__).parents[4]
     design = (root / "docs" / "design" / "semantic_ingestion_architecture.md").read_bytes()
     registry = load_registry(root / "docs" / "design" / "semantic_ingestion" / "traceability_registry" / "registry-v1.json")
@@ -73,7 +73,7 @@ def test_sia_t03_independent_manifest_rejects_published_byte_mutation() -> None:
 
 
 @pytest.mark.parametrize("mutation", ["missing", "extra", "parent_fallback"])
-def test_sia_t03_both_structural_paths_require_exact_section_heading_paths(tmp_path: Path, mutation: str) -> None:
+def test_both_structural_paths_require_exact_section_heading_paths(tmp_path: Path, mutation: str) -> None:
     root = Path(__file__).parents[4]
     design = (root / "docs" / "design" / "semantic_ingestion_architecture.md").read_bytes()
     registry_path = root / "docs" / "design" / "semantic_ingestion" / "traceability_registry" / "registry-v1.json"
@@ -95,3 +95,21 @@ def test_sia_t03_both_structural_paths_require_exact_section_heading_paths(tmp_p
         build_structural_manifest(design_bytes=design, registry=registry)
     with pytest.raises(TraceabilityCoverageError, match=expected):
         rebuild_structural_manifest_bytes(design_bytes=design, registry=registry, registry_bytes=mutated.read_bytes())
+
+
+def test_both_structural_paths_reject_duplicate_numbered_heading() -> None:
+    root = Path(__file__).parents[4]
+    design = (root / "docs/design/semantic_ingestion_architecture.md").read_bytes()
+    registry_path = root / "docs/design/semantic_ingestion/traceability_registry/registry-v1.json"
+    registry = load_registry(registry_path)
+    duplicated = design.replace(
+        b"## 1. ", b"## 1. \n### 1.1. Duplicate heading\n\n", 1
+    )
+    with pytest.raises(StructuralManifestError, match="duplicate"):
+        build_structural_manifest(design_bytes=duplicated, registry=registry)
+    with pytest.raises(TraceabilityCoverageError, match="duplicate"):
+        rebuild_structural_manifest_bytes(
+            design_bytes=duplicated,
+            registry=registry,
+            registry_bytes=registry_path.read_bytes(),
+        )

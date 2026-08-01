@@ -31,7 +31,7 @@ from elaborate_scenario_a import (
     canonical,
     sha,
 )
-from memorii.tools.semantic_ingestion_scenario_test_trust import (
+from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
     build_generation_package,
     build_scenario_test_authority,
 )

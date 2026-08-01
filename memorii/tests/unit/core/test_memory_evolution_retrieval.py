@@ -189,7 +189,7 @@ def test_graph_audit_preserves_explicit_belief_candidates() -> None:
     assert "Bob" in rejected_values
 
 
-def test_relation_condition_resolves_shared_alias_from_object_evidence() -> None:
+def test_relation_condition_resolves_split_entity_from_passive_object_evidence() -> None:
     timestamp = datetime(2026, 1, 3, tzinfo=UTC)
     project = EntityLinkState(
         link_id="link:atlas-project",
@@ -205,7 +205,7 @@ def test_relation_condition_resolves_shared_alias_from_object_evidence() -> None
         mention_text="Atlas Platform Service",
         normalized_name="atlas platform service",
         canonical_entity_id="entity:atlas-service",
-        aliases=["Atlas", "Atlas service"],
+        aliases=["Atlas service"],
         entity_type="service",
         confidence=1.0,
     )

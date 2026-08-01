@@ -141,11 +141,41 @@ jobs:
 
       - name: Run unit tests
         working-directory: memorii
-        run: pytest -W error tests/unit -p no:cacheprovider
+        run: >-
+          pytest -W error tests/unit
+          --ignore=tests/unit/tools/test_generation_closure_exactness.py
+          --ignore=tests/unit/tools/test_scenario_fixture_authority.py
+          -p no:cacheprovider
+
+
+  semantic-ingestion-acceptance:
+    name: Semantic Ingestion Acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
 
       - name: Run semantic ingestion public acceptance
         working-directory: memorii
-        run: pytest -W error tests/acceptance/semantic_ingestion/test_sia_requirements.py -p no:cacheprovider
+        run: >-
+          pytest -W error
+          tests/unit/tools/test_generation_closure_exactness.py
+          tests/unit/tools/test_scenario_fixture_authority.py
+          tests/acceptance/semantic_ingestion/test_sia_requirements.py
+          -p no:cacheprovider
 
   benchmark-contracts:
     name: Benchmark Contracts

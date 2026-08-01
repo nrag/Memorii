@@ -297,7 +297,7 @@ def validate_anti_rollback_backend_registration(**kwargs: object) -> None:
 
 
 class TraceabilityReleasePublicationStore(Protocol):
-    """Composition-owned all-or-none publisher for a validated C2 release.
+    """Composition-owned all-or-none publisher for a validated traceability release.
 
     Candidate bytes are validated before this boundary. The store may publish
     only these exact immutable bytes while advancing its current index/fence.

@@ -1,4 +1,4 @@
-"""Admission-cap tests for the immutable M0 generation transport."""
+"""Admission-cap tests for the immutable current-generation transport."""
 
 from __future__ import annotations
 

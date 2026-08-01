@@ -1,4 +1,4 @@
-"""Deterministic, explicitly test-only trust material for scenario C2 vectors.
+"""Deterministic trust material used only by semantic-ingestion tests.
 
 This module is intentionally not wired into application composition.  It makes
 the acceptance fixture's authority explicit, with a distinct test root, so a
@@ -289,7 +289,7 @@ def build_scenario_test_authority(
 def build_generation_package(
     *, built: dict[str, object], design_bytes: bytes, registry_bytes: bytes
 ) -> tuple[bytes, dict[str, bytes]]:
-    """Produce the closed, independently addressable C2 generation package."""
+    """Produce the closed, independently addressable scenario generation package."""
     authority = built["authority"]
     typed = built["typed"]
     roots = built["roots"]
