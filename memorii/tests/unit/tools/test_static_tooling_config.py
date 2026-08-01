@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import tomllib
 from pathlib import Path
@@ -196,6 +197,7 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     config = _workflow_config("pr-gates.yml")
     jobs = config["jobs"]
     shards = jobs["unit-test-shards"]
+    compatibility = jobs["provider-compatibility"]
     umbrella = jobs["unit-tests"]
 
     assert shards["timeout-minutes"] == "15"
@@ -209,13 +211,25 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     assert umbrella["needs"] == [
         "static-analysis",
         "package-smoke",
+        "provider-compatibility",
         "unit-test-shards",
         "unit-timing-inventory",
     ]
+    assert compatibility["name"] == "Provider Compatibility Recapture"
+    compatibility_checkout = compatibility["steps"][0]
+    assert compatibility_checkout["with"]["fetch-depth"] == "0"
+    compatibility_run = next(
+        step for step in compatibility["steps"]
+        if step["name"] == "Verify deterministic historical provider recapture"
+    )
+    assert "tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py" in compatibility_run["run"]
+    shard_config = json.loads((PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text())
+    assert not any("provider_compatibility_recapture" in argument for argument in shard_config["pytest_args"])
 
     bounded_jobs = [
         "static-analysis",
         "package-smoke",
+        "provider-compatibility",
         "unit-test-shards",
         "unit-timing-inventory",
         "unit-tests",
@@ -229,6 +243,19 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     assert all(int(jobs[name]["timeout-minutes"]) <= 15 for name in bounded_jobs)
     assert jobs["benchmark-contracts"]["name"] == "Benchmark Contracts"
     assert jobs["benchmark-contracts"]["needs"] == ["benchmark-contract-tests", "benchmark-artifacts"]
+
+
+def test_test_symbols_use_behavioral_names_instead_of_requirement_or_milestone_ids() -> None:
+    identifier_name = re.compile(
+        r"^(?:async )?def test_(?:.*_(?:r|m|t|c|p)\d+(?:_|\()|sia_[a-z]\d+(?:_|\())",
+        re.IGNORECASE,
+    )
+    violations: list[str] = []
+    for path in sorted((PROJECT_ROOT / "tests").rglob("*.py")):
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if identifier_name.match(line):
+                violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line_number}:{line.strip()}")
+    assert violations == []
 
 
 def _workflow_steps(path: Path) -> list[tuple[str, str]]:

@@ -43,7 +43,7 @@ class _FailFirstTurnExtractor(EnglishRuleMemoryExtractor):
         return super().extract(observations)
 
 
-def test_default_provider_composition_excludes_semantic_execution_in_m1() -> None:
+def test_default_provider_composition_is_source_admission_only() -> None:
     service = ProviderMemoryService()
 
     service.sync_event(

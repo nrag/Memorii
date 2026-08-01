@@ -54,7 +54,7 @@ def _mappings():
     )
 
 
-def test_sia_t03_struct_accepts_complete_closed_coverage() -> None:
+def test_traceability_accepts_complete_closed_coverage() -> None:
     units, mappings = _mappings()
     verify_traceability_coverage(
         design_bytes=_DESIGN,
@@ -64,7 +64,7 @@ def test_sia_t03_struct_accepts_complete_closed_coverage() -> None:
     )
 
 
-def test_sia_t03_struct_extracts_every_closed_grammar_unit_from_frozen_design() -> None:
+def test_traceability_extracts_every_closed_grammar_unit_from_frozen_design() -> None:
     design = Path(__file__).parents[4] / "docs" / "design" / "semantic_ingestion_architecture.md"
     units = extract_normative_units(design.read_bytes())
     assert len(units) > 7_000
@@ -73,7 +73,7 @@ def test_sia_t03_struct_extracts_every_closed_grammar_unit_from_frozen_design() 
     assert all(unit.parent_invariant_id is None or unit.parent_invariant_id in emitted_ids for unit in units)
 
 
-def test_sia_t03_struct_direct_parents_are_emitted_structural_units() -> None:
+def test_traceability_direct_parents_are_emitted_structural_units() -> None:
     units = extract_normative_units(_DESIGN)
     by_kind = {unit.unit_kind: unit for unit in units}
     assert by_kind["list_item"].parent_invariant_id == by_kind["list"].invariant_id
@@ -82,7 +82,7 @@ def test_sia_t03_struct_direct_parents_are_emitted_structural_units() -> None:
     assert by_kind["schema_field"].parent_invariant_id == by_kind["fence"].invariant_id
 
 
-def test_sia_t03_struct_repeated_headings_keep_their_own_parent_occurrences() -> None:
+def test_traceability_repeated_headings_keep_their_own_parent_occurrences() -> None:
     repeated = b"""# Frozen Design
 
 ## 1. One
@@ -121,7 +121,7 @@ second child.
     )
 
 
-def test_sia_t03_struct_excludes_sections_after_five() -> None:
+def test_traceability_excludes_non_normative_sections() -> None:
     with_section_six = _DESIGN + b"\n## 6. Excluded\n\nThis must not be extracted.\n"
     before = extract_normative_units(_DESIGN)
     after = extract_normative_units(with_section_six)
@@ -129,7 +129,7 @@ def test_sia_t03_struct_excludes_sections_after_five() -> None:
 
 
 @pytest.mark.parametrize("mutation", ["missing", "orphan", "duplicate", "wrong_owner", "stale_unit", "stale_parent"])
-def test_sia_t03_struct_rejects_incomplete_or_forged_coverage(mutation: str) -> None:
+def test_traceability_rejects_incomplete_or_forged_coverage(mutation: str) -> None:
     units, mappings = _mappings()
     if mutation == "missing":
         mappings = mappings[1:]

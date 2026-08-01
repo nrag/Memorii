@@ -13,6 +13,6 @@ def test_production_factory_constructs_only_source_admission_dependencies() -> N
     assert not hasattr(service, "_evolution_coordinator")
 
 
-def test_production_factory_has_no_m2_reconciliation_path() -> None:
+def test_production_factory_exposes_no_reconciliation_path() -> None:
     service = provider_factory.build_provider_memory_service_from_env()
     assert service.reconcile_memory_evolution() == []

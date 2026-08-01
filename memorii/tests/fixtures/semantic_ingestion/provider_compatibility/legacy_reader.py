@@ -1,4 +1,4 @@
-"""Frozen R22 legacy reader; intentionally imports no Memorii code."""
+"""Frozen provider compatibility reader; intentionally imports no Memorii code."""
 from __future__ import annotations
 
 import json

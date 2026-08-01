@@ -722,7 +722,7 @@ def test_end_to_end_marks_runtime_observability_unsupported_when_trace_missing(
     assert observation.scenario_success is False
 
 
-def test_end_to_end_provider_mode_memory_write_memory_is_source_only_in_m1() -> None:
+def test_end_to_end_provider_memory_write_is_source_admission_only() -> None:
     fixture = BenchmarkScenarioFixture(
         scenario_id="e2e_provider_memory_write_memory",
         category=BenchmarkScenarioType.END_TO_END,
@@ -756,7 +756,7 @@ def test_end_to_end_provider_mode_memory_write_memory_is_source_only_in_m1() -> 
     assert observation.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"
 
 
-def test_end_to_end_provider_mode_memory_write_user_is_source_only_in_m1() -> None:
+def test_end_to_end_provider_user_write_is_source_admission_only() -> None:
     fixture = BenchmarkScenarioFixture(
         scenario_id="e2e_provider_memory_write_user",
         category=BenchmarkScenarioType.END_TO_END,

@@ -5,7 +5,6 @@ import json
 import re
 import shutil
 import subprocess
-import sys
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -25,7 +24,6 @@ from memorii.integrations.hermes_provider import HermesMemoryProvider
 _ROOT = Path(__file__).parents[3]
 _FIXTURE = _ROOT / "fixtures" / "semantic_ingestion" / "provider_compatibility"
 _TOOL = _ROOT.parents[0] / "tools" / "extract_provider_compatibility_fixture.py"
-_REPOSITORY = _ROOT.parents[1]
 
 
 def _json(path: Path) -> dict[str, Any]:
@@ -63,7 +61,7 @@ def _manifest() -> dict[str, Any]:
 
 
 def _legacy_reader() -> Any:
-    spec = importlib.util.spec_from_file_location("r22_legacy_reader", _FIXTURE / "legacy_reader.py")
+    spec = importlib.util.spec_from_file_location("provider_compatibility_legacy_reader", _FIXTURE / "legacy_reader.py")
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -110,13 +108,13 @@ def _verify_fixture(root: Path, expected_manifest_digest: str, *, legacy_reader:
     assert sha256(legacy_reader.read_bytes()).hexdigest() == reader_input["sha256"]
 
 
-def test_r22_independent_rfc8785_known_answer_vectors() -> None:
+def test_independent_rfc8785_known_answer_vectors() -> None:
     assert _jcs([-0.0, 1e-7, 1e-6, 1e20, 1e21]) == b"[0,1e-7,0.000001,100000000000000000000,1e+21]"
     assert _jcs("\x00\b\t\n\f\r\"\\/🙂e\u0301") == b'"\\u0000\\b\\t\\n\\f\\r\\\"\\\\/\xf0\x9f\x99\x82e\xcc\x81"'
     assert _jcs({"\ue000": 1, "\U00010000": 2, "\ufffd": 3}) == '{"𐀀":2,"":1,"�":3}'.encode()
 
 
-def test_r22_capture_manifest_binds_every_portable_input_tool_and_generated_file() -> None:
+def test_capture_manifest_binds_every_portable_input_tool_and_generated_file() -> None:
     expected_digest = _authority_digest()
     assert sha256((_FIXTURE / "capture_manifest.json").read_bytes()).hexdigest() == expected_digest
     _verify_fixture(_FIXTURE, expected_digest, legacy_reader=_FIXTURE / "legacy_reader.py")
@@ -142,7 +140,7 @@ def test_r22_capture_manifest_binds_every_portable_input_tool_and_generated_file
         assert path.read_bytes() == _jcs(_json(path))
 
 
-def test_r22_schema_field_order_enum_cases_and_validator_matrix_are_exact() -> None:
+def test_schema_field_order_enum_cases_and_validator_matrix_are_exact() -> None:
     corpus, manifest = _corpus(), _manifest()
     reader = _legacy_reader()
     assert ProviderEvolutionOutcome.model_json_schema() == corpus["provider_evolution_outcome_schema"]
@@ -167,7 +165,7 @@ def test_r22_schema_field_order_enum_cases_and_validator_matrix_are_exact() -> N
             assert type(error.value).__name__ == vector["error"]
 
 
-def test_r22_sync_result_serializes_every_public_case_in_field_and_outcome_order() -> None:
+def test_sync_result_serializes_every_public_case_in_field_and_outcome_order() -> None:
     corpus, manifest = _corpus(), _manifest()
     reader = _legacy_reader()
     assert list(corpus["sync_cases"]) == manifest["coverage"]["sync_case_names"]
@@ -185,23 +183,28 @@ def test_r22_sync_result_serializes_every_public_case_in_field_and_outcome_order
             assert type(error.value).__name__ == verdict["error"], name
 
 
-def test_r22_service_and_hermes_public_paths_preserve_schema_and_reader_contract() -> None:
+def test_service_and_hermes_public_paths_preserve_schema_and_reader_contract() -> None:
     def now() -> datetime:
         return datetime(2026, 1, 2, tzinfo=UTC)
     service = ProviderMemoryService(now_provider=now)
     service_result = service.sync_event(
         operation=ProviderOperation.MEMORY_WRITE_DAILYLOG,
-        content="R22 service bytes",
-        operation_id="r22-service",
-        task_id="r22",
+        content="Provider compatibility service bytes",
+        operation_id="compatibility-service",
+        task_id="provider-compatibility",
     )
     assert _legacy_reader().read_sync(_bytes(service_result.model_dump(mode="json", exclude_none=False)))
     hermes = HermesMemoryProvider(ProviderMemoryService(now_provider=now))
-    hermes_result = hermes.sync_turn("R22 user bytes", "R22 assistant bytes", operation_id="r22-turn", task_id="r22")
+    hermes_result = hermes.sync_turn(
+        "Provider compatibility user bytes",
+        "Provider compatibility assistant bytes",
+        operation_id="compatibility-turn",
+        task_id="provider-compatibility",
+    )
     assert _legacy_reader().read_sync(_bytes(hermes_result.model_dump(mode="json", exclude_none=False)))
 
 
-def test_r22_current_target_service_scenarios_remain_reader_compatible() -> None:
+def test_current_service_scenarios_remain_reader_compatible() -> None:
     reader = _legacy_reader()
 
     def now() -> datetime:
@@ -212,7 +215,7 @@ def test_r22_current_target_service_scenarios_remain_reader_compatible() -> None
             operation=ProviderOperation.MEMORY_WRITE_DAILYLOG,
             content="Atlas owner is Bob." if modality is None else "ignored",
             operation_id=operation_id,
-            task_id="r22",
+            task_id="provider-compatibility",
             source_modality=modality,
         )
 
@@ -223,15 +226,18 @@ def test_r22_current_target_service_scenarios_remain_reader_compatible() -> None
         )
     )
     actual = {
-        "deterministic_abstention": run(EnglishRuleMemoryExtractor(), "r22-abstained", modality=SourceModality.NOISE),
-        "retryable_failure": run(_failing_extractor(), "r22-retryable"),
-        "terminal_nonretryable": run(terminal, "r22-terminal"),
-        "committed_primary": run(EnglishRuleMemoryExtractor(), "r22-primary"),
-        "committed_fallback": run(HybridMemoryExtractor(llm_extractor=_failing_extractor()), "r22-fallback"),
+        "deterministic_abstention": run(EnglishRuleMemoryExtractor(), "compatibility-abstained", modality=SourceModality.NOISE),
+        "retryable_failure": run(_failing_extractor(), "compatibility-retryable"),
+        "terminal_nonretryable": run(terminal, "compatibility-terminal"),
+        "committed_primary": run(EnglishRuleMemoryExtractor(), "compatibility-primary"),
+        "committed_fallback": run(HybridMemoryExtractor(llm_extractor=_failing_extractor()), "compatibility-fallback"),
     }
     mixed = HermesMemoryProvider(ProviderMemoryService(memory_evolution_extractor=_FailFirstExtractor(), now_provider=now))
     actual["hermes_ordered_mixed"] = mixed.sync_turn(
-        "Atlas owner is Bob.", "Atlas owner is Carol.", operation_id="r22-mixed", task_id="r22"
+        "Atlas owner is Bob.",
+        "Atlas owner is Carol.",
+        operation_id="compatibility-mixed",
+        task_id="provider-compatibility",
     )
     for result in actual.values():
         raw = _bytes(result.model_dump(mode="json", exclude_none=False))
@@ -240,7 +246,7 @@ def test_r22_current_target_service_scenarios_remain_reader_compatible() -> None
         assert result.evolution_outcomes == []
 
 
-def test_r22_frozen_legacy_reader_accepts_target_public_bytes_and_rejects_order_tamper() -> None:
+def test_frozen_legacy_reader_accepts_public_bytes_and_rejects_order_tamper() -> None:
     module = _legacy_reader()
     corpus = _corpus()
     for payload in corpus["accepted_outcomes"].values():
@@ -258,7 +264,7 @@ def test_r22_frozen_legacy_reader_accepts_target_public_bytes_and_rejects_order_
         module.read_sync(b'[]')
 
 
-def test_r22_frozen_reader_rejects_closed_schema_and_lifecycle_mutations() -> None:
+def test_frozen_reader_rejects_closed_schema_and_lifecycle_mutations() -> None:
     reader, corpus = _legacy_reader(), _corpus()
     base = corpus["accepted_outcomes"]["pending"]
     mutations = [
@@ -287,7 +293,7 @@ def test_r22_frozen_reader_rejects_closed_schema_and_lifecycle_mutations() -> No
             reader.read_sync(_bytes({**sync_base, field: wrong}))
 
 
-def test_r22_frozen_reader_uses_exact_baseline_memory_domains() -> None:
+def test_frozen_reader_uses_exact_baseline_memory_domains() -> None:
     reader = _legacy_reader()
     baseline_domains = ("transcript", "semantic", "episodic", "user", "execution", "solver")
     sync_base = ProviderSyncResult().model_dump(mode="json", exclude_none=False)
@@ -302,7 +308,7 @@ def test_r22_frozen_reader_uses_exact_baseline_memory_domains() -> None:
                 reader.read_sync(_bytes({**sync_base, field: [spurious]}))
 
 
-def test_r22_frozen_reader_rejects_duplicate_keys_and_unhashable_enums() -> None:
+def test_frozen_reader_rejects_duplicate_keys_and_unhashable_enums() -> None:
     reader, corpus = _legacy_reader(), _corpus()
     outcome = corpus["accepted_outcome_bytes"]["pending"].encode("utf-8")
     duplicate_outcome = outcome.replace(b'{"operation_id":', b'{"operation_id":"duplicate","operation_id":', 1)
@@ -324,7 +330,7 @@ def test_r22_frozen_reader_rejects_duplicate_keys_and_unhashable_enums() -> None
         reader.read_sync(_bytes({**sync_base, "blocked_domains": [[]]}))
 
 
-def test_r22_unicode_and_opaque_embedded_payload_contract() -> None:
+def test_unicode_and_opaque_embedded_payload_contract() -> None:
     corpus = _corpus()
     payload = corpus["accepted_outcomes"]["unicode_boundary"]
     assert payload["operation_id"] == "op-\x00-🙂-e\u0301"
@@ -338,36 +344,7 @@ def test_r22_unicode_and_opaque_embedded_payload_contract() -> None:
     assert _jcs(json.loads(_jcs(mutated)))[0:1] == b"{"  # string remains opaque across outer round trip
 
 
-def test_r22_static_authority_rejects_tamper(tmp_path: Path) -> None:
+def test_static_authority_rejects_tamper(tmp_path: Path) -> None:
     authority = tmp_path / "expected_manifest.sha256"
     authority.write_text("0" * 64 + "  capture_manifest.json\n", encoding="ascii")
     assert _authority_digest(tmp_path) != sha256((_FIXTURE / "capture_manifest.json").read_bytes()).hexdigest()
-
-
-def test_r22_clean_recaptures_are_byte_identical_and_tamper_is_detected(tmp_path: Path) -> None:
-    assert shutil.which("git") is not None, "git is required for the claimed R22 capture gate"
-    first, second = tmp_path / "first", tmp_path / "second"
-    command = [sys.executable, str(_TOOL), "--repository", str(_REPOSITORY), "--python", sys.executable, "--legacy-reader", str(_FIXTURE / "legacy_reader.py")]
-    subprocess.run([*command, "--output", str(first)], check=True, capture_output=True, text=True)
-    subprocess.run([*command, "--output", str(second)], check=True, capture_output=True, text=True)
-    assert {path.name: path.read_bytes() for path in first.iterdir()} == {path.name: path.read_bytes() for path in second.iterdir()}
-    assert (first / "provider_envelope_corpus.json").read_bytes() == (_FIXTURE / "provider_envelope_corpus.json").read_bytes()
-    assert (first / "capture_manifest.json").read_bytes() == (_FIXTURE / "capture_manifest.json").read_bytes()
-    tampered = first / "provider_envelope_corpus.json"
-    tampered.write_bytes(tampered.read_bytes() + b"x")
-    manifest = _json(first / "capture_manifest.json")
-    assert sha256(tampered.read_bytes()).hexdigest() != manifest["corpus_sha256"]
-    with pytest.raises(AssertionError):
-        _verify_fixture(
-            first,
-            sha256((first / "capture_manifest.json").read_bytes()).hexdigest(),
-            legacy_reader=_FIXTURE / "legacy_reader.py",
-        )
-    manifest_path = second / "capture_manifest.json"
-    manifest_path.write_bytes(manifest_path.read_bytes().replace(b'"format":"memorii.provider-envelope-capture.v4"', b'"format":"tampered"'))
-    with pytest.raises(AssertionError):
-        _verify_fixture(
-            second,
-            sha256((_FIXTURE / "capture_manifest.json").read_bytes()).hexdigest(),
-            legacy_reader=_FIXTURE / "legacy_reader.py",
-        )

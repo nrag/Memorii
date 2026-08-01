@@ -555,7 +555,7 @@ def test_authenticated_non_english_declaration_abstains_even_when_public_label_i
 
 
 @pytest.mark.parametrize("case", _complete_corpus_cases(), ids=lambda case: case.case_id)
-def test_every_bootstrap_corpus_case_has_exact_protected_m1_outcome(
+def test_every_bootstrap_corpus_case_has_exact_protected_source_admission_outcome(
     case: BootstrapGrammarCorpusCase,
 ) -> None:
     capability = _TestHostBootstrapCapability(resolver=_CorpusResolver(case))
@@ -798,7 +798,7 @@ def test_incomplete_component_inventory_fails_closed_before_classification() -> 
     assert outcome.reason == "invalid_manifest"
 
 
-def test_jsonl_reopen_and_lost_ack_retry_preserve_one_m1_generation(tmp_path: Path) -> None:
+def test_jsonl_reopen_and_lost_ack_retry_preserve_one_bootstrap_generation(tmp_path: Path) -> None:
     capability = _TestHostBootstrapCapability()
     host_ingress = AuthenticatedHostIngress(
         provider_identity="provider:test",
@@ -1145,7 +1145,7 @@ def test_expected_host_ingress_denial_uses_non_disclosing_lookup_shape() -> None
     assert plane.list_records() == []
 
 
-def test_bootstrap_release_and_corpus_fail_closed_without_m2_state() -> None:
+def test_bootstrap_release_and_corpus_fail_closed_without_runtime_state() -> None:
     artifacts = build_bootstrap_profile_artifacts(_complete_corpus_cases())
     anchor = build_bootstrap_trust_anchor(artifacts)
     metadata = BootstrapProfileReleaseMetadata(

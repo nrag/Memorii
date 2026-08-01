@@ -26,8 +26,10 @@ Workflow file: `.github/workflows/pr-gates.yml`
 - Run Ruff, Pyright, and installed-wheel smoke checks in independent jobs.
 - Run the complete unit inventory through four deterministic,
   duration-balanced pytest shards.
+- Run historical provider compatibility recapture in a dedicated full-history
+  integration job.
 - Preserve `Unit Tests` as the required umbrella check over every shard and
-  supporting static/package job.
+  supporting static, package, and compatibility job.
 - Test import path is pinned in `memorii/pyproject.toml` (`[tool.pytest.ini_options].pythonpath = ["."]`) so `pytest tests/unit` behaves consistently in local and CI environments.
 
 ## GitHub settings plan (what to change in UI)
@@ -76,7 +78,8 @@ stable `Unit Tests` branch-protection identity:
 
 1. static analysis (`ruff` and scoped `pyright`)
 2. installed-package smoke verification
-3. four exhaustive unit-test shards
-4. dedicated semantic-ingestion acceptance partitions
+3. historical provider compatibility recapture
+4. four exhaustive unit-test shards
+5. dedicated semantic-ingestion acceptance partitions
 
 Keep each gate as a separate named job so branch-protection checks stay explicit and debuggable.

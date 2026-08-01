@@ -211,18 +211,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [static-analysis, package-smoke, unit-test-shards, unit-timing-inventory]
+    needs: [static-analysis, package-smoke, provider-compatibility, unit-test-shards, unit-timing-inventory]
 
     steps:
       - name: Require every unit-test dependency
         env:
           STATIC_RESULT: ${{ needs.static-analysis.result }}
           PACKAGE_RESULT: ${{ needs.package-smoke.result }}
+          COMPATIBILITY_RESULT: ${{ needs.provider-compatibility.result }}
           SHARD_RESULT: ${{ needs.unit-test-shards.result }}
           TIMING_RESULT: ${{ needs.unit-timing-inventory.result }}
         run: >-
           test "$STATIC_RESULT" = success
           && test "$PACKAGE_RESULT" = success
+          && test "$COMPATIBILITY_RESULT" = success
           && test "$SHARD_RESULT" = success
           && test "$TIMING_RESULT" = success
 
@@ -268,6 +270,35 @@ jobs:
           name: unit-test-timing-inventory
           path: ${{ runner.temp }}/unit-test-durations.json
           if-no-files-found: error
+
+  provider-compatibility:
+    name: Provider Compatibility Recapture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout complete compatibility history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Verify deterministic historical provider recapture
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py
+          -p no:cacheprovider
 
   semantic-ingestion-generation:
     name: Semantic Ingestion Generation Closure

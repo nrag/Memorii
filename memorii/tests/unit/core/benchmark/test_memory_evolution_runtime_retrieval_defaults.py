@@ -16,7 +16,7 @@ from tests.support.memory_evolution_provider_harness import (
 )
 
 
-def test_runtime_benchmark_requires_explicit_m2_composition() -> None:
+def test_runtime_benchmark_requires_explicit_semantic_execution_composition() -> None:
     with pytest.raises(RuntimeError, match="unavailable in the M1 source-only milestone"):
         run_runtime_scenarios(
             scenarios=[],
