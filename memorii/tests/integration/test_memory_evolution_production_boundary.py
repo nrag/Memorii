@@ -115,6 +115,16 @@ def _owner_response(
             "source_id": source_id,
             "quote": quote,
             "confidence": confidence,
+            "semantic_context": {
+                "assertion_mode": "world_assertion",
+                "epistemic_status": "asserted",
+                "polarity": "positive",
+                "modality": "assertion",
+                "attribution_source_id": source_id,
+                "attribution_speaker_id": None,
+                "reported_source_id": None,
+                "belief_holder_entity_ref": None,
+            },
         }
     ]
     if project_type_quote is not None:
@@ -127,6 +137,16 @@ def _owner_response(
                 "source_id": source_id,
                 "quote": project_type_quote,
                 "confidence": confidence,
+                "semantic_context": {
+                    "assertion_mode": "world_assertion",
+                    "epistemic_status": "asserted",
+                    "polarity": "positive",
+                    "modality": "assertion",
+                    "attribution_source_id": source_id,
+                    "attribution_speaker_id": None,
+                    "reported_source_id": None,
+                    "belief_holder_entity_ref": None,
+                },
             }
         )
     return {

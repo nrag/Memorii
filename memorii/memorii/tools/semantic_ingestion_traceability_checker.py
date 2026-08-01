@@ -644,10 +644,10 @@ def _load_independent_registry_bytes(raw: bytes) -> dict[str, Any]:
     ):
         raise TraceabilityCoverageError("registry heading defaults use invalid field types")
     paths = [item["heading_path"] for item in defaults]
-    # This independent loader deliberately repeats the closed 148-heading
+    # This independent loader deliberately repeats the closed 149-heading
     # contract rather than importing the production-side registry validation.
-    if len(defaults) != 148 or len(set(paths)) != 148 or any(not item.get("requirements") for item in defaults):
-        raise TraceabilityCoverageError("registry does not contain exactly 148 nonempty unique defaults")
+    if len(defaults) != 149 or len(set(paths)) != 149 or any(not item.get("requirements") for item in defaults):
+        raise TraceabilityCoverageError("registry does not contain exactly 149 nonempty unique defaults")
     if any(
         not isinstance(item.get("requirements"), list)
         or len(item["requirements"]) != len(set(item["requirements"]))

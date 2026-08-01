@@ -2385,12 +2385,12 @@ def test_registered_normative_approval_rejects_root_report_profile_and_lifecycle
         _approve(inputs)
 
 
-def test_sia_r03_acceptance() -> None:
-    """Registered R03 coordinate: approve a complete signed generation."""
+def test_registered_approval_accepts_complete_signed_generation() -> None:
+    """The registry maps this behavioral proof to the signed-generation requirement."""
     assert _approve(_approval_inputs("semantic-ingestion-r03"))["command_id"] == "pytest-sia-r03-v1"
 
 
-def test_sia_r13_acceptance() -> None:
-    """Registered R13 coordinate: trust is composition-owned, never request-owned."""
+def test_registered_approval_uses_composition_owned_trust() -> None:
+    """The registry maps this behavioral proof to the trust-ownership requirement."""
     inputs = _approval_inputs("semantic-ingestion-r13")
     assert _approve(inputs)["command_id"] == "pytest-sia-r13-v1"

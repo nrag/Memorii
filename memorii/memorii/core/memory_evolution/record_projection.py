@@ -26,6 +26,7 @@ def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObser
         task_id=record.task_id,
         user_id=record.user_id,
         language=record.language,
+        speaker_id=_declared_source_speaker_from_record(record),
     )
 
 
@@ -41,6 +42,15 @@ def declared_source_modality_from_record(
         return SourceModality(value)
     except ValueError as exc:
         raise ValueError(f"unknown declared source modality: {value!r}") from exc
+
+
+def _declared_source_speaker_from_record(record: CanonicalMemoryRecord) -> str | None:
+    value = record.content.get("source_speaker_id")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value:
+        raise ValueError("declared source speaker must be a non-empty string")
+    return value
 
 
 def record_from_entity_link(link: EntityLinkState) -> CanonicalMemoryRecord:

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
 import yaml
+from tools.extract_provider_compatibility_fixture import BASELINE_REVISION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 REPO_ROOT = PROJECT_ROOT.parent
@@ -192,6 +196,107 @@ def test_candidate_live_gate_is_not_an_automatic_pr_or_merge_trigger() -> None:
     assert set(pr_config["on"]) == {"pull_request", "merge_group"}
 
 
+def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> None:
+    config = _workflow_config("pr-gates.yml")
+    jobs = config["jobs"]
+    shards = jobs["unit-test-shards"]
+    compatibility = jobs["provider-compatibility"]
+    umbrella = jobs["unit-tests"]
+
+    assert shards["timeout-minutes"] == "15"
+    assert shards["strategy"]["fail-fast"] == "false"
+    assert shards["strategy"]["matrix"]["shard"] == ["0", "1", "2", "3"]
+    shard_run = next(step for step in shards["steps"] if step["name"] == "Run deterministic unit shard")
+    assert "memorii.tools.test_shards run" in shard_run["run"]
+    assert "--timing-output" in shard_run["run"]
+    assert umbrella["name"] == "Unit Tests"
+    assert umbrella["if"] == "always()"
+    assert umbrella["needs"] == [
+        "static-analysis",
+        "package-smoke",
+        "provider-compatibility",
+        "unit-test-shards",
+        "unit-timing-inventory",
+    ]
+    umbrella_run = umbrella["steps"][0]
+    assert umbrella_run["env"]["COMPATIBILITY_RESULT"] == "${{ needs.provider-compatibility.result }}"
+    assert 'test "$COMPATIBILITY_RESULT" = success' in umbrella_run["run"]
+    assert compatibility["name"] == "Provider Compatibility Recapture"
+    compatibility_checkout = compatibility["steps"][0]
+    assert compatibility_checkout["name"] == "Checkout"
+    assert compatibility_checkout["uses"] == "actions/checkout@v4"
+    compatibility_fetch_index, compatibility_fetch = next(
+        (index, step)
+        for index, step in enumerate(compatibility["steps"])
+        if step["name"] == "Fetch pinned provider compatibility baseline"
+    )
+    assert compatibility_fetch["working-directory"] == "memorii"
+    assignments = re.findall(
+        r"BASELINE_REVISION=\"\$\(python -c '([^']+)'\)\"",
+        compatibility_fetch["run"],
+    )
+    assert len(assignments) == 1
+    completed = subprocess.run(
+        [sys.executable, "-c", assignments[0]],
+        cwd=REPO_ROOT / compatibility_fetch["working-directory"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.stdout.strip() == BASELINE_REVISION
+    assert 'git fetch --no-tags --depth=1 origin "$BASELINE_REVISION"' in compatibility_fetch["run"]
+    assert 'git cat-file -e "$BASELINE_REVISION^{commit}"' in compatibility_fetch["run"]
+    compatibility_run = next(
+        step for step in compatibility["steps"]
+        if step["name"] == "Verify deterministic historical provider recapture"
+    )
+    assert compatibility_fetch_index < compatibility["steps"].index(compatibility_run)
+    assert "tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py" in compatibility_run["run"]
+    shard_config = json.loads((PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text())
+    assert not any("provider_compatibility_recapture" in argument for argument in shard_config["pytest_args"])
+
+    bounded_jobs = [
+        "static-analysis",
+        "package-smoke",
+        "provider-compatibility",
+        "unit-test-shards",
+        "unit-timing-inventory",
+        "unit-tests",
+        "semantic-ingestion-generation",
+        "semantic-ingestion-scenario",
+        "semantic-ingestion-acceptance",
+        "benchmark-contract-tests",
+        "benchmark-artifacts",
+        "benchmark-contracts",
+    ]
+    assert all(int(jobs[name]["timeout-minutes"]) <= 15 for name in bounded_jobs)
+    assert jobs["benchmark-contracts"]["name"] == "Benchmark Contracts"
+    assert jobs["benchmark-contracts"]["needs"] == ["benchmark-contract-tests", "benchmark-artifacts"]
+
+
+def test_test_symbols_use_behavioral_names_instead_of_requirement_or_milestone_ids() -> None:
+    identifier_name = re.compile(
+        r"^(?:async )?def test_(?:.*_(?:r|m|t|c|p)\d+(?:_|\()|sia_[a-z]\d+(?:_|\())",
+        re.IGNORECASE,
+    )
+    violations: list[str] = []
+    for path in sorted((PROJECT_ROOT / "tests").rglob("*.py")):
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if identifier_name.match(line):
+                violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line_number}:{line.strip()}")
+    assert violations == []
+
+
+def test_provider_recapture_documentation_matches_exact_pinned_fetch_contract() -> None:
+    documentation = (REPO_ROOT / "docs" / "development" / "static_tooling.md").read_text(encoding="utf-8")
+    assert "fetch the tool-owned baseline SHA" in documentation
+    assert "`--depth=1`" in documentation
+    assert "verify that the fetched object is a commit" in documentation
+    assert "fetch-depth: 0" not in documentation
+    assert "provider compatibility\nrecapture" in documentation
+    assert "merged unit\ntiming inventory" in documentation
+
+
 def _workflow_steps(path: Path) -> list[tuple[str, str]]:
     workflow = path.read_text(encoding="utf-8")
     return re.findall(
@@ -201,17 +306,19 @@ def _workflow_steps(path: Path) -> list[tuple[str, str]]:
 
 
 def test_runtime_dry_runs_separate_plumbing_from_semantic_quality_gates() -> None:
-    pr_steps = _workflow_steps(REPO_ROOT / ".github" / "workflows" / "pr-gates.yml")
+    pr_config = _workflow_config("pr-gates.yml")
     scheduled_steps = _workflow_steps(REPO_ROOT / ".github" / "workflows" / "benchmark-scheduled.yml")
-    runtime_steps = [body for name, body in pr_steps if "runtime plumbing artifact" in name]
-    semantic_runtime_steps = [body for name, body in pr_steps if "runtime semantic artifact" in name]
-    simulator_steps = [body for name, body in pr_steps if "simulator plumbing artifact" in name]
     scheduled_semantic_runtime_steps = [body for name, body in scheduled_steps if "runtime semantic artifact" in name]
+    artifact_job = pr_config["jobs"]["benchmark-artifacts"]
+    matrix = artifact_job["strategy"]["matrix"]["include"]
+    runtime_rows = [row for row in matrix if row["suite"] == "memory_evolution_runtime_v1"]
+    simulator_rows = [row for row in matrix if row["suite"] == "memory_evolution_sim_v1"]
+    artifact_step = next(step for step in artifact_job["steps"] if step["name"] == "Build deterministic benchmark artifact")
 
-    assert len(runtime_steps) == 0
-    assert len(semantic_runtime_steps) == 4
-    assert len(simulator_steps) == 4
-    assert len(scheduled_semantic_runtime_steps) == 1
-    assert all("--fail-on-benchmark-failure" in body for body in semantic_runtime_steps)
-    assert all("--fail-on-benchmark-failure" in body for body in scheduled_semantic_runtime_steps)
-    assert all("--fail-on-benchmark-failure" in body for body in simulator_steps)
+    assert len(runtime_rows) == 4
+    assert len(simulator_rows) == 4
+    assert {row["profile"] for row in runtime_rows} == {"long_horizon", "adversarial"}
+    assert {row["mode"] for row in runtime_rows} == {"llm", "hybrid"}
+    assert "tests.support.run_memory_evolution_runtime_benchmark" in artifact_step["run"]
+    assert "--fail-on-benchmark-failure" in artifact_step["run"]
+    assert len(scheduled_semantic_runtime_steps) == 0

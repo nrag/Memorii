@@ -10,7 +10,6 @@ from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.summary import DecisionStateSummary
 from memorii.core.llm_decision.trace import LLMDecisionTraceStore
 from memorii.core.memory_evolution import (
-    EnglishRuleMemoryExtractor,
     GraphAuditRequest,
     MemoryEvolutionResult,
     MemoryEvolutionService,
@@ -23,11 +22,25 @@ from memorii.core.memory_evolution import (
     RetrievalPurpose,
     RetrievalView,
 )
+from memorii.core.memory_evolution.admission import (
+    GovernedSourceAdmissionService,
+    SemanticIngestionOutcomeLookupRequest,
+    SemanticIngestionOutcomeLookupResponse,
+)
+from memorii.core.memory_evolution.bootstrap_profile import (
+    BootstrapProfileVerificationError,
+    InstalledHostBootstrapCapabilityProvider,
+    VerifiedBootstrapProfile,
+    verify_bootstrap_profile,
+)
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedHostIngress,
+    AuthenticatedIngressContextResolver,
+    AuthenticatedIngressResolutionError,
+)
 from memorii.core.memory_evolution.operation_store import (
     EvolutionOperationRepository,
-    MemoryPlaneEvolutionOperationRepository,
 )
-from memorii.core.memory_evolution.operations import EvolutionCoordinator
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.next_step import NextStepEngine
 from memorii.core.promotion.provider import PromotionAssessmentProvider
@@ -35,6 +48,7 @@ from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentPro
 from memorii.core.provider.classifier import make_event
 from memorii.core.provider.ingestion import ProviderIngestionCoordinator
 from memorii.core.provider.models import (
+    ProviderEvent,
     ProviderEvolutionOutcome,
     ProviderOperation,
     ProviderPrefetchResult,
@@ -87,6 +101,33 @@ class ProviderMemoryService:
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
+        capability_provider = InstalledHostBootstrapCapabilityProvider()
+        try:
+            host_bootstrap_capability = capability_provider.load()
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+            host_bootstrap_capability = None
+        verified_material = None
+        if host_bootstrap_capability is not None:
+            try:
+                verified_material = host_bootstrap_capability.load_verified_bootstrap_material()
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+                verified_material = None
+        self._authenticated_ingress_resolver = None
+        self._bootstrap_profile: VerifiedBootstrapProfile | None = None
+        self._bootstrap_unavailable_reason = "invalid_config"
+        if verified_material is not None:
+            self._authenticated_ingress_resolver = cast(
+                AuthenticatedIngressContextResolver,
+                verified_material.authenticated_ingress_resolver,
+            )
+            try:
+                self._bootstrap_profile = verify_bootstrap_profile(verified_material)
+            except BootstrapProfileVerificationError as exc:
+                self._bootstrap_profile = None
+                self._bootstrap_unavailable_reason = exc.reason.value
+            except ValueError:
+                self._bootstrap_profile = None
+                self._bootstrap_unavailable_reason = "invalid_manifest"
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
         self._work_state_service = work_state_service
         self._work_state_selector = WorkStateSelector(work_state_service)
@@ -112,26 +153,13 @@ class ProviderMemoryService:
             overlay_store=overlay_store,
         )
         self._emit_work_state_event_candidates = emit_work_state_event_candidates
-        self._memory_evolution_service = MemoryEvolutionService(
-            memory_plane=self._memory_plane,
-            extractor=memory_evolution_extractor or EnglishRuleMemoryExtractor(),
-            query_analyzer=memory_evolution_query_analyzer,
-            now_provider=self._now_provider,
-        )
-        operation_repository = (
-            memory_evolution_operation_repository
-            if memory_evolution_operation_repository is not None
-            else MemoryPlaneEvolutionOperationRepository(self._memory_plane)
-        )
-        self._evolution_coordinator = EvolutionCoordinator(
-            memory_plane=self._memory_plane,
-            evolution_service=self._memory_evolution_service,
-            now_provider=self._now_provider,
-            operation_repository=operation_repository,
-        )
+        self._memory_evolution_service: MemoryEvolutionService | None = None
+        self._semantic_ingestion_admission = GovernedSourceAdmissionService(self._memory_plane)
         self._provider_ingestion = ProviderIngestionCoordinator(
             memory_plane=self._memory_plane,
-            evolution_coordinator=self._evolution_coordinator,
+            admission_service=self._semantic_ingestion_admission,
+            bootstrap_profile=self._bootstrap_profile,
+            bootstrap_unavailable_reason=self._bootstrap_unavailable_reason,
         )
         self._work_state_memory_projector = WorkStateMemoryProjector(
             memory_plane=self._memory_plane,
@@ -164,8 +192,10 @@ class ProviderMemoryService:
         task_id: str | None = None,
         user_id: str | None = None,
         language: str = "en",
+        speaker_id: str | None = None,
         timestamp: datetime | None = None,
         source_modality: SourceModality | None = None,
+        authenticated_host_ingress: AuthenticatedHostIngress | None = None,
     ) -> ProviderSyncResult:
         event = make_event(
             event_id=operation_id,
@@ -178,24 +208,92 @@ class ProviderMemoryService:
             task_id=task_id,
             user_id=user_id,
             language=language,
+            speaker_id=speaker_id,
             timestamp=timestamp or self._now_provider(),
             source_modality=source_modality,
         )
+        return self._ingest_event(
+            event,
+            authenticated_host_ingress=authenticated_host_ingress,
+        )
+
+    def _sync_composite_event(
+        self,
+        *,
+        operation: ProviderOperation,
+        content: str,
+        composite_operation_id: str,
+        role: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        authenticated_host_ingress: AuthenticatedHostIngress | None = None,
+    ) -> ProviderSyncResult:
+        """Internal-only typed composite coordinate path used by Hermes fan-out."""
+
+        if not composite_operation_id.startswith("composite:v1:"):
+            raise ValueError("internal composite event requires a composite coordinate")
+        # This path is not exposed through ProviderEvent validation or any
+        # caller-selectable API.  The adapter obtains the value only from the
+        # canonical domain-separated coordinate constructor.
+        event = ProviderEvent.model_construct(
+            event_id=composite_operation_id,
+            operation=operation,
+            content=content,
+            role=role,
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+            language="en",
+            timestamp=self._now_provider(),
+        )
+        return self._ingest_event(event, authenticated_host_ingress=authenticated_host_ingress)
+
+    def _ingest_event(
+        self,
+        event: ProviderEvent,
+        *,
+        authenticated_host_ingress: AuthenticatedHostIngress | None,
+    ) -> ProviderSyncResult:
+        ingress = self._resolve_ingress(authenticated_host_ingress)
         result, _, evolution_result = self._provider_ingestion.ingest(
             event,
-            defer_assertions=operation
+            defer_assertions=event.operation
             in {
                 ProviderOperation.CHAT_USER_TURN,
                 ProviderOperation.CHAT_ASSISTANT_TURN,
             },
+            authenticated_ingress=ingress,
         )
         self._last_memory_evolution_result = evolution_result
-        self._work_state_memory_projector.ingest_provider_event(event)
         return result
+
+    def _resolve_ingress(self, host_ingress: AuthenticatedHostIngress | None):
+        if host_ingress is None or self._authenticated_ingress_resolver is None:
+            return None
+        try:
+            return self._authenticated_ingress_resolver.resolve(host_ingress, self._now_provider())
+        except AuthenticatedIngressResolutionError:
+            return None
+
+    def lookup_semantic_ingestion_outcome(
+        self,
+        request: SemanticIngestionOutcomeLookupRequest,
+        *,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> SemanticIngestionOutcomeLookupResponse:
+        """Use the sole authenticated, intentionally non-disclosing result path."""
+
+        ingress = self._resolve_ingress(authenticated_host_ingress)
+        if ingress is None:
+            return SemanticIngestionOutcomeLookupResponse()
+        return self._semantic_ingestion_admission.lookup(request, authenticated_ingress=ingress)
 
     @property
     def memory_evolution_service(self) -> MemoryEvolutionService:
         """Return the runtime evolution service used by provider operations."""
+        if self._memory_evolution_service is None:
+            raise RuntimeError("memory evolution is unavailable in the M1 source-only composition")
         return self._memory_evolution_service
 
     def retrieve_evolution_decision(
@@ -209,7 +307,7 @@ class ProviderMemoryService:
         adapter concern in :meth:`prefetch`.
         """
 
-        return self._memory_evolution_service.retrieve(request)
+        return self.memory_evolution_service.retrieve(request)
 
     def apply_memory_write(
         self,
@@ -225,6 +323,7 @@ class ProviderMemoryService:
         language: str = "en",
         timestamp: datetime | None = None,
         source_modality: SourceModality | None = None,
+        authenticated_host_ingress: AuthenticatedHostIngress | None = None,
     ) -> ProviderWriteDecision:
         event = make_event(
             event_id=operation_id,
@@ -239,7 +338,10 @@ class ProviderMemoryService:
             timestamp=timestamp or self._now_provider(),
             source_modality=source_modality,
         )
-        sync_result, _, evolution_result = self._provider_ingestion.ingest(event)
+        sync_result, _, evolution_result = self._provider_ingestion.ingest(
+            event,
+            authenticated_ingress=self._resolve_ingress(authenticated_host_ingress),
+        )
         self._last_memory_evolution_result = evolution_result
         decision = ProviderWriteDecision(
             blocked_domains=sync_result.blocked_domains,
@@ -251,7 +353,6 @@ class ProviderMemoryService:
             blocked_commit_domains=sync_result.blocked_commit_domains,
             evolution_outcomes=list(sync_result.evolution_outcomes),
         )
-        self._work_state_memory_projector.ingest_provider_event(event)
         return decision
 
     def prefetch(
@@ -416,6 +517,9 @@ class ProviderMemoryService:
     ) -> tuple[str, ProductionRetrievalDecision | None]:
         """Render only the production evolution decision into provider context."""
 
+        if self._memory_evolution_service is None:
+            return "", None
+
         scope = MemoryScope(
             task_id=task_id,
             session_id=session_id,
@@ -461,7 +565,7 @@ class ProviderMemoryService:
             return format_evolution_execution_decision(decision), decision
         states = {
             state.claim_id: state
-            for state in self._memory_evolution_service.retrieve_claim_states(
+            for state in self.memory_evolution_service.retrieve_claim_states(
                 view=RetrievalView.ALL_VERSIONS,
             )
         }
@@ -513,7 +617,7 @@ class ProviderMemoryService:
     def reconcile_memory_evolution(self) -> list[ProviderEvolutionOutcome]:
         """Retry pending and retryable failed evolution operations."""
 
-        return self._provider_ingestion.reconcile()
+        return []
 
     @staticmethod
     def _format_work_state_section(work_states: list[WorkStateSummary]) -> str:

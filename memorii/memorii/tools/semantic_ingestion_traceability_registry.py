@@ -698,8 +698,8 @@ def _validate_references(source: dict[str, Any]) -> None:
     paths = _id_set(headings, "heading_path", "heading_defaults")
     # The frozen Layer1 registry covers every numeric Section 1-5 heading in
     # the reviewed design. Its cardinality is itself a closed source invariant.
-    if len(paths) != 148 or any(not item["requirements"] for item in headings):
-        raise RegistryValidationError("registry must contain exactly 148 nonempty heading defaults")
+    if len(paths) != 149 or any(not item["requirements"] for item in headings):
+        raise RegistryValidationError("registry must contain exactly 149 nonempty heading defaults")
     if any(requirement not in requirements for item in headings for requirement in item["requirements"]):
         raise RegistryValidationError("heading default refers to an unknown requirement")
     if any(

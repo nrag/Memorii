@@ -28,12 +28,12 @@ SEMANTIC_CHECKER = VECTORS / "check_lifecycle_root_signer_provenance_v1.py"
 SEMANTIC_EXPECTED = {
     "fixture": "d3c1dce10624365647cbb00926f63b6deabe681e51a138bc3de88d7c60faef69",
     "validator": "46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb",
-    "checker": "8c219ad322277abfe5e969a2153eaf050971187af619713b3f4ffb58dd942038",
+    "checker": "c4168249dbf4845d90e9593819323dc331e22e3bdfa5a9df70b076ed10449f01",
 }
 EXPECTED = {
-    "design": "70ace2b99c4db79911f45555f72cde43278ccaac69c1fc11530e2d474f1fa26c",
-    "registry": "8e6395e2657eb1a51e5eef7d9b88b5d43b974a58f7f786ed135f6758262bfec1",
-    "authority": "c119345548166fd99e7aefe963d62a9b73e6c98c7cac84b7d6f8759b2ceb5633",
+    "design": "e7de038a5cad8f8d95536d60d35621472a79588e100c2da8633a9dd1fcfb5e7a",
+    "registry": "35396897f98833b3eeb9572b16d7eab38ea34741ca876a4a72048424de676ea3",
+    "authority": "0dff4f2c0c8a33b7a23ba067de07ae16e556d60b5f94192223b4c76a2246c056",
     "validator": "826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e",
     "checker": "e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732",
 }
@@ -200,6 +200,8 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     exact_job = jobs["ctv-binding-authority-exact"]
     unit_job = jobs["unit-tests"]
     acceptance_job = jobs["semantic-ingestion-acceptance"]
+    generation_job = jobs["semantic-ingestion-generation"]
+    scenario_job = jobs["semantic-ingestion-scenario"]
     assert isinstance(compiler_job, dict)
     assert isinstance(gate_job, dict)
     assert isinstance(exact_job, dict)
@@ -210,10 +212,17 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     assert exact_job["name"] == "CTV Binding Authority Exact"
     assert acceptance_job["name"] == "Semantic Ingestion Acceptance"
     assert acceptance_job["runs-on"] == "ubuntu-latest"
-    assert acceptance_job["timeout-minutes"] == "35"
-    unit_checkout = [step for step in unit_job["steps"] if step.get("name") == "Checkout"]
-    assert len(unit_checkout) == 1
-    assert unit_checkout[0]["with"] == {"fetch-depth": "0"}
+    assert acceptance_job["timeout-minutes"] == "15"
+    assert generation_job["timeout-minutes"] == "15"
+    assert scenario_job["timeout-minutes"] == "15"
+    assert unit_job["name"] == "Unit Tests"
+    assert unit_job["needs"] == [
+        "static-analysis",
+        "package-smoke",
+        "provider-compatibility",
+        "unit-test-shards",
+        "unit-timing-inventory",
+    ]
     for job in (compiler_job, gate_job, exact_job):
         assert job["runs-on"] == "ubuntu-latest"
         assert job["timeout-minutes"] == "5"
@@ -279,18 +288,19 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
         "pytest",
         "-W",
         "error",
-        "tests/unit/tools/test_generation_closure_exactness.py",
-        "tests/unit/tools/test_scenario_fixture_authority.py",
         "tests/acceptance/semantic_ingestion/test_sia_requirements.py",
         "-p",
         "no:cacheprovider",
     ]
     assert not forbidden_selectors.intersection(acceptance_tokens)
-    unit_steps = [step for step in unit_job["steps"] if step.get("name") == "Run unit tests"]
-    assert len(unit_steps) == 1
-    unit_tokens = shlex.split(unit_steps[0]["run"])
-    assert "--ignore=tests/unit/tools/test_generation_closure_exactness.py" in unit_tokens
-    assert "--ignore=tests/unit/tools/test_scenario_fixture_authority.py" in unit_tokens
+    generation_run = next(
+        step for step in generation_job["steps"] if step.get("name") == "Run generation closure acceptance"
+    )
+    scenario_run = next(
+        step for step in scenario_job["steps"] if step.get("name") == "Run scenario authority acceptance"
+    )
+    assert "tests/unit/tools/test_generation_closure_exactness.py" in shlex.split(generation_run["run"])
+    assert "tests/unit/tools/test_scenario_fixture_authority.py" in shlex.split(scenario_run["run"])
     exact_steps = exact_job["steps"]
     assert [step.get("name") for step in exact_steps] == [
         "Checkout",

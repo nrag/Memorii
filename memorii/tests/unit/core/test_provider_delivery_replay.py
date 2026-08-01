@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import cast
 
+from memorii.core.memory_evolution.ingestion_contracts import derive_composite_child_delivery_id
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore
 
 _PROCESS_SCRIPT = """
@@ -15,7 +16,10 @@ from pathlib import Path
 
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.memory_evolution.ingestion_contracts import derive_composite_child_delivery_id
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
 store_path = Path(sys.argv[1])
@@ -32,12 +36,15 @@ if action == "turn":
         task_id="task:atlas",
     )
 elif action == "user_only":
-    result = service.sync_event(
+    result = service._sync_composite_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas migration owner is Alice.",
         role="user",
-        operation_id="delivery:durable-turn:user",
+        composite_operation_id=derive_composite_child_delivery_id("delivery:durable-turn", "user"),
         task_id="task:atlas",
+        session_id=None,
+        user_id=None,
+        authenticated_host_ingress=None,
     )
 else:
     raise AssertionError(action)
@@ -80,9 +87,11 @@ def test_partial_turn_recovers_after_process_restart(tmp_path: Path) -> None:
 
     reopened = JsonlMemoryPlaneStore(store_path)
     transcript_records = [record for record in reopened.list_records() if record.is_raw_event]
-    assert first["operation_ids"] == ["delivery:durable-turn:user"]
+    assert first["operation_ids"] == [
+        derive_composite_child_delivery_id("delivery:durable-turn", "user")
+    ]
     assert recovered["operation_ids"] == [
-        "delivery:durable-turn:user",
-        "delivery:durable-turn:assistant",
+        derive_composite_child_delivery_id("delivery:durable-turn", "user"),
+        derive_composite_child_delivery_id("delivery:durable-turn", "assistant"),
     ]
     assert len(transcript_records) == 2

@@ -27,6 +27,7 @@ from memorii.core.promotion import (
     PromotionService,
     RuleBasedPromotionExecutionPolicy,
 )
+from memorii.core.provider.classifier import make_event
 from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.retrieval.planner import RetrievalPlanner
@@ -343,7 +344,7 @@ class ScenarioExecutor:
         plane = MemoryPlaneService()
         provider = ProviderMemoryService(memory_plane=plane)
         expected = next(item for item in fx.corpus if item.item_id == fx.expected_reuse_id)
-        stage_result = provider.apply_memory_write(
+        stage_result = plane.ingest_provider_event(make_event(
             operation=_provider_operation_for_learning_domain(expected.domain),
             content=expected.text,
             action="upsert",
@@ -351,8 +352,8 @@ class ScenarioExecutor:
             session_id="session:learning",
             task_id=expected.task_id,
             user_id="user:learning",
-            operation_id=f"benchmark:{fixture.scenario_id}:learning-write",
-        )
+            event_id=f"benchmark:{fixture.scenario_id}:learning-write",
+        ))
         if not stage_result.candidate_ids:
             raise ValueError("learning benchmark expected a staged candidate via provider path")
         candidate_id = stage_result.candidate_ids[0]

@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from memorii.core.execution import RuntimeStepService
 from memorii.core.memory_plane import MemoryPlaneService, from_memory_object, from_provider_stored_record
 from memorii.core.provider.models import ProviderOperation, ProviderStoredRecord
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.common import Provenance, RoutingInfo
 from memorii.domain.enums import (
     CommitStatus,
@@ -28,6 +27,9 @@ from memorii.stores.event_log import InMemoryEventLogStore
 from memorii.stores.execution_graph import InMemoryExecutionGraphStore
 from memorii.stores.overlays import InMemoryOverlayStore
 from memorii.stores.solver_graph import InMemorySolverGraphStore
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 
 def _build_runtime(shared_plane: MemoryPlaneService) -> RuntimeStepService:

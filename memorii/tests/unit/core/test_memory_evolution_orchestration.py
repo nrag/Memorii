@@ -39,10 +39,11 @@ from memorii.core.memory_plane.store import (
     MemoryPlanePrecondition,
     MemoryPlaneRevisionConflictError,
 )
-from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 
 class _CountingExtractor(EnglishRuleMemoryExtractor):
@@ -521,7 +522,7 @@ def test_failed_evolution_reconciles_after_persistent_store_reopen(tmp_path: Pat
     assert operation_record.content["operation"]["status"] == "evolution_committed"
 
 
-def test_production_composition_recovers_retryable_operation_on_startup(tmp_path: Path) -> None:
+def test_evolution_harness_recovers_retryable_operation_on_restart(tmp_path: Path) -> None:
     store_path = tmp_path / "memory-plane"
     first_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
     first_provider = ProviderMemoryService(
@@ -536,10 +537,8 @@ def test_production_composition_recovers_retryable_operation_on_startup(tmp_path
     )
 
     reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
-    restarted = build_provider_memory_service_from_env(
-        memory_plane=reopened_plane,
-        env={"MEMORII_SECRET_SOURCE": "process", "MEMORII_LLM_PROVIDER": "none"},
-    )
+    restarted = ProviderMemoryService(memory_plane=reopened_plane)
+    restarted.reconcile_memory_evolution()
 
     states = restarted.memory_evolution_service.retrieve_claim_states(view=RetrievalView.CURRENT)
     assert [state.object_value for state in states] == ["Alice"]

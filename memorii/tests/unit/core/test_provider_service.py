@@ -10,12 +10,10 @@ from memorii.core.memory_evolution import (
     LLMMemoryExtractor,
     MemoryQueryRequest,
     RetrievalPurpose,
-    RetrievalView,
     StructuredQueryAnalyzer,
 )
 from memorii.core.memory_evolution.models import SourceObservation
 from memorii.core.memory_plane import MemoryPlaneService
-from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import (
     ProviderEvent,
     ProviderEvolutionOutcome,
@@ -24,7 +22,6 @@ from memorii.core.provider.models import (
 )
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import (
-    CommitStatus,
     ExtractionRunStatus,
     FinalExtractionSource,
     MemoryDomain,
@@ -46,7 +43,7 @@ class _FailFirstTurnExtractor(EnglishRuleMemoryExtractor):
         return super().extract(observations)
 
 
-def test_default_provider_composition_enables_memory_evolution() -> None:
+def test_default_provider_composition_is_source_admission_only() -> None:
     service = ProviderMemoryService()
 
     service.sync_event(
@@ -56,10 +53,9 @@ def test_default_provider_composition_enables_memory_evolution() -> None:
         task_id="task:default-evolution",
     )
 
-    assert service.memory_evolution_service is not None
-    result = service.last_memory_evolution_result()
-    assert result is not None
-    assert [observation.source_id for observation in result.observations]
+    with pytest.raises(RuntimeError, match="M1 source-only"):
+        _ = service.memory_evolution_service
+    assert service.last_memory_evolution_result() is None
 
 
 def test_provider_preserves_caller_owned_event_time() -> None:
@@ -79,13 +75,8 @@ def test_provider_preserves_caller_owned_event_time() -> None:
         timestamp=source_time,
     )
 
-    result = service.last_memory_evolution_result()
-    assert result is not None
-    assert {observation.timestamp for observation in result.observations} == {source_time}
-    transcript = memory_plane.get_record("tx:test:source-time")
-    assert transcript is not None
-    assert transcript.timestamp == source_time
-    assert "source_modality" not in transcript.content
+    assert service.last_memory_evolution_result() is None
+    assert memory_plane.list_records() == []
 
 
 @pytest.mark.parametrize(
@@ -105,7 +96,7 @@ def test_provider_preserves_caller_owned_event_time() -> None:
         ),
     ],
 )
-def test_declared_non_extractable_modality_commits_without_provider_attempt(
+def test_declared_non_extractable_modality_has_zero_semantic_effect(
     modality: SourceModality,
     text: str,
 ) -> None:
@@ -131,20 +122,9 @@ def test_declared_non_extractable_modality_commits_without_provider_attempt(
     )
 
     assert client.last_request is None
-    assert len(result.evolution_outcomes) == 1
-    outcome = result.evolution_outcomes[0]
-    assert outcome.status == "evolution_committed"
-    assert outcome.extraction_status == ExtractionRunStatus.ABSTAINED
-    assert outcome.provider_attempt_status == ProviderAttemptStatus.NOT_ATTEMPTED
-    assert outcome.final_extraction_source == FinalExtractionSource.NONE
-    evolution = service.last_memory_evolution_result()
-    assert evolution is not None
-    assert evolution.skipped_observation_ids == result.transcript_ids
-    transcript = memory_plane.get_record(result.transcript_ids[0])
-    assert transcript is not None
-    assert transcript.content["source_modality"] == modality.value
-    assert "hidden_distractor_ids" not in transcript.content
-    assert "exposed_claim_ids" not in transcript.content
+    assert result.evolution_outcomes == []
+    assert result.candidate_ids == []
+    assert service.last_memory_evolution_result() is None
 
 
 def test_provider_rejects_failed_deterministic_abstention() -> None:
@@ -215,15 +195,15 @@ def test_provider_hook_methods_cover_core_operations() -> None:
     )
     prefetch_text = provider.prefetch("what happened last session", task_id="task:2")
 
-    assert len(turn_result.transcript_ids) == 2
-    assert write_result.blocked_domains
-    assert session_result.transcript_ids
-    assert precompress_result.transcript_ids
-    assert delegation_result.transcript_ids
+    assert turn_result.candidate_ids == []
+    assert write_result.candidate_ids == []
+    assert session_result.candidate_ids == []
+    assert precompress_result.candidate_ids == []
+    assert delegation_result.candidate_ids == []
     assert isinstance(prefetch_text, str)
 
 
-def test_sync_turn_preserves_every_evolution_outcome_after_partial_failure() -> None:
+def test_sync_turn_contains_extractor_failures_before_semantic_execution() -> None:
     extractor = _FailFirstTurnExtractor()
     provider = HermesMemoryProvider(ProviderMemoryService(memory_evolution_extractor=extractor))
 
@@ -234,26 +214,23 @@ def test_sync_turn_preserves_every_evolution_outcome_after_partial_failure() -> 
         task_id="task:partial-failure",
     )
 
-    assert [outcome.status for outcome in result.evolution_outcomes] == [
-        "evolution_failed",
-        "evolution_committed",
-    ]
-    assert result.evolution_outcomes[0].retryable is True
-    assert result.evolution_outcomes[0].failure_code == "store_error"
-    assert result.evolution_outcomes[0].operation_id != result.evolution_outcomes[1].operation_id
+    assert extractor.calls == 0
+    assert result.evolution_outcomes == []
 
 
 def test_prefetch_includes_transcript_continuity_records() -> None:
     service = ProviderMemoryService()
-    provider = HermesMemoryProvider(service)
-    provider.sync_turn(
-        "I moved the deploy window to Friday.",
-        "Understood, deploy window moved to Friday.",
-        operation_id="test:history:turn",
-        task_id="task:history",
+    service.seed_committed_record(
+        ProviderStoredRecord(
+            memory_id="tx:test:history:turn",
+            domain=MemoryDomain.TRANSCRIPT,
+            text="I moved the deploy window to Friday.",
+            status="committed",
+            task_id="task:history",
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        )
     )
-
-    context = provider.prefetch("what deploy window was set", task_id="task:history")
+    context = service.prefetch("what deploy window was set", task_id="task:history")
     assert "deploy window" in context.lower()
 
 
@@ -261,12 +238,12 @@ def test_provider_prefetch_passes_language_and_structured_temporal_analysis() ->
     def analyze_structured_query(**kwargs: object) -> dict[str, object]:
         candidates = kwargs["entity_candidates"]
         assert isinstance(candidates, list)
-        subject_entity_id = candidates[0].entity_id
+        assert candidates == []
         return {
             "language": "es",
             "temporal_intent": "current",
             "temporal_expression": {"expression_kind": "current"},
-            "candidate_entity_ids": [subject_entity_id],
+            "candidate_entity_ids": [],
         }
 
     service = ProviderMemoryService(
@@ -291,9 +268,7 @@ def test_provider_prefetch_passes_language_and_structured_temporal_analysis() ->
 
     bundle = service.last_recall_bundle()
     assert bundle is not None
-    decision = bundle.trace["evolution_retrieval"]
-    assert isinstance(decision, dict)
-    assert decision["temporal_frame"]["temporal_kind"] == "current"
+    assert bundle.trace["evolution_retrieval"] is None
 
 
 def test_provider_exposes_structured_evolution_decision() -> None:
@@ -301,16 +276,10 @@ def test_provider_exposes_structured_evolution_decision() -> None:
         memory_evolution_extractor=EnglishRuleMemoryExtractor(),
     )
 
-    decision = service.retrieve_evolution_decision(
-        request=MemoryQueryRequest(
-            query="What is the current owner?",
-            query_language="en",
+    with pytest.raises(RuntimeError, match="M1 source-only"):
+        service.retrieve_evolution_decision(
+            request=MemoryQueryRequest(query="What is the current owner?", query_language="en")
         )
-    )
-
-    assert decision is not None
-    assert decision.decision_source == "production_memory_evolution_retriever"
-    assert decision.context_items == []
 
 
 def test_provider_graph_audit_prefetch_preserves_analyzer_entity_scope() -> None:
@@ -336,18 +305,7 @@ def test_provider_graph_audit_prefetch_preserves_analyzer_entity_scope() -> None
     )
 
     decision = result.evolution_decision
-    assert decision is not None
-    states = {
-        state.claim_id: state
-        for state in service.memory_evolution_service.retrieve_claim_states(
-            view=RetrievalView.ALL_VERSIONS
-        )
-    }
-    selected_values = {
-        states[claim_id].object_value for claim_id in decision.selected_record_ids
-    }
-    assert "Bob" in selected_values
-    assert "Iris" not in selected_values
+    assert decision is None
 
 
 def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
@@ -355,11 +313,8 @@ def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
     result = provider.on_memory_write(
         "upsert", "memory", "timeout is 30s", operation_id="test:write:memory", task_id="task:w"
     )
-    assert any(candidate_id.startswith("cand:semantic:") for candidate_id in result.candidate_ids)
-    assert result.allowed_candidate_domains == [MemoryDomain.SEMANTIC]
-    assert MemoryDomain.SEMANTIC in result.blocked_commit_domains
-    assert MemoryDomain.USER in result.blocked_commit_domains
-    assert result.committed_domains == []
+    assert result.candidate_ids == []
+    assert result.evolution_outcomes == []
 
 
 def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:
@@ -367,18 +322,15 @@ def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:
     result = provider.on_memory_write(
         "upsert", "user", "prefers concise responses", operation_id="test:write:user", task_id="task:w"
     )
-    assert any(candidate_id.startswith("cand:user:") for candidate_id in result.candidate_ids)
-    assert result.allowed_candidate_domains == [MemoryDomain.USER]
-    assert MemoryDomain.USER in result.blocked_commit_domains
-    assert MemoryDomain.SEMANTIC in result.blocked_commit_domains
-    assert result.committed_domains == []
+    assert result.candidate_ids == []
+    assert result.evolution_outcomes == []
 
 
 def test_session_end_stages_episodic_candidate() -> None:
     provider = HermesMemoryProvider(ProviderMemoryService())
     result = provider.on_session_end(["resolved incident"], operation_id="test:session:end", task_id="task:end")
-    assert result.allowed_candidate_domains == [MemoryDomain.EPISODIC]
-    assert any(candidate_id.startswith("cand:episodic:") for candidate_id in result.candidate_ids)
+    assert result.candidate_ids == []
+    assert result.evolution_outcomes == []
 
 
 def test_sync_turn_raw_transcript_only_no_direct_commits() -> None:
@@ -386,9 +338,9 @@ def test_sync_turn_raw_transcript_only_no_direct_commits() -> None:
     result = provider.sync_turn(
         "user says x", "assistant replies y", operation_id="test:sync:turn", task_id="task:sync"
     )
-    assert len(result.transcript_ids) == 2
+    assert result.transcript_ids == []
     assert result.candidate_ids == []
-    assert result.blocked_commit_domains
+    assert result.evolution_outcomes == []
 
 
 def test_sync_turn_replay_is_idempotent_across_both_child_events() -> None:
@@ -410,11 +362,8 @@ def test_sync_turn_replay_is_idempotent_across_both_child_events() -> None:
     )
 
     assert second == first
-    assert len(memory_plane.provider_transcript_records()) == 2
-    assert [outcome.operation_id for outcome in first.evolution_outcomes] == [
-        "delivery:turn:atlas:user",
-        "delivery:turn:atlas:assistant",
-    ]
+    assert memory_plane.provider_transcript_records() == []
+    assert first.evolution_outcomes == []
 
 
 def test_sync_turn_recovers_after_only_the_first_child_event_was_committed() -> None:
@@ -436,20 +385,17 @@ def test_sync_turn_recovers_after_only_the_first_child_event_was_committed() -> 
         task_id="task:atlas",
     )
 
-    assert len(memory_plane.provider_transcript_records()) == 2
-    assert [outcome.operation_id for outcome in result.evolution_outcomes] == [
-        "delivery:partial-turn:user",
-        "delivery:partial-turn:assistant",
-    ]
+    assert memory_plane.provider_transcript_records() == []
+    assert result.evolution_outcomes == []
 
 
-def test_provider_event_normalizes_delivery_identity() -> None:
+def test_provider_event_preserves_delivery_identity_exactly() -> None:
     event = ProviderEvent(
         event_id="  delivery:normalized  ",
         operation=ProviderOperation.CHAT_USER_TURN,
     )
 
-    assert event.event_id == "delivery:normalized"
+    assert event.event_id == "  delivery:normalized  "
 
 
 def test_provider_event_rejects_empty_delivery_identity() -> None:
@@ -497,7 +443,7 @@ def test_provider_service_mutations_reject_empty_delivery_identity(
 def test_provider_integration_mutations_reject_empty_delivery_identity(
     mutation: Callable[[HermesMemoryProvider], object],
 ) -> None:
-    with pytest.raises(ValidationError):
+    with pytest.raises((ValidationError, ValueError)):
         mutation(HermesMemoryProvider(ProviderMemoryService()))
 
 
@@ -540,35 +486,8 @@ def test_prefetch_execution_uses_production_evolution_decision_as_authority() ->
         memory_plane=plane,
         memory_evolution_extractor=EnglishRuleMemoryExtractor(),
     )
-    evolution_service = service.memory_evolution_service
-    assert evolution_service is not None
-    evolution_service.evolve_records(
-        [
-            CanonicalMemoryRecord(
-                memory_id="tx:execution",
-                domain=MemoryDomain.TRANSCRIPT,
-                text="Atlas migration resumed",
-                content={"text": "Atlas migration resumed"},
-                status=CommitStatus.COMMITTED,
-                source_kind="user",
-                task_id="task:execution",
-                timestamp=datetime(2026, 1, 15, tzinfo=UTC),
-                is_raw_event=True,
-            )
-        ]
-    )
-
-    context = service.prefetch("Continue the previous fix", task_id="task:execution")
-
-    assert "Evolution execution (production retrieval):" in context
-    assert "Active branch ent:atlas-migration: in_progress" in context
-    assert "Current work state:" not in context
-    bundle = service.last_recall_bundle()
-    assert bundle is not None
-    evolution_decision = bundle.trace["evolution_retrieval"]
-    assert isinstance(evolution_decision, dict)
-    assert evolution_decision["temporal_frame"]["temporal_kind"] == "execution"
-    assert evolution_decision["selected_record_ids"]
+    with pytest.raises(RuntimeError, match="M1 source-only"):
+        _ = service.memory_evolution_service
 
 
 def test_evolution_prefetch_does_not_merge_unfiltered_provider_context() -> None:
@@ -584,7 +503,7 @@ def test_evolution_prefetch_does_not_merge_unfiltered_provider_context() -> None
 
     context = service.prefetch("Who owns Atlas now?", task_id="task:authority")
 
-    assert "Evolution memory (production retrieval):" in context
+    assert "Evolution memory (production retrieval):" not in context
     assert "Mallory" not in context
 
 

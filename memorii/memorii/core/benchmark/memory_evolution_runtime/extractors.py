@@ -36,7 +36,12 @@ from memorii.core.llm_provider.base import LLMStructuredClient
 from memorii.core.llm_provider.factory import LLMClientFactory
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.memory_evolution import (
+    ClaimAssertionMode,
+    ClaimEpistemicStatus,
     ClaimKey,
+    ClaimModality,
+    ClaimPolarity,
+    ClaimSemanticContext,
     EnglishRuleMemoryExtractor,
     EntityIdentityRelationType,
     EntityMention,
@@ -166,9 +171,21 @@ class OracleVisibleMemoryExtractor:
                             predicate_id=claim.predicate.predicate_id,
                             scope=runtime_scope_for_claim(claim),
                             qualifier_key="default",
+                            assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+                            epistemic_status=ClaimEpistemicStatus.ASSERTED,
+                            polarity=ClaimPolarity.POSITIVE,
+                            modality=ClaimModality.ASSERTION,
                         ),
                         object_value=claim.object.value,
                         object_entity_id=claim.object.entity_id,
+                        semantic_context=ClaimSemanticContext(
+                            assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+                            epistemic_status=ClaimEpistemicStatus.ASSERTED,
+                            polarity=ClaimPolarity.POSITIVE,
+                            modality=ClaimModality.ASSERTION,
+                            attribution_source_id=observation.source_id,
+                            attribution_speaker_id=observation.speaker_id,
+                        ),
                         valid_from=claim.lifecycle.valid_from,
                         valid_to=(
                             claim.lifecycle.valid_to

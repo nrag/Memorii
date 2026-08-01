@@ -1,0 +1,1157 @@
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
+from hashlib import sha256
+from pathlib import Path
+from threading import Barrier
+from unittest.mock import patch
+
+import pytest
+from memorii.core.filesystem_storage.bundle import build_filesystem_provider
+from memorii.core.memory_evolution.admission import (
+    GovernedSourceAdmissionService,
+    SemanticIngestionOutcomeLookupRequest,
+)
+from memorii.core.memory_evolution.bootstrap_profile import (
+    BOOTSTRAP_COORDINATE,
+    BootstrapGrammarCorpusCase,
+    BootstrapProfileReleaseMetadata,
+    HostVerifiedBootstrapMaterial,
+    ProfileSelectedPipelinePending,
+    build_bootstrap_profile_artifacts,
+    build_bootstrap_trust_anchor,
+    disposition_outcome,
+    verify_bootstrap_release,
+)
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedHostIngress,
+    AuthenticatedIngressContext,
+    AuthenticatedIngressResolutionError,
+    DeliveryIdentity,
+    DeliveryPrincipalBinding,
+    RequiredOutcomeScopeSet,
+    derive_composite_child_delivery_id,
+    normalize_delivery_id,
+)
+from memorii.core.memory_plane.models import CanonicalMemoryRecord
+from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.memory_plane.store import (
+    InMemoryMemoryPlaneStore,
+    JsonlMemoryPlaneStore,
+    MemoryPlaneRevisionConflictError,
+)
+from memorii.core.provider.factory import build_provider_memory_service_from_env
+from memorii.core.provider.models import ProviderOperation
+from memorii.core.provider.service import ProviderMemoryService
+from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+from memorii.integrations.hermes_provider import HermesMemoryProvider
+
+
+def _binding() -> DeliveryPrincipalBinding:
+    return DeliveryPrincipalBinding.create(
+        principal_subject_id="principal:alice", tenant_partition_id="tenant:one", provider_identity="provider:test"
+    )
+
+
+def _ingress(*scopes: str) -> AuthenticatedIngressContext:
+    binding = _binding()
+    return AuthenticatedIngressContext(
+        delivery_principal_binding=binding,
+        current_authorized_scopes=RequiredOutcomeScopeSet.create(
+            tenant_partition_id=binding.tenant_partition_id, scopes=set(scopes)
+        ),
+        language_declaration="en",
+        language_evidence_kind="authenticated_host_declaration",
+        language_evidence_trust="trusted",
+        language_governance_agreement="agrees",
+    )
+
+
+def _source() -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id="tx:exact-id",
+        domain=MemoryDomain.TRANSCRIPT,
+        text="Atlas owner is Bob.",
+        content={"text": "Atlas owner is Bob."},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_source",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        task_id="task:one",
+        user_id="user:alice",
+        is_raw_event=True,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+class _TestHostBootstrapCapability:
+    def __init__(self, *, enabled: bool = True, resolver=None) -> None:
+        self._artifacts = build_bootstrap_profile_artifacts(_complete_corpus_cases())
+        self._trust_anchor = build_bootstrap_trust_anchor(self._artifacts)
+        self._trust_root_provider = DeterministicTestTrustRootProvider(self._trust_anchor.trust_anchor_digest)
+        self._release_metadata = BootstrapProfileReleaseMetadata(
+            coordinate=BOOTSTRAP_COORDINATE,
+            bootstrap_profile_trust_anchor_digest=self._trust_anchor.trust_anchor_digest,
+        )
+        self._resolver = resolver or _TrustedResolver()
+        self._enabled = enabled
+
+    @property
+    def trust_root_provider(self):
+        return self._trust_root_provider
+
+    @property
+    def release_metadata(self):
+        return self._release_metadata
+
+    @property
+    def trust_anchor(self):
+        return self._trust_anchor
+
+    @property
+    def artifact_payloads(self):
+        from memorii.core.memory_evolution.bootstrap_profile import serialize_bootstrap_profile_artifacts
+
+        return serialize_bootstrap_profile_artifacts(self._artifacts)
+
+    @property
+    def profile_enabled(self):
+        return self._enabled
+
+    @property
+    def authenticated_ingress_resolver(self):
+        return self._resolver
+
+    def load_verified_bootstrap_material(self):
+        if not verify_bootstrap_release(
+            provider=self.trust_root_provider,
+            metadata=self.release_metadata,
+            anchor=self.trust_anchor,
+        ):
+            return None
+        return HostVerifiedBootstrapMaterial(
+            release_metadata=self.release_metadata,
+            trust_anchor=self.trust_anchor,
+            artifact_payloads=self.artifact_payloads,
+            authenticated_ingress_resolver=self.authenticated_ingress_resolver,
+            profile_enabled=self.profile_enabled,
+        )
+
+
+class DeterministicTestTrustRootProvider:
+    def __init__(self, accepted_anchor_digest: str) -> None:
+        self._accepted_anchor_digest = accepted_anchor_digest
+
+    def verify_active_release(self, metadata: BootstrapProfileReleaseMetadata) -> bool:
+        return (
+            metadata.coordinate == BOOTSTRAP_COORDINATE
+            and metadata.bootstrap_profile_trust_anchor_digest == self._accepted_anchor_digest
+        )
+
+
+def _complete_corpus_cases() -> tuple[BootstrapGrammarCorpusCase, ...]:
+    def case(
+        case_id: str,
+        content: bytes,
+        disposition: str,
+        reason: str | None,
+        *,
+        language: str | None = "en",
+        evidence_kind: str = "authenticated_host_declaration",
+        evidence_trust: str = "trusted",
+        agreement: str = "agrees",
+    ) -> BootstrapGrammarCorpusCase:
+        return BootstrapGrammarCorpusCase.model_validate(
+            {
+                "case_id": case_id,
+                "declared_language": language,
+                "language_evidence_kind": evidence_kind,
+                "language_evidence_trust": evidence_trust,
+                "governance_agreement": agreement,
+                "normalized_segment_bytes": content,
+                "disposition": disposition,
+                "expected_reason": reason,
+            }
+        )
+
+    return (
+        case("01-supported-atlas", b"Atlas owner is Bob.", "supported_form", None),
+        case("02-supported-receipt", b"Receipt is confirmed.", "supported_form", None),
+        case("03-unsupported-mixed", b"Atlas is Bob. trailing", "unsupported_form", "mixed_residue"),
+        case("04-unsupported-grammar", b"unstructured", "unsupported_form", "unsupported_grammar"),
+        case("05-abstain-extractor", b"", "abstain_form", "extractor_abstained"),
+        case(
+            "06-abstain-mismatch", b"mismatch", "abstain_form", "language_mismatch",
+            evidence_kind="mismatched", evidence_trust="mismatched", agreement="disagrees",
+        ),
+        case(
+            "07-abstain-missing", b"missing", "abstain_form", "missing_language_declaration",
+            language=None, evidence_kind="missing", evidence_trust="missing", agreement="missing",
+        ),
+        case("08-abstain-non-english", b"bonjour", "abstain_form", "non_english_language", language="fr"),
+        case(
+            "09-abstain-untrusted", b"untrusted", "abstain_form", "untrusted_language",
+            language=None, evidence_kind="untrusted", evidence_trust="untrusted", agreement="missing",
+        ),
+    )
+
+
+def test_delivery_id_is_exact_and_rejects_unsafe_forms() -> None:
+    value = "  delivery:naive-cafe  "
+    assert normalize_delivery_id(value) == value
+    assert DeliveryIdentity.create(_binding(), value).normalized_delivery_id.strict_utf8_bytes == value.encode("utf-8")
+    with pytest.raises(ValueError, match="nonblank"):
+        normalize_delivery_id(" \t\n")
+    with pytest.raises(ValueError, match="Unicode scalar"):
+        normalize_delivery_id("bad\ud800")
+    assert derive_composite_child_delivery_id("parent:one", "user") != derive_composite_child_delivery_id(
+        "parent", "one:user"
+    )
+
+
+def test_admission_rejects_partial_scope_before_any_retention() -> None:
+    memory_plane = MemoryPlaneService()
+    admission = GovernedSourceAdmissionService(memory_plane)
+    identity = DeliveryIdentity.create(_binding(), "delivery-1")
+    with pytest.raises(ValueError, match="scope coverage"):
+        admission.admit(
+            source=_source(), delivery_identity=identity, ingress=_ingress("task:task:one"), operation_id="operation-1"
+        )
+    assert memory_plane.list_records() == []
+
+
+def test_admission_identity_is_stable_and_lookup_is_non_disclosing() -> None:
+    memory_plane = MemoryPlaneService()
+    admission = GovernedSourceAdmissionService(memory_plane)
+    identity = DeliveryIdentity.create(_binding(), "delivery-1")
+    accepted = admission.admit(
+        source=_source(),
+        delivery_identity=identity,
+        ingress=_ingress("task:task:one", "user:user:alice"),
+        operation_id="operation-1",
+    )
+    recovered = admission.admit(
+        source=_source(),
+        delivery_identity=identity,
+        ingress=_ingress("task:task:one", "user:user:alice", "session:rotated"),
+        operation_id="operation-1",
+    )
+    assert (
+        accepted.delivery_identity.delivery_key_digest
+        == DeliveryIdentity.create(_binding(), "delivery-1").delivery_key_digest
+    )
+    assert recovered == accepted
+    response = admission.lookup(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=identity,
+        ),
+        authenticated_ingress=_ingress("task:task:one", "user:user:alice", "session:rotated"),
+    )
+    denied = admission.lookup(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=identity,
+        ),
+        authenticated_ingress=_ingress("task:task:one"),
+    )
+    assert response.available is True
+    assert isinstance(response.outcome, ProfileSelectedPipelinePending)
+    assert denied.available is False and denied.outcome is None
+    assert accepted.admission_index_digest == recovered.admission_index_digest
+
+
+def test_cross_principal_same_source_cannot_overwrite_retained_evidence() -> None:
+    memory_plane = MemoryPlaneService()
+    admission = GovernedSourceAdmissionService(memory_plane)
+    first_binding = _binding()
+    first_identity = DeliveryIdentity.create(first_binding, "delivery-1")
+    admission.admit(
+        source=_source(), delivery_identity=first_identity,
+        ingress=_ingress("task:task:one", "user:user:alice"), operation_id="operation-1",
+    )
+    second_binding = DeliveryPrincipalBinding.create(
+        principal_subject_id="principal:bob", tenant_partition_id="tenant:one", provider_identity="provider:test"
+    )
+    second_identity = DeliveryIdentity.create(second_binding, "delivery-1")
+    second_ingress = AuthenticatedIngressContext(
+        delivery_principal_binding=second_binding,
+        current_authorized_scopes=RequiredOutcomeScopeSet.create(
+            tenant_partition_id="tenant:one", scopes={"task:task:one", "user:user:alice"}
+        ),
+    )
+    with pytest.raises(MemoryPlaneRevisionConflictError):
+        admission.admit(source=_source(), delivery_identity=second_identity, ingress=second_ingress, operation_id="operation-1")
+    assert memory_plane.get_record("tx:exact-id") == _source()
+
+
+class _TrustedResolver:
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime) -> AuthenticatedIngressContext:
+        assert host_ingress.provider_identity == "provider:test"
+        return _ingress("task:task:one", "user:user:alice")
+
+
+class _FrenchResolver:
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime) -> AuthenticatedIngressContext:
+        base = _ingress("task:task:one")
+        return base.model_copy(
+            update={
+                "language_declaration": "fr",
+                "language_evidence_kind": "authenticated_host_declaration",
+                "language_evidence_trust": "trusted",
+                "language_governance_agreement": "agrees",
+            }
+        )
+
+
+class _CorpusResolver:
+    def __init__(self, case: BootstrapGrammarCorpusCase) -> None:
+        self._case = case
+
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime) -> AuthenticatedIngressContext:
+        base = _ingress("task:task:one")
+        return base.model_copy(
+            update={
+                "language_declaration": self._case.declared_language,
+                "language_evidence_kind": self._case.language_evidence_kind,
+                "language_evidence_trust": self._case.language_evidence_trust,
+                "language_governance_agreement": self._case.governance_agreement,
+            }
+        )
+
+
+class _PartialScopeResolver:
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime) -> AuthenticatedIngressContext:
+        return _ingress("task:task:one")
+
+
+class _DeniedResolver:
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime) -> AuthenticatedIngressContext:
+        raise AuthenticatedIngressResolutionError("expired host ingress")
+
+
+class _CapabilityLoader:
+    def __init__(self, capability: object) -> None:
+        self._capability = capability
+
+    def load(self):
+        return self._capability
+
+
+class _InstalledCapabilityEntryPoint:
+    def __init__(self, capability: object) -> None:
+        self._capability = capability
+
+    def load(self):
+        return _CapabilityLoader(self._capability)
+
+
+class _UnavailableHostBoundary:
+    def load_verified_bootstrap_material(self):
+        return None
+
+
+def _service_with_capability(
+    capability: _TestHostBootstrapCapability,
+    *,
+    memory_plane: MemoryPlaneService | None = None,
+) -> ProviderMemoryService:
+    with patch(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        return_value=(_InstalledCapabilityEntryPoint(capability),),
+    ):
+        return ProviderMemoryService(memory_plane=memory_plane)
+
+
+def test_default_provider_root_is_profile_unapproved_evidence_only() -> None:
+    memory_plane = MemoryPlaneService()
+    service = ProviderMemoryService(memory_plane=memory_plane)
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id=" exact-delivery-id ",
+        task_id="task:one",
+    )
+    assert result.transcript_ids == []
+    assert result.candidate_ids == []
+    assert result.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"
+    assert memory_plane.list_records() == []
+    with pytest.raises(ValueError, match="reserved composite"):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN, content="ignored", operation_id="composite:v1:" + "0" * 64
+        )
+
+
+def test_trusted_provider_path_admits_evidence_before_profile_gate() -> None:
+    memory_plane = MemoryPlaneService()
+    service = _service_with_capability(_TestHostBootstrapCapability(), memory_plane=memory_plane)
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="exact-delivery-id",
+        task_id="task:one",
+        authenticated_host_ingress=AuthenticatedHostIngress(
+            provider_identity="provider:test", principal_handle=object(), session_handle=object(), received_at=datetime.now(UTC)
+        ),
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert len(memory_plane.list_records()) == 5
+
+
+def test_hermes_trusted_ingress_uses_internal_composite_coordinates() -> None:
+    memory_plane = MemoryPlaneService()
+    provider = HermesMemoryProvider(
+        _service_with_capability(_TestHostBootstrapCapability(), memory_plane=memory_plane)
+    )
+    result = provider.sync_turn(
+        "Atlas owner is Bob.", "Receipt is confirmed.", operation_id="turn-1", task_id="task:one",
+        authenticated_host_ingress=AuthenticatedHostIngress(
+            provider_identity="provider:test", principal_handle=object(), session_handle=object(), received_at=datetime.now(UTC)
+        ),
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert len(memory_plane.list_records()) == 10
+
+
+def test_authenticated_metadata_poor_snapshot_is_governed_evidence_only() -> None:
+    memory_plane = MemoryPlaneService()
+    service = _service_with_capability(_TestHostBootstrapCapability(), memory_plane=memory_plane)
+    result = service.sync_event(
+        operation=ProviderOperation.SESSION_END,
+        content="user: Atlas owner is Bob.",
+        operation_id="session-end-1",
+        task_id="task:one",
+        authenticated_host_ingress=AuthenticatedHostIngress(
+            provider_identity="provider:test",
+            principal_handle=object(),
+            session_handle=object(),
+            received_at=datetime.now(UTC),
+        ),
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    records = memory_plane.list_records()
+    assert {record.source_kind for record in records} == {
+        "semantic_ingestion_metadata_poor_snapshot",
+        "semantic_ingestion_admission_index",
+        "semantic_ingestion_profile_selection",
+        "semantic_ingestion_profile_verification",
+        "semantic_ingestion_profile_outcome",
+    }
+    snapshot = next(
+        record for record in records if record.source_kind == "semantic_ingestion_metadata_poor_snapshot"
+    )
+    assert snapshot.content["snapshot_utf8_bytes"] == b"user: Atlas owner is Bob."
+    assert snapshot.session_id is None and snapshot.task_id is None and snapshot.user_id is None
+
+
+def test_hermes_metadata_poor_payload_preserves_structural_shape() -> None:
+    memory_plane = MemoryPlaneService()
+    provider = HermesMemoryProvider(
+        _service_with_capability(_TestHostBootstrapCapability(), memory_plane=memory_plane)
+    )
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    provider.on_session_end(
+        ["user: a"], operation_id="shape-string", authenticated_host_ingress=host_ingress
+    )
+    provider.on_pre_compress(
+        [{"role": "user", "content": "a", "metadata": None}],
+        operation_id="shape-map",
+        authenticated_host_ingress=host_ingress,
+    )
+    snapshots = memory_plane.list_records(source_kind="semantic_ingestion_metadata_poor_snapshot")
+    payloads = {record.content["snapshot_utf8_bytes"] for record in snapshots}
+    assert payloads == {
+        b'["user: a"]',
+        b'[{"content":"a","metadata":null,"role":"user"}]',
+    }
+    assert all(record.language == "und" for record in snapshots)
+
+
+def test_disabled_profile_is_exact_only_through_protected_lookup() -> None:
+    memory_plane = MemoryPlaneService()
+    capability = _TestHostBootstrapCapability(enabled=False)
+    service = _service_with_capability(capability, memory_plane=memory_plane)
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="disabled-delivery",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    response = service.lookup_semantic_ingestion_outcome(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=DeliveryIdentity.create(_binding(), "disabled-delivery")
+        ),
+        authenticated_host_ingress=host_ingress,
+    )
+    assert response.available is True
+    assert response.outcome is not None and response.outcome.kind == "disabled"
+
+
+def test_factory_loads_installed_host_capability_and_ignores_public_language_label() -> None:
+    capability = _TestHostBootstrapCapability()
+    with patch(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        return_value=(_InstalledCapabilityEntryPoint(capability),),
+    ):
+        service = build_provider_memory_service_from_env(memory_plane=MemoryPlaneService())
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        language="fr",
+        operation_id="factory-delivery",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    outcome = service.lookup_semantic_ingestion_outcome(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=DeliveryIdentity.create(_binding(), "factory-delivery")
+        ),
+        authenticated_host_ingress=host_ingress,
+    ).outcome
+    assert outcome is not None and outcome.kind == "selected_pipeline_pending"
+
+
+def test_authenticated_non_english_declaration_abstains_even_when_public_label_is_en() -> None:
+    capability = _TestHostBootstrapCapability(resolver=_FrenchResolver())
+    service = _service_with_capability(capability, memory_plane=MemoryPlaneService())
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        language="en",
+        operation_id="french-delivery",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    outcome = service.lookup_semantic_ingestion_outcome(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=DeliveryIdentity.create(_binding(), "french-delivery")
+        ),
+        authenticated_host_ingress=host_ingress,
+    ).outcome
+    assert outcome is not None and outcome.kind == "abstained"
+    assert outcome.reason == "non_english_language"
+
+
+@pytest.mark.parametrize("case", _complete_corpus_cases(), ids=lambda case: case.case_id)
+def test_every_bootstrap_corpus_case_has_exact_protected_source_admission_outcome(
+    case: BootstrapGrammarCorpusCase,
+) -> None:
+    capability = _TestHostBootstrapCapability(resolver=_CorpusResolver(case))
+    plane = MemoryPlaneService()
+    service = _service_with_capability(capability, memory_plane=plane)
+    ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    delivery_id = f"corpus-{case.case_id}"
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content=case.normalized_segment_bytes.decode("utf-8"),
+        operation_id=delivery_id,
+        task_id="task:one",
+        authenticated_host_ingress=ingress,
+    )
+    outcome = service.lookup_semantic_ingestion_outcome(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=DeliveryIdentity.create(_binding(), delivery_id)
+        ),
+        authenticated_host_ingress=ingress,
+    ).outcome
+    expected_kind = {
+        "supported_form": "selected_pipeline_pending",
+        "unsupported_form": "unsupported_input",
+        "abstain_form": "abstained",
+    }[case.disposition]
+    assert outcome is not None and outcome.kind == expected_kind
+    if outcome.kind in {"unsupported_input", "abstained"}:
+        assert outcome.reason == case.expected_reason
+        assert outcome.matched_corpus_case_id == case.case_id
+        assert outcome.input_normalized_digest == sha256(case.normalized_segment_bytes).hexdigest()
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert len(plane.list_records()) == 5
+    assert result.candidate_ids == []
+
+
+def test_bootstrap_artifact_payloads_require_canonical_envelope_and_exact_binding() -> None:
+    from memorii.core.memory_evolution.bootstrap_profile import (
+        BootstrapProfileArtifactPayloads,
+        bootstrap_artifact_binding,
+        serialize_bootstrap_profile_artifacts,
+    )
+    from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value, serialize_artifact
+
+    baseline = _TestHostBootstrapCapability()
+    valid = serialize_bootstrap_profile_artifacts(baseline._artifacts)
+    invalid_payloads = (
+        valid.model_copy(
+            update={
+                "profile_manifest": encode_typed_value(
+                    baseline._artifacts.profile_manifest.model_dump(mode="python")
+                )
+            }
+        ),
+        valid.model_copy(
+            update={
+                "profile_manifest": serialize_artifact(
+                    baseline._artifacts.profile_manifest.model_dump(mode="python"),
+                    bootstrap_artifact_binding(
+                        "memorii.semantic_ingestion.bootstrap_grammar_capability_manifest"
+                    ),
+                )
+            }
+        ),
+        BootstrapProfileArtifactPayloads(
+            profile_manifest=valid.profile_manifest[:-1] + bytes([valid.profile_manifest[-1] ^ 1]),
+            grammar_capability_manifest=valid.grammar_capability_manifest,
+            grammar_corpus=valid.grammar_corpus,
+        ),
+    )
+    class InvalidCapability(_TestHostBootstrapCapability):
+        def __init__(self, payloads):
+            super().__init__()
+            self._invalid_payloads = payloads
+
+        @property
+        def artifact_payloads(self):
+            return self._invalid_payloads
+
+    for index, payloads in enumerate(invalid_payloads):
+        plane = MemoryPlaneService()
+        service = _service_with_capability(InvalidCapability(payloads), memory_plane=plane)
+        ingress = AuthenticatedHostIngress(
+            provider_identity="provider:test",
+            principal_handle=object(),
+            session_handle=object(),
+            received_at=datetime.now(UTC),
+        )
+        delivery_id = f"invalid-envelope-{index}"
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id=delivery_id,
+            task_id="task:one",
+            authenticated_host_ingress=ingress,
+        )
+        outcome = service.lookup_semantic_ingestion_outcome(
+            SemanticIngestionOutcomeLookupRequest(
+                delivery_identity=DeliveryIdentity.create(_binding(), delivery_id)
+            ),
+            authenticated_host_ingress=ingress,
+        ).outcome
+        assert outcome is not None and outcome.kind == "unavailable"
+        assert outcome.reason == "invalid_manifest"
+        assert len(plane.list_records()) == 5
+
+
+def test_invalid_installed_capability_inventory_fails_closed_at_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capability = _TestHostBootstrapCapability()
+    monkeypatch.setattr(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        lambda **kwargs: (
+            _InstalledCapabilityEntryPoint(capability),
+            _InstalledCapabilityEntryPoint(capability),
+        ),
+    )
+    service = ProviderMemoryService(memory_plane=MemoryPlaneService())
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="invalid-installed-inventory",
+        task_id="task:one",
+        authenticated_host_ingress=AuthenticatedHostIngress(
+            provider_identity="provider:test",
+            principal_handle=object(),
+            session_handle=object(),
+            received_at=datetime.now(UTC),
+        ),
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"
+
+
+def test_altered_component_fails_closed_with_truthful_unavailable_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capability = _TestHostBootstrapCapability()
+    monkeypatch.setattr(
+        "memorii.core.memory_evolution.bootstrap_profile.Path.read_bytes",
+        lambda path: b"altered-installed-component",
+    )
+    memory_plane = MemoryPlaneService()
+    service = _service_with_capability(capability, memory_plane=memory_plane)
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="altered-component",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    records = {record.source_kind: record for record in memory_plane.list_records()}
+    assert records["semantic_ingestion_profile_selection"].content == {"status": "unavailable"}
+    assert records["semantic_ingestion_profile_verification"].content == {"status": "unavailable"}
+    outcome = service.lookup_semantic_ingestion_outcome(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=DeliveryIdentity.create(_binding(), "altered-component")
+        ),
+        authenticated_host_ingress=host_ingress,
+    ).outcome
+    assert outcome is not None and outcome.kind == "unavailable"
+    assert outcome.reason == "altered_component"
+
+
+def test_unreadable_component_fails_closed_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capability = _TestHostBootstrapCapability()
+    monkeypatch.setattr(
+        "memorii.core.memory_evolution.bootstrap_profile.Path.read_bytes",
+        lambda path: (_ for _ in ()).throw(OSError("component unavailable")),
+    )
+    plane = MemoryPlaneService()
+    service = _service_with_capability(capability, memory_plane=plane)
+    ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="unreadable-component",
+        task_id="task:one",
+        authenticated_host_ingress=ingress,
+    )
+    outcome = service.lookup_semantic_ingestion_outcome(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=DeliveryIdentity.create(_binding(), "unreadable-component")
+        ),
+        authenticated_host_ingress=ingress,
+    ).outcome
+    assert outcome is not None and outcome.kind == "unavailable"
+    assert outcome.reason == "missing_component"
+
+
+def test_incomplete_component_inventory_fails_closed_before_classification() -> None:
+    capability = _TestHostBootstrapCapability()
+    profile = capability._artifacts.profile_manifest
+    capability._artifacts = capability._artifacts.model_copy(
+        update={
+            "profile_manifest": profile.model_copy(
+                update={"component_fingerprints": profile.component_fingerprints[1:]}
+            )
+        }
+    )
+    memory_plane = MemoryPlaneService()
+    service = _service_with_capability(capability, memory_plane=memory_plane)
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="incomplete-components",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    outcome = service.lookup_semantic_ingestion_outcome(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=DeliveryIdentity.create(_binding(), "incomplete-components")
+        ),
+        authenticated_host_ingress=host_ingress,
+    ).outcome
+    assert outcome is not None and outcome.kind == "unavailable"
+    assert outcome.reason == "invalid_manifest"
+
+
+def test_jsonl_reopen_and_lost_ack_retry_preserve_one_bootstrap_generation(tmp_path: Path) -> None:
+    capability = _TestHostBootstrapCapability()
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    store_path = tmp_path / "memory-plane"
+    first = _service_with_capability(
+        capability,
+        memory_plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path)),
+    )
+    first.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="retry-delivery",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(store_path))
+    reopened = _service_with_capability(capability, memory_plane=reopened_plane)
+    reopened.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="retry-delivery",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    assert len(reopened_plane.list_records()) == 5
+    assert len((store_path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+
+
+@pytest.mark.parametrize("persistent", [False, True], ids=["memory", "jsonl"])
+def test_concurrent_exact_delivery_is_idempotent(
+    persistent: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = (
+        JsonlMemoryPlaneStore(tmp_path / "concurrent")
+        if persistent
+        else InMemoryMemoryPlaneStore()
+    )
+    plane = MemoryPlaneService(record_store=store)
+    service = _service_with_capability(_TestHostBootstrapCapability(), memory_plane=plane)
+    ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    original_apply = store.apply_batch
+    rendezvous = Barrier(2)
+
+    def synchronized_apply(*args, **kwargs):
+        rendezvous.wait(timeout=5)
+        return original_apply(*args, **kwargs)
+
+    monkeypatch.setattr(store, "apply_batch", synchronized_apply)
+
+    def deliver():
+        return service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="concurrent-exact-delivery",
+            task_id="task:one",
+            authenticated_host_ingress=ingress,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = tuple(executor.map(lambda _: deliver(), range(2)))
+    assert all(result.blocked_reasons["semantic_ingestion"] == "source_only" for result in results)
+    assert len({tuple(result.transcript_ids) for result in results}) == 1
+    assert len(plane.list_records()) == 5
+
+
+def test_installed_capability_loader_works_through_hermes_and_filesystem_roots(tmp_path: Path) -> None:
+    capability = _TestHostBootstrapCapability()
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    with patch(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        return_value=(_InstalledCapabilityEntryPoint(capability),),
+    ):
+        hermes = HermesMemoryProvider()
+    hermes_result = hermes.sync_turn(
+        "Atlas owner is Bob.",
+        "Receipt is confirmed.",
+        operation_id="hermes-loader",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    assert hermes_result.blocked_reasons["semantic_ingestion"] == "source_only"
+
+    with patch(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        return_value=(_InstalledCapabilityEntryPoint(capability),),
+    ):
+        filesystem = build_filesystem_provider(tmp_path / "filesystem-root")
+    filesystem_result = filesystem.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="filesystem-loader",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    assert filesystem_result.blocked_reasons["semantic_ingestion"] == "source_only"
+
+
+def test_normal_roots_discover_installed_host_capability_without_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    capability = _TestHostBootstrapCapability()
+    monkeypatch.setattr(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        lambda **kwargs: (_InstalledCapabilityEntryPoint(capability),),
+    )
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    direct = ProviderMemoryService(memory_plane=MemoryPlaneService())
+    direct_result = direct.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="installed-direct",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    assert direct_result.transcript_ids[0].startswith("semantic_ingestion:source:")
+    assert direct_result.blocked_reasons["semantic_ingestion"] == "source_only"
+
+    factory = build_provider_memory_service_from_env(memory_plane=MemoryPlaneService())
+    factory_result = factory.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="installed-factory",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    assert factory_result.blocked_reasons["semantic_ingestion"] == "source_only"
+
+    hermes = HermesMemoryProvider()
+    assert hermes.sync_turn(
+        "Atlas owner is Bob.", "Receipt is confirmed.", operation_id="installed-hermes",
+        task_id="task:one", authenticated_host_ingress=host_ingress,
+    ).blocked_reasons["semantic_ingestion"] == "source_only"
+    filesystem = build_filesystem_provider(tmp_path / "installed-filesystem")
+    assert filesystem.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="installed-filesystem",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    ).blocked_reasons["semantic_ingestion"] == "source_only"
+
+
+def test_jsonl_replace_failure_is_atomic_and_lost_ack_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    capability = _TestHostBootstrapCapability()
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    failed_path = tmp_path / "failed-replace"
+    failed_store = JsonlMemoryPlaneStore(failed_path)
+    failed_service = _service_with_capability(
+        capability,
+        memory_plane=MemoryPlaneService(record_store=failed_store),
+    )
+    monkeypatch.setattr(
+        "memorii.core.memory_plane.store.os.replace",
+        lambda source, target: (_ for _ in ()).throw(OSError("injected replace failure")),
+    )
+    with pytest.raises(OSError, match="injected replace failure"):
+        failed_service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="failed-replace",
+            task_id="task:one",
+            authenticated_host_ingress=host_ingress,
+        )
+    monkeypatch.undo()
+    assert MemoryPlaneService(record_store=JsonlMemoryPlaneStore(failed_path)).list_records() == []
+
+    lost_ack_path = tmp_path / "lost-ack"
+    lost_ack_store = JsonlMemoryPlaneStore(lost_ack_path)
+    original_apply = lost_ack_store.apply_batch
+
+    def apply_then_fail(*args, **kwargs):
+        original_apply(*args, **kwargs)
+        raise OSError("injected lost acknowledgement")
+
+    monkeypatch.setattr(lost_ack_store, "apply_batch", apply_then_fail)
+    lost_ack_service = _service_with_capability(
+        capability,
+        memory_plane=MemoryPlaneService(record_store=lost_ack_store),
+    )
+    with pytest.raises(OSError, match="lost acknowledgement"):
+        lost_ack_service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="lost-ack",
+            task_id="task:one",
+            authenticated_host_ingress=host_ingress,
+        )
+    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(lost_ack_path))
+    expected_kinds = {
+        "semantic_ingestion_source",
+        "semantic_ingestion_admission_index",
+        "semantic_ingestion_profile_selection",
+        "semantic_ingestion_profile_verification",
+        "semantic_ingestion_profile_outcome",
+    }
+    assert {record.source_kind for record in reopened_plane.list_records()} == expected_kinds
+    retry = _service_with_capability(capability, memory_plane=reopened_plane)
+    retry.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="lost-ack",
+        task_id="task:one",
+        authenticated_host_ingress=host_ingress,
+    )
+    assert {record.source_kind for record in reopened_plane.list_records()} == expected_kinds
+
+
+def test_unavailable_host_boundary_exposes_no_partial_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    boundary = _UnavailableHostBoundary()
+    monkeypatch.setattr(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        lambda **kwargs: (_InstalledCapabilityEntryPoint(boundary),),
+    )
+    service = ProviderMemoryService(memory_plane=MemoryPlaneService())
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="unavailable-host-boundary",
+        task_id="task:one",
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"
+
+
+def test_bootstrap_construction_and_ingestion_attempt_no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    capability = _TestHostBootstrapCapability()
+    monkeypatch.setattr(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        lambda **kwargs: (_InstalledCapabilityEntryPoint(capability),),
+    )
+
+    def network_forbidden(*args, **kwargs):
+        raise AssertionError("M1 attempted network access")
+
+    monkeypatch.setattr("socket.getaddrinfo", network_forbidden)
+    monkeypatch.setattr("socket.create_connection", network_forbidden)
+    monkeypatch.setattr("socket.socket.connect", network_forbidden)
+    monkeypatch.setattr("socket.socket.connect_ex", network_forbidden)
+    monkeypatch.setattr("socket.socket.bind", network_forbidden)
+    monkeypatch.setattr("socket.socket.listen", network_forbidden)
+    service = build_provider_memory_service_from_env(memory_plane=MemoryPlaneService())
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="no-network",
+        task_id="task:one",
+        authenticated_host_ingress=AuthenticatedHostIngress(
+            provider_identity="provider:test",
+            principal_handle=object(),
+            session_handle=object(),
+            received_at=datetime.now(UTC),
+        ),
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+
+
+def test_denied_lookup_never_reads_protected_outcome(monkeypatch: pytest.MonkeyPatch) -> None:
+    memory_plane = MemoryPlaneService()
+    capability = _TestHostBootstrapCapability()
+    service = _service_with_capability(capability, memory_plane=memory_plane)
+    host_ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test",
+        principal_handle=object(),
+        session_handle=object(),
+        received_at=datetime.now(UTC),
+    )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="protected-lookup",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=host_ingress,
+    )
+    denied_service = _service_with_capability(
+        _TestHostBootstrapCapability(resolver=_PartialScopeResolver()),
+        memory_plane=memory_plane,
+    )
+    reads: list[str] = []
+    original_get = memory_plane.get_record
+
+    def recording_get(memory_id: str):
+        reads.append(memory_id)
+        return original_get(memory_id)
+
+    monkeypatch.setattr(memory_plane, "get_record", recording_get)
+    response = denied_service.lookup_semantic_ingestion_outcome(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=DeliveryIdentity.create(_binding(), "protected-lookup")
+        ),
+        authenticated_host_ingress=host_ingress,
+    )
+    assert response.available is False
+    assert not any(memory_id.endswith(":outcome") for memory_id in reads)
+
+
+def test_expected_host_ingress_denial_uses_non_disclosing_lookup_shape() -> None:
+    plane = MemoryPlaneService()
+    service = _service_with_capability(
+        _TestHostBootstrapCapability(resolver=_DeniedResolver()),
+        memory_plane=plane,
+    )
+    response = service.lookup_semantic_ingestion_outcome(
+        SemanticIngestionOutcomeLookupRequest(
+            delivery_identity=DeliveryIdentity.create(_binding(), "unknown-delivery")
+        ),
+        authenticated_host_ingress=AuthenticatedHostIngress(
+            provider_identity="provider:test",
+            principal_handle=object(),
+            session_handle=object(),
+            received_at=datetime.now(UTC),
+        ),
+    )
+    assert response.available is False and response.outcome is None
+    assert plane.list_records() == []
+
+
+def test_bootstrap_release_and_corpus_fail_closed_without_runtime_state() -> None:
+    artifacts = build_bootstrap_profile_artifacts(_complete_corpus_cases())
+    anchor = build_bootstrap_trust_anchor(artifacts)
+    metadata = BootstrapProfileReleaseMetadata(
+        coordinate=BOOTSTRAP_COORDINATE, bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest
+    )
+    assert verify_bootstrap_release(provider=DeterministicTestTrustRootProvider(anchor.trust_anchor_digest), metadata=metadata, anchor=anchor)
+    assert not verify_bootstrap_release(provider=None, metadata=metadata, anchor=anchor)
+    case = BootstrapGrammarCorpusCase(case_id="supported", declared_language="en", language_evidence_kind="authenticated_host_declaration", language_evidence_trust="trusted", governance_agreement="agrees", normalized_segment_bytes=b"x", disposition="supported_form", expected_reason=None)
+    assert disposition_outcome(case) == "selected_pipeline_pending"

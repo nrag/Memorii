@@ -65,13 +65,13 @@ def _evidence() -> tuple[ExecutionEvidenceRecord, EvidenceInputs]:
     return record, inputs
 
 
-def test_sia_t03_legacy_caller_hmac_cannot_authorize_evidence() -> None:
+def test_legacy_caller_hmac_cannot_authorize_evidence() -> None:
     _, inputs = _evidence()
     with pytest.raises(ExecutionEvidenceError, match="not approval-capable"):
         inputs.verify()
 
 
-def test_sia_t03_legacy_caller_hmac_rejection_is_independent_of_record_content() -> None:
+def test_legacy_caller_hmac_rejection_is_independent_of_record_content() -> None:
     record, inputs = _evidence()
     # The legacy public boundary rejects before inspecting any caller-shaped
     # record. Field-level evidence belongs to the registered report API.
@@ -79,13 +79,13 @@ def test_sia_t03_legacy_caller_hmac_rejection_is_independent_of_record_content()
         replace(inputs, records=(replace(record, execution_status="not_executed"),)).verify()
 
 
-def test_sia_t03_legacy_caller_hmac_is_rejected_before_record_details() -> None:
+def test_legacy_caller_hmac_is_rejected_before_record_details() -> None:
     record, inputs = _evidence()
     with pytest.raises(ExecutionEvidenceError, match="not approval-capable"):
         replace(inputs, records=(replace(record, expires_at=datetime(2026, 1, 1, tzinfo=UTC)),)).verify()
 
 
-def test_sia_t03_release_bound_helper_is_not_a_public_approval_api() -> None:
+def test_release_bound_helper_is_not_a_public_approval_api() -> None:
     import memorii.tools.semantic_ingestion_execution_evidence as evidence
 
     assert not hasattr(evidence, "verify_release_bound_execution")

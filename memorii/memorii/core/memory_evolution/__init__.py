@@ -1,5 +1,21 @@
 """Runtime memory evolution primitives."""
 
+from memorii.core.memory_evolution.admission import (
+    GovernedSourceAdmissionService,
+    SemanticIngestionOutcomeLookupRequest,
+    SemanticIngestionOutcomeLookupResponse,
+    SourceAdmissionAccepted,
+)
+from memorii.core.memory_evolution.bootstrap_profile import (
+    BOOTSTRAP_COORDINATE,
+    BootstrapGrammarCorpusCase,
+    BootstrapProfileCoordinate,
+    BootstrapProfileOutcome,
+    BootstrapProfileReleaseMetadata,
+    BootstrapProfileTrustAnchor,
+    BootstrapTrustRootProvider,
+    GovernedSourceAdmissionFact,
+)
 from memorii.core.memory_evolution.entity_resolution import EntityResolutionService
 from memorii.core.memory_evolution.execution import (
     ActionEvent,
@@ -33,6 +49,15 @@ from memorii.core.memory_evolution.graph_constraint_resolution import (
     resolve_graph_pattern,
 )
 from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore, MemoryGraphValidator
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedIngressContext,
+    DeliveryIdentity,
+    DeliveryPrincipalBinding,
+    NormalizedDeliveryId,
+    OperationFenceBinding,
+    RequiredOutcomeScopeSet,
+    normalize_delivery_id,
+)
 from memorii.core.memory_evolution.language_support import (
     DEFAULT_EXTRACTION_LANGUAGE_REGISTRY,
     EvidenceDecision,
@@ -42,10 +67,16 @@ from memorii.core.memory_evolution.language_support import (
 )
 from memorii.core.memory_evolution.modality import ExtractionTriggerPolicy, SourceModalityClassifier
 from memorii.core.memory_evolution.models import (
+    ClaimAssertionMode,
+    ClaimEpistemicStatus,
     ClaimKey,
     ClaimLifecycleState,
     ClaimLifecycleTransition,
+    ClaimModality,
+    ClaimPolarity,
+    ClaimSemanticContext,
     ClaimState,
+    ConfidenceComponents,
     ConfidenceUpdate,
     ContradictionSet,
     EntityIdentityDecision,
@@ -161,15 +192,40 @@ from memorii.core.memory_evolution.temporal_contracts import (
 from memorii.core.memory_evolution.validation import MemoryEvolutionValidator
 
 __all__ = [
+    "AuthenticatedIngressContext",
+    "BOOTSTRAP_COORDINATE",
+    "BootstrapGrammarCorpusCase",
+    "BootstrapProfileCoordinate",
+    "BootstrapProfileOutcome",
+    "BootstrapProfileReleaseMetadata",
+    "BootstrapProfileTrustAnchor",
+    "BootstrapTrustRootProvider",
     "ClaimKey",
+    "DeliveryIdentity",
+    "DeliveryPrincipalBinding",
+    "GovernedSourceAdmissionService",
+    "GovernedSourceAdmissionFact",
+    "NormalizedDeliveryId",
+    "OperationFenceBinding",
+    "RequiredOutcomeScopeSet",
+    "SemanticIngestionOutcomeLookupRequest",
+    "SemanticIngestionOutcomeLookupResponse",
+    "SourceAdmissionAccepted",
+    "ClaimAssertionMode",
+    "ClaimEpistemicStatus",
     "ActionEvent",
     "ActionEventType",
     "ContinuationDecision",
     "ContinuationResolutionStatus",
     "ClaimLifecycleState",
     "ClaimLifecycleTransition",
+    "ClaimModality",
+    "ClaimPolarity",
+    "ClaimSemanticContext",
     "ClaimState",
+    "ConfidenceComponents",
     "ConfidenceUpdate",
+    "normalize_delivery_id",
     "ContradictionSet",
     "EntityIdentityDecision",
     "EntityIdentityDecisionType",

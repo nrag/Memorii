@@ -2,7 +2,12 @@ from datetime import UTC, datetime
 
 import pytest
 from memorii.core.memory_evolution import (
+    ClaimAssertionMode,
+    ClaimEpistemicStatus,
     ClaimKey,
+    ClaimModality,
+    ClaimPolarity,
+    ClaimSemanticContext,
     EnglishRuleMemoryExtractor,
     EntityIdentityDecision,
     EntityIdentityDecisionType,
@@ -41,12 +46,25 @@ from memorii.core.memory_evolution.extraction_contracts import (
     MemoryExtractionRunError,
 )
 from memorii.core.memory_evolution.modality import classify_and_mark_observation
-from memorii.core.memory_evolution.models import ConfidenceComponents
+from memorii.core.memory_evolution.models import ConfidenceComponents, SourceObservation
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain, SourceType
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
+
+
+def _world_context(observation: SourceObservation) -> ClaimSemanticContext:
+    return ClaimSemanticContext(
+        assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+        epistemic_status=ClaimEpistemicStatus.ASSERTED,
+        polarity=ClaimPolarity.POSITIVE,
+        modality=ClaimModality.ASSERTION,
+        attribution_source_id=observation.source_id,
+        attribution_speaker_id=observation.speaker_id,
+    )
 
 
 def _record(
@@ -220,9 +238,14 @@ class _StableClaimIdExtractor:
                 subject_entity_id="ent:atlas",
                 predicate_id="owner",
                 scope=MemoryScope(task_id="task:evolution"),
+                assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+                epistemic_status=ClaimEpistemicStatus.ASSERTED,
+                polarity=ClaimPolarity.POSITIVE,
+                modality=ClaimModality.ASSERTION,
             ),
             object_value="Bob",
             object_entity_id="ent:bob",
+            semantic_context=_world_context(observation),
             valid_from=observation.timestamp,
             evidence_spans=[span],
             confidence=ConfidenceComponents(
@@ -275,8 +298,13 @@ class _UnresolvedClaimExtractor:
                 subject_entity_id=mention.entity_id,
                 predicate_id="status",
                 scope=scope,
+                assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+                epistemic_status=ClaimEpistemicStatus.ASSERTED,
+                polarity=ClaimPolarity.POSITIVE,
+                modality=ClaimModality.ASSERTION,
             ),
             object_value="active",
+            semantic_context=_world_context(observation),
             valid_from=observation.timestamp,
             evidence_spans=[span],
             confidence=ConfidenceComponents(
@@ -343,6 +371,9 @@ class _RequestLocalIdentityExtractor:
             source_type=observation.source_type,
             timestamp=observation.timestamp,
         )
+        claim_span = span.model_copy(
+            update={"quote": observation.text.rsplit(". ", maxsplit=1)[-1]}
+        )
         scope = MemoryScope(task_id="task:evolution")
         entities = [
             EntityMention(
@@ -394,11 +425,16 @@ class _RequestLocalIdentityExtractor:
                 subject_entity_id=project_id,
                 predicate_id="owner",
                 scope=scope,
+                assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+                epistemic_status=ClaimEpistemicStatus.ASSERTED,
+                polarity=ClaimPolarity.POSITIVE,
+                modality=ClaimModality.ASSERTION,
             ),
             object_value=person_name,
             object_entity_id=person_id,
+            semantic_context=_world_context(observation),
             valid_from=observation.timestamp,
-            evidence_spans=[span],
+            evidence_spans=[claim_span],
             confidence=ConfidenceComponents(
                 extraction=0.9,
                 evidence=0.9,
@@ -492,17 +528,25 @@ def test_claim_key_is_stable_and_excludes_object_value() -> None:
         subject_entity_id="ent:atlas",
         predicate_id="owner",
         scope=MemoryScope(task_id="task:1"),
-        qualifier_key="default",
+            qualifier_key="default",
+            assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+            epistemic_status=ClaimEpistemicStatus.ASSERTED,
+            polarity=ClaimPolarity.POSITIVE,
+            modality=ClaimModality.ASSERTION,
     )
     second = ClaimKey(
         subject_entity_id="ent:atlas",
         predicate_id="owner",
         scope=MemoryScope(task_id="task:1"),
-        qualifier_key="default",
+            qualifier_key="default",
+            assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+            epistemic_status=ClaimEpistemicStatus.ASSERTED,
+            polarity=ClaimPolarity.POSITIVE,
+            modality=ClaimModality.ASSERTION,
     )
 
     assert first.stable_id() == second.stable_id()
-    assert first.stable_id() == "ent:atlas|owner|||task:1|default"
+    assert first.stable_id() == "ent:atlas|owner|||task:1|default|world_assertion|asserted|positive|assertion|"
 
 
 def test_memory_scope_visibility_is_hierarchical_and_identity_safe() -> None:
@@ -1186,8 +1230,19 @@ def test_validator_requires_evidence_quote_to_exist_in_source() -> None:
             subject_entity_id="ent:atlas",
             predicate_id="owner",
             scope=MemoryScope(task_id="task:evolution"),
+            assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+            epistemic_status=ClaimEpistemicStatus.ASSERTED,
+            polarity=ClaimPolarity.POSITIVE,
+            modality=ClaimModality.ASSERTION,
         ),
         object_value="Alice",
+        semantic_context=ClaimSemanticContext(
+            assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+            epistemic_status=ClaimEpistemicStatus.ASSERTED,
+            polarity=ClaimPolarity.POSITIVE,
+            modality=ClaimModality.ASSERTION,
+            attribution_source_id="tx:1",
+        ),
         evidence_spans=[
             EvidenceSpan(
                 source_id="tx:1",
@@ -1223,9 +1278,20 @@ def test_lifecycle_validator_does_not_duplicate_language_semantics() -> None:
             subject_entity_id="ent:atlas",
             predicate_id="owner",
             scope=MemoryScope(task_id="task:evolution"),
+            assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+            epistemic_status=ClaimEpistemicStatus.ASSERTED,
+            polarity=ClaimPolarity.POSITIVE,
+            modality=ClaimModality.ASSERTION,
         ),
         object_value="Bob",
         object_entity_id="ent:bob-local",
+        semantic_context=ClaimSemanticContext(
+            assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+            epistemic_status=ClaimEpistemicStatus.ASSERTED,
+            polarity=ClaimPolarity.POSITIVE,
+            modality=ClaimModality.ASSERTION,
+            attribution_source_id=source.memory_id,
+        ),
         evidence_spans=[
             EvidenceSpan(
                 source_id=source.memory_id,

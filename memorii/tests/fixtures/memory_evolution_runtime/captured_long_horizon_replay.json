@@ -21351,7 +21351,7 @@
             "object_entity_ref": "person:Eli",
             "object_value": "Eli",
             "predicate_id": "owner",
-            "quote": "For incident task task:05:incident, Atlas Billing Migration owner is Eli temporarily; this assignment is task-local.",
+            "quote": "For incident task task:05:incident, Atlas Billing Migration owner is Eli temporarily;",
             "source_id": "tx:benchmark:runtime:oid_56ff371767cb9bedfdf3",
             "subject_entity_ref": "project:Atlas_Billing_Migration"
           }

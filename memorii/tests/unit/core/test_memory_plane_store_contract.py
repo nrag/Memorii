@@ -120,7 +120,11 @@ def test_jsonl_processes_serialize_concurrent_writes(tmp_path: Path) -> None:
     path = tmp_path / "store"
     arguments = [(str(path), index) for index in range(12)]
 
-    with ProcessPoolExecutor(max_workers=4) as executor:
+    try:
+        executor = ProcessPoolExecutor(max_workers=4)
+    except (NotImplementedError, PermissionError) as exc:
+        pytest.skip(f"process semaphore capability is unavailable: {exc}")
+    with executor:
         revisions = list(executor.map(_write_record_in_process, arguments))
 
     reopened = JsonlMemoryPlaneStore(path)

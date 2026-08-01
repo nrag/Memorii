@@ -46,6 +46,7 @@ def _run_memory_evolution_runtime_suite(
             allow_live=args.allow_live,
             prompt_root=prompt_root,
             live_client_factory=dependencies.create_live_client,
+            provider_factory=dependencies.memory_evolution_provider_factory,
         )
         summary = runtime_summary_metrics(runtime_rows)
         provider_health = summary.runtime_provider_health

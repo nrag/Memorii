@@ -9,7 +9,6 @@ from memorii.core.filesystem_storage import (
     collect_storage_status,
     ensure_within_soft_limits,
 )
-from memorii.core.memory_evolution.operation_store import MemoryPlaneEvolutionOperationRepository
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.service import ProviderMemoryService
@@ -102,9 +101,9 @@ def test_build_provider_memory_service_wires_services_together(tmp_path) -> None
     assert isinstance(provider._memory_plane, MemoryPlaneService)
     assert isinstance(provider._work_state_service, WorkStateService)
     assert isinstance(provider._decision_state_service, DecisionStateService)
-    assert provider._llm_decision_trace_store is not None
-    assert isinstance(provider._evolution_coordinator._operations, MemoryPlaneEvolutionOperationRepository)
-    assert provider._evolution_coordinator._operations._memory_plane is provider._memory_plane
+    assert provider._llm_decision_trace_store is None
+    assert provider._memory_evolution_service is None
+    assert not hasattr(provider, "_evolution_coordinator")
 
 
 def test_provider_record_progress_writes_work_state_event_and_memory_candidate(tmp_path) -> None:
@@ -157,8 +156,8 @@ def test_llm_trace_store_persists_promotion_trace_when_provider_records_outcome(
     assert outcome_result.ok is True
 
     traces = FilesystemStorageBundle.from_root(tmp_path / "storage").llm_trace_store.list_traces()
-    assert traces
-    assert outcome_result.result["promotion_trace_id"] in {trace.trace_id for trace in traces}
+    assert traces == []
+    assert isinstance(outcome_result.result["promotion_trace_id"], str)
 
 
 def test_collect_storage_status_reports_total_bytes_and_file_statuses(tmp_path) -> None:

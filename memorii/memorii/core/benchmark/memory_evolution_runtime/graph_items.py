@@ -273,8 +273,42 @@ def runtime_span_for_item(
 def claim_quote(claim: LatentClaim, surface: SurfaceObservation) -> str:
     for span in claim.evidence.spans:
         if span.event_id == surface.event_id and span.quote in surface.text:
-            return span.quote
+            return _narrow_claim_quote(
+                span.quote,
+                object_value=claim.object.value,
+                predicate_id=claim.predicate.predicate_id,
+            )
     return claim.evidence.spans[0].quote if claim.evidence.spans else surface.text
+
+
+def _narrow_claim_quote(quote: str, *, object_value: str, predicate_id: str) -> str:
+    """Bind benchmark oracle claims to one complete source construction."""
+
+    constructions: list[str] = []
+    start = 0
+    for index, character in enumerate(quote):
+        if character in ".?!;":
+            construction = quote[start : index + 1].strip()
+            if construction:
+                constructions.append(construction)
+            start = index + 1
+    trailing = quote[start:].strip()
+    if trailing:
+        constructions.append(trailing)
+    matching = [item for item in constructions if object_value.casefold() in item.casefold()]
+    predicate_markers = {
+        "entity_type": (" is a ", " is an ", " is the "),
+        "owner": (" owns ", " owner ", " owner="),
+    }.get(predicate_id, ())
+    if predicate_markers:
+        marked = [
+            item
+            for item in matching
+            if any(marker in f" {item.casefold()} " for marker in predicate_markers)
+        ]
+        if len(marked) == 1:
+            return marked[0]
+    return matching[0] if len(matching) == 1 else quote
 
 
 def entity_quote(entity: LatentEntity, surface: SurfaceObservation) -> str:

@@ -26,8 +26,10 @@ from memorii.core.memory_evolution.models import (
     SourceObservation,
 )
 from memorii.core.memory_plane import MemoryPlaneService
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import SourceType
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 _FIXTURE = Path(__file__).parents[3] / "fixtures" / "memory_evolution_runtime" / "captured_ingestion_proposals.json"
 _LONG_HORIZON_FIXTURE = (
@@ -180,12 +182,53 @@ def _proposal_map(
     *,
     corrected: bool,
 ) -> dict[str, dict[str, object] | None]:
-    proposals = {str(item["event_id"]): item["structured_proposal"] for item in payload["proposals"]}
+    proposals = {
+        str(item["event_id"]): (
+            _with_explicit_world_semantics(dict(item["structured_proposal"]))
+            if corrected and item["structured_proposal"] is not None
+            else item["structured_proposal"]
+        )
+        for item in payload["proposals"]
+    }
     if corrected:
         proposals.update(
-            {str(item["event_id"]): item["structured_proposal"] for item in payload["proposal_corrections"]}
+            {
+                str(item["event_id"]): _with_explicit_world_semantics(
+                    dict(item["structured_proposal"])
+                )
+                for item in payload["proposal_corrections"]
+            }
         )
     return proposals
+
+
+def _with_explicit_world_semantics(proposal: dict[str, object]) -> dict[str, object]:
+    """Version captured corrected proposals without changing production legacy handling."""
+
+    claims = proposal.get("claims")
+    if not isinstance(claims, list):
+        return proposal
+    typed_claims: list[object] = []
+    for claim in claims:
+        if not isinstance(claim, dict):
+            typed_claims.append(claim)
+            continue
+        typed_claims.append(
+            {
+                **claim,
+                "semantic_context": {
+                    "assertion_mode": "world_assertion",
+                    "epistemic_status": "asserted",
+                    "polarity": "positive",
+                    "modality": "assertion",
+                    "attribution_source_id": claim.get("source_id"),
+                    "attribution_speaker_id": None,
+                    "reported_source_id": None,
+                    "belief_holder_entity_ref": None,
+                },
+            }
+        )
+    return {**proposal, "claims": typed_claims}
 
 
 def _replay_long_horizon_prefixes(

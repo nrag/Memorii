@@ -13,8 +13,13 @@ from memorii.core.memory_evolution.language_support import (
     ExtractionLanguageRegistry,
 )
 from memorii.core.memory_evolution.models import (
+    ClaimAssertionMode,
+    ClaimEpistemicStatus,
     ClaimKey,
     ClaimLifecycleTransition,
+    ClaimModality,
+    ClaimPolarity,
+    ClaimSemanticContext,
     ConfidenceComponents,
     EntityLinkState,
     EntityResolutionOutcome,
@@ -240,8 +245,19 @@ def _compile_action_state_pairs(
                     predicate_id="action_state",
                     scope=action.scope,
                     qualifier_key="default",
+                    assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+                    epistemic_status=ClaimEpistemicStatus.ASSERTED,
+                    polarity=ClaimPolarity.POSITIVE,
+                    modality=ClaimModality.ASSERTION,
                 ),
                 object_value=_normalized_status(action.status),
+                semantic_context=ClaimSemanticContext(
+                    assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+                    epistemic_status=ClaimEpistemicStatus.ASSERTED,
+                    polarity=ClaimPolarity.POSITIVE,
+                    modality=ClaimModality.ASSERTION,
+                    attribution_source_id=action.evidence_spans[0].source_id,
+                ),
                 valid_from=action.timestamp,
                 evidence_spans=list(action.evidence_spans),
                 confidence=ConfidenceComponents(

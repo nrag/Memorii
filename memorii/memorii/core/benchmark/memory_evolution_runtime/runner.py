@@ -161,7 +161,13 @@ def run_runtime_scenarios(
     allow_live: bool,
     prompt_root: Path,
     live_client_factory: Callable[[LLMRuntimeConfig], LLMStructuredClient] = LLMClientFactory.from_config,
+    provider_factory: Callable[..., ProviderMemoryService] | None = None,
 ) -> RuntimeSuiteRows:
+    if provider_factory is None:
+        raise RuntimeError(
+            "memory-evolution runtime benchmarks require the M2 provider composition, "
+            "which is unavailable in the M1 source-only milestone"
+        )
     requested_mode = decision_mode(mode)
     effective_mode, runtime_config = validate_runtime_live_safety(mode=mode, dry_run=dry_run, allow_live=allow_live)
     scenario_rows: list[SimScenarioResultRow] = []
@@ -193,7 +199,7 @@ def run_runtime_scenarios(
             prompt_root=prompt_root,
             client_factory=live_client_factory,
         )
-        provider = ProviderMemoryService(
+        provider = provider_factory(
             memory_plane=memory_plane,
             memory_evolution_extractor=extractor,
             memory_evolution_query_analyzer=query_analyzer,

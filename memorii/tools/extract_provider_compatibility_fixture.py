@@ -1,4 +1,4 @@
-"""Capture the R22 provider envelope from the pinned Git archive only.
+"""Capture the provider envelope compatibility corpus from a pinned Git archive.
 
 The generated corpus is deliberately not an executable target oracle.  It is
 produced in a temporary archive extraction, and the committed legacy reader is
@@ -141,13 +141,13 @@ for name, value in sync_inputs.items():
 
 now=lambda: datetime(2026,1,2,tzinfo=UTC)
 service=ProviderMemoryService(now_provider=now)
-service_result=dump(service.sync_event(operation=ProviderOperation.MEMORY_WRITE_DAILYLOG, content="R22 service bytes", operation_id="r22-service", task_id="r22"))
+service_result=dump(service.sync_event(operation=ProviderOperation.MEMORY_WRITE_DAILYLOG, content="Provider compatibility service bytes", operation_id="compatibility-service", task_id="provider-compatibility"))
 hermes=HermesMemoryProvider(ProviderMemoryService(now_provider=now))
-hermes_result=dump(hermes.sync_turn("R22 user bytes", "R22 assistant bytes", operation_id="r22-turn", task_id="r22"))
+hermes_result=dump(hermes.sync_turn("Provider compatibility user bytes", "Provider compatibility assistant bytes", operation_id="compatibility-turn", task_id="provider-compatibility"))
 def failing_extractor():
  return LLMMemoryExtractor(runner=PromptLLMRunner(client=FakeLLMStructuredClient(raise_on_request=True), config=LLMRuntimeConfig(provider="none")))
 def service_path(extractor, operation_id, content="Atlas owner is Bob."):
- return dump(ProviderMemoryService(memory_evolution_extractor=extractor, now_provider=now).sync_event(operation=ProviderOperation.MEMORY_WRITE_DAILYLOG, content=content, operation_id=operation_id, task_id="r22"))
+ return dump(ProviderMemoryService(memory_evolution_extractor=extractor, now_provider=now).sync_event(operation=ProviderOperation.MEMORY_WRITE_DAILYLOG, content=content, operation_id=operation_id, task_id="provider-compatibility"))
 class FailFirst(EnglishRuleMemoryExtractor):
  def __init__(self): self.calls=0
  def extract(self, observations):
@@ -155,14 +155,14 @@ class FailFirst(EnglishRuleMemoryExtractor):
   if self.calls == 1: raise OSError("injected retryable failure")
   return super().extract(observations)
 service_paths={
- "deterministic_abstention": dump(ProviderMemoryService(memory_evolution_extractor=EnglishRuleMemoryExtractor(), now_provider=now).sync_event(operation=ProviderOperation.MEMORY_WRITE_DAILYLOG, content="ignored", operation_id="r22-abstained", task_id="r22", source_modality="noise")),
- "retryable_failure": service_path(failing_extractor(), "r22-retryable"),
- "terminal_nonretryable": service_path(LLMMemoryExtractor(runner=PromptLLMRunner(client=FakeLLMStructuredClient(default_response="{}"), config=LLMRuntimeConfig(provider="none"))), "r22-terminal"),
- "committed_primary": service_path(EnglishRuleMemoryExtractor(), "r22-primary"),
- "committed_fallback": service_path(HybridMemoryExtractor(llm_extractor=failing_extractor()), "r22-fallback"),
+ "deterministic_abstention": dump(ProviderMemoryService(memory_evolution_extractor=EnglishRuleMemoryExtractor(), now_provider=now).sync_event(operation=ProviderOperation.MEMORY_WRITE_DAILYLOG, content="ignored", operation_id="compatibility-abstained", task_id="provider-compatibility", source_modality="noise")),
+ "retryable_failure": service_path(failing_extractor(), "compatibility-retryable"),
+ "terminal_nonretryable": service_path(LLMMemoryExtractor(runner=PromptLLMRunner(client=FakeLLMStructuredClient(default_response="{}"), config=LLMRuntimeConfig(provider="none"))), "compatibility-terminal"),
+ "committed_primary": service_path(EnglishRuleMemoryExtractor(), "compatibility-primary"),
+ "committed_fallback": service_path(HybridMemoryExtractor(llm_extractor=failing_extractor()), "compatibility-fallback"),
 }
 mixed=HermesMemoryProvider(ProviderMemoryService(memory_evolution_extractor=FailFirst(), now_provider=now))
-service_paths["hermes_ordered_mixed"] = dump(mixed.sync_turn("Atlas owner is Bob.", "Atlas owner is Carol.", operation_id="r22-mixed", task_id="r22"))
+service_paths["hermes_ordered_mixed"] = dump(mixed.sync_turn("Atlas owner is Bob.", "Atlas owner is Carol.", operation_id="compatibility-mixed", task_id="provider-compatibility"))
 
 print(json.dumps({
  "provider_evolution_outcome_schema":ProviderEvolutionOutcome.model_json_schema(),

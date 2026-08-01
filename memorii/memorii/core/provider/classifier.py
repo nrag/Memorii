@@ -43,6 +43,7 @@ def make_event(
     task_id: str | None = None,
     user_id: str | None = None,
     language: str = "en",
+    speaker_id: str | None = None,
     timestamp: datetime | None = None,
     source_modality: SourceModality | None = None,
 ) -> ProviderEvent:
@@ -57,6 +58,7 @@ def make_event(
         task_id=task_id,
         user_id=user_id,
         language=language,
+        speaker_id=speaker_id,
         timestamp=timestamp or datetime.now(UTC),
         source_modality=source_modality,
     )

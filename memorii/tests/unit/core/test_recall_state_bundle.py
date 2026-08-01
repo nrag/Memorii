@@ -2,10 +2,12 @@ from datetime import UTC, datetime, timedelta
 
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
 from memorii.core.work_state.service import WorkStateService
 from memorii.core.work_state.store import InMemoryWorkStateStore
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 
 def _state(

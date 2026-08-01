@@ -21,7 +21,12 @@ from memorii.core.memory_evolution.language_support import (
     ExtractionLanguageRegistry,
 )
 from memorii.core.memory_evolution.models import (
+    ClaimAssertionMode,
+    ClaimEpistemicStatus,
     ClaimKey,
+    ClaimModality,
+    ClaimPolarity,
+    ClaimSemanticContext,
     ConfidenceComponents,
     EntityIdentityRelationType,
     EntityMention,
@@ -207,9 +212,21 @@ class EnglishRuleMemoryExtractor:
                         predicate_id=predicate,
                         scope=observation_scope,
                         qualifier_key="default",
+                        assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+                        epistemic_status=ClaimEpistemicStatus.ASSERTED,
+                        polarity=ClaimPolarity.POSITIVE,
+                        modality=ClaimModality.ASSERTION,
                     ),
                     object_value=value,
                     object_entity_id=value_entity_id,
+                    semantic_context=ClaimSemanticContext(
+                        assertion_mode=ClaimAssertionMode.WORLD_ASSERTION,
+                        epistemic_status=ClaimEpistemicStatus.ASSERTED,
+                        polarity=ClaimPolarity.POSITIVE,
+                        modality=ClaimModality.ASSERTION,
+                        attribution_source_id=observation.source_id,
+                        attribution_speaker_id=observation.speaker_id,
+                    ),
                     valid_from=observation.timestamp,
                     evidence_spans=[span],
                     confidence=_confidence_for_source(observation),
@@ -585,12 +602,6 @@ def models_from_llm_output(
                 require_unique=True,
             )
             observation_scope = memory_scope_from_observation(observation)
-            claim_key = ClaimKey(
-                subject_entity_id=subject_entity_id,
-                predicate_id=predicate_id,
-                scope=observation_scope,
-                qualifier_key="default",
-            )
             confidence = _float_output(item.get("confidence"), default=0.6)
             object_entity_ref = str(item["object_entity_ref"]).strip() if item.get("object_entity_ref") else None
             object_entity_id, object_value, object_qualifiers = _resolve_claim_object_endpoint(
@@ -600,6 +611,50 @@ def models_from_llm_output(
                 observation=observation,
                 entity_id_by_ref=entity_id_by_ref,
                 entities=entities,
+            )
+            context_value = item.get("semantic_context") or {}
+            if not isinstance(context_value, dict):
+                raise ValueError("semantic_context must be an object")
+            assertion_mode = ClaimAssertionMode(
+                context_value.get("assertion_mode", ClaimAssertionMode.LEGACY_UNCLASSIFIED)
+            )
+            belief_holder_ref = context_value.get("belief_holder_entity_ref")
+            belief_holder_entity_id = (
+                entity_id_by_ref[str(belief_holder_ref).strip()]
+                if belief_holder_ref is not None
+                else None
+            )
+            semantic_context = ClaimSemanticContext(
+                assertion_mode=assertion_mode,
+                epistemic_status=ClaimEpistemicStatus(
+                    context_value.get("epistemic_status", ClaimEpistemicStatus.LEGACY_UNCLASSIFIED)
+                ),
+                polarity=ClaimPolarity(
+                    context_value.get("polarity", ClaimPolarity.LEGACY_UNCLASSIFIED)
+                ),
+                modality=ClaimModality(
+                    context_value.get("modality", ClaimModality.LEGACY_UNCLASSIFIED)
+                ),
+                attribution_source_id=context_value.get("attribution_source_id"),
+                attribution_speaker_id=context_value.get("attribution_speaker_id"),
+                reported_source_id=context_value.get("reported_source_id"),
+                belief_holder_entity_id=belief_holder_entity_id,
+            )
+            if (
+                semantic_context.assertion_mode != ClaimAssertionMode.LEGACY_UNCLASSIFIED
+                and semantic_context.attribution_source_id != observation.source_id
+            ):
+                raise ValueError("claim attribution source must equal the evidence source")
+            claim_key = ClaimKey(
+                subject_entity_id=subject_entity_id,
+                predicate_id=predicate_id,
+                scope=observation_scope,
+                qualifier_key="default",
+                assertion_mode=semantic_context.assertion_mode,
+                epistemic_status=semantic_context.epistemic_status,
+                polarity=semantic_context.polarity,
+                modality=semantic_context.modality,
+                belief_holder_entity_id=semantic_context.belief_holder_entity_id,
             )
             claim_id = _stable_id(
                 "claim",
@@ -613,6 +668,13 @@ def models_from_llm_output(
                         object_entity_id or "",
                         claim_key.scope.stable_id(),
                         "default",
+                        semantic_context.assertion_mode.value,
+                        semantic_context.epistemic_status.value,
+                        semantic_context.polarity.value,
+                        semantic_context.modality.value,
+                        semantic_context.belief_holder_entity_id or "",
+                        semantic_context.reported_source_id or "",
+                        semantic_context.attribution_speaker_id or "",
                     ]
                 ),
             )
@@ -623,6 +685,7 @@ def models_from_llm_output(
                     object_value=object_value,
                     object_entity_id=object_entity_id,
                     qualifiers=object_qualifiers,
+                    semantic_context=semantic_context,
                     valid_from=observation.timestamp,
                     valid_to=None,
                     evidence_spans=[span],

@@ -232,6 +232,16 @@ def test_spanish_owner_compiles_through_the_state_aware_boundary() -> None:
                 "source_id": observation.source_id,
                 "quote": "Alicia posee Atlas",
                 "confidence": 0.9,
+                "semantic_context": {
+                    "assertion_mode": "world_assertion",
+                    "epistemic_status": "asserted",
+                    "polarity": "positive",
+                    "modality": "assertion",
+                    "attribution_source_id": observation.source_id,
+                    "attribution_speaker_id": None,
+                    "reported_source_id": None,
+                    "belief_holder_entity_ref": None,
+                },
             }
         ],
     )
