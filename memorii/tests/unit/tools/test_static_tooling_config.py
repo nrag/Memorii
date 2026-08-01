@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
 import yaml
+from tools.extract_provider_compatibility_fixture import BASELINE_REVISION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 REPO_ROOT = PROJECT_ROOT.parent
@@ -227,7 +230,20 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         for index, step in enumerate(compatibility["steps"])
         if step["name"] == "Fetch pinned provider compatibility baseline"
     )
-    assert "memorii.tools.extract_provider_compatibility_fixture import BASELINE_REVISION" in compatibility_fetch["run"]
+    assert compatibility_fetch["working-directory"] == "memorii"
+    assignments = re.findall(
+        r"BASELINE_REVISION=\"\$\(python -c '([^']+)'\)\"",
+        compatibility_fetch["run"],
+    )
+    assert len(assignments) == 1
+    completed = subprocess.run(
+        [sys.executable, "-c", assignments[0]],
+        cwd=REPO_ROOT / compatibility_fetch["working-directory"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.stdout.strip() == BASELINE_REVISION
     assert 'git fetch --no-tags --depth=1 origin "$BASELINE_REVISION"' in compatibility_fetch["run"]
     assert 'git cat-file -e "$BASELINE_REVISION^{commit}"' in compatibility_fetch["run"]
     compatibility_run = next(

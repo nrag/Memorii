@@ -294,7 +294,7 @@ jobs:
       - name: Fetch pinned provider compatibility baseline
         working-directory: memorii
         run: >-
-          BASELINE_REVISION="$(python -c 'from memorii.tools.extract_provider_compatibility_fixture import BASELINE_REVISION; print(BASELINE_REVISION)')"
+          BASELINE_REVISION="$(python -c 'from tools.extract_provider_compatibility_fixture import BASELINE_REVISION; print(BASELINE_REVISION)')"
           && git fetch --no-tags --depth=1 origin "$BASELINE_REVISION"
           && git cat-file -e "$BASELINE_REVISION^{commit}"
 
