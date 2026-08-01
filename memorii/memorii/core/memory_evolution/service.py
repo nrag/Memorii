@@ -19,7 +19,11 @@ from memorii.core.memory_evolution.execution import (
 from memorii.core.memory_evolution.extraction import (
     EnglishRuleMemoryExtractor,
 )
-from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionRunError, MemoryExtractor
+from memorii.core.memory_evolution.extraction_contracts import (
+    MemoryExtractionProposal,
+    MemoryExtractionRunError,
+    MemoryExtractor,
+)
 from memorii.core.memory_evolution.graph import MemoryGraphProjector
 from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore, MemoryGraphValidator
 from memorii.core.memory_evolution.graph_queries import MemoryGraphQueryService
@@ -32,12 +36,11 @@ from memorii.core.memory_evolution.models import (
     ClaimLifecycleTransition,
     ClaimState,
     ContradictionSet,
-    EntityMention,
     ExtractedAction,
-    ExtractedClaim,
-    ExtractionRun,
+    ExtractionFailureCode,
     ExtractionRunStatus,
     ExtractionTriggerMode,
+    FinalExtractionSource,
     MemoryEvolutionResult,
     MemoryGraphSnapshot,
     MemoryScope,
@@ -54,6 +57,7 @@ from memorii.core.memory_evolution.mutations import (
 from memorii.core.memory_evolution.predicates import PredicateRegistry
 from memorii.core.memory_evolution.query_analysis import EnglishLexicalQueryAnalyzer, QueryAnalyzer
 from memorii.core.memory_evolution.record_projection import (
+    declared_source_modality_from_record,
     record_from_contradiction_set,
     record_from_entity_link,
     record_from_temporal_anchor,
@@ -64,6 +68,7 @@ from memorii.core.memory_evolution.retrieval_contracts import (
     ProductionRetrievalDecision,
 )
 from memorii.core.memory_evolution.retrieval_runtime import MemoryEvolutionRetrievalRuntime
+from memorii.core.memory_evolution.semantic_compilation import SemanticIngestionCompiler
 from memorii.core.memory_evolution.state_repository import EvolutionStateRepository
 from memorii.core.memory_evolution.temporal_contracts import (
     QueryTemporalFrame,
@@ -87,11 +92,7 @@ class PreparedEvolution:
     extractable_observations: list[SourceObservation]
     deferred_observation_ids: list[str]
     skipped_observation_ids: list[str]
-    run: ExtractionRun
-    entities: list[EntityMention]
-    claims: list[ExtractedClaim]
-    actions: list[ExtractedAction]
-    validation_results: dict[str, list[ValidationResult]]
+    proposal: MemoryExtractionProposal
 
 
 class MemoryEvolutionService:
@@ -122,6 +123,10 @@ class MemoryEvolutionService:
         self._trigger_policy = trigger_policy or ExtractionTriggerPolicy()
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
         self._entity_resolver = entity_resolver or EntityResolutionService(now_provider=self._now_provider)
+        self._semantic_compiler = SemanticIngestionCompiler(
+            entity_resolver=self._entity_resolver,
+            validator=self._validator,
+        )
         confidence_aggregator = confidence_aggregator or ConfidenceAggregator()
         contradiction_resolver = contradiction_resolver or ContradictionResolver()
         self._graph_projector = graph_projector or MemoryGraphProjector()
@@ -205,6 +210,7 @@ class MemoryEvolutionService:
                 source_observation_from_record(record),
                 classifier=self._modality_classifier,
                 trigger_policy=self._trigger_policy,
+                declared_modality=declared_source_modality_from_record(record),
             )
             for record in records
             if record.is_raw_event or record.domain == MemoryDomain.TRANSCRIPT
@@ -233,21 +239,46 @@ class MemoryEvolutionService:
         skipped_observation_ids = [
             obs.source_id for obs in observations if obs.trigger_mode == ExtractionTriggerMode.SKIP
         ]
-        run, entities, claims, actions = self._extractor.extract(extractable_observations)
-        if run.status == ExtractionRunStatus.FAILED:
+        if len(extractable_observations) > 1:
+            raise ValueError("memory evolution requires one extractable source observation per call")
+        proposal = self._extractor.extract(extractable_observations)
+        run = proposal.run
+        if run.status in {
+            ExtractionRunStatus.FAILED,
+            ExtractionRunStatus.PARTIAL,
+        }:
             raise MemoryExtractionRunError(run)
-        validation_results = self._validator.validate_claims(claims=claims, observations=extractable_observations)
-        run = run.model_copy(update={"validation_summary": self._validator.summary(validation_results)})
+        coverage_errors = (
+            self._validator.extraction_coverage_errors(
+                observations=extractable_observations,
+                entities=proposal.entities,
+                claims=proposal.claims,
+                actions=proposal.actions,
+            )
+            if run.status == ExtractionRunStatus.SUCCEEDED
+            else []
+        )
+        if coverage_errors:
+            failed_without_output = not (proposal.entities or proposal.claims or proposal.actions)
+            run = run.model_copy(
+                update={
+                    "status": (
+                        ExtractionRunStatus.PARTIAL if not failed_without_output else ExtractionRunStatus.FAILED
+                    ),
+                    "final_output_source": (
+                        run.final_output_source if not failed_without_output else FinalExtractionSource.NONE
+                    ),
+                    "failure_code": ExtractionFailureCode.OUTPUT_VALIDATION,
+                    "errors": [*run.errors, *coverage_errors],
+                }
+            )
+            raise MemoryExtractionRunError(run)
         return PreparedEvolution(
             observations=observations,
             extractable_observations=extractable_observations,
             deferred_observation_ids=deferred_observation_ids,
             skipped_observation_ids=skipped_observation_ids,
-            run=run,
-            entities=entities,
-            claims=claims,
-            actions=actions,
-            validation_results=validation_results,
+            proposal=proposal.model_copy(update={"run": run}),
         )
 
     def _build_evolution_mutation(self, prepared: PreparedEvolution) -> MemoryEvolutionResult:
@@ -255,20 +286,25 @@ class MemoryEvolutionService:
         extractable_observations = prepared.extractable_observations
         deferred_observation_ids = prepared.deferred_observation_ids
         skipped_observation_ids = prepared.skipped_observation_ids
-        run = prepared.run
-        entities = prepared.entities
-        claims = prepared.claims
-        actions = prepared.actions
-        validation_results = {claim_id: list(results) for claim_id, results in prepared.validation_results.items()}
-
         existing_entity_links = self._state_repository.list_entity_links()
-        entity_resolution = self._entity_resolver.resolve_mentions(entities, existing_entity_links)
+        compilation = self._semantic_compiler.compile(
+            proposal=prepared.proposal,
+            observations=extractable_observations,
+            existing_entity_links=existing_entity_links,
+        )
+        run = prepared.proposal.run
+        entities = list(prepared.proposal.entities)
+        claims = list(compilation.claims)
+        actions = list(compilation.actions)
+        identity_relations = list(compilation.identity_relations)
+        validation_results = {claim_id: list(results) for claim_id, results in compilation.validation_results.items()}
+        entity_resolution = compilation.entity_resolution
         entity_links = entity_resolution.links
         for link in entity_links:
             self._memory_plane.upsert_record(record_from_entity_link(link))
 
         claim_states: list[ClaimState] = []
-        transitions: list[ClaimLifecycleTransition] = list(entity_resolution.transitions)
+        transitions: list[ClaimLifecycleTransition] = list(compilation.transitions)
         contradiction_sets: list[ContradictionSet] = []
         written_record_ids: list[str] = []
         deferred_ids = set(deferred_observation_ids)
@@ -346,6 +382,7 @@ class MemoryEvolutionService:
             entities=entities,
             claims=claims,
             actions=actions,
+            identity_relations=identity_relations,
             observations=observations,
             entity_links=entity_links,
             entity_identity_decisions=entity_resolution.decisions,

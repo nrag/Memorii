@@ -21,12 +21,15 @@ from memorii.core.memory_evolution.query_analysis import (
     EnglishLexicalQueryAnalyzer,
     StructuredQueryAnalyzer,
 )
+from memorii.core.memory_evolution.retrieval import rank_claims
+from memorii.core.memory_evolution.retrieval_contracts import ResolvedMemoryQuery
 from memorii.core.memory_evolution.retrieval_runtime import MemoryEvolutionRetrievalRuntime
 from memorii.core.memory_evolution.temporal_contracts import (
     QueryAnalysis,
     QueryScopeKind,
     QueryTemporalFrame,
     QueryTemporalKind,
+    RetrievalDecision,
     TemporalAnchor,
     TemporalAnchorCatalog,
 )
@@ -80,6 +83,7 @@ def test_production_retrieval_separates_current_and_historical_truth() -> None:
     )
 
     assert current.selected_record_ids
+    assert current.supporting_record_ids == current.selected_record_ids
     assert historical.selected_record_ids
     assert current.selected_record_ids != historical.selected_record_ids
     assert set(current.rejected_record_ids)
@@ -112,7 +116,80 @@ def test_production_retrieval_abstains_on_ambiguous_entity_anchor() -> None:
     assert decision.abstention_reason == "entity_resolution_ambiguous"
 
 
-def test_relation_condition_resolves_shared_alias_from_object_evidence() -> None:
+def test_graph_audit_preserves_explicit_multi_entity_query() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records(
+        [_record("tx:project", "Atlas migration owner is Bob.", datetime(2026, 1, 1, tzinfo=UTC))]
+    )
+    service.evolve_records(
+        [_record("tx:service", "Atlas service owner is Iris.", datetime(2026, 1, 2, tzinfo=UTC))]
+    )
+
+    decision = service.retrieve(
+        GraphAuditRequest(
+            query="Reconstruct the Atlas project and Atlas service ownership graph.",
+            reference_time=datetime(2026, 1, 3, tzinfo=UTC),
+            purpose="graph_audit",
+            scope_mode="full",
+        )
+    )
+
+    snapshot = service.retrieve_graph_snapshot()
+    expected_entities = {
+        node.properties["canonical_entity_id"]
+        for node in snapshot.nodes
+        if node.node_type.value == "entity"
+        and node.properties.get("entity_type") in {"project", "service"}
+    }
+    assert decision.abstained is False
+    assert expected_entities <= set(decision.temporal_frame.resolved_entity_ids)
+    states = {
+        state.claim_id: state
+        for state in service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS)
+    }
+    assert {states[claim_id].object_value for claim_id in decision.selected_record_ids} >= {"Bob", "Iris"}
+
+
+def test_graph_audit_preserves_explicit_belief_candidates() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records(
+        [_record("tx:bob", "Atlas migration owner is Bob.", datetime(2026, 1, 1, tzinfo=UTC))]
+    )
+    service.evolve_records(
+        [_record("tx:alice", "Atlas migration owner is Alice.", datetime(2026, 1, 2, tzinfo=UTC))]
+    )
+
+    decision = service.retrieve(
+        GraphAuditRequest(
+            query="Rank the competing belief claims that Bob and Alice own the Atlas migration.",
+            reference_time=datetime(2026, 1, 3, tzinfo=UTC),
+            purpose="graph_audit",
+            scope_mode="full",
+            include_conflicts=True,
+        )
+    )
+
+    states = {
+        state.claim_id: state
+        for state in service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS)
+    }
+    selected_values = {states[claim_id].object_value for claim_id in decision.selected_record_ids}
+    rejected_values = {states[claim_id].object_value for claim_id in decision.rejected_record_ids}
+    assert decision.abstained is False
+    assert decision.temporal_frame.temporal_kind == QueryTemporalKind.BELIEF
+    snapshot = service.retrieve_graph_snapshot()
+    selected_entity_names = {
+        node.properties["normalized_name"]
+        for node in snapshot.nodes
+        if node.node_type.value == "entity"
+        and node.properties.get("canonical_entity_id") in decision.temporal_frame.resolved_entity_ids
+    }
+    assert {"bob", "alice"} <= selected_entity_names
+    assert selected_values == {"Alice"}
+    assert "Bob" in rejected_values
+
+
+def test_relation_condition_resolves_split_entity_from_passive_object_evidence() -> None:
     timestamp = datetime(2026, 1, 3, tzinfo=UTC)
     project = EntityLinkState(
         link_id="link:atlas-project",
@@ -128,7 +205,7 @@ def test_relation_condition_resolves_shared_alias_from_object_evidence() -> None
         mention_text="Atlas Platform Service",
         normalized_name="atlas platform service",
         canonical_entity_id="entity:atlas-service",
-        aliases=["Atlas", "Atlas service"],
+        aliases=["Atlas service"],
         entity_type="service",
         confidence=1.0,
     )
@@ -203,7 +280,8 @@ def test_relation_condition_resolves_shared_alias_from_object_evidence() -> None
     assert decision.temporal_frame is not None
     assert decision.temporal_frame.resolution_confidence == 0.65
     assert decision.temporal_frame.resolution_confidence_source == "lexical_participant_fallback"
-    assert decision.context_record_ids == ["claim:project-owner"]
+    assert decision.context_record_ids == []
+    assert decision.rejected_record_ids == ["claim:project-owner"]
 
     contrastive = runtime.retrieve(
         MemoryQueryRequest(
@@ -215,6 +293,179 @@ def test_relation_condition_resolves_shared_alias_from_object_evidence() -> None
     assert contrastive.abstained is False
     assert contrastive.selected_record_ids == ["claim:project-owner"]
     assert contrastive.rejected_record_ids == ["claim:service-owner"]
+
+
+def test_retrieval_channel_contract_allows_selected_support_only() -> None:
+    decision = RetrievalDecision(
+        temporal_frame=QueryTemporalFrame(),
+        selected_record_ids=["claim:selected"],
+        supporting_record_ids=["claim:selected"],
+        context_record_ids=["claim:context"],
+        rejected_record_ids=["claim:rejected"],
+    )
+
+    assert decision.selected_record_ids == decision.supporting_record_ids
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"supporting_record_ids": []},
+        {"context_record_ids": ["claim:selected"]},
+        {"rejected_record_ids": ["claim:selected"]},
+        {
+            "context_record_ids": ["claim:shared"],
+            "rejected_record_ids": ["claim:shared"],
+        },
+    ],
+)
+def test_retrieval_channel_contract_rejects_missing_support_or_role_overlap(
+    update: dict[str, list[str]],
+) -> None:
+    payload = {
+        "temporal_frame": QueryTemporalFrame(),
+        "selected_record_ids": ["claim:selected"],
+        "supporting_record_ids": ["claim:selected"],
+        **update,
+    }
+
+    with pytest.raises(ValueError):
+        RetrievalDecision(**payload)
+
+
+def test_frozen_graph_retrieval_places_subject_definition_in_context() -> None:
+    timestamp = datetime(2026, 1, 3, tzinfo=UTC)
+    confidence = ConfidenceComponents(
+        extraction=1.0,
+        evidence=1.0,
+        source_trust=1.0,
+        calibrated=1.0,
+    )
+    states = [
+        ClaimState(
+            claim_id="claim:owner",
+            claim_key=ClaimKey(subject_entity_id="raw:atlas", predicate_id="owner"),
+            object_value="Alice",
+            lifecycle_state=ClaimLifecycleState.ACTIVE,
+            source_claim_id="source:owner",
+            confidence=confidence,
+            valid_from=timestamp,
+        ),
+        ClaimState(
+            claim_id="claim:definition",
+            claim_key=ClaimKey(subject_entity_id="raw:atlas", predicate_id="entity_type"),
+            object_value="project",
+            lifecycle_state=ClaimLifecycleState.ACTIVE,
+            source_claim_id="source:definition",
+            confidence=confidence,
+            valid_from=timestamp,
+        ),
+    ]
+    frame = QueryTemporalFrame(
+        temporal_kind=QueryTemporalKind.CURRENT,
+        evaluation_time=timestamp,
+        resolved_entity_ids=["entity:atlas"],
+    )
+    request = ResolvedMemoryQuery(
+        query="Who owns Atlas?",
+        reference_time=timestamp,
+        query_analysis=QueryAnalysis(
+            temporal_frame=frame,
+            predicate_id="owner",
+            subject_entity_id="entity:atlas",
+        ),
+        temporal_frame=frame,
+        predicate_id="owner",
+        subject_entity_id="entity:atlas",
+    )
+
+    decision = rank_claims(
+        request=request,
+        frame=frame,
+        states=states,
+        subject_entity_by_claim={
+            "claim:owner": "entity:atlas",
+            "claim:definition": "entity:atlas",
+        },
+    )
+
+    assert decision.selected_record_ids == ["claim:owner"]
+    assert decision.supporting_record_ids == ["claim:owner"]
+    assert decision.context_record_ids == ["claim:definition"]
+    assert decision.rejected_record_ids == []
+
+
+def test_frozen_graph_scope_shadowing_uses_canonical_subject_identity() -> None:
+    timestamp = datetime(2026, 1, 3, tzinfo=UTC)
+    confidence = ConfidenceComponents(
+        extraction=1.0,
+        evidence=1.0,
+        source_trust=1.0,
+        calibrated=1.0,
+    )
+    states = [
+        ClaimState(
+            claim_id="claim:global",
+            claim_key=ClaimKey(
+                subject_entity_id="raw:atlas-global",
+                predicate_id="owner",
+                scope=MemoryScope(),
+            ),
+            object_value="GlobalOwner",
+            lifecycle_state=ClaimLifecycleState.ACTIVE,
+            source_claim_id="source:global",
+            confidence=confidence,
+            valid_from=timestamp,
+        ),
+        ClaimState(
+            claim_id="claim:task",
+            claim_key=ClaimKey(
+                subject_entity_id="raw:atlas-task",
+                predicate_id="owner",
+                scope=MemoryScope(task_id="task:incident"),
+            ),
+            object_value="TaskOwner",
+            lifecycle_state=ClaimLifecycleState.ACTIVE,
+            source_claim_id="source:task",
+            confidence=confidence,
+            valid_from=timestamp,
+        ),
+    ]
+    frame = QueryTemporalFrame(
+        temporal_kind=QueryTemporalKind.CURRENT,
+        evaluation_time=timestamp,
+        resolved_entity_ids=["entity:atlas"],
+        scope_kind=QueryScopeKind.TASK,
+        scope_key="task:incident",
+    )
+    request = ResolvedMemoryQuery(
+        query="Who owns Atlas?",
+        reference_time=timestamp,
+        scope=MemoryScope(task_id="task:incident"),
+        query_analysis=QueryAnalysis(
+            temporal_frame=frame,
+            predicate_id="owner",
+            subject_entity_id="entity:atlas",
+        ),
+        temporal_frame=frame,
+        predicate_id="owner",
+        subject_entity_id="entity:atlas",
+    )
+
+    decision = rank_claims(
+        request=request,
+        frame=frame,
+        states=states,
+        subject_entity_by_claim={
+            "claim:global": "entity:atlas",
+            "claim:task": "entity:atlas",
+        },
+    )
+
+    assert decision.selected_record_ids == ["claim:task"]
+    assert decision.supporting_record_ids == ["claim:task"]
+    assert decision.context_record_ids == ["claim:global"]
+    assert decision.rejected_record_ids == []
 
 
 def test_public_query_request_rejects_caller_supplied_semantic_analysis() -> None:
@@ -569,6 +820,51 @@ def test_heuristic_entity_match_is_context_not_execution_branch_authority() -> N
     assert decision.execution_state.continuation.branch_id == "entity:branch-b"
 
 
+def test_execution_context_includes_suppressed_branch_evidence() -> None:
+    timestamp = datetime(2026, 1, 3, tzinfo=UTC)
+    actions = [
+        ExtractedAction(
+            action_id="action:branch-a-blocked",
+            action_type="unknown",
+            target_entity_ids=["entity:branch-a"],
+            status="blocked",
+            timestamp=timestamp,
+            extraction_run_id="run:branch-a-blocked",
+        ),
+        ExtractedAction(
+            action_id="action:branch-b-progress",
+            action_type="progress",
+            target_entity_ids=["entity:branch-b"],
+            status="in_progress",
+            timestamp=timestamp,
+            extraction_run_id="run:branch-b-progress",
+        ),
+    ]
+    runtime = MemoryEvolutionRetrievalRuntime(
+        claim_reader=lambda **_kwargs: [],
+        entity_link_reader=lambda: [],
+        action_reader=lambda: actions,
+        query_analyzer=EnglishLexicalQueryAnalyzer(),
+        temporal_anchor_catalog=TemporalAnchorCatalog(),
+        now_provider=lambda: timestamp,
+    )
+
+    decision = runtime.retrieve(
+        MemoryQueryRequest(
+            query="Continue the previous fix",
+            purpose="execution",
+            reference_time=timestamp,
+        )
+    )
+
+    assert decision.selected_record_ids == ["branch-b-progress"]
+    assert decision.context_record_ids == ["branch-a-blocked"]
+    assert decision.execution_state is not None
+    assert decision.execution_state.work_state.suppressed_branch_ids == [
+        "entity:branch-a"
+    ]
+
+
 def test_scope_shadowing_keeps_readable_global_object_link_referential_integrity() -> None:
     class _OwnerAnalyzer:
         def analyze(self, **_kwargs: object) -> QueryAnalysis:
@@ -919,12 +1215,16 @@ def test_structured_graph_retrieval_abstains_on_ambiguous_object_reference() -> 
                 "tx:project",
                 "Atlas migration owner is Bob.",
                 datetime(2026, 1, 1, tzinfo=UTC),
-            ),
+            )
+        ]
+    )
+    service.evolve_records(
+        [
             _record(
                 "tx:service",
                 "Atlas service owner is Iris.",
                 datetime(2026, 1, 2, tzinfo=UTC),
-            ),
+            )
         ]
     )
 

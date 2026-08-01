@@ -77,9 +77,26 @@ def test_redacted_no_secret_and_no_test_flag() -> None:
     assert "super-secret-value" not in str(data)
 
 
-@pytest.mark.parametrize("value", ["true", "1", "yes", "y", "on", "false", "0", "no", "n", "off", ""])
-def test_boolean_variants(value: str) -> None:
-    LLMLiveTestConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": value})
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("true", True),
+        ("1", True),
+        ("yes", True),
+        ("y", True),
+        ("on", True),
+        ("false", False),
+        ("0", False),
+        ("no", False),
+        ("n", False),
+        ("off", False),
+        ("", False),
+    ],
+)
+def test_boolean_variants(value: str, expected: bool) -> None:
+    config = LLMLiveTestConfig.from_env({"MEMORII_ENABLE_LIVE_LLM_TESTS": value})
+
+    assert config.enable_live_llm_tests is expected
 
 
 def test_invalid_boolean_raises() -> None:

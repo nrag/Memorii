@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from memorii.core.benchmark.memory_evolution_runtime import (
     normalize_action_status,
     project_runtime_checkpoint,
+    runtime_failure_buckets,
 )
 from memorii.core.benchmark.memory_evolution_runtime.models import RuntimeGraphItemRow
 from memorii.core.benchmark.memory_evolution_sim import LatentGraphScenario
@@ -124,11 +125,11 @@ def test_runtime_execution_projection_selects_action_backed_continuation_state()
     oracle = _execution_oracle(scenario)
     graph_items = [
         *runtime_execution_base_items(scenario=scenario),
-        runtime_action(target="ent:atlas-cleanup-branch-b", status="in_progress", events=[oracle.progress_event_id]),
+        runtime_action(target="runtime:branch-b", status="in_progress", events=[oracle.progress_event_id]),
         runtime_action(
-            target="ent:atlas-cleanup-branch-a", status="started", events=[oracle.branch_a_started_event_id]
+            target="runtime:branch-a", status="started", events=[oracle.branch_a_started_event_id]
         ),
-        runtime_action(target="ent:atlas-cleanup", status="blocked", events=[oracle.blocked_event_id]),
+        runtime_action(target="runtime:branch-a", status="blocked", events=[oracle.blocked_event_id]),
     ]
 
     projection = project_runtime_checkpoint(
@@ -143,10 +144,10 @@ def test_runtime_execution_projection_selects_action_backed_continuation_state()
     assert oracle.progress_claim_id in projection.output.selected_claim_ids
     assert oracle.progress_claim_id in projection.output.supporting_claim_ids
     assert oracle.progress_event_id in projection.output.supporting_citation_event_ids
-    assert oracle.blocked_claim_id in projection.output.rejected_claim_ids
-    assert oracle.blocked_entity_id in projection.output.rejected_entity_ids
-    assert projection.execution_state.active_continuation_branch == "ent:atlas-cleanup-branch-b"
-    assert "ent:atlas-cleanup-branch-a" in projection.execution_state.suppressed_branch_ids
+    assert oracle.blocked_claim_id not in projection.output.rejected_claim_ids
+    assert oracle.blocked_entity_id not in projection.output.rejected_entity_ids
+    assert projection.execution_state.active_continuation_branch == "runtime:branch-b"
+    assert "runtime:branch-a" in projection.execution_state.suppressed_branch_ids
 
 
 def test_runtime_projection_never_selects_an_action_without_production_decision() -> None:
@@ -154,7 +155,7 @@ def test_runtime_projection_never_selects_an_action_without_production_decision(
     oracle = _execution_oracle(scenario)
     graph_items = [
         *runtime_execution_base_items(scenario=scenario),
-        runtime_action(target="ent:atlas-cleanup-branch-b", status="in_progress", events=[oracle.progress_event_id]),
+        runtime_action(target="runtime:branch-b", status="in_progress", events=[oracle.progress_event_id]),
     ]
 
     projection = project_runtime_checkpoint(
@@ -176,7 +177,7 @@ def test_runtime_projection_does_not_count_unselected_aligned_action_as_support(
     oracle = _execution_oracle(scenario)
     graph_items = [
         *runtime_execution_base_items(scenario=scenario),
-        runtime_action(target="ent:atlas-cleanup-branch-b", status="in_progress", events=[oracle.progress_event_id]),
+        runtime_action(target="runtime:branch-b", status="in_progress", events=[oracle.progress_event_id]),
     ]
 
     projection = project_runtime_checkpoint(
@@ -196,6 +197,12 @@ def test_runtime_projection_does_not_count_unselected_aligned_action_as_support(
 
     assert projection.action_support == {}
     assert projection.output.supporting_citation_event_ids == []
+    assert "production_retrieval_missing_expected_action" in runtime_failure_buckets(
+        checkpoint=checkpoint,
+        output=projection.output,
+        projection=projection,
+        graph_snapshot=projection.graph_snapshot,
+    )
 
 
 def test_runtime_execution_projection_derives_active_progress_from_action_type() -> None:
@@ -204,12 +211,12 @@ def test_runtime_execution_projection_derives_active_progress_from_action_type()
     graph_items = [
         *runtime_execution_base_items(scenario=scenario),
         runtime_action(
-            target="ent:atlas-cleanup-branch-b",
+            target="runtime:branch-b",
             status="started",
             action_type="in_progress",
             events=[oracle.progress_event_id],
         ),
-        runtime_action(target="ent:atlas-cleanup-branch-a", status="blocked", events=[oracle.blocked_event_id]),
+        runtime_action(target="runtime:branch-a", status="blocked", events=[oracle.blocked_event_id]),
     ]
 
     projection = project_runtime_checkpoint(
@@ -224,18 +231,18 @@ def test_runtime_execution_projection_derives_active_progress_from_action_type()
     assert projection.action_support[f"action:{oracle.progress_claim_id}"] == "runtime_action_semantic"
     assert oracle.progress_claim_id in projection.output.selected_claim_ids
     assert oracle.progress_event_id in projection.output.supporting_citation_event_ids
-    assert projection.execution_state.active_continuation_branch == "ent:atlas-cleanup-branch-b"
+    assert projection.execution_state.active_continuation_branch == "runtime:branch-b"
     assert projection.execution_state.continuation_decision is not None
     assert projection.execution_state.continuation_decision.status == "resolved"
 
 
-def test_runtime_execution_projection_rejects_semantic_short_branch_id() -> None:
+def test_runtime_execution_projection_accepts_opaque_targets_through_entity_alignment() -> None:
     scenario, checkpoint = long_horizon_execution_scenario()
     oracle = _execution_oracle(scenario)
     graph_items = [
         *runtime_execution_base_items(scenario=scenario),
-        runtime_action(target="ent:branch-b", status="in_progress", events=[oracle.progress_event_id]),
-        runtime_action(target="ent:branch-a", status="blocked", events=[oracle.blocked_event_id]),
+        runtime_action(target="runtime:branch-b", status="in_progress", events=[oracle.progress_event_id]),
+        runtime_action(target="runtime:branch-a", status="blocked", events=[oracle.blocked_event_id]),
     ]
 
     projection = project_runtime_checkpoint(
@@ -249,10 +256,10 @@ def test_runtime_execution_projection_rejects_semantic_short_branch_id() -> None
 
     assert projection.action_support[f"action:{oracle.progress_claim_id}"] == "runtime_action_semantic"
     assert oracle.progress_claim_id in projection.output.selected_claim_ids
-    assert oracle.blocked_claim_id in projection.output.rejected_claim_ids
-    assert oracle.blocked_entity_id in projection.output.rejected_entity_ids
-    assert projection.execution_state.active_continuation_branch == "ent:branch-b"
-    assert projection.execution_state.suppressed_branch_ids == ["ent:branch-a"]
+    assert oracle.blocked_claim_id not in projection.output.rejected_claim_ids
+    assert oracle.blocked_entity_id not in projection.output.rejected_entity_ids
+    assert projection.execution_state.active_continuation_branch == "runtime:branch-b"
+    assert projection.execution_state.suppressed_branch_ids == ["runtime:branch-a"]
 
 
 def test_runtime_execution_projection_bridges_subtask_progress_to_active_branch() -> None:
@@ -261,12 +268,12 @@ def test_runtime_execution_projection_bridges_subtask_progress_to_active_branch(
     graph_items = [
         *runtime_execution_base_items(scenario=scenario, branch_b_events=[oracle.branch_b_started_event_id]),
         runtime_action(
-            target="ent:atlas-cleanup-branch-b", status="started", events=[oracle.branch_b_started_event_id]
+            target="runtime:branch-b", status="started", events=[oracle.branch_b_started_event_id]
         ),
         runtime_action(
             target="ent:org-directory-owner-cleanup", status="in_progress", events=[oracle.progress_event_id]
         ),
-        runtime_action(target="ent:atlas-cleanup-branch-a", status="blocked", events=[oracle.blocked_event_id]),
+        runtime_action(target="runtime:branch-a", status="blocked", events=[oracle.blocked_event_id]),
     ]
 
     projection = project_runtime_checkpoint(
@@ -281,14 +288,67 @@ def test_runtime_execution_projection_bridges_subtask_progress_to_active_branch(
     assert projection.action_support[f"action:{oracle.progress_claim_id}"] == "runtime_action_work_state_bridge"
     assert oracle.progress_claim_id in projection.output.selected_claim_ids
     assert oracle.progress_event_id in projection.output.supporting_citation_event_ids
-    assert oracle.blocked_claim_id in projection.output.rejected_claim_ids
-    assert oracle.blocked_entity_id in projection.output.rejected_entity_ids
+    assert oracle.blocked_claim_id not in projection.output.rejected_claim_ids
+    assert oracle.blocked_entity_id not in projection.output.rejected_entity_ids
     assert projection.execution_state.active_continuation_branch == "ent:org-directory-owner-cleanup"
     assert projection.execution_state.suppressed_branch_ids == [
-        "ent:atlas-cleanup-branch-a",
-        "ent:atlas-cleanup-branch-b",
+        "runtime:branch-a",
+        "runtime:branch-b",
     ]
     assert projection.action_alignment_rows[0].bridged_target_entity_id == checkpoint.expected_execution_entity_ids[0]
+
+
+def test_hidden_expected_rejections_cannot_author_runtime_output() -> None:
+    scenario, checkpoint = long_horizon_execution_scenario()
+    oracle = _execution_oracle(scenario)
+    graph_items = [
+        *runtime_execution_base_items(scenario=scenario),
+        runtime_action(target="runtime:branch-b", status="in_progress", events=[oracle.progress_event_id]),
+        runtime_action(target="runtime:branch-a", status="blocked", events=[oracle.blocked_event_id]),
+    ]
+    decision = _decision_for_action(graph_items)
+
+    original = project_runtime_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+        graph_snapshot=MemoryGraphSnapshot(snapshot_id="test"),
+        graph_items=graph_items,
+        source_id_to_event_id={},
+        retrieval_decision=decision,
+    )
+    mutated = project_runtime_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint.model_copy(update={"expected_excluded_claim_ids": []}),
+        graph_snapshot=MemoryGraphSnapshot(snapshot_id="test"),
+        graph_items=graph_items,
+        source_id_to_event_id={},
+        retrieval_decision=decision,
+    )
+
+    assert mutated.output == original.output
+    assert mutated.production_channels == original.production_channels
+
+    without_expected_actions = project_runtime_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint.model_copy(update={"expected_action_ids": []}),
+        graph_snapshot=MemoryGraphSnapshot(snapshot_id="test"),
+        graph_items=graph_items,
+        source_id_to_event_id={},
+        retrieval_decision=decision,
+    )
+
+    assert without_expected_actions.production_channels == original.production_channels
+    assert any(
+        row.verdict == "unmatched_runtime"
+        and row.runtime_action_id in without_expected_actions.production_channels.selected_action_ids
+        for row in without_expected_actions.action_alignment_rows
+    )
+    assert "production_retrieval_unexpected_selected_action" in runtime_failure_buckets(
+        checkpoint=checkpoint.model_copy(update={"expected_action_ids": []}),
+        output=without_expected_actions.output,
+        projection=without_expected_actions,
+        graph_snapshot=without_expected_actions.graph_snapshot,
+    )
 
 
 def test_runtime_execution_projection_does_not_bridge_subtask_without_branch_history() -> None:
@@ -320,7 +380,7 @@ def test_runtime_execution_projection_does_not_reject_active_or_wrong_branch() -
     oracle = _execution_oracle(scenario)
     base_items = [
         *runtime_execution_base_items(scenario=scenario),
-        runtime_action(target="ent:branch-b", status="in_progress", events=[oracle.progress_event_id]),
+        runtime_action(target="runtime:branch-b", status="in_progress", events=[oracle.progress_event_id]),
     ]
 
     active_branch_a = project_runtime_checkpoint(
@@ -329,7 +389,7 @@ def test_runtime_execution_projection_does_not_reject_active_or_wrong_branch() -
         graph_snapshot=MemoryGraphSnapshot(snapshot_id="test"),
         graph_items=[
             *base_items,
-            runtime_action(target="ent:branch-a", status="in_progress", events=[oracle.blocked_event_id]),
+            runtime_action(target="runtime:branch-a", status="in_progress", events=[oracle.blocked_event_id]),
         ],
         source_id_to_event_id={},
     )

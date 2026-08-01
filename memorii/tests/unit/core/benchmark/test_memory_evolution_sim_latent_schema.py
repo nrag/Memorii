@@ -44,19 +44,54 @@ def test_memory_evolution_sim_adversarial_profile_creates_hidden_latent_items() 
         assert not expected_ids & exposed_ids
 
 
+@pytest.mark.parametrize("profile", ["adversarial", "long_horizon"])
+def test_hidden_distractor_only_observations_are_labeled_non_extractable(
+    profile: str,
+) -> None:
+    scenarios = generate_memory_evolution_sim_scenarios(
+        profile=profile,
+        scenario_count=10,
+        seed=7,
+        noise_rate=0.35,
+    )
+
+    distractors = [
+        observation
+        for scenario in scenarios
+        for observation in scenario.observations
+        if observation.hidden_distractor_ids
+        and not observation.exposed_entity_ids
+        and not observation.exposed_claim_ids
+        and not observation.exposed_relation_ids
+    ]
+
+    assert distractors
+    assert {observation.modality for observation in distractors}.issubset({"hypothetical", "noise"})
+
+
 def test_memory_evolution_sim_smoke_profile_does_not_create_hidden_latent_items() -> None:
     scenarios = generate_memory_evolution_sim_scenarios(profile="smoke", scenario_count=10, seed=7)
 
-    hidden_ids = {
-        item.entity_id for scenario in scenarios for item in scenario.entities if item.observability == ObservabilityLabel.HIDDEN
-    } | {
-        item.claim_id for scenario in scenarios for item in scenario.claims if item.observability == ObservabilityLabel.HIDDEN
-    } | {
-        item.relation_id
-        for scenario in scenarios
-        for item in scenario.relations
-        if item.observability == ObservabilityLabel.HIDDEN
-    }
+    hidden_ids = (
+        {
+            item.entity_id
+            for scenario in scenarios
+            for item in scenario.entities
+            if item.observability == ObservabilityLabel.HIDDEN
+        }
+        | {
+            item.claim_id
+            for scenario in scenarios
+            for item in scenario.claims
+            if item.observability == ObservabilityLabel.HIDDEN
+        }
+        | {
+            item.relation_id
+            for scenario in scenarios
+            for item in scenario.relations
+            if item.observability == ObservabilityLabel.HIDDEN
+        }
+    )
 
     assert hidden_ids == set()
 
@@ -78,9 +113,14 @@ def test_memory_evolution_sim_visible_claim_relation_evidence_matches_exposing_o
                 continue
             assert set(claim.evidence.source_event_ids) & exposed_claim_events[claim.claim_id], claim.claim_id
         for relation in scenario.relations:
-            if relation.relation_id not in exposed_relation_events or relation.observability == ObservabilityLabel.HIDDEN:
+            if (
+                relation.relation_id not in exposed_relation_events
+                or relation.observability == ObservabilityLabel.HIDDEN
+            ):
                 continue
-            assert set(relation.provenance.source_event_ids) & exposed_relation_events[relation.relation_id], relation.relation_id
+            assert set(relation.provenance.source_event_ids) & exposed_relation_events[relation.relation_id], (
+                relation.relation_id
+            )
 
 
 def test_memory_evolution_sim_seed_19_conflict_evidence_uses_ambiguity_event_not_noise() -> None:
@@ -147,7 +187,9 @@ def test_memory_evolution_sim_hidden_items_cannot_be_expected() -> None:
     checkpoint = checkpoint_by_type(scenario, "entity_reconstruction")
     payload = scenario.model_dump(mode="json")
     payload_claim = next(item for item in payload["claims"] if item["claim_id"] == claim.claim_id)
-    payload_checkpoint = next(item for item in payload["checkpoints"] if item["checkpoint_id"] == checkpoint.checkpoint_id)
+    payload_checkpoint = next(
+        item for item in payload["checkpoints"] if item["checkpoint_id"] == checkpoint.checkpoint_id
+    )
     payload_claim["observability"] = ObservabilityLabel.HIDDEN.value
     payload_claim["evidence"]["spans"] = []
     payload_checkpoint["expected_claim_ids"] = [payload_claim["claim_id"]]
@@ -162,13 +204,11 @@ def test_memory_evolution_sim_oracle_checkpoints_do_not_require_hidden_ids() -> 
     )
 
     for scenario in scenarios:
-        hidden_ids = {
-            item.entity_id for item in scenario.entities if item.observability == ObservabilityLabel.HIDDEN
-        } | {
-            item.claim_id for item in scenario.claims if item.observability == ObservabilityLabel.HIDDEN
-        } | {
-            item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN
-        }
+        hidden_ids = (
+            {item.entity_id for item in scenario.entities if item.observability == ObservabilityLabel.HIDDEN}
+            | {item.claim_id for item in scenario.claims if item.observability == ObservabilityLabel.HIDDEN}
+            | {item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN}
+        )
         for checkpoint in scenario.checkpoints:
             expected_ids = {
                 *checkpoint.expected_entity_ids,

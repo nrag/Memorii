@@ -20,16 +20,19 @@ def test_memory_evolution_sim_benchmark_cli_runs_and_writes_judge_artifacts(
 ) -> None:
     _clear_llm_env(monkeypatch)
 
-    assert main(
-        [
-            "--suite",
-            "memory_evolution_sim_v1",
-            "--storage-root",
-            str(tmp_path),
-            "--sim-profile",
-            "smoke",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_sim_v1",
+                "--storage-root",
+                str(tmp_path),
+                "--sim-profile",
+                "smoke",
+            ]
+        )
+        == 0
+    )
 
     output = capsys.readouterr().out
     run_dir = _latest_run_dir(tmp_path, "memory_evolution_sim_v1")
@@ -72,23 +75,26 @@ def test_memory_evolution_sim_benchmark_cli_runs_and_writes_judge_artifacts(
         assert (run_dir / relative_path).exists()
 
 
-def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
+def test_memory_evolution_sim_dry_run_llm_uses_oracle_bypass_without_provider_calls(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
-    assert main(
-        [
-            "--suite",
-            "memory_evolution_sim_v1",
-            "--mode",
-            "llm",
-            "--dry-run",
-            "--inference-replicate",
-            "3",
-            "--storage-root",
-            str(tmp_path),
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_sim_v1",
+                "--mode",
+                "llm",
+                "--dry-run",
+                "--inference-replicate",
+                "3",
+                "--storage-root",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
 
     output = capsys.readouterr().out
     run_dir = _latest_run_dir(tmp_path, "memory_evolution_sim_v1", "llm")
@@ -98,11 +104,11 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
     assert payload["inference_replicate"] == 3
     assert payload["run_id"] == f"{payload['benchmark_key']}-rep3"
     assert int(fields["failed"]) == payload["failed"] == 0
-    assert int(fields["llm_calls"]) == payload["checkpoint_count"]
+    assert int(fields["llm_calls"]) == 0
     assert int(fields["llm_calls"]) == _jsonl_count(run_dir / "llm_traces.jsonl")
-    assert payload["llm_calls"] == payload["checkpoint_count"]
+    assert payload["llm_calls"] == 0
     assert payload["provider_successes"] == 0
-    assert payload["fake_calls"] == payload["checkpoint_count"]
+    assert payload["fake_calls"] == 0
     assert payload["final_output_source_counts"] == {"fake_oracle": payload["checkpoint_count"]}
     assert "critical_failure_bucket_counts" in payload
     assert "warning_bucket_counts" in payload
@@ -162,10 +168,7 @@ def test_memory_evolution_sim_dry_run_llm_passes_and_records_calls(
         "precision_failure_classification",
     ]:
         assert field_name in first_row
-    first_trace = json.loads((run_dir / "llm_traces.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    trace_payload = first_trace["trace"]
-    assert trace_payload["prompt_version"] == "memory_evolution_sim_reconstruction:v1"
-    assert trace_payload["input_payload"]["provider"] == "fake"
+    assert (run_dir / "llm_traces.jsonl").read_text(encoding="utf-8") == ""
 
 
 def test_memory_evolution_sim_dry_run_hybrid_does_not_require_live_provider(
@@ -175,64 +178,70 @@ def test_memory_evolution_sim_dry_run_hybrid_does_not_require_live_provider(
 ) -> None:
     _clear_llm_env(monkeypatch)
 
-    assert main(
-        [
-            "--suite",
-            "memory_evolution_sim_v1",
-            "--mode",
-            "hybrid",
-            "--dry-run",
-            "--fail-on-benchmark-failure",
-            "--storage-root",
-            str(tmp_path),
-            "--sim-profile",
-            "long_horizon",
-            "--sim-scenario-count",
-            "2",
-            "--sim-min-events",
-            "25",
-            "--sim-max-events",
-            "60",
-            "--sim-noise-rate",
-            "0.35",
-            "--seed",
-            "7",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_sim_v1",
+                "--mode",
+                "hybrid",
+                "--dry-run",
+                "--fail-on-benchmark-failure",
+                "--storage-root",
+                str(tmp_path),
+                "--sim-profile",
+                "long_horizon",
+                "--sim-scenario-count",
+                "2",
+                "--sim-min-events",
+                "25",
+                "--sim-max-events",
+                "60",
+                "--sim-noise-rate",
+                "0.35",
+                "--seed",
+                "7",
+            ]
+        )
+        == 0
+    )
 
     run_dir = _latest_run_dir(tmp_path, "memory_evolution_sim_v1", "hybrid")
     report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
     fields = _summary_fields(capsys.readouterr().out)
 
     assert report["failed"] == 0
-    assert report["llm_calls"] == report["checkpoint_count"]
-    assert report["fake_calls"] == report["checkpoint_count"]
+    assert report["llm_calls"] == 0
+    assert report["fake_calls"] == 0
     assert report["final_output_source_counts"] == {"fake_oracle": report["checkpoint_count"]}
-    assert int(fields["llm_calls"]) == report["checkpoint_count"]
+    assert int(fields["llm_calls"]) == 0
 
 
 def test_memory_evolution_sim_adversarial_artifacts_include_hidden_pressure_without_prompt_leak(
     tmp_path: Path,
 ) -> None:
-    assert main(
-        [
-            "--suite",
-            "memory_evolution_sim_v1",
-            "--mode",
-            "llm",
-            "--dry-run",
-            "--storage-root",
-            str(tmp_path),
-            "--sim-profile",
-            "adversarial",
-            "--sim-scenario-count",
-            "2",
-            "--sim-noise-rate",
-            "0.35",
-            "--seed",
-            "7",
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "--suite",
+                "memory_evolution_sim_v1",
+                "--mode",
+                "llm",
+                "--dry-run",
+                "--storage-root",
+                str(tmp_path),
+                "--sim-profile",
+                "adversarial",
+                "--sim-scenario-count",
+                "2",
+                "--sim-noise-rate",
+                "0.35",
+                "--seed",
+                "7",
+            ]
+        )
+        == 0
+    )
 
     run_dir = _latest_run_dir(tmp_path, "memory_evolution_sim_v1", "llm")
     payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
@@ -240,22 +249,16 @@ def test_memory_evolution_sim_adversarial_artifacts_include_hidden_pressure_with
     candidate_cards = (run_dir / "candidate_cards.jsonl").read_text(encoding="utf-8")
     surface_observations = (run_dir / "surface_observations.jsonl").read_text(encoding="utf-8")
 
-    hidden_ids = {
-        item["entity_id"]
-        for scenario in latent
-        for item in scenario["entities"]
-        if item["observability"] == "hidden"
-    } | {
-        item["claim_id"]
-        for scenario in latent
-        for item in scenario["claims"]
-        if item["observability"] == "hidden"
-    } | {
-        item["relation_id"]
-        for scenario in latent
-        for item in scenario["relations"]
-        if item["observability"] == "hidden"
-    }
+    hidden_ids = (
+        {item["entity_id"] for scenario in latent for item in scenario["entities"] if item["observability"] == "hidden"}
+        | {item["claim_id"] for scenario in latent for item in scenario["claims"] if item["observability"] == "hidden"}
+        | {
+            item["relation_id"]
+            for scenario in latent
+            for item in scenario["relations"]
+            if item["observability"] == "hidden"
+        }
+    )
     hidden_names = {
         item["canonical_name"]
         for scenario in latent

@@ -9,12 +9,10 @@ from pydantic import ValidationError
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
     DEGRADED_BELIEF_SCORE_MAX,
     MemoryEvolutionAnswerProjectionPolicy,
-    MemoryEvolutionAnswerTemporalMode,
     MemoryEvolutionBeliefLifecyclePolicy,
     MemoryEvolutionBeliefScorePolicy,
     MemoryEvolutionBeliefState,
     MemoryEvolutionCheckpoint,
-    MemoryEvolutionCheckpointContract,
     MemoryEvolutionCheckpointKind,
     MemoryEvolutionCitationPolicy,
     MemoryEvolutionDecision,
@@ -26,9 +24,11 @@ from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionNextActionPolicy,
     MemoryEvolutionScenario,
     MemoryEvolutionSelectedMemoryPolicy,
+    MemoryEvolutionTemporalReference,
+    MemoryEvolutionVisibleDecisionContract,
     MemoryEvolutionWarningBucket,
 )
-from memorii.core.benchmark.memory_evolution_decision.policies import checkpoint_contract, lifecycle_expected_ids
+from memorii.core.benchmark.memory_evolution_decision.policies import lifecycle_expected_ids, visible_decision_contract
 from memorii.core.benchmark.memory_evolution_decision.temporal_diagnostics import (
     expected_temporal_frame as build_expected_temporal_frame,
 )
@@ -91,7 +91,7 @@ def memory_evolution_decision_diagnostics(
             rationale=f"MemoryEvolutionDecision schema validation failed: {exc.errors()}",
         )
 
-    contract = checkpoint_contract(scenario=scenario, checkpoint=checkpoint)
+    contract = visible_decision_contract(scenario=scenario, checkpoint=checkpoint)
     answer_selection = parsed.answer_selection
     lifecycle = parsed.lifecycle_snapshot
     retrieval = parsed.retrieval_context
@@ -101,9 +101,7 @@ def memory_evolution_decision_diagnostics(
 
     score_by_id = {score.memory_id: score.belief for score in parsed.belief_scores}
     belief_state_by_id = {
-        score.memory_id: score.belief_state
-        for score in parsed.belief_scores
-        if score.belief_state is not None
+        score.memory_id: score.belief_state for score in parsed.belief_scores if score.belief_state is not None
     }
     selected_ids = list(answer_selection.selected_memory_ids)
     selected = set(selected_ids)
@@ -119,7 +117,11 @@ def memory_evolution_decision_diagnostics(
     evaluated_belief_ids = dedupe_string_ids(
         [
             *parsed.evaluated_belief_ids,
-            *[score.memory_id for score in parsed.belief_scores if is_belief_memory_id(score.memory_id, checkpoint=checkpoint)],
+            *[
+                score.memory_id
+                for score in parsed.belief_scores
+                if is_belief_memory_id(score.memory_id, checkpoint=checkpoint)
+            ],
         ]
     )
 
@@ -128,8 +130,8 @@ def memory_evolution_decision_diagnostics(
     expected_superseded_ids = lifecycle_expected_ids(checkpoint=checkpoint, lifecycle_kind="superseded")
     expected_retained_ids = lifecycle_expected_ids(checkpoint=checkpoint, lifecycle_kind="retained")
 
-    if answer_selection.temporal_mode != contract.answer_temporal_mode:
-        failure_buckets.append(MemoryEvolutionFailureBucket.WRONG_TEMPORAL_MODE)
+    if answer_selection.temporal_reference != contract.temporal_reference:
+        failure_buckets.append(MemoryEvolutionFailureBucket.WRONG_TEMPORAL_REFERENCE)
     temporal_frame_diagnostics = compute_temporal_frame_diagnostics(
         expected=expected_temporal_frame,
         actual=actual_temporal_frame,
@@ -137,7 +139,8 @@ def memory_evolution_decision_diagnostics(
         scenario=scenario,
         checkpoint=checkpoint,
     )
-    temporal_kind_mismatch = temporal_frame_diagnostics["temporal_kind_mismatch"]
+    temporal_reference_mismatch = temporal_frame_diagnostics["temporal_reference_mismatch"]
+    decision_domain_mismatch = temporal_frame_diagnostics["decision_domain_mismatch"]
     temporal_scope_mismatch = temporal_frame_diagnostics["temporal_scope_mismatch"]
     temporal_anchor_mismatch = temporal_frame_diagnostics["temporal_anchor_mismatch"]
     temporal_interval_mismatch = temporal_frame_diagnostics["temporal_interval_mismatch"]
@@ -147,16 +150,16 @@ def memory_evolution_decision_diagnostics(
     temporal_extra_interval = temporal_frame_diagnostics["temporal_extra_interval"]
     temporal_frame_warning = temporal_frame_diagnostics["temporal_frame_warning"]
     temporal_frame_mismatch = any(
-        value
-        for key, value in temporal_frame_diagnostics.items()
-        if key != "temporal_frame_warning"
+        value for key, value in temporal_frame_diagnostics.items() if key != "temporal_frame_warning"
     )
     if temporal_frame_mismatch:
         failure_buckets.append(MemoryEvolutionFailureBucket.TEMPORAL_FRAME_MISMATCH)
     if temporal_frame_warning:
         warning_buckets.append(MemoryEvolutionWarningBucket.TEMPORAL_FRAME_ENRICHMENT)
-    if temporal_kind_mismatch:
-        failure_buckets.append(MemoryEvolutionFailureBucket.TEMPORAL_KIND_MISMATCH)
+    if temporal_reference_mismatch:
+        failure_buckets.append(MemoryEvolutionFailureBucket.TEMPORAL_REFERENCE_MISMATCH)
+    if decision_domain_mismatch:
+        failure_buckets.append(MemoryEvolutionFailureBucket.DECISION_DOMAIN_MISMATCH)
     if temporal_scope_mismatch:
         failure_buckets.append(MemoryEvolutionFailureBucket.TEMPORAL_SCOPE_MISMATCH)
     if temporal_anchor_mismatch:
@@ -172,10 +175,14 @@ def memory_evolution_decision_diagnostics(
     if temporal_extra_interval:
         failure_buckets.append(MemoryEvolutionFailureBucket.TEMPORAL_EXTRA_INTERVAL)
 
-    if _requires_answer_text(contract) and checkpoint.expected_answer is not None and not answer_matches_expected(
-        actual=parsed.answer,
-        expected=checkpoint.expected_answer,
-        aliases=checkpoint.expected_answer_aliases,
+    if (
+        _requires_answer_text(contract)
+        and checkpoint.expected_answer is not None
+        and not answer_matches_expected(
+            actual=parsed.answer,
+            expected=checkpoint.expected_answer,
+            aliases=checkpoint.expected_answer_aliases,
+        )
     ):
         failure_buckets.append(MemoryEvolutionFailureBucket.ANSWER_MISMATCH)
 
@@ -236,7 +243,10 @@ def memory_evolution_decision_diagnostics(
     selected_rejected_ids = sorted(selected & rejected)
     if selected_rejected_ids:
         failure_buckets.append(MemoryEvolutionFailureBucket.SELECTED_MEMORY_REJECTED)
-        if set(selected_rejected_ids) & (set(checkpoint.expected_checkpoint_superseded_record_ids) | set(checkpoint.expected_checkpoint_retained_record_ids)):
+        if set(selected_rejected_ids) & (
+            set(checkpoint.expected_checkpoint_superseded_record_ids)
+            | set(checkpoint.expected_checkpoint_retained_record_ids)
+        ):
             failure_buckets.append(MemoryEvolutionFailureBucket.QUERY_LIFECYCLE_CONFLATION)
 
     missing_citation_ids: list[str] = []
@@ -258,12 +268,13 @@ def memory_evolution_decision_diagnostics(
             else:
                 failure_buckets.append(MemoryEvolutionFailureBucket.CITATION_CHANNEL_POLLUTION)
         belief_ids_used_as_citations = [
-            memory_id
-            for memory_id in citations
-            if is_belief_memory_id(memory_id, checkpoint=checkpoint)
+            memory_id for memory_id in citations if is_belief_memory_id(memory_id, checkpoint=checkpoint)
         ]
         if belief_ids_used_as_citations:
-            if contract.checkpoint_kind == MemoryEvolutionCheckpointKind.BELIEF_DEGRADATION and not missing_citation_ids:
+            if (
+                contract.checkpoint_kind == MemoryEvolutionCheckpointKind.BELIEF_DEGRADATION
+                and not missing_citation_ids
+            ):
                 warning_buckets.append(MemoryEvolutionWarningBucket.CONTEXT_CITATION_IN_DIRECT_CHANNEL)
             else:
                 failure_buckets.append(MemoryEvolutionFailureBucket.BELIEF_ID_USED_AS_CITATION)
@@ -295,7 +306,9 @@ def memory_evolution_decision_diagnostics(
         non_checkpoint_active |= set(execution.suppressed_branch_memory_ids)
     missing_checkpoint_superseded = ordered_missing(
         expected_superseded_ids,
-        non_checkpoint_active if contract.lifecycle_policy == MemoryEvolutionLifecyclePolicy.NON_CHECKPOINT_ACTIVE_EQUIVALENT else checkpoint_superseded,
+        non_checkpoint_active
+        if contract.lifecycle_policy == MemoryEvolutionLifecyclePolicy.NON_CHECKPOINT_ACTIVE_EQUIVALENT
+        else checkpoint_superseded,
     )
     if missing_checkpoint_superseded:
         failure_buckets.append(MemoryEvolutionFailureBucket.EXPECTED_CHECKPOINT_SUPERSEDED_RECORD_MISSING)
@@ -315,14 +328,18 @@ def memory_evolution_decision_diagnostics(
     selected_historical_record_ids = [
         memory_id
         for memory_id in selected_ids
-        if memory_id in set(checkpoint.expected_checkpoint_superseded_record_ids) | set(checkpoint.expected_checkpoint_retained_record_ids)
+        if memory_id
+        in set(checkpoint.expected_checkpoint_superseded_record_ids)
+        | set(checkpoint.expected_checkpoint_retained_record_ids)
     ]
-    historical_answer_record_marked_checkpoint_active_ids = [memory_id for memory_id in selected_historical_record_ids if memory_id in checkpoint_active]
+    historical_answer_record_marked_checkpoint_active_ids = [
+        memory_id for memory_id in selected_historical_record_ids if memory_id in checkpoint_active
+    ]
     if historical_answer_record_marked_checkpoint_active_ids:
         failure_buckets.append(MemoryEvolutionFailureBucket.HISTORICAL_ANSWER_RECORD_MARKED_CHECKPOINT_ACTIVE)
         failure_buckets.append(MemoryEvolutionFailureBucket.QUERY_LIFECYCLE_CONFLATION)
 
-    if contract.answer_temporal_mode == MemoryEvolutionAnswerTemporalMode.HISTORICAL:
+    if contract.temporal_reference == MemoryEvolutionTemporalReference.HISTORICAL:
         historical_missing = ordered_missing(checkpoint.expected_retrieval_ids, query_historical | selected)
         if historical_missing:
             failure_buckets.append(MemoryEvolutionFailureBucket.HISTORICAL_MEMORY_NOT_MARKED_QUERY_RELEVANT)
@@ -343,7 +360,9 @@ def memory_evolution_decision_diagnostics(
 
     missing_checkpoint_retained = ordered_missing(
         expected_retained_ids,
-        non_checkpoint_active if contract.lifecycle_policy == MemoryEvolutionLifecyclePolicy.NON_CHECKPOINT_ACTIVE_EQUIVALENT else checkpoint_retained,
+        non_checkpoint_active
+        if contract.lifecycle_policy == MemoryEvolutionLifecyclePolicy.NON_CHECKPOINT_ACTIVE_EQUIVALENT
+        else checkpoint_retained,
     )
     if missing_checkpoint_retained:
         if contract.lifecycle_policy in {
@@ -449,12 +468,13 @@ def memory_evolution_decision_diagnostics(
                 if abs(actual - expected) > 0.05:
                     score_mismatch_ids.append(memory_id)
                     warning_buckets.append(MemoryEvolutionWarningBucket.BELIEF_SCORE_CALIBRATION_DRIFT)
-            elif contract.belief_score_policy == MemoryEvolutionBeliefScorePolicy.EXACT and abs(actual - expected) > 0.05:
+            elif (
+                contract.belief_score_policy == MemoryEvolutionBeliefScorePolicy.EXACT and abs(actual - expected) > 0.05
+            ):
                 score_mismatch_ids.append(memory_id)
                 failure_buckets.append(MemoryEvolutionFailureBucket.BELIEF_SCORE_MISMATCH)
-        if (
-            contract.belief_score_policy == MemoryEvolutionBeliefScorePolicy.EXACT
-            and any(memory_id not in score_by_id for memory_id in checkpoint.expected_belief_scores)
+        if contract.belief_score_policy == MemoryEvolutionBeliefScorePolicy.EXACT and any(
+            memory_id not in score_by_id for memory_id in checkpoint.expected_belief_scores
         ):
             failure_buckets.append(MemoryEvolutionFailureBucket.BELIEF_SCORE_MISMATCH)
 
@@ -469,11 +489,15 @@ def memory_evolution_decision_diagnostics(
         score_mismatch_ids.extend(missing_required_belief_score_ids)
         failure_buckets.append(MemoryEvolutionFailureBucket.BELIEF_SCORE_MISMATCH)
 
-    lifecycle_drift_ids = dedupe_string_ids([*missing_checkpoint_active, *missing_checkpoint_superseded, *missing_checkpoint_retained])
-    query_lifecycle_conflation_ids = dedupe_string_ids([
-        *historical_answer_record_marked_checkpoint_active_ids,
-        *lifecycle_content_conflation_ids,
-    ])
+    lifecycle_drift_ids = dedupe_string_ids(
+        [*missing_checkpoint_active, *missing_checkpoint_superseded, *missing_checkpoint_retained]
+    )
+    query_lifecycle_conflation_ids = dedupe_string_ids(
+        [
+            *historical_answer_record_marked_checkpoint_active_ids,
+            *lifecycle_content_conflation_ids,
+        ]
+    )
     failure_buckets = dedupe_preserving_order(failure_buckets)
     warning_buckets = dedupe_preserving_order(warning_buckets)
     return MemoryEvolutionDecisionDiagnostics(
@@ -502,7 +526,8 @@ def memory_evolution_decision_diagnostics(
         missing_required_belief_score_ids=missing_required_belief_score_ids,
         belief_effect_order_errors=belief_effect_order_errors,
         temporal_frame_mismatch=temporal_frame_mismatch,
-        temporal_kind_mismatch=temporal_kind_mismatch,
+        temporal_reference_mismatch=temporal_reference_mismatch,
+        decision_domain_mismatch=decision_domain_mismatch,
         temporal_scope_mismatch=temporal_scope_mismatch,
         temporal_anchor_mismatch=temporal_anchor_mismatch,
         temporal_interval_mismatch=temporal_interval_mismatch,
@@ -519,7 +544,8 @@ def memory_evolution_decision_diagnostics(
         rationale="memory evolution assertion diagnostics",
     )
 
-def _requires_exact_selected_memory(contract: MemoryEvolutionCheckpointContract) -> bool:
+
+def _requires_exact_selected_memory(contract: MemoryEvolutionVisibleDecisionContract) -> bool:
     return contract.checkpoint_kind not in {
         MemoryEvolutionCheckpointKind.BELIEF_RANKING,
         MemoryEvolutionCheckpointKind.BELIEF_DEGRADATION,
@@ -529,7 +555,7 @@ def _requires_exact_selected_memory(contract: MemoryEvolutionCheckpointContract)
 def _append_selected_memory_policy_failures(
     *,
     failure_buckets: list[MemoryEvolutionFailureBucket],
-    contract: MemoryEvolutionCheckpointContract,
+    contract: MemoryEvolutionVisibleDecisionContract,
     checkpoint: MemoryEvolutionCheckpoint,
     selected_ids: list[str],
     selected: set[str],
@@ -542,12 +568,16 @@ def _append_selected_memory_policy_failures(
         if selected and not selected.issubset(checkpoint_active):
             failure_buckets.append(MemoryEvolutionFailureBucket.QUERY_LIFECYCLE_CONFLATION)
         if expected_retrieval and not expected_retrieval.issubset(checkpoint_active):
-            failure_buckets.append(MemoryEvolutionFailureBucket.CHECKPOINT_ACTIVE_RECORD_MISSING_FROM_LIFECYCLE_SNAPSHOT)
+            failure_buckets.append(
+                MemoryEvolutionFailureBucket.CHECKPOINT_ACTIVE_RECORD_MISSING_FROM_LIFECYCLE_SNAPSHOT
+            )
         return
     if contract.selected_memory_policy == MemoryEvolutionSelectedMemoryPolicy.HISTORICAL_TRUTH:
         if expected_retrieval and not expected_retrieval.issubset(selected | query_historical):
             failure_buckets.append(MemoryEvolutionFailureBucket.HISTORICAL_MEMORY_NOT_MARKED_QUERY_RELEVANT)
-        expected_non_checkpoint_active = set(checkpoint.expected_checkpoint_superseded_record_ids) | set(checkpoint.expected_checkpoint_retained_record_ids)
+        expected_non_checkpoint_active = set(checkpoint.expected_checkpoint_superseded_record_ids) | set(
+            checkpoint.expected_checkpoint_retained_record_ids
+        )
         if expected_retrieval & expected_non_checkpoint_active & checkpoint_active:
             failure_buckets.append(MemoryEvolutionFailureBucket.QUERY_LIFECYCLE_CONFLATION)
         return
@@ -609,7 +639,7 @@ def _extra_direct_citations_are_warning_only(
     *,
     extra_citation_ids: list[str],
     checkpoint: MemoryEvolutionCheckpoint,
-    contract: MemoryEvolutionCheckpointContract,
+    contract: MemoryEvolutionVisibleDecisionContract,
 ) -> bool:
     if contract.citation_policy != MemoryEvolutionCitationPolicy.DIRECT_WITH_CONTEXT_WARNING:
         return False
@@ -624,7 +654,7 @@ def _extra_direct_citations_are_warning_only(
     )
 
 
-def _requires_answer_text(contract: MemoryEvolutionCheckpointContract) -> bool:
+def _requires_answer_text(contract: MemoryEvolutionVisibleDecisionContract) -> bool:
     return contract.answer_projection_policy not in {
         MemoryEvolutionAnswerProjectionPolicy.GRAPH_CHANNELS_ONLY,
         MemoryEvolutionAnswerProjectionPolicy.NONE,
@@ -638,7 +668,7 @@ def _next_action_matches_expected(
     checkpoint: MemoryEvolutionCheckpoint,
     scenario: MemoryEvolutionScenario,
     parsed: MemoryEvolutionDecision,
-    contract: MemoryEvolutionCheckpointContract,
+    contract: MemoryEvolutionVisibleDecisionContract,
 ) -> bool:
     if contract.next_action_policy == MemoryEvolutionNextActionPolicy.NONEMPTY_STRUCTURED:
         if not normalize_decision_text(actual):

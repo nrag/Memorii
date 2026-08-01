@@ -32,7 +32,7 @@ from memorii.core.benchmark.calibration.models import (
 )
 from memorii.core.benchmark.calibration.policy import response_for_failure_buckets, response_for_slice
 from memorii.core.benchmark.calibration.reports import build_calibration_artifacts, build_decision_cost_report
-from memorii.core.benchmark.memory_evolution_sim.schemas import SimCheckpointContract
+from memorii.core.benchmark.memory_evolution_sim.schemas import ReconstructionTaskContract
 from tests.unit.core.benchmark.checkpoint_artifact_test_helpers import checkpoint_diagnostics_payload
 
 
@@ -41,7 +41,7 @@ def _checkpoint_row(partial: dict[str, object]) -> SimCheckpointResultRow:
 
     timestamp = datetime(2026, 1, 1, tzinfo=UTC)
     checkpoint_type = str(partial.get("checkpoint_type", "current_truth"))
-    success = bool(partial.get("success", True))
+    success = bool(partial.get("success", not partial.get("failure_buckets", [])))
     output = dict(partial.get("output", {}))
     output.setdefault("rationale", "calibration test output")
     expected = dict(partial.get("expected", {}))
@@ -51,7 +51,7 @@ def _checkpoint_row(partial: dict[str, object]) -> SimCheckpointResultRow:
             "timestamp": timestamp,
             "checkpoint_type": checkpoint_type,
             "query_or_task": "calibration test",
-            "checkpoint_contract": SimCheckpointContract().model_dump(mode="json"),
+            "task_contract": ReconstructionTaskContract().model_dump(mode="json"),
         }
     )
     cards = dict(partial.get("candidate_cards", {}))
@@ -79,6 +79,7 @@ def _checkpoint_row(partial: dict[str, object]) -> SimCheckpointResultRow:
                 "checkpoint_id": str(partial.get("checkpoint_id", "checkpoint")),
                 "timestamp": timestamp,
                 "query_or_task": "calibration test",
+                "task_contract": ReconstructionTaskContract().model_dump(mode="json"),
             },
             "visible_events": visible_events,
             "visible_claims": visible_claims,
@@ -135,7 +136,13 @@ def _checkpoint_row(partial: dict[str, object]) -> SimCheckpointResultRow:
     return SimCheckpointResultRow.model_validate(payload)
 
 
-def _event(*, confidence: float, label: CalibrationLabel, source: CalibrationLabelSource = CalibrationLabelSource.PROGRAMMATIC_JUDGE, modality: str = "assertion") -> CalibrationEvent:
+def _event(
+    *,
+    confidence: float,
+    label: CalibrationLabel,
+    source: CalibrationLabelSource = CalibrationLabelSource.PROGRAMMATIC_JUDGE,
+    modality: str = "assertion",
+) -> CalibrationEvent:
     return CalibrationEvent(
         event_id=f"event-{confidence}-{label.value}-{modality}",
         suite="memory_evolution_sim_v1",
@@ -225,46 +232,49 @@ def test_slice_policy_uses_wilson_uncertainty_before_hard_failure() -> None:
 
 
 def test_calibration_artifacts_emit_hierarchy_and_label_provenance() -> None:
-    rows = [_checkpoint_row(row) for row in [
-        {
-            "scenario_id": "scenario",
-            "checkpoint_id": "checkpoint",
-            "checkpoint_type": "current_truth",
-            "success": True,
-            "failure_buckets": [],
-            "output": {
-                "confidence": 0.8,
-                "selected_claim_ids": ["claim_current"],
-                "supporting_citation_event_ids": ["event_current"],
-            },
-            "expected": {
-                "expected_claim_ids": ["claim_current"],
-                "expected_citation_event_ids": ["event_current"],
-                "expected_excluded_claim_ids": ["claim_old"],
-            },
-            "candidate_cards": {
-                "visible_events": [
-                    {
-                        "event_id": "event_current",
-                        "modality": "tool_result",
-                        "trust_level": 5,
-                    }
-                ],
-                "visible_claims": [
-                    {
-                        "claim_id": "claim_current",
-                        "predicate_id": "owner",
-                        "scope_key": "global",
-                        "lifecycle_state": "active",
-                        "source_modality": "tool_result",
-                        "source_trust": 5,
-                        "evidence_event_ids": ["event_current"],
-                    }
-                ],
-            },
-            "judge_aggregate": {"votes": [{"judge_id": "claim_spo_judge"}]},
-        }
-    ]]
+    rows = [
+        _checkpoint_row(row)
+        for row in [
+            {
+                "scenario_id": "scenario",
+                "checkpoint_id": "checkpoint",
+                "checkpoint_type": "current_truth",
+                "success": True,
+                "failure_buckets": [],
+                "output": {
+                    "confidence": 0.8,
+                    "selected_claim_ids": ["claim_current"],
+                    "supporting_citation_event_ids": ["event_current"],
+                },
+                "expected": {
+                    "expected_claim_ids": ["claim_current"],
+                    "expected_citation_event_ids": ["event_current"],
+                    "expected_excluded_claim_ids": ["claim_old"],
+                },
+                "candidate_cards": {
+                    "visible_events": [
+                        {
+                            "event_id": "event_current",
+                            "modality": "tool_result",
+                            "trust_level": 5,
+                        }
+                    ],
+                    "visible_claims": [
+                        {
+                            "claim_id": "claim_current",
+                            "predicate_id": "owner",
+                            "scope_key": "global",
+                            "lifecycle_state": "active",
+                            "source_modality": "tool_result",
+                            "source_trust": 5,
+                            "evidence_event_ids": ["event_current"],
+                        }
+                    ],
+                },
+                "judge_aggregate": {"votes": [{"judge_id": "claim_spo_judge"}]},
+            }
+        ]
+    ]
     events, report, slices, decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
         profile="adversarial",
@@ -278,9 +288,17 @@ def test_calibration_artifacts_emit_hierarchy_and_label_provenance() -> None:
     assert report.label_source_counts[CalibrationLabelSource.LATENT_ORACLE.value] >= 1
     assert CalibrationHierarchyLayer.GRAPH.value not in report.hierarchy_layer_counts
     assert report.scenario_cluster_intervals["accuracy"].scenario_count == 1
-    citation_event = next(event for event in events if event.item_id == "event_current" and event.decision_channel == CalibrationDecisionChannel.SUPPORTING)
+    citation_event = next(
+        event
+        for event in events
+        if event.item_id == "event_current" and event.decision_channel == CalibrationDecisionChannel.SUPPORTING
+    )
     assert citation_event.item_type == CalibrationItemType.SOURCE_OBSERVATION
-    selected_event = next(event for event in events if event.item_id == "claim_current" and event.decision_channel == CalibrationDecisionChannel.SELECTED)
+    selected_event = next(
+        event
+        for event in events
+        if event.item_id == "claim_current" and event.decision_channel == CalibrationDecisionChannel.SELECTED
+    )
     assert selected_event.label_source == CalibrationLabelSource.LATENT_ORACLE
     assert selected_event.label_history[0].label_source == CalibrationLabelSource.LATENT_ORACLE
     assert selected_event.decision_action == DecisionAction.ANSWER_CURRENT_TRUTH
@@ -289,45 +307,48 @@ def test_calibration_artifacts_emit_hierarchy_and_label_provenance() -> None:
 
 
 def test_calibration_retrieval_decision_phase_comes_from_evidence_event() -> None:
-    rows = [_checkpoint_row(row) for row in [
-        {
-            "scenario_id": "scenario",
-            "checkpoint_id": "checkpoint",
-            "checkpoint_type": "execution_continuation",
-            "phase": "checkpoint",
-            "success": True,
-            "failure_buckets": [],
-            "output": {
-                "confidence": 0.86,
-                "selected_claim_ids": ["claim_branch_progress"],
-            },
-            "expected": {
-                "expected_claim_ids": ["claim_branch_progress"],
-            },
-            "candidate_cards": {
-                "visible_events": [
-                    {
-                        "event_id": "event_branch_progress",
-                        "modality": "assertion",
-                        "trust_level": 4,
-                        "phase": "evolution",
-                    }
-                ],
-                "visible_claims": [
-                    {
-                        "claim_id": "claim_branch_progress",
-                        "predicate_id": "action_state",
-                        "scope_key": "task:atlas",
-                        "lifecycle_state": "active",
-                        "source_modality": "assertion",
-                        "source_trust": 4,
-                        "evidence_event_ids": ["event_branch_progress"],
-                    }
-                ],
-            },
-            "judge_aggregate": {"votes": [{"judge_id": "execution_branch_judge"}]},
-        }
-    ]]
+    rows = [
+        _checkpoint_row(row)
+        for row in [
+            {
+                "scenario_id": "scenario",
+                "checkpoint_id": "checkpoint",
+                "checkpoint_type": "execution_continuation",
+                "phase": "checkpoint",
+                "success": True,
+                "failure_buckets": [],
+                "output": {
+                    "confidence": 0.86,
+                    "selected_claim_ids": ["claim_branch_progress"],
+                },
+                "expected": {
+                    "expected_claim_ids": ["claim_branch_progress"],
+                },
+                "candidate_cards": {
+                    "visible_events": [
+                        {
+                            "event_id": "event_branch_progress",
+                            "modality": "assertion",
+                            "trust_level": 4,
+                            "phase": "evolution",
+                        }
+                    ],
+                    "visible_claims": [
+                        {
+                            "claim_id": "claim_branch_progress",
+                            "predicate_id": "action_state",
+                            "scope_key": "task:atlas",
+                            "lifecycle_state": "active",
+                            "source_modality": "assertion",
+                            "source_trust": 4,
+                            "evidence_event_ids": ["event_branch_progress"],
+                        }
+                    ],
+                },
+                "judge_aggregate": {"votes": [{"judge_id": "execution_branch_judge"}]},
+            }
+        ]
+    ]
 
     events, _report, slices, _decision_report = build_calibration_artifacts(
         suite="memory_evolution_runtime_v1",
@@ -348,21 +369,24 @@ def test_calibration_retrieval_decision_phase_comes_from_evidence_event() -> Non
 
 
 def test_calibration_context_events_in_passing_rows_are_correct_audit_evidence() -> None:
-    rows = [_checkpoint_row(row) for row in [
-        {
-            "scenario_id": "scenario",
-            "checkpoint_id": "checkpoint",
-            "checkpoint_type": "current_truth",
-            "success": True,
-            "failure_buckets": [],
-            "output": {
-                "confidence": 0.95,
-                "context_claim_ids": ["claim_context"],
-            },
-            "expected": {"expected_claim_ids": ["claim_current"]},
-            "judge_aggregate": {"votes": [{"judge_id": "graph_context_judge"}]},
-        }
-    ]]
+    rows = [
+        _checkpoint_row(row)
+        for row in [
+            {
+                "scenario_id": "scenario",
+                "checkpoint_id": "checkpoint",
+                "checkpoint_type": "current_truth",
+                "success": True,
+                "failure_buckets": [],
+                "output": {
+                    "confidence": 0.95,
+                    "context_claim_ids": ["claim_context"],
+                },
+                "expected": {"expected_claim_ids": ["claim_current"]},
+                "judge_aggregate": {"votes": [{"judge_id": "graph_context_judge"}]},
+            }
+        ]
+    ]
 
     events, report, _slices, _decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
@@ -377,26 +401,28 @@ def test_calibration_context_events_in_passing_rows_are_correct_audit_evidence()
     assert report.overall_accuracy == 1 / 3
 
 
-
 def test_calibration_rejected_expected_item_is_incorrect_but_rejected_excluded_is_correct() -> None:
-    rows = [_checkpoint_row(row) for row in [
-        {
-            "scenario_id": "scenario",
-            "checkpoint_id": "checkpoint",
-            "checkpoint_type": "current_truth",
-            "success": True,
-            "failure_buckets": [],
-            "output": {
-                "confidence": 0.9,
-                "rejected_claim_ids": ["claim_current", "claim_old"],
-            },
-            "expected": {
-                "expected_claim_ids": ["claim_current"],
-                "expected_excluded_claim_ids": ["claim_old"],
-            },
-            "judge_aggregate": {"votes": [{"judge_id": "rejection_classification_judge"}]},
-        }
-    ]]
+    rows = [
+        _checkpoint_row(row)
+        for row in [
+            {
+                "scenario_id": "scenario",
+                "checkpoint_id": "checkpoint",
+                "checkpoint_type": "current_truth",
+                "success": True,
+                "failure_buckets": [],
+                "output": {
+                    "confidence": 0.9,
+                    "rejected_claim_ids": ["claim_current", "claim_old"],
+                },
+                "expected": {
+                    "expected_claim_ids": ["claim_current"],
+                    "expected_excluded_claim_ids": ["claim_old"],
+                },
+                "judge_aggregate": {"votes": [{"judge_id": "rejection_classification_judge"}]},
+            }
+        ]
+    ]
 
     events, _report, _slices, _decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
@@ -410,25 +436,29 @@ def test_calibration_rejected_expected_item_is_incorrect_but_rejected_excluded_i
     assert "expected_item_rejected" in current.failure_buckets
     assert old.label == CalibrationLabel.CORRECT
 
+
 def test_calibration_artifacts_mark_excluded_support_as_oracle_failure() -> None:
-    rows = [_checkpoint_row(row) for row in [
-        {
-            "scenario_id": "scenario",
-            "checkpoint_id": "checkpoint",
-            "checkpoint_type": "current_truth",
-            "success": False,
-            "failure_buckets": ["wrong_current_truth"],
-            "output": {
-                "confidence": 0.91,
-                "supporting_claim_ids": ["claim_old"],
-            },
-            "expected": {
-                "expected_claim_ids": ["claim_current"],
-                "expected_excluded_claim_ids": ["claim_old"],
-            },
-            "judge_aggregate": {"votes": [{"judge_id": "selected_truth_precision_judge"}]},
-        }
-    ]]
+    rows = [
+        _checkpoint_row(row)
+        for row in [
+            {
+                "scenario_id": "scenario",
+                "checkpoint_id": "checkpoint",
+                "checkpoint_type": "current_truth",
+                "success": False,
+                "failure_buckets": ["wrong_current_truth"],
+                "output": {
+                    "confidence": 0.91,
+                    "supporting_claim_ids": ["claim_old"],
+                },
+                "expected": {
+                    "expected_claim_ids": ["claim_current"],
+                    "expected_excluded_claim_ids": ["claim_old"],
+                },
+                "judge_aggregate": {"votes": [{"judge_id": "selected_truth_precision_judge"}]},
+            }
+        ]
+    ]
     events, report, _slices, decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
         profile="adversarial",
@@ -458,10 +488,12 @@ def test_rolling_metrics_emit_drift_windows() -> None:
 
 
 def test_decision_cost_report_uses_failure_bucket_costs() -> None:
-    report = build_decision_cost_report([
-        _checkpoint_row({"checkpoint_type": "current_truth", "failure_buckets": ["hidden_fact_hallucinated"]}),
-        _checkpoint_row({"checkpoint_type": "current_truth", "failure_buckets": ["extra_provenance_noise"]}),
-    ])
+    report = build_decision_cost_report(
+        [
+            _checkpoint_row({"checkpoint_type": "current_truth", "failure_buckets": ["hidden_fact_hallucinated"]}),
+            _checkpoint_row({"checkpoint_type": "current_truth", "failure_buckets": ["extra_provenance_noise"]}),
+        ]
+    )
     assert report.decision_cost_total == 102.0
     assert report.cost_by_failure_bucket["hidden_fact_hallucinated"] == 100.0
 
@@ -491,20 +523,52 @@ def test_runtime_graph_alignment_protocol_helpers() -> None:
     entity = align_entity_by_fields(
         runtime_item_id="runtime_entity",
         oracle_item_id="oracle_entity",
-        runtime_fields={"canonical_name": "Atlas Billing", "entity_type": "project", "aliases": ["Atlas"], "evidence_event_ids": ["event_1"]},
-        oracle_fields={"canonical_name": "Atlas", "entity_type": "project", "aliases": [], "evidence_event_ids": ["event_1"]},
+        runtime_fields={
+            "canonical_name": "Atlas Billing",
+            "entity_type": "project",
+            "aliases": ["Atlas"],
+            "evidence_event_ids": ["event_1"],
+        },
+        oracle_fields={
+            "canonical_name": "Atlas",
+            "entity_type": "project",
+            "aliases": [],
+            "evidence_event_ids": ["event_1"],
+        },
     )
     claim = align_claim_by_fields(
         runtime_item_id="runtime_claim",
         oracle_item_id="oracle_claim",
-        runtime_fields={"subject": "Atlas", "predicate": "owner", "object": "Bob", "scope": "global", "valid_time": "2026-03"},
-        oracle_fields={"subject": " atlas ", "predicate": "owner", "object": "bob", "scope": "global", "valid_time": "2026-03"},
+        runtime_fields={
+            "subject": "Atlas",
+            "predicate": "owner",
+            "object": "Bob",
+            "scope": "global",
+            "valid_time": "2026-03",
+        },
+        oracle_fields={
+            "subject": " atlas ",
+            "predicate": "owner",
+            "object": "bob",
+            "scope": "global",
+            "valid_time": "2026-03",
+        },
     )
     relation = align_relation_by_fields(
         runtime_item_id="runtime_relation",
         oracle_item_id="oracle_relation",
-        runtime_fields={"source": "claim_new", "target": "claim_old", "relation_type": "supersedes", "directionality": "directed"},
-        oracle_fields={"source": "claim_new", "target": "claim_old", "relation_type": "supersedes", "directionality": "directed"},
+        runtime_fields={
+            "source": "claim_new",
+            "target": "claim_old",
+            "relation_type": "supersedes",
+            "directionality": "directed",
+        },
+        oracle_fields={
+            "source": "claim_new",
+            "target": "claim_old",
+            "relation_type": "supersedes",
+            "directionality": "directed",
+        },
     )
     evidence = align_evidence_by_fields(
         runtime_item_id="runtime_evidence",
@@ -520,26 +584,29 @@ def test_runtime_graph_alignment_protocol_helpers() -> None:
 
 
 def test_build_calibration_artifacts_from_checkpoint_rows() -> None:
-    rows = [_checkpoint_row(row) for row in [
-        {
-            "scenario_id": "scenario",
-            "checkpoint_id": "checkpoint",
-            "checkpoint_type": "current_truth",
-            "success": True,
-            "failure_buckets": [],
-            "output": {
-                "confidence": 0.8,
-                "selected_claim_ids": ["claim_current"],
-                "supporting_citation_event_ids": ["event_current"],
-            },
-            "expected": {
-                "expected_claim_ids": ["claim_current"],
-                "expected_citation_event_ids": ["event_current"],
-                "expected_excluded_claim_ids": ["claim_old"],
-            },
-            "judge_aggregate": {"votes": [{"judge_id": "claim_spo_judge"}]},
-        }
-    ]]
+    rows = [
+        _checkpoint_row(row)
+        for row in [
+            {
+                "scenario_id": "scenario",
+                "checkpoint_id": "checkpoint",
+                "checkpoint_type": "current_truth",
+                "success": True,
+                "failure_buckets": [],
+                "output": {
+                    "confidence": 0.8,
+                    "selected_claim_ids": ["claim_current"],
+                    "supporting_citation_event_ids": ["event_current"],
+                },
+                "expected": {
+                    "expected_claim_ids": ["claim_current"],
+                    "expected_citation_event_ids": ["event_current"],
+                    "expected_excluded_claim_ids": ["claim_old"],
+                },
+                "judge_aggregate": {"votes": [{"judge_id": "claim_spo_judge"}]},
+            }
+        ]
+    ]
     events, report, slices, decision_report = build_calibration_artifacts(
         suite="memory_evolution_sim_v1",
         profile="adversarial",

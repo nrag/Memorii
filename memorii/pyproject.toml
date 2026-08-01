@@ -68,6 +68,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["B011"]
+"tests/fixtures/semantic_ingestion/provider_compatibility/*.baseline.py" = ["I001"]
 
 [tool.pyright]
 pythonVersion = "3.11"

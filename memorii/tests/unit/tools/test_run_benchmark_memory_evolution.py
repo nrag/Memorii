@@ -80,7 +80,14 @@ def test_memory_evolution_benchmark_dry_run_llm_passes_all_cases(
     assert payload["run_id"] == payload["benchmark_key"]
     assert payload["dry_run"] is True
     assert payload["live_run"] is False
-    assert payload["artifact_version"] == "memory_evolution_v1_artifacts:2"
+    assert payload["artifact_version"] == "memory_evolution_v1_artifacts:4"
+    assert payload["provider_attempt_counts"] == {"succeeded": payload["llm_calls"]}
+    assert payload["semantic_validation_counts"] == {"passed": payload["llm_calls"]}
+    assert payload["final_outputs_accepted"] == payload["checkpoints"]
+    assert payload["final_outputs_rejected"] == 0
+    assert payload["fallback_outcome_counts"] == {"not_used": payload["llm_calls"]}
+    assert payload["fallback_assisted_passes"] == 0
+    assert payload["local_certification_passed"] is True
     for report_field in [
         "failure_bucket_counts",
         "warning_bucket_counts",
@@ -189,7 +196,26 @@ def test_memory_evolution_hybrid_falls_back_to_rule_on_invalid_llm_output(
         for line in (run_dir / "memory_evolution_checkpoint_traces.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert len([row for row in rows if row["fallback_used"] is True]) == len(rows)
-    assert len([row for row in rows if row["success"] is False]) >= 5
+    assert all(row["final_output_accepted"] is False for row in rows)
+    assert all(row["success"] is False for row in rows)
+    assert any(row["functional_success"] is True for row in rows)
+    assert all(
+        row["fallback_assisted_success"] is row["functional_success"]
+        for row in rows
+    )
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    assert report["final_outputs_accepted"] == 0
+    assert (
+        report["fallback_assisted_passes"]
+        == report["functional_checkpoints_passed"]
+    )
+    assert report["local_certification_passed"] is False
+    trace_rows = [
+        json.loads(line)
+        for line in (run_dir / "llm_traces.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert all(row["fallback_outcome"] == "succeeded" for row in trace_rows)
+    assert all(row["final_output_accepted"] is False for row in trace_rows)
 
 
 def test_memory_evolution_llm_provider_error_is_not_reported_as_llm_output(
@@ -233,6 +259,13 @@ def test_memory_evolution_llm_provider_error_is_not_reported_as_llm_output(
     assert all(row["fallback_used"] is True for row in rows)
     assert all(row["fallback_reason"] == "provider_error" for row in rows)
     assert all(row["final_output_source"] == "rule" for row in rows)
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    assert report["provider_attempt_counts"] == {"provider_error": report["llm_calls"]}
+    assert report["semantic_validation_counts"] == {
+        "not_evaluated": report["llm_calls"]
+    }
+    assert report["final_outputs_accepted"] == 0
+    assert report["local_certification_passed"] is False
 
 
 def test_memory_evolution_llm_programming_error_propagates(

@@ -23,7 +23,7 @@ def judge_answer(
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
-    if not checkpoint.checkpoint_contract.answer_required:
+    if not checkpoint.task_contract.answer_required:
         return JudgeVote(
             judge_id="answer_judge",
             checkpoint_id=checkpoint.checkpoint_id,
@@ -31,14 +31,9 @@ def judge_answer(
             score=1.0,
             confidence=0.7,
             failure_buckets=(
-                ["graph_answer_optional_missing"]
-                if not output.answer and checkpoint.expected_answer
-                else []
+                ["graph_answer_optional_missing"] if not output.answer and checkpoint.expected_answer else []
             ),
-            rationale=(
-                "answer text is diagnostic for this checkpoint; "
-                "structured graph/action state is authoritative"
-            ),
+            rationale=("answer text is diagnostic for this checkpoint; structured graph/action state is authoritative"),
         )
     if checkpoint.expected_abstention:
         passed = output.answer in {None, "unknown"} or bool(output.uncertain_ids)
@@ -83,13 +78,11 @@ def judge_hidden_hallucination(
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
-    hidden_ids = {
-        item.entity_id for item in scenario.entities if item.observability == ObservabilityLabel.HIDDEN
-    } | {
-        item.claim_id for item in scenario.claims if item.observability == ObservabilityLabel.HIDDEN
-    } | {
-        item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN
-    }
+    hidden_ids = (
+        {item.entity_id for item in scenario.entities if item.observability == ObservabilityLabel.HIDDEN}
+        | {item.claim_id for item in scenario.claims if item.observability == ObservabilityLabel.HIDDEN}
+        | {item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN}
+    )
     asserted = set(role_entity_ids(output)) | set(role_claim_ids(output)) | set(role_relation_ids(output))
     hallucinated = sorted(asserted & hidden_ids)
     answer_leaks = hidden_answer_leaks(scenario, output)
@@ -125,9 +118,7 @@ def judge_ambiguity_abstention(checkpoint: OracleCheckpoint, output: SimSystemOu
     overcommitted = [
         item
         for item in checkpoint.expected_uncertain_ids
-        if item in role_entity_ids(output)
-        or item in role_claim_ids(output)
-        or item in role_relation_ids(output)
+        if item in role_entity_ids(output) or item in role_claim_ids(output) or item in role_relation_ids(output)
     ]
     if output.confidence >= 0.75 and overcommitted:
         return JudgeVote(

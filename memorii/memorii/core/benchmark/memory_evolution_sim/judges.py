@@ -10,13 +10,12 @@ from memorii.core.benchmark.memory_evolution_sim.answer_judges import (
 )
 from memorii.core.benchmark.memory_evolution_sim.judge_features import (
     expected_rejected_claim_subject_entity_ids,
+    rejected_required_definition_claim_ids,
     required_selected_entity_ids_for_policy,
     selected_action_state_event_ids_missing_support,
     selected_claim_evidence_event_ids_missing_support,
     selected_claim_ids_missing_support,
     selected_claim_support_closure_errors,
-    supporting_claim_role_violations,
-    supporting_rejection_provenance_overlap_ids,
 )
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     JudgeAggregate,
@@ -26,10 +25,11 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     OracleCheckpoint,
     SimSystemOutput,
 )
+from memorii.core.benchmark.memory_evolution_sim.support_judges import (
+    judge_supporting_evidence_precision,
+)
 from memorii.core.benchmark.memory_evolution_sim.utils import (
-    bad_supporting_event_ids,
     claim_bucket,
-    claim_is_bad_support,
     is_visible_claim,
     is_visible_entity,
     ordered_unique,
@@ -91,7 +91,9 @@ def judge_sim_checkpoint(
             checkpoint,
             expected=expected_claim_ids,
             actual=output.selected_claim_ids,
-            bucket="historical_truth_lost" if checkpoint.checkpoint_type == "historical_truth" else "wrong_current_truth",
+            bucket="historical_truth_lost"
+            if checkpoint.checkpoint_type == "historical_truth"
+            else "wrong_current_truth",
         ),
         _set_judge(
             "source_trust_judge",
@@ -132,7 +134,11 @@ def judge_sim_checkpoint(
             "belief_ranking_judge",
             checkpoint,
             expected=expected_claim_ids,
-            actual=(output.belief_ranking_ids if checkpoint.checkpoint_type == "belief_ranking" else output.selected_claim_ids),
+            actual=(
+                output.belief_ranking_ids
+                if checkpoint.checkpoint_type == "belief_ranking"
+                else output.selected_claim_ids
+            ),
             bucket="belief_ranking_error",
         ),
         _execution_branch_judge(checkpoint, output),
@@ -144,7 +150,7 @@ def judge_sim_checkpoint(
             bucket="missing_provenance",
         ),
         _selected_truth_precision_judge(scenario, checkpoint, output),
-        _supporting_evidence_precision_judge(scenario, checkpoint, output),
+        judge_supporting_evidence_precision(scenario, checkpoint, output),
         _selected_support_closure_judge(scenario, checkpoint, output),
         _rejection_classification_judge(scenario, checkpoint, output),
         _graph_context_judge(scenario, checkpoint, output),
@@ -179,7 +185,8 @@ def judge_sim_checkpoint(
         required_judge_ids=sorted(required),
         critical_failure_buckets=critical,
         review_required=review_required,
-        rationale="; ".join(vote.rationale for vote in [*required_failed, *required_abstained, *optional_failed]) or "required judges passed",
+        rationale="; ".join(vote.rationale for vote in [*required_failed, *required_abstained, *optional_failed])
+        or "required judges passed",
     )
 
 
@@ -211,15 +218,68 @@ def _required_judge_ids_for_checkpoint(checkpoint: OracleCheckpoint) -> list[str
         "confidence_calibration_judge",
     }
     by_type = {
-        "entity_reconstruction": {"entity_type_judge", "alias_resolution_judge", "relation_directionality_judge", "graph_context_judge", "definition_coverage_judge", "selected_truth_precision_judge"},
-        "current_truth": {"temporal_truth_judge", "claim_lifecycle_judge", "selected_entity_role_judge", "selected_truth_precision_judge", "supporting_evidence_precision_judge"},
-        "historical_truth": {"temporal_truth_judge", "claim_lifecycle_judge", "selected_entity_role_judge", "supporting_evidence_precision_judge"},
-        "scoped_truth": {"scope_judge", "selected_entity_role_judge", "selected_truth_precision_judge", "supporting_evidence_precision_judge"},
-        "source_trust_conflict": {"source_trust_judge", "support_contradiction_judge", "relation_directionality_judge", "selected_entity_role_judge", "selected_truth_precision_judge", "supporting_evidence_precision_judge"},
-        "modality_suppression": {"modality_suppression_judge", "selected_entity_role_judge", "selected_truth_precision_judge", "supporting_evidence_precision_judge"},
-        "entity_disambiguation": {"alias_resolution_judge", "selected_entity_role_judge", "selected_truth_precision_judge", "supporting_evidence_precision_judge"},
-        "entity_split_repair": {"alias_resolution_judge", "graph_context_judge", "selected_entity_role_judge", "selected_truth_precision_judge", "supporting_evidence_precision_judge"},
-        "claim_rekey": {"alias_resolution_judge", "claim_lifecycle_judge", "graph_context_judge", "definition_coverage_judge", "selected_entity_role_judge", "selected_truth_precision_judge"},
+        "entity_reconstruction": {
+            "entity_type_judge",
+            "alias_resolution_judge",
+            "relation_directionality_judge",
+            "graph_context_judge",
+            "definition_coverage_judge",
+            "selected_truth_precision_judge",
+        },
+        "current_truth": {
+            "temporal_truth_judge",
+            "claim_lifecycle_judge",
+            "selected_entity_role_judge",
+            "selected_truth_precision_judge",
+            "supporting_evidence_precision_judge",
+        },
+        "historical_truth": {
+            "temporal_truth_judge",
+            "claim_lifecycle_judge",
+            "selected_entity_role_judge",
+            "supporting_evidence_precision_judge",
+        },
+        "scoped_truth": {
+            "scope_judge",
+            "selected_entity_role_judge",
+            "selected_truth_precision_judge",
+            "supporting_evidence_precision_judge",
+        },
+        "source_trust_conflict": {
+            "source_trust_judge",
+            "support_contradiction_judge",
+            "relation_directionality_judge",
+            "selected_entity_role_judge",
+            "selected_truth_precision_judge",
+            "supporting_evidence_precision_judge",
+        },
+        "modality_suppression": {
+            "modality_suppression_judge",
+            "selected_entity_role_judge",
+            "selected_truth_precision_judge",
+            "supporting_evidence_precision_judge",
+        },
+        "entity_disambiguation": {
+            "alias_resolution_judge",
+            "selected_entity_role_judge",
+            "selected_truth_precision_judge",
+            "supporting_evidence_precision_judge",
+        },
+        "entity_split_repair": {
+            "alias_resolution_judge",
+            "graph_context_judge",
+            "selected_entity_role_judge",
+            "selected_truth_precision_judge",
+            "supporting_evidence_precision_judge",
+        },
+        "claim_rekey": {
+            "alias_resolution_judge",
+            "claim_lifecycle_judge",
+            "graph_context_judge",
+            "definition_coverage_judge",
+            "selected_entity_role_judge",
+            "selected_truth_precision_judge",
+        },
         "belief_ranking": {"belief_ranking_judge", "support_contradiction_judge", "selected_truth_precision_judge"},
         "execution_continuation": {
             "execution_branch_judge",
@@ -235,9 +295,15 @@ def _required_judge_ids_for_checkpoint(checkpoint: OracleCheckpoint) -> list[str
         required.add("relation_directionality_judge")
     if checkpoint.expected_excluded_claim_ids or checkpoint.expected_excluded_entity_ids:
         required.add("rejection_classification_judge")
-    if _judge_expected_claim_ids(checkpoint) and checkpoint.checkpoint_contract.supporting_citations_must_be_direct_current_evidence:
+    if (
+        _judge_expected_claim_ids(checkpoint)
+        and checkpoint.task_contract.supporting_citations_must_be_direct_current_evidence
+    ):
         required.add("selected_support_closure_judge")
+    if _judge_expected_claim_ids(checkpoint):
+        required.add("supporting_evidence_precision_judge")
     return sorted(required)
+
 
 def _set_judge(
     judge_id: str,
@@ -283,12 +349,13 @@ def _set_judge(
         rationale="expected ids covered",
     )
 
+
 def _selected_entity_role_judge(
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
-    policy = checkpoint.checkpoint_contract.selected_entity_role_policy
+    policy = checkpoint.task_contract.selected_entity_role_policy
     if policy == "audit_graph_entities":
         return JudgeVote(
             judge_id="selected_entity_role_judge",
@@ -326,7 +393,8 @@ def _selected_entity_role_judge(
             failure_buckets=["judge_uncovered_case"],
         )
     missing = [entity_id for entity_id in required_ids if entity_id not in output.selected_entity_ids]
-    if missing:
+    extra = [entity_id for entity_id in output.selected_entity_ids if entity_id not in required_ids]
+    if missing or extra:
         return JudgeVote(
             judge_id="selected_entity_role_judge",
             checkpoint_id=checkpoint.checkpoint_id,
@@ -334,9 +402,14 @@ def _selected_entity_role_judge(
             score=0.0,
             confidence=0.9,
             covered_ids=[entity_id for entity_id in required_ids if entity_id in output.selected_entity_ids],
-            failed_ids=missing,
-            failure_buckets=["entity_role_mismatch"],
-            rationale=f"selected_entity_ids must include {policy} entity ids for selected claims: {missing}",
+            failed_ids=ordered_unique([*missing, *extra]),
+            failure_buckets=[
+                "entity_role_mismatch" if missing else "selected_entity_role_overbreadth"
+            ],
+            rationale=(
+                f"selected_entity_ids must exactly match {policy} entity ids for selected claims; "
+                f"missing={missing}, extra={extra}"
+            ),
         )
     return JudgeVote(
         judge_id="selected_entity_role_judge",
@@ -348,23 +421,30 @@ def _selected_entity_role_judge(
         rationale="selected entity roles match selected claim roles",
     )
 
+
 def _selected_truth_precision_judge(
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
-    rejected_required_definition_claims = _rejected_required_definition_claim_ids(scenario, output)
+    rejected_required_definition_claims = rejected_required_definition_claim_ids(scenario, output)
     bad_claims = selected_noncurrent_claim_ids(scenario, checkpoint, output)
-    selected_excluded_claims = [item for item in checkpoint.expected_excluded_claim_ids if item in output.selected_claim_ids]
-    selected_excluded_entities = [item for item in checkpoint.expected_excluded_entity_ids if item in output.selected_entity_ids]
+    selected_excluded_claims = [
+        item for item in checkpoint.expected_excluded_claim_ids if item in output.selected_claim_ids
+    ]
+    selected_excluded_entities = [
+        item for item in checkpoint.expected_excluded_entity_ids if item in output.selected_entity_ids
+    ]
     selected_rejected_claims = [item for item in output.selected_claim_ids if item in output.rejected_claim_ids]
-    failed = ordered_unique([
-        *bad_claims,
-        *selected_excluded_claims,
-        *selected_excluded_entities,
-        *selected_rejected_claims,
-        *rejected_required_definition_claims,
-    ])
+    failed = ordered_unique(
+        [
+            *bad_claims,
+            *selected_excluded_claims,
+            *selected_excluded_entities,
+            *selected_rejected_claims,
+            *rejected_required_definition_claims,
+        ]
+    )
     if failed:
         buckets = ["selected_truth_precision_error"]
         if selected_rejected_claims:
@@ -390,95 +470,13 @@ def _selected_truth_precision_judge(
         rationale="selected channel contains no excluded or non-current ids",
     )
 
-def _supporting_evidence_precision_judge(
-    scenario: LatentGraphScenario,
-    checkpoint: OracleCheckpoint,
-    output: SimSystemOutput,
-) -> JudgeVote:
-    excluded_support_claims = [
-        item for item in checkpoint.expected_excluded_claim_ids if item in output.supporting_claim_ids
-    ]
-    bad_claims = [
-        item
-        for item in [*output.supporting_claim_ids, *output.selected_claim_ids]
-        if claim_is_bad_support(scenario, checkpoint, item)
-    ]
-    support_role_violations = supporting_claim_role_violations(scenario, checkpoint, output)
-    support_role_violation_ids = [
-        claim_id
-        for claim_ids in support_role_violations.values()
-        for claim_id in claim_ids
-    ]
-    bad_events = bad_supporting_event_ids(scenario, checkpoint, output.supporting_citation_event_ids)
-    supporting_rejected_claims = [item for item in output.supporting_claim_ids if item in output.rejected_claim_ids]
-    rejected_required_definition_claims = _rejected_required_definition_claim_ids(scenario, output)
-    supporting_rejection_events = supporting_rejection_provenance_overlap_ids(scenario, checkpoint, output)
-    failed = ordered_unique([
-        *excluded_support_claims,
-        *bad_claims,
-        *support_role_violation_ids,
-        *bad_events,
-        *supporting_rejected_claims,
-        *rejected_required_definition_claims,
-        *supporting_rejection_events,
-    ])
-    if failed:
-        buckets = []
-        if excluded_support_claims:
-            buckets.append("supporting_excluded_id")
-        if bad_claims:
-            buckets.append("supporting_noncurrent_claim_selected")
-        if support_role_violation_ids:
-            buckets.append("supporting_role_violation")
-        if support_role_violations.get("wrong_subject_support"):
-            buckets.append("wrong_entity_support_used")
-            buckets.append("disambiguation_evidence_used_as_support")
-        if support_role_violations.get("execution_context_support"):
-            buckets.append("execution_context_claim_used_as_support")
-        if bad_events:
-            buckets.append("supporting_noisy_or_stale_provenance")
-        if supporting_rejected_claims:
-            buckets.append("supporting_rejected_channel_overlap")
-        if rejected_required_definition_claims:
-            buckets.append("definition_claim_rejected")
-        if supporting_rejection_events:
-            buckets.append("supporting_rejection_provenance_overlap")
-        return JudgeVote(
-            judge_id="supporting_evidence_precision_judge",
-            checkpoint_id=checkpoint.checkpoint_id,
-            verdict=JudgeVerdict.FAIL,
-            score=0.0,
-            confidence=0.9,
-            failed_ids=failed,
-            failure_buckets=buckets,
-            rationale=f"supporting channel contains invalid support ids: {failed}",
-        )
-    return JudgeVote(
-        judge_id="supporting_evidence_precision_judge",
-        checkpoint_id=checkpoint.checkpoint_id,
-        verdict=JudgeVerdict.PASS,
-        score=1.0,
-        confidence=0.85,
-        rationale="supporting channel contains clean answer support",
-    )
-
-
-def _rejected_required_definition_claim_ids(
-    scenario: LatentGraphScenario,
-    output: SimSystemOutput,
-) -> list[str]:
-    required_definition_claim_ids = required_definition_claim_ids_for_selected_claims(scenario, output)
-    return [
-        claim_id for claim_id in required_definition_claim_ids if claim_id in output.rejected_claim_ids
-    ]
-
 
 def _selected_support_closure_judge(
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
-    if not checkpoint.checkpoint_contract.supporting_citations_must_be_direct_current_evidence:
+    if not checkpoint.task_contract.supporting_citations_must_be_direct_current_evidence:
         return JudgeVote(
             judge_id="selected_support_closure_judge",
             checkpoint_id=checkpoint.checkpoint_id,
@@ -502,9 +500,7 @@ def _selected_support_closure_judge(
     missing_support_claims = selected_claim_ids_missing_support(closure_errors)
     missing_evidence_event_ids = selected_claim_evidence_event_ids_missing_support(closure_errors)
     action_claims_missing_support = [
-        error.claim_id
-        for error in closure_errors
-        if error.is_action_state and error.missing_supporting_claim
+        error.claim_id for error in closure_errors if error.is_action_state and error.missing_supporting_claim
     ]
     action_events_missing = selected_action_state_event_ids_missing_support(closure_errors)
     failed = ordered_unique([*missing_support_claims, *missing_evidence_event_ids])
@@ -538,27 +534,30 @@ def _selected_support_closure_judge(
         rationale="selected claims have direct supporting claims and citation events",
     )
 
+
 def _rejection_classification_judge(
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
     expected_rejected_claims = [
-        item
-        for item in checkpoint.expected_excluded_claim_ids
-        if is_visible_claim(scenario, item)
+        item for item in checkpoint.expected_excluded_claim_ids if is_visible_claim(scenario, item)
     ]
     expected_rejected_entities = [
-        item
-        for item in checkpoint.expected_excluded_entity_ids
-        if is_visible_entity(scenario, item)
+        item for item in checkpoint.expected_excluded_entity_ids if is_visible_entity(scenario, item)
     ]
-    expected_rejected_entities = ordered_unique([
-        *expected_rejected_entities,
-        *expected_rejected_claim_subject_entity_ids(scenario, checkpoint),
-    ])
-    selected_or_supporting = set(output.selected_claim_ids) | set(output.supporting_claim_ids) | set(output.selected_entity_ids)
-    bad_selected = [item for item in [*expected_rejected_claims, *expected_rejected_entities] if item in selected_or_supporting]
+    expected_rejected_entities = ordered_unique(
+        [
+            *expected_rejected_entities,
+            *expected_rejected_claim_subject_entity_ids(scenario, checkpoint),
+        ]
+    )
+    selected_or_supporting = (
+        set(output.selected_claim_ids) | set(output.supporting_claim_ids) | set(output.selected_entity_ids)
+    )
+    bad_selected = [
+        item for item in [*expected_rejected_claims, *expected_rejected_entities] if item in selected_or_supporting
+    ]
     missing_rejected = [
         item
         for item in expected_rejected_claims
@@ -569,9 +568,7 @@ def _rejection_classification_judge(
         if item not in output.rejected_entity_ids and item not in output.context_entity_ids
     ]
     required_missing = (
-        missing_rejected
-        if checkpoint.checkpoint_contract.excluded_ids_must_be_rejected_or_contextualized
-        else []
+        missing_rejected if checkpoint.task_contract.excluded_ids_must_be_rejected_or_contextualized else []
     )
     if bad_selected or required_missing:
         buckets = []
@@ -608,17 +605,23 @@ def _rejection_classification_judge(
         covered_ids=[*expected_rejected_claims, *expected_rejected_entities],
         rationale=(
             "excluded ids were rejected or contextualized"
-            if checkpoint.checkpoint_contract.excluded_ids_must_be_rejected_or_contextualized
+            if checkpoint.task_contract.excluded_ids_must_be_rejected_or_contextualized
             else "excluded ids were not selected as truth"
         ),
     )
+
 
 def _graph_context_judge(
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
-    if checkpoint.checkpoint_type not in {"entity_reconstruction", "entity_split_repair", "claim_rekey", "conflict_audit"}:
+    if checkpoint.checkpoint_type not in {
+        "entity_reconstruction",
+        "entity_split_repair",
+        "claim_rekey",
+        "conflict_audit",
+    }:
         return JudgeVote(
             judge_id="graph_context_judge",
             checkpoint_id=checkpoint.checkpoint_id,
@@ -649,12 +652,13 @@ def _graph_context_judge(
         rationale="graph context did not pollute selected truth",
     )
 
+
 def _definition_coverage_judge(
     scenario: LatentGraphScenario,
     checkpoint: OracleCheckpoint,
     output: SimSystemOutput,
 ) -> JudgeVote:
-    if not checkpoint.checkpoint_contract.definition_claims_required_in_selected:
+    if checkpoint.task_contract.definition_claim_placement != "selected_and_supporting_required":
         return JudgeVote(
             judge_id="definition_coverage_judge",
             checkpoint_id=checkpoint.checkpoint_id,
@@ -692,6 +696,7 @@ def _definition_coverage_judge(
         covered_ids=required,
         rationale="selected graph role claims include subject definition coverage",
     )
+
 
 def _execution_branch_judge(checkpoint: OracleCheckpoint, output: SimSystemOutput) -> JudgeVote:
     if checkpoint.checkpoint_type != "execution_continuation":

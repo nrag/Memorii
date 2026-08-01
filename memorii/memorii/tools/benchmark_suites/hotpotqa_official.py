@@ -215,7 +215,7 @@ def _run_hotpotqa_answer_decisions(
                         "trace": trace.model_dump(mode="json"),
                         "success": llm_success,
                         "fallback_used": trace.fallback_used,
-                        "failure_mode": ",".join(trace.validation_errors) or None,
+                        "failure_mode": ",".join(issue.code for issue in trace.validation_issues) or None,
                         "output": trace.final_output,
                     }
                 )

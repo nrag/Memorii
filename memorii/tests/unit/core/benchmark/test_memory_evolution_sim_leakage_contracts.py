@@ -100,12 +100,44 @@ def test_memory_evolution_sim_context_exposes_candidate_cards_without_oracle_fie
     assert "checkpoint_type" not in payload["checkpoint"]
     assert "severity" not in payload["checkpoint"]
     assert all("is_current_active" not in claim for claim in payload["visible_claims"])
+    assert payload["checkpoint"]["task_contract"] == checkpoint.task_contract.model_dump(mode="json")
     hidden_ids = (
         {item.entity_id for item in scenario.entities if item.observability == ObservabilityLabel.HIDDEN}
         | {item.claim_id for item in scenario.claims if item.observability == ObservabilityLabel.HIDDEN}
         | {item.relation_id for item in scenario.relations if item.observability == ObservabilityLabel.HIDDEN}
     )
     assert not any(hidden_id in serialized for hidden_id in hidden_ids)
+
+
+def test_memory_evolution_sim_oracle_expectation_mutation_does_not_change_model_context() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="entity_split",
+        scenario_count=10,
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "entity_split_repair")
+    mutated = checkpoint.model_copy(
+        update={
+            "expected_entity_ids": ["oracle-only-entity"],
+            "expected_claim_ids": ["oracle-only-claim"],
+            "expected_relation_ids": ["oracle-only-relation"],
+            "expected_answer": "oracle-only-answer",
+        }
+    )
+
+    original = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+    changed = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=mutated,
+    ).model_dump(mode="json")
+
+    assert changed == original
+    assert "oracle-only" not in str(changed)
 
 
 def test_memory_evolution_sim_execution_cards_expose_evidence_not_derived_eligibility_labels() -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -138,16 +138,19 @@ class CheckpointResultRow(FlatArtifactModel):
         ]
         if inconsistent_fields:
             raise ValueError(
-                "checkpoint top-level diagnostics must match diagnostics payload: "
-                f"{sorted(inconsistent_fields)!r}"
+                f"checkpoint top-level diagnostics must match diagnostics payload: {sorted(inconsistent_fields)!r}"
             )
         return {**value, **flat_fields}
 
     @model_validator(mode="after")
     def validate_verdict_projection(self) -> CheckpointResultRow:
-        expected_passed = self.verdict == "pass"
+        expected_passed = self.verdict == "pass" and not self.review_required
         if self.passed != expected_passed:
-            raise ValueError("checkpoint passed must be true exactly when verdict is pass")
+            raise ValueError("checkpoint passed requires a pass verdict with no required review")
+        if self.success != self.passed:
+            raise ValueError("checkpoint success must match clean-pass acceptance")
+        if self.passed and self.failure_buckets:
+            raise ValueError("passing checkpoints cannot contain failure buckets")
         inconsistent_diagnostics = [
             field_name
             for field_name in CheckpointDiagnosticsSection.model_fields
@@ -155,8 +158,7 @@ class CheckpointResultRow(FlatArtifactModel):
         ]
         if inconsistent_diagnostics:
             raise ValueError(
-                "checkpoint top-level diagnostics must match diagnostics payload: "
-                f"{sorted(inconsistent_diagnostics)!r}"
+                f"checkpoint top-level diagnostics must match diagnostics payload: {sorted(inconsistent_diagnostics)!r}"
             )
         return self
 
@@ -323,6 +325,51 @@ class RuntimeGraphAlignmentRow(FlatArtifactModel):
         return self
 
 
+class RuntimeChannelAlignmentRow(FlatArtifactModel):
+    """Alignment evidence for one production retrieval channel item."""
+
+    channel: Literal["selected", "context", "rejected"]
+    oracle_id: str
+    runtime_id: str
+    item_type: AlignmentItemType
+    verdict: AlignmentVerdict
+    score: float = Field(ge=0.0, le=1.0)
+    matched_on: list[str] = Field(default_factory=list)
+    failure_reason: str
+
+    @classmethod
+    def from_alignment(
+        cls,
+        alignment: RuntimeGraphAlignment,
+        *,
+        channel: Literal["selected", "context", "rejected"],
+    ) -> RuntimeChannelAlignmentRow:
+        return cls(
+            channel=channel,
+            oracle_id=alignment.oracle_item_id or "",
+            runtime_id=alignment.runtime_item_id or "",
+            item_type=cast(AlignmentItemType, alignment.item_type),
+            verdict=alignment.verdict.value,
+            score=alignment.score,
+            matched_on=list(alignment.matched_on),
+            failure_reason="" if alignment.verdict.value == "aligned" else alignment.rationale,
+        )
+
+    @model_validator(mode="after")
+    def validate_identity_by_verdict(self) -> RuntimeChannelAlignmentRow:
+        if self.verdict in {"aligned", "partial"} and not (self.oracle_id and self.runtime_id):
+            raise ValueError(f"{self.verdict} channel alignment rows require oracle_id and runtime_id")
+        if self.verdict == "missing_expected" and not self.oracle_id:
+            raise ValueError("missing_expected channel alignment rows require oracle_id")
+        if self.verdict == "unmatched_runtime" and not self.runtime_id:
+            raise ValueError("unmatched_runtime channel alignment rows require runtime_id")
+        if self.verdict == "ambiguous_alignment" and not (self.oracle_id or self.runtime_id):
+            raise ValueError("ambiguous channel alignment rows require oracle_id or runtime_id")
+        if self.verdict != "aligned" and not self.failure_reason:
+            raise ValueError(f"{self.verdict} channel alignment rows require failure_reason")
+        return self
+
+
 class RuntimeActionAlignmentRow(FlatArtifactModel):
     """Stable row contract for runtime action-to-oracle alignment diagnostics."""
 
@@ -399,6 +446,46 @@ class RuntimeExecutionStateSection(FlatArtifactModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class RuntimeStageTraceRow(FlatArtifactModel):
+    """Secret-free outcome for one stage of the runtime acceptance pipeline."""
+
+    stage: Literal[
+        "extraction",
+        "validation",
+        "normalization",
+        "lifecycle",
+        "persistence",
+        "query",
+        "retrieval",
+        "comparison",
+    ]
+    status: Literal["pass", "fail", "not_run"]
+    execution_status: Literal["pass", "fail", "not_run"] = "pass"
+    semantic_status: Literal["pass", "fail", "not_evaluated"] = "pass"
+    is_first_divergence: bool = False
+    reason_codes: list[str] = Field(default_factory=list)
+    input_count: int = Field(default=0, ge=0)
+    output_count: int = Field(default=0, ge=0)
+
+
+class RuntimeSemanticComparisonIssueRow(FlatArtifactModel):
+    """Canonical expected/actual mismatch emitted by the independent oracle."""
+
+    code: str = Field(min_length=1)
+    channel: Literal[
+        "selected",
+        "supporting",
+        "context",
+        "rejected",
+        "uncertain",
+        "graph",
+        "provenance",
+        "abstention",
+    ]
+    expected: str = ""
+    actual: str = ""
+
+
 class RuntimeDiagnosticsSection(BaseModel):
     """Typed runtime diagnostics flattened into checkpoint rows."""
 
@@ -406,6 +493,11 @@ class RuntimeDiagnosticsSection(BaseModel):
     runtime_relation_support: list[RuntimeRelationSupportRow] = Field(default_factory=list)
     runtime_action_support: list[RuntimeActionSupportRow] = Field(default_factory=list)
     runtime_action_alignments: list[RuntimeActionAlignmentRow] = Field(default_factory=list)
+    runtime_channel_alignments: list[RuntimeChannelAlignmentRow] = Field(default_factory=list)
+    runtime_stage_trace: list[RuntimeStageTraceRow] = Field(default_factory=list)
+    runtime_semantic_comparison_issues: list[RuntimeSemanticComparisonIssueRow] = Field(
+        default_factory=list
+    )
     runtime_execution_state: RuntimeExecutionStateSection
     runtime_retrieval_decision: ProductionRetrievalDecision | None = None
     active_continuation_branch: str | None = None
@@ -425,6 +517,11 @@ class CheckpointDiagnosticsPayload(CheckpointDiagnosticsSection):
     runtime_relation_support: list[RuntimeRelationSupportRow] = Field(default_factory=list)
     runtime_action_support: list[RuntimeActionSupportRow] = Field(default_factory=list)
     runtime_action_alignments: list[RuntimeActionAlignmentRow] = Field(default_factory=list)
+    runtime_channel_alignments: list[RuntimeChannelAlignmentRow] = Field(default_factory=list)
+    runtime_stage_trace: list[RuntimeStageTraceRow] = Field(default_factory=list)
+    runtime_semantic_comparison_issues: list[RuntimeSemanticComparisonIssueRow] = Field(
+        default_factory=list
+    )
     runtime_execution_state: RuntimeExecutionStateSection | None = None
     runtime_retrieval_decision: ProductionRetrievalDecision | None = None
     active_continuation_branch: str | None = None
@@ -484,6 +581,13 @@ class CheckpointDiagnosticsPayload(CheckpointDiagnosticsSection):
             runtime_relation_support=[] if runtime is None else runtime.runtime_relation_support,
             runtime_action_support=[] if runtime is None else runtime.runtime_action_support,
             runtime_action_alignments=[] if runtime is None else runtime.runtime_action_alignments,
+            runtime_channel_alignments=[] if runtime is None else runtime.runtime_channel_alignments,
+            runtime_stage_trace=[] if runtime is None else runtime.runtime_stage_trace,
+            runtime_semantic_comparison_issues=(
+                []
+                if runtime is None
+                else runtime.runtime_semantic_comparison_issues
+            ),
             runtime_execution_state=None if runtime is None else runtime.runtime_execution_state,
             runtime_retrieval_decision=None if runtime is None else runtime.runtime_retrieval_decision,
             active_continuation_branch=None if runtime is None else runtime.active_continuation_branch,

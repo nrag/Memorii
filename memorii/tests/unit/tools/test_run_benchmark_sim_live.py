@@ -4,6 +4,11 @@ import json
 from pathlib import Path
 
 import pytest
+from memorii.core.benchmark.artifact_validation import (
+    ArtifactValidationError,
+    finalize_memory_evolution_run,
+    validate_memory_evolution_run,
+)
 from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.models import LLMStructuredRequest, LLMStructuredResponse
 from tests.unit.tools.run_benchmark_test_helpers import (
@@ -22,28 +27,28 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
 
         def complete_structured(self, request: LLMStructuredRequest, *, config: LLMRuntimeConfig) -> LLMStructuredResponse:
             del config
+            assessment_variants = request.output_schema["properties"][
+                "claim_assessments"
+            ]["items"]["anyOf"]
+            claim_ids = [
+                variant["properties"]["claim_id"]["const"]
+                for variant in assessment_variants
+            ]
             output = {
-                "operation": "answer",
-                "belief_ranking_ids": [],
-                "selected_entity_ids": [],
-                "selected_claim_ids": [],
-                "selected_relation_ids": [],
-                "supporting_claim_ids": [],
-                "supporting_relation_ids": [],
-                "supporting_citation_event_ids": [],
-                "rejected_entity_ids": [],
-                "rejected_claim_ids": [],
-                "rejected_relation_ids": [],
-                "rejection_citation_event_ids": [],
-                "context_entity_ids": [],
-                "context_claim_ids": [],
-                "context_relation_ids": [],
-                "context_citation_event_ids": [],
-                "answer": "not the oracle answer",
+                "operation": "abstain",
+                "claim_assessments": [
+                    {
+                        "claim_id": claim_id,
+                        "role": "irrelevant",
+                        "belief_rank": None,
+                    }
+                    for claim_id in claim_ids
+                ],
+                "answer": None,
                 "next_action": None,
                 "uncertain_ids": [],
                 "confidence": 0.5,
-                "rationale": "valid live-shaped response, intentionally not oracle",
+                "rationale": "valid semantic abstention, intentionally not oracle",
             }
             return LLMStructuredResponse(
                 request_id=request.request_id,
@@ -88,9 +93,25 @@ def test_memory_evolution_sim_live_llm_uses_live_adapter_not_oracle(
 
     assert payload["final_output_source_counts"] == {"live_llm": payload["checkpoint_count"]}
     assert payload["failed"] > 0
-    assert rows[0]["output"]["answer"] == "not the oracle answer"
+    assert rows[0]["output"]["operation"] == "abstain"
     assert traces[0]["trace"]["input_payload"]["provider"] == "stub-live"
     assert traces[0]["trace"]["prompt_version"] == "memory_evolution_sim_reconstruction:v1"
+
+    rows[0]["output"]["rationale"] = "tampered judged output"
+    (run_dir / "sim_checkpoint_results.jsonl").write_text(
+        "".join(f"{json.dumps(row)}\n" for row in rows),
+        encoding="utf-8",
+    )
+    finalize_memory_evolution_run(run_dir)
+
+    with pytest.raises(
+        ArtifactValidationError,
+        match="judged output disagrees with persisted LLM output",
+    ):
+        validate_memory_evolution_run(
+            run_dir,
+            suite="memory_evolution_sim_v1",
+        )
 
 
 def test_memory_evolution_sim_hybrid_falls_back_to_rule_on_invalid_llm_output(

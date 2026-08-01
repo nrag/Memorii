@@ -60,7 +60,7 @@ def required_selected_entity_ids_for_policy(
     output: SimSystemOutput,
     policy: str | None = None,
 ) -> list[str]:
-    selected_policy = policy or checkpoint.checkpoint_contract.selected_entity_role_policy
+    selected_policy = policy or checkpoint.task_contract.selected_entity_role_policy
     if selected_policy == "audit_graph_entities":
         return []
     required: list[str] = []
@@ -73,6 +73,14 @@ def required_selected_entity_ids_for_policy(
         if selected_policy in {"object", "subject_and_object"} and claim.object.entity_id:
             required.append(claim.object.entity_id)
     return ordered_unique(required)
+
+
+def rejected_required_definition_claim_ids(
+    scenario: LatentGraphScenario,
+    output: SimSystemOutput,
+) -> list[str]:
+    required_ids = required_definition_claim_ids_for_selected_claims(scenario, output)
+    return [claim_id for claim_id in required_ids if claim_id in output.rejected_claim_ids]
 
 
 def expected_rejected_claim_subject_entity_ids(
@@ -105,7 +113,7 @@ def required_definition_claim_ids_for_checkpoint(
     in support even when nearby stale/wrong-entity evidence is rejected.
     """
 
-    if checkpoint.checkpoint_contract.definition_claims_required_in_selected:
+    if checkpoint.task_contract.definition_claim_placement == "selected_and_supporting_required":
         return required_definition_claim_ids_for_selected_claims(scenario, output)
     if checkpoint.checkpoint_type in {"entity_reconstruction", "claim_rekey"}:
         return required_definition_claim_ids_for_selected_claims(scenario, output)

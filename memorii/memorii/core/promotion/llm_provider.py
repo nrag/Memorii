@@ -6,6 +6,11 @@ from pydantic import ValidationError
 
 from memorii.core.llm_decision.models import LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
 from memorii.core.llm_decision.provider import LLMDecisionProvider, LLMDecisionProviderError
+from memorii.core.llm_validation import (
+    LLMValidationStage,
+    domain_validation_issue,
+    validation_issues_from_pydantic,
+)
 from memorii.core.promotion.assessment import PromotionAssessment, PromotionAssessmentContext
 from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
 
@@ -22,7 +27,7 @@ class LLMPromotionAssessmentProvider:
                 decision_point=LLMDecisionPoint.PROMOTION,
                 input_payload=input_payload,
             )
-        except LLMDecisionProviderError as exc:
+        except LLMDecisionProviderError:
             fallback_decision, fallback_trace = self._rule_provider.decide(context=context)
             return fallback_decision, fallback_trace.model_copy(
                 update={
@@ -30,7 +35,12 @@ class LLMPromotionAssessmentProvider:
                     "fallback_used": True,
                     "final_output": fallback_decision.model_dump(mode="json"),
                     "parsed_output": fallback_decision.model_dump(mode="json"),
-                    "validation_errors": [str(exc)],
+                    "validation_issues": [
+                        domain_validation_issue(
+                            "promotion provider failed",
+                            code="provider_error",
+                        )
+                    ],
                 }
             )
 
@@ -43,7 +53,9 @@ class LLMPromotionAssessmentProvider:
                     "status": LLMDecisionStatus.FALLBACK_USED,
                     "final_output": fallback_decision.model_dump(mode="json"),
                     "parsed_output": fallback_decision.model_dump(mode="json"),
-                    "validation_errors": ["empty llm output"],
+                    "validation_issues": [
+                        domain_validation_issue("empty llm output", code="empty_output")
+                    ],
                 }
             )
 
@@ -55,7 +67,12 @@ class LLMPromotionAssessmentProvider:
                     "fallback_used": True,
                     "status": LLMDecisionStatus.VALIDATION_FAILED,
                     "final_output": fallback_decision.model_dump(mode="json"),
-                    "validation_errors": [str(exc)],
+                    "validation_issues": list(
+                        validation_issues_from_pydantic(
+                            exc,
+                            stage=LLMValidationStage.DOMAIN,
+                        )
+                    ),
                 }
             )
 

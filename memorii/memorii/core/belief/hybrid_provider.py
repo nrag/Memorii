@@ -30,7 +30,7 @@ class HybridBeliefUpdateProvider:
                     "status": LLMDecisionStatus.FALLBACK_USED,
                     "fallback_used": True,
                     "final_output": rule_decision.model_dump(mode="json"),
-                    "validation_errors": llm_trace.validation_errors,
+                    "validation_issues": llm_trace.validation_issues,
                 }
             )
 

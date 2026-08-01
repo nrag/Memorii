@@ -384,7 +384,7 @@ class WorldTransition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SimCheckpointContract(BaseModel):
+class ReconstructionTaskContract(BaseModel):
     allowed_operations: list[Literal["answer", "next_action", "graph_reconstruction", "abstain"]] = Field(
         default_factory=lambda: ["answer"]
     )
@@ -405,11 +405,19 @@ class SimCheckpointContract(BaseModel):
     ] = "subject"
     allow_stale_selected_claims: bool = False
     excluded_ids_must_be_rejected_or_contextualized: bool = True
-    definition_claims_required_in_selected: bool = False
+    definition_claim_placement: Literal[
+        "selected_and_supporting_required",
+        "context_required",
+    ] = "context_required"
     supporting_citations_must_be_direct_current_evidence: bool = True
-    conflict_relation_ids_belong_in: list[str] = Field(default_factory=lambda: ["context_relation_ids"])
-    wrong_entity_claims_belong_in: list[str] = Field(default_factory=list)
-    requires_belief_ranking_ids: bool = False
+    conflict_relation_placement: Literal[
+        "selected_and_supporting",
+        "supporting",
+        "context",
+        "rejected",
+    ] = "context"
+    wrong_entity_claim_placement: Literal["context", "rejected", "omit"] = "omit"
+    belief_ranking_policy: Literal["required", "forbidden"] = "forbidden"
     requires_next_action: bool = False
 
     model_config = ConfigDict(extra="forbid")
@@ -434,7 +442,7 @@ class OracleCheckpoint(BaseModel):
         "abstention",
     ]
     query_or_task: str
-    checkpoint_contract: SimCheckpointContract
+    task_contract: ReconstructionTaskContract
     query_language: str = "en"
     # Caller context is separate from oracle expectations.  It is allowed to
     # reach the runtime request, but never the rendered model prompt.
@@ -472,8 +480,14 @@ class OracleCheckpoint(BaseModel):
     horizon_distance: int = 0
     interference_count: int = 0
     source_event_age_days: float = 0.0
-    required_retrieval_view: Literal["current", "historical_at", "all_versions", "conflicts", "evidence_only"] = "current"
-    expected_stage_path: list[Literal["extraction", "validation", "lifecycle_evolution", "graph_projection", "alignment", "retrieval_decision"]] = Field(
+    required_retrieval_view: Literal["current", "historical_at", "all_versions", "conflicts", "evidence_only"] = (
+        "current"
+    )
+    expected_stage_path: list[
+        Literal[
+            "extraction", "validation", "lifecycle_evolution", "graph_projection", "alignment", "retrieval_decision"
+        ]
+    ] = Field(
         default_factory=lambda: [
             "extraction",
             "validation",
@@ -488,7 +502,7 @@ class OracleCheckpoint(BaseModel):
 
     @property
     def answer_projection_policy(self) -> str:
-        return self.checkpoint_contract.answer_projection_policy
+        return self.task_contract.answer_projection_policy
 
 
 class SimSystemOutput(BaseModel):
@@ -517,30 +531,62 @@ class SimSystemOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SimProviderOutput(BaseModel):
-    """Strict model transport for simulated memory reconstruction."""
+class SimClaimSemanticRole(StrEnum):
+    """Provider-owned relevance judgment for one visible claim."""
+
+    PRIMARY = "primary"
+    RELEVANT = "relevant"
+    IRRELEVANT = "irrelevant"
+
+
+class SimClaimAssessment(BaseModel):
+    """Exactly one semantic assessment for a visible claim."""
+
+    claim_id: str
+    role: SimClaimSemanticRole
+    belief_rank: int | None = Field(ge=1)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SimSemanticDecisionOutput(BaseModel):
+    """Strict transport for provider-owned semantic choices."""
 
     operation: Literal["answer", "next_action", "graph_reconstruction", "abstain"] = Field()
-    belief_ranking_ids: list[str] = Field()
-    selected_entity_ids: list[str] = Field()
-    selected_claim_ids: list[str] = Field()
-    selected_relation_ids: list[str] = Field()
-    supporting_claim_ids: list[str] = Field()
-    supporting_relation_ids: list[str] = Field()
-    supporting_citation_event_ids: list[str] = Field()
-    rejected_entity_ids: list[str] = Field()
-    rejected_claim_ids: list[str] = Field()
-    rejected_relation_ids: list[str] = Field()
-    rejection_citation_event_ids: list[str] = Field()
-    context_entity_ids: list[str] = Field()
-    context_claim_ids: list[str] = Field()
-    context_relation_ids: list[str] = Field()
-    context_citation_event_ids: list[str] = Field()
+    claim_assessments: list[SimClaimAssessment] = Field()
     answer: str | None = Field()
     next_action: str | None = Field()
     uncertain_ids: list[str] = Field()
     confidence: float = Field(ge=0.0, le=1.0)
     rationale: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SimSemanticDecision(SimSemanticDecisionOutput):
+    """Validated semantic choices compiled into deterministic graph channels."""
+
+    @model_validator(mode="after")
+    def validate_operation_payload(self) -> SimSemanticDecision:
+        if self.operation == "next_action":
+            if not self.next_action or self.answer is not None:
+                raise ValueError("next_action requires next_action text and no answer")
+        elif self.operation == "answer":
+            if not self.answer or self.next_action is not None:
+                raise ValueError("answer requires answer text and no next_action")
+        elif self.operation == "abstain" and (
+            self.answer is not None or self.next_action is not None
+        ):
+            raise ValueError("abstain cannot include answer or next_action text")
+        return self
+
+
+class SimSemanticRepairRequest(BaseModel):
+    """One bounded request to revise only invalid semantic choices."""
+
+    attempt: Literal[1] = 1
+    violation_codes: list[str] = Field(min_length=1)
+    previous_decision: SimSemanticDecision
 
     model_config = ConfigDict(extra="forbid")
 
@@ -613,7 +659,7 @@ class VisibleCheckpointCandidate(BaseModel):
     checkpoint_id: str
     timestamp: datetime
     query_or_task: str
-    answer_projection_policy: str = "claim_object"
+    task_contract: ReconstructionTaskContract
     query_language: str = "en"
     evidence_languages: list[str] = Field(default_factory=lambda: ["en"])
     answer_language_policy: str = "match_query"
@@ -634,6 +680,7 @@ class MemoryEvolutionSimReconstructionContext(BaseModel):
     visible_entities: list[VisibleEntityCandidate] = Field(default_factory=list)
     visible_claims: list[VisibleClaimCandidate] = Field(default_factory=list)
     visible_relations: list[VisibleRelationCandidate] = Field(default_factory=list)
+    repair_request: SimSemanticRepairRequest | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -702,9 +749,7 @@ class LatentGraphScenario(BaseModel):
             exposed_events = exposed_claims_by_event.get(claim.claim_id, set())
             evidence_events = set(claim.evidence.source_event_ids)
             if exposed_events and not (evidence_events & exposed_events):
-                raise ValueError(
-                    f"claim {claim.claim_id} evidence does not reference an observation that exposes it"
-                )
+                raise ValueError(f"claim {claim.claim_id} evidence does not reference an observation that exposes it")
         for relation in self.relations:
             if relation.observability == ObservabilityLabel.HIDDEN:
                 continue
@@ -737,9 +782,7 @@ class LatentGraphScenario(BaseModel):
                 *checkpoint.expected_execution_claim_ids,
             ]
             hidden_required = [
-                item_id
-                for item_id in required_ids
-                if self._observability_for(item_id) == ObservabilityLabel.HIDDEN
+                item_id for item_id in required_ids if self._observability_for(item_id) == ObservabilityLabel.HIDDEN
             ]
             if hidden_required:
                 raise ValueError(f"checkpoint {checkpoint.checkpoint_id} requires hidden ids: {hidden_required}")

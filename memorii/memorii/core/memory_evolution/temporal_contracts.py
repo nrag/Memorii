@@ -299,6 +299,10 @@ class QueryAnalysis(BaseModel):
     analyzer_version: str | None = None
     provider_error: str | None = None
     failure_code: QueryAnalysisFailureCode | None = None
+    analyzer_path: list[str] = Field(default_factory=list)
+    escalation_reason: str | None = None
+    analyzer_outcome: Literal["resolved", "abstained", "failed"] = "resolved"
+    structured_query_call_count: int = Field(default=0, ge=0)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -455,12 +459,55 @@ class RetrievalDecision(BaseModel):
     supporting_record_ids: list[str] = Field(default_factory=list)
     rejected_record_ids: list[str] = Field(default_factory=list)
     context_record_ids: list[str] = Field(default_factory=list)
+    uncertain_record_ids: list[str] = Field(default_factory=list)
     abstained: bool = False
     abstention_reason: str | None = None
     resolution_status: str = "resolved"
     decision_source: str = "production_memory_evolution_retriever"
 
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_channels(self) -> RetrievalDecision:
+        channels = {
+            "selected": self.selected_record_ids,
+            "supporting": self.supporting_record_ids,
+            "rejected": self.rejected_record_ids,
+            "context": self.context_record_ids,
+            "uncertain": self.uncertain_record_ids,
+        }
+        for name, values in channels.items():
+            if len(values) != len(set(values)):
+                raise ValueError(f"{name} retrieval channel must not contain duplicate IDs")
+        selected = set(self.selected_record_ids)
+        supporting = set(self.supporting_record_ids)
+        context = set(self.context_record_ids)
+        rejected = set(self.rejected_record_ids)
+        uncertain = set(self.uncertain_record_ids)
+        missing_support = selected - supporting
+        if missing_support:
+            raise ValueError(
+                f"selected retrieval records must also be supporting: {sorted(missing_support)!r}"
+            )
+        for left_name, left, right_name, right in (
+            ("selected", selected, "context", context),
+            ("selected", selected, "rejected", rejected),
+            ("supporting", supporting, "context", context),
+            ("supporting", supporting, "rejected", rejected),
+            ("context", context, "rejected", rejected),
+            ("selected", selected, "uncertain", uncertain),
+            ("supporting", supporting, "uncertain", uncertain),
+            ("context", context, "uncertain", uncertain),
+            ("rejected", rejected, "uncertain", uncertain),
+        ):
+            overlap = left.intersection(right)
+            if overlap:
+                raise ValueError(
+                    f"retrieval channels {left_name} and {right_name} must be disjoint: {sorted(overlap)!r}"
+                )
+        if self.abstained and self.selected_record_ids:
+            raise ValueError("abstained retrieval cannot contain selected records")
+        return self
 
 
 class TemporalEntityCandidate(BaseModel):

@@ -1,9 +1,18 @@
 """Public facade for memory evolution simulator helpers."""
 
 from memorii.core.benchmark.memory_evolution_sim.candidate_cards import sim_reconstruction_context_for_checkpoint
+from memorii.core.benchmark.memory_evolution_sim.decision_compiler import (
+    compile_sim_semantic_decision,
+    render_sim_answer,
+)
+from memorii.core.benchmark.memory_evolution_sim.decision_contract import (
+    SimDecisionContractIssue,
+    SimDecisionContractValidation,
+    SimDecisionContractViolationCode,
+    validate_sim_decision_contract,
+)
 from memorii.core.benchmark.memory_evolution_sim.decisions import (
     expected_sim_output_for_checkpoint,
-    fake_llm_result_for_memory_evolution_sim,
     memory_evolution_sim_engine_result_from_llm,
     memory_evolution_sim_trace_for_rule,
     rule_sim_output_for_checkpoint,
@@ -16,7 +25,9 @@ from memorii.core.benchmark.memory_evolution_sim.generation import (
 from memorii.core.benchmark.memory_evolution_sim.judges import judge_sim_checkpoint
 from memorii.core.benchmark.memory_evolution_sim.metrics import sim_metrics_from_rows
 from memorii.core.benchmark.memory_evolution_sim.opaque_ids import remap_scenario_ids
-from memorii.core.benchmark.memory_evolution_sim.output_validation import sim_output_allowed_id_errors
+from memorii.core.benchmark.memory_evolution_sim.oracle_output_audit import (
+    sim_output_allowed_id_errors,
+)
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     ClaimArgument,
     ClaimEvidence,
@@ -38,12 +49,16 @@ from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
     ObservabilityLabel,
     OracleCheckpoint,
+    ReconstructionTaskContract,
     RelationEndpoint,
     RelationProvenance,
     RelationTemporal,
-    SimCheckpointContract,
+    SimClaimAssessment,
+    SimClaimSemanticRole,
     SimLifecycleState,
-    SimProviderOutput,
+    SimSemanticDecision,
+    SimSemanticDecisionOutput,
+    SimSemanticRepairRequest,
     SimSystemOutput,
     SurfaceObservation,
     VisibleCheckpointCandidate,
@@ -80,9 +95,16 @@ __all__ = [
     "RelationEndpoint",
     "RelationProvenance",
     "RelationTemporal",
-    "SimCheckpointContract",
+    "ReconstructionTaskContract",
     "SimLifecycleState",
-    "SimProviderOutput",
+    "SimClaimAssessment",
+    "SimClaimSemanticRole",
+    "SimSemanticDecision",
+    "SimSemanticDecisionOutput",
+    "SimSemanticRepairRequest",
+    "SimDecisionContractIssue",
+    "SimDecisionContractValidation",
+    "SimDecisionContractViolationCode",
     "SimSystemOutput",
     "SurfaceObservation",
     "VisibleCheckpointCandidate",
@@ -93,7 +115,6 @@ __all__ = [
     "VisibleSurfaceObservation",
     "WorldTransition",
     "expected_sim_output_for_checkpoint",
-    "fake_llm_result_for_memory_evolution_sim",
     "generate_memory_evolution_sim_scenarios",
     "judge_sim_checkpoint",
     "memory_evolution_sim_engine_result_from_llm",
@@ -104,4 +125,7 @@ __all__ = [
     "sim_metrics_from_rows",
     "sim_output_allowed_id_errors",
     "sim_reconstruction_context_for_checkpoint",
+    "compile_sim_semantic_decision",
+    "render_sim_answer",
+    "validate_sim_decision_contract",
 ]

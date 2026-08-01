@@ -3,6 +3,7 @@ from __future__ import annotations
 from memorii.core.llm_config import ResolvedLLMDecisionConfig
 from memorii.core.memory_evolution import EnglishRuleMemoryExtractor
 from memorii.core.memory_evolution.models import SourceObservation
+from memorii.core.memory_evolution.query_analysis import EnglishLexicalQueryAnalyzer
 from memorii.core.promotion.provider import PromotionAssessmentProviderError
 from memorii.core.provider import factory as provider_factory
 from memorii.core.provider.models import ProviderOperation
@@ -27,6 +28,7 @@ def test_production_factory_wires_environment_selected_dependencies(monkeypatch)
     extractor = _CountingExtractor()
     promotion_provider = _RaisingPromotionProvider()
     received_configs: list[ResolvedLLMDecisionConfig] = []
+    query_runtime_configs = []
 
     def build_extractor(*, config: ResolvedLLMDecisionConfig):
         received_configs.append(config)
@@ -36,8 +38,13 @@ def test_production_factory_wires_environment_selected_dependencies(monkeypatch)
         received_configs.append(config)
         return promotion_provider
 
+    def build_query_analyzer(*, runtime_config, **_kwargs):
+        query_runtime_configs.append(runtime_config)
+        return EnglishLexicalQueryAnalyzer()
+
     monkeypatch.setattr(provider_factory, "build_memory_extractor", build_extractor)
     monkeypatch.setattr(provider_factory, "build_promotion_decision_provider", build_promotion_provider)
+    monkeypatch.setattr(provider_factory, "build_production_query_analyzer", build_query_analyzer)
     environment = {
         "MEMORII_DECISION_MODE": "hybrid",
         "MEMORII_LLM_PROVIDER": "none",
@@ -68,6 +75,7 @@ def test_production_factory_wires_environment_selected_dependencies(monkeypatch)
     assert len(received_configs) == 2
     assert received_configs[0] is received_configs[1]
     assert received_configs[0].mode == "rule"
+    assert query_runtime_configs == [received_configs[0].runtime]
     assert extractor.calls == 1
     assert outcome.ok is True
     assert outcome.result["promotion_decision_error"] == "configured promotion provider called"

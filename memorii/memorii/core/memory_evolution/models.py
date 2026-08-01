@@ -14,6 +14,7 @@ from memorii.domain.enums import (
     FinalExtractionSource,
     MemoryDomain,
     ProviderAttemptStatus,
+    SourceModality,
     SourceType,
 )
 
@@ -95,19 +96,6 @@ class ClaimTransitionType(StrEnum):
     CLAIM_REKEY = "claim_rekey"
 
 
-class SourceModality(StrEnum):
-    ASSERTION = "assertion"
-    CORRECTION = "correction"
-    QUOTED_OR_PASTED = "quoted_or_pasted"
-    HYPOTHETICAL = "hypothetical"
-    QUESTION = "question"
-    INSTRUCTION = "instruction"
-    TOOL_RESULT = "tool_result"
-    ASSISTANT_CLAIM = "assistant_claim"
-    THIRD_PARTY_CLAIM = "third_party_claim"
-    NOISE = "noise"
-
-
 class ExtractionTriggerMode(StrEnum):
     IMMEDIATE = "immediate"
     DEFERRED = "deferred"
@@ -144,6 +132,13 @@ class EntityIdentityDecisionType(StrEnum):
     SPLIT_EXISTING = "split_existing"
     MERGE_EXISTING = "merge_existing"
     ABSTAIN = "abstain"
+
+
+class EntityIdentityRelationType(StrEnum):
+    ALIAS_OF = "alias_of"
+    SAME_AS = "same_as"
+    SPLIT_FROM = "split_from"
+    MERGED_INTO = "merged_into"
 
 
 class ValidationVerdict(StrEnum):
@@ -321,6 +316,7 @@ class EntityLinkState(BaseModel):
     normalized_name: str
     entity_type: EntityType = EntityType.UNKNOWN
     aliases: list[str] = Field(default_factory=list)
+    observed_names: list[str] = Field(default_factory=list)
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
     scope: MemoryScope = Field(default_factory=MemoryScope)
@@ -389,8 +385,8 @@ class ExtractedAction(BaseModel):
     action_type: str
     target_entity_ids: list[str] = Field(default_factory=list)
     status: str
-    dependency_ids: list[str] = Field(default_factory=list)
-    blocking_ids: list[str] = Field(default_factory=list)
+    dependency_entity_ids: list[str] = Field(default_factory=list)
+    blocking_entity_ids: list[str] = Field(default_factory=list)
     timestamp: datetime
     scope: MemoryScope = Field(default_factory=MemoryScope)
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
@@ -415,6 +411,25 @@ class ExtractedAction(BaseModel):
         return self.scope.scope_key
 
 
+class ExtractedIdentityRelation(BaseModel):
+    relation_id: str
+    relation_type: EntityIdentityRelationType
+    source_entity_id: str
+    target_entity_id: str
+    evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    scope: MemoryScope = Field(default_factory=MemoryScope)
+    extraction_run_id: str
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_endpoints(self) -> ExtractedIdentityRelation:
+        if not self.evidence_spans:
+            raise ValueError("identity relation requires grounded evidence")
+        return self
+
+
 class ValidationResult(BaseModel):
     validator_name: str
     verdict: ValidationVerdict
@@ -433,6 +448,7 @@ class ClaimState(BaseModel):
     lifecycle_state: ClaimLifecycleState
     source_claim_id: str
     confidence: ConfidenceComponents
+    source_modality: SourceModality = SourceModality.ASSERTION
     validation_results: list[ValidationResult] = Field(default_factory=list)
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
     supersedes_claim_ids: list[str] = Field(default_factory=list)
@@ -567,11 +583,15 @@ class ExtractionRun(BaseModel):
     extraction_run_id: str
     provider: str
     model: str | None = None
+    requested_model: str | None = None
+    actual_model: str | None = None
     prompt_hash: str | None = None
     input_source_ids: list[str]
     entity_ids: list[str] = Field(default_factory=list)
     claim_ids: list[str] = Field(default_factory=list)
     action_ids: list[str] = Field(default_factory=list)
+    identity_relation_ids: list[str] = Field(default_factory=list)
+    language_capability_ids: list[str] = Field(default_factory=list)
     validation_summary: dict[str, int] = Field(default_factory=dict)
     status: ExtractionRunStatus = ExtractionRunStatus.SUCCEEDED
     provider_attempt_status: ProviderAttemptStatus = ProviderAttemptStatus.NOT_ATTEMPTED
@@ -621,10 +641,22 @@ class ExtractionRun(BaseModel):
             )
             if self.final_output_source != expected_source:
                 raise ValueError("fallback outcome and final output source disagree")
-        if self.status == ExtractionRunStatus.FAILED and self.final_output_source != FinalExtractionSource.NONE:
+        deterministic_abstention = (
+            self.status == ExtractionRunStatus.ABSTAINED
+            and self.provider_attempt_status == ProviderAttemptStatus.NOT_ATTEMPTED
+            and self.fallback_outcome == FallbackOutcome.NOT_USED
+            and self.failure_code is None
+            and self.primary_failure_code is None
+            and not self.entity_ids
+            and not self.claim_ids
+            and not self.action_ids
+            and not self.identity_relation_ids
+        )
+        if self.final_output_source == FinalExtractionSource.NONE:
+            if self.status != ExtractionRunStatus.FAILED and not deterministic_abstention:
+                raise ValueError("missing extraction output requires failure or deterministic abstention")
+        elif self.status == ExtractionRunStatus.FAILED:
             raise ValueError("failed extraction cannot identify a final output source")
-        if self.status != ExtractionRunStatus.FAILED and self.final_output_source == FinalExtractionSource.NONE:
-            raise ValueError("non-failed extraction requires a final output source")
         return self
 
 
@@ -633,6 +665,7 @@ class MemoryEvolutionResult(BaseModel):
     entities: list[EntityMention] = Field(default_factory=list)
     claims: list[ExtractedClaim] = Field(default_factory=list)
     actions: list[ExtractedAction] = Field(default_factory=list)
+    identity_relations: list[ExtractedIdentityRelation] = Field(default_factory=list)
     observations: list[SourceObservation] = Field(default_factory=list)
     entity_links: list[EntityLinkState] = Field(default_factory=list)
     entity_identity_decisions: list[EntityIdentityDecision] = Field(default_factory=list)

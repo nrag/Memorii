@@ -96,17 +96,29 @@ class EvolutionOperation(BaseModel):
         if self.status == EvolutionOperationStatus.COMMITTED:
             if not self.extraction_run_id or self.extraction_status is None:
                 raise ValueError("committed operation requires extraction identity and status")
-            if self.extraction_status == ExtractionRunStatus.FAILED:
-                raise ValueError("failed extraction cannot be committed")
+            if self.extraction_status not in {
+                ExtractionRunStatus.SUCCEEDED,
+                ExtractionRunStatus.ABSTAINED,
+            }:
+                raise ValueError("only complete extraction outcomes can be committed")
             if self.fallback_outcome == FallbackOutcome.SUCCEEDED:
                 if not self.fallback_provider or self.final_extraction_source != FinalExtractionSource.FALLBACK:
                     raise ValueError("committed fallback extraction requires fallback provenance")
             elif self.fallback_provider is not None:
                 raise ValueError("non-fallback committed extraction cannot identify a fallback provider")
-            if self.final_extraction_source is None or self.final_extraction_source == FinalExtractionSource.NONE:
-                raise ValueError("committed extraction requires a final output source")
             if self.provider_attempt_status is None:
                 raise ValueError("committed extraction requires provider-attempt provenance")
+            deterministic_abstention = (
+                self.extraction_status == ExtractionRunStatus.ABSTAINED
+                and self.provider_attempt_status == ProviderAttemptStatus.NOT_ATTEMPTED
+                and self.fallback_outcome == FallbackOutcome.NOT_USED
+                and self.extraction_failure_code is None
+                and self.primary_failure_code is None
+            )
+            if self.final_extraction_source is None or (
+                self.final_extraction_source == FinalExtractionSource.NONE and not deterministic_abstention
+            ):
+                raise ValueError("committed extraction requires output or deterministic abstention")
             if self.completed_fence_epoch != self.ownership_epoch or self.ownership_epoch < 1:
                 raise ValueError("committed operation requires its completing ownership epoch")
         elif self.status == EvolutionOperationStatus.FAILED:
@@ -114,12 +126,25 @@ class EvolutionOperation(BaseModel):
                 raise ValueError("failed operations cannot identify committed projection results")
             if self.extraction_status is not None:
                 if (
-                    self.extraction_status != ExtractionRunStatus.FAILED
+                    self.extraction_status
+                    not in {
+                        ExtractionRunStatus.FAILED,
+                        ExtractionRunStatus.PARTIAL,
+                    }
                     or self.extraction_run_id is None
                     or self.provider_attempt_status is None
-                    or self.final_extraction_source != FinalExtractionSource.NONE
                 ):
                     raise ValueError("failed extraction telemetry must be complete and terminal")
+                if (
+                    self.extraction_status == ExtractionRunStatus.FAILED
+                    and self.final_extraction_source != FinalExtractionSource.NONE
+                ):
+                    raise ValueError("failed extraction cannot identify usable output")
+                if self.extraction_status == ExtractionRunStatus.PARTIAL and self.final_extraction_source not in {
+                    FinalExtractionSource.PRIMARY,
+                    FinalExtractionSource.FALLBACK,
+                }:
+                    raise ValueError("partial extraction must identify its output source")
             elif (
                 self.extraction_run_id is not None
                 or self.provider_attempt_status is not None

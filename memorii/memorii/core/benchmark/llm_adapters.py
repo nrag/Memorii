@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import ClassVar
 
 from pydantic import BaseModel
@@ -12,14 +13,21 @@ from memorii.core.benchmark.execution_graph_decision import (
 )
 from memorii.core.benchmark.hotpotqa_official import HotpotQAAnswerContext, HotpotQAAnswerOutput
 from memorii.core.benchmark.lifecycle_decision import LifecycleDecisionContext, LifecycleDecisionOutput
+from memorii.core.benchmark.memory_evolution_decision.closed_world_schema import (
+    constrain_memory_evolution_semantic_contract,
+)
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
-    MemoryEvolutionDecision,
     MemoryEvolutionDecisionContext,
-    MemoryEvolutionDecisionOutput,
+    MemoryEvolutionSemanticDecision,
+    MemoryEvolutionSemanticDecisionOutput,
+)
+from memorii.core.benchmark.memory_evolution_sim.closed_world_schema import (
+    constrain_sim_semantic_contract,
 )
 from memorii.core.benchmark.memory_evolution_sim.schemas import (
     MemoryEvolutionSimReconstructionContext,
-    SimProviderOutput,
+    SimSemanticDecision,
+    SimSemanticDecisionOutput,
 )
 from memorii.core.benchmark.retrieval_relevance_decision import (
     RetrievalRelevanceContext,
@@ -27,7 +35,7 @@ from memorii.core.benchmark.retrieval_relevance_decision import (
 )
 from memorii.core.llm_provider.models import LLMDecisionResult
 from memorii.core.llm_provider.runner import PromptLLMRunner
-from memorii.core.prompts.registry import PromptRegistry
+from memorii.core.prompts.registry import PromptRegistry, RegisteredPromptContract
 from memorii.core.prompts.runtime_manifest import PromptOwner
 
 
@@ -54,12 +62,18 @@ class _BenchmarkPromptAdapter:
         query: str,
         request_id: str,
         metadata: dict[str, object] | None,
+        contract_transform: Callable[
+            [RegisteredPromptContract], RegisteredPromptContract
+        ]
+        | None = None,
     ) -> LLMDecisionResult:
         contract = self._registry.load(
             self.prompt_ref,
             owner=self.owner,
             output_model=self.output_model,
         )
+        if contract_transform is not None:
+            contract = contract_transform(contract)
         return self._runner.run(
             contract=contract,
             variables={
@@ -120,8 +134,8 @@ class LLMExecutionGraphDecisionAdapter(_BenchmarkPromptAdapter):
 class LLMMemoryEvolutionDecisionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "memory_evolution_decision:v1"
     owner = PromptOwner.LLM_MEMORY_EVOLUTION_DECISION_ADAPTER
-    output_model = MemoryEvolutionDecisionOutput
-    semantic_model = MemoryEvolutionDecision
+    output_model = MemoryEvolutionSemanticDecisionOutput
+    semantic_model = MemoryEvolutionSemanticDecision
 
     def decide(
         self,
@@ -137,13 +151,18 @@ class LLMMemoryEvolutionDecisionAdapter(_BenchmarkPromptAdapter):
             query=context.checkpoint.query_or_task,
             request_id=request_id,
             metadata=metadata,
+            contract_transform=lambda contract: constrain_memory_evolution_semantic_contract(
+                contract=contract,
+                context=context,
+            ),
         )
 
 
 class LLMMemoryEvolutionSimReconstructionAdapter(_BenchmarkPromptAdapter):
     prompt_ref = "memory_evolution_sim_reconstruction:v1"
     owner = PromptOwner.LLM_MEMORY_EVOLUTION_SIM_RECONSTRUCTION_ADAPTER
-    output_model = SimProviderOutput
+    output_model = SimSemanticDecisionOutput
+    semantic_model = SimSemanticDecision
 
     def decide(
         self,
@@ -159,6 +178,10 @@ class LLMMemoryEvolutionSimReconstructionAdapter(_BenchmarkPromptAdapter):
             query=context.checkpoint.query_or_task,
             request_id=request_id,
             metadata=metadata,
+            contract_transform=lambda contract: constrain_sim_semantic_contract(
+                contract=contract,
+                context=context,
+            ),
         )
 
 

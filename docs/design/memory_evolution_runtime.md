@@ -157,12 +157,16 @@ The lifecycle supports:
 - expired
 - archived
 
-For single-value predicates, a stronger or newer accepted claim can supersede older active claims. Older claims are retained with invalidated/superseded state rather than deleted.
+For single-value predicates, validation and modality eligibility run before arbitration.
+Accepted claims use an explicit precedence tuple: effective time first, predicate-specific
+source authority second, and stable claim ID only as the final deterministic tie-break.
+Model confidence is diagnostic and never selects categorical durable truth. Older claims
+are retained with invalidated/superseded state rather than deleted.
 
 Current conflict behavior:
 
 - same-value claims reinforce an existing active claim
-- different values for single-value predicates can supersede or invalidate based on source strength and confidence
+- different values for single-value predicates supersede or invalidate according to the explicit precedence tuple
 - contradiction sets are written for incompatible single-value claims
 
 ## Runtime Graph Projection

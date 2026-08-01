@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier, Lock
-from time import sleep
 
 from memorii.core.memory_evolution import (
     EnglishRuleMemoryExtractor,
+    EntityMention,
+    EntityType,
+    EvidenceSpan,
     ExtractionFailureCode,
     ExtractionRun,
     ExtractionRunStatus,
@@ -16,6 +19,7 @@ from memorii.core.memory_evolution import (
     HybridMemoryExtractor,
     MemoryEvolutionResult,
     MemoryEvolutionService,
+    MemoryExtractionProposal,
     MemoryGraphProjector,
     MemoryGraphSnapshot,
     ProviderAttemptStatus,
@@ -74,8 +78,8 @@ class _FailedExtractionProvider:
     prompt_hash = "test-prompt"
 
     def extract(self, observations: list[SourceObservation]):
-        return (
-            ExtractionRun(
+        return MemoryExtractionProposal(
+            run=ExtractionRun(
                 extraction_run_id="extraction:failed",
                 provider=self.provider,
                 model=self.model,
@@ -87,10 +91,51 @@ class _FailedExtractionProvider:
                 failure_code=ExtractionFailureCode.PROVIDER_ERROR,
                 primary_failure_code=ExtractionFailureCode.PROVIDER_ERROR,
                 errors=["provider_error"],
+            )
+        )
+
+
+class _PartialExtractionProvider(EnglishRuleMemoryExtractor):
+    provider = "test_llm"
+    model = "test-model"
+    prompt_hash = "test-prompt"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def extract(self, observations: list[SourceObservation]):
+        self.calls += 1
+        observation = observations[0]
+        entity = EntityMention(
+            entity_id="entity:accepted-before-error",
+            mention_text="Atlas",
+            normalized_name="atlas",
+            entity_type=EntityType.UNKNOWN,
+            evidence_spans=[
+                EvidenceSpan(
+                    source_id=observation.source_id,
+                    quote="Atlas",
+                    source_type=observation.source_type,
+                    timestamp=observation.timestamp,
+                )
+            ],
+            confidence=0.8,
+        )
+        return MemoryExtractionProposal(
+            run=ExtractionRun(
+                extraction_run_id="extraction:partial",
+                provider=self.provider,
+                model=self.model,
+                prompt_hash=self.prompt_hash,
+                input_source_ids=[observation.source_id for observation in observations],
+                entity_ids=[entity.entity_id],
+                status=ExtractionRunStatus.PARTIAL,
+                provider_attempt_status=ProviderAttemptStatus.SUCCEEDED,
+                final_output_source=FinalExtractionSource.PRIMARY,
+                failure_code=ExtractionFailureCode.OUTPUT_VALIDATION,
+                errors=["claim[0]: KeyError:missing-reference"],
             ),
-            [],
-            [],
-            [],
+            entities=[entity],
         )
 
 
@@ -203,6 +248,32 @@ class _BlockingGraphProjector(MemoryGraphProjector):
         return super().project_evolution_result(result=result, existing_snapshot=existing_snapshot)
 
 
+class _ManualHeartbeat:
+    def __init__(self, *, renew: Callable[[], bool], now: list[datetime], advance: timedelta) -> None:
+        self._renew = renew
+        self._now = now
+        self._advance = advance
+
+    def start(self) -> None:
+        self._now[0] += self._advance
+        assert self._renew() is True
+
+    def stop(self) -> None:
+        pass
+
+
+def _manual_heartbeat_factory(
+    now: list[datetime],
+    *,
+    advance: timedelta,
+) -> Callable[..., _ManualHeartbeat]:
+    def build(*, renew: Callable[[], bool], interval: timedelta) -> _ManualHeartbeat:
+        assert interval > timedelta(0)
+        return _ManualHeartbeat(renew=renew, now=now, advance=advance)
+
+    return build
+
+
 def _is_committed_operation(record: CanonicalMemoryRecord) -> bool:
     operation = record.content.get("operation")
     return isinstance(operation, dict) and operation.get("status") == "evolution_committed"
@@ -293,6 +364,37 @@ def test_failed_extraction_records_terminal_provider_failure_without_committing(
     assert provider.memory_evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
 
 
+def test_partial_extraction_fails_atomically_and_retains_truthful_telemetry(caplog) -> None:
+    memory_plane = MemoryPlaneService()
+    provider = ProviderMemoryService(memory_plane=memory_plane, memory_evolution_extractor=_PartialExtractionProvider())
+
+    result = provider.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Alice.",
+        operation_id="operation:partial-extraction",
+    )
+
+    outcome = result.evolution_outcomes[0]
+    assert outcome.status == "evolution_failed"
+    assert outcome.failure_code == "extraction_output_error"
+    assert outcome.retryable is False
+    assert outcome.extraction_status == ExtractionRunStatus.PARTIAL
+    assert outcome.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
+    assert outcome.final_extraction_source == FinalExtractionSource.PRIMARY
+    assert provider.memory_evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
+    assert all(
+        record.content.get("memory_evolution_kind")
+        not in {
+            "claim_state",
+            "entity_link",
+            "action",
+        }
+        for record in memory_plane.list_records()
+    )
+    assert "memory_evolution_extraction_rejected" in caplog.text
+    assert "Traceback" not in caplog.text
+
+
 def test_hybrid_fallback_records_recovery_without_masking_primary_failure() -> None:
     provider = ProviderMemoryService(
         memory_evolution_extractor=HybridMemoryExtractor(
@@ -314,6 +416,50 @@ def test_hybrid_fallback_records_recovery_without_masking_primary_failure() -> N
     assert outcome.fallback_outcome == FallbackOutcome.SUCCEEDED
     assert outcome.final_extraction_source == FinalExtractionSource.FALLBACK
     assert outcome.fallback_provider == "english_rule"
+
+
+def test_hybrid_repairs_partial_extraction_with_commit_eligible_output() -> None:
+    primary = _PartialExtractionProvider()
+    provider = ProviderMemoryService(memory_evolution_extractor=HybridMemoryExtractor(llm_extractor=primary))
+
+    result = provider.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Alice.",
+        operation_id="operation:partial-fallback",
+    )
+
+    outcome = result.evolution_outcomes[0]
+    assert primary.calls == 1
+    assert outcome.status == "evolution_committed"
+    assert outcome.extraction_status == ExtractionRunStatus.SUCCEEDED
+    assert outcome.primary_failure_code == ExtractionFailureCode.OUTPUT_VALIDATION
+    assert outcome.fallback_outcome == FallbackOutcome.SUCCEEDED
+    assert outcome.final_extraction_source == FinalExtractionSource.FALLBACK
+
+
+def test_hybrid_rejects_partial_repair_and_attempts_only_once() -> None:
+    primary = _PartialExtractionProvider()
+    repair = _PartialExtractionProvider()
+    provider = ProviderMemoryService(
+        memory_evolution_extractor=HybridMemoryExtractor(
+            llm_extractor=primary,
+            rule_extractor=repair,
+        )
+    )
+
+    result = provider.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Alice.",
+        operation_id="operation:partial-repair-failed",
+    )
+
+    outcome = result.evolution_outcomes[0]
+    assert primary.calls == repair.calls == 1
+    assert outcome.status == "evolution_failed"
+    assert outcome.extraction_status == ExtractionRunStatus.FAILED
+    assert outcome.fallback_outcome == FallbackOutcome.FAILED
+    assert outcome.final_extraction_source == FinalExtractionSource.NONE
+    assert provider.memory_evolution_service.retrieve_claim_states(view=RetrievalView.ALL_VERSIONS) == []
 
 
 def test_hybrid_does_not_report_an_abstaining_fallback_as_success() -> None:
@@ -554,6 +700,8 @@ def test_concurrent_delivery_claims_one_evolution_execution() -> None:
 
 
 def test_active_lease_is_renewed_during_slow_extraction() -> None:
+    now = [datetime(2026, 1, 1, tzinfo=UTC)]
+    lease_duration = timedelta(seconds=3)
     plane = MemoryPlaneService()
     extractor = _BlockingCountingExtractor()
     evolution_service = MemoryEvolutionService(memory_plane=plane, extractor=extractor)
@@ -561,15 +709,18 @@ def test_active_lease_is_renewed_during_slow_extraction() -> None:
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
+        heartbeat_factory=_manual_heartbeat_factory(now, advance=lease_duration + timedelta(seconds=1)),
         operation_repository=operations,
     )
     contender = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
         operation_repository=operations,
     )
     source = _source("tx:renewed-lease")
@@ -583,7 +734,6 @@ def test_active_lease_is_renewed_during_slow_extraction() -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(coordinator.execute, operation)
         extractor.entered.wait(timeout=5)
-        sleep(0.25)
         observed, result = contender.execute(operation)
         extractor.release.wait(timeout=5)
         committed, _ = future.result(timeout=5)
@@ -596,6 +746,8 @@ def test_active_lease_is_renewed_during_slow_extraction() -> None:
 
 
 def test_active_lease_is_renewed_during_slow_projection() -> None:
+    now = [datetime(2026, 1, 1, tzinfo=UTC)]
+    lease_duration = timedelta(seconds=3)
     plane = MemoryPlaneService()
     projector = _BlockingGraphProjector()
     evolution_service = MemoryEvolutionService(memory_plane=plane, graph_projector=projector)
@@ -603,15 +755,18 @@ def test_active_lease_is_renewed_during_slow_projection() -> None:
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
+        heartbeat_factory=_manual_heartbeat_factory(now, advance=lease_duration + timedelta(seconds=1)),
         operation_repository=operations,
     )
     contender = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
         operation_repository=operations,
     )
     source = _source("tx:slow-projection")
@@ -625,7 +780,6 @@ def test_active_lease_is_renewed_during_slow_projection() -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(coordinator.execute, operation)
         projector.entered.wait(timeout=5)
-        sleep(0.25)
         observed, result = contender.execute(operation)
         projector.release.wait(timeout=5)
         committed, _ = future.result(timeout=5)
@@ -637,6 +791,8 @@ def test_active_lease_is_renewed_during_slow_projection() -> None:
 
 
 def test_active_lease_is_renewed_during_slow_commit() -> None:
+    now = [datetime(2026, 1, 1, tzinfo=UTC)]
+    lease_duration = timedelta(seconds=3)
     store = _BlockingCompletionStore()
     plane = MemoryPlaneService(record_store=store)
     evolution_service = MemoryEvolutionService(memory_plane=plane)
@@ -644,15 +800,18 @@ def test_active_lease_is_renewed_during_slow_commit() -> None:
     coordinator = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
+        heartbeat_factory=_manual_heartbeat_factory(now, advance=lease_duration + timedelta(seconds=1)),
         operation_repository=operations,
     )
     contender = EvolutionCoordinator(
         memory_plane=plane,
         evolution_service=evolution_service,
-        lease_duration=timedelta(milliseconds=120),
-        heartbeat_interval=timedelta(milliseconds=20),
+        now_provider=lambda: now[0],
+        lease_duration=lease_duration,
+        heartbeat_interval=timedelta(seconds=1),
         operation_repository=operations,
     )
     source = _source("tx:slow-commit")
@@ -666,7 +825,6 @@ def test_active_lease_is_renewed_during_slow_commit() -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         future = pool.submit(coordinator.execute, operation)
         store.completion_started.wait(timeout=5)
-        sleep(0.25)
         observed, result = contender.execute(operation)
         store.completion_release.wait(timeout=5)
         committed, _ = future.result(timeout=5)

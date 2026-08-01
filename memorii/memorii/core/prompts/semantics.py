@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ValidationError
 
+from memorii.core.llm_validation import (
+    LLMValidationIssue,
+    LLMValidationStage,
+    validation_issues_from_pydantic,
+)
 from memorii.core.prompts.runtime_manifest import (
     PromptRuntimeRegistration,
     PromptSemanticContract,
@@ -12,6 +17,10 @@ from memorii.core.prompts.runtime_manifest import (
 
 class PromptSemanticValidationError(ValueError):
     """A schema-valid provider output violates its domain contract."""
+
+    def __init__(self, message: str, *, issues: tuple[LLMValidationIssue, ...]) -> None:
+        super().__init__(message)
+        self.issues = issues
 
 
 def qualified_model_name(model: type[BaseModel]) -> str:
@@ -51,5 +60,9 @@ def validate_prompt_semantics(
         semantic_model.model_validate(output.model_dump(mode="python"))
     except ValidationError as exc:
         raise PromptSemanticValidationError(
-            f"Prompt {registration.prompt_ref} output violates {registration.semantic_contract.value}"
+            f"Prompt {registration.prompt_ref} output violates {registration.semantic_contract.value}",
+            issues=validation_issues_from_pydantic(
+                exc,
+                stage=LLMValidationStage.SEMANTIC,
+            ),
         ) from exc

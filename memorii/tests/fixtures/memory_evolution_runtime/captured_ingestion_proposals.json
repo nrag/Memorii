@@ -1,0 +1,150 @@
+[
+  {
+    "case_id": "accepted_identity_incomplete_project",
+    "source_id": "tx:captured-project",
+    "source_text": "Atlas is the Q2 billing migration project.",
+    "captured_proposal": {
+      "entities": [
+        {
+          "entity_ref": "project",
+          "mention_text": "Atlas",
+          "aliases": ["Q2 billing migration project"],
+          "entity_type": "project",
+          "source_id": "tx:captured-project",
+          "quote": "Atlas is the Q2 billing migration project.",
+          "confidence": 1.0
+        }
+      ],
+      "claims": [
+        {
+          "subject_entity_ref": "project",
+          "predicate_id": "entity_type",
+          "object_value": "project",
+          "object_entity_ref": null,
+          "source_id": "tx:captured-project",
+          "quote": "Atlas is the Q2 billing migration project.",
+          "confidence": 1.0
+        }
+      ],
+      "actions": []
+    },
+    "corrected_source_text": "Atlas Billing Migration is a project also called Atlas.",
+    "corrected_proposal": {
+      "entities": [
+        {
+          "entity_ref": "project",
+          "mention_text": "Atlas Billing Migration",
+          "aliases": ["Atlas"],
+          "entity_type": "project",
+          "source_id": "tx:captured-project",
+          "quote": "Atlas Billing Migration is a project also called Atlas.",
+          "confidence": 1.0
+        }
+      ],
+      "claims": [
+        {
+          "subject_entity_ref": "project",
+          "predicate_id": "entity_type",
+          "object_value": "project",
+          "object_entity_ref": null,
+          "source_id": "tx:captured-project",
+          "quote": "Atlas Billing Migration is a project also called Atlas.",
+          "confidence": 1.0
+        }
+      ],
+      "actions": []
+    }
+  },
+  {
+    "case_id": "anaphoric_service_owner",
+    "source_id": "tx:captured-service",
+    "source_text": "Separate note: Atlas service is the internal platform service, and Carol owns that service.",
+    "captured_proposal": {
+      "entities": [
+        {
+          "entity_ref": "service",
+          "mention_text": "Atlas service",
+          "aliases": ["internal platform service"],
+          "entity_type": "service",
+          "source_id": "tx:captured-service",
+          "quote": "Atlas service is the internal platform service",
+          "confidence": 1.0
+        },
+        {
+          "entity_ref": "owner",
+          "mention_text": "Carol",
+          "aliases": [],
+          "entity_type": "person",
+          "source_id": "tx:captured-service",
+          "quote": "Carol owns that service",
+          "confidence": 1.0
+        }
+      ],
+      "claims": [
+        {
+          "subject_entity_ref": "service",
+          "predicate_id": "owner",
+          "object_value": "Carol",
+          "object_entity_ref": "owner",
+          "source_id": "tx:captured-service",
+          "quote": "Carol owns that service",
+          "confidence": 1.0
+        },
+        {
+          "subject_entity_ref": "service",
+          "predicate_id": "semantic_fact",
+          "object_value": "internal platform service",
+          "object_entity_ref": null,
+          "source_id": "tx:captured-service",
+          "quote": "Atlas service is the internal platform service",
+          "confidence": 1.0
+        }
+      ],
+      "actions": []
+    },
+    "corrected_source_text": "Atlas Platform Service is a separate internal platform service. Carol owns Atlas Platform Service.",
+    "corrected_proposal": {
+      "entities": [
+        {
+          "entity_ref": "service",
+          "mention_text": "Atlas Platform Service",
+          "aliases": ["Atlas service"],
+          "entity_type": "service",
+          "source_id": "tx:captured-service",
+          "quote": "Atlas Platform Service is a separate internal platform service",
+          "confidence": 1.0
+        },
+        {
+          "entity_ref": "owner",
+          "mention_text": "Carol",
+          "aliases": [],
+          "entity_type": "person",
+          "source_id": "tx:captured-service",
+          "quote": "Carol owns Atlas Platform Service",
+          "confidence": 1.0
+        }
+      ],
+      "claims": [
+        {
+          "subject_entity_ref": "service",
+          "predicate_id": "entity_type",
+          "object_value": "service",
+          "object_entity_ref": null,
+          "source_id": "tx:captured-service",
+          "quote": "Atlas Platform Service is a separate internal platform service",
+          "confidence": 1.0
+        },
+        {
+          "subject_entity_ref": "service",
+          "predicate_id": "owner",
+          "object_value": "Carol",
+          "object_entity_ref": "owner",
+          "source_id": "tx:captured-service",
+          "quote": "Carol owns Atlas Platform Service",
+          "confidence": 1.0
+        }
+      ],
+      "actions": []
+    }
+  }
+]

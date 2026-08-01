@@ -31,10 +31,9 @@ class ConfidenceAggregator:
             1.0,
             max(
                 0.0,
-                claim.confidence.extraction * 0.35
-                + claim.confidence.evidence * 0.25
-                + claim.confidence.source_trust * 0.25
-                + modality_factor * 0.15
+                claim.confidence.extraction * 0.4
+                + claim.confidence.evidence * 0.3
+                + modality_factor * 0.2
                 + claim.confidence.agreement * 0.1
                 - claim.confidence.contradiction * 0.2,
             ),
@@ -83,4 +82,3 @@ class ConfidenceAggregator:
 
 def _stable_id(prefix: str, value: str) -> str:
     return f"{prefix}:{uuid5(NAMESPACE_URL, value)}"
-

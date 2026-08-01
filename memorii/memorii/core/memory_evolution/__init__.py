@@ -21,7 +21,11 @@ from memorii.core.memory_evolution.extraction import (
     HybridMemoryExtractor,
     LLMMemoryExtractor,
 )
-from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionRunError, MemoryExtractor
+from memorii.core.memory_evolution.extraction_contracts import (
+    MemoryExtractionProposal,
+    MemoryExtractionRunError,
+    MemoryExtractor,
+)
 from memorii.core.memory_evolution.factory import build_memory_extractor_from_env
 from memorii.core.memory_evolution.graph import MemoryGraphProjector
 from memorii.core.memory_evolution.graph_constraint_resolution import (
@@ -29,6 +33,13 @@ from memorii.core.memory_evolution.graph_constraint_resolution import (
     resolve_graph_pattern,
 )
 from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore, MemoryGraphValidator
+from memorii.core.memory_evolution.language_support import (
+    DEFAULT_EXTRACTION_LANGUAGE_REGISTRY,
+    EvidenceDecision,
+    EvidenceVerdict,
+    ExtractionLanguageCapabilities,
+    ExtractionLanguageRegistry,
+)
 from memorii.core.memory_evolution.modality import ExtractionTriggerPolicy, SourceModalityClassifier
 from memorii.core.memory_evolution.models import (
     ClaimKey,
@@ -39,6 +50,7 @@ from memorii.core.memory_evolution.models import (
     ContradictionSet,
     EntityIdentityDecision,
     EntityIdentityDecisionType,
+    EntityIdentityRelationType,
     EntityLinkState,
     EntityMention,
     EntityResolutionOutcome,
@@ -46,6 +58,7 @@ from memorii.core.memory_evolution.models import (
     EvidenceSpan,
     ExtractedAction,
     ExtractedClaim,
+    ExtractedIdentityRelation,
     ExtractionFailureCode,
     ExtractionRun,
     ExtractionRunStatus,
@@ -76,6 +89,7 @@ from memorii.core.memory_evolution.query_analysis import (
     EnglishLexicalQueryResolver,
     LexicalQueryAnalyzer,
     LexicalQueryResolver,
+    ProductionQueryAnalyzer,
     PromptBackedStructuredQueryAnalysisProvider,
     QueryAnalyzer,
     StructuredQueryAnalysisProvider,
@@ -85,7 +99,7 @@ from memorii.core.memory_evolution.query_analysis import (
     infer_query_predicate_id,
     resolve_query_temporal_frame,
 )
-from memorii.core.memory_evolution.query_analysis.runtime_factory import build_prompt_backed_query_analyzer
+from memorii.core.memory_evolution.query_analysis.runtime_factory import build_production_query_analyzer
 from memorii.core.memory_evolution.query_graph import (
     AmbiguousEntityReference,
     EntityReference,
@@ -114,6 +128,10 @@ from memorii.core.memory_evolution.retrieval_contracts import (
     RetrievalPurpose,
     ScopedExecutionView,
     SemanticFrameStatus,
+)
+from memorii.core.memory_evolution.semantic_compilation import (
+    SemanticCompilationResult,
+    SemanticIngestionCompiler,
 )
 from memorii.core.memory_evolution.service import MemoryEvolutionService
 from memorii.core.memory_evolution.temporal_compilation import (
@@ -155,15 +173,22 @@ __all__ = [
     "ContradictionSet",
     "EntityIdentityDecision",
     "EntityIdentityDecisionType",
+    "EntityIdentityRelationType",
     "EntityMention",
     "EntityLinkState",
     "EntityResolutionOutcome",
     "EntityType",
     "EntityResolutionService",
+    "EvidenceDecision",
+    "EvidenceVerdict",
+    "ExtractionLanguageCapabilities",
+    "ExtractionLanguageRegistry",
+    "DEFAULT_EXTRACTION_LANGUAGE_REGISTRY",
     "ExtractionTriggerMode",
     "EvidenceSpan",
     "ExtractedAction",
     "ExtractedClaim",
+    "ExtractedIdentityRelation",
     "ExtractionFailureCode",
     "FallbackOutcome",
     "FinalExtractionSource",
@@ -182,8 +207,11 @@ __all__ = [
     "ProviderAttemptStatus",
     "MemoryEvolutionResult",
     "MemoryExtractionRunError",
+    "MemoryExtractionProposal",
     "EvolutionMutationPlan",
     "MemoryEvolutionService",
+    "SemanticCompilationResult",
+    "SemanticIngestionCompiler",
     "MemoryEvolutionMutationValidationError",
     "MemoryEvolutionValidator",
     "MemoryExtractor",
@@ -200,11 +228,12 @@ __all__ = [
     "QueryResolutionConfidenceSource",
     "StructuredQueryConstraintError",
     "StructuredQueryProviderError",
-    "build_prompt_backed_query_analyzer",
+    "build_production_query_analyzer",
     "HybridMemoryExtractor",
     "LLMMemoryExtractor",
     "PredicatePolicy",
     "PredicateRegistry",
+    "ProductionQueryAnalyzer",
     "ReferenceClaim",
     "ReferenceEntity",
     "RetrievalView",

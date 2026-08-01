@@ -2,17 +2,35 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from memorii.core.llm_config import LLMRuntimeConfig
+from memorii.core.llm_provider.fake import FakeLLMStructuredClient
+from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.memory_evolution import (
     EnglishRuleMemoryExtractor,
+    LLMMemoryExtractor,
     MemoryQueryRequest,
+    RetrievalPurpose,
+    RetrievalView,
     StructuredQueryAnalyzer,
 )
 from memorii.core.memory_evolution.models import SourceObservation
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.provider.models import ProviderEvent, ProviderOperation, ProviderStoredRecord
+from memorii.core.provider.models import (
+    ProviderEvent,
+    ProviderEvolutionOutcome,
+    ProviderOperation,
+    ProviderStoredRecord,
+)
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.domain.enums import CommitStatus, MemoryDomain
+from memorii.domain.enums import (
+    CommitStatus,
+    ExtractionRunStatus,
+    FinalExtractionSource,
+    MemoryDomain,
+    ProviderAttemptStatus,
+    SourceModality,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from pydantic import ValidationError
 
@@ -42,6 +60,104 @@ def test_default_provider_composition_enables_memory_evolution() -> None:
     result = service.last_memory_evolution_result()
     assert result is not None
     assert [observation.source_id for observation in result.observations]
+
+
+def test_provider_preserves_caller_owned_event_time() -> None:
+    processing_time = datetime(2026, 2, 1, tzinfo=UTC)
+    source_time = datetime(2025, 11, 3, 9, 15, tzinfo=UTC)
+    memory_plane = MemoryPlaneService()
+    service = ProviderMemoryService(
+        memory_plane=memory_plane,
+        now_provider=lambda: processing_time,
+    )
+
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Bob.",
+        operation_id="test:source-time",
+        task_id="task:source-time",
+        timestamp=source_time,
+    )
+
+    result = service.last_memory_evolution_result()
+    assert result is not None
+    assert {observation.timestamp for observation in result.observations} == {source_time}
+    transcript = memory_plane.get_record("tx:test:source-time")
+    assert transcript is not None
+    assert transcript.timestamp == source_time
+    assert "source_modality" not in transcript.content
+
+
+@pytest.mark.parametrize(
+    ("modality", "text"),
+    [
+        (
+            SourceModality.HYPOTHETICAL,
+            "Someone hinted there may be another Atlas owner, but no source confirmed who.",
+        ),
+        (
+            SourceModality.NOISE,
+            "A private HR note was referenced but not shown, so no ownership change can be verified.",
+        ),
+        (
+            SourceModality.NOISE,
+            "Debug scratchpad says owner maybe TBD, but no source confirms it.",
+        ),
+    ],
+)
+def test_declared_non_extractable_modality_commits_without_provider_attempt(
+    modality: SourceModality,
+    text: str,
+) -> None:
+    client = FakeLLMStructuredClient(raise_on_request=True)
+    extractor = LLMMemoryExtractor(
+        runner=PromptLLMRunner(
+            client=client,
+            config=LLMRuntimeConfig(provider="none"),
+        )
+    )
+    memory_plane = MemoryPlaneService()
+    service = ProviderMemoryService(
+        memory_plane=memory_plane,
+        memory_evolution_extractor=extractor,
+    )
+
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content=text,
+        operation_id=f"test:declared-modality:{modality.value}",
+        task_id="task:declared-modality",
+        source_modality=modality,
+    )
+
+    assert client.last_request is None
+    assert len(result.evolution_outcomes) == 1
+    outcome = result.evolution_outcomes[0]
+    assert outcome.status == "evolution_committed"
+    assert outcome.extraction_status == ExtractionRunStatus.ABSTAINED
+    assert outcome.provider_attempt_status == ProviderAttemptStatus.NOT_ATTEMPTED
+    assert outcome.final_extraction_source == FinalExtractionSource.NONE
+    evolution = service.last_memory_evolution_result()
+    assert evolution is not None
+    assert evolution.skipped_observation_ids == result.transcript_ids
+    transcript = memory_plane.get_record(result.transcript_ids[0])
+    assert transcript is not None
+    assert transcript.content["source_modality"] == modality.value
+    assert "hidden_distractor_ids" not in transcript.content
+    assert "exposed_claim_ids" not in transcript.content
+
+
+def test_provider_rejects_failed_deterministic_abstention() -> None:
+    with pytest.raises(ValidationError, match="usable extraction result"):
+        ProviderEvolutionOutcome(
+            operation_id="test:invalid-abstention",
+            status="evolution_committed",
+            attempt_count=1,
+            extraction_status=ExtractionRunStatus.ABSTAINED,
+            provider_attempt_status=ProviderAttemptStatus.NOT_ATTEMPTED,
+            final_extraction_source=FinalExtractionSource.NONE,
+            extraction_failure_code="output_validation",
+        )
 
 
 def test_prefetch_excludes_candidate_only_records_and_formats_context() -> None:
@@ -197,6 +313,43 @@ def test_provider_exposes_structured_evolution_decision() -> None:
     assert decision.context_items == []
 
 
+def test_provider_graph_audit_prefetch_preserves_analyzer_entity_scope() -> None:
+    service = ProviderMemoryService(
+        memory_evolution_extractor=EnglishRuleMemoryExtractor(),
+    )
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas migration owner is Bob.",
+        operation_id="test:graph-audit:project",
+    )
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas service owner is Iris.",
+        operation_id="test:graph-audit:service",
+    )
+
+    result = service.prefetch_result(
+        "Reconstruct the Atlas migration ownership graph.",
+        purpose=RetrievalPurpose.GRAPH_AUDIT,
+        include_context=True,
+        include_conflicts=True,
+    )
+
+    decision = result.evolution_decision
+    assert decision is not None
+    states = {
+        state.claim_id: state
+        for state in service.memory_evolution_service.retrieve_claim_states(
+            view=RetrievalView.ALL_VERSIONS
+        )
+    }
+    selected_values = {
+        states[claim_id].object_value for claim_id in decision.selected_record_ids
+    }
+    assert "Bob" in selected_values
+    assert "Iris" not in selected_values
+
+
 def test_memory_write_stages_semantic_candidate_and_blocks_commit() -> None:
     provider = HermesMemoryProvider(ProviderMemoryService())
     result = provider.on_memory_write(
@@ -223,9 +376,7 @@ def test_memory_write_stages_user_candidate_and_blocks_commit() -> None:
 
 def test_session_end_stages_episodic_candidate() -> None:
     provider = HermesMemoryProvider(ProviderMemoryService())
-    result = provider.on_session_end(
-        ["resolved incident"], operation_id="test:session:end", task_id="task:end"
-    )
+    result = provider.on_session_end(["resolved incident"], operation_id="test:session:end", task_id="task:end")
     assert result.allowed_candidate_domains == [MemoryDomain.EPISODIC]
     assert any(candidate_id.startswith("cand:episodic:") for candidate_id in result.candidate_ids)
 

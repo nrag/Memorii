@@ -3,6 +3,7 @@
 from memorii.core.memory_evolution.query_analysis.analyzers import (
     EnglishLexicalQueryAnalyzer,
     LexicalQueryAnalyzer,
+    ProductionQueryAnalyzer,
     StructuredQueryAnalyzer,
 )
 from memorii.core.memory_evolution.query_analysis.contracts import (
@@ -23,7 +24,7 @@ from memorii.core.memory_evolution.query_analysis.lexical import (
     resolve_query_temporal_frame,
 )
 from memorii.core.memory_evolution.query_analysis.provider import PromptBackedStructuredQueryAnalysisProvider
-from memorii.core.memory_evolution.query_analysis.runtime_factory import build_prompt_backed_query_analyzer
+from memorii.core.memory_evolution.query_analysis.runtime_factory import build_production_query_analyzer
 from memorii.core.memory_evolution.query_analysis.validation import (
     query_scope_kind,
     validate_query_analysis_constraints,
@@ -36,6 +37,7 @@ __all__ = [
     "LexicalQueryAnalyzer",
     "LexicalQueryResolver",
     "PromptBackedStructuredQueryAnalysisProvider",
+    "ProductionQueryAnalyzer",
     "QueryAnalyzer",
     "StructuredQueryAnalysisProvider",
     "StructuredQueryAnalyzer",
@@ -45,7 +47,7 @@ __all__ = [
     "VisibleAnchorCatalogEntry",
     "VisibleEntityCatalogEntry",
     "VisiblePredicateCatalogEntry",
-    "build_prompt_backed_query_analyzer",
+    "build_production_query_analyzer",
     "infer_query_predicate_id",
     "is_english",
     "query_scope_kind",

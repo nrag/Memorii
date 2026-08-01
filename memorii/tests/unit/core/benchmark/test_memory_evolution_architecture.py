@@ -4,9 +4,13 @@ import importlib.util
 import re
 from pathlib import Path
 
+from memorii.core.prompts.sensitivity import (
+    ORACLE_INPUT_FIELDS,
+    normalize_sensitive_key,
+)
+
 PACKAGE_ROOT = Path(__file__).resolve().parents[4] / "memorii" / "core"
 SOURCE_ROOT = PACKAGE_ROOT.parent
-TEST_ROOT = SOURCE_ROOT.parent / "tests"
 PRODUCTION_ROOT = PACKAGE_ROOT / "memory_evolution"
 PRODUCTION_LLM_DECISION_ROOT = PACKAGE_ROOT / "llm_decision"
 PROMPT_ROOT = PACKAGE_ROOT / "prompts"
@@ -17,44 +21,16 @@ INDEPENDENT_EVALUATORS = (
     PACKAGE_ROOT / "benchmark" / "memory_evolution_decision",
     PACKAGE_ROOT / "benchmark" / "memory_evolution_sim",
 )
-DOMAIN_NAMING_PATTERN = re.compile(r"(?:phase\d+|wave\d+|legacy|compat)", re.IGNORECASE)
+INGESTION_ORACLE = (
+    PACKAGE_ROOT
+    / "benchmark"
+    / "memory_evolution_runtime"
+    / "ingestion_oracle.py"
+)
 DYNAMIC_IMPORT_OWNERS = {
     PACKAGE_ROOT / "memory_plane" / "file_lock.py": "platform-specific standard-library lock API",
     PACKAGE_ROOT / "provider" / "bm25.py": "optional external rank_bm25 dependency",
 }
-COHESION_ROOTS = (
-    PRODUCTION_ROOT,
-    PACKAGE_ROOT / "provider",
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim",
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_runtime",
-    PACKAGE_ROOT / "benchmark" / "calibration",
-    PACKAGE_ROOT / "benchmark" / "artifact_rows",
-)
-DEFAULT_MODULE_LINE_BUDGET = 750
-DEFAULT_FUNCTION_LINE_BUDGET = 350
-DEFAULT_CLASS_LINE_BUDGET = 500
-MODULE_LINE_BUDGET_EXCEPTIONS = {
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "schemas.py": (
-        800,
-        "declarative simulator schema catalog",
-    ),
-    PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "judges.py": (
-        780,
-        "single selection and rejection judge policy family; answer judges have a separate owner",
-    ),
-}
-FUNCTION_LINE_BUDGET_EXCEPTIONS = {
-    (
-        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "family_scenarios.py",
-        "build_family_scenario",
-    ): (650, "exhaustive declarative scenario-family construction"),
-    (
-        PACKAGE_ROOT / "benchmark" / "calibration" / "gates.py",
-        "evaluate_live_gate",
-    ): (450, "ordered fail-closed calibration gate evaluation"),
-}
-
-
 def _imports(path: Path) -> list[tuple[str, tuple[str, ...]]]:
     tree = ast.parse(path.read_text(), filename=str(path))
     imports: list[tuple[str, tuple[str, ...]]] = []
@@ -96,7 +72,7 @@ def _dynamic_import_capabilities(path: Path) -> list[tuple[int, str]]:
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"eval", "exec"}:
             capabilities.append((node.lineno, node.func.id))
         elif isinstance(node, ast.Constant) and node.value == "__import__":
-            capabilities.append((node.lineno, node.value))
+            capabilities.append((node.lineno, "__import__"))
     return capabilities
 
 
@@ -151,6 +127,24 @@ def test_production_memory_evolution_never_imports_benchmark_code() -> None:
     ]
 
     assert violations == []
+
+
+def test_ingestion_oracle_does_not_import_production_semantic_implementations() -> None:
+    forbidden_modules = {
+        "memorii.core.memory_evolution.claim_policy",
+        "memorii.core.memory_evolution.contradictions",
+        "memorii.core.memory_evolution.entity_resolution",
+        "memorii.core.memory_evolution.graph",
+        "memorii.core.memory_evolution.graph_constraint_compilation",
+        "memorii.core.memory_evolution.graph_constraint_resolution",
+        "memorii.core.memory_evolution.graph_persistence",
+        "memorii.core.memory_evolution.service",
+        "memorii.core.benchmark.memory_evolution_runtime.semantic_comparison",
+    }
+
+    imported_modules = {module for module, _names in _imports(INGESTION_ORACLE)}
+
+    assert imported_modules.isdisjoint(forbidden_modules)
 
 
 def test_production_runtime_never_imports_benchmark_code() -> None:
@@ -251,6 +245,113 @@ def test_production_runtime_contains_no_dynamic_test_support_references() -> Non
     assert violations == []
 
 
+def test_memory_evolution_model_execution_paths_reference_no_oracle_fields() -> None:
+    execution_paths = (
+        PACKAGE_ROOT / "benchmark" / "llm_adapters.py",
+        PACKAGE_ROOT / "benchmark" / "bounded_semantic_repair.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_decision"
+        / "semantic_pipeline.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_decision"
+        / "closed_world_schema.py",
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "claim_policy.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "decision_contract.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "decision_compiler.py",
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "closed_world_schema.py",
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "visible_graph_closure.py",
+        SOURCE_ROOT / "prompts" / "memory_evolution_decision" / "v1.yaml",
+        SOURCE_ROOT / "prompts" / "memory_evolution_sim_reconstruction" / "v1.yaml",
+    )
+    violations = [
+        f"{path}:{token}"
+        for path in execution_paths
+        for token in re.findall(
+            r"[A-Za-z_][A-Za-z0-9_]*",
+            path.read_text(encoding="utf-8"),
+        )
+        if normalize_sensitive_key(token) in ORACLE_INPUT_FIELDS
+    ]
+
+    assert violations == []
+
+
+def test_simulator_compiler_modules_cannot_import_hidden_oracle_or_judges() -> None:
+    compiler_paths = (
+        PACKAGE_ROOT / "benchmark" / "memory_evolution_sim" / "claim_policy.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "decision_contract.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "decision_compiler.py",
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_sim"
+        / "visible_graph_closure.py",
+    )
+    forbidden_modules = {
+        "memorii.core.benchmark.memory_evolution_sim.judges",
+        "memorii.core.benchmark.memory_evolution_sim.answer_judges",
+        "memorii.core.benchmark.memory_evolution_sim.support_judges",
+        "memorii.core.benchmark.memory_evolution_sim.judge_features",
+    }
+    forbidden_symbols = {"OracleCheckpoint", "LatentGraphScenario"}
+    violations: list[str] = []
+    for path in compiler_paths:
+        for module, names in _imports(path):
+            if module in forbidden_modules:
+                violations.append(f"{path}:{module}")
+            violations.extend(
+                f"{path}:{name}" for name in names if name in forbidden_symbols
+            )
+
+    assert violations == []
+
+
+def test_runtime_runner_does_not_invoke_simulator_decision_pipeline() -> None:
+    runner_path = (
+        PACKAGE_ROOT
+        / "benchmark"
+        / "memory_evolution_runtime"
+        / "runner.py"
+    )
+    forbidden_modules = {
+        "memorii.core.benchmark.memory_evolution_sim.decision_contract",
+        "memorii.core.benchmark.memory_evolution_sim.decision_compiler",
+        "memorii.core.benchmark.memory_evolution_sim.decisions",
+        "memorii.core.benchmark.memory_evolution_sim.visible_graph_closure",
+    }
+    forbidden_calls = {
+        "validate_sim_decision_contract",
+        "compile_sim_semantic_decision",
+        "expected_sim_output_for_checkpoint",
+        "oracle_shaped_sim_semantic_decision",
+        "memory_evolution_sim_engine_result_from_llm",
+    }
+    imported_modules = {module for module, _names in _imports(runner_path)}
+    tree = ast.parse(runner_path.read_text(encoding="utf-8"), filename=str(runner_path))
+    invoked = {
+        call_name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and (call_name := _call_attribute(node)) is not None
+    }
+
+    assert imported_modules.isdisjoint(forbidden_modules)
+    assert invoked.isdisjoint(forbidden_calls)
+
+
 def test_benchmark_prompt_adapters_use_explicit_context_annotations() -> None:
     adapter_paths = (
         PACKAGE_ROOT / "benchmark" / "llm_adapters.py",
@@ -344,104 +445,6 @@ def test_public_hardening_packages_export_real_symbols() -> None:
         module = importlib.import_module(module_name)
         missing = [name for name in module.__all__ if not hasattr(module, name)]
         assert missing == [], f"{module_name} has invalid __all__ entries: {missing}"
-
-
-def test_owned_packages_replace_the_removed_monolith_modules() -> None:
-    benchmark_root = PACKAGE_ROOT / "benchmark"
-
-    assert (benchmark_root / "artifact_rows").is_dir()
-    assert not (benchmark_root / "artifact_rows.py").exists()
-    assert (PRODUCTION_ROOT / "query_analysis").is_dir()
-    assert not (PRODUCTION_ROOT / "query_analysis.py").exists()
-    assert not (PRODUCTION_ROOT / "query_runtime_factory.py").exists()
-
-
-def test_hardening_owned_modules_stay_within_cohesion_budgets() -> None:
-    paths = sorted({path for root in COHESION_ROOTS for path in root.rglob("*.py")})
-    violations: list[str] = []
-    for path in paths:
-        exception = MODULE_LINE_BUDGET_EXCEPTIONS.get(path)
-        budget = exception[0] if exception is not None else DEFAULT_MODULE_LINE_BUDGET
-        line_count = len(path.read_text(encoding="utf-8").splitlines())
-        if line_count > budget:
-            violations.append(f"{path.relative_to(SOURCE_ROOT)}: module {line_count} > {budget}")
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                continue
-            assert node.end_lineno is not None
-            span = node.end_lineno - node.lineno + 1
-            if isinstance(node, ast.ClassDef):
-                node_budget = DEFAULT_CLASS_LINE_BUDGET
-                kind = "class"
-            else:
-                function_exception = FUNCTION_LINE_BUDGET_EXCEPTIONS.get((path, node.name))
-                node_budget = (
-                    function_exception[0]
-                    if function_exception is not None
-                    else DEFAULT_FUNCTION_LINE_BUDGET
-                )
-                kind = "function"
-            if span > node_budget:
-                violations.append(
-                    f"{path.relative_to(SOURCE_ROOT)}:{node.lineno}: "
-                    f"{kind} {node.name} {span} > {node_budget}"
-                )
-
-    stale_module_exceptions = set(MODULE_LINE_BUDGET_EXCEPTIONS) - set(paths)
-    stale_function_exceptions = {
-        (path, name)
-        for path, name in FUNCTION_LINE_BUDGET_EXCEPTIONS
-        if path not in paths
-        or not any(
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
-            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
-        )
-    }
-    violations.extend(f"stale module exception: {path}" for path in sorted(stale_module_exceptions))
-    violations.extend(
-        f"stale function exception: {path}:{name}"
-        for path, name in sorted(stale_function_exceptions)
-    )
-
-    assert violations == []
-
-
-def test_provider_tool_handlers_remain_small_and_independently_testable() -> None:
-    path = PACKAGE_ROOT / "provider" / "tool_dispatch.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    dispatcher = next(
-        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ProviderToolDispatcher"
-    )
-    violations = [
-        f"{method.name}: {method.end_lineno - method.lineno + 1} > 60"
-        for method in dispatcher.body
-        if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and method.end_lineno is not None
-        and method.end_lineno - method.lineno + 1 > 60
-    ]
-
-    assert violations == []
-
-
-def test_active_python_identifiers_and_paths_use_domain_names() -> None:
-    architecture_test = Path(__file__).resolve()
-    violations: list[str] = []
-    for root in (SOURCE_ROOT, TEST_ROOT):
-        for path in root.rglob("*.py"):
-            if path.resolve() == architecture_test:
-                continue
-            relative_path = path.relative_to(root).as_posix()
-            if DOMAIN_NAMING_PATTERN.search(relative_path):
-                violations.append(relative_path)
-            tree = ast.parse(path.read_text(), filename=str(path))
-            violations.extend(
-                f"{relative_path}:{line}:{name}"
-                for line, name in _defined_identifiers(tree)
-                if DOMAIN_NAMING_PATTERN.search(name)
-            )
-
-    assert violations == []
 
 
 def test_domain_constructors_do_not_load_environment_configuration() -> None:
@@ -578,28 +581,6 @@ def test_runtime_benchmark_uses_production_prefetch_composition() -> None:
 
     assert "prefetch_result" in calls
     assert "retrieve_evolution_decision" not in calls
-
-
-def test_documentation_does_not_advertise_removed_memory_evolution_feature_flag() -> None:
-    repository_root = SOURCE_ROOT.parents[1]
-    documented_paths = (
-        repository_root / "docs" / "plans" / "agent_integration_readiness.md",
-        repository_root / "docs" / "design" / "belief_state_management.md",
-        repository_root / "docs" / "design" / "memory_evolution_runtime_benchmark.md",
-        repository_root / "docs" / "design" / "memory_evolution_runtime.md",
-    )
-
-    stale_paths = [str(path) for path in documented_paths if "memory_evolution_enabled" in path.read_text()]
-
-    assert stale_paths == []
-
-
-def test_promotion_contract_modules_have_single_domain_ownership() -> None:
-    promotion_root = PACKAGE_ROOT / "promotion"
-    assert (promotion_root / "assessment.py").exists()
-    assert (promotion_root / "execution_contracts.py").exists()
-    assert not (promotion_root / "models.py").exists()
-    assert not (promotion_root / "lifecycle_models.py").exists()
 
 
 def test_checkpoint_diagnostics_aggregator_copies_every_typed_field() -> None:

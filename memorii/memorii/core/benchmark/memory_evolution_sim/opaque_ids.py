@@ -40,7 +40,8 @@ _SEMANTIC_ID_FIELDS = frozenset(
     {
         "predicate_id",
         "required_judge_ids",
-        "requires_belief_ranking_ids",
+        "belief_ranking_policy",
+        "definition_claim_placement",
     }
 )
 

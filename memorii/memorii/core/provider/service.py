@@ -60,6 +60,7 @@ from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
 from memorii.core.work_state.selector import WorkStateSelector
 from memorii.core.work_state.service import WorkStateService
+from memorii.domain.enums import SourceModality
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
 
 
@@ -163,6 +164,8 @@ class ProviderMemoryService:
         task_id: str | None = None,
         user_id: str | None = None,
         language: str = "en",
+        timestamp: datetime | None = None,
+        source_modality: SourceModality | None = None,
     ) -> ProviderSyncResult:
         event = make_event(
             event_id=operation_id,
@@ -175,7 +178,8 @@ class ProviderMemoryService:
             task_id=task_id,
             user_id=user_id,
             language=language,
-            timestamp=self._now_provider(),
+            timestamp=timestamp or self._now_provider(),
+            source_modality=source_modality,
         )
         result, _, evolution_result = self._provider_ingestion.ingest(
             event,
@@ -219,6 +223,8 @@ class ProviderMemoryService:
         target: str,
         operation_id: str,
         language: str = "en",
+        timestamp: datetime | None = None,
+        source_modality: SourceModality | None = None,
     ) -> ProviderWriteDecision:
         event = make_event(
             event_id=operation_id,
@@ -230,7 +236,8 @@ class ProviderMemoryService:
             task_id=task_id,
             user_id=user_id,
             language=language,
-            timestamp=self._now_provider(),
+            timestamp=timestamp or self._now_provider(),
+            source_modality=source_modality,
         )
         sync_result, _, evolution_result = self._provider_ingestion.ingest(event)
         self._last_memory_evolution_result = evolution_result
@@ -425,7 +432,6 @@ class ProviderMemoryService:
                 include_context=include_context,
                 include_conflicts=include_conflicts,
                 purpose=purpose,
-                scope_mode="full",
             )
         else:
             request = MemoryQueryRequest(

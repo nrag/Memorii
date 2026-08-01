@@ -11,6 +11,12 @@ from pydantic import ValidationError
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionDecision,
     MemoryEvolutionDecisionContext,
+    MemoryEvolutionSemanticDecision,
+)
+from memorii.core.benchmark.memory_evolution_decision.semantic_pipeline import (
+    compile_memory_evolution_decision,
+    render_memory_evolution_answer,
+    validate_memory_evolution_semantic_decision,
 )
 from memorii.core.llm_decision.models import (
     LLMDecisionMode,
@@ -24,6 +30,7 @@ from memorii.core.llm_provider.models import (
     LLMStructuredResponse,
 )
 from memorii.core.llm_trace.builder import build_llm_decision_trace_from_result
+from memorii.core.llm_validation import LLMValidationIssue, LLMValidationStage
 
 
 def memory_evolution_trace_for_rule(
@@ -47,20 +54,26 @@ def memory_evolution_engine_result_from_llm(
     *,
     result: LLMDecisionResult,
     mode: LLMDecisionMode,
+    context: MemoryEvolutionDecisionContext,
     rule_output: dict[str, object],
 ) -> tuple[dict[str, object], LLMDecisionTrace, bool, str | None]:
     if not result.success:
+        failure_status = (
+            LLMDecisionStatus.PROVIDER_ERROR
+            if result.failure_mode == "provider_error"
+            else LLMDecisionStatus.VALIDATION_FAILED
+        )
         trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_DECISION,
             mode=mode,
             result=result,
             final_output=rule_output,
             fallback_used=True,
-            status=LLMDecisionStatus.PROVIDER_ERROR,
+            status=failure_status,
         )
         return rule_output, trace, False, result.failure_mode or "llm_decision_failed"
     try:
-        decision = MemoryEvolutionDecision.model_validate(result.output)
+        semantic = MemoryEvolutionSemanticDecision.model_validate(result.output)
     except ValidationError:
         trace = build_llm_decision_trace_from_result(
             decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_DECISION,
@@ -71,6 +84,29 @@ def memory_evolution_engine_result_from_llm(
             status=LLMDecisionStatus.VALIDATION_FAILED,
         )
         return rule_output, trace, False, "llm_decision_validation_failed"
+    validation = validate_memory_evolution_semantic_decision(context=context, semantic=semantic)
+    if not validation.valid:
+        trace = build_llm_decision_trace_from_result(
+            decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_DECISION,
+            mode=mode,
+            result=result,
+            final_output=rule_output,
+            fallback_used=True,
+            status=LLMDecisionStatus.VALIDATION_FAILED,
+        )
+        trace.validation_issues.extend(
+            LLMValidationIssue(
+                stage=LLMValidationStage.SEMANTIC,
+                code=code.value,
+                message=code.value.replace("_", " "),
+            )
+            for code in validation.violation_codes
+        )
+        return rule_output, trace, False, "llm_semantic_validation_failed"
+    decision = render_memory_evolution_answer(
+        decision=compile_memory_evolution_decision(context=context, semantic=semantic),
+        semantic=semantic,
+    )
     output = decision.model_dump(mode="json")
     trace = build_llm_decision_trace_from_result(
         decision_point=LLMDecisionPoint.MEMORY_EVOLUTION_DECISION,
@@ -86,7 +122,7 @@ def memory_evolution_engine_result_from_llm(
 def fake_llm_result_for_memory_evolution(
     *,
     request: LLMStructuredRequest,
-    decision: MemoryEvolutionDecision,
+    decision: MemoryEvolutionSemanticDecision,
     provider_name: str = "fake",
 ) -> LLMDecisionResult:
     output = decision.model_dump(mode="json")

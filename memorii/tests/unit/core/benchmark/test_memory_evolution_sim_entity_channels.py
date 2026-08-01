@@ -190,7 +190,6 @@ def test_memory_evolution_sim_inverse_ownership_requires_owned_subject_entity() 
     )
 
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
-
     assert aggregate.verdict == JudgeVerdict.FAIL
     assert "entity_role_mismatch" in aggregate.critical_failure_buckets
 
@@ -281,9 +280,9 @@ def test_memory_evolution_sim_claim_rekey_passes_with_defining_claim_and_current
 
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=output)
 
-    assert checkpoint.checkpoint_contract.allowed_operations == ["graph_reconstruction"]
-    assert checkpoint.checkpoint_contract.selected_entity_role_policy == "active_graph_subjects"
-    assert "allowed_operations" not in context.model_dump_json()
+    assert checkpoint.task_contract.allowed_operations == ["graph_reconstruction"]
+    assert checkpoint.task_contract.selected_entity_role_policy == "active_graph_subjects"
+    assert context.checkpoint.task_contract.allowed_operations == ["graph_reconstruction"]
     assert output.operation == "graph_reconstruction"
     assert aggregate.verdict == JudgeVerdict.PASS
 
@@ -313,7 +312,8 @@ def test_memory_evolution_sim_active_graph_subjects_reports_overbroad_selected_e
         aggregate=aggregate,
     )
 
-    assert aggregate.verdict == JudgeVerdict.PASS
+    assert aggregate.verdict == JudgeVerdict.FAIL
+    assert "selected_entity_role_overbreadth" in aggregate.critical_failure_buckets
     assert diagnostics.selected_nonrequired_graph_entity_ids == [current_owner_claim.object.entity_id]
     assert diagnostics.selected_graph_entity_overbreadth == [current_owner_claim.object.entity_id]
 

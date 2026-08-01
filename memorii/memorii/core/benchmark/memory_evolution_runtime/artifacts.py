@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from pathlib import Path
 from typing import cast
@@ -21,9 +22,13 @@ from memorii.core.benchmark.artifact_rows import (
 )
 from memorii.core.benchmark.artifact_validation import write_json_atomic, write_typed_jsonl
 from memorii.core.benchmark.failure_policy import WARNING_ONLY_BUCKET_RATIONALES
+from memorii.core.benchmark.memory_evolution_runtime.ingestion_oracle import (
+    IngestionPrefixAuditRow,
+)
 from memorii.core.benchmark.memory_evolution_runtime.models import (
     RuntimeGraphItemRow,
     RuntimeGraphSnapshotRow,
+    RuntimeIngestionTraceRow,
     RuntimeSuiteRows,
 )
 from memorii.core.memory_evolution import (
@@ -35,6 +40,7 @@ from memorii.core.memory_evolution import (
     ProviderAttemptStatus,
     RecordLifecycleState,
 )
+from memorii.core.memory_evolution.operation_models import EvolutionOperationStatus
 
 
 def write_runtime_artifacts(*, run_dir: Path, rows: RuntimeSuiteRows) -> None:
@@ -47,6 +53,16 @@ def write_runtime_artifacts(*, run_dir: Path, rows: RuntimeSuiteRows) -> None:
     write_json_atomic(run_dir / "runtime_graph_alignments_summary.json", runtime_alignment_summary(rows))
     snapshots = [snapshot.model_dump(mode="json") for snapshot in rows.graph_snapshots]
     write_json_atomic(run_dir / "runtime_graph_snapshot.json", snapshots)
+    write_typed_jsonl(
+        run_dir / "runtime_ingestion_traces.jsonl",
+        rows.ingestion_traces,
+        model_type=RuntimeIngestionTraceRow,
+    )
+    write_typed_jsonl(
+        run_dir / "runtime_ingestion_prefix_audits.jsonl",
+        rows.ingestion_prefix_audits,
+        model_type=IngestionPrefixAuditRow,
+    )
 
 
 def horizon_distance_bucket(distance: int | float | object) -> str:
@@ -234,20 +250,16 @@ def runtime_summary_metrics(rows: RuntimeSuiteRows) -> RuntimeReportSummary:
     checkpoint_count = len(checkpoint_rows)
     bucket_counts = Counter(bucket for row in checkpoint_rows for bucket in row.runtime_failure_buckets)
     final_output_source_counts = Counter(row.final_output_source for row in checkpoint_rows)
-    provider_successes = (
+    extraction_successes = (
         0
         if rows.dry_run
-        else sum(
-            row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
-            for row in rows.llm_rows
-        )
+        else sum(row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED for row in rows.llm_rows)
     )
-    provider_failures = 0 if rows.dry_run else _provider_failure_count(rows)
-    fallbacks = (
-        0
-        if rows.dry_run
-        else sum(row.fallback_outcome != FallbackOutcome.NOT_USED for row in rows.llm_rows)
-    )
+    extraction_failures = 0 if rows.dry_run else _provider_failure_count(rows)
+    query_calls, query_failures = _structured_query_call_counts(rows)
+    provider_successes = extraction_successes + query_calls - query_failures
+    provider_failures = extraction_failures + query_failures
+    fallbacks = 0 if rows.dry_run else sum(row.fallback_outcome != FallbackOutcome.NOT_USED for row in rows.llm_rows)
     graph_summary = runtime_graph_completeness_metrics(rows)
     alignment_summary = runtime_alignment_summary(rows)
     return RuntimeReportSummary(
@@ -287,22 +299,39 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
             next(iter(effective_modes), None) if len(effective_modes) == 1 else None,
         )
     provider_backed = effective_mode in {"llm", "hybrid"} and not rows.dry_run
-    provider_successes = (
+    extraction_successes = (
         0
         if rows.dry_run
+        else sum(row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED for row in rows.llm_rows)
+    )
+    extraction_failures = 0 if rows.dry_run else _provider_failure_count(rows)
+    query_calls, query_failures = _structured_query_call_counts(rows)
+    provider_successes = extraction_successes + query_calls - query_failures
+    provider_failures = extraction_failures + query_failures
+    fallbacks = 0 if rows.dry_run else sum(row.fallback_outcome != FallbackOutcome.NOT_USED for row in rows.llm_rows)
+    extraction_attempted_calls = extraction_successes + extraction_failures
+    attempted_calls = extraction_attempted_calls + query_calls
+    requested_model = rows.provider_metadata.get("model")
+    model_identity_mismatches = (
+        0
+        if not provider_backed or not requested_model
         else sum(
-            row.provider_attempt_status == ProviderAttemptStatus.SUCCEEDED
+            row.trace.requested_model != requested_model
+            or not _actual_model_matches_requested(
+                requested_model,
+                row.trace.actual_model,
+            )
             for row in rows.llm_rows
+            if row.provider_attempt_status != ProviderAttemptStatus.NOT_ATTEMPTED
         )
     )
-    provider_failures = 0 if rows.dry_run else _provider_failure_count(rows)
-    fallbacks = (
-        0
-        if rows.dry_run
-        else sum(row.fallback_outcome != FallbackOutcome.NOT_USED for row in rows.llm_rows)
-    )
-    attempted_calls = provider_successes + provider_failures
     provider_attempt_status_counts = Counter(row.provider_attempt_status.value for row in rows.llm_rows)
+    provider_attempt_status_counts.update(
+        {
+            "structured_query_succeeded": query_calls - query_failures,
+            "structured_query_failed": query_failures,
+        }
+    )
     extraction_status_counts = Counter(row.extraction_status.value for row in rows.llm_rows)
     fallback_outcome_counts = Counter(row.fallback_outcome.value for row in rows.llm_rows)
     failure_classifications = Counter(
@@ -316,6 +345,16 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
     )
     abstentions = sum(row.extraction_status == ExtractionRunStatus.ABSTAINED for row in rows.llm_rows)
     partial_extractions = sum(row.extraction_status == ExtractionRunStatus.PARTIAL for row in rows.llm_rows)
+    operation_status_counts = Counter(
+        row.operation_status.value for row in rows.llm_rows if row.operation_status is not None
+    )
+    operation_failure_classifications = Counter(
+        row.operation_failure_code.value for row in rows.llm_rows if row.operation_failure_code is not None
+    )
+    operation_outcome_count = sum(operation_status_counts.values())
+    committed_operations = operation_status_counts[EvolutionOperationStatus.COMMITTED.value]
+    failed_operations = operation_status_counts[EvolutionOperationStatus.FAILED.value]
+    missing_operation_outcomes = sum(row.operation_status is None for row in rows.llm_rows)
     failure_buckets: list[str] = []
     if provider_failures:
         failure_buckets.append("runtime_provider_failure")
@@ -325,6 +364,15 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
         failure_buckets.append("runtime_output_validation_failure")
     if partial_extractions:
         failure_buckets.append("runtime_partial_extraction")
+    if failed_operations:
+        failure_buckets.append("runtime_evolution_operation_failure")
+    if missing_operation_outcomes:
+        failure_buckets.append("runtime_missing_evolution_outcome")
+    if model_identity_mismatches:
+        failure_buckets.append("runtime_provider_model_mismatch")
+    nonterminal_operations = operation_outcome_count - committed_operations - failed_operations
+    if nonterminal_operations:
+        failure_buckets.append("runtime_nonterminal_evolution_outcome")
     if not provider_backed:
         status: ProviderHealthStatus = "not_applicable"
         clean_runtime_gate = True
@@ -337,6 +385,10 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
             and not fallbacks
             and not output_validation_failures
             and not partial_extractions
+            and not failed_operations
+            and not missing_operation_outcomes
+            and not nonterminal_operations
+            and not model_identity_mismatches
             else "fail"
         )
         clean_runtime_gate = status == "pass"
@@ -349,6 +401,10 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
     return RuntimeProviderHealth(
         effective_decision_mode=effective_mode,
         attempted_calls=attempted_calls,
+        extraction_attempted_calls=extraction_attempted_calls,
+        structured_query_attempted_calls=query_calls,
+        structured_query_failures=query_failures,
+        model_identity_mismatches=model_identity_mismatches,
         provider_successes=provider_successes,
         provider_failures=provider_failures,
         fallbacks=fallbacks,
@@ -363,6 +419,12 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
         output_validation_failures=output_validation_failures,
         abstentions=abstentions,
         partial_extractions=partial_extractions,
+        operation_outcome_count=operation_outcome_count,
+        committed_operations=committed_operations,
+        failed_operations=failed_operations,
+        missing_operation_outcomes=missing_operation_outcomes,
+        operation_status_counts=dict(sorted(operation_status_counts.items())),
+        operation_failure_classification_counts=dict(sorted(operation_failure_classifications.items())),
         execution_source=execution_source,
         dry_run=rows.dry_run,
         fake_extractor_calls=sum(1 for row in rows.checkpoint_rows if row.final_output_source == "fake_oracle"),
@@ -374,7 +436,25 @@ def runtime_provider_health(rows: RuntimeSuiteRows) -> RuntimeProviderHealth:
             "rule_mode": "not_applicable",
             "dry_run": "not_provider_health",
             "fake_oracle": "never_provider_success",
+            "operation_outcome": "require_committed_for_every_extraction",
+            "model_identity": "require_requested_model_or_dated_snapshot",
         },
+    )
+
+
+def _actual_model_matches_requested(
+    requested_model: str,
+    actual_model: str | None,
+) -> bool:
+    if actual_model is None:
+        return False
+    return (
+        actual_model == requested_model
+        or re.fullmatch(
+            rf"{re.escape(requested_model)}-\d{{4}}-\d{{2}}-\d{{2}}",
+            actual_model,
+        )
+        is not None
     )
 
 
@@ -385,6 +465,23 @@ def _provider_failure_count(rows: RuntimeSuiteRows) -> int:
         ProviderAttemptStatus.SCHEMA_ERROR,
     }
     return sum(row.provider_attempt_status in failure_statuses for row in rows.llm_rows)
+
+
+def _structured_query_call_counts(rows: RuntimeSuiteRows) -> tuple[int, int]:
+    if rows.dry_run:
+        return 0, 0
+    analyses = [
+        decision.query_analysis
+        for row in rows.checkpoint_rows
+        if (decision := row.diagnostics.runtime_retrieval_decision) is not None and decision.query_analysis is not None
+    ]
+    calls = sum(analysis.structured_query_call_count for analysis in analyses)
+    failures = sum(
+        analysis.structured_query_call_count
+        for analysis in analyses
+        if analysis.failure_code is not None or analysis.provider_error is not None
+    )
+    return calls, failures
 
 
 def runtime_alignment_summary(rows: RuntimeSuiteRows) -> AlignmentSummary:
@@ -422,9 +519,7 @@ def runtime_alignment_summary(rows: RuntimeSuiteRows) -> AlignmentSummary:
             required_counts[verdict] += 1
             required_item_counts[f"{item_type}:{verdict}"] += 1
     scored_verdict_counts = Counter(row.verdict for row in rows.checkpoint_rows)
-    scored_verdict_counts = Counter(
-        {"pass": scored_verdict_counts["pass"], "fail": scored_verdict_counts["fail"]}
-    )
+    scored_verdict_counts = Counter({"pass": scored_verdict_counts["pass"], "fail": scored_verdict_counts["fail"]})
     scored_failure_bucket_counts = Counter(bucket for row in rows.checkpoint_rows for bucket in row.failure_buckets)
     return AlignmentSummary(
         alignment_summary_policy={

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from memorii.core.benchmark.calibration.alignment import (
     RuntimeGraphAlignment,
     RuntimeGraphAlignmentVerdict,
     align_entity_by_fields,
-    align_relation_by_fields,
     normalize_alignment_value,
 )
 from memorii.core.benchmark.memory_evolution_runtime.models import (
@@ -110,21 +109,30 @@ def align_runtime_graph_to_oracle(
                 rationale="no oracle claim candidates",
             )
         )
+    alignments = _enforce_one_to_one_alignment(alignments)
+    endpoint_map = _aligned_runtime_endpoint_map(graph_items=graph_items, alignments=alignments)
     for runtime in runtime_relations:
         best = _best_alignment(
             [
-                align_relation_by_fields(
-                    runtime_item_id=runtime.runtime_item_id,
-                    oracle_item_id=relation.relation_id,
-                    runtime_fields=_runtime_relation_fields(runtime),
-                    oracle_fields=_oracle_relation_fields(relation),
+                _align_relation_by_topology(
+                    runtime=runtime,
+                    oracle_relation=relation,
+                    endpoint_map=endpoint_map,
                 )
                 for relation in scenario.relations
                 if relation.observability != ObservabilityLabel.HIDDEN
             ]
         )
-        if best is not None:
-            alignments.append(best)
+        alignments.append(
+            best
+            or RuntimeGraphAlignment(
+                runtime_item_id=runtime.runtime_item_id,
+                item_type="relation",
+                verdict=RuntimeGraphAlignmentVerdict.UNMATCHED_RUNTIME,
+                score=0.0,
+                rationale="no oracle relation candidates",
+            )
+        )
     alignments = _enforce_one_to_one_alignment(alignments)
     for entity in scenario.entities:
         if entity.observability != ObservabilityLabel.HIDDEN and not any(
@@ -152,7 +160,78 @@ def align_runtime_graph_to_oracle(
                     rationale="oracle claim missing from runtime graph",
                 )
             )
+    for relation in scenario.relations:
+        if relation.observability != ObservabilityLabel.HIDDEN and not any(
+            a.oracle_item_id == relation.relation_id and a.item_type == "relation" for a in alignments
+        ):
+            alignments.append(
+                RuntimeGraphAlignment(
+                    oracle_item_id=relation.relation_id,
+                    item_type="relation",
+                    verdict=RuntimeGraphAlignmentVerdict.MISSING_EXPECTED,
+                    score=0.0,
+                    rationale="oracle relation missing from runtime graph",
+                )
+            )
     return alignments
+
+
+def _aligned_runtime_endpoint_map(
+    *, graph_items: Sequence[RuntimeGraphItem], alignments: Sequence[RuntimeGraphAlignment]
+) -> dict[str, str]:
+    """Map runtime endpoint aliases to oracle IDs after independent node alignment."""
+
+    item_by_runtime_id = {item.runtime_item_id: item for item in graph_items}
+    endpoint_map: dict[str, str] = {}
+    for alignment in alignments:
+        if (
+            alignment.item_type not in {"entity", "claim"}
+            or alignment.verdict != RuntimeGraphAlignmentVerdict.ALIGNED
+            or alignment.runtime_item_id is None
+            or alignment.oracle_item_id is None
+        ):
+            continue
+        item = item_by_runtime_id.get(alignment.runtime_item_id)
+        runtime_ids = {alignment.runtime_item_id}
+        if isinstance(item, RuntimeEntityGraphItemRow):
+            runtime_ids.add(item.canonical_id)
+        elif isinstance(item, RuntimeClaimGraphItemRow):
+            runtime_ids.add(item.claim_id)
+        for runtime_id in runtime_ids:
+            if runtime_id:
+                endpoint_map[runtime_id] = alignment.oracle_item_id
+    return endpoint_map
+
+
+def _align_relation_by_topology(
+    *,
+    runtime: RuntimeRelationGraphItemRow,
+    oracle_relation: LatentRelation,
+    endpoint_map: Mapping[str, str],
+) -> RuntimeGraphAlignment:
+    mapped_source = endpoint_map.get(runtime.source)
+    mapped_target = endpoint_map.get(runtime.target)
+    oracle_source = oracle_relation.source.endpoint_id
+    oracle_target = oracle_relation.target.endpoint_id
+    endpoints_match = (mapped_source, mapped_target) == (oracle_source, oracle_target)
+    if runtime.directionality == oracle_relation.directionality == "undirected":
+        endpoints_match = endpoints_match or (mapped_source, mapped_target) == (oracle_target, oracle_source)
+
+    matched: list[str] = []
+    if endpoints_match:
+        matched.extend(["source_alignment", "target_alignment"])
+    if normalize_alignment_value(runtime.relation_type) == normalize_alignment_value(oracle_relation.relation_type):
+        matched.append("relation_type")
+    if normalize_alignment_value(runtime.directionality) == normalize_alignment_value(oracle_relation.directionality):
+        matched.append("directionality")
+    return _runtime_alignment_from_matches(
+        runtime_item_id=runtime.runtime_item_id,
+        oracle_item_id=oracle_relation.relation_id,
+        item_type="relation",
+        matched=matched,
+        required_count=4,
+        rationale="relation alignment composes independent endpoint alignment with type and direction",
+    )
 
 
 def _align_claim_with_entity_context(
@@ -405,22 +484,4 @@ def _oracle_claim_fields(claim: LatentClaim) -> dict[str, object]:
         "object": claim.object.value,
         "scope": claim.scope.scope_key,
         "valid_from": claim.lifecycle.valid_from.isoformat() if claim.lifecycle.valid_from else "",
-    }
-
-
-def _oracle_relation_fields(relation: LatentRelation) -> dict[str, object]:
-    return {
-        "source": relation.source.endpoint_id,
-        "target": relation.target.endpoint_id,
-        "relation_type": relation.relation_type,
-        "directionality": relation.directionality,
-    }
-
-
-def _runtime_relation_fields(item: RuntimeRelationGraphItemRow) -> dict[str, object]:
-    return {
-        "source": item.source,
-        "target": item.target,
-        "relation_type": item.relation_type,
-        "directionality": item.directionality,
     }

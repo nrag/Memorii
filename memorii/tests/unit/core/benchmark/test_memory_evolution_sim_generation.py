@@ -8,6 +8,10 @@ from memorii.core.benchmark.memory_evolution_sim import (
     generate_memory_evolution_sim_scenarios,
     sim_reconstruction_context_for_checkpoint,
 )
+from memorii.core.benchmark.memory_evolution_sim.schemas import LatentEntity, LatentGraphScenario
+from memorii.core.memory_evolution.extraction import models_from_llm_output
+from memorii.core.memory_evolution.models import ExtractionRunStatus, SourceObservation
+from memorii.domain.enums import SourceModality, SourceType
 from tests.unit.core.benchmark.memory_evolution_test_helpers import generate_scenario_by_family
 
 
@@ -59,6 +63,173 @@ def test_memory_evolution_sim_surface_observations_vary_by_seed() -> None:
     assert first != second
 
 
+def test_unverified_owner_surface_matches_hidden_project_claim() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="entity_definition_before_role_claims",
+        seed=7,
+        noise_rate=0.35,
+    )
+    observation = next(
+        item for item in scenario.observations if item.modality == "third_party_claim" and item.exposed_claim_ids
+    )
+    claim = next(item for item in scenario.claims if item.claim_id in observation.exposed_claim_ids)
+
+    assert "Atlas billing migration" in observation.text
+    assert "not verified" in observation.text
+    assert claim.subject.entity_type == "project"
+    assert claim.subject.canonical_name == "Atlas Billing Migration"
+    assert claim.lifecycle.state.value == "invalidated"
+
+
+def _surface_mentions_entity(text: str, entity: LatentEntity) -> bool:
+    normalized = text.casefold()
+    names = [entity.canonical_name, *(alias.alias_text for alias in entity.aliases)]
+    return any(name.casefold() in normalized for name in names)
+
+
+def _assert_surface_contract_is_textually_grounded(scenario: LatentGraphScenario) -> None:
+    entities = {entity.entity_id: entity for entity in scenario.entities}
+    claims = {claim.claim_id: claim for claim in scenario.claims}
+    relations = {relation.relation_id: relation for relation in scenario.relations}
+
+    for observation in scenario.observations:
+        for entity_id in observation.exposed_entity_ids:
+            assert _surface_mentions_entity(observation.text, entities[entity_id]), (
+                scenario.family,
+                observation.event_id,
+                entity_id,
+                observation.text,
+            )
+        for claim_id in observation.exposed_claim_ids:
+            claim = claims[claim_id]
+            assert _surface_mentions_entity(observation.text, entities[claim.subject.entity_id])
+            if claim.object.entity_id is not None:
+                assert _surface_mentions_entity(observation.text, entities[claim.object.entity_id])
+            else:
+                assert claim.object.value.casefold() in observation.text.casefold()
+        for relation_id in observation.exposed_relation_ids:
+            relation = relations[relation_id]
+            if relation.relation_type not in {"alias_of", "split_from"}:
+                continue
+            assert relation.source.label.casefold() in observation.text.casefold()
+            assert relation.target.label.casefold() in observation.text.casefold()
+
+
+def _assert_exposed_claims_satisfy_production_ingestion(scenario: LatentGraphScenario) -> None:
+    entities = {entity.entity_id: entity for entity in scenario.entities}
+    claims = {claim.claim_id: claim for claim in scenario.claims}
+
+    for observation in scenario.observations:
+        exposed_claims = [claims[claim_id] for claim_id in observation.exposed_claim_ids]
+        if not exposed_claims:
+            continue
+        entity_ids = list(
+            dict.fromkeys(
+                entity_id
+                for claim in exposed_claims
+                for entity_id in (claim.subject.entity_id, claim.object.entity_id)
+                if entity_id is not None
+            )
+        )
+        entity_refs = {entity_id: f"entity_{index}" for index, entity_id in enumerate(entity_ids)}
+        source_id = f"source:{observation.event_id}"
+        output = {
+            "entities": [
+                {
+                    "entity_ref": entity_refs[entity_id],
+                    "mention_text": entities[entity_id].canonical_name,
+                    "aliases": [alias.alias_text for alias in entities[entity_id].aliases],
+                    "entity_type": entities[entity_id].entity_type,
+                    "source_id": source_id,
+                    "quote": observation.text,
+                    "confidence": 1.0,
+                }
+                for entity_id in entity_ids
+            ],
+            "claims": [
+                {
+                    "subject_entity_ref": entity_refs[claim.subject.entity_id],
+                    "predicate_id": claim.predicate.predicate_id,
+                    "object_value": (
+                        entities[claim.object.entity_id].canonical_name
+                        if claim.object.entity_id is not None
+                        else claim.object.value
+                    ),
+                    "object_entity_ref": (
+                        entity_refs[claim.object.entity_id] if claim.object.entity_id is not None else None
+                    ),
+                    "source_id": source_id,
+                    "quote": observation.text,
+                    "confidence": 1.0,
+                }
+                for claim in exposed_claims
+            ],
+            "actions": [],
+        }
+
+        proposal = models_from_llm_output(
+            run_id=f"run:{observation.event_id}",
+            provider="test",
+            model="test-model",
+            prompt_hash="test-prompt",
+            observations=[
+                SourceObservation(
+                    source_id=source_id,
+                    text=observation.text,
+                    source_type=(
+                        SourceType.TOOL
+                        if observation.source_type == "tool" or observation.modality == "tool_result"
+                        else SourceType.USER
+                    ),
+                    timestamp=observation.timestamp,
+                    task_id=observation.task_id,
+                    session_id=observation.session_id,
+                    user_id=observation.user_id,
+                    modality=SourceModality(observation.modality),
+                )
+            ],
+            output=output,
+        )
+
+        assert proposal.run.status == ExtractionRunStatus.SUCCEEDED, (
+            scenario.profile,
+            scenario.family,
+            observation.event_id,
+            observation.text,
+            proposal.run.errors,
+        )
+        assert proposal.run.errors == []
+
+
+@pytest.mark.parametrize("profile", ["smoke", "adversarial", "long_horizon"])
+@pytest.mark.parametrize("seed", [7, 11, 19, 23, 31])
+def test_generated_surface_contracts_are_textually_grounded(profile: str, seed: int) -> None:
+    scenarios = generate_memory_evolution_sim_scenarios(
+        profile=profile,
+        scenario_count=len(MEMORY_EVOLUTION_SCENARIO_FAMILIES),
+        seed=seed,
+        noise_rate=0.35,
+    )
+
+    for scenario in scenarios:
+        _assert_surface_contract_is_textually_grounded(scenario)
+
+
+@pytest.mark.parametrize("profile", ["smoke", "adversarial", "long_horizon"])
+@pytest.mark.parametrize("seed", [7, 11, 19, 23, 31])
+def test_generated_claims_satisfy_production_ingestion_contract(profile: str, seed: int) -> None:
+    scenarios = generate_memory_evolution_sim_scenarios(
+        profile=profile,
+        scenario_count=len(MEMORY_EVOLUTION_SCENARIO_FAMILIES),
+        seed=seed,
+        noise_rate=0.35,
+    )
+
+    for scenario in scenarios:
+        _assert_exposed_claims_satisfy_production_ingestion(scenario)
+
+
 def test_checkpoint_paraphrases_vary_without_changing_contracts() -> None:
     first = generate_memory_evolution_sim_scenarios(
         profile="long_horizon",
@@ -77,7 +248,7 @@ def test_checkpoint_paraphrases_vary_without_changing_contracts() -> None:
         (
             scenario.family,
             checkpoint.checkpoint_type,
-            checkpoint.checkpoint_contract.model_dump(mode="json"),
+            checkpoint.task_contract.model_dump(mode="json"),
             checkpoint.difficulty_tags,
             checkpoint.severity,
         )
@@ -88,7 +259,7 @@ def test_checkpoint_paraphrases_vary_without_changing_contracts() -> None:
         (
             scenario.family,
             checkpoint.checkpoint_type,
-            checkpoint.checkpoint_contract.model_dump(mode="json"),
+            checkpoint.task_contract.model_dump(mode="json"),
             checkpoint.difficulty_tags,
             checkpoint.severity,
         )
@@ -116,7 +287,7 @@ def test_generated_semantic_worlds_are_unique_and_surface_id_independent() -> No
 
 @pytest.mark.parametrize("profile", ["smoke", "adversarial", "long_horizon"])
 @pytest.mark.parametrize("seed", [7, 11, 19])
-def test_every_generated_family_has_a_closed_visible_checkpoint_contract(
+def test_every_generated_family_has_a_closed_visible_task_contract(
     profile: str,
     seed: int,
 ) -> None:

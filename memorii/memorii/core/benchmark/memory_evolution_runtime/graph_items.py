@@ -96,7 +96,7 @@ def graph_items_from_snapshot(
                 create=lambda node=node: RuntimeEntityGraphItemRow(
                     scenario_id=scenario_id,
                     runtime_item_id=node.node_id,
-                    canonical_name=node.label,
+                    canonical_name=node.properties.get("normalized_name") or node.label,
                     canonical_id=node.canonical_id or "",
                     entity_type=node.properties.get("entity_type", "unknown"),
                     aliases=[alias for alias in node.properties.get("aliases", "").split("|") if alias],
@@ -278,7 +278,18 @@ def claim_quote(claim: LatentClaim, surface: SurfaceObservation) -> str:
 
 
 def entity_quote(entity: LatentEntity, surface: SurfaceObservation) -> str:
+    surface_name = entity_mention_text(entity, surface.text)
+    if surface_name in surface.text:
+        return surface_name
     for span in entity.evidence_spans:
         if span.event_id == surface.event_id and span.quote in surface.text:
             return span.quote
     return entity.canonical_name if entity.canonical_name in surface.text else surface.text
+
+
+def entity_mention_text(entity: LatentEntity, quote: str) -> str:
+    """Return the longest declared entity surface that occurs in the quote."""
+
+    candidates = (entity.canonical_name, *(alias.alias_text for alias in entity.aliases))
+    matches = [candidate for candidate in candidates if candidate and candidate in quote]
+    return max(matches, key=len) if matches else entity.canonical_name

@@ -10,6 +10,93 @@ permissions:
   contents: read
 
 jobs:
+  ctv-binding-authority-compiler-parity:
+    name: CTV Binding Authority Compiler Parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install compiler parity dependencies
+        run: python3.12 -m pip install 'pytest>=8,<10'
+
+      - name: Run independent CTV compiler parity
+        working-directory: memorii
+        run: >-
+          python3.12 -m pytest -W error
+          tests/unit/tools/test_semantic_ingestion_ctv_reference_compiler.py
+          -p no:cacheprovider
+
+  ctv-binding-authority-pr-gate:
+    name: CTV Binding Authority PR Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PR-gate test dependencies
+        run: python3.12 -m pip install 'pytest>=8,<10' 'PyYAML>=6,<7'
+
+      - name: Run CTV PR-gate tamper tests
+        working-directory: memorii
+        run: >-
+          python3.12 -m pytest -W error
+          tests/unit/tools/test_ctv_binding_authority_pr_gate.py
+          -p no:cacheprovider
+
+  ctv-binding-authority-exact:
+    name: CTV Binding Authority Exact
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # This is intentionally dependency-free: the hermetic checker admits
+      # only the frozen design, registry, authority, validator, and stdlib.
+      - name: Verify pinned CTV binding authority
+        run: >-
+          python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_ctv_binding_authority_v2.py
+          --design docs/design/semantic_ingestion_architecture.md
+          --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json
+          --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json
+          --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py
+          --expected-design-sha256 70ace2b99c4db79911f45555f72cde43278ccaac69c1fc11530e2d474f1fa26c
+          --expected-registry-sha256 8e6395e2657eb1a51e5eef7d9b88b5d43b974a58f7f786ed135f6758262bfec1
+          --expected-authority-sha256 c119345548166fd99e7aefe963d62a9b73e6c98c7cac84b7d6f8759b2ceb5633
+          --expected-validator-sha256 826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e
+          --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
+
+      - name: Verify lifecycle-root signer provenance semantics
+        run: >-
+          python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_lifecycle_root_signer_provenance_v1.py
+          --design docs/design/semantic_ingestion_architecture.md
+          --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
+          --fixture docs/design/semantic_ingestion/traceability_golden_vectors/lifecycle-root-signer-provenance-witness-v1.json
+          --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_lifecycle_root_signer_provenance_v1.py
+          --expected-checker-sha256 8c219ad322277abfe5e969a2153eaf050971187af619713b3f4ffb58dd942038
+          --self-test
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -20,6 +107,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -54,7 +143,41 @@ jobs:
 
       - name: Run unit tests
         working-directory: memorii
-        run: pytest -W error tests/unit -p no:cacheprovider
+        run: >-
+          pytest -W error tests/unit
+          --ignore=tests/unit/tools/test_generation_closure_exactness.py
+          --ignore=tests/unit/tools/test_scenario_fixture_authority.py
+          -p no:cacheprovider
+
+
+  semantic-ingestion-acceptance:
+    name: Semantic Ingestion Acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run semantic ingestion public acceptance
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/unit/tools/test_generation_closure_exactness.py
+          tests/unit/tools/test_scenario_fixture_authority.py
+          tests/acceptance/semantic_ingestion/test_sia_requirements.py
+          -p no:cacheprovider
 
   benchmark-contracts:
     name: Benchmark Contracts

@@ -158,6 +158,9 @@ def claim(
     roles: list[str],
     object_entity_id: str | None = None,
     valid_to: datetime | None = None,
+    supersedes_claim_ids: list[str] | None = None,
+    superseded_by_claim_id: str | None = None,
+    conflict_with_claim_ids: list[str] | None = None,
     observability: ObservabilityLabel = ObservabilityLabel.OBSERVED,
     confidence: LatentConfidence | None = None,
     scope: ClaimScope | None = None,
@@ -188,7 +191,14 @@ def claim(
             resolution_confidence=0.9 if object_entity_id else None,
         ),
         scope=scope or ClaimScope(scope_key="global", organization_unit="Finance Ops"),
-        lifecycle=ClaimLifecycle(state=state, valid_from=timestamp, valid_to=valid_to),
+        lifecycle=ClaimLifecycle(
+            state=state,
+            valid_from=timestamp,
+            valid_to=valid_to,
+            supersedes_claim_ids=supersedes_claim_ids or [],
+            superseded_by_claim_id=superseded_by_claim_id,
+            conflict_with_claim_ids=conflict_with_claim_ids or [],
+        ),
         evidence=ClaimEvidence(
             source_event_ids=[event_id],
             spans=[

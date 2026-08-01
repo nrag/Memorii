@@ -3,10 +3,9 @@ from __future__ import annotations
 import pytest
 from memorii.core.benchmark.memory_evolution_sim import (
     SimSystemOutput,
-    expected_sim_output_for_checkpoint,
-    fake_llm_result_for_memory_evolution_sim,
     memory_evolution_sim_engine_result_from_llm,
     rule_sim_output_for_checkpoint,
+    sim_reconstruction_context_for_checkpoint,
 )
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.models import LLMStructuredRequest
@@ -15,6 +14,8 @@ from pydantic import ValidationError
 from tests.unit.core.benchmark.memory_evolution_test_helpers import (
     checkpoint_by_type,
     generate_scenario_by_family,
+    oracle_shaped_sim_semantic_decision,
+    provider_result_for_sim_semantic,
 )
 
 
@@ -48,7 +49,10 @@ def test_rule_baseline_is_invariant_to_oracle_annotations() -> None:
         }
     )
 
-    assert rule_sim_output_for_checkpoint(scenario=scenario, checkpoint=changed_oracle) == decision
+    assert rule_sim_output_for_checkpoint(
+        scenario=scenario,
+        checkpoint=changed_oracle,
+    ) == decision
 
 
 def test_sim_output_rejects_removed_flat_channels() -> None:
@@ -62,22 +66,69 @@ def test_sim_output_rejects_removed_flat_channels() -> None:
         )
 
 
-def test_llm_engine_preserves_explicit_role_channels_without_evaluator_repair() -> None:
+def test_llm_engine_rejects_unknown_uncertain_id_and_uses_rule_fallback() -> None:
+    scenario = generate_scenario_by_family(
+        profile="adversarial",
+        family="entity_split",
+        seed=7,
+        noise_rate=0.35,
+    )
+    checkpoint = checkpoint_by_type(scenario, "entity_split_repair")
+    context = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    ).model_copy(update={"uncertain_ids": ["fabricated-composite-id"]})
+    rule_output = rule_sim_output_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
+
+    output, trace, success, failure = memory_evolution_sim_engine_result_from_llm(
+        result=provider_result_for_sim_semantic(
+            request=_request(),
+            decision=semantic,
+        ),
+        mode=LLMDecisionMode.LLM,
+        context=context,
+        rule_output=rule_output,
+    )
+
+    assert success is False
+    assert failure == "llm_semantic_validation_failed"
+    assert output == rule_output
+    assert [issue.code for issue in trace.validation_issues] == [
+        "invalid_uncertain_id"
+    ]
+    assert trace.fallback_used is True
+
+
+def test_llm_engine_compiles_support_and_citations_from_semantic_assessments() -> None:
     scenario = generate_scenario_by_family(
         profile="long_horizon",
         family="current_vs_historical_truth",
         seed=7,
     )
     checkpoint = checkpoint_by_type(scenario, "current_truth")
-    live_output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
-        update={"supporting_claim_ids": [], "supporting_citation_event_ids": []}
-    )
-    result = fake_llm_result_for_memory_evolution_sim(request=_request(), decision=live_output)
-
-    output, _trace, success, failure = memory_evolution_sim_engine_result_from_llm(
-        result=result,
-        mode=LLMDecisionMode.LLM,
+    context = sim_reconstruction_context_for_checkpoint(
         scenario=scenario,
+        checkpoint=checkpoint,
+    )
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    )
+
+    output, trace, success, failure = memory_evolution_sim_engine_result_from_llm(
+        result=provider_result_for_sim_semantic(
+            request=_request(),
+            decision=semantic,
+        ),
+        mode=LLMDecisionMode.LLM,
+        context=context,
         rule_output=rule_sim_output_for_checkpoint(
             scenario=scenario,
             checkpoint=checkpoint,
@@ -86,32 +137,56 @@ def test_llm_engine_preserves_explicit_role_channels_without_evaluator_repair() 
 
     assert success is True
     assert failure is None
-    assert output == live_output.model_dump(mode="json")
+    assert output["supporting_claim_ids"] == output["selected_claim_ids"]
+    assert output["supporting_citation_event_ids"]
+    assert trace.final_output == output
 
 
-def test_llm_engine_reports_invalid_role_channel_ids_without_fallback_rewrite() -> None:
+def test_llm_engine_rejects_invalid_claim_assessment_without_sanitizing_to_success() -> None:
     scenario = generate_scenario_by_family(
         profile="long_horizon",
         family="current_vs_historical_truth",
         seed=7,
     )
     checkpoint = checkpoint_by_type(scenario, "current_truth")
-    live_output = expected_sim_output_for_checkpoint(checkpoint).model_copy(
-        update={"rejection_citation_event_ids": ["event:not-visible"]}
+    context = sim_reconstruction_context_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
     )
-    result = fake_llm_result_for_memory_evolution_sim(request=_request(), decision=live_output)
+    semantic = oracle_shaped_sim_semantic_decision(
+        context=context,
+        checkpoint=checkpoint,
+    )
+    invalid_assessments = [
+        assessment.model_copy(
+            update={"claim_id": "claim:not-visible"}
+        )
+        if index == 0
+        else assessment
+        for index, assessment in enumerate(semantic.claim_assessments)
+    ]
+    invalid = semantic.model_copy(
+        update={"claim_assessments": invalid_assessments}
+    )
+    rule_output = rule_sim_output_for_checkpoint(
+        scenario=scenario,
+        checkpoint=checkpoint,
+    ).model_dump(mode="json")
 
     output, trace, success, failure = memory_evolution_sim_engine_result_from_llm(
-        result=result,
+        result=provider_result_for_sim_semantic(
+            request=_request(),
+            decision=invalid,
+        ),
         mode=LLMDecisionMode.LLM,
-        scenario=scenario,
-        rule_output=rule_sim_output_for_checkpoint(
-            scenario=scenario,
-            checkpoint=checkpoint,
-        ).model_dump(mode="json"),
+        context=context,
+        rule_output=rule_output,
     )
 
     assert success is False
-    assert failure == "llm_output_referenced_invalid_ids"
-    assert output == live_output.model_dump(mode="json")
-    assert trace.validation_errors == ["invalid_rejection_citation_event_ids:event:not-visible"]
+    assert failure == "llm_semantic_validation_failed"
+    assert output == rule_output
+    assert {"invalid_claim_id", "missing_claim_assessment"}.issubset(
+        {issue.code for issue in trace.validation_issues}
+    )
+    assert trace.fallback_used is True

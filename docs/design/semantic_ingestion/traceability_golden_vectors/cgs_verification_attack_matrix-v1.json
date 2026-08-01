@@ -1,0 +1,573 @@
+{
+  "matrix_id": "memorii.semantic_ingestion.cgs_verification_attack_matrix",
+  "matrix_version": 1,
+  "required_keys": [
+    "requirement_id",
+    "case_id",
+    "mutation_or_variant",
+    "boundary",
+    "evidence",
+    "expected_verdict_reason",
+    "postcondition"
+  ],
+  "cases": [
+    {
+      "requirement_id": "CGS-01",
+      "case_id": "ba-genesis-smuggle",
+      "mutation_or_variant": "BA genesis adds prior lifecycle root/record",
+      "boundary": "typed decode",
+      "evidence": "closed union fixture",
+      "expected_verdict_reason": "reject: forbidden successor fields",
+      "postcondition": "no authorization"
+    },
+    {
+      "requirement_id": "CGS-01",
+      "case_id": "rr-successor-smuggle",
+      "mutation_or_variant": "RR successor adds provision channel/artifact",
+      "boundary": "typed decode",
+      "evidence": "closed union fixture",
+      "expected_verdict_reason": "reject: forbidden genesis fields",
+      "postcondition": "no authorization"
+    },
+    {
+      "requirement_id": "CGS-02",
+      "case_id": "ba-post-activation-downgrade",
+      "mutation_or_variant": "activated BA uses genesis variant",
+      "boundary": "lifecycle replay",
+      "evidence": "replayed root/record",
+      "expected_verdict_reason": "reject: lifecycle downgrade",
+      "postcondition": "pointer unchanged"
+    },
+    {
+      "requirement_id": "CGS-03",
+      "case_id": "rp-genesis-smuggle",
+      "mutation_or_variant": "RP genesis adds lifecycle coordinate",
+      "boundary": "signature preimage decode",
+      "evidence": "variant preimage",
+      "expected_verdict_reason": "reject: wrong signer provenance",
+      "postcondition": "no policy activation"
+    },
+    {
+      "requirement_id": "CGS-03",
+      "case_id": "rp-successor-replay",
+      "mutation_or_variant": "RP successor changes authority/channel/profile/key/purpose",
+      "boundary": "verifier-held lookup",
+      "evidence": "prior lifecycle view",
+      "expected_verdict_reason": "reject: coordinate replay/substitution",
+      "postcondition": "pointer unchanged"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-authority-substitution",
+      "mutation_or_variant": "genesis authority ID substitution",
+      "boundary": "independent bootstrap-anchor lookup",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: anchor_authority_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-channel-substitution",
+      "mutation_or_variant": "genesis provisioned channel substitution",
+      "boundary": "independent bootstrap-anchor lookup",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: anchor_channel_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-anchor-id-substitution",
+      "mutation_or_variant": "genesis bootstrap-anchor ID substitution",
+      "boundary": "independent bootstrap-anchor lookup",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: anchor_id_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-anchor-digest-substitution",
+      "mutation_or_variant": "genesis bootstrap-anchor digest substitution",
+      "boundary": "independent bootstrap-anchor lookup",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: anchor_digest_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-issuer-substitution",
+      "mutation_or_variant": "genesis issuer ID substitution",
+      "boundary": "independent bootstrap-anchor lookup",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: anchor_issuer_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-key-substitution",
+      "mutation_or_variant": "genesis key/certificate digest substitution",
+      "boundary": "independent bootstrap-anchor lookup",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: anchor_key_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-profile-substitution",
+      "mutation_or_variant": "genesis signature profile substitution",
+      "boundary": "independent bootstrap-anchor lookup",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: anchor_profile_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-purpose-substitution",
+      "mutation_or_variant": "genesis signature purpose substitution",
+      "boundary": "purpose equality",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: purpose_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-not-before-substitution",
+      "mutation_or_variant": "genesis eligibility start substitution",
+      "boundary": "interval endpoint equality",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: anchor_not_before_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-02",
+      "case_id": "lifecycle-root-genesis-not-after-substitution",
+      "mutation_or_variant": "genesis eligibility end substitution",
+      "boundary": "interval endpoint equality",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: anchor_not_after_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-01",
+      "case_id": "lifecycle-root-genesis-mixed-union-fields",
+      "mutation_or_variant": "genesis member adds successor lifecycle-root field",
+      "boundary": "closed union decode",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: genesis_fields_invalid",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-sequence-one-successor",
+      "mutation_or_variant": "sequence one uses prior-root successor member",
+      "boundary": "sequence legality",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: sequence_one_requires_genesis",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-genesis-downgrade",
+      "mutation_or_variant": "sequence two uses independently provisioned genesis member",
+      "boundary": "sequence legality",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_requires_prior_root",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-authority-substitution",
+      "mutation_or_variant": "successor root replays a verified predecessor from another authority",
+      "boundary": "historical authority replay",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_authority_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-issuer-substitution",
+      "mutation_or_variant": "successor substitutes the final-action-authorized issuer",
+      "boundary": "historical signer authorization",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_issuer_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-key-substitution",
+      "mutation_or_variant": "successor substitutes the final-action-authorized key",
+      "boundary": "historical signer authorization",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_key_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-profile-substitution",
+      "mutation_or_variant": "successor substitutes the final-action-authorized signature profile",
+      "boundary": "historical signer authorization",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_profile_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-purpose-substitution",
+      "mutation_or_variant": "successor substitutes the final-action-authorized purpose",
+      "boundary": "historical signer authorization",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: purpose_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-not-before-substitution",
+      "mutation_or_variant": "successor widens the final-action-authorized interval start",
+      "boundary": "historical signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_not_before_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-not-after-substitution",
+      "mutation_or_variant": "successor widens the final-action-authorized interval end",
+      "boundary": "historical signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_not_after_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-genesis-issued-at-not-before",
+      "mutation_or_variant": "genesis issuance equals the inclusive eligibility start",
+      "boundary": "genesis signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "accept: inclusive lower endpoint",
+      "postcondition": "signature verification may proceed"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-genesis-issued-at-not-after",
+      "mutation_or_variant": "genesis issuance equals the inclusive eligibility end",
+      "boundary": "genesis signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "accept: inclusive upper endpoint",
+      "postcondition": "signature verification may proceed"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-genesis-issued-before-not-before",
+      "mutation_or_variant": "genesis issuance is one microsecond before eligibility",
+      "boundary": "genesis signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: genesis_issued_at_ineligible",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-genesis-issued-after-not-after",
+      "mutation_or_variant": "genesis issuance is one microsecond after eligibility",
+      "boundary": "genesis signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: genesis_issued_at_ineligible",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-issued-at-not-before",
+      "mutation_or_variant": "successor issuance equals the inclusive eligibility start",
+      "boundary": "successor signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "accept: inclusive lower endpoint",
+      "postcondition": "signature verification may proceed"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-issued-at-not-after",
+      "mutation_or_variant": "successor issuance equals the inclusive eligibility end",
+      "boundary": "successor signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "accept: inclusive upper endpoint",
+      "postcondition": "signature verification may proceed"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-issued-before-not-before",
+      "mutation_or_variant": "successor issuance is one microsecond before eligibility",
+      "boundary": "successor signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_issued_at_ineligible",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-issued-after-not-after",
+      "mutation_or_variant": "successor issuance is one microsecond after eligibility",
+      "boundary": "successor signer eligibility",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_issued_at_ineligible",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-issuer-malformed",
+      "mutation_or_variant": "successor issuer is an empty string",
+      "boundary": "successor coordinate structural validation",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_issuer_invalid",
+      "postcondition": "no historical equality comparison or signature verification"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-key-malformed",
+      "mutation_or_variant": "successor key coordinate is not a SHA-256 digest",
+      "boundary": "successor coordinate structural validation",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_key_invalid",
+      "postcondition": "no historical equality comparison or signature verification"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-profile-malformed",
+      "mutation_or_variant": "successor signature profile is an empty string",
+      "boundary": "successor coordinate structural validation",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_profile_invalid",
+      "postcondition": "no historical equality comparison or signature verification"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-interval-order-malformed",
+      "mutation_or_variant": "successor eligibility start is not before its end",
+      "boundary": "successor coordinate structural validation",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_interval_invalid",
+      "postcondition": "no historical equality comparison or signature verification"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-history-issuer-malformed",
+      "mutation_or_variant": "authorized historical issuer is an empty string",
+      "boundary": "historical coordinate structural validation",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: history_issuer_invalid",
+      "postcondition": "no coordinate equality comparison or signature verification"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-history-key-malformed",
+      "mutation_or_variant": "authorized historical key is not a SHA-256 digest",
+      "boundary": "historical coordinate structural validation",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: history_key_invalid",
+      "postcondition": "no coordinate equality comparison or signature verification"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-history-profile-malformed",
+      "mutation_or_variant": "authorized historical profile is an empty string",
+      "boundary": "historical coordinate structural validation",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: history_profile_invalid",
+      "postcondition": "no coordinate equality comparison or signature verification"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-history-interval-order-malformed",
+      "mutation_or_variant": "authorized historical interval start is not before its end",
+      "boundary": "historical coordinate structural validation",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: history_interval_invalid",
+      "postcondition": "no coordinate equality comparison or signature verification"
+    },
+    {
+      "requirement_id": "LRG-01",
+      "case_id": "lifecycle-root-rp-owner-cross-substitution",
+      "mutation_or_variant": "genesis member substituted into recovery-policy owner",
+      "boundary": "owner-specific decode",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: wrong_owner",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-01",
+      "case_id": "lifecycle-root-ba-owner-cross-substitution",
+      "mutation_or_variant": "genesis member substituted into bootstrap-anchor owner",
+      "boundary": "owner-specific decode",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: wrong_owner",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-01",
+      "case_id": "lifecycle-root-rr-owner-cross-substitution",
+      "mutation_or_variant": "genesis member substituted into recovery-root owner",
+      "boundary": "owner-specific decode",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: wrong_owner",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-01",
+      "case_id": "lifecycle-root-record-owner-cross-substitution",
+      "mutation_or_variant": "genesis member substituted into lifecycle-record owner",
+      "boundary": "owner-specific decode",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: wrong_owner",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-04",
+      "case_id": "lifecycle-root-envelope-preimage-mismatch",
+      "mutation_or_variant": "envelope and preimage provenance differ",
+      "boundary": "signature preimage binding",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: envelope_preimage_mismatch",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-self-root-reference",
+      "mutation_or_variant": "successor names its own root digest",
+      "boundary": "historical reference replay",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_self_reference",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-self-record-reference",
+      "mutation_or_variant": "successor names its own terminal record digest",
+      "boundary": "historical reference replay",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_self_reference",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-forward-root-reference",
+      "mutation_or_variant": "successor names an unverified forward root digest",
+      "boundary": "historical reference replay",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_reference_unverified",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "LRG-03",
+      "case_id": "lifecycle-root-successor-forward-record-reference",
+      "mutation_or_variant": "successor names an unverified forward record digest",
+      "boundary": "historical reference replay",
+      "evidence": "lifecycle-root signer-provenance witness v1",
+      "expected_verdict_reason": "reject: successor_reference_unverified",
+      "postcondition": "no signature verification or lifecycle/pointer/watermark mutation"
+    },
+    {
+      "requirement_id": "CGS-04",
+      "case_id": "field-01-grammar_revision",
+      "mutation_or_variant": "omit or change grammar_revision",
+      "boundary": "ledger/body equality",
+      "evidence": "prototype vector",
+      "expected_verdict_reason": "reject: field mismatch",
+      "postcondition": "no envelope"
+    },
+    {
+      "requirement_id": "CGS-04",
+      "case_id": "field-02-through-07-inputs",
+      "mutation_or_variant": "mutate design, registry, ledger schema/version/digest/coordinate",
+      "boundary": "raw input binding",
+      "evidence": "raw bytes and ledger digest",
+      "expected_verdict_reason": "reject: immutable input mismatch",
+      "postcondition": "no authorization/replay advancement"
+    },
+    {
+      "requirement_id": "CGS-04",
+      "case_id": "field-08-through-29",
+      "mutation_or_variant": "omit/mutate each artifact DAG, root digest, profile, defaults, rules, assertion, groups, schemas, profiles, units, entries, overrides, anchors field",
+      "boundary": "full-body comparison",
+      "evidence": "29-field prototype vector",
+      "expected_verdict_reason": "reject: structural field mismatch",
+      "postcondition": "no envelope or generation member"
+    },
+    {
+      "requirement_id": "CGS-05",
+      "case_id": "order-dag-reference",
+      "mutation_or_variant": "reorder source array, Kahn tie, requirement mapping, entry, override, anchor, or DAG reference",
+      "boundary": "parser/order verifier",
+      "evidence": "adversarial corpus",
+      "expected_verdict_reason": "reject: canonical order/reference violation",
+      "postcondition": "watermark unchanged"
+    },
+    {
+      "requirement_id": "CGS-06",
+      "case_id": "all-domain-families",
+      "mutation_or_variant": "swap raw design/registry/ledger, eight root, report, environment, mapping, entry, body, or envelope domain",
+      "boundary": "digest preimage",
+      "evidence": "known-answer preimages",
+      "expected_verdict_reason": "reject: domain/digest mismatch",
+      "postcondition": "no authorization"
+    },
+    {
+      "requirement_id": "CGS-07",
+      "case_id": "body-envelope-confusion",
+      "mutation_or_variant": "substitute body digest for envelope digest or reverse",
+      "boundary": "artifact decode",
+      "evidence": "prototype known answer",
+      "expected_verdict_reason": "reject: body/envelope distinction",
+      "postcondition": "generation closure fails"
+    },
+    {
+      "requirement_id": "CGS-07",
+      "case_id": "clean-room-import",
+      "mutation_or_variant": "prototype imports Memorii, production derivation, elaborator A, or generated A output",
+      "boundary": "import gate",
+      "evidence": "stdlib AST import check",
+      "expected_verdict_reason": "reject: prohibited dependency",
+      "postcondition": "independence claim withheld"
+    },
+    {
+      "requirement_id": "CGS-08",
+      "case_id": "legacy-version-pairs",
+      "mutation_or_variant": "legacy wrapper, pre-correction v2, corrected v2, mixed v2/future version",
+      "boundary": "reader/dispatch",
+      "evidence": "version matrix",
+      "expected_verdict_reason": "reject except fully verified homogeneous corrected generation",
+      "postcondition": "diagnostic reader cannot authorize"
+    },
+    {
+      "requirement_id": "CGS-09",
+      "case_id": "limits",
+      "mutation_or_variant": "each cap at limit-1, limit, limit+1; parser/reconstruction timeout; interruption",
+      "boundary": "admission/time budget",
+      "evidence": "cap corpus",
+      "expected_verdict_reason": "accept first two; reject limit+1/timeout/interruption with no retry",
+      "postcondition": "no release/pointer/lifecycle/watermark mutation"
+    },
+    {
+      "requirement_id": "CGS-10",
+      "case_id": "resolver-watermark-replay-migration",
+      "mutation_or_variant": "resolver swap, stale watermark, replay, interrupted migration, rollback to unverified or legacy generation",
+      "boundary": "authorization/pointer transaction",
+      "evidence": "transaction history corpus",
+      "expected_verdict_reason": "reject stale/mixed/unverified state",
+      "postcondition": "last verified pointer and watermark remain unchanged"
+    },
+    {
+      "requirement_id": "CGS-11",
+      "case_id": "ledger-matrix-authority",
+      "mutation_or_variant": "mutate ledger bytes/schema/version/digest/coordinate; matrix unknown field or duplicate case ID",
+      "boundary": "CGS hermetic verifier",
+      "evidence": "ledger/matrix schema validation",
+      "expected_verdict_reason": "reject immutable authority mismatch",
+      "postcondition": "no authorization and state unchanged"
+    },
+    {
+      "requirement_id": "CGS-12",
+      "case_id": "prototype-feasibility-boundary",
+      "mutation_or_variant": "mutate frozen input or import Memorii/production/elaborator; claim runtime evidence",
+      "boundary": "isolated stdlib prototype",
+      "evidence": "AST import gate and known-answer comparison",
+      "expected_verdict_reason": "reject import/mutation; classify output feasibility only",
+      "postcondition": "no production or independent-A/B claim"
+    }
+  ]
+}

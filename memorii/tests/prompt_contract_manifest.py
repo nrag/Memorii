@@ -326,7 +326,10 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             prompt_ref="lifecycle_decision:v1",
             owning_adapter=PromptOwner.LLM_LIFECYCLE_DECISION_ADAPTER,
             expected_input_variables=["context_json", "query"],
-            representative_variables={"context_json": {"query": "current owner", "memories": []}, "query": "current owner"},
+            representative_variables={
+                "context_json": {"query": "current owner", "memories": []},
+                "query": "current owner",
+            },
             output_schema_owner="lifecycle_decision:v1.output_schema",
             fake_valid_output={
                 "selected_retrieval_ids": ["mem_1"],
@@ -417,9 +420,7 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                             "belief_scores": "Rank belief ids with calibrated probabilities.",
                             "answer_selection.citation_memory_ids": "Only direct evidence/source ids, not ranked belief ids.",
                         },
-                        "evidence_effect_policy": {
-                            "ranking_order": "supported > neutral > weakened > falsified"
-                        },
+                        "evidence_effect_policy": {"ranking_order": "supported > neutral > weakened > falsified"},
                     },
                 },
                 "query": "Rank the current root-cause beliefs.",
@@ -431,7 +432,8 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                 "next_action": None,
                 "confidence": 0.9,
                 "query_temporal_frame": {
-                    "temporal_kind": "belief",
+                    "temporal_reference": "current",
+                    "decision_domain": "belief",
                     "scope_kind": "none",
                     "scope_key": None,
                     "anchor_id": None,
@@ -440,29 +442,8 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                     "confidence": 0.9,
                     "rationale": "The query asks for current belief ranking.",
                 },
-                "answer_selection": {
-                    "selected_memory_ids": ["belief:b-worker-exhaustion"],
-                    "supporting_memory_ids": ["belief:b-worker-exhaustion"],
-                    "citation_memory_ids": ["evidence:workers-exhausted"],
-                    "temporal_mode": "belief",
-                    "rationale": "Worker exhaustion is the top supported belief.",
-                },
-                "lifecycle_snapshot": {
-                    "checkpoint_active_record_ids": [],
-                    "checkpoint_superseded_record_ids": [],
-                    "checkpoint_retained_record_ids": [],
-                    "evaluation_time": "2026-05-02T10:15:00Z",
-                    "rationale": "Belief ranking does not mark hypotheses as current active facts.",
-                },
-                "retrieval_context": {
-                    "query_relevant_memory_ids": ["belief:b-worker-exhaustion", "evidence:workers-exhausted"],
-                    "query_historical_memory_ids": [],
-                    "query_context_memory_ids": [],
-                    "rejected_memory_ids": [],
-                    "rationale": "The evidence card explains the ranking.",
-                },
-                "execution_selection": None,
-                "evaluated_belief_ids": [
+                "selected_memory_ids": ["belief:b-worker-exhaustion"],
+                "considered_memory_ids": [
                     "belief:b-worker-exhaustion",
                     "belief:c-database-locks",
                     "belief:a-network-saturation",
@@ -473,7 +454,6 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                     {"memory_id": "belief:a-network-saturation", "belief": 0.1, "belief_state": "unknown"},
                 ],
                 "rationale": "Tool evidence supports worker exhaustion and justifies the reranking.",
-                "failure_mode": None,
                 "requires_judge_review": False,
             },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
@@ -494,21 +474,13 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             output_schema_owner="memory_evolution_sim_reconstruction:v1.output_schema",
             fake_valid_output={
                 "operation": "answer",
-                "belief_ranking_ids": [],
-                "selected_entity_ids": ["ent_atlas"],
-                "selected_claim_ids": ["claim_owner"],
-                "selected_relation_ids": [],
-                "supporting_claim_ids": ["claim_owner"],
-                "supporting_relation_ids": [],
-                "supporting_citation_event_ids": ["event_1"],
-                "rejected_entity_ids": [],
-                "rejected_claim_ids": [],
-                "rejected_relation_ids": [],
-                "rejection_citation_event_ids": [],
-                "context_entity_ids": [],
-                "context_claim_ids": [],
-                "context_relation_ids": [],
-                "context_citation_event_ids": [],
+                "claim_assessments": [
+                    {
+                        "claim_id": "claim_owner",
+                        "role": "primary",
+                        "belief_rank": None,
+                    }
+                ],
                 "answer": "Bob",
                 "next_action": None,
                 "uncertain_ids": [],
@@ -522,9 +494,16 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             prompt_ref="memory_extraction:v1",
             owning_adapter=PromptOwner.LLM_MEMORY_EXTRACTOR,
             expected_input_variables=["source_observations"],
-            representative_variables={"source_observations": [{"source_id": "event_1", "text": "Remember that Atlas owner is Bob."}]},
+            representative_variables={
+                "source_observations": [{"source_id": "event_1", "text": "Remember that Atlas owner is Bob."}]
+            },
             output_schema_owner="memory_extraction:v1.output_schema",
-            fake_valid_output={"entities": [], "claims": [], "actions": []},
+            fake_valid_output={
+                "entities": [],
+                "claims": [],
+                "actions": [],
+                "identity_relations": [],
+            },
             forbidden_live_prompt_keys=_base_forbidden_keys(),
             no_leakage_rules=_base_rules("Extraction prompts must not receive benchmark oracle data."),
         ),
@@ -570,7 +549,10 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             prompt_ref="retrieval_relevance:v1",
             owning_adapter=PromptOwner.LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER,
             expected_input_variables=["context_json", "query"],
-            representative_variables={"context_json": {"candidates": [{"id": "mem_1", "text": "Atlas owner is Bob."}]}, "query": "Who owns Atlas?"},
+            representative_variables={
+                "context_json": {"candidates": [{"id": "mem_1", "text": "Atlas owner is Bob."}]},
+                "query": "Who owns Atlas?",
+            },
             output_schema_owner="retrieval_relevance:v1.output_schema",
             fake_valid_output={
                 "selected_ids": ["mem_1"],
@@ -595,9 +577,7 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
                     "language": "en",
                     "reference_time": "2026-07-19T00:00:00Z",
                     "scope_kind": "task",
-                    "entities": [
-                        {"entity_id": "entity_1", "names": ["Atlas"], "entity_type": "project"}
-                    ],
+                    "entities": [{"entity_id": "entity_1", "names": ["Atlas"], "entity_type": "project"}],
                     "temporal_anchors": [],
                     "predicates": [
                         {

@@ -5,6 +5,7 @@ import json
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import pytest
 from memorii.core.benchmark.artifact_rows import (
@@ -38,7 +39,7 @@ from memorii.core.benchmark.memory_evolution_sim import (
     JudgeVerdict,
     MemoryEvolutionSimReconstructionContext,
     OracleCheckpoint,
-    SimCheckpointContract,
+    ReconstructionTaskContract,
     SimSystemOutput,
     expected_sim_output_for_checkpoint,
     generate_memory_evolution_sim_scenarios,
@@ -186,6 +187,9 @@ def _benchmark_report_payload() -> dict[str, object]:
     provider_health = {
         "effective_decision_mode": "hybrid",
         "attempted_calls": 10,
+        "extraction_attempted_calls": 10,
+        "structured_query_attempted_calls": 0,
+        "structured_query_failures": 0,
         "provider_successes": 10,
         "provider_failures": 0,
         "fallbacks": 0,
@@ -200,6 +204,12 @@ def _benchmark_report_payload() -> dict[str, object]:
         "output_validation_failures": 0,
         "abstentions": 0,
         "partial_extractions": 0,
+        "operation_outcome_count": 10,
+        "committed_operations": 10,
+        "failed_operations": 0,
+        "missing_operation_outcomes": 0,
+        "operation_status_counts": {"evolution_committed": 10},
+        "operation_failure_classification_counts": {},
         "execution_source": "live_llm",
         "dry_run": False,
         "fake_extractor_calls": 0,
@@ -314,7 +324,7 @@ def _runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
                 "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
                 "checkpoint_type": "current_truth",
                 "query_or_task": "",
-                "checkpoint_contract": SimCheckpointContract().model_dump(mode="json"),
+                "task_contract": ReconstructionTaskContract().model_dump(mode="json"),
                 **expected_payload,
             }
         ),
@@ -326,6 +336,7 @@ def _runtime_checkpoint_row(**row_fields: object) -> RuntimeCheckpointResultRow:
                     "checkpoint_id": "checkpoint_1",
                     "timestamp": datetime(2026, 1, 1, tzinfo=UTC),
                     "query_or_task": "",
+                    "task_contract": ReconstructionTaskContract().model_dump(mode="json"),
                 },
                 **candidate_payload,
             }
@@ -373,7 +384,7 @@ def test_artifact_row_models_are_strict_and_serialize_flat_json() -> None:
                 "timestamp": "2026-01-01T00:00:00Z",
                 "checkpoint_type": "current_truth",
                 "query_or_task": "",
-                "checkpoint_contract": {},
+                "task_contract": {},
             },
             "candidate_cards": {
                 "scenario_id": "scenario_1",
@@ -382,6 +393,7 @@ def test_artifact_row_models_are_strict_and_serialize_flat_json() -> None:
                     "checkpoint_id": "checkpoint_1",
                     "timestamp": "2026-01-01T00:00:00Z",
                     "query_or_task": "",
+                    "task_contract": {},
                 },
             },
             "judge_aggregate": {
@@ -607,6 +619,30 @@ def test_report_rejects_empty_layer_fingerprints() -> None:
         BenchmarkReportSummary.model_validate(payload)
 
 
+def test_live_report_rejects_fake_oracle_provenance() -> None:
+    payload = deepcopy(_benchmark_report_payload())
+    runtime = cast(dict[str, object], payload["runtime"])
+    runtime_health = cast(
+        dict[str, object],
+        runtime["runtime_provider_health"],
+    )
+    report_health = cast(
+        dict[str, object],
+        payload["runtime_provider_health"],
+    )
+    payload["execution_source"] = "fake_oracle"
+    payload["final_output_source_counts"] = {"fake_oracle": 2}
+    payload["fake_calls"] = 2
+    runtime["final_output_source_counts"] = {"fake_oracle": 2}
+    runtime_health["execution_source"] = "fake_oracle"
+    runtime_health["fake_extractor_calls"] = 2
+    report_health["execution_source"] = "fake_oracle"
+    report_health["fake_extractor_calls"] = 2
+
+    with pytest.raises(ValidationError, match="fake provenance"):
+        BenchmarkReportSummary.model_validate(payload)
+
+
 def test_typed_jsonl_writer_rejects_unvalidated_mapping(tmp_path: Path) -> None:
     with pytest.raises(ArtifactValidationError, match="must be a validated SimCheckpointResultRow"):
         write_typed_jsonl(
@@ -632,6 +668,9 @@ def test_memory_evolution_owned_submodule_imports_resolve() -> None:
         "memorii.core.benchmark.memory_evolution_sim.schemas": "SimSystemOutput",
         "memorii.core.benchmark.memory_evolution_sim.generation": "generate_memory_evolution_sim_scenarios",
         "memorii.core.benchmark.memory_evolution_sim.candidate_cards": "sim_reconstruction_context_for_checkpoint",
+        "memorii.core.benchmark.memory_evolution_sim.claim_policy": "is_execution_eligible_claim",
+        "memorii.core.benchmark.memory_evolution_sim.decision_contract": "validate_sim_decision_contract",
+        "memorii.core.benchmark.memory_evolution_sim.decision_compiler": "compile_sim_semantic_decision",
         "memorii.core.benchmark.memory_evolution_sim.decisions": "expected_sim_output_for_checkpoint",
         "memorii.core.benchmark.memory_evolution_sim.judges": "judge_sim_checkpoint",
         "memorii.core.benchmark.memory_evolution_sim.diagnostics": "sim_checkpoint_diagnostics",
@@ -650,7 +689,7 @@ def test_memory_evolution_owned_submodule_imports_resolve() -> None:
         assert hasattr(module, symbol_name), f"{module_name} must export {symbol_name}"
 
 
-def test_memory_evolution_sim_public_checkpoint_contract() -> None:
+def test_memory_evolution_sim_public_task_contract() -> None:
     scenario = generate_memory_evolution_sim_scenarios(
         profile="adversarial",
         scenario_count=1,
@@ -664,13 +703,23 @@ def test_memory_evolution_sim_public_checkpoint_contract() -> None:
     aggregate = judge_sim_checkpoint(scenario=scenario, checkpoint=checkpoint, output=expected)
 
     assert context.checkpoint.checkpoint_id == checkpoint.checkpoint_id
-    assert context.checkpoint.answer_projection_policy == checkpoint.answer_projection_policy
+    assert context.checkpoint.task_contract == checkpoint.task_contract
     assert "expected_claim_ids" not in context.model_dump(mode="json")
     assert aggregate.verdict.value == "pass"
     assert aggregate.score >= 0.99
 
 
-def test_memory_evolution_sim_checkpoint_contract_is_single_source_for_all_generated_profiles() -> None:
+def test_checkpoint_result_rejects_review_required_green_status() -> None:
+    with pytest.raises(ValidationError, match="pass verdict with no required review"):
+        _runtime_checkpoint_row(
+            success=True,
+            passed=True,
+            verdict="pass",
+            review_required=True,
+        )
+
+
+def test_memory_evolution_sim_task_contract_is_single_source_for_all_generated_profiles() -> None:
     scenarios = [
         *generate_memory_evolution_sim_scenarios(
             profile="adversarial",
@@ -692,9 +741,9 @@ def test_memory_evolution_sim_checkpoint_contract_is_single_source_for_all_gener
                 scenario=scenario,
                 checkpoint=checkpoint,
             )
-            contract = checkpoint.checkpoint_contract.model_dump(mode="json")
+            contract = checkpoint.task_contract.model_dump(mode="json")
 
-            assert context.checkpoint.answer_projection_policy == contract["answer_projection_policy"]
+            assert context.checkpoint.task_contract.model_dump(mode="json") == contract
             rendered_context = context.model_dump(mode="json")
             assert "allowed_operations" not in rendered_context
             assert "required_judge_ids" not in rendered_context

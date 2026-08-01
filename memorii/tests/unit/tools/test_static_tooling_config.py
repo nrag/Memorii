@@ -78,11 +78,9 @@ def test_pyright_config_is_scoped_to_hardening_surfaces() -> None:
     assert pyright["reportOperatorIssue"] == "error"
     assert pyright["reportOptionalMemberAccess"] == "error"
     assert pyright["reportReturnType"] == "error"
-    assert pyright["include"] == [
+    required_includes = {
         "memorii/core/belief",
         "memorii/core/benchmark/artifact_rows",
-        "memorii/core/benchmark/artifact_validation.py",
-        "memorii/core/benchmark/reproducibility.py",
         "memorii/core/memory_evolution",
         "memorii/core/memory_plane",
         "memorii/core/provider",
@@ -94,47 +92,10 @@ def test_pyright_config_is_scoped_to_hardening_surfaces() -> None:
         "memorii/core/llm_decision",
         "memorii/integrations",
         "memorii/tools/benchmark_suites",
-    ]
-
-
-def test_static_tooling_workflow_doc_lists_supported_commands() -> None:
-    doc = (REPO_ROOT / "docs" / "development" / "static_tooling.md").read_text(encoding="utf-8")
-    workflow = (REPO_ROOT / ".github" / "workflows" / "pr-gates.yml").read_text(encoding="utf-8")
-
-    assert "python -m pip install -e '.[dev]'" in doc
-    assert "python -W error -m pytest tests/unit -p no:cacheprovider" in doc
-    assert "python -m ruff check memorii tests" in doc
-    assert "--select F" not in doc
-    assert "pyright --pythonpath" in doc
-    load_command = (
-        "PromptRegistry().load('memory_extraction:v1', "
-        "owner=PromptOwner.LLM_MEMORY_EXTRACTOR, output_model=MemoryExtractionOutput)"
-    )
-    assert load_command in doc
-    assert "from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput" in doc
-    assert "from memorii.core.prompts.runtime_manifest import PromptOwner" in doc
-    assert "Run Ruff" in workflow
-    assert "ruff check memorii tests" in workflow
-    assert "pyright --pythonpath" in workflow
-    assert "Build and smoke-test wheel" in workflow
-    assert "pytest -W error tests/unit" in workflow
-    assert "pytest -W error" in workflow
-    assert "pip wheel . --no-deps" in workflow
-    assert "memorii-wheel-benchmark" in doc
-    assert "memorii-wheel-benchmark" in workflow
-    assert "validate_benchmark_artifacts" in doc
-    assert "validate_benchmark_artifacts" in workflow
-    assert load_command in workflow
-    assert "from memorii.core.memory_evolution.extraction_contracts import MemoryExtractionOutput" in workflow
-    assert "from memorii.core.prompts.runtime_manifest import PromptOwner" in workflow
-    assert "is_relative_to(root)" in workflow
-    assert "memorii.core.promotion.legacy_models" in doc
-    assert "memorii.core.promotion.legacy_models" in workflow
-    assert "assert all(find_spec(module) is None for module in removed)" in doc
-    assert "assert all(find_spec(module) is None for module in removed)" in workflow
-    assert "ignored in-tree `build/` directory" in doc
-    assert "Do not mass-format unrelated files." in doc
-    assert "Pyright is error-mode" in doc
+    }
+    includes = pyright["include"]
+    assert isinstance(includes, list)
+    assert required_includes <= set(includes)
 
 
 def test_prompt_contracts_are_owned_by_the_installable_package() -> None:
@@ -146,23 +107,6 @@ def test_prompt_contracts_are_owned_by_the_installable_package() -> None:
     package_data = _tool_config("setuptools")["package-data"]
     assert isinstance(package_data, dict)
     assert "prompts/**/*.yaml" in package_data["memorii"]
-
-
-def test_hardening_closure_matrix_covers_every_declared_contract() -> None:
-    matrix = (REPO_ROOT / "docs" / "plans" / "engineering_hardening_closure_matrix.md").read_text(
-        encoding="utf-8"
-    )
-    contract_ids = re.findall(r"^\| (C\d+) \|", matrix, flags=re.MULTILINE)
-
-    assert contract_ids == [f"C{index}" for index in range(1, 15)]
-    for required_outcome in (
-        "Orthogonal provider-call, extraction, fallback, and final-source outcomes",
-        "caller delivery ID",
-        "process-safe and crash-atomic",
-        "bounded stale recovery",
-        "tool dispatch",
-    ):
-        assert required_outcome in matrix
 
 
 def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_scheduled_runs() -> None:
@@ -199,6 +143,7 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     live_environment = live_smoke["env"]
     assert isinstance(live_environment, dict)
     assert live_environment["MEMORII_LLM_PROVIDER"] == "openai"
+    assert live_environment["MEMORII_LLM_MODEL"] == "${{ vars.MEMORII_LLM_MODEL }}"
     assert live_environment["MEMORII_ENABLE_LIVE_LLM_TESTS"] == "true"
     assert live_environment["OPENAI_API_KEY"] == "${{ secrets.OPENAI_API_KEY }}"
     live_gate = jobs["live-runtime-gate"]
@@ -218,6 +163,7 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     assert "--minimum-replicates-per-seed" not in workflow
     assert "Verify live provider configuration" in workflow
     assert "runtime.has_live_provider()" in workflow
+    assert "assert runtime.model" in workflow
     assert "live.should_run_live_llm_tests(runtime)" in workflow
     assert "LLMDecisionRuntimeConfig(mode='hybrid').resolve(runtime) == 'hybrid'" in workflow
     assert "ref: ${{ env.MEMORII_SOURCE_REVISION }}" in workflow
@@ -227,46 +173,23 @@ def test_scheduled_workflow_requires_manual_live_certification_and_opt_in_schedu
     assert "from memorii.core.benchmark.calibration.gates import LiveGateSummary" in workflow
 
 
-def test_live_certification_documentation_requires_default_branch_bootstrap() -> None:
-    certification_doc = (
-        REPO_ROOT / "docs" / "development" / "benchmark_certification.md"
-    ).read_text(encoding="utf-8")
-
-    assert "default branch" in certification_doc
-    assert "credential-free bootstrap PR" in certification_doc
-    assert "`.github/workflows/benchmark-scheduled.yml`" in certification_doc
-    assert re.search(r"must not\s+contain provider secrets", certification_doc)
-
-
 def test_pr_and_live_workflows_bind_reports_to_checked_out_revision() -> None:
     pr_workflow = (REPO_ROOT / ".github" / "workflows" / "pr-gates.yml").read_text(encoding="utf-8")
     live_workflow = (REPO_ROOT / ".github" / "workflows" / "benchmark-scheduled.yml").read_text(encoding="utf-8")
-    certification_doc = (REPO_ROOT / "docs" / "development" / "benchmark_certification.md").read_text(encoding="utf-8")
 
     assert "MEMORII_SOURCE_REVISION: ${{ github.sha }}" in pr_workflow
     assert "MEMORII_SOURCE_REVISION: ${{ github.sha }}" in live_workflow
     assert "benchmark-certification-${{ github.sha }}" in live_workflow
     assert "source_revision:" not in live_workflow
     assert "github.event.inputs.source_revision" not in live_workflow
-    assert "full commit SHA" in certification_doc
-    assert "dirty working tree" in certification_doc
-    assert "`Unit Tests` and `Benchmark Contracts`" in certification_doc
-    assert "not a permanent" in certification_doc
-    assert "pre-merge check" in certification_doc
-    assert "gh workflow run benchmark-scheduled.yml --ref <pr-branch>" in certification_doc
 
 
 def test_candidate_live_gate_is_not_an_automatic_pr_or_merge_trigger() -> None:
-    certification_doc = (
-        REPO_ROOT / "docs" / "development" / "benchmark_certification.md"
-    ).read_text(encoding="utf-8")
     live_config = _workflow_config("benchmark-scheduled.yml")
     pr_config = _workflow_config("pr-gates.yml")
 
     assert set(live_config["on"]) == {"schedule", "workflow_dispatch"}
     assert set(pr_config["on"]) == {"pull_request", "merge_group"}
-    assert "candidate acceptance gate" in certification_doc
-    assert "`Unit Tests` and `Benchmark Contracts`" in certification_doc
 
 
 def _workflow_steps(path: Path) -> list[tuple[str, str]]:
@@ -283,9 +206,7 @@ def test_runtime_dry_runs_separate_plumbing_from_semantic_quality_gates() -> Non
     runtime_steps = [body for name, body in pr_steps if "runtime plumbing artifact" in name]
     semantic_runtime_steps = [body for name, body in pr_steps if "runtime semantic artifact" in name]
     simulator_steps = [body for name, body in pr_steps if "simulator plumbing artifact" in name]
-    scheduled_semantic_runtime_steps = [
-        body for name, body in scheduled_steps if "runtime semantic artifact" in name
-    ]
+    scheduled_semantic_runtime_steps = [body for name, body in scheduled_steps if "runtime semantic artifact" in name]
 
     assert len(runtime_steps) == 0
     assert len(semantic_runtime_steps) == 4

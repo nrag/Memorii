@@ -100,7 +100,14 @@ class MemoryEvolutionRetrievalRuntime:
         catalog = [
             TemporalEntityCandidate(
                 entity_id=link.canonical_entity_id,
-                names=sorted({link.mention_text, link.normalized_name, *link.aliases}),
+                names=sorted(
+                    {
+                        link.mention_text,
+                        link.normalized_name,
+                        *link.observed_names,
+                        *link.aliases,
+                    }
+                ),
                 entity_type=link.entity_type.value,
                 scope=link.scope,
                 lifecycle_state=RecordLifecycleState(link.lifecycle_state.value),
@@ -186,14 +193,25 @@ class MemoryEvolutionRetrievalRuntime:
             request_scope=resolved_request.scope,
         )
         entity_names_by_id = {
-            link.canonical_entity_id: {link.mention_text, link.normalized_name, *link.aliases} for link in links
+            link.canonical_entity_id: {
+                link.mention_text,
+                link.normalized_name,
+                *link.observed_names,
+                *link.aliases,
+            }
+            for link in links
         }
         link_by_id = {link.link_id: link for link in readable_links}
         for state in states:
             subject_link = link_by_id.get(state.subject_link_id or "")
             if subject_link is not None:
                 entity_names_by_id.setdefault(state.claim_key.subject_entity_id, set()).update(
-                    {subject_link.mention_text, subject_link.normalized_name, *subject_link.aliases}
+                    {
+                        subject_link.mention_text,
+                        subject_link.normalized_name,
+                        *subject_link.observed_names,
+                        *subject_link.aliases,
+                    }
                 )
         object_entity_by_claim: dict[str, str] = {}
         subject_entity_by_claim: dict[str, str] = {}
@@ -315,7 +333,10 @@ class MemoryEvolutionRetrievalRuntime:
             None,
         )
         selected_ids = [selected_action.action_id.removeprefix("action:")] if selected_action is not None else []
-        relevant_branch_ids = set(continuation.candidate_branch_ids)
+        relevant_branch_ids = {
+            *continuation.candidate_branch_ids,
+            *snapshot.suppressed_branch_ids,
+        }
         context_ids = [
             action.action_id.removeprefix("action:")
             for action in actions

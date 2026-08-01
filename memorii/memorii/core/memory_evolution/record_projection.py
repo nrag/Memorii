@@ -7,6 +7,7 @@ from memorii.core.memory_evolution.models import (
     ClaimState,
     ContradictionSet,
     EntityLinkState,
+    SourceModality,
     SourceObservation,
 )
 from memorii.core.memory_evolution.temporal_contracts import TemporalAnchor
@@ -26,6 +27,20 @@ def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObser
         user_id=record.user_id,
         language=record.language,
     )
+
+
+def declared_source_modality_from_record(
+    record: CanonicalMemoryRecord,
+) -> SourceModality | None:
+    value = record.content.get("source_modality")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("declared source modality must be a string")
+    try:
+        return SourceModality(value)
+    except ValueError as exc:
+        raise ValueError(f"unknown declared source modality: {value!r}") from exc
 
 
 def record_from_entity_link(link: EntityLinkState) -> CanonicalMemoryRecord:

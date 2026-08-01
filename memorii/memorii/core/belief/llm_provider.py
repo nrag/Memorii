@@ -9,6 +9,11 @@ from memorii.core.belief.provider import BeliefUpdateProvider
 from memorii.core.belief.rule_provider import RuleBasedBeliefUpdateProvider
 from memorii.core.llm_decision.models import LLMDecisionMode, LLMDecisionPoint, LLMDecisionStatus, LLMDecisionTrace
 from memorii.core.llm_decision.provider import LLMDecisionProvider, LLMDecisionProviderError
+from memorii.core.llm_validation import (
+    LLMValidationStage,
+    domain_validation_issue,
+    validation_issues_from_pydantic,
+)
 
 
 class LLMBeliefUpdateProvider:
@@ -29,14 +34,19 @@ class LLMBeliefUpdateProvider:
                 decision_point=LLMDecisionPoint.BELIEF_UPDATE,
                 input_payload=input_payload,
             )
-        except LLMDecisionProviderError as exc:
+        except LLMDecisionProviderError:
             fallback_decision, fallback_trace = self._fallback_provider.update(context=context)
             return fallback_decision.model_copy(update={"fallback_used": True}), fallback_trace.model_copy(
                 update={
                     "mode": LLMDecisionMode.LLM,
                     "status": LLMDecisionStatus.PROVIDER_ERROR,
                     "fallback_used": True,
-                    "validation_errors": [str(exc)],
+                    "validation_issues": [
+                        domain_validation_issue(
+                            "belief update provider failed",
+                            code="provider_error",
+                        )
+                    ],
                     "final_output": fallback_decision.model_dump(mode="json"),
                     "parsed_output": fallback_decision.model_dump(mode="json"),
                 }
@@ -50,7 +60,9 @@ class LLMBeliefUpdateProvider:
                     "status": LLMDecisionStatus.FALLBACK_USED,
                     "final_output": fallback_decision.model_dump(mode="json"),
                     "parsed_output": fallback_decision.model_dump(mode="json"),
-                    "validation_errors": ["empty llm output"],
+                    "validation_issues": [
+                        domain_validation_issue("empty llm output", code="empty_output")
+                    ],
                 }
             )
 
@@ -63,7 +75,12 @@ class LLMBeliefUpdateProvider:
                     "status": LLMDecisionStatus.VALIDATION_FAILED,
                     "final_output": fallback_decision.model_dump(mode="json"),
                     "parsed_output": fallback_decision.model_dump(mode="json"),
-                    "validation_errors": [str(exc)],
+                    "validation_issues": list(
+                        validation_issues_from_pydantic(
+                            exc,
+                            stage=LLMValidationStage.DOMAIN,
+                        )
+                    ),
                 }
             )
 

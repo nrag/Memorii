@@ -4,7 +4,7 @@ import json
 
 import pytest
 from memorii.core.grounding.models import EvidenceSelectionDecision, EvidenceSelectionOutput
-from memorii.core.llm_config import LLMLiveTestConfig, LLMRuntimeConfig
+from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.promotion.assessment import PromotionAssessmentOutput
@@ -150,6 +150,23 @@ def test_domain_output_validation_rejects_semantically_invalid_schema_valid_json
     assert result.success is False
     assert result.failure_mode == "semantic_validation"
     assert result.output is None
+    assert result.rejected_output == payload
+    assert [
+        (
+            issue.stage.value,
+            issue.code,
+            issue.location,
+            issue.message,
+        )
+        for issue in result.validation_issues
+    ] == [
+        (
+            "semantic",
+            "value_error",
+            ("proof_steps", 0),
+            "Value error, citations must role-label every candidate_id",
+        )
+    ]
     assert result.response.schema_valid is True
     assert result.response.semantic_valid is False
     assert result.response.error == "Semantic output validation failed: PromptSemanticValidationError"
@@ -230,15 +247,6 @@ def test_no_api_key_required_and_provider_none_works_with_fake() -> None:
     runner = PromptLLMRunner(client=FakeLLMStructuredClient(default_response=_VALID), config=config)
     result = runner.run(contract=_contract(), variables=_variables(), request_id="r1")
     assert result.success is True
-
-
-def test_optional_live_llm_tests_are_gated() -> None:
-    env = {"MEMORII_ENABLE_LIVE_LLM_TESTS": "true", "MEMORII_LLM_PROVIDER": "openai"}
-    runtime_config = LLMRuntimeConfig.from_env(env)
-    live_config = LLMLiveTestConfig.from_env(env)
-    if not live_config.should_run_live_llm_tests(runtime_config):
-        pytest.skip("live LLM tests are disabled unless key + flag are present")
-    pytest.fail("live network test intentionally not implemented in unit tests")
 
 
 def test_sensitive_value_redaction_normalizes_aliases_and_nested_sequences() -> None:

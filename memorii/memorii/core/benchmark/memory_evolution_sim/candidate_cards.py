@@ -47,7 +47,9 @@ def sim_reconstruction_context_for_checkpoint(
             entity_type=entity.entity_type,
             aliases=[alias.alias_text for alias in entity.aliases],
             lifecycle_state=entity.lifecycle_state,
-            evidence_event_ids=sorted({span.event_id for span in entity.evidence_spans if span.event_id in visible_event_ids}),
+            evidence_event_ids=sorted(
+                {span.event_id for span in entity.evidence_spans if span.event_id in visible_event_ids}
+            ),
         )
         for entity in sorted(scenario.entities, key=lambda item: item.entity_id)
         if entity.entity_id in visible_entity_ids
@@ -68,7 +70,9 @@ def sim_reconstruction_context_for_checkpoint(
             valid_to=claim.lifecycle.valid_to,
             source_trust=claim.provenance.source_trust,
             source_modality=claim.provenance.source_modality,
-            evidence_event_ids=[event_id for event_id in claim.evidence.source_event_ids if event_id in visible_event_ids],
+            evidence_event_ids=[
+                event_id for event_id in claim.evidence.source_event_ids if event_id in visible_event_ids
+            ],
             evidence_quote=claim.evidence.spans[0].quote if claim.evidence.spans else "",
             contradicts_claim_ids=list(claim.contradicts_claim_ids),
         )
@@ -88,9 +92,7 @@ def sim_reconstruction_context_for_checkpoint(
             directionality=relation.directionality,
             lifecycle_state=relation.lifecycle_state.value,
             evidence_event_ids=[
-                event_id
-                for event_id in relation.provenance.source_event_ids
-                if event_id in visible_event_ids
+                event_id for event_id in relation.provenance.source_event_ids if event_id in visible_event_ids
             ],
             evidence_quote=relation.evidence_spans[0].quote if relation.evidence_spans else "",
         )
@@ -122,7 +124,7 @@ def sim_reconstruction_context_for_checkpoint(
             checkpoint_id=checkpoint.checkpoint_id,
             timestamp=checkpoint.timestamp,
             query_or_task=checkpoint.query_or_task,
-            answer_projection_policy=checkpoint.answer_projection_policy,
+            task_contract=checkpoint.task_contract,
             query_language=checkpoint.query_language,
             evidence_languages=list(checkpoint.evidence_languages),
             answer_language_policy=checkpoint.answer_language_policy,

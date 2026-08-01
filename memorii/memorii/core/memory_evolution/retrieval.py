@@ -158,6 +158,7 @@ def rank_claims(
     selected: list[RetrievalCandidate] = []
     rejected: list[str] = []
     context: list[str] = []
+    audit_context_only: set[str] = set()
     entity_names_by_id = entity_names_by_id or {}
     subject_entity_by_claim = subject_entity_by_claim or {}
     object_entity_by_claim = object_entity_by_claim or {}
@@ -225,7 +226,10 @@ def rank_claims(
             )
         ):
             continue
-        identity = _claim_scope_identity(state)
+        identity = _claim_scope_identity(
+            state,
+            resolved_subject=subject_entity_by_claim.get(state.claim_id),
+        )
         selected_scope_specificity_by_claim[identity] = max(
             _scope_specificity(state.claim_key.scope, request),
             selected_scope_specificity_by_claim.get(identity, 0),
@@ -240,15 +244,25 @@ def rank_claims(
                 context.append(state.claim_id)
             continue
         if effective_predicate_id and state.claim_key.predicate_id != effective_predicate_id:
+            if request.include_context and _is_definition_context(
+                state,
+                frame=frame,
+                resolved_subject=subject_entity_by_claim.get(state.claim_id),
+            ):
+                context.append(state.claim_id)
             continue
         if not request.scope.can_read(state.claim_key.scope):
             continue
         if _scope_specificity(state.claim_key.scope, request) < selected_scope_specificity_by_claim.get(
-            _claim_scope_identity(state),
+            _claim_scope_identity(
+                state,
+                resolved_subject=subject_entity_by_claim.get(state.claim_id),
+            ),
             0,
         ):
             if request.include_context:
                 context.append(state.claim_id)
+                audit_context_only.add(state.claim_id)
             continue
         # A full graph audit enumerates the lifecycle-valid graph slice instead
         # of treating one heuristic name match as an answer-time constraint.
@@ -340,6 +354,7 @@ def rank_claims(
         state.claim_id
         for state in states
         if state.claim_id not in selected_ids
+        and state.claim_id not in audit_context_only
         and _is_query_relevant_rejection(
             state,
             request=request,
@@ -352,6 +367,11 @@ def rank_claims(
             query_tokens=query_tokens,
         )
     )
+    selected_ids = list(dict.fromkeys(selected_ids))
+    selected_set = set(selected_ids)
+    rejected_ids = sorted(set(rejected) - selected_set)
+    rejected_set = set(rejected_ids)
+    context_ids = sorted(set(context) - selected_set - rejected_set)
     result = ProductionRetrievalDecision(
         query=request.query,
         semantic_frame_status=SemanticFrameStatus.MATCHED,
@@ -359,10 +379,10 @@ def rank_claims(
         query_analysis=request.query_analysis,
         graph_pattern_resolution=request.graph_pattern_resolution,
         resolution_status="resolved",
-        selected_record_ids=list(dict.fromkeys(selected_ids)),
+        selected_record_ids=selected_ids,
         supporting_record_ids=selected_ids,
-        rejected_record_ids=sorted(set(rejected)),
-        context_record_ids=sorted(set(context) - set(selected_ids)),
+        rejected_record_ids=rejected_ids,
+        context_record_ids=context_ids,
         abstained=not selected_ids,
         abstention_reason="no_lifecycle_valid_match" if not selected_ids else None,
         candidates=selected,
@@ -424,8 +444,14 @@ def _is_query_relevant_rejection(
     resolved_subject = subject_entity_by_claim.get(state.claim_id, state.claim_key.subject_entity_id)
     resolved_object = object_entity_by_claim.get(state.claim_id)
     resolved_entities = set(frame.resolved_entity_ids)
-    selected_identities = {_claim_scope_identity(candidate) for candidate in selected_states}
-    if _claim_scope_identity(state) in selected_identities:
+    selected_identities = {
+        _claim_scope_identity(
+            candidate,
+            resolved_subject=subject_entity_by_claim.get(candidate.claim_id),
+        )
+        for candidate in selected_states
+    }
+    if _claim_scope_identity(state, resolved_subject=resolved_subject) in selected_identities:
         return True
 
     entity_terms = _tokens(
@@ -492,12 +518,28 @@ def _scope_specificity(scope: MemoryScope, request: ResolvedMemoryQuery) -> int:
     return scope.specificity if request.scope.can_read(scope) else -1
 
 
-def _claim_scope_identity(state: ClaimState) -> tuple[str, str, str]:
+def _claim_scope_identity(
+    state: ClaimState,
+    *,
+    resolved_subject: str | None = None,
+) -> tuple[str, str, str]:
     return (
-        state.claim_key.subject_entity_id,
+        resolved_subject or state.claim_key.subject_entity_id,
         state.claim_key.predicate_id,
         state.claim_key.qualifier_key,
     )
+
+
+def _is_definition_context(
+    state: ClaimState,
+    *,
+    frame: QueryTemporalFrame,
+    resolved_subject: str | None,
+) -> bool:
+    if state.claim_key.predicate_id != "entity_type":
+        return False
+    subject = resolved_subject or state.claim_key.subject_entity_id
+    return not frame.resolved_entity_ids or subject in frame.resolved_entity_ids
 
 
 def _tokens(value: str) -> set[str]:

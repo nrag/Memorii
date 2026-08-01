@@ -94,6 +94,166 @@ def test_action_execution_status_is_independent_of_record_lifecycle() -> None:
     assert persisted.validity_status == "active"
 
 
+def test_graph_validator_rejects_owner_with_non_person_object() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records([_record("tx:owner", "Atlas owner is Bob.")])
+    snapshot = service.retrieve_graph_snapshot()
+    owner_claim = next(
+        node
+        for node in snapshot.nodes
+        if node.node_type == MemoryGraphNodeType.CLAIM
+        and node.properties.get("predicate_id") == "owner"
+    )
+    object_edge = next(
+        edge
+        for edge in snapshot.edges
+        if edge.source_node_id == owner_claim.node_id
+        and edge.edge_type == MemoryGraphEdgeType.HAS_OBJECT
+    )
+    mutated_nodes = [
+        node.model_copy(
+            update={
+                "properties": {
+                    **node.properties,
+                    "entity_type": "service",
+                }
+            }
+        )
+        if node.node_id == object_edge.target_node_id
+        else node
+        for node in snapshot.nodes
+    ]
+
+    errors = MemoryGraphValidator().validate_snapshot(
+        snapshot.model_copy(update={"nodes": mutated_nodes})
+    )
+
+    assert f"claim_requires_grounded_person_object:{owner_claim.node_id}" in errors
+
+
+def test_graph_validator_rejects_entity_type_claim_with_entity_object() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records([_record("tx:owner", "Atlas owner is Bob.")])
+    snapshot = service.retrieve_graph_snapshot()
+    owner_claim = next(
+        node
+        for node in snapshot.nodes
+        if node.node_type == MemoryGraphNodeType.CLAIM
+        and node.properties.get("predicate_id") == "owner"
+    )
+    mutated_nodes = [
+        node.model_copy(
+            update={
+                "properties": {
+                    **node.properties,
+                    "predicate_id": "entity_type",
+                }
+            }
+        )
+        if node.node_id == owner_claim.node_id
+        else node
+        for node in snapshot.nodes
+    ]
+
+    errors = MemoryGraphValidator().validate_snapshot(
+        snapshot.model_copy(update={"nodes": mutated_nodes})
+    )
+
+    assert f"entity_type_claim_has_invalid_endpoints:{owner_claim.node_id}" in errors
+
+
+def test_graph_validator_rejects_action_without_grounded_target() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records([_record("tx:action", "Atlas completed.", source_kind="tool")])
+    snapshot = service.retrieve_graph_snapshot()
+    action = next(
+        node for node in snapshot.nodes if node.node_type == MemoryGraphNodeType.ACTION
+    )
+    mutated_edges = [
+        edge
+        for edge in snapshot.edges
+        if not (
+            edge.source_node_id == action.node_id
+            and edge.edge_type == MemoryGraphEdgeType.HAS_OBJECT
+        )
+    ]
+
+    errors = MemoryGraphValidator().validate_snapshot(
+        snapshot.model_copy(update={"edges": mutated_edges})
+    )
+
+    assert f"action_missing_target:{action.node_id}" in errors
+
+
+def test_graph_validator_rejects_semantic_nodes_and_evidence_edges_without_provenance() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records([_record("tx:status", "Atlas status is active.")])
+    snapshot = service.retrieve_graph_snapshot()
+    claim = next(
+        node for node in snapshot.nodes if node.node_type == MemoryGraphNodeType.CLAIM
+    )
+    mutated_nodes = [
+        node.model_copy(update={"source_record_ids": []})
+        if node.node_id == claim.node_id
+        else node
+        for node in snapshot.nodes
+    ]
+    mutated_edges = [
+        edge.model_copy(
+            update={
+                "source_record_ids": [],
+                "evidence_span_ids": [],
+            }
+        )
+        if edge.source_node_id == claim.node_id
+        and edge.edge_type == MemoryGraphEdgeType.OBSERVED_IN
+        else edge
+        for edge in snapshot.edges
+    ]
+
+    errors = MemoryGraphValidator().validate_snapshot(
+        snapshot.model_copy(update={"nodes": mutated_nodes, "edges": mutated_edges})
+    )
+
+    assert f"semantic_node_missing_provenance:{claim.node_id}" in errors
+    assert any(error.startswith("observed_in_missing_provenance:") for error in errors)
+
+
+def test_graph_validator_rejects_ambiguous_claim_endpoints() -> None:
+    service = MemoryEvolutionService(memory_plane=MemoryPlaneService())
+    service.evolve_records([_record("tx:owner", "Atlas owner is Bob.")])
+    snapshot = service.retrieve_graph_snapshot()
+    owner_claim = next(
+        node
+        for node in snapshot.nodes
+        if node.node_type == MemoryGraphNodeType.CLAIM
+        and node.properties.get("predicate_id") == "owner"
+    )
+    endpoint_edges = [
+        edge
+        for edge in snapshot.edges
+        if edge.source_node_id == owner_claim.node_id
+        and edge.edge_type
+        in {
+            MemoryGraphEdgeType.HAS_SUBJECT,
+            MemoryGraphEdgeType.HAS_SCOPE,
+            MemoryGraphEdgeType.HAS_OBJECT,
+        }
+    ]
+    duplicate_edges = [
+        edge.model_copy(update={"edge_id": f"{edge.edge_id}:duplicate"})
+        for edge in endpoint_edges
+    ]
+
+    errors = MemoryGraphValidator().validate_snapshot(
+        snapshot.model_copy(update={"edges": [*snapshot.edges, *duplicate_edges]})
+    )
+
+    assert f"claim_ambiguous_subject:{owner_claim.node_id}" in errors
+    assert f"claim_ambiguous_scope:{owner_claim.node_id}" in errors
+    assert f"claim_ambiguous_object:{owner_claim.node_id}" in errors
+
+
 def test_superseded_claim_history_is_retained_in_graph() -> None:
     plane = MemoryPlaneService()
     service = MemoryEvolutionService(memory_plane=plane)
@@ -212,3 +372,37 @@ def test_graph_validator_reports_exact_missing_endpoint_and_claim_shape_errors()
     assert f"claim_missing_scope:{claim_node.node_id}" in errors
     assert f"claim_missing_object:{claim_node.node_id}" in errors
     assert f"claim_missing_observed_in:{claim_node.node_id}" in errors
+
+
+def test_graph_validator_rejects_semantic_self_relations() -> None:
+    claim_node = MemoryGraphNode(
+        node_id=claim_node_id("claim:self"),
+        node_type=MemoryGraphNodeType.CLAIM,
+        label="self relation claim",
+        canonical_id="claim:self",
+        lifecycle_state="active",
+        confidence=0.8,
+        payload_ref="mem:evolution:claim:claim:self",
+        properties={"claim_id": "claim:self"},
+    )
+    self_edge = MemoryGraphEdge(
+        edge_id=edge_id(
+            MemoryGraphEdgeType.CONTRADICTS,
+            claim_node.node_id,
+            claim_node.node_id,
+        ),
+        edge_type=MemoryGraphEdgeType.CONTRADICTS,
+        source_node_id=claim_node.node_id,
+        target_node_id=claim_node.node_id,
+        lifecycle_state="active",
+        confidence=0.8,
+    )
+    snapshot = MemoryGraphSnapshot(
+        snapshot_id="graph:snapshot:self",
+        nodes=[claim_node],
+        edges=[self_edge],
+    )
+
+    errors = MemoryGraphValidator().validate_snapshot(snapshot)
+
+    assert f"self_relation:{self_edge.edge_id}" in errors

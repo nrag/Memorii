@@ -4,18 +4,30 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
+from collections.abc import Sequence
 from datetime import (
     UTC,
     datetime,
 )
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
+from memorii.core.benchmark.artifact_rows import (
+    CuratedMemoryEvolutionLLMTraceRow,
+    DecisionMode,
+    FinalOutputSource,
+    artifact_row_to_json,
+)
+from memorii.core.benchmark.bounded_semantic_repair import run_with_one_semantic_repair
 from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.fixture_sets.memory_evolution_v1 import load_memory_evolution_v1_fixture_set
 from memorii.core.benchmark.llm_adapters import LLMMemoryEvolutionDecisionAdapter
 from memorii.core.benchmark.memory_evolution_decision import (
+    MemoryEvolutionDecision,
     MemoryEvolutionScenario,
+    MemoryEvolutionSemanticDecision,
+    MemoryEvolutionSemanticRepairRequest,
     memory_evolution_context_for_checkpoint,
     memory_evolution_decision_diagnostics,
     memory_evolution_engine_result_from_llm,
@@ -24,6 +36,10 @@ from memorii.core.benchmark.memory_evolution_decision import (
 )
 from memorii.core.benchmark.models import BenchmarkRunConfig
 from memorii.core.benchmark.reproducibility import build_run_id
+from memorii.core.benchmark.semantic_attempt_artifacts import (
+    provider_attempt_status,
+    semantic_attempt_artifact,
+)
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import (
     DecisionModeName,
@@ -33,6 +49,7 @@ from memorii.core.llm_config import (
 )
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
+from memorii.core.memory_evolution import FallbackOutcome, ProviderAttemptStatus
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.artifact_io import write_jsonl
@@ -69,7 +86,11 @@ def _run_memory_evolution_transitions(
     allow_live: bool,
     prompt_root: Path,
     dependencies: BenchmarkRuntimeDependencies,
-) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
+) -> tuple[
+    list[dict[str, object]],
+    list[dict[str, object]],
+    list[CuratedMemoryEvolutionLLMTraceRow],
+]:
     env_snapshot = load_memorii_environment()
     runtime_config = LLMRuntimeConfig.from_env(env_snapshot.env)
     decision_config = (
@@ -108,7 +129,7 @@ def _run_memory_evolution_transitions(
 
     scenario_rows: list[dict[str, object]] = []
     checkpoint_rows: list[dict[str, object]] = []
-    llm_rows: list[dict[str, object]] = []
+    llm_rows: list[CuratedMemoryEvolutionLLMTraceRow] = []
     for scenario in scenarios:
         scenario_checkpoint_rows: list[dict[str, object]] = []
         for checkpoint in scenario.checkpoints:
@@ -143,16 +164,63 @@ def _run_memory_evolution_transitions(
                     "decision_mode": mode,
                     "transition_type": "memory_evolution_decision",
                 }
-                llm_result = adapter.decide(
-                    context,
+                resolution = run_with_one_semantic_repair(
+                    context=context,
                     request_id=request_id,
                     metadata=metadata,
+                    decide=lambda candidate_context, candidate_request_id, candidate_metadata: adapter.decide(
+                        candidate_context,
+                        request_id=candidate_request_id,
+                        metadata=candidate_metadata,
+                    ),
+                    evaluate=lambda result, candidate_context, rule_output=rule_output: (
+                        memory_evolution_engine_result_from_llm(
+                            result=result,
+                            mode=LLMDecisionMode(effective_mode),
+                            context=candidate_context,
+                            rule_output=rule_output,
+                        )
+                    ),
+                    build_repair_context=lambda original, output_payload, violation_codes: original.model_copy(
+                        update={
+                            "repair_request": MemoryEvolutionSemanticRepairRequest(
+                                violation_codes=violation_codes,
+                                previous_decision=MemoryEvolutionSemanticDecision.model_validate(
+                                    output_payload
+                                ),
+                            )
+                        }
+                    ),
                 )
-                output, llm_trace, llm_success, fallback_reason = memory_evolution_engine_result_from_llm(
-                    result=llm_result,
-                    mode=LLMDecisionMode(effective_mode),
-                    rule_output=rule_output,
+                final_attempt = resolution.final_attempt
+                output = final_attempt.output
+                llm_trace = final_attempt.trace
+                llm_success = final_attempt.success
+                fallback_reason = final_attempt.failure_mode
+                final_provider_status = provider_attempt_status(
+                    final_attempt.provider_result
                 )
+                provider_attempts = [
+                    semantic_attempt_artifact(
+                        attempt=index,
+                        result=attempt.provider_result,
+                        provider_status=provider_attempt_status(
+                            attempt.provider_result
+                        ),
+                        accepted=attempt.success,
+                        failure_mode=attempt.failure_mode,
+                        validation_issues=[
+                            issue.code for issue in attempt.trace.validation_issues
+                        ],
+                        compiled_output=attempt.output if attempt.success else None,
+                        repair_request=(
+                            resolution.final_context.repair_request
+                            if index == 1
+                            else None
+                        ),
+                    )
+                    for index, attempt in enumerate(resolution.attempts)
+                ]
                 if llm_success:
                     if llm_binding is None:
                         raise RuntimeError("LLM result is missing execution provenance")
@@ -160,18 +228,27 @@ def _run_memory_evolution_transitions(
                 else:
                     final_output_source = "rule"
                 llm_rows.append(
-                    {
-                        "scenario_id": scenario.scenario_id,
-                        "checkpoint_id": checkpoint.checkpoint_id,
-                        "transition_type": "memory_evolution_decision",
-                        "decision_mode": mode,
-                        "effective_decision_mode": effective_mode,
-                        "trace": llm_trace.model_dump(mode="json"),
-                        "success": llm_success,
-                        "fallback_used": not llm_success,
-                        "failure_mode": fallback_reason,
-                        "output": output,
-                    }
+                    CuratedMemoryEvolutionLLMTraceRow(
+                        scenario_id=scenario.scenario_id,
+                        checkpoint_id=checkpoint.checkpoint_id,
+                        transition_type="memory_evolution_decision",
+                        decision_mode=cast(DecisionMode, mode),
+                        effective_decision_mode=effective_mode,
+                        final_output_source=cast(FinalOutputSource, final_output_source),
+                        trace=llm_trace,
+                        provider_attempt_status=final_provider_status,
+                        semantic_validation_status=_semantic_validation_status(
+                            provider_status=final_provider_status,
+                            accepted=final_attempt.success,
+                        ),
+                        fallback_outcome=(
+                            FallbackOutcome.NOT_USED if llm_success else FallbackOutcome.SUCCEEDED
+                        ),
+                        final_output_accepted=llm_success,
+                        failure_mode=fallback_reason,
+                        provider_attempts=provider_attempts,
+                        output=MemoryEvolutionDecision.model_validate(output),
+                    )
                 )
             else:
                 llm_trace = rule_trace
@@ -182,7 +259,15 @@ def _run_memory_evolution_transitions(
                 decision=output,
             )
             assertion_passed = diagnostics.assertion_passed
-            success = assertion_passed and (effective_mode != "llm" or llm_success or not llm_used)
+            functional_success = assertion_passed
+            model_success = assertion_passed and (llm_success if llm_used else True)
+            fallback_assisted_success = bool(
+                llm_used
+                and not llm_success
+                and llm_trace.fallback_used
+                and assertion_passed
+            )
+            success = model_success
             checkpoint_row = {
                 "scenario_id": scenario.scenario_id,
                 "family": scenario.family,
@@ -197,6 +282,10 @@ def _run_memory_evolution_transitions(
                 "final_output_source": final_output_source,
                 "request_id": request_id if llm_used else llm_trace.trace_id,
                 "success": success,
+                "functional_success": functional_success,
+                "model_success": model_success,
+                "final_output_accepted": llm_success if llm_used else None,
+                "fallback_assisted_success": fallback_assisted_success,
                 "failure_mode": None if success else (fallback_reason or "memory_evolution_assertion_failed"),
                 "transition_assertion_passed": assertion_passed,
                 "memory_evolution_assertion_passed": assertion_passed,
@@ -210,6 +299,9 @@ def _run_memory_evolution_transitions(
             scenario_checkpoint_rows.append(checkpoint_row)
 
         scenario_success = all(row["success"] is True for row in scenario_checkpoint_rows)
+        scenario_functional_success = all(
+            row["functional_success"] is True for row in scenario_checkpoint_rows
+        )
         scenario_rows.append(
             {
                 "scenario_id": scenario.scenario_id,
@@ -219,12 +311,24 @@ def _run_memory_evolution_transitions(
                 "effective_decision_mode": effective_mode,
                 "checkpoint_count": len(scenario_checkpoint_rows),
                 "success": scenario_success,
+                "functional_success": scenario_functional_success,
+                "model_success": scenario_success,
                 "failure_mode": None if scenario_success else "one_or_more_checkpoints_failed",
                 "checkpoints_passed": sum(1 for row in scenario_checkpoint_rows if row["success"] is True),
                 "checkpoints_failed": sum(1 for row in scenario_checkpoint_rows if row["success"] is False),
             }
         )
     return scenario_rows, checkpoint_rows, llm_rows
+
+
+def _semantic_validation_status(
+    *,
+    provider_status: ProviderAttemptStatus,
+    accepted: bool,
+) -> Literal["not_evaluated", "passed", "failed"]:
+    if provider_status != ProviderAttemptStatus.SUCCEEDED:
+        return "not_evaluated"
+    return "passed" if accepted else "failed"
 
 
 def memory_evolution_artifact_run_metadata(
@@ -273,7 +377,7 @@ def _write_memory_evolution_artifacts(
     scenarios: list[MemoryEvolutionScenario],
     scenario_rows: list[dict[str, object]],
     checkpoint_rows: list[dict[str, object]],
-    llm_rows: list[dict[str, object]],
+    llm_rows: list[CuratedMemoryEvolutionLLMTraceRow],
     suite: str,
     mode: str,
     storage_root: str,
@@ -294,6 +398,38 @@ def _write_memory_evolution_artifacts(
     run_dir.mkdir(parents=True, exist_ok=True)
     passed = sum(1 for row in scenario_rows if row["success"] is True)
     failed = len(scenario_rows) - passed
+    functional_passed = sum(1 for row in scenario_rows if row["functional_success"] is True)
+    functional_failed = len(scenario_rows) - functional_passed
+    functional_checkpoints_passed = sum(
+        1 for row in checkpoint_rows if row["functional_success"] is True
+    )
+    functional_checkpoints_failed = len(checkpoint_rows) - functional_checkpoints_passed
+    provider_attempts = [
+        attempt
+        for row in llm_rows
+        for attempt in row.provider_attempts
+    ]
+    provider_attempt_counts = Counter(
+        attempt.provider_attempt_status.value for attempt in provider_attempts
+    )
+    semantic_validation_counts = Counter(
+        attempt.semantic_validation_status for attempt in provider_attempts
+    )
+    fallback_outcome_counts = Counter(row.fallback_outcome.value for row in llm_rows)
+    final_output_source_counts = Counter(row.final_output_source for row in llm_rows)
+    final_outputs_accepted = sum(1 for row in llm_rows if row.final_output_accepted)
+    fallback_assisted_passes = sum(
+        1 for row in checkpoint_rows if row["fallback_assisted_success"] is True
+    )
+    local_certification_passed = (
+        None
+        if not llm_rows
+        else bool(
+            all(row["success"] is True for row in checkpoint_rows)
+            and final_outputs_accepted == len(llm_rows)
+            and fallback_assisted_passes == 0
+        )
+    )
     report_bucket_counts = _memory_evolution_report_bucket_counts(checkpoint_rows)
     discriminative_scenario_ids = {
         scenario.scenario_id for scenario in scenarios if scenario.discriminative
@@ -318,12 +454,24 @@ def _write_memory_evolution_artifacts(
         "generated_at": datetime.now(UTC).isoformat(),
         "fixture_source": fixture_source,
         "storage_root": storage_root,
-        "artifact_version": "memory_evolution_v1_artifacts:2",
+        "artifact_version": "memory_evolution_v1_artifacts:4",
         "scenarios": len(scenario_rows),
         "checkpoints": len(checkpoint_rows),
         "passed": passed,
         "failed": failed,
-        "llm_calls": len(llm_rows),
+        "functional_passed": functional_passed,
+        "functional_failed": functional_failed,
+        "functional_checkpoints_passed": functional_checkpoints_passed,
+        "functional_checkpoints_failed": functional_checkpoints_failed,
+        "llm_calls": len(provider_attempts),
+        "provider_attempt_counts": dict(sorted(provider_attempt_counts.items())),
+        "semantic_validation_counts": dict(sorted(semantic_validation_counts.items())),
+        "final_outputs_accepted": final_outputs_accepted,
+        "final_outputs_rejected": len(llm_rows) - final_outputs_accepted,
+        "fallback_outcome_counts": dict(sorted(fallback_outcome_counts.items())),
+        "fallback_assisted_passes": fallback_assisted_passes,
+        "final_output_source_counts": dict(sorted(final_output_source_counts.items())),
+        "local_certification_passed": local_certification_passed,
         "discriminative_scenarios": len(discriminative_scenario_rows),
         "non_discriminative_scenarios": len(non_discriminative_scenario_rows),
         "discriminative_passed": sum(1 for row in discriminative_scenario_rows if row["success"] is True),
@@ -345,7 +493,11 @@ def _write_memory_evolution_artifacts(
     report_md = (
         f"# {suite}\n\n"
         f"mode={mode} scenarios={len(scenario_rows)} checkpoints={len(checkpoint_rows)} "
-        f"passed={passed} failed={failed} llm_calls={len(llm_rows)}\n"
+        f"passed={passed} failed={failed} functional_passed={functional_passed} "
+        f"functional_failed={functional_failed} llm_calls={len(provider_attempts)} "
+        f"final_outputs_accepted={final_outputs_accepted} "
+        f"fallback_assisted_passes={fallback_assisted_passes} "
+        f"local_certification_passed={local_certification_passed}\n"
     )
     (run_dir / "report.json").write_text(report_json, encoding="utf-8")
     (run_dir / "memory_evolution_report.json").write_text(report_json, encoding="utf-8")
@@ -357,7 +509,7 @@ def _write_memory_evolution_artifacts(
     )
     write_jsonl(run_dir / "memory_evolution_traces.jsonl", scenario_rows)
     write_jsonl(run_dir / "memory_evolution_checkpoint_traces.jsonl", checkpoint_rows)
-    write_jsonl(run_dir / "llm_traces.jsonl", llm_rows)
+    write_jsonl(run_dir / "llm_traces.jsonl", [artifact_row_to_json(row) for row in llm_rows])
     write_jsonl(run_dir / "failures.jsonl", [row for row in checkpoint_rows if row["success"] is False])
     return run_dir
 
@@ -459,7 +611,7 @@ def _print_memory_evolution_summary(
     run_dir: Path,
     scenario_rows: list[dict[str, object]],
     checkpoint_rows: list[dict[str, object]],
-    llm_rows: list[dict[str, object]],
+    llm_rows: Sequence[CuratedMemoryEvolutionLLMTraceRow],
 ) -> None:
     passed = sum(1 for row in scenario_rows if row["success"] is True)
     failed = len(scenario_rows) - passed
@@ -467,7 +619,7 @@ def _print_memory_evolution_summary(
         f"suite={suite} mode={mode} systems=memorii "
         f"scenarios={len(scenario_rows)} checkpoints={len(checkpoint_rows)} "
         f"passed={passed} failed={failed} "
-        f"llm_calls={len(llm_rows)} artifacts={run_dir}"
+        f"llm_calls={sum(len(row.provider_attempts) for row in llm_rows)} artifacts={run_dir}"
     )
 
 def _run_memory_evolution_suite(

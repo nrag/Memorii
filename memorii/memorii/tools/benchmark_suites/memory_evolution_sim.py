@@ -24,6 +24,7 @@ from memorii.core.benchmark.artifact_validation import (
     finalize_memory_evolution_run,
     validate_memory_evolution_run,
 )
+from memorii.core.benchmark.bounded_semantic_repair import run_with_one_semantic_repair
 from memorii.core.benchmark.decision_modes import resolve_benchmark_decision_mode
 from memorii.core.benchmark.llm_adapters import LLMMemoryEvolutionSimReconstructionAdapter
 from memorii.core.benchmark.memory_evolution_sim import (
@@ -31,13 +32,20 @@ from memorii.core.benchmark.memory_evolution_sim import (
     LatentGraphScenario,
     MemoryEvolutionSimReconstructionContext,
     OracleCheckpoint,
+    SimSemanticDecision,
+    SimSemanticRepairRequest,
     SimSystemOutput,
+    expected_sim_output_for_checkpoint,
     judge_sim_checkpoint,
     memory_evolution_sim_engine_result_from_llm,
     memory_evolution_sim_trace_for_rule,
     rule_sim_output_for_checkpoint,
     sim_checkpoint_diagnostics,
     sim_reconstruction_context_for_checkpoint,
+)
+from memorii.core.benchmark.semantic_attempt_artifacts import (
+    provider_attempt_status,
+    semantic_attempt_artifact,
 )
 from memorii.core.env_config import load_memorii_environment
 from memorii.core.llm_config import (
@@ -48,13 +56,13 @@ from memorii.core.llm_config import (
 )
 from memorii.core.llm_decision.models import LLMDecisionMode
 from memorii.core.llm_provider.runner import PromptLLMRunner
+from memorii.core.memory_evolution.models import FallbackOutcome
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.tools.benchmark_registry import BenchmarkSuiteRunner, FunctionBenchmarkSuiteRunner
 from memorii.tools.benchmark_suites.common import (
     ALL_DECISION_MODES,
     require_memorii_only,
 )
-from memorii.tools.benchmark_suites.fake_adapters import ExpectedMemoryEvolutionSimFakeAdapter
 from memorii.tools.benchmark_suites.memory_evolution_artifacts import (
     horizon_distance_bucket,
     interference_count_bucket,
@@ -69,7 +77,7 @@ from memorii.tools.benchmark_suites.runtime_dependencies import BenchmarkRuntime
 from memorii.tools.run_live_llm_eval import validate_live_safety
 
 SUITE_NAME = "memory_evolution_sim_v1"
-_INVALID_REFERENCE_ID_BUCKET = "invalid_reference_id"
+_SEMANTIC_DECISION_INVALID_BUCKET = "semantic_decision_invalid"
 
 
 def _decision_modes_from_args(mode: str) -> list[DecisionModeName]:
@@ -129,15 +137,18 @@ def _run_memory_evolution_sim_transitions(
             runtime_config = runtime_config.model_copy(update={"max_retries": 0})
 
     registry = PromptRegistry(prompt_root=prompt_root)
+    oracle_bypass = (
+        effective_mode in {"llm", "hybrid"}
+        and dependencies.use_oracle_adapters(dry_run=dry_run)
+    )
     adapter = None
     llm_binding = None
-    if effective_mode in {"llm", "hybrid"}:
+    if effective_mode in {"llm", "hybrid"} and not oracle_bypass:
         llm_binding = dependencies.bind_llm_client(dry_run=dry_run, config=runtime_config)
         runner = PromptLLMRunner(client=llm_binding.client, config=runtime_config)
-        adapter = (
-            ExpectedMemoryEvolutionSimFakeAdapter(scenarios=scenarios, registry=registry)
-            if dependencies.use_oracle_adapters(dry_run=dry_run)
-            else LLMMemoryEvolutionSimReconstructionAdapter(runner=runner, registry=registry)
+        adapter = LLMMemoryEvolutionSimReconstructionAdapter(
+            runner=runner,
+            registry=registry,
         )
 
     scenario_rows: list[SimScenarioResultRow] = []
@@ -161,34 +172,85 @@ def _run_memory_evolution_sim_transitions(
             final_output_source = "rule"
             llm_trace = rule_trace
 
-            if effective_mode in {"llm", "hybrid"} and adapter is not None:
+            if oracle_bypass:
+                oracle_output = expected_sim_output_for_checkpoint(checkpoint)
+                output_json = oracle_output.model_dump(mode="json")
+                final_output_source = "fake_oracle"
+                llm_trace = memory_evolution_sim_trace_for_rule(
+                    context=context,
+                    decision=oracle_output,
+                    mode=effective_mode,
+                )
+            elif effective_mode in {"llm", "hybrid"} and adapter is not None:
                 llm_call_made = True
-                result = adapter.decide(
-                    context,
+                metadata: dict[str, object] = {
+                    "suite": "memory_evolution_sim_v1",
+                    "scenario_id": scenario.scenario_id,
+                    "checkpoint_id": checkpoint.checkpoint_id,
+                    "decision_mode": mode,
+                    "effective_decision_mode": effective_mode,
+                    "transition_type": "memory_evolution_sim_reconstruction",
+                }
+                resolution = run_with_one_semantic_repair(
+                    context=context,
                     request_id=request_id,
-                    metadata={
-                        "suite": "memory_evolution_sim_v1",
-                        "scenario_id": scenario.scenario_id,
-                        "checkpoint_id": checkpoint.checkpoint_id,
-                        "decision_mode": mode,
-                        "effective_decision_mode": effective_mode,
-                        "transition_type": "memory_evolution_sim_reconstruction",
-                    },
+                    metadata=metadata,
+                    decide=lambda candidate_context, candidate_request_id, candidate_metadata: adapter.decide(
+                        candidate_context,
+                        request_id=candidate_request_id,
+                        metadata=candidate_metadata,
+                    ),
+                    evaluate=lambda result, candidate_context, rule_output_json=rule_output_json: (
+                        memory_evolution_sim_engine_result_from_llm(
+                            result=result,
+                            mode=LLMDecisionMode(effective_mode),
+                            context=candidate_context,
+                            rule_output=rule_output_json,
+                        )
+                    ),
+                    build_repair_context=lambda original, output_payload, violation_codes: original.model_copy(
+                        update={
+                            "repair_request": SimSemanticRepairRequest(
+                                violation_codes=violation_codes,
+                                previous_decision=SimSemanticDecision.model_validate(output_payload),
+                            )
+                        }
+                    ),
                 )
-                output_json, llm_trace, llm_success, fallback_reason = memory_evolution_sim_engine_result_from_llm(
-                    result=result,
-                    mode=LLMDecisionMode(effective_mode),
-                    scenario=scenario,
-                    rule_output=rule_output_json,
-                )
-                invalid_reference_failure = fallback_reason == "llm_output_referenced_invalid_ids"
-                if llm_success or invalid_reference_failure:
+                final_attempt = resolution.final_attempt
+                result = final_attempt.provider_result
+                output_json = final_attempt.output
+                llm_trace = final_attempt.trace
+                llm_success = final_attempt.success
+                fallback_reason = final_attempt.failure_mode
+                attempts = [
+                    semantic_attempt_artifact(
+                        attempt=index,
+                        result=attempt.provider_result,
+                        provider_status=provider_attempt_status(
+                            attempt.provider_result
+                        ),
+                        accepted=attempt.success,
+                        failure_mode=attempt.failure_mode,
+                        validation_issues=[
+                            issue.code for issue in attempt.trace.validation_issues
+                        ],
+                        compiled_output=attempt.output if attempt.success else None,
+                        repair_request=(
+                            resolution.final_context.repair_request
+                            if index == 1
+                            else None
+                        ),
+                    )
+                    for index, attempt in enumerate(resolution.attempts)
+                ]
+                if llm_success:
                     if llm_binding is None:
                         raise RuntimeError("LLM result is missing execution provenance")
                     final_output_source = llm_binding.final_output_source
                 else:
                     final_output_source = "rule"
-                fallback_used = not llm_success and not invalid_reference_failure
+                fallback_used = not llm_success
                 llm_rows.append(
                     SimLLMTraceRow(
                         scenario_id=scenario.scenario_id,
@@ -198,9 +260,18 @@ def _run_memory_evolution_sim_transitions(
                         effective_decision_mode=effective_mode,
                         final_output_source=final_output_source,
                         trace=llm_trace,
-                        success=llm_success,
-                        fallback_used=fallback_used,
+                        provider_attempt_status=provider_attempt_status(result),
+                        semantic_validation_status=(
+                            "passed" if llm_success else "failed" if result.success else "not_evaluated"
+                        ),
+                        fallback_outcome=(
+                            FallbackOutcome.SUCCEEDED
+                            if fallback_used
+                            else FallbackOutcome.NOT_USED
+                        ),
+                        final_output_accepted=llm_success,
                         failure_mode=fallback_reason,
+                        provider_attempts=attempts,
                         output=SimSystemOutput.model_validate(output_json),
                     )
                 )
@@ -212,20 +283,26 @@ def _run_memory_evolution_sim_transitions(
                 checkpoint=checkpoint,
                 output=output,
             )
-            invalid_reference_failure = fallback_reason == "llm_output_referenced_invalid_ids"
             diagnostics = sim_checkpoint_diagnostics(
                 scenario=scenario,
                 checkpoint=checkpoint,
                 output=output,
                 aggregate=aggregate,
             )
-            engine_failure_buckets = [_INVALID_REFERENCE_ID_BUCKET] if invalid_reference_failure else []
-            if effective_mode == "llm" and llm_call_made and not llm_success:
+            semantic_failure = fallback_reason in {
+                "llm_semantic_validation_failed",
+                "llm_compiled_output_validation_failed",
+            }
+            engine_failure_buckets = (
+                [_SEMANTIC_DECISION_INVALID_BUCKET] if semantic_failure else []
+            )
+            if effective_mode in {"llm", "hybrid"} and llm_call_made and not llm_success:
                 engine_failure_buckets.append(fallback_reason or "llm_provider_failure")
             success = (
                 aggregate.verdict.value == "pass"
-                and (effective_mode != "llm" or llm_success or not llm_call_made)
-                and not invalid_reference_failure
+                and not aggregate.review_required
+                and (not llm_call_made or llm_success)
+                and not semantic_failure
             )
             warning_buckets = checkpoint_warning_buckets(
                 answer_match_type=diagnostics.answer_match_type,

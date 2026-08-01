@@ -375,6 +375,7 @@ class MemoryPlaneService:
                 "role": event.role,
                 "action": event.action,
                 "target": event.target,
+                **({"source_modality": event.source_modality.value} if event.source_modality is not None else {}),
             },
             status=CommitStatus.COMMITTED,
             source_kind="provider",

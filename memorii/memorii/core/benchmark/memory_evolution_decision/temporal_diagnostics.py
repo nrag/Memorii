@@ -5,9 +5,7 @@ from __future__ import annotations
 import re
 
 from memorii.core.benchmark.memory_evolution_decision.contracts import (
-    MemoryEvolutionAnswerTemporalMode,
     MemoryEvolutionCheckpoint,
-    MemoryEvolutionCheckpointContract,
     MemoryEvolutionEvent,
     MemoryEvolutionScenario,
     MemoryEvolutionScopeKeyPolicy,
@@ -15,7 +13,7 @@ from memorii.core.benchmark.memory_evolution_decision.contracts import (
     MemoryEvolutionScopeMatchPolicy,
     MemoryEvolutionTemporalFrame,
     MemoryEvolutionTemporalIntervalPolicy,
-    MemoryEvolutionTemporalKind,
+    MemoryEvolutionVisibleDecisionContract,
 )
 from memorii.core.benchmark.memory_evolution_decision.utils import normalize_decision_text
 
@@ -23,18 +21,13 @@ from memorii.core.benchmark.memory_evolution_decision.utils import normalize_dec
 def expected_temporal_frame(
     *,
     checkpoint: MemoryEvolutionCheckpoint,
-    contract: MemoryEvolutionCheckpointContract,
+    contract: MemoryEvolutionVisibleDecisionContract,
 ) -> MemoryEvolutionTemporalFrame:
     if checkpoint.expected_temporal_frame is not None:
         return checkpoint.expected_temporal_frame
-    mode_by_answer_mode = {
-        MemoryEvolutionAnswerTemporalMode.CURRENT: MemoryEvolutionTemporalKind.CURRENT,
-        MemoryEvolutionAnswerTemporalMode.HISTORICAL: MemoryEvolutionTemporalKind.HISTORICAL,
-        MemoryEvolutionAnswerTemporalMode.EXECUTION: MemoryEvolutionTemporalKind.EXECUTION,
-        MemoryEvolutionAnswerTemporalMode.BELIEF: MemoryEvolutionTemporalKind.BELIEF,
-    }
     return MemoryEvolutionTemporalFrame(
-        temporal_kind=mode_by_answer_mode[contract.answer_temporal_mode],
+        temporal_reference=contract.temporal_reference,
+        decision_domain=contract.decision_domain,
         scope_kind=MemoryEvolutionScopeKind.NONE,
         scope_key=None,
         anchor_id=None,
@@ -49,11 +42,12 @@ def temporal_frame_diagnostics(
     *,
     expected: MemoryEvolutionTemporalFrame,
     actual: MemoryEvolutionTemporalFrame,
-    contract: MemoryEvolutionCheckpointContract,
+    contract: MemoryEvolutionVisibleDecisionContract,
     scenario: MemoryEvolutionScenario,
     checkpoint: MemoryEvolutionCheckpoint,
 ) -> dict[str, bool]:
-    kind_mismatch = actual.temporal_kind != expected.temporal_kind
+    reference_mismatch = actual.temporal_reference != expected.temporal_reference
+    domain_mismatch = actual.decision_domain != expected.decision_domain
     scope_kind_mismatch, scope_key_mismatch = _temporal_scope_mismatches(
         expected=expected,
         actual=actual,
@@ -63,35 +57,26 @@ def temporal_frame_diagnostics(
     )
     anchor_mismatch = expected.anchor_id is not None and actual.anchor_id != expected.anchor_id
     extra_anchor = (
-        expected.anchor_id is None
-        and actual.anchor_id is not None
-        and not contract.allow_extra_temporal_anchor
+        expected.anchor_id is None and actual.anchor_id is not None and not contract.allow_extra_temporal_anchor
     )
     expected_has_interval = expected.valid_from is not None or expected.valid_to is not None
     actual_has_interval = actual.valid_from is not None or actual.valid_to is not None
-    interval_mismatch = (
-        (expected.valid_from is not None and actual.valid_from != expected.valid_from)
-        or (expected.valid_to is not None and actual.valid_to != expected.valid_to)
+    interval_mismatch = (expected.valid_from is not None and actual.valid_from != expected.valid_from) or (
+        expected.valid_to is not None and actual.valid_to != expected.valid_to
     )
     extra_interval = (
-        actual_has_interval
-        and not expected_has_interval
-        and not _extra_interval_is_allowed(contract=contract)
+        actual_has_interval and not expected_has_interval and not _extra_interval_is_allowed(contract=contract)
     )
     under_specified = expected_has_interval and not actual_has_interval
     if contract.temporal_interval_policy == MemoryEvolutionTemporalIntervalPolicy.REQUIRE_START_AND_END:
         under_specified = expected.valid_from is not None and actual.valid_from is None
         under_specified = under_specified or (expected.valid_to is not None and actual.valid_to is None)
     temporal_frame_warning = (
-        (actual_has_interval and not expected_has_interval and _extra_interval_is_allowed(contract=contract))
-        or (
-            expected.anchor_id is None
-            and actual.anchor_id is not None
-            and contract.allow_extra_temporal_anchor
-        )
-    )
+        actual_has_interval and not expected_has_interval and _extra_interval_is_allowed(contract=contract)
+    ) or (expected.anchor_id is None and actual.anchor_id is not None and contract.allow_extra_temporal_anchor)
     return {
-        "temporal_kind_mismatch": kind_mismatch,
+        "temporal_reference_mismatch": reference_mismatch,
+        "decision_domain_mismatch": domain_mismatch,
         "temporal_scope_mismatch": scope_kind_mismatch,
         "temporal_anchor_mismatch": anchor_mismatch,
         "temporal_interval_mismatch": interval_mismatch,
@@ -103,7 +88,7 @@ def temporal_frame_diagnostics(
     }
 
 
-def _extra_interval_is_allowed(*, contract: MemoryEvolutionCheckpointContract) -> bool:
+def _extra_interval_is_allowed(*, contract: MemoryEvolutionVisibleDecisionContract) -> bool:
     return contract.allow_extra_temporal_bounds or contract.temporal_interval_policy in {
         MemoryEvolutionTemporalIntervalPolicy.ALLOW_CHECKPOINT_BOUNDS,
         MemoryEvolutionTemporalIntervalPolicy.ALLOW_EXTRA_BOUNDS,
@@ -114,7 +99,7 @@ def _temporal_scope_mismatches(
     *,
     expected: MemoryEvolutionTemporalFrame,
     actual: MemoryEvolutionTemporalFrame,
-    contract: MemoryEvolutionCheckpointContract,
+    contract: MemoryEvolutionVisibleDecisionContract,
     scenario: MemoryEvolutionScenario,
     checkpoint: MemoryEvolutionCheckpoint,
 ) -> tuple[bool, bool]:
@@ -201,7 +186,7 @@ def _scope_keys_equivalent(
     kind: MemoryEvolutionScopeKind,
     scenario: MemoryEvolutionScenario,
     checkpoint: MemoryEvolutionCheckpoint,
-    contract: MemoryEvolutionCheckpointContract,
+    contract: MemoryEvolutionVisibleDecisionContract,
 ) -> bool:
     if contract.scope_key_policy == MemoryEvolutionScopeKeyPolicy.KIND_ONLY:
         return True
@@ -270,15 +255,11 @@ def _scope_aliases_by_canonical_key(
             continue
         if kind == MemoryEvolutionScopeKind.TASK and event.task_id:
             canonical = _normalize_scope_key(event.task_id)
-            aliases.setdefault(canonical, set()).update(
-                _scope_key_aliases(event.task_id)
-            )
+            aliases.setdefault(canonical, set()).update(_scope_key_aliases(event.task_id))
         if kind == MemoryEvolutionScopeKind.ENTITY:
             for entity_id in event.entity_ids:
                 canonical = _normalize_scope_key(entity_id)
-                aliases.setdefault(canonical, set()).update(
-                    _scope_key_aliases(entity_id)
-                )
+                aliases.setdefault(canonical, set()).update(_scope_key_aliases(entity_id))
     return aliases
 
 
