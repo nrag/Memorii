@@ -106,7 +106,7 @@ def _verify_fixture(root: Path, expected_manifest_digest: str, *, legacy_reader:
     for name, digest in manifest["generated_files"].items():
         assert sha256((root / name).read_bytes()).hexdigest() == digest
     reader_input = manifest["capture"]["inputs"]["legacy_reader"]
-    assert reader_input["path"] == str(legacy_reader.resolve())
+    assert reader_input["path"] == "legacy_reader.py"
     assert sha256(legacy_reader.read_bytes()).hexdigest() == reader_input["sha256"]
 
 
@@ -116,21 +116,24 @@ def test_r22_independent_rfc8785_known_answer_vectors() -> None:
     assert _jcs({"\ue000": 1, "\U00010000": 2, "\ufffd": 3}) == '{"𐀀":2,"":1,"�":3}'.encode()
 
 
-def test_r22_capture_manifest_binds_every_input_tool_environment_and_generated_file() -> None:
+def test_r22_capture_manifest_binds_every_portable_input_tool_and_generated_file() -> None:
     expected_digest = _authority_digest()
     assert sha256((_FIXTURE / "capture_manifest.json").read_bytes()).hexdigest() == expected_digest
     _verify_fixture(_FIXTURE, expected_digest, legacy_reader=_FIXTURE / "legacy_reader.py")
     manifest = _manifest()
-    assert manifest["format"] == "memorii.provider-envelope-capture.v3"
+    assert manifest["format"] == "memorii.provider-envelope-capture.v4"
     assert manifest["baseline"]["commit"] == "f76850fc45f09d21a40b5a7302d173ce642ec9d6"
     assert manifest["baseline"]["tree"] == "1aef4aa4364dad9cf4e0063fb64a8e26c5783614"
     assert manifest["baseline"]["blob"] == "307921e7648fcaf5e11244200a7fb3c1f402e817"
     assert manifest["baseline"]["source_sha256"] == "38b80a29a991ebfb1076cccc437c2406d43da031982a6c8fe57f755e1e58dbbd"
     assert manifest["capture"]["tool_sha256"] == sha256(_TOOL.read_bytes()).hexdigest()
-    assert manifest["capture"]["interpreter"]["executable"] == str(Path(sys.executable).resolve())
-    assert manifest["capture"]["interpreter"]["sha256"] == sha256(Path(sys.executable).read_bytes()).hexdigest()
-    assert manifest["capture"]["interpreter"]["pydantic"]["version"]
-    assert manifest["capture"]["interpreter"]["dependencies"]
+    assert set(manifest["capture"]) == {
+        "inputs",
+        "jcs_program_sha256",
+        "method",
+        "program_sha256",
+        "tool_sha256",
+    }
     assert "legacy_reader.py" not in manifest["generated_files"]
     for name, digest in manifest["generated_files"].items():
         assert sha256((_FIXTURE / name).read_bytes()).hexdigest() == digest
@@ -362,7 +365,7 @@ def test_r22_clean_recaptures_are_byte_identical_and_tamper_is_detected(tmp_path
             legacy_reader=_FIXTURE / "legacy_reader.py",
         )
     manifest_path = second / "capture_manifest.json"
-    manifest_path.write_bytes(manifest_path.read_bytes().replace(b'"format":"memorii.provider-envelope-capture.v3"', b'"format":"tampered"'))
+    manifest_path.write_bytes(manifest_path.read_bytes().replace(b'"format":"memorii.provider-envelope-capture.v4"', b'"format":"tampered"'))
     with pytest.raises(AssertionError):
         _verify_fixture(
             second,

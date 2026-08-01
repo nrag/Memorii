@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import platform
 import shutil
 import subprocess
 import sys
@@ -31,8 +30,7 @@ process.stdout.write(jcs(JSON.parse(fs.readFileSync(0,"utf8"))));'''
 # This program is evaluated inside the archive.  Keep it self-contained so it
 # cannot import the checkout being tested.
 _CAPTURE = r'''
-import hashlib, importlib.metadata, itertools, json, platform, sys
-from pathlib import Path
+import itertools, json
 from datetime import UTC, datetime
 from memorii.core.provider.models import ProviderEvolutionOutcome, ProviderSyncResult, ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
@@ -165,18 +163,6 @@ service_paths={
 mixed=HermesMemoryProvider(ProviderMemoryService(memory_evolution_extractor=FailFirst(), now_provider=now))
 service_paths["hermes_ordered_mixed"] = dump(mixed.sync_turn("Atlas owner is Bob.", "Atlas owner is Carol.", operation_id="r22-mixed", task_id="r22"))
 
-def runtime():
- versions={}; fingerprints={}
- for distribution in importlib.metadata.distributions():
-  name=distribution.metadata.get("Name")
-  if not name: continue
-  key=name.lower(); versions[key]=distribution.version; rows=[]
-  for entry in distribution.files or ():
-   path=Path(str(distribution.locate_file(entry)))
-   if path.is_file(): rows.append((str(entry), hashlib.sha256(path.read_bytes()).hexdigest()))
-  fingerprints[key]=hashlib.sha256(json.dumps(sorted(rows), ensure_ascii=False, separators=(",",":"), sort_keys=True).encode()).hexdigest()
- return {"executable":str(Path(sys.executable).resolve()),"sha256":hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest(),"version":sys.version,"implementation":platform.python_implementation(),"pydantic":{"version":versions.get("pydantic"),"distribution_sha256":fingerprints.get("pydantic")},"dependencies":dict(sorted(versions.items())),"distribution_files":dict(sorted(fingerprints.items()))}
-
 print(json.dumps({
  "provider_evolution_outcome_schema":ProviderEvolutionOutcome.model_json_schema(),
  "provider_sync_result_schema":ProviderSyncResult.model_json_schema(),
@@ -186,7 +172,6 @@ print(json.dumps({
  "enum_members":{name:[x.value for x in enum] for name,enum in {"ExtractionFailureCode":ExtractionFailureCode,"ExtractionRunStatus":ExtractionRunStatus,"FallbackOutcome":FallbackOutcome,"FinalExtractionSource":FinalExtractionSource,"ProviderAttemptStatus":ProviderAttemptStatus}.items()},
  "sync_cases":sync_cases,"sync_case_bytes":{k:canonical(v) for k,v in sync_cases.items()},"sync_validation":sync_validation,
  "service_public_bytes":canonical(service_result),"hermes_public_bytes":canonical(hermes_result),"service_path_bytes":{k:canonical(v) for k,v in service_paths.items()},
- "child_runtime":runtime(),
 }, ensure_ascii=True, sort_keys=True, separators=(",",":")))
 '''
 
@@ -211,10 +196,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument("--legacy-reader", type=Path)
     args = parser.parse_args(argv)
-    node_name = shutil.which("node")
-    if node_name is None:
+    if shutil.which("node") is None:
         raise RuntimeError("RFC 8785 capture requires the pinned Node.js runtime")
-    node = Path(node_name).resolve()
     repository, interpreter = args.repository.resolve(), args.python.expanduser().absolute()
     archive = subprocess.run(["git", "archive", "--format=tar", BASELINE_REVISION], cwd=repository, check=True, capture_output=True).stdout
     source = subprocess.run(["git", "show", f"{BASELINE_REVISION}:{_SOURCE_PATH}"], cwd=repository, check=True, capture_output=True).stdout
@@ -235,9 +218,6 @@ def main(argv: list[str] | None = None) -> int:
         if captured.returncode:
             raise RuntimeError(f"isolated baseline capture failed: {captured.stderr}")
     payload = json.loads(captured.stdout)
-    child_runtime = payload.pop("child_runtime")
-    versions = child_runtime["dependencies"]
-    distributions = child_runtime["distribution_files"]
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     # Capture never owns the separately authored frozen legacy reader.
@@ -248,25 +228,13 @@ def main(argv: list[str] | None = None) -> int:
     (output / "provider_envelope_corpus.json").write_bytes(corpus)
     # The manifest deliberately does not hash itself. It binds only immutable
     # inputs and generated siblings, eliminating the self-digest paradox.
-    manifest = {"format":"memorii.provider-envelope-capture.v2","baseline":{"commit":BASELINE_REVISION,"tree":tree,"source_path":_SOURCE_PATH,"blob":blob,"source_sha256":_sha256(source),"archive_sha256":_sha256(archive)},"capture":{"method":"git_archive_isolated_runtime","tool_sha256":_sha256(Path(__file__).read_bytes()),"program_sha256":_sha256(_CAPTURE.encode()),"interpreter":{"executable":str(interpreter),"sha256":_sha256(interpreter.read_bytes()),"version":sys.version,"implementation":platform.python_implementation()},"pydantic":{"version":versions.get("pydantic"),"distribution_sha256":distributions.get("pydantic")},"dependencies_sha256":_sha256(_canonical(versions)),"distribution_files_sha256":_sha256(_canonical(distributions)),"lock_sha256":None},"generated_files":{name:_sha256(data) for name,data in {**files,"provider_envelope_corpus.json":corpus}.items()},"corpus_sha256":_sha256(corpus),"coverage":{"required_sections":["provider_evolution_outcome_schema","provider_sync_result_schema","field_order","accepted_outcomes","invalid_outcomes","validator_branch_matrix","enum_members","sync_cases","service_public_bytes","hermes_public_bytes"],"validator_vector_count":len(payload["validator_branch_matrix"]),"sync_case_names":list(payload["sync_cases"]),"outcome_case_names":list(payload["accepted_outcomes"])} }
+    manifest = {"format":"memorii.provider-envelope-capture.v4","baseline":{"commit":BASELINE_REVISION,"tree":tree,"source_path":_SOURCE_PATH,"blob":blob,"source_sha256":_sha256(source),"archive_sha256":_sha256(archive)},"capture":{"method":"git_archive_isolated_runtime","tool_sha256":_sha256(Path(__file__).read_bytes()),"program_sha256":_sha256(_CAPTURE.encode()),"jcs_program_sha256":_sha256(_JCS_PROGRAM.encode("utf-8"))},"generated_files":{name:_sha256(data) for name,data in {**files,"provider_envelope_corpus.json":corpus}.items()},"corpus_sha256":_sha256(corpus),"coverage":{"required_sections":["provider_evolution_outcome_schema","provider_sync_result_schema","field_order","accepted_outcomes","invalid_outcomes","validator_branch_matrix","enum_members","sync_cases","service_public_bytes","hermes_public_bytes"],"validator_vector_count":len(payload["validator_branch_matrix"]),"sync_case_names":list(payload["sync_cases"]),"outcome_case_names":list(payload["accepted_outcomes"])} }
     reader = (args.legacy_reader or output / "legacy_reader.py").resolve()
     if not reader.is_file():
         raise RuntimeError("frozen legacy reader is required and capture will not create it")
-    manifest["format"] = "memorii.provider-envelope-capture.v3"
-    manifest["capture"]["interpreter"] = child_runtime
-    manifest["capture"]["jcs_runtime"] = {
-        "executable": str(node),
-        "sha256": _sha256(node.read_bytes()),
-        "version": subprocess.run([str(node), "--version"], check=True, capture_output=True, text=True).stdout.strip(),
-        "program_sha256": _sha256(_JCS_PROGRAM.encode("utf-8")),
-    }
-    manifest["capture"].pop("pydantic")
-    manifest["capture"].pop("dependencies_sha256")
-    manifest["capture"].pop("distribution_files_sha256")
-    manifest["capture"].pop("lock_sha256")
     manifest["capture"]["inputs"] = {
         "legacy_reader": {
-            "path": str(reader),
+            "path": "legacy_reader.py",
             "sha256": _sha256(reader.read_bytes()),
         }
     }
