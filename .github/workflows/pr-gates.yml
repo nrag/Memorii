@@ -277,10 +277,8 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout complete compatibility history
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -292,6 +290,13 @@ jobs:
       - name: Install package + test deps
         working-directory: memorii
         run: pip install -e '.[local,dev]'
+
+      - name: Fetch pinned provider compatibility baseline
+        working-directory: memorii
+        run: >-
+          BASELINE_REVISION="$(python -c 'from memorii.tools.extract_provider_compatibility_fixture import BASELINE_REVISION; print(BASELINE_REVISION)')"
+          && git fetch --no-tags --depth=1 origin "$BASELINE_REVISION"
+          && git cat-file -e "$BASELINE_REVISION^{commit}"
 
       - name: Verify deterministic historical provider recapture
         working-directory: memorii

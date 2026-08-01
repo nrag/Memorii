@@ -101,9 +101,12 @@ Run the historical provider compatibility recapture separately:
 pytest -W error tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py -p no:cacheprovider
 ```
 
-This integration gate requires complete Git history because it reconstructs a
-pinned historical revision. Pull requests therefore run it in the dedicated
-`Provider Compatibility Recapture` job with `fetch-depth: 0`; the lightweight
+This integration gate requires the exact pinned historical commit because it
+reconstructs that revision. Pull requests therefore run it in the dedicated
+`Provider Compatibility Recapture` job, fetch the tool-owned baseline SHA with
+`--depth=1`, verify that the fetched object is a commit, and then recapture.
+The baseline need not be an ancestor of the pull-request revision. Local clones
+must likewise contain or explicitly fetch that pinned object. Lightweight
 schema, reader, and tamper contracts remain in the duration-balanced unit
 inventory.
 
@@ -254,8 +257,9 @@ produce a certification.
 
 Repository rules require the deterministic `Unit Tests` and `Benchmark Contracts`
 checks for normal pull requests. `Unit Tests` is a stable umbrella check over
-separate static-analysis, installed-package smoke, and four complete
-duration-balanced pytest shards. The semantic-ingestion generation closure,
+separate static-analysis, installed-package smoke, provider compatibility
+recapture, four complete duration-balanced pytest shards, and the merged unit
+timing inventory. The semantic-ingestion generation closure,
 scenario authority, and public acceptance proofs run as separate jobs so each
 retains a 15-minute timeout. `Live Runtime Statistical Gate` is deliberately not
 a permanent required check because it is a manually dispatched, three-hour candidate

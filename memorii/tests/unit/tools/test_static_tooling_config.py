@@ -215,13 +215,26 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "unit-test-shards",
         "unit-timing-inventory",
     ]
+    umbrella_run = umbrella["steps"][0]
+    assert umbrella_run["env"]["COMPATIBILITY_RESULT"] == "${{ needs.provider-compatibility.result }}"
+    assert 'test "$COMPATIBILITY_RESULT" = success' in umbrella_run["run"]
     assert compatibility["name"] == "Provider Compatibility Recapture"
     compatibility_checkout = compatibility["steps"][0]
-    assert compatibility_checkout["with"]["fetch-depth"] == "0"
+    assert compatibility_checkout["name"] == "Checkout"
+    assert compatibility_checkout["uses"] == "actions/checkout@v4"
+    compatibility_fetch_index, compatibility_fetch = next(
+        (index, step)
+        for index, step in enumerate(compatibility["steps"])
+        if step["name"] == "Fetch pinned provider compatibility baseline"
+    )
+    assert "memorii.tools.extract_provider_compatibility_fixture import BASELINE_REVISION" in compatibility_fetch["run"]
+    assert 'git fetch --no-tags --depth=1 origin "$BASELINE_REVISION"' in compatibility_fetch["run"]
+    assert 'git cat-file -e "$BASELINE_REVISION^{commit}"' in compatibility_fetch["run"]
     compatibility_run = next(
         step for step in compatibility["steps"]
         if step["name"] == "Verify deterministic historical provider recapture"
     )
+    assert compatibility_fetch_index < compatibility["steps"].index(compatibility_run)
     assert "tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py" in compatibility_run["run"]
     shard_config = json.loads((PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text())
     assert not any("provider_compatibility_recapture" in argument for argument in shard_config["pytest_args"])
@@ -256,6 +269,16 @@ def test_test_symbols_use_behavioral_names_instead_of_requirement_or_milestone_i
             if identifier_name.match(line):
                 violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line_number}:{line.strip()}")
     assert violations == []
+
+
+def test_provider_recapture_documentation_matches_exact_pinned_fetch_contract() -> None:
+    documentation = (REPO_ROOT / "docs" / "development" / "static_tooling.md").read_text(encoding="utf-8")
+    assert "fetch the tool-owned baseline SHA" in documentation
+    assert "`--depth=1`" in documentation
+    assert "verify that the fetched object is a commit" in documentation
+    assert "fetch-depth: 0" not in documentation
+    assert "provider compatibility\nrecapture" in documentation
+    assert "merged unit\ntiming inventory" in documentation
 
 
 def _workflow_steps(path: Path) -> list[tuple[str, str]]:

@@ -219,6 +219,7 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     assert unit_job["needs"] == [
         "static-analysis",
         "package-smoke",
+        "provider-compatibility",
         "unit-test-shards",
         "unit-timing-inventory",
     ]
