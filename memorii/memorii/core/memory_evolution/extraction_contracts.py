@@ -8,6 +8,10 @@ from typing import Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_evolution.models import (
+    ClaimAssertionMode,
+    ClaimEpistemicStatus,
+    ClaimModality,
+    ClaimPolarity,
     EntityMention,
     EntityType,
     EvidenceSpan,
@@ -60,6 +64,16 @@ class MemoryExtractionProposal(BaseModel):
             if claim.object_entity_id is not None:
                 _require_declared_entity(claim.object_entity_id, declared_entities, "claim object", claim.claim_id)
             _require_evidence_sources(claim.evidence_spans, input_sources, "claim", claim.claim_id)
+            context = claim.semantic_context
+            if context.attribution_source_id is not None and context.attribution_source_id not in {
+                span.source_id for span in claim.evidence_spans
+            }:
+                raise ValueError(f"claim {claim.claim_id!r} attribution source is outside its evidence")
+            if (
+                context.assertion_mode == ClaimAssertionMode.ATTRIBUTED_BELIEF
+                and context.belief_holder_entity_id not in declared_entities
+            ):
+                raise ValueError(f"claim {claim.claim_id!r} belief holder is not a declared entity")
         for action in self.actions:
             _require_extraction_run(action.extraction_run_id, self.run.extraction_run_id, "action", action.action_id)
             references = {
@@ -140,6 +154,18 @@ class ExtractedEntityOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ExtractedClaimSemanticContextOutput(BaseModel):
+    assertion_mode: ClaimAssertionMode = ClaimAssertionMode.LEGACY_UNCLASSIFIED
+    epistemic_status: ClaimEpistemicStatus = ClaimEpistemicStatus.LEGACY_UNCLASSIFIED
+    polarity: ClaimPolarity = ClaimPolarity.LEGACY_UNCLASSIFIED
+    modality: ClaimModality = ClaimModality.LEGACY_UNCLASSIFIED
+    attribution_source_id: str | None = None
+    attribution_speaker_id: str | None = None
+    reported_source_id: str | None = None
+    belief_holder_entity_ref: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
 class ExtractedClaimOutput(BaseModel):
     subject_entity_ref: str = Field(min_length=1)
     predicate_id: Literal[
@@ -160,9 +186,11 @@ class ExtractedClaimOutput(BaseModel):
     source_id: str
     quote: str
     confidence: float = Field(ge=0.0, le=1.0)
+    semantic_context: ExtractedClaimSemanticContextOutput = Field(
+        default_factory=ExtractedClaimSemanticContextOutput
+    )
 
     model_config = ConfigDict(extra="forbid")
-
 
 class ExtractedActionOutput(BaseModel):
     action_ref: str = Field(min_length=1)

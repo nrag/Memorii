@@ -80,6 +80,34 @@ class ClaimLifecycleState(StrEnum):
     ARCHIVED = "archived"
 
 
+class ClaimAssertionMode(StrEnum):
+    """Whether the source asserts a world fact or reports an agent's belief."""
+
+    WORLD_ASSERTION = "world_assertion"
+    ATTRIBUTED_BELIEF = "attributed_belief"
+    LEGACY_UNCLASSIFIED = "legacy_unclassified"
+
+
+class ClaimEpistemicStatus(StrEnum):
+    ASSERTED = "asserted"
+    BELIEVED = "believed"
+    LEGACY_UNCLASSIFIED = "legacy_unclassified"
+
+
+class ClaimPolarity(StrEnum):
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+    LEGACY_UNCLASSIFIED = "legacy_unclassified"
+
+
+class ClaimModality(StrEnum):
+    ASSERTION = "assertion"
+    POSSIBLE = "possible"
+    NECESSARY = "necessary"
+    QUESTION = "question"
+    LEGACY_UNCLASSIFIED = "legacy_unclassified"
+
+
 class ClaimTransitionType(StrEnum):
     CREATE = "create"
     REINFORCE = "reinforce"
@@ -202,6 +230,7 @@ class SourceObservation(BaseModel):
     task_id: str | None = None
     user_id: str | None = None
     language: str = "en"
+    speaker_id: str | None = None
     modality: SourceModality = SourceModality.ASSERTION
     trigger_mode: ExtractionTriggerMode = ExtractionTriggerMode.IMMEDIATE
 
@@ -341,6 +370,11 @@ class ClaimKey(BaseModel):
     predicate_id: str
     scope: MemoryScope = Field(default_factory=MemoryScope)
     qualifier_key: str = "default"
+    assertion_mode: ClaimAssertionMode = ClaimAssertionMode.LEGACY_UNCLASSIFIED
+    epistemic_status: ClaimEpistemicStatus = ClaimEpistemicStatus.LEGACY_UNCLASSIFIED
+    polarity: ClaimPolarity = ClaimPolarity.LEGACY_UNCLASSIFIED
+    modality: ClaimModality = ClaimModality.LEGACY_UNCLASSIFIED
+    belief_holder_entity_id: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -351,6 +385,11 @@ class ClaimKey(BaseModel):
                 self.predicate_id,
                 self.scope.stable_id(),
                 self.qualifier_key,
+                self.assertion_mode.value,
+                self.epistemic_status.value,
+                self.polarity.value,
+                self.modality.value,
+                self.belief_holder_entity_id or "",
             ]
         )
 
@@ -359,12 +398,61 @@ class ClaimKey(BaseModel):
         return self.scope.scope_key
 
 
+class ClaimSemanticContext(BaseModel):
+    """Source-grounded proposition semantics, separate from its world slot."""
+
+    assertion_mode: ClaimAssertionMode = ClaimAssertionMode.LEGACY_UNCLASSIFIED
+    epistemic_status: ClaimEpistemicStatus = ClaimEpistemicStatus.LEGACY_UNCLASSIFIED
+    polarity: ClaimPolarity = ClaimPolarity.LEGACY_UNCLASSIFIED
+    modality: ClaimModality = ClaimModality.LEGACY_UNCLASSIFIED
+    attribution_source_id: str | None = None
+    attribution_speaker_id: str | None = None
+    reported_source_id: str | None = None
+    belief_holder_entity_id: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="after")
+    def validate_semantic_context(self) -> ClaimSemanticContext:
+        legacy = (
+            self.assertion_mode == ClaimAssertionMode.LEGACY_UNCLASSIFIED
+            and self.epistemic_status == ClaimEpistemicStatus.LEGACY_UNCLASSIFIED
+            and self.polarity == ClaimPolarity.LEGACY_UNCLASSIFIED
+            and self.modality == ClaimModality.LEGACY_UNCLASSIFIED
+            and self.attribution_source_id is None
+            and self.attribution_speaker_id is None
+            and self.reported_source_id is None
+            and self.belief_holder_entity_id is None
+        )
+        if legacy:
+            return self
+        if not self.attribution_source_id:
+            raise ValueError("resolved semantic context requires an attribution source")
+        if self.assertion_mode == ClaimAssertionMode.WORLD_ASSERTION:
+            if (
+                self.epistemic_status != ClaimEpistemicStatus.ASSERTED
+                or self.modality != ClaimModality.ASSERTION
+                or self.belief_holder_entity_id is not None
+                or self.reported_source_id is not None
+            ):
+                raise ValueError("world assertion has incompatible semantic context")
+        elif self.assertion_mode == ClaimAssertionMode.ATTRIBUTED_BELIEF:
+            if self.epistemic_status != ClaimEpistemicStatus.BELIEVED or not self.belief_holder_entity_id:
+                raise ValueError("attributed belief requires believed status and a belief holder")
+        else:
+            raise ValueError("legacy semantic context cannot mix resolved metadata")
+        if self.polarity == ClaimPolarity.LEGACY_UNCLASSIFIED or self.modality == ClaimModality.LEGACY_UNCLASSIFIED:
+            raise ValueError("resolved semantic context requires polarity and modality")
+        return self
+
+
 class ExtractedClaim(BaseModel):
     claim_id: str
     claim_key: ClaimKey
     object_value: str
     object_entity_id: str | None = None
     qualifiers: dict[str, str] = Field(default_factory=dict)
+    semantic_context: ClaimSemanticContext = Field(default_factory=ClaimSemanticContext)
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
@@ -376,6 +464,14 @@ class ExtractedClaim(BaseModel):
     @model_validator(mode="after")
     def validate_interval(self) -> ExtractedClaim:
         _validate_optional_half_open_interval(self.valid_from, self.valid_to, "claim")
+        if (
+            self.claim_key.assertion_mode != self.semantic_context.assertion_mode
+            or self.claim_key.epistemic_status != self.semantic_context.epistemic_status
+            or self.claim_key.polarity != self.semantic_context.polarity
+            or self.claim_key.modality != self.semantic_context.modality
+            or self.claim_key.belief_holder_entity_id != self.semantic_context.belief_holder_entity_id
+        ):
+            raise ValueError("claim key must partition semantic proposition identity")
         return self
 
 
@@ -449,6 +545,7 @@ class ClaimState(BaseModel):
     source_claim_id: str
     confidence: ConfidenceComponents
     source_modality: SourceModality = SourceModality.ASSERTION
+    semantic_context: ClaimSemanticContext = Field(default_factory=ClaimSemanticContext)
     validation_results: list[ValidationResult] = Field(default_factory=list)
     evidence_spans: list[EvidenceSpan] = Field(default_factory=list)
     supersedes_claim_ids: list[str] = Field(default_factory=list)
@@ -467,6 +564,14 @@ class ClaimState(BaseModel):
     @model_validator(mode="after")
     def validate_interval(self) -> ClaimState:
         _validate_optional_half_open_interval(self.valid_from, self.valid_to, "claim state")
+        if (
+            self.claim_key.assertion_mode != self.semantic_context.assertion_mode
+            or self.claim_key.epistemic_status != self.semantic_context.epistemic_status
+            or self.claim_key.polarity != self.semantic_context.polarity
+            or self.claim_key.modality != self.semantic_context.modality
+            or self.claim_key.belief_holder_entity_id != self.semantic_context.belief_holder_entity_id
+        ):
+            raise ValueError("claim state key must partition semantic proposition identity")
         return self
 
 

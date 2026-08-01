@@ -45,6 +45,18 @@ output_schema:
           source_id: {type: string}
           quote: {type: string}
           confidence: {type: number, minimum: 0.0, maximum: 1.0}
+          semantic_context:
+            type: object
+            additionalProperties: false
+            properties:
+              assertion_mode: {type: string, enum: [world_assertion, attributed_belief, legacy_unclassified]}
+              epistemic_status: {type: string, enum: [asserted, believed, legacy_unclassified]}
+              polarity: {type: string, enum: [positive, negative, legacy_unclassified]}
+              modality: {type: string, enum: [assertion, possible, necessary, question, legacy_unclassified]}
+              attribution_source_id: {type: [string, 'null']}
+              attribution_speaker_id: {type: [string, 'null']}
+              reported_source_id: {type: [string, 'null']}
+              belief_holder_entity_ref: {type: [string, 'null']}
     actions:
       type: array
       items:
@@ -92,6 +104,15 @@ system_template: |-
 
   Extract only facts that the text directly supports. Do not infer durable preferences, owners,
   statuses, dependencies, or actions from vague discussion. If evidence is ambiguous, omit it.
+
+  Every claim must carry semantic status. Use `world_assertion`, `asserted`,
+  `positive` or `negative`, and `assertion` only when the source itself asserts
+  the proposition as a world fact. Use `attributed_belief`, `believed`, and a
+  source-grounded `belief_holder_entity_ref` in `semantic_context` when the proposition is someone's
+  belief; never present that as a world assertion. Set
+  `attribution_source_id` to the claim source_id and set
+  `attribution_speaker_id` only when the source observation identifies that
+  speaker. Do not emit `legacy_unclassified` claims.
 
   The source observation includes modality and trigger_mode. Respect them:
   - question, hypothetical, instruction, noise: extract nothing.

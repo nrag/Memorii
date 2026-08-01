@@ -14,7 +14,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta  # type: ignore[attr-defined]
 from hashlib import sha256
-from typing import Any
+from typing import Any, Literal, Protocol
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _INTEGER = re.compile(r"(?:0|-?[1-9][0-9]*)\Z")
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
@@ -26,6 +28,315 @@ _OUTER_ENVELOPE_SCHEMA_ID = "CanonicalEncodedArtifact.v1"
 _OUTER_ENVELOPE_BINDING_DIGEST = (
     "39222b18e67ffe8f679943676a46a464c804bb2ef9d0e3fd28d27a590fe3fde1"
 )
+_DELIVERY_ID_MAX_UTF8_BYTES = 1024
+
+
+def _digest(domain: bytes, *parts: bytes) -> str:
+    """Hash explicit length-delimited fields so identity inputs cannot alias."""
+
+    return sha256(_length_prefixed(domain, *parts)).hexdigest()
+
+
+def normalize_delivery_id(value: str) -> str:
+    """Validate one public delivery ID without changing a single accepted byte.
+
+    This is deliberately not a cosmetic normalizer: trimming, case folding,
+    NFC/NFD conversion, and delimiter rewriting all change delivery identity.
+    """
+
+    if not isinstance(value, str):
+        raise ValueError("delivery_id must be a string")
+    try:
+        encoded = value.encode("utf-8", "strict")
+    except UnicodeEncodeError as exc:
+        raise ValueError("delivery_id must contain only Unicode scalar values") from exc
+    if not encoded or len(encoded) > _DELIVERY_ID_MAX_UTF8_BYTES or not value.strip():
+        raise ValueError("delivery_id must be nonblank UTF-8 within the byte limit")
+    return value
+
+
+def derive_composite_child_delivery_id(parent_delivery_id: str, child_kind: str) -> str:
+    """Derive a domain-separated child coordinate without delimiter concatenation."""
+
+    parent = normalize_delivery_id(parent_delivery_id).encode("utf-8")
+    if not child_kind or child_kind.strip() != child_kind:
+        raise ValueError("composite child kind must be non-empty and exact")
+    return f"composite:v1:{_digest(b'memorii.semantic-ingestion.composite-child.v1', parent, child_kind.encode())}"
+
+
+def is_reserved_composite_delivery_id(value: str) -> bool:
+    return value.startswith("composite:v1:")
+
+
+class DeliveryPrincipalBinding(BaseModel):
+    """Stable authenticated principal coordinate, excluding session authority."""
+
+    principal_subject_id: str = Field(min_length=1)
+    tenant_partition_id: str = Field(min_length=1)
+    provider_identity: str = Field(min_length=1)
+    binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_digest(self) -> DeliveryPrincipalBinding:
+        expected = _digest(
+            b"memorii.semantic-ingestion.delivery-principal.v1",
+            self.principal_subject_id.encode(),
+            self.tenant_partition_id.encode(),
+            self.provider_identity.encode(),
+        )
+        if self.binding_digest != expected:
+            raise ValueError("delivery principal binding digest mismatch")
+        return self
+
+    @classmethod
+    def create(
+        cls, *, principal_subject_id: str, tenant_partition_id: str, provider_identity: str
+    ) -> DeliveryPrincipalBinding:
+        for value in (principal_subject_id, tenant_partition_id, provider_identity):
+            if not value:
+                raise ValueError("delivery principal binding fields must be non-empty")
+        return cls(
+            principal_subject_id=principal_subject_id,
+            tenant_partition_id=tenant_partition_id,
+            provider_identity=provider_identity,
+            binding_digest=_digest(
+                b"memorii.semantic-ingestion.delivery-principal.v1",
+                principal_subject_id.encode(),
+                tenant_partition_id.encode(),
+                provider_identity.encode(),
+            ),
+        )
+
+
+class NormalizedDeliveryId(BaseModel):
+    normalization_contract_version: int = Field(default=1, ge=1, le=1)
+    value: str
+    strict_utf8_bytes: bytes
+    utf8_byte_length: int = Field(ge=1, le=_DELIVERY_ID_MAX_UTF8_BYTES)
+    normalized_delivery_id_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_normalized(self) -> NormalizedDeliveryId:
+        if normalize_delivery_id(self.value) != self.value or self.strict_utf8_bytes != self.value.encode("utf-8"):
+            raise ValueError("delivery ID bytes must be exact")
+        if self.utf8_byte_length != len(self.strict_utf8_bytes):
+            raise ValueError("delivery ID byte length mismatch")
+        if self.normalized_delivery_id_digest != _digest(
+            b"memorii.semantic-ingestion.delivery-id.v1", self.strict_utf8_bytes
+        ):
+            raise ValueError("delivery ID digest mismatch")
+        return self
+
+    @classmethod
+    def from_public(cls, value: str) -> NormalizedDeliveryId:
+        exact = normalize_delivery_id(value)
+        encoded = exact.encode("utf-8")
+        return cls(
+            value=exact,
+            strict_utf8_bytes=encoded,
+            utf8_byte_length=len(encoded),
+            normalized_delivery_id_digest=_digest(b"memorii.semantic-ingestion.delivery-id.v1", encoded),
+        )
+
+
+class DeliveryIdentity(BaseModel):
+    delivery_principal_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    normalized_delivery_id: NormalizedDeliveryId
+    delivery_key_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_delivery_key(self) -> DeliveryIdentity:
+        expected = _digest(
+            b"memorii.semantic-ingestion.delivery-key.v1",
+            self.delivery_principal_binding_digest.encode(),
+            self.normalized_delivery_id.normalized_delivery_id_digest.encode(),
+        )
+        if self.delivery_key_digest != expected:
+            raise ValueError("delivery key digest mismatch")
+        return self
+
+    @classmethod
+    def create(cls, binding: DeliveryPrincipalBinding, delivery_id: str) -> DeliveryIdentity:
+        normalized = NormalizedDeliveryId.from_public(delivery_id)
+        return cls(
+            delivery_principal_binding_digest=binding.binding_digest,
+            normalized_delivery_id=normalized,
+            delivery_key_digest=_digest(
+                b"memorii.semantic-ingestion.delivery-key.v1",
+                binding.binding_digest.encode(),
+                normalized.normalized_delivery_id_digest.encode(),
+            ),
+        )
+
+
+class RequiredOutcomeScopeSet(BaseModel):
+    """Server-derived complete scope names; caller scope data is never accepted."""
+
+    tenant_partition_id: str = Field(min_length=1)
+    scopes: tuple[str, ...] = ()
+    required_scope_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_scope_set(self) -> RequiredOutcomeScopeSet:
+        if tuple(sorted(set(self.scopes))) != self.scopes or any(not scope for scope in self.scopes):
+            raise ValueError("required scopes must be ordered, unique, and non-empty")
+        expected = _digest(
+            b"memorii.semantic-ingestion.required-scopes.v1",
+            self.tenant_partition_id.encode(),
+            *(scope.encode() for scope in self.scopes),
+        )
+        if self.required_scope_set_digest != expected:
+            raise ValueError("required scope digest mismatch")
+        return self
+
+    @classmethod
+    def create(
+        cls, *, tenant_partition_id: str, scopes: set[str] | tuple[str, ...] | list[str]
+    ) -> RequiredOutcomeScopeSet:
+        ordered = tuple(sorted(set(scopes)))
+        return cls(
+            tenant_partition_id=tenant_partition_id,
+            scopes=ordered,
+            required_scope_set_digest=_digest(
+                b"memorii.semantic-ingestion.required-scopes.v1",
+                tenant_partition_id.encode(),
+                *(scope.encode() for scope in ordered),
+            ),
+        )
+
+
+class AuthenticatedIngressContext(BaseModel):
+    delivery_principal_binding: DeliveryPrincipalBinding
+    current_authorized_scopes: RequiredOutcomeScopeSet
+    language_declaration: str | None = None
+    language_evidence_kind: Literal[
+        "authenticated_host_declaration", "missing", "untrusted", "mismatched"
+    ] = "missing"
+    language_evidence_trust: Literal["trusted", "missing", "untrusted", "mismatched"] = "missing"
+    language_governance_agreement: Literal["agrees", "missing", "disagrees"] = "missing"
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_tenant(self) -> AuthenticatedIngressContext:
+        if self.current_authorized_scopes.tenant_partition_id != self.delivery_principal_binding.tenant_partition_id:
+            raise ValueError("authorized scopes tenant must match authenticated principal")
+        evidence = (
+            self.language_evidence_kind,
+            self.language_evidence_trust,
+            self.language_governance_agreement,
+        )
+        if self.language_declaration is None and evidence not in {
+            ("missing", "missing", "missing"),
+            ("untrusted", "untrusted", "missing"),
+        }:
+            raise ValueError("language evidence tuple is invalid")
+        if self.language_declaration is not None and evidence not in {
+            ("authenticated_host_declaration", "trusted", "agrees"),
+            ("mismatched", "mismatched", "disagrees"),
+        }:
+            raise ValueError("language evidence tuple is invalid")
+        return self
+
+
+class AuthenticatedHostIngress(BaseModel):
+    """Opaque host-authenticated handoff, never reconstructed from event fields."""
+
+    provider_identity: str = Field(min_length=1)
+    principal_handle: object
+    session_handle: object
+    received_at: datetime
+
+    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
+
+
+class AuthenticatedIngressContextResolver(Protocol):
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime) -> AuthenticatedIngressContext: ...
+
+
+class AuthenticatedIngressResolutionError(ValueError):
+    """Expected denial from the external host authentication boundary."""
+
+
+class OperationFenceBinding(BaseModel):
+    operation_id: str = Field(min_length=1)
+    operation_fence_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_id: str = Field(min_length=1)
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delivery_identity: DeliveryIdentity
+    delivery_principal_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delivery_key_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    allocation_namespace_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_binding(self) -> OperationFenceBinding:
+        if self.delivery_principal_binding_digest != self.delivery_identity.delivery_principal_binding_digest:
+            raise ValueError("operation fence principal binding mismatch")
+        if self.delivery_key_digest != self.delivery_identity.delivery_key_digest:
+            raise ValueError("operation fence delivery key mismatch")
+        common = (
+            self.delivery_key_digest.encode(),
+            self.source_id.encode(),
+            self.source_digest.encode(),
+            self.operation_id.encode(),
+        )
+        if self.operation_fence_id != _digest(b"memorii.semantic-ingestion.operation-fence.v1", *common):
+            raise ValueError("operation fence ID mismatch")
+        if self.allocation_namespace_id != _digest(b"memorii.semantic-ingestion.allocation-namespace.v1", *common):
+            raise ValueError("allocation namespace mismatch")
+        values = (
+            self.operation_id, self.operation_fence_id, self.source_id, self.source_digest,
+            self.delivery_principal_binding_digest, self.delivery_key_digest, self.allocation_namespace_id,
+        )
+        if self.binding_digest != _digest(b"memorii.semantic-ingestion.operation-fence-binding.v1", *(value.encode() for value in values)):
+            raise ValueError("operation fence binding digest mismatch")
+        return self
+
+    @classmethod
+    def create(
+        cls, *, operation_id: str, source_id: str, source_digest: str, delivery_identity: DeliveryIdentity
+    ) -> OperationFenceBinding:
+        common = (
+            delivery_identity.delivery_key_digest.encode(),
+            source_id.encode(),
+            source_digest.encode(),
+            operation_id.encode(),
+        )
+        fence = _digest(b"memorii.semantic-ingestion.operation-fence.v1", *common)
+        allocation = _digest(b"memorii.semantic-ingestion.allocation-namespace.v1", *common)
+        values = (
+            operation_id,
+            fence,
+            source_id,
+            source_digest,
+            delivery_identity.delivery_principal_binding_digest,
+            delivery_identity.delivery_key_digest,
+            allocation,
+        )
+        return cls(
+            operation_id=operation_id,
+            operation_fence_id=fence,
+            source_id=source_id,
+            source_digest=source_digest,
+            delivery_identity=delivery_identity,
+            delivery_principal_binding_digest=delivery_identity.delivery_principal_binding_digest,
+            delivery_key_digest=delivery_identity.delivery_key_digest,
+            allocation_namespace_id=allocation,
+            binding_digest=_digest(
+                b"memorii.semantic-ingestion.operation-fence-binding.v1", *(value.encode() for value in values)
+            ),
+        )
 
 
 class CanonicalTypedValueError(ValueError):

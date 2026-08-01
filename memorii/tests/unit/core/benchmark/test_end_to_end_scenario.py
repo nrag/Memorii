@@ -722,7 +722,7 @@ def test_end_to_end_marks_runtime_observability_unsupported_when_trace_missing(
     assert observation.scenario_success is False
 
 
-def test_end_to_end_provider_mode_memory_write_memory_stages_semantic_candidate() -> None:
+def test_end_to_end_provider_mode_memory_write_memory_is_source_only_in_m1() -> None:
     fixture = BenchmarkScenarioFixture(
         scenario_id="e2e_provider_memory_write_memory",
         category=BenchmarkScenarioType.END_TO_END,
@@ -746,15 +746,17 @@ def test_end_to_end_provider_mode_memory_write_memory_stages_semantic_candidate(
             task_id="task:provider:memory",
             system_interface="provider",
             provider_operations=["memory_write_memory"],
-            expect_writeback_domains=[MemoryDomain.SEMANTIC],
+            expect_writeback_domains=[],
         ),
     )
     observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
-    assert MemoryDomain.SEMANTIC in observation.writeback_candidate_domains
+    assert observation.writeback_candidate_domains == []
+    assert observation.writeback_candidate_ids == []
     assert MemoryDomain.SEMANTIC in observation.blocked_domains
+    assert observation.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"
 
 
-def test_end_to_end_provider_mode_memory_write_user_stages_user_candidate() -> None:
+def test_end_to_end_provider_mode_memory_write_user_is_source_only_in_m1() -> None:
     fixture = BenchmarkScenarioFixture(
         scenario_id="e2e_provider_memory_write_user",
         category=BenchmarkScenarioType.END_TO_END,
@@ -778,9 +780,11 @@ def test_end_to_end_provider_mode_memory_write_user_stages_user_candidate() -> N
             task_id="task:provider:user",
             system_interface="provider",
             provider_operations=["memory_write_user"],
-            expect_writeback_domains=[MemoryDomain.USER],
+            expect_writeback_domains=[],
         ),
     )
     observation = ScenarioExecutor().run(fixture=fixture, system=BenchmarkSystem.MEMORII)
-    assert MemoryDomain.USER in observation.writeback_candidate_domains
+    assert observation.writeback_candidate_domains == []
+    assert observation.writeback_candidate_ids == []
     assert MemoryDomain.USER in observation.blocked_domains
+    assert observation.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"

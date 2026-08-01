@@ -553,13 +553,34 @@ class EntityResolutionService:
             if claim.object_entity_id is not None
             else None
         )
-        if subject_entity_id == old_key.subject_entity_id and object_entity_id == claim.object_entity_id:
+        belief_holder_entity_id = (
+            references.get(
+                (claim.semantic_context.belief_holder_entity_id, scope_identity),
+                claim.semantic_context.belief_holder_entity_id,
+            )
+            if claim.semantic_context.belief_holder_entity_id is not None
+            else None
+        )
+        if (
+            subject_entity_id == old_key.subject_entity_id
+            and object_entity_id == claim.object_entity_id
+            and belief_holder_entity_id == claim.semantic_context.belief_holder_entity_id
+        ):
             return claim, None
-        updated_key = old_key.model_copy(update={"subject_entity_id": subject_entity_id})
+        updated_key = old_key.model_copy(
+            update={
+                "subject_entity_id": subject_entity_id,
+                "belief_holder_entity_id": belief_holder_entity_id,
+            }
+        )
+        updated_context = claim.semantic_context.model_copy(
+            update={"belief_holder_entity_id": belief_holder_entity_id}
+        )
         updated_claim = claim.model_copy(
             update={
                 "claim_key": updated_key,
                 "object_entity_id": object_entity_id,
+                "semantic_context": updated_context,
             }
         )
         transition = ClaimLifecycleTransition(
@@ -571,6 +592,7 @@ class EntityResolutionService:
                         "claim_rekey",
                         subject_entity_id,
                         object_entity_id or "",
+                        belief_holder_entity_id or "",
                     ]
                 ),
             ),
@@ -580,7 +602,8 @@ class EntityResolutionService:
             rationale=(
                 "claim entity references canonicalized "
                 f"from subject={old_key.subject_entity_id},object={claim.object_entity_id or ''} "
-                f"to subject={subject_entity_id},object={object_entity_id or ''}"
+                f"to subject={subject_entity_id},object={object_entity_id or ''},"
+                f"belief_holder={belief_holder_entity_id or ''}"
             ),
             timestamp=self._now_provider(),
         )

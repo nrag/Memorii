@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 from memorii.domain.enums import (
     ExtractionFailureCode,
@@ -19,8 +19,7 @@ from memorii.domain.enums import (
 )
 
 PrefetchDecisionT = TypeVar("PrefetchDecisionT", bound=BaseModel)
-DeliveryId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-_DELIVERY_ID_ADAPTER = TypeAdapter(DeliveryId)
+DeliveryId = Annotated[str, StringConstraints(min_length=1)]
 
 
 class ProviderOperation(StrEnum):
@@ -110,16 +109,32 @@ class ProviderEvent(BaseModel):
     task_id: str | None = None
     user_id: str | None = None
     language: str = "en"
+    speaker_id: str | None = None
     timestamp: datetime | None = None
     source_modality: SourceModality | None = None
 
     model_config = ConfigDict(extra="forbid")
 
+    @field_validator("event_id")
+    @classmethod
+    def validate_event_id(cls, value: str) -> str:
+        return normalize_delivery_id(value)
+
 
 def normalize_delivery_id(value: str) -> str:
-    """Validate and normalize a caller-owned provider delivery identifier."""
+    """Forward to the owning ingestion contract without an import-time cycle."""
 
-    return _DELIVERY_ID_ADAPTER.validate_python(value)
+    from memorii.core.memory_evolution.ingestion_contracts import (
+        is_reserved_composite_delivery_id,
+    )
+    from memorii.core.memory_evolution.ingestion_contracts import (
+        normalize_delivery_id as normalize,
+    )
+
+    normalized = normalize(value)
+    if is_reserved_composite_delivery_id(normalized):
+        raise ValueError("public delivery ID cannot use a reserved composite coordinate")
+    return normalized
 
 
 class ProviderDomainPermission(BaseModel):

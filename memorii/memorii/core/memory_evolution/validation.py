@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 from memorii.core.memory_evolution.models import (
+    ClaimAssertionMode,
+    ClaimPolarity,
     EntityMention,
     EvidenceSpan,
     ExtractedAction,
@@ -63,6 +67,7 @@ class MemoryEvolutionValidator:
     ) -> list[ValidationResult]:
         results = [
             self._validate_predicate(claim),
+            self._validate_semantic_status(claim, observation_by_id),
             self._validate_modality(claim, observation_by_id),
             self._validate_object(claim),
             self._validate_subject_support(claim, observation_by_id),
@@ -71,6 +76,73 @@ class MemoryEvolutionValidator:
         ]
         return results
 
+    def _validate_semantic_status(
+        self,
+        claim: ExtractedClaim,
+        observation_by_id: dict[str, SourceObservation],
+    ) -> ValidationResult:
+        context = claim.semantic_context
+        if context.assertion_mode == ClaimAssertionMode.LEGACY_UNCLASSIFIED:
+            return ValidationResult(
+                validator_name="semantic_status",
+                verdict=ValidationVerdict.FAIL,
+                score=0.0,
+                rationale="claim semantic status is unresolved and cannot promote",
+            )
+        if context.attribution_source_id not in {span.source_id for span in claim.evidence_spans}:
+            return ValidationResult(
+                validator_name="semantic_status",
+                verdict=ValidationVerdict.FAIL,
+                score=0.0,
+                rationale="claim attribution is not source-grounded by its evidence",
+            )
+        source = observation_by_id.get(context.attribution_source_id or "")
+        if source is None:
+            return ValidationResult(
+                validator_name="semantic_status",
+                verdict=ValidationVerdict.FAIL,
+                score=0.0,
+                rationale="claim attribution source is not an extraction input",
+            )
+        if context.attribution_speaker_id is not None and source.speaker_id != context.attribution_speaker_id:
+            return ValidationResult(
+                validator_name="semantic_status",
+                verdict=ValidationVerdict.FAIL,
+                score=0.0,
+                rationale="claim attribution speaker does not match its source envelope",
+            )
+        if context.assertion_mode == ClaimAssertionMode.WORLD_ASSERTION:
+            source_form_error = _world_assertion_evidence_form_error(
+                claim=claim,
+                source=source,
+            )
+            if source_form_error is not None:
+                return ValidationResult(
+                    validator_name="semantic_status",
+                    verdict=ValidationVerdict.FAIL,
+                    score=0.0,
+                    rationale=f"world assertion is not source-certified: {source_form_error}",
+                )
+        if context.assertion_mode == ClaimAssertionMode.ATTRIBUTED_BELIEF:
+            return ValidationResult(
+                validator_name="semantic_status",
+                verdict=ValidationVerdict.FAIL,
+                score=0.0,
+                rationale="attributed belief is evidence-only until a dedicated belief projection exists",
+            )
+        if context.polarity != ClaimPolarity.POSITIVE:
+            return ValidationResult(
+                validator_name="semantic_status",
+                verdict=ValidationVerdict.FAIL,
+                score=0.0,
+                rationale="negative world assertion is evidence-only until negative claim lifecycle exists",
+            )
+        return ValidationResult(
+            validator_name="semantic_status",
+            verdict=ValidationVerdict.PASS,
+            score=1.0,
+            rationale="source-grounded world assertion is promotion-eligible",
+        )
     def accepted(self, results: list[ValidationResult]) -> bool:
         return all(result.verdict != ValidationVerdict.FAIL for result in results)
 
@@ -249,6 +321,94 @@ def _source_text_for_claim(
     observation_by_id: dict[str, SourceObservation],
 ) -> str:
     return " ".join(obs.text.lower() for obs in _claim_observations(claim, observation_by_id))
+
+
+def _world_assertion_evidence_form_error(
+    *,
+    claim: ExtractedClaim,
+    source: SourceObservation,
+) -> str | None:
+    attribution_spans = [
+        span for span in claim.evidence_spans if span.source_id == source.source_id
+    ]
+    if len(attribution_spans) != 1:
+        return "ambiguous attributed evidence spans"
+    span = attribution_spans[0]
+    quote = span.quote
+    if not quote:
+        return "empty attributed evidence span"
+    if span.char_start is not None:
+        quote_start = span.char_start
+        quote_end = span.char_end
+        if quote_end is None or source.text[quote_start:quote_end] != quote:
+            return "attributed evidence offsets do not match the source quote"
+    else:
+        quote_start = source.text.find(quote)
+        if quote_start < 0 or source.text.find(quote, quote_start + 1) >= 0:
+            return "ambiguous attributed evidence quote"
+        quote_end = quote_start + len(quote)
+    constructions = _source_constructions(source.text)
+    governing_constructions = [
+        construction
+        for construction in constructions
+        if construction[0] <= quote_start and quote_end <= construction[1]
+    ]
+    if len(governing_constructions) != 1:
+        return "attributed evidence does not identify one complete source construction"
+    return _world_assertion_source_form_error(governing_constructions[0][2])
+
+
+def _source_constructions(source_text: str) -> tuple[tuple[int, int, str], ...]:
+    """Derive conservative sentence/clause boundaries from source text alone."""
+
+    constructions: list[tuple[int, int, str]] = []
+    start = 0
+    quoted = False
+    for index, character in enumerate(source_text):
+        if character in {'"', "\u201c", "\u201d"}:
+            quoted = not quoted
+            continue
+        if character not in ".?!;" or quoted:
+            continue
+        _append_source_construction(constructions, source_text, start, index + 1)
+        start = index + 1
+    _append_source_construction(constructions, source_text, start, len(source_text))
+    return tuple(constructions)
+
+
+def _append_source_construction(
+    constructions: list[tuple[int, int, str]],
+    source_text: str,
+    start: int,
+    end: int,
+) -> None:
+    while start < end and source_text[start].isspace():
+        start += 1
+    while end > start and source_text[end - 1].isspace():
+        end -= 1
+    if start < end:
+        constructions.append((start, end, source_text[start:end]))
+
+
+def _world_assertion_source_form_error(text: str) -> str | None:
+    """Fail closed unless the source itself is a direct positive assertion.
+
+    A model's world label is not authority to reinterpret reported, negated, modal,
+    quoted, or interrogative language as committed world truth.
+    """
+
+    normalized = text.casefold()
+    if "?" in normalized:
+        return "interrogative source"
+    if '"' in normalized or "\u201c" in normalized or "\u201d" in normalized:
+        return "quoted source"
+    if re.search(r"\b(?:believes?|thinks?|claims?|reports?|said|says|heard|according to)\b", normalized):
+        return "reported belief or speech"
+    if re.search(r"\b(?:may|might|could|possibly|perhaps|likely|unclear|unknown)\b", normalized):
+        return "modal or ambiguous source"
+    if re.search(r"\b(?:not|never|neither|no)\b|n['\u2019]t", normalized):
+        return "negated source"
+    return None
 
 
 def _entity_token(entity_id: str) -> str:

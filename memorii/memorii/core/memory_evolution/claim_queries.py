@@ -5,7 +5,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 
-from memorii.core.memory_evolution.models import ClaimLifecycleState, ClaimState, MemoryScope, RetrievalView
+from memorii.core.memory_evolution.models import (
+    ClaimAssertionMode,
+    ClaimEpistemicStatus,
+    ClaimLifecycleState,
+    ClaimModality,
+    ClaimPolarity,
+    ClaimState,
+    MemoryScope,
+    RetrievalView,
+)
 from memorii.core.memory_evolution.state_repository import EvolutionStateRepository
 from memorii.core.memory_evolution.temporal_contracts import (
     QueryTemporalFrame,
@@ -57,12 +66,13 @@ class ClaimStateQueryService:
                 if state.claim_key.subject_entity_id in resolved_entity_ids
                 or links_by_id.get(state.object_link_id or "", state.object_link_id) in resolved_entity_ids
             ]
+        if _requires_truth_semantics(view=view, frame=frame):
+            states = [state for state in states if _is_truth_eligible(state)]
         if frame is not None:
             framed = self._filter_by_frame(states, frame)
             if framed is not None:
                 return framed
         return self._filter_by_view(states, view=view, valid_at=valid_at)
-
     def _resolved_frame(
         self,
         *,
@@ -167,3 +177,24 @@ class ClaimStateQueryService:
         if view == RetrievalView.EVIDENCE_ONLY:
             return [state for state in states if state.evidence_spans]
         return states
+
+
+def _requires_truth_semantics(*, view: RetrievalView, frame: QueryTemporalFrame | None) -> bool:
+    if view in {RetrievalView.CURRENT, RetrievalView.HISTORICAL_AT}:
+        return True
+    return frame is not None and frame.temporal_kind in {
+        QueryTemporalKind.CURRENT,
+        QueryTemporalKind.EXECUTION,
+        QueryTemporalKind.HISTORICAL,
+        QueryTemporalKind.INTERVAL,
+    }
+
+
+def _is_truth_eligible(state: ClaimState) -> bool:
+    context = state.semantic_context
+    return (
+        context.assertion_mode == ClaimAssertionMode.WORLD_ASSERTION
+        and context.epistemic_status == ClaimEpistemicStatus.ASSERTED
+        and context.polarity == ClaimPolarity.POSITIVE
+        and context.modality == ClaimModality.ASSERTION
+    )

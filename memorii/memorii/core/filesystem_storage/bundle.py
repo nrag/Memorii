@@ -69,7 +69,6 @@ class FilesystemStorageBundle:
             memory_plane=self.build_memory_plane_service(),
             work_state_service=self.build_work_state_service(),
             decision_state_service=self.build_decision_state_service(),
-            llm_decision_trace_store=self.llm_trace_store,
         )
 
     def storage_status(self) -> StorageRootStatus:
