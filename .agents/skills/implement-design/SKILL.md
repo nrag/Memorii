@@ -8,7 +8,7 @@ description: Implement an approved Memorii design through readiness checks, boun
 Read:
 
 - root `AGENTS.md`
-- `.agent/PLANS.md`
+- `.agents/PLANS.md`
 - the active implementation WorkPlan
 - the frozen approved design baseline
 - governing documents selected through the knowledge router
@@ -100,6 +100,20 @@ ordered, duplicate, fast-path, and normal-path forms where applicable.
 
 Run `test_reviewer` on the matrix before coding high-risk behavior.
 
+For substantial test additions, suite reorganization, stale-test retirement,
+or CI gate changes, use `$design-tests` with a linked testing WorkPlan. Small
+feature-local tests remain in this implementation WorkPlan.
+
+Before adding tests, inventory the current owners and measured runtime. Do not
+name files, fixtures, helpers, symbols, or jobs after milestones, phases, review
+rounds, or task IDs. Keep unit tests isolated and fast. Place packaging,
+subprocess, large-artifact, restart, migration, and exhaustive matrix coverage
+in explicit slower tiers.
+
+BVT and PR-fast gates must remain small representative samples. Preserve
+family-complete coverage in dedicated parallel gates rather than deleting or
+weakening tests to satisfy the fast-gate budget.
+
 ## Phase 4: Implement One Milestone
 
 Spawn exactly one worker for overlapping changes. Require the worker to:
@@ -186,7 +200,7 @@ Each finding must:
   and unavailable operational evidence
 - recommend the smallest architecture-consistent correction and proof
 
-Apply the product-impact remediation gate in `.agent/PLANS.md` before editing.
+Apply the product-impact remediation gate in `.agents/PLANS.md` before editing.
 Only validated `P1` or `P2` implementation defects enter a product-remediation
 round. Do not treat approval disposition, a critical-sounding invariant, or a
 missing test as proof of product priority.
@@ -238,6 +252,6 @@ When all milestones appear complete:
 6. verify migration, rollback, compatibility, observability, and failure behavior
 7. run fresh whole-branch reviews with all three reviewers
 
-Complete the WorkPlan only when `.agent/PLANS.md` is satisfied. Do not claim
+Complete the WorkPlan only when `.agents/PLANS.md` is satisfied. Do not claim
 completion from test success or an agent summary alone. Stop as blocked when the
 WorkPlan stop conditions apply.

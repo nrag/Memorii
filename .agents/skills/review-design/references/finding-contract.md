@@ -44,7 +44,7 @@ Use confidence:
 
 Low-confidence observations cannot block approval without more evidence.
 
-Use remediation eligibility from `.agent/PLANS.md`:
+Use remediation eligibility from `.agents/PLANS.md`:
 
 - `eligible_p1_p2`
 - `evidence_action`

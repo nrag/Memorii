@@ -8,7 +8,7 @@ description: Build or substantially revise a Memorii technical design through re
 Read:
 
 - root `AGENTS.md`
-- `.agent/PLANS.md`
+- `.agents/PLANS.md`
 - the active design WorkPlan, if one exists
 - governing documents selected through the repository knowledge router
 - relevant production code and tests
@@ -157,7 +157,7 @@ Require every finding to:
 Do not accept one syntax variant as a complete finding when adjacent variants
 can be inspected in the same pass.
 
-Apply the product-impact remediation gate in `.agent/PLANS.md` before editing.
+Apply the product-impact remediation gate in `.agents/PLANS.md` before editing.
 Only validated `P1` or `P2` design defects enter a design-remediation round.
 Missing tests, evidence-maturity gaps, hypothetical unsupported inputs, and
 governance observations do not become product defects without demonstrated
@@ -198,7 +198,7 @@ When the design appears complete:
 6. run one fresh whole-design review with all three reviewers
 
 Complete the WorkPlan only when the design completion contract in
-`.agent/PLANS.md` is satisfied.
+`.agents/PLANS.md` is satisfied.
 
 State only that no unresolved validated design gaps remain under the recorded
 scope, sources, and review method. Stop as blocked when the WorkPlan stop

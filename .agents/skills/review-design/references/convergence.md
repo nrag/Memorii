@@ -79,7 +79,7 @@ non-convergent under the WorkPlan budget.
 
 Do not open a product-remediation round unless the coordinator has admitted at
 least one finding through the product-impact remediation gate in
-`.agent/PLANS.md`. A round that finds only P3, unsupported, evidence-maturity,
+`.agents/PLANS.md`. A round that finds only P3, unsupported, evidence-maturity,
 documentation, or governance observations closes without product edits.
 
 Required evidence work is bounded by the validation matrix frozen before

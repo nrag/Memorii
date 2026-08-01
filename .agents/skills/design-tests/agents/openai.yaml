@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Tests"
+  short_description: "Architect lean, durable test suites and CI gates"
+  default_prompt: "Use $design-tests to design, implement, prune, and validate a maintainable test strategy for this change."

@@ -8,7 +8,7 @@ description: Investigate and fix a complex Memorii failure through deterministic
 Read:
 
 - root `AGENTS.md`
-- `.agent/PLANS.md`
+- `.agents/PLANS.md`
 - the active debugging WorkPlan, if one exists
 - governing documents selected through the knowledge router
 - incident reports, logs, traces, failures, code, and tests
@@ -135,5 +135,5 @@ patch.
 Update the hypothesis, experiment, evidence, and review logs and set exactly
 one next action.
 
-Complete only when the debugging contract in `.agent/PLANS.md` is satisfied.
+Complete only when the debugging contract in `.agents/PLANS.md` is satisfied.
 Stop when evidence, authority, scope, risk, or iteration budgets require it.

@@ -50,7 +50,7 @@ Use this precedence when product or implementation requirements conflict:
 9. `docs/plans/initial.md`, which is historical context rather than a statement
    of current implementation status
 
-`.agent/PLANS.md` is the process contract for long-running work. It defines how
+`.agents/PLANS.md` is the process contract for long-running work. It defines how
 WorkPlans are structured and completed. It is not a source of product behavior.
 
 Repository Skills under `.agents/skills/` define how Codex conducts design,
@@ -75,6 +75,7 @@ Classify long-running work before beginning.
 | Build or substantially revise a design | `$build-design`     |
 | Implement an approved design           | `$implement-design` |
 | Investigate and fix a complex failure  | `$debug-problem`    |
+| Design, reorganize, or prune test architecture | `$design-tests` |
 
 A task is long-running when it:
 
@@ -84,7 +85,7 @@ A task is long-running when it:
 * must be resumable from repository artifacts
 * affects several architectural or operational boundaries
 
-Long-running work requires a WorkPlan conforming to `.agent/PLANS.md`.
+Long-running work requires a WorkPlan conforming to `.agents/PLANS.md`.
 
 Small, bounded changes do not require a WorkPlan unless the applicable design,
 issue, or user instruction requires one. They must still follow the governing
@@ -233,7 +234,7 @@ Update the WorkPlan after every material:
 A new agent must be able to resume the operation using only:
 
 1. applicable `AGENTS.md` instructions
-2. `.agent/PLANS.md`
+2. `.agents/PLANS.md`
 3. the active WorkPlan
 4. artifacts and evidence referenced by the WorkPlan
 
@@ -410,7 +411,7 @@ Do not claim completion because:
 * an agent reported success
 
 Complete work only when the applicable completion contract in
-`.agent/PLANS.md` is satisfied by recorded evidence.
+`.agents/PLANS.md` is satisfied by recorded evidence.
 
 Stop as blocked when:
 

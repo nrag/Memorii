@@ -11,7 +11,7 @@ governing specifications, production code, or tests.
 Read:
 
 - root `AGENTS.md`
-- `.agent/PLANS.md`
+- `.agents/PLANS.md`
 - target design and frozen baseline
 - active review WorkPlan, if one exists
 - governing documents selected through the knowledge router
@@ -178,7 +178,7 @@ For each confirmed finding:
 5. require the complete known equivalence class and adjacent bypass inventory
 6. reject recommendations that expand scope or introduce a larger defect
 7. define invariant-level correction and behavioral proof
-8. assign remediation eligibility under `.agent/PLANS.md`
+8. assign remediation eligibility under `.agents/PLANS.md`
 
 Only validated `P1` or `P2` design defects are eligible for design remediation.
 Missing tests, weak proof, evidence-maturity gaps, governance concerns, and

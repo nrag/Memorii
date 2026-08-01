@@ -9,11 +9,13 @@ Supported work types are:
 
 * `design`
 * `implementation`
+* `testing`
 * `debugging`
 * `investigation`
 * `migration`
 
-This document fully defines the first three. Investigation and migration plans
+This document fully defines design, implementation, testing, and debugging.
+Investigation and migration plans
 must follow the common requirements and add an explicit completion contract
 appropriate to their work.
 
@@ -29,6 +31,7 @@ Recommended filenames are:
 
 * `design.plan.md`
 * `implementation.plan.md`
+* `testing.plan.md`
 * `debug-001.plan.md`
 * `investigation-001.plan.md`
 * `migration.plan.md`
@@ -179,7 +182,7 @@ Do not present an assumption as a fact.
 
 ### Milestones Or Experiments
 
-Design and implementation WorkPlans use milestones.
+Design, implementation, and testing WorkPlans use milestones.
 
 Debugging WorkPlans use experiments and may also use milestones.
 
@@ -652,6 +655,124 @@ Implementation is complete only when:
   incomplete fallback paths remain
 * a final review has inspected the entire branch against the design baseline,
   not only the most recent diff
+
+## Work Type: Testing
+
+A testing WorkPlan designs and maintains proof topology for approved behavior.
+It may add, reorganize, migrate, or retire tests, fixtures, helpers, and CI
+gates. It must not invent product semantics or silently weaken coverage.
+
+Use a linked design, implementation, or debugging WorkPlan when test work
+reveals that product behavior must change.
+
+### Required Testing Sections
+
+In addition to the common sections, include the following.
+
+#### Test Portfolio
+
+Use:
+
+| Requirement or contract | Behavior and canonical path | Test owner and level | Failure signal | Status |
+| ----------------------- | --------------------------- | -------------------- | -------------- | ------ |
+
+Each test must map to a stable requirement, contract, invariant, or supported
+failure family. Record whether prior proof is retained, replaced, migrated, or
+retired. A green test bound to superseded behavior is stale evidence.
+
+#### Equivalence And Failure Matrix
+
+For each invariant, record applicable positive, negative, boundary, malformed,
+retry, replay, concurrency, interruption, migration, rollback, compatibility,
+authorization, and resource-limit classes. Mark non-applicable classes with the
+design fact that excludes them.
+
+Identify one canonical test owner per failure family. Layered tests are valid
+when they observe distinct boundaries; tests that induce the same fault and
+observe the same boundary must merge or justify distinct diagnostic value.
+
+#### Suite Topology And Runtime Budget
+
+For each tier, record its purpose, trigger, owner, representative cases, exact
+command, measured baseline, budget, and timeout headroom. Use these tiers where
+applicable:
+
+* BVT or PR-fast: small deterministic representative sample
+* PR-contract: fast public, schema, adapter, and compatibility boundaries
+* acceptance: supported end-to-end composition
+* slow-exhaustive: family-complete matrices, packaging, restart, migration,
+  large artifacts, and subprocess coverage
+* benchmark or live: performance or provider evidence, separately governed
+
+Moving a test does not remove its proof obligation. Heavy coverage moved out of
+a fast gate must remain enforced at a named cadence and promotion point.
+
+#### Test Asset Inventory
+
+List fixtures, generators, golden files, fakes, mocks, trust material, and
+shared setup with:
+
+* stable behavioral owner
+* authority and provenance
+* production-package isolation requirement
+* consumers
+* retirement condition
+
+Names must describe durable behavior or protocol identity. Do not use internal
+milestones, WorkPlan phases, review rounds, dates, or issue numbers unless they
+are genuine persisted migration identities.
+
+#### Retention And Retirement Ledger
+
+Before deleting or replacing a suite, record every negative and positive family
+as retained, migrated, duplicate, obsolete, or intentionally deferred, with its
+replacement proof and rationale. Remove obsolete tests, fixtures, imports, CI
+paths, and stale WorkPlan references together.
+
+#### Gate Change Log
+
+Record every required-check addition, removal, split, or move, including:
+
+* unique failure signal
+* why an existing job cannot own it
+* before and after collected count and wall time
+* cadence and merge or promotion consequence
+
+Do not create a gate that reruns a broad suite merely to add one unique test.
+
+### Testing Reviewer Responsibilities
+
+During testing work:
+
+* `spec_auditor` confirms the portfolio matches approved requirements without
+  inventing semantics
+* `correctness_reviewer` checks fixture fidelity, production paths, mocks,
+  isolation, and whether tests can pass while behavior is absent
+* `test_reviewer` checks equivalence coverage, distinct failure signals,
+  retention decisions, suite placement, runtime budgets, and CI enforcement
+
+### Testing Completion Contract
+
+Testing work is complete only when:
+
+* every in-scope requirement or contract has current, non-stale proof
+* every retained test has a distinct behavioral or diagnostic failure signal
+* high-risk proofs demonstrably fail under a representative counterfactual
+* applicable failure and compatibility classes are covered
+* mocks and fakes do not bypass the canonical production boundary
+* test-only authority and fixtures are excluded from production packages
+* obsolete tests, fixtures, helpers, imports, and gate references are removed
+* files, symbols, fixtures, and jobs use stable behavioral names
+* unit tests remain isolated and fast; expensive behavior is placed in an
+  explicit slower tier
+* BVT and PR-fast gates are measured, small, representative samples rather
+  than the complete corpus
+* exhaustive deterministic coverage remains enforced outside the fast sample
+* before and after counts, wall times, commands, revision, and environment are
+  recorded
+* deterministic checks and required gate configuration validation pass
+* independent final review has no unresolved `changes_required` test-governance
+  finding and no validated P1/P2 product defect is mislabeled as a test issue
 
 ## Work Type: Debugging
 
