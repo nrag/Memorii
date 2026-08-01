@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from memorii.tools.run_benchmark import main
+from tests.support.memory_evolution_provider_harness import enable_test_runtime_benchmark_harness
 from tests.unit.tools.run_benchmark_test_helpers import (
     _jsonl_count,
     _latest_run_dir,
@@ -14,8 +15,10 @@ from tests.unit.tools.run_benchmark_test_helpers import (
 
 def test_memory_evolution_runtime_benchmark_dry_run_writes_runtime_artifacts(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    enable_test_runtime_benchmark_harness(monkeypatch)
     assert main(
         [
             "--suite",

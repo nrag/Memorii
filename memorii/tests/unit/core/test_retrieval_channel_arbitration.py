@@ -4,8 +4,10 @@ from memorii.core.memory_evolution import EnglishRuleMemoryExtractor
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import ProviderStoredRecord, RetrievalChannelStatus
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 
 def _evolution_record(*, memory_id: str, text: str, task_id: str) -> CanonicalMemoryRecord:

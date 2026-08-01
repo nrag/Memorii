@@ -26,8 +26,10 @@ from memorii.core.memory_evolution.models import (
     SourceObservation,
 )
 from memorii.core.memory_plane import MemoryPlaneService
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import SourceType
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 _FIXTURE = Path(__file__).parents[3] / "fixtures" / "memory_evolution_runtime" / "captured_ingestion_proposals.json"
 _LONG_HORIZON_FIXTURE = (

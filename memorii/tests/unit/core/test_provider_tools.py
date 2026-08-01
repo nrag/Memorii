@@ -8,7 +8,6 @@ from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.promotion.assessment import PromotionAssessmentContext
 from memorii.core.promotion.provider import PromotionAssessmentProviderError
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind, WorkStateStatus
 from memorii.core.work_state.service import WorkStateService
@@ -18,6 +17,9 @@ from memorii.domain.solver_graph.nodes import SolverNode
 from memorii.domain.solver_graph.overlays import SolverNodeOverlay, SolverOverlayVersion
 from memorii.stores.overlays import InMemoryOverlayStore
 from memorii.stores.solver_graph import InMemorySolverGraphStore
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 NOW = datetime.now(UTC)
 

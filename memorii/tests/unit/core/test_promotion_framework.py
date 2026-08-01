@@ -17,8 +17,10 @@ from memorii.core.promotion import (
     build_promotion_execution_policy,
 )
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 
 def test_public_api_distinguishes_assessment_from_execution_contracts() -> None:

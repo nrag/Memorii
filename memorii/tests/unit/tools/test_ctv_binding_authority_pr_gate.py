@@ -28,12 +28,12 @@ SEMANTIC_CHECKER = VECTORS / "check_lifecycle_root_signer_provenance_v1.py"
 SEMANTIC_EXPECTED = {
     "fixture": "d3c1dce10624365647cbb00926f63b6deabe681e51a138bc3de88d7c60faef69",
     "validator": "46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb",
-    "checker": "8c219ad322277abfe5e969a2153eaf050971187af619713b3f4ffb58dd942038",
+    "checker": "c4168249dbf4845d90e9593819323dc331e22e3bdfa5a9df70b076ed10449f01",
 }
 EXPECTED = {
-    "design": "70ace2b99c4db79911f45555f72cde43278ccaac69c1fc11530e2d474f1fa26c",
-    "registry": "8e6395e2657eb1a51e5eef7d9b88b5d43b974a58f7f786ed135f6758262bfec1",
-    "authority": "c119345548166fd99e7aefe963d62a9b73e6c98c7cac84b7d6f8759b2ceb5633",
+    "design": "e7de038a5cad8f8d95536d60d35621472a79588e100c2da8633a9dd1fcfb5e7a",
+    "registry": "35396897f98833b3eeb9572b16d7eab38ea34741ca876a4a72048424de676ea3",
+    "authority": "0dff4f2c0c8a33b7a23ba067de07ae16e556d60b5f94192223b4c76a2246c056",
     "validator": "826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e",
     "checker": "e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732",
 }

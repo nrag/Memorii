@@ -4293,28 +4293,22 @@ typed configuration and selection; core never self-authorizes writeback:
 
 ```python
 class BootstrapProfileCoordinate(BaseModel):
-    profile_id: Literal["memorii.bootstrap_local_english_rule"]
-    profile_version: Literal[1]
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    profile_id: str
+    profile_version: int
 
 class BootstrapProfileTrustAnchor(BaseModel):
     schema_id: Literal["memorii.semantic_ingestion.bootstrap_profile_trust_anchor"]
     schema_version: Literal[1]
     coordinate: BootstrapProfileCoordinate
-    profile_manifest_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-    grammar_capability_manifest_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-    grammar_corpus_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-    component_root_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-    trust_anchor_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    profile_manifest_digest: str
+    grammar_capability_manifest_digest: str
+    grammar_corpus_digest: str
+    component_root_digest: str
+    trust_anchor_digest: str
 
 class BootstrapProfileReleaseMetadata(BaseModel):
     coordinate: BootstrapProfileCoordinate
-    bootstrap_profile_trust_anchor_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    bootstrap_profile_trust_anchor_digest: str
 
 class ComponentSymbolFingerprint(BaseModel):
     module_path: str
@@ -4322,18 +4316,8 @@ class ComponentSymbolFingerprint(BaseModel):
     distribution_name: str | None
     distribution_version: str | None
     repository_blob_identity: str | None
-    source_or_package_content_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-    fingerprint_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_identity(self) -> Self:
-        if (self.distribution_name is None) != (self.distribution_version is None):
-            raise ValueError("distribution name/version are paired")
-        if self.distribution_name is None and self.repository_blob_identity is None:
-            raise ValueError("component requires distribution or repository identity")
-        return self
+    source_or_package_content_digest: str
+    fingerprint_digest: str
 
 class BootstrapGrammarCorpusCase(BaseModel):
     case_id: str
@@ -4345,61 +4329,19 @@ class BootstrapGrammarCorpusCase(BaseModel):
     disposition: Literal["supported_form", "unsupported_form", "abstain_form"]
     expected_reason: Literal["missing_language_declaration", "untrusted_language", "language_mismatch", "non_english_language", "mixed_residue", "unsupported_grammar", "extractor_abstained"] | None
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_closed_disposition(self) -> Self:
-        authenticated_en = (
-            self.language_evidence_kind == "authenticated_host_declaration"
-            and self.language_evidence_trust == "trusted"
-            and self.governance_agreement == "agrees"
-            and self.declared_language == "en"
-        )
-        if self.disposition == "supported_form":
-            if not authenticated_en or self.expected_reason is not None:
-                raise ValueError("supported form requires trusted agreeing authenticated en and no failure reason")
-        elif self.disposition == "unsupported_form":
-            if not authenticated_en or self.expected_reason not in {"mixed_residue", "unsupported_grammar"}:
-                raise ValueError("unsupported form requires authenticated en and grammar reason")
-        elif self.disposition == "abstain_form":
-            closed_abstentions = {
-                ("missing", "missing", "missing", None, "missing_language_declaration"),
-                ("untrusted", "untrusted", "missing", None, "untrusted_language"),
-                ("mismatched", "mismatched", "disagrees", "en", "language_mismatch"),
-                ("authenticated_host_declaration", "trusted", "agrees", "en", "extractor_abstained"),
-            }
-            current = (
-                self.language_evidence_kind, self.language_evidence_trust,
-                self.governance_agreement, self.declared_language, self.expected_reason,
-            )
-            non_english = (
-                self.language_evidence_kind == "authenticated_host_declaration"
-                and self.language_evidence_trust == "trusted"
-                and self.governance_agreement == "agrees"
-                and self.declared_language not in {None, "en"}
-                and self.expected_reason == "non_english_language"
-            )
-            if current not in closed_abstentions and not non_english:
-                raise ValueError("invalid abstain-form language/disposition/reason combination")
-        return self
-
 class BootstrapGrammarCorpus(BaseModel):
     schema_id: Literal["memorii.semantic_ingestion.bootstrap_grammar_corpus"]
     schema_version: Literal[1]
     coordinate: BootstrapProfileCoordinate
     cases: tuple[BootstrapGrammarCorpusCase, ...]
-    corpus_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    corpus_digest: str
 
 class BootstrapGrammarCapabilityManifest(BaseModel):
     schema_id: Literal["memorii.semantic_ingestion.bootstrap_grammar_capability_manifest"]
     schema_version: Literal[1]
     coordinate: BootstrapProfileCoordinate
-    grammar_corpus_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-    manifest_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    grammar_corpus_digest: str
+    manifest_digest: str
 
 class BootstrapLocalProfileManifest(BaseModel):
     schema_id: Literal["memorii.semantic_ingestion.bootstrap_local_profile_manifest"]
@@ -4409,22 +4351,24 @@ class BootstrapLocalProfileManifest(BaseModel):
     compiler_symbol: Literal["memorii.core.memory_evolution.semantic_compilation.SemanticIngestionCompiler"]
     validator_symbol: Literal["memorii.core.memory_evolution.validation.MemoryEvolutionValidator"]
     service_symbol: Literal["memorii.core.memory_evolution.service.MemoryEvolutionService"]
-    grammar_capability_manifest_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-    grammar_corpus_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-    component_root_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+    grammar_capability_manifest_digest: str
+    grammar_corpus_digest: str
+    component_root_digest: str
     component_fingerprints: tuple[ComponentSymbolFingerprint, ...]
-    profile_digest: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+    profile_digest: str
     network_capability: Literal["denied"]
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
 class BootstrapProfileSelection(BaseModel):
     manifest: BootstrapLocalProfileManifest
     enabled: bool
     remote_selector: Literal[None]
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
 ```
+
+All bootstrap models are frozen and reject unknown fields. Component distribution
+name/version are paired, and a component without a distribution identity requires
+a repository blob identity. Grammar corpus disposition, language evidence, and
+reason combinations are validated against the closed matrix defined below.
 
 The canonical coordinate is the typed tuple
 `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)`.
@@ -4445,8 +4389,9 @@ profile-manifest digest, grammar-capability-manifest digest, grammar-corpus
 digest, and component-root digest. It is not self-authority: an active signed
 `SemanticIngestionTraceabilityRelease`, verified against the independently
 provisioned `TraceabilityBootstrapTrustAnchor` and its signed lifecycle root,
-contains `BootstrapProfileReleaseMetadata` with this exact bootstrap-anchor
-digest and coordinate. The out-of-box installer/host distribution process
+authorizes host-verified `BootstrapProfileReleaseMetadata` with this exact
+bootstrap-anchor digest and coordinate without changing the frozen v1 release
+body schema. The out-of-box installer/host distribution process
 automatically provisions the `TraceabilityBootstrapTrustAnchor` through an
 authenticated channel separate from the Memorii package/release into the host
 or OS trust store (or host-executable trust boundary); no manual user
@@ -4513,14 +4458,10 @@ lease, writer, or allocation. The protected accessor serializes exactly one
 frozen with `ConfigDict(extra="forbid")`:
 
 ```python
-class BootstrapUnavailableReason(StrEnum):
-    INVALID_MANIFEST = "invalid_manifest"
-    ALTERED_MANIFEST = "altered_manifest"
-    MISSING_MANIFEST = "missing_manifest"
-    MISSING_COMPONENT = "missing_component"
-    ALTERED_COMPONENT = "altered_component"
-    INVALID_CORPUS = "invalid_corpus"
-    INVALID_CONFIG = "invalid_config"
+BootstrapUnavailableReason = Literal[
+    "invalid_manifest", "altered_manifest", "missing_manifest",
+    "missing_component", "altered_component", "invalid_corpus", "invalid_config",
+]
 
 class GovernedSourceAdmissionFact(BaseModel):
     source_id: str
@@ -4530,49 +4471,54 @@ class GovernedSourceAdmissionFact(BaseModel):
     required_scope_set_digest: str
     admission_index_digest: str
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-class BootstrapOutcomeBase(BaseModel):
+class ProfileSelectedPipelinePending(BaseModel):
+    kind: Literal["selected_pipeline_pending"]
     coordinate: BootstrapProfileCoordinate
     source_admission: GovernedSourceAdmissionFact
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-class ProfileSelectedPipelinePending(BootstrapOutcomeBase):
-    kind: Literal["selected_pipeline_pending"]
     selection_digest: str
     verification_digest: str
 
-class ProfileDisabled(BootstrapOutcomeBase):
+class ProfileDisabled(BaseModel):
     kind: Literal["disabled"]
+    coordinate: BootstrapProfileCoordinate
+    source_admission: GovernedSourceAdmissionFact
     disable_reason: Literal["operator_disabled"]
 
-class ProfileUnavailable(BootstrapOutcomeBase):
+class ProfileUnavailable(BaseModel):
     kind: Literal["unavailable"]
+    coordinate: BootstrapProfileCoordinate
+    source_admission: GovernedSourceAdmissionFact
     reason: BootstrapUnavailableReason
 
-class ProfileUnsupportedInput(BootstrapOutcomeBase):
+class ProfileUnsupportedInput(BaseModel):
     kind: Literal["unsupported_input", "abstained"]
+    coordinate: BootstrapProfileCoordinate
+    source_admission: GovernedSourceAdmissionFact
     input_normalized_digest: str
     matched_corpus_case_id: str | None
     reason: Literal["missing_language_declaration", "untrusted_language", "language_mismatch", "non_english_language", "mixed_residue", "unsupported_grammar", "extractor_abstained"]
 
-class ProfileAcceptedCandidate(BootstrapOutcomeBase):
+class ProfileAcceptedCandidate(BaseModel):
     kind: Literal["accepted_candidate"]
+    coordinate: BootstrapProfileCoordinate
+    source_admission: GovernedSourceAdmissionFact
     candidate_digest: str
     operation_fence_binding_digest: str
 
-class ProfileCommittedTerminal(BootstrapOutcomeBase):
+class ProfileCommittedTerminal(BaseModel):
     kind: Literal["committed_terminal"]
+    coordinate: BootstrapProfileCoordinate
+    source_admission: GovernedSourceAdmissionFact
     terminal_result_digest: str
     operation_fence_binding_digest: str
 
-BootstrapProfileOutcome = Annotated[
+BootstrapProfileOutcome = (
     ProfileSelectedPipelinePending | ProfileDisabled | ProfileUnavailable |
-    ProfileUnsupportedInput | ProfileAcceptedCandidate | ProfileCommittedTerminal,
-    Field(discriminator="kind"),
-]
+    ProfileUnsupportedInput | ProfileAcceptedCandidate | ProfileCommittedTerminal
+)
 ```
+
+`kind` is the required discriminator for `BootstrapProfileOutcome`.
 
 Unknown kinds, absent required fields, extra fields, and cross-variant fields
 reject before persistence or disclosure. The unchanged `ProviderSyncResult`
@@ -7067,7 +7013,6 @@ class SemanticIngestionTraceabilityReleaseBody(BaseModel):
     bootstrap_anchor_digest: str
     bootstrap_anchor_history_digest: str
     bootstrap_rotation_sequence: int = Field(ge=1)
-    bootstrap_profile_metadata: BootstrapProfileReleaseMetadata
     recovery_trust_policy_digest: str
     recovery_policy_history_digest: str
     recovery_trust_root_digests: tuple[str, ...]
@@ -9547,23 +9492,8 @@ may diverge.
 `[SIA-CTV-ENUM-REGISTRY-V2-BEGIN]`
 ```json
 {
-  "TraceabilityLifecycleRootGenesisSignerProvenance.source_kind": [
-    "independently_provisioned_bootstrap_anchor"
-  ],
-  "TraceabilityLifecycleRootGenesisSignerProvenance.signature_purpose": [
-    "semantic_ingestion_traceability_lifecycle_root"
-  ],
   "CanonicalTypedValueProfileBinding.profile_id": [
     "semantic_ingestion_typed_value"
-  ],
-  "NormativeTraceabilityStructuralManifestBody.derivation_ledger_schema_id": [
-    "TraceabilityStructuralManifestDerivationLedger.v1"
-  ],
-  "NormativeTraceabilityStructuralManifestBody.derivation_ledger_schema_version": [
-    {
-      "$type": "integer",
-      "value": "1"
-    }
   ],
   "NormativeExecutionEvidenceRecordBody.execution_result": [
     "pass",
@@ -9590,6 +9520,15 @@ may diverge.
   ],
   "NormativeExecutionEvidenceSignaturePreimage.issuance_purpose": [
     "semantic_ingestion_normative_evidence"
+  ],
+  "NormativeTraceabilityStructuralManifestBody.derivation_ledger_schema_id": [
+    "TraceabilityStructuralManifestDerivationLedger.v1"
+  ],
+  "NormativeTraceabilityStructuralManifestBody.derivation_ledger_schema_version": [
+    {
+      "$type": "integer",
+      "value": "1"
+    }
   ],
   "NormativeUnitKind": [
     "heading",
@@ -9962,21 +9901,6 @@ may diverge.
     "independently_provisioned_genesis",
     "prior_verified_lifecycle_root"
   ],
-  "TraceabilityProvisionedTrustArtifactGenesisProvenance.source_kind": [
-    "independently_provisioned_genesis"
-  ],
-  "TraceabilityProvisionedTrustArtifactSuccessorProvenance.source_kind": [
-    "prior_verified_lifecycle_root"
-  ],
-  "TraceabilityRecoveryPolicyGenesisSignerProvenance.source_kind": [
-    "independently_provisioned_bootstrap_anchor"
-  ],
-  "TraceabilityRecoveryPolicyGenesisSignerProvenance.signature_purpose": [
-    "semantic_ingestion_traceability_recovery_policy"
-  ],
-  "TraceabilitySignerCoordinate.source_kind": [
-    "prior_verified_lifecycle_root"
-  ],
   "TraceabilityLifecycleRootGenerationMember.artifact_kind": [
     "trust_lifecycle_root"
   ],
@@ -9991,6 +9915,12 @@ may diverge.
       "$type": "integer",
       "value": "1"
     }
+  ],
+  "TraceabilityLifecycleRootGenesisSignerProvenance.signature_purpose": [
+    "semantic_ingestion_traceability_lifecycle_root"
+  ],
+  "TraceabilityLifecycleRootGenesisSignerProvenance.source_kind": [
+    "independently_provisioned_bootstrap_anchor"
   ],
   "TraceabilityLocaleTimezonePolicy.lang": [
     "C.UTF-8"
@@ -10049,6 +9979,12 @@ may diverge.
   "TraceabilityProjectMetadataPolicy.path": [
     "pyproject.toml"
   ],
+  "TraceabilityProvisionedTrustArtifactGenesisProvenance.source_kind": [
+    "independently_provisioned_genesis"
+  ],
+  "TraceabilityProvisionedTrustArtifactSuccessorProvenance.source_kind": [
+    "prior_verified_lifecycle_root"
+  ],
   "TraceabilityPytestIniPolicy.pythonpath": [
     "."
   ],
@@ -10105,6 +10041,12 @@ may diverge.
       "$type": "integer",
       "value": "1"
     }
+  ],
+  "TraceabilityRecoveryPolicyGenesisSignerProvenance.signature_purpose": [
+    "semantic_ingestion_traceability_recovery_policy"
+  ],
+  "TraceabilityRecoveryPolicyGenesisSignerProvenance.source_kind": [
+    "independently_provisioned_bootstrap_anchor"
   ],
   "TraceabilityRecoveryPolicyHistoryGenerationMember.artifact_kind": [
     "recovery_policy_history"
@@ -10364,6 +10306,9 @@ may diverge.
     "semantic_ingestion_traceability_reader_lease",
     "semantic_ingestion_traceability_monotonic_time_witness",
     "semantic_ingestion_traceability_generation_verification"
+  ],
+  "TraceabilitySignerCoordinate.source_kind": [
+    "prior_verified_lifecycle_root"
   ],
   "TraceabilityStartupCustomizationPolicy.sitecustomize": [
     "absent"

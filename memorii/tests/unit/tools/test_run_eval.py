@@ -8,6 +8,7 @@ import pytest
 from memorii.tools import run_benchmark
 from memorii.tools import run_eval as run_eval_module
 from memorii.tools.run_eval import main
+from tests.support.memory_evolution_provider_harness import enable_test_runtime_benchmark_harness
 
 HOTPOTQA_SAMPLE_PATH = files("memorii.core.benchmark.fixture_sets").joinpath("hotpotqa_sample.json")
 
@@ -375,8 +376,10 @@ def test_run_eval_suite_all_runs_promotion_belief_and_lifecycle(
 
 def test_run_eval_routes_memory_evolution_runtime_suite(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    enable_test_runtime_benchmark_harness(monkeypatch)
     assert main(
         [
             "--suite",

@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.work_state.models import (
     AgentEventEnvelope,
     WorkStateDetectionAction,
@@ -10,6 +9,9 @@ from memorii.core.work_state.models import (
     WorkStateStatus,
 )
 from memorii.core.work_state.service import WorkStateService
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 
 def _event(

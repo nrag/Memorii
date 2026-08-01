@@ -16,8 +16,8 @@ from pathlib import Path
 from typing import Any
 
 EXPECTED = {
-    "design": "70ace2b99c4db79911f45555f72cde43278ccaac69c1fc11530e2d474f1fa26c",
-    "registry": "8e6395e2657eb1a51e5eef7d9b88b5d43b974a58f7f786ed135f6758262bfec1",
+    "design": "e7de038a5cad8f8d95536d60d35621472a79588e100c2da8633a9dd1fcfb5e7a",
+    "registry": "35396897f98833b3eeb9572b16d7eab38ea34741ca876a4a72048424de676ea3",
     "ledger": "085921e6c4e995f0d6259c9f6f6eabeec3f1455bba344105ef0e16d24eb81671",
     "matrix": "a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604",
     "prototype": "b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed",

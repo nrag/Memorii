@@ -99,7 +99,11 @@ def test_filesystem_operation_repository_serializes_process_claims(tmp_path: Pat
     pending = repository.create(_pending_operation("operation:process-contention"))
     payload = pending.model_dump(mode="python")
 
-    with ProcessPoolExecutor(max_workers=2, mp_context=multiprocessing.get_context("spawn")) as pool:
+    try:
+        pool = ProcessPoolExecutor(max_workers=2, mp_context=multiprocessing.get_context("spawn"))
+    except (NotImplementedError, PermissionError) as exc:
+        pytest.skip(f"process semaphore capability is unavailable: {exc}")
+    with pool:
         outcomes = list(
             pool.map(
                 _claim_from_process,

@@ -17,6 +17,7 @@ from memorii.tools.benchmark_suites.runtime_dependencies import (
     LLMClientBinding,
 )
 from memorii.tools.run_benchmark import main
+from tests.support.memory_evolution_provider_harness import enable_test_runtime_benchmark_harness
 from tests.unit.core.benchmark.memory_evolution_test_helpers import generate_scenario_by_family
 from tests.unit.tools.run_benchmark_test_helpers import _clear_llm_env, _latest_run_dir
 
@@ -132,6 +133,7 @@ def test_runtime_dry_run_hybrid_uses_fake_extractor_without_live_provider(
     tmp_path: Path,
 ) -> None:
     _clear_llm_env(monkeypatch)
+    enable_test_runtime_benchmark_harness(monkeypatch)
 
     assert main(
         [

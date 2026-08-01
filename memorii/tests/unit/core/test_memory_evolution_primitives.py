@@ -50,8 +50,10 @@ from memorii.core.memory_evolution.models import ConfidenceComponents, SourceObs
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.provider.models import ProviderOperation
-from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain, SourceType
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
 
 
 def _world_context(observation: SourceObservation) -> ClaimSemanticContext:
@@ -369,6 +371,9 @@ class _RequestLocalIdentityExtractor:
             source_type=observation.source_type,
             timestamp=observation.timestamp,
         )
+        claim_span = span.model_copy(
+            update={"quote": observation.text.rsplit(". ", maxsplit=1)[-1]}
+        )
         scope = MemoryScope(task_id="task:evolution")
         entities = [
             EntityMention(
@@ -429,7 +434,7 @@ class _RequestLocalIdentityExtractor:
             object_entity_id=person_id,
             semantic_context=_world_context(observation),
             valid_from=observation.timestamp,
-            evidence_spans=[span],
+            evidence_spans=[claim_span],
             confidence=ConfidenceComponents(
                 extraction=0.9,
                 evidence=0.9,

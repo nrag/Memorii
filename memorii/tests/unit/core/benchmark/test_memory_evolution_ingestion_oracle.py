@@ -20,6 +20,7 @@ from memorii.core.memory_evolution import (
     MemoryGraphSnapshot,
     RecordLifecycleState,
 )
+from tests.support.memory_evolution_provider_harness import MemoryEvolutionProviderHarness
 
 
 @pytest.fixture(scope="module")
@@ -36,6 +37,7 @@ def ownership_graph() -> tuple[LatentGraphScenario, MemoryGraphSnapshot, dict[st
         dry_run=True,
         allow_live=False,
         prompt_root=Path("memorii/memorii/prompts"),
+        provider_factory=MemoryEvolutionProviderHarness,
     )
     assert rows.ingestion_prefix_audits
     assert all(row.passed for row in rows.ingestion_prefix_audits)
@@ -56,6 +58,7 @@ def action_graph() -> tuple[LatentGraphScenario, MemoryGraphSnapshot, dict[str, 
         dry_run=True,
         allow_live=False,
         prompt_root=Path("memorii/memorii/prompts"),
+        provider_factory=MemoryEvolutionProviderHarness,
     )
     assert all(row.passed for row in rows.ingestion_prefix_audits)
     return scenario, _snapshot(rows.graph_snapshots[-1]), _source_event_map(scenario)

@@ -11,7 +11,20 @@ from memorii.core.benchmark.memory_evolution_runtime.runner import (
 from memorii.core.benchmark.memory_evolution_sim import generate_memory_evolution_sim_scenarios
 from memorii.core.memory_evolution.operation_models import EvolutionOperationStatus
 from memorii.core.prompts.registry import default_prompt_root
-from memorii.core.provider.service import ProviderMemoryService
+from tests.support.memory_evolution_provider_harness import (
+    MemoryEvolutionProviderHarness as ProviderMemoryService,
+)
+
+
+def test_runtime_benchmark_requires_explicit_m2_composition() -> None:
+    with pytest.raises(RuntimeError, match="unavailable in the M1 source-only milestone"):
+        run_runtime_scenarios(
+            scenarios=[],
+            mode="rule",
+            dry_run=True,
+            allow_live=False,
+            prompt_root=default_prompt_root(),
+        )
 
 
 def test_runtime_benchmark_dispatches_checkpoint_retrieval_contract(monkeypatch) -> None:
@@ -36,6 +49,7 @@ def test_runtime_benchmark_dispatches_checkpoint_retrieval_contract(monkeypatch)
         dry_run=True,
         allow_live=False,
         prompt_root=default_prompt_root(),
+        provider_factory=ProviderMemoryService,
     )
 
     checkpoints = [
@@ -89,6 +103,7 @@ def test_dry_runtime_never_constructs_a_live_client() -> None:
         allow_live=False,
         prompt_root=default_prompt_root(),
         live_client_factory=reject_live_client,
+        provider_factory=ProviderMemoryService,
     )
 
     assert rows.checkpoint_rows
@@ -112,6 +127,7 @@ def test_known_correct_graph_passes_production_retrieval_and_direct_comparison(
         dry_run=True,
         allow_live=False,
         prompt_root=default_prompt_root(),
+        provider_factory=ProviderMemoryService,
     )
 
     assert len(rows.checkpoint_rows) == sum(len(scenario.checkpoints) for scenario in scenarios)
@@ -141,6 +157,7 @@ def test_failed_ingestion_prefix_blocks_query_retrieval_and_comparison(monkeypat
         dry_run=True,
         allow_live=False,
         prompt_root=default_prompt_root(),
+        provider_factory=ProviderMemoryService,
     )
 
     assert rows.checkpoint_rows
@@ -201,6 +218,7 @@ def test_dry_runtime_records_durable_outcome_for_every_extraction() -> None:
         dry_run=True,
         allow_live=False,
         prompt_root=default_prompt_root(),
+        provider_factory=ProviderMemoryService,
     )
 
     assert rows.llm_rows
