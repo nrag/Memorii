@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
-from functools import partial
+from typing import Any
 
 from _pytest.monkeypatch import MonkeyPatch
 from memorii.core.memory_evolution.extraction_contracts import MemoryExtractor
@@ -127,11 +127,11 @@ def enable_test_runtime_benchmark_harness(monkeypatch: MonkeyPatch) -> None:
     from memorii.core.benchmark.memory_evolution_runtime.runner import run_runtime_scenarios
     from memorii.tools.benchmark_suites import memory_evolution_runtime as runtime_suite
 
-    monkeypatch.setattr(
-        runtime_suite,
-        "run_runtime_scenarios",
-        partial(run_runtime_scenarios, provider_factory=MemoryEvolutionProviderHarness),
-    )
+    def run_with_test_composition(**kwargs: Any):
+        kwargs["provider_factory"] = MemoryEvolutionProviderHarness
+        return run_runtime_scenarios(**kwargs)
+
+    monkeypatch.setattr(runtime_suite, "run_runtime_scenarios", run_with_test_composition)
 
 
 def _provider_outcome(operation: EvolutionOperation) -> ProviderEvolutionOutcome:

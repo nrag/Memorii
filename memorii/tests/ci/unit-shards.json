@@ -1,0 +1,11 @@
+{
+  "pytest_args": [
+    "tests/unit",
+    "--ignore=tests/unit/tools/test_generation_closure_exactness.py",
+    "--ignore=tests/unit/tools/test_scenario_fixture_authority.py"
+  ],
+  "schema_version": 1,
+  "shard_count": 4,
+  "target_seconds": 600,
+  "timing_manifest": "unit-test-durations.json"
+}

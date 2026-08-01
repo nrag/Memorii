@@ -22,8 +22,12 @@ Workflow file: `.github/workflows/pr-gates.yml`
 - Trigger on `pull_request` to `main`.
 - Trigger on `merge_group` to support GitHub merge queue usage.
 - Use Python 3.11.
-- Install local development dependencies via `pip install -e '.[local]'`.
-- Run: `pytest tests/unit`.
+- Install local development dependencies via `pip install -e '.[local,dev]'`.
+- Run Ruff, Pyright, and installed-wheel smoke checks in independent jobs.
+- Run the complete unit inventory through four deterministic,
+  duration-balanced pytest shards.
+- Preserve `Unit Tests` as the required umbrella check over every shard and
+  supporting static/package job.
 - Test import path is pinned in `memorii/pyproject.toml` (`[tool.pytest.ini_options].pythonpath = ["."]`) so `pytest tests/unit` behaves consistently in local and CI environments.
 
 ## GitHub settings plan (what to change in UI)
@@ -67,11 +71,12 @@ For PR unit tests specifically, environment configuration is optional and usuall
 
 ## Future gate expansion (optional)
 
-After unit tests are stable, add additional required checks in a controlled sequence:
+The gate now includes these independently diagnosable jobs while preserving the
+stable `Unit Tests` branch-protection identity:
 
-1. lint (`ruff check .`)
-2. formatting (`black --check .`)
-3. type checks (`mypy memorii`)
-4. integration tests (`pytest tests/integration`)
+1. static analysis (`ruff` and scoped `pyright`)
+2. installed-package smoke verification
+3. four exhaustive unit-test shards
+4. dedicated semantic-ingestion acceptance partitions
 
 Keep each gate as a separate named job so branch-protection checks stay explicit and debuggable.

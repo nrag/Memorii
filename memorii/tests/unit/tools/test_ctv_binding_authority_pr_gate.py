@@ -200,6 +200,8 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     exact_job = jobs["ctv-binding-authority-exact"]
     unit_job = jobs["unit-tests"]
     acceptance_job = jobs["semantic-ingestion-acceptance"]
+    generation_job = jobs["semantic-ingestion-generation"]
+    scenario_job = jobs["semantic-ingestion-scenario"]
     assert isinstance(compiler_job, dict)
     assert isinstance(gate_job, dict)
     assert isinstance(exact_job, dict)
@@ -210,10 +212,16 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     assert exact_job["name"] == "CTV Binding Authority Exact"
     assert acceptance_job["name"] == "Semantic Ingestion Acceptance"
     assert acceptance_job["runs-on"] == "ubuntu-latest"
-    assert acceptance_job["timeout-minutes"] == "35"
-    unit_checkout = [step for step in unit_job["steps"] if step.get("name") == "Checkout"]
-    assert len(unit_checkout) == 1
-    assert unit_checkout[0]["with"] == {"fetch-depth": "0"}
+    assert acceptance_job["timeout-minutes"] == "15"
+    assert generation_job["timeout-minutes"] == "15"
+    assert scenario_job["timeout-minutes"] == "15"
+    assert unit_job["name"] == "Unit Tests"
+    assert unit_job["needs"] == [
+        "static-analysis",
+        "package-smoke",
+        "unit-test-shards",
+        "unit-timing-inventory",
+    ]
     for job in (compiler_job, gate_job, exact_job):
         assert job["runs-on"] == "ubuntu-latest"
         assert job["timeout-minutes"] == "5"
@@ -279,18 +287,19 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
         "pytest",
         "-W",
         "error",
-        "tests/unit/tools/test_generation_closure_exactness.py",
-        "tests/unit/tools/test_scenario_fixture_authority.py",
         "tests/acceptance/semantic_ingestion/test_sia_requirements.py",
         "-p",
         "no:cacheprovider",
     ]
     assert not forbidden_selectors.intersection(acceptance_tokens)
-    unit_steps = [step for step in unit_job["steps"] if step.get("name") == "Run unit tests"]
-    assert len(unit_steps) == 1
-    unit_tokens = shlex.split(unit_steps[0]["run"])
-    assert "--ignore=tests/unit/tools/test_generation_closure_exactness.py" in unit_tokens
-    assert "--ignore=tests/unit/tools/test_scenario_fixture_authority.py" in unit_tokens
+    generation_run = next(
+        step for step in generation_job["steps"] if step.get("name") == "Run generation closure acceptance"
+    )
+    scenario_run = next(
+        step for step in scenario_job["steps"] if step.get("name") == "Run scenario authority acceptance"
+    )
+    assert "tests/unit/tools/test_generation_closure_exactness.py" in shlex.split(generation_run["run"])
+    assert "tests/unit/tools/test_scenario_fixture_authority.py" in shlex.split(scenario_run["run"])
     exact_steps = exact_job["steps"]
     assert [step.get("name") for step in exact_steps] == [
         "Checkout",

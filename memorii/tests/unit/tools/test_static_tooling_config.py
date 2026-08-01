@@ -192,6 +192,45 @@ def test_candidate_live_gate_is_not_an_automatic_pr_or_merge_trigger() -> None:
     assert set(pr_config["on"]) == {"pull_request", "merge_group"}
 
 
+def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> None:
+    config = _workflow_config("pr-gates.yml")
+    jobs = config["jobs"]
+    shards = jobs["unit-test-shards"]
+    umbrella = jobs["unit-tests"]
+
+    assert shards["timeout-minutes"] == "15"
+    assert shards["strategy"]["fail-fast"] == "false"
+    assert shards["strategy"]["matrix"]["shard"] == ["0", "1", "2", "3"]
+    shard_run = next(step for step in shards["steps"] if step["name"] == "Run deterministic unit shard")
+    assert "memorii.tools.test_shards run" in shard_run["run"]
+    assert "--timing-output" in shard_run["run"]
+    assert umbrella["name"] == "Unit Tests"
+    assert umbrella["if"] == "always()"
+    assert umbrella["needs"] == [
+        "static-analysis",
+        "package-smoke",
+        "unit-test-shards",
+        "unit-timing-inventory",
+    ]
+
+    bounded_jobs = [
+        "static-analysis",
+        "package-smoke",
+        "unit-test-shards",
+        "unit-timing-inventory",
+        "unit-tests",
+        "semantic-ingestion-generation",
+        "semantic-ingestion-scenario",
+        "semantic-ingestion-acceptance",
+        "benchmark-contract-tests",
+        "benchmark-artifacts",
+        "benchmark-contracts",
+    ]
+    assert all(int(jobs[name]["timeout-minutes"]) <= 15 for name in bounded_jobs)
+    assert jobs["benchmark-contracts"]["name"] == "Benchmark Contracts"
+    assert jobs["benchmark-contracts"]["needs"] == ["benchmark-contract-tests", "benchmark-artifacts"]
+
+
 def _workflow_steps(path: Path) -> list[tuple[str, str]]:
     workflow = path.read_text(encoding="utf-8")
     return re.findall(
@@ -201,17 +240,19 @@ def _workflow_steps(path: Path) -> list[tuple[str, str]]:
 
 
 def test_runtime_dry_runs_separate_plumbing_from_semantic_quality_gates() -> None:
-    pr_steps = _workflow_steps(REPO_ROOT / ".github" / "workflows" / "pr-gates.yml")
+    pr_config = _workflow_config("pr-gates.yml")
     scheduled_steps = _workflow_steps(REPO_ROOT / ".github" / "workflows" / "benchmark-scheduled.yml")
-    runtime_steps = [body for name, body in pr_steps if "runtime plumbing artifact" in name]
-    semantic_runtime_steps = [body for name, body in pr_steps if "runtime semantic artifact" in name]
-    simulator_steps = [body for name, body in pr_steps if "simulator plumbing artifact" in name]
     scheduled_semantic_runtime_steps = [body for name, body in scheduled_steps if "runtime semantic artifact" in name]
+    artifact_job = pr_config["jobs"]["benchmark-artifacts"]
+    matrix = artifact_job["strategy"]["matrix"]["include"]
+    runtime_rows = [row for row in matrix if row["suite"] == "memory_evolution_runtime_v1"]
+    simulator_rows = [row for row in matrix if row["suite"] == "memory_evolution_sim_v1"]
+    artifact_step = next(step for step in artifact_job["steps"] if step["name"] == "Build deterministic benchmark artifact")
 
-    assert len(runtime_steps) == 0
-    assert len(semantic_runtime_steps) == 4
-    assert len(simulator_steps) == 4
-    assert len(scheduled_semantic_runtime_steps) == 1
-    assert all("--fail-on-benchmark-failure" in body for body in semantic_runtime_steps)
-    assert all("--fail-on-benchmark-failure" in body for body in scheduled_semantic_runtime_steps)
-    assert all("--fail-on-benchmark-failure" in body for body in simulator_steps)
+    assert len(runtime_rows) == 4
+    assert len(simulator_rows) == 4
+    assert {row["profile"] for row in runtime_rows} == {"long_horizon", "adversarial"}
+    assert {row["mode"] for row in runtime_rows} == {"llm", "hybrid"}
+    assert "tests.support.run_memory_evolution_runtime_benchmark" in artifact_step["run"]
+    assert "--fail-on-benchmark-failure" in artifact_step["run"]
+    assert len(scheduled_semantic_runtime_steps) == 0

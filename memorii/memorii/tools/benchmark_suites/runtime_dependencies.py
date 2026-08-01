@@ -12,6 +12,7 @@ from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_eval.fake_client import EvalFakeClient
 from memorii.core.llm_provider.base import LLMStructuredClient
 from memorii.core.llm_provider.factory import LLMClientFactory
+from memorii.core.provider.service import ProviderMemoryService
 
 _DEFAULT_HOTPOTQA_DATASET = files("memorii.core.benchmark.fixture_sets").joinpath("hotpotqa_sample.json")
 
@@ -48,6 +49,7 @@ class LLMClientBinding:
 
 FakeClientBindingFactory = Callable[[], LLMClientBinding]
 LiveClientBindingFactory = Callable[[LLMRuntimeConfig], LLMClientBinding]
+MemoryEvolutionProviderFactory = Callable[..., ProviderMemoryService]
 
 
 def default_fake_client_binding() -> LLMClientBinding:
@@ -83,6 +85,7 @@ class BenchmarkRuntimeDependencies:
     fake_client_binding_factory: FakeClientBindingFactory = default_fake_client_binding
     live_client_binding_factory: LiveClientBindingFactory = default_live_client_binding
     dry_run_decision_strategy: DryRunDecisionStrategy = DryRunDecisionStrategy.ORACLE_ADAPTERS
+    memory_evolution_provider_factory: MemoryEvolutionProviderFactory | None = None
 
     def bind_llm_client(
         self,

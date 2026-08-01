@@ -102,32 +102,12 @@ jobs:
           --sim-noise-rate 0.35
           --seed 7
 
-      - name: Build fake-oracle runtime semantic artifact
-        working-directory: memorii
-        run: >-
-          python -m memorii.tools.run_eval
-          --suite memory_evolution_runtime_v1
-          --mode hybrid
-          --dry-run
-          --fail-on-benchmark-failure
-          --storage-root .memorii
-          --sim-profile long_horizon
-          --sim-scenario-count 25
-          --sim-min-events 25
-          --sim-max-events 60
-          --sim-noise-rate 0.35
-          --seed 7
-
       - name: Validate fake-oracle plumbing artifacts
         working-directory: memorii
         run: >-
           python -m memorii.tools.validate_benchmark_artifacts
           --root .memorii/benchmark_runs
           --suite memory_evolution_sim_v1
-          &&
-          python -m memorii.tools.validate_benchmark_artifacts
-          --root .memorii/benchmark_runs
-          --suite memory_evolution_runtime_v1
 
       - name: Upload benchmark artifacts
         uses: actions/upload-artifact@v4

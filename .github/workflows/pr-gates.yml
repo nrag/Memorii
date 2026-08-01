@@ -97,19 +97,14 @@ jobs:
           --expected-checker-sha256 c4168249dbf4845d90e9593819323dc331e22e3bdfa5a9df70b076ed10449f01
           --self-test
 
-  unit-tests:
-    name: Unit Tests
+  static-analysis:
+    name: Static Analysis
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      MEMORII_SOURCE_REVISION: ${{ github.sha }}
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -129,6 +124,28 @@ jobs:
         working-directory: memorii
         run: pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
 
+  package-smoke:
+    name: Package Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MEMORII_SOURCE_REVISION: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
       - name: Build and smoke-test wheel
         working-directory: memorii
         run: |
@@ -141,19 +158,175 @@ jobs:
           PYTHONPATH="${RUNNER_TEMP}/memorii-wheel-site" python -m memorii.tools.run_eval --suite memory_evolution_sim_v1 --mode llm --dry-run --storage-root "${RUNNER_TEMP}/memorii-wheel-benchmark" --sim-profile long_horizon --sim-scenario-count 1 --sim-min-events 5 --sim-max-events 10 --sim-noise-rate 0.35 --seed 7
           PYTHONPATH="${RUNNER_TEMP}/memorii-wheel-site" python -m memorii.tools.validate_benchmark_artifacts --root "${RUNNER_TEMP}/memorii-wheel-benchmark/benchmark_runs" --suite memory_evolution_sim_v1
 
-      - name: Run unit tests
+  unit-test-shards:
+    name: Unit Test Shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      MEMORII_SOURCE_REVISION: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Verify complete deterministic shard plan
         working-directory: memorii
         run: >-
-          pytest -W error tests/unit
-          --ignore=tests/unit/tools/test_generation_closure_exactness.py
-          --ignore=tests/unit/tools/test_scenario_fixture_authority.py
+          python -m memorii.tools.test_shards verify
+          --config tests/ci/unit-shards.json
+
+      - name: Run deterministic unit shard
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.test_shards run
+          --config tests/ci/unit-shards.json
+          --index ${{ matrix.shard }}
+          --timing-output "${RUNNER_TEMP}/unit-shard-${{ matrix.shard }}-timings.json"
+
+      - name: Upload shard timing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-shard-${{ matrix.shard }}-timings
+          path: ${{ runner.temp }}/unit-shard-${{ matrix.shard }}-timings.json
+          if-no-files-found: error
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [static-analysis, package-smoke, unit-test-shards, unit-timing-inventory]
+
+    steps:
+      - name: Require every unit-test dependency
+        env:
+          STATIC_RESULT: ${{ needs.static-analysis.result }}
+          PACKAGE_RESULT: ${{ needs.package-smoke.result }}
+          SHARD_RESULT: ${{ needs.unit-test-shards.result }}
+          TIMING_RESULT: ${{ needs.unit-timing-inventory.result }}
+        run: >-
+          test "$STATIC_RESULT" = success
+          && test "$PACKAGE_RESULT" = success
+          && test "$SHARD_RESULT" = success
+          && test "$TIMING_RESULT" = success
+
+  unit-timing-inventory:
+    name: Unit Timing Inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [unit-test-shards]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Download shard timing evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: unit-shard-*-timings
+          path: ${{ runner.temp }}/unit-shard-timings
+          merge-multiple: true
+
+      - name: Merge timing inventory
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.test_shards merge
+          --config tests/ci/unit-shards.json
+          --input-dir "${RUNNER_TEMP}/unit-shard-timings"
+          --output "${RUNNER_TEMP}/unit-test-durations.json"
+
+      - name: Upload complete timing inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-timing-inventory
+          path: ${{ runner.temp }}/unit-test-durations.json
+          if-no-files-found: error
+
+  semantic-ingestion-generation:
+    name: Semantic Ingestion Generation Closure
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run generation closure acceptance
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/unit/tools/test_generation_closure_exactness.py
           -p no:cacheprovider
 
+  semantic-ingestion-scenario:
+    name: Semantic Ingestion Scenario Authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Run scenario authority acceptance
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/unit/tools/test_scenario_fixture_authority.py
+          -p no:cacheprovider
 
   semantic-ingestion-acceptance:
     name: Semantic Ingestion Acceptance
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -174,13 +347,11 @@ jobs:
         working-directory: memorii
         run: >-
           pytest -W error
-          tests/unit/tools/test_generation_closure_exactness.py
-          tests/unit/tools/test_scenario_fixture_authority.py
           tests/acceptance/semantic_ingestion/test_sia_requirements.py
           -p no:cacheprovider
 
-  benchmark-contracts:
-    name: Benchmark Contracts
+  benchmark-contract-tests:
+    name: Benchmark Contract Tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -227,133 +398,113 @@ jobs:
           tests/integration/test_benchmark_source_fingerprint.py
           -p no:cacheprovider
 
-      - name: Build fake-oracle simulator plumbing artifact
-        working-directory: memorii
-        run: >-
-          python -m memorii.tools.run_eval
-          --suite memory_evolution_sim_v1
-          --mode llm
-          --dry-run
-          --fail-on-benchmark-failure
-          --storage-root .memorii
-          --sim-profile long_horizon
-          --sim-scenario-count 10
-          --sim-min-events 25
-          --sim-max-events 60
-          --sim-noise-rate 0.35
-          --seed 7
+  benchmark-artifacts:
+    name: Benchmark Artifact ${{ matrix.suite }} / ${{ matrix.profile }} / ${{ matrix.mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: memory_evolution_sim_v1
+            profile: long_horizon
+            mode: llm
+            count: 10
+            extra: --sim-min-events 25 --sim-max-events 60
+          - suite: memory_evolution_sim_v1
+            profile: long_horizon
+            mode: hybrid
+            count: 10
+            extra: --sim-min-events 25 --sim-max-events 60
+          - suite: memory_evolution_sim_v1
+            profile: adversarial
+            mode: llm
+            count: 10
+            extra: ''
+          - suite: memory_evolution_sim_v1
+            profile: adversarial
+            mode: hybrid
+            count: 10
+            extra: ''
+          - suite: memory_evolution_runtime_v1
+            profile: long_horizon
+            mode: llm
+            count: 10
+            extra: --sim-min-events 25 --sim-max-events 60
+          - suite: memory_evolution_runtime_v1
+            profile: long_horizon
+            mode: hybrid
+            count: 25
+            extra: --sim-min-events 25 --sim-max-events 60
+          - suite: memory_evolution_runtime_v1
+            profile: adversarial
+            mode: llm
+            count: 10
+            extra: ''
+          - suite: memory_evolution_runtime_v1
+            profile: adversarial
+            mode: hybrid
+            count: 10
+            extra: ''
+    env:
+      MEMORII_SOURCE_REVISION: ${{ github.sha }}
 
-      - name: Build deterministic runtime semantic artifact
-        working-directory: memorii
-        run: >-
-          python -m memorii.tools.run_eval
-          --suite memory_evolution_runtime_v1
-          --mode llm
-          --dry-run
-          --fail-on-benchmark-failure
-          --storage-root .memorii
-          --sim-profile long_horizon
-          --sim-scenario-count 10
-          --sim-min-events 25
-          --sim-max-events 60
-          --sim-noise-rate 0.35
-          --seed 7
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Build fake-oracle hybrid simulator plumbing artifact
-        working-directory: memorii
-        run: >-
-          python -m memorii.tools.run_eval
-          --suite memory_evolution_sim_v1
-          --mode hybrid
-          --dry-run
-          --fail-on-benchmark-failure
-          --storage-root .memorii
-          --sim-profile long_horizon
-          --sim-scenario-count 10
-          --sim-min-events 25
-          --sim-max-events 60
-          --sim-noise-rate 0.35
-          --seed 7
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
 
-      - name: Build deterministic hybrid runtime semantic artifact
+      - name: Install package + test deps
         working-directory: memorii
-        run: >-
-          python -m memorii.tools.run_eval
-          --suite memory_evolution_runtime_v1
-          --mode hybrid
-          --dry-run
-          --fail-on-benchmark-failure
-          --storage-root .memorii
-          --sim-profile long_horizon
-          --sim-scenario-count 25
-          --sim-min-events 25
-          --sim-max-events 60
-          --sim-noise-rate 0.35
-          --seed 7
+        run: pip install -e '.[local,dev]'
 
-      - name: Build fake-oracle adversarial simulator plumbing artifact
+      - name: Build deterministic benchmark artifact
         working-directory: memorii
-        run: >-
-          python -m memorii.tools.run_eval
-          --suite memory_evolution_sim_v1
-          --mode llm
-          --dry-run
-          --fail-on-benchmark-failure
-          --storage-root .memorii
-          --sim-profile adversarial
-          --sim-scenario-count 10
-          --sim-noise-rate 0.35
-          --seed 7
+        env:
+          BENCHMARK_SUITE: ${{ matrix.suite }}
+          BENCHMARK_PROFILE: ${{ matrix.profile }}
+          BENCHMARK_MODE: ${{ matrix.mode }}
+          BENCHMARK_COUNT: ${{ matrix.count }}
+          BENCHMARK_EXTRA: ${{ matrix.extra }}
+        run: |
+          if [ "$BENCHMARK_SUITE" = memory_evolution_runtime_v1 ]; then
+            runner=(python -m tests.support.run_memory_evolution_runtime_benchmark)
+          else
+            runner=(python -m memorii.tools.run_eval)
+          fi
+          "${runner[@]}" \
+            --suite "$BENCHMARK_SUITE" \
+            --mode "$BENCHMARK_MODE" \
+            --dry-run \
+            --fail-on-benchmark-failure \
+            --storage-root .memorii \
+            --sim-profile "$BENCHMARK_PROFILE" \
+            --sim-scenario-count "$BENCHMARK_COUNT" \
+            --sim-noise-rate 0.35 \
+            --seed 7 \
+            $BENCHMARK_EXTRA
+          python -m memorii.tools.validate_benchmark_artifacts \
+            --root .memorii/benchmark_runs \
+            --suite "$BENCHMARK_SUITE"
 
-      - name: Build deterministic adversarial runtime semantic artifact
-        working-directory: memorii
-        run: >-
-          python -m memorii.tools.run_eval
-          --suite memory_evolution_runtime_v1
-          --mode llm
-          --dry-run
-          --fail-on-benchmark-failure
-          --storage-root .memorii
-          --sim-profile adversarial
-          --sim-scenario-count 10
-          --sim-noise-rate 0.35
-          --seed 7
+  benchmark-contracts:
+    name: Benchmark Contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [benchmark-contract-tests, benchmark-artifacts]
 
-      - name: Build fake-oracle adversarial hybrid simulator plumbing artifact
-        working-directory: memorii
+    steps:
+      - name: Require benchmark contract and artifact gates
+        env:
+          CONTRACT_RESULT: ${{ needs.benchmark-contract-tests.result }}
+          ARTIFACT_RESULT: ${{ needs.benchmark-artifacts.result }}
         run: >-
-          python -m memorii.tools.run_eval
-          --suite memory_evolution_sim_v1
-          --mode hybrid
-          --dry-run
-          --fail-on-benchmark-failure
-          --storage-root .memorii
-          --sim-profile adversarial
-          --sim-scenario-count 10
-          --sim-noise-rate 0.35
-          --seed 7
-
-      - name: Build deterministic adversarial hybrid runtime semantic artifact
-        working-directory: memorii
-        run: >-
-          python -m memorii.tools.run_eval
-          --suite memory_evolution_runtime_v1
-          --mode hybrid
-          --dry-run
-          --fail-on-benchmark-failure
-          --storage-root .memorii
-          --sim-profile adversarial
-          --sim-scenario-count 10
-          --sim-noise-rate 0.35
-          --seed 7
-
-      - name: Validate deterministic plumbing reports
-        working-directory: memorii
-        run: >-
-          python -m memorii.tools.validate_benchmark_artifacts
-          --root .memorii/benchmark_runs
-          --suite memory_evolution_sim_v1
-          &&
-          python -m memorii.tools.validate_benchmark_artifacts
-          --root .memorii/benchmark_runs
-          --suite memory_evolution_runtime_v1
+          test "$CONTRACT_RESULT" = success
+          && test "$ARTIFACT_RESULT" = success

@@ -54,6 +54,7 @@ from memorii.core.memory_evolution import (
 )
 from memorii.tools.run_benchmark import main
 from pydantic import ValidationError
+from tests.support.memory_evolution_provider_harness import enable_test_runtime_benchmark_harness
 from tests.unit.core.benchmark.checkpoint_artifact_test_helpers import checkpoint_diagnostics_payload
 
 
@@ -924,7 +925,11 @@ def test_memory_evolution_sim_dry_run_artifact_public_shape(tmp_path: Path) -> N
         assert row["review_required"] is not None
 
 
-def test_memory_evolution_runtime_dry_run_artifact_public_shape(tmp_path: Path) -> None:
+def test_memory_evolution_runtime_dry_run_artifact_public_shape(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    enable_test_runtime_benchmark_harness(monkeypatch)
     assert (
         main(
             [
