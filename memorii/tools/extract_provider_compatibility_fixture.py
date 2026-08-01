@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -214,7 +215,19 @@ def main(argv: list[str] | None = None) -> int:
             if any(member.name.startswith("/") or ".." in Path(member.name).parts for member in members):
                 raise RuntimeError("baseline archive contains an unsafe member")
             tar.extractall(root / "tree", members=members, filter="data")
-        captured = subprocess.run([str(interpreter), "-s", "-c", _CAPTURE], cwd=root / "tree" / "memorii", check=False, capture_output=True, text=True, env={"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1"})
+        child_environment = {"PATH": "/usr/bin:/bin", "PYTHONNOUSERSITE": "1"}
+        # setup-python distributions on Linux need their tool-cache library
+        # directory to load libpython. This does not add a Python import path.
+        if loader_path := os.environ.get("LD_LIBRARY_PATH"):
+            child_environment["LD_LIBRARY_PATH"] = loader_path
+        captured = subprocess.run(
+            [str(interpreter), "-s", "-c", _CAPTURE],
+            cwd=root / "tree" / "memorii",
+            check=False,
+            capture_output=True,
+            text=True,
+            env=child_environment,
+        )
         if captured.returncode:
             raise RuntimeError(f"isolated baseline capture failed: {captured.stderr}")
     payload = json.loads(captured.stdout)
