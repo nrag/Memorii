@@ -211,6 +211,9 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
     assert acceptance_job["name"] == "Semantic Ingestion Acceptance"
     assert acceptance_job["runs-on"] == "ubuntu-latest"
     assert acceptance_job["timeout-minutes"] == "35"
+    unit_checkout = [step for step in unit_job["steps"] if step.get("name") == "Checkout"]
+    assert len(unit_checkout) == 1
+    assert unit_checkout[0]["with"] == {"fetch-depth": "0"}
     for job in (compiler_job, gate_job, exact_job):
         assert job["runs-on"] == "ubuntu-latest"
         assert job["timeout-minutes"] == "5"
