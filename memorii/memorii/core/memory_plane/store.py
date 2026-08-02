@@ -26,6 +26,23 @@ class MemoryPlaneCorruptionError(RuntimeError):
     """Raised when persisted memory cannot be replayed without data loss."""
 
 
+class MemoryPlaneGovernedWritePolicyRequiredError(RuntimeError):
+    """A governed namespace was written without its installed policy."""
+
+
+class MemoryPlaneWriteAuthorization:
+    """Opaque authorization owned by a feature policy, not the memory plane."""
+
+
+class GovernedWritePolicy(Protocol):
+    def validate(
+        self,
+        records: tuple[CanonicalMemoryRecord, ...],
+        current: tuple[CanonicalMemoryRecord, ...],
+        authorization: MemoryPlaneWriteAuthorization | None,
+    ) -> None: ...
+
+
 class RecordAbsentPrecondition(BaseModel):
     kind: Literal["record_absent"] = "record_absent"
     memory_id: str = Field(min_length=1)
@@ -86,11 +103,25 @@ class _PersistedBatch(BaseModel):
 
 
 class MemoryPlaneStore(Protocol):
-    def write_records(self, records: tuple[CanonicalMemoryRecord, ...]) -> int: ...
+    def write_records(
+        self, records: tuple[CanonicalMemoryRecord, ...], *, authorization: MemoryPlaneWriteAuthorization | None = None
+    ) -> int: ...
 
-    def stage_record(self, record: CanonicalMemoryRecord) -> None: ...
+    def stage_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None: ...
 
-    def upsert_record(self, record: CanonicalMemoryRecord) -> None: ...
+    def upsert_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None: ...
+
+    def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None: ...
 
     def revision(self) -> int: ...
 
@@ -100,6 +131,7 @@ class MemoryPlaneStore(Protocol):
         *,
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int: ...
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]: ...
@@ -120,16 +152,32 @@ class InMemoryMemoryPlaneStore:
         self._records: dict[str, CanonicalMemoryRecord] = {}
         self._revision = 0
         self._lock = RLock()
+        self._governed_write_policy: GovernedWritePolicy | None = None
 
-    def stage_record(self, record: CanonicalMemoryRecord) -> None:
-        self.write_records((record,))
+    def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
+        self._governed_write_policy = policy
 
-    def upsert_record(self, record: CanonicalMemoryRecord) -> None:
-        self.write_records((record,))
+    def stage_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None:
+        self.write_records((record,), authorization=authorization)
 
-    def write_records(self, records: tuple[CanonicalMemoryRecord, ...]) -> int:
+    def upsert_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None:
+        self.write_records((record,), authorization=authorization)
+
+    def write_records(
+        self, records: tuple[CanonicalMemoryRecord, ...], *, authorization: MemoryPlaneWriteAuthorization | None = None
+    ) -> int:
         with self._lock:
-            return self._apply_locked(records, preconditions=())
+            return self._apply_locked(records, preconditions=(), authorization=authorization)
 
     def revision(self) -> int:
         with self._lock:
@@ -141,21 +189,29 @@ class InMemoryMemoryPlaneStore:
         *,
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         with self._lock:
             if expected_revision is not None and expected_revision != self._revision:
                 raise MemoryPlaneRevisionConflictError(
                     f"memory-plane revision changed: expected {expected_revision}, actual {self._revision}"
                 )
-            return self._apply_locked(records, preconditions=preconditions)
+            return self._apply_locked(records, preconditions=preconditions, authorization=authorization)
 
     def _apply_locked(
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
         preconditions: tuple[MemoryPlanePrecondition, ...],
+        authorization: MemoryPlaneWriteAuthorization | None,
     ) -> int:
         _validate_preconditions(self._records, preconditions)
+        _validate_governed_write(
+            self._governed_write_policy,
+            records,
+            tuple(self._records.values()),
+            authorization,
+        )
         updated = dict(self._records)
         for record in records:
             updated[record.memory_id] = _clone_record(record)
@@ -197,16 +253,38 @@ class JsonlMemoryPlaneStore:
         self._records_path = self._base_path / "memory_records.jsonl"
         self._lock_path = self._base_path / "memory_records.lock"
         self._base_path.mkdir(parents=True, exist_ok=True)
+        self._governed_write_policy: GovernedWritePolicy | None = None
 
-    def stage_record(self, record: CanonicalMemoryRecord) -> None:
-        self.write_records((record,))
+    def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
+        self._governed_write_policy = policy
 
-    def upsert_record(self, record: CanonicalMemoryRecord) -> None:
-        self.write_records((record,))
+    def stage_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None:
+        self.write_records((record,), authorization=authorization)
 
-    def write_records(self, records: tuple[CanonicalMemoryRecord, ...]) -> int:
+    def upsert_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None:
+        self.write_records((record,), authorization=authorization)
+
+    def write_records(
+        self, records: tuple[CanonicalMemoryRecord, ...], *, authorization: MemoryPlaneWriteAuthorization | None = None
+    ) -> int:
         with self._locked(exclusive=True):
             batches = self._read_batches_unlocked()
+            _validate_governed_write(
+                self._governed_write_policy,
+                records,
+                tuple(_records_from_batches(batches).values()),
+                authorization,
+            )
             next_revision = batches[-1].revision + 1 if batches else 1
             current_data_revision = batches[-1].data_revision if batches else 0
             next_data_revision = current_data_revision + int(_contains_runtime_context(records))
@@ -233,6 +311,7 @@ class JsonlMemoryPlaneStore:
         *,
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         with self._locked(exclusive=True):
             batches = self._read_batches_unlocked()
@@ -243,6 +322,12 @@ class JsonlMemoryPlaneStore:
                     f"memory-plane revision changed: expected {expected_revision}, actual {actual_data_revision}"
                 )
             _validate_preconditions(_records_from_batches(batches), preconditions)
+            _validate_governed_write(
+                self._governed_write_policy,
+                records,
+                tuple(_records_from_batches(batches).values()),
+                authorization,
+            )
             next_revision = actual_revision + 1
             next_data_revision = actual_data_revision + int(_contains_runtime_context(records))
             self._replace_batches(
@@ -301,8 +386,7 @@ class JsonlMemoryPlaneStore:
             expected_data_revision = previous_data_revision + int(_contains_runtime_context(batch.records))
             if batch.data_revision != expected_data_revision:
                 raise MemoryPlaneCorruptionError(
-                    "invalid memory-plane data revision: "
-                    f"expected {expected_data_revision}, got {batch.data_revision}"
+                    f"invalid memory-plane data revision: expected {expected_data_revision}, got {batch.data_revision}"
                 )
             batches.append(batch)
             expected_revision += 1
@@ -345,6 +429,46 @@ class JsonlMemoryPlaneStore:
 
 def _clone_record(record: CanonicalMemoryRecord) -> CanonicalMemoryRecord:
     return record.model_copy(deep=True)
+
+
+def _validate_governed_write(
+    policy: GovernedWritePolicy | None,
+    records: tuple[CanonicalMemoryRecord, ...],
+    current: tuple[CanonicalMemoryRecord, ...],
+    authorization: MemoryPlaneWriteAuthorization | None,
+) -> None:
+    if policy is not None:
+        policy.validate(records, current, authorization)
+        return
+    if any(
+        record.source_kind == "semantic_ingestion_writer_admission"
+        or (
+            record.source_kind in {
+                "semantic_ingestion_source",
+                "semantic_ingestion_metadata_poor_snapshot",
+                "semantic_ingestion_admission_index",
+                "semantic_ingestion_profile_selection",
+                "semantic_ingestion_profile_verification",
+                "semantic_ingestion_profile_outcome",
+                "semantic_ingestion_legacy_delivery_record",
+            }
+            and any(existing.memory_id == "semantic_ingestion:writer_admission:current" for existing in current)
+        )
+        or record.source_kind.startswith("semantic_ingestion_preplanning")
+        or record.source_kind.startswith("semantic_ingestion_generation")
+        or record.source_kind.startswith("semantic_ingestion_migration")
+        or record.source_kind == "semantic_ingestion_migrated_target"
+        or record.memory_id == "semantic_ingestion:writer_admission:current"
+        or record.memory_id.startswith("semantic_ingestion:operation:")
+        or record.memory_id.startswith("semantic_ingestion:artifact:")
+        or record.memory_id.startswith("semantic_ingestion:generation:")
+        or record.memory_id.startswith("semantic_ingestion:migration:")
+        or record.memory_id.startswith("semantic_ingestion:migrated:")
+        for record in records
+    ):
+        raise MemoryPlaneGovernedWritePolicyRequiredError(
+            "semantic-ingestion governed write requires its installed policy"
+        )
 
 
 def record_digest(record: CanonicalMemoryRecord) -> str:

@@ -27,6 +27,7 @@ from memorii.core.memory_evolution.admission import (
     SemanticIngestionOutcomeLookupRequest,
     SemanticIngestionOutcomeLookupResponse,
 )
+from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapProfileVerificationError,
     InstalledHostBootstrapCapabilityProvider,
@@ -40,6 +41,10 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.memory_evolution.operation_store import (
     EvolutionOperationRepository,
+)
+from memorii.core.memory_evolution.writer_admission import (
+    SemanticWriterAdmissionStore,
+    bounded_preplanning_ownership_manifest,
 )
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.next_step import NextStepEngine
@@ -155,11 +160,24 @@ class ProviderMemoryService:
         self._emit_work_state_event_candidates = emit_work_state_event_candidates
         self._memory_evolution_service: MemoryEvolutionService | None = None
         self._semantic_ingestion_admission = GovernedSourceAdmissionService(self._memory_plane)
+        self._semantic_writer_admission = SemanticWriterAdmissionStore(
+            self._memory_plane, bounded_preplanning_ownership_manifest(), now_provider=self._now_provider
+        )
+        self._semantic_writer_admission.create_initial_evidence_only(
+            admission_id="memorii-provider-semantic-writer-v1",
+            writer_implementation_fingerprint="memorii-provider-m2-evidence-only-v1",
+            graph_schema_fingerprint="memorii-semantic-graph-preactivation-v1",
+        )
+        self._semantic_atomic_store = SemanticIngestionAtomicStore(
+            self._memory_plane, self._semantic_writer_admission, now_provider=self._now_provider
+        )
         self._provider_ingestion = ProviderIngestionCoordinator(
             memory_plane=self._memory_plane,
             admission_service=self._semantic_ingestion_admission,
             bootstrap_profile=self._bootstrap_profile,
             bootstrap_unavailable_reason=self._bootstrap_unavailable_reason,
+            atomic_store=self._semantic_atomic_store,
+            writer_admission=self._semantic_writer_admission,
         )
         self._work_state_memory_projector = WorkStateMemoryProjector(
             memory_plane=self._memory_plane,

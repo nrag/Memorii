@@ -10,6 +10,14 @@ from threading import Event, Thread
 logger = logging.getLogger(__name__)
 
 
+def lease_renewal_interval(lease_duration: timedelta) -> timedelta:
+    """Choose a bounded positive renewal cadence for a renewable lease."""
+
+    if lease_duration <= timedelta(0):
+        raise ValueError("lease duration must be positive")
+    return max(timedelta(milliseconds=1), lease_duration / 2)
+
+
 class EvolutionLeaseHeartbeat:
     def __init__(self, *, renew: Callable[[], bool], interval: timedelta) -> None:
         self._renew = renew

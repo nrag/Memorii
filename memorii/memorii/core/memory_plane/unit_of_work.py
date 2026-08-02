@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
-from memorii.core.memory_plane.store import MemoryPlanePrecondition, MemoryPlaneStore
+from memorii.core.memory_plane.store import (
+    GovernedWritePolicy,
+    MemoryPlanePrecondition,
+    MemoryPlaneStore,
+    MemoryPlaneWriteAuthorization,
+)
 from memorii.domain.enums import CommitStatus, MemoryDomain
 
 
@@ -16,6 +21,7 @@ class MemoryPlaneUnitOfWork:
         self._records = {record.memory_id: record for record in records}
         self._pending: dict[str, CanonicalMemoryRecord] = {}
         self._pending_preconditions: list[MemoryPlanePrecondition] = []
+        self._authorization: MemoryPlaneWriteAuthorization | None = None
         self._committed_revision: int | None = None
 
     @property
@@ -30,21 +36,44 @@ class MemoryPlaneUnitOfWork:
     def committed(self) -> bool:
         return self._committed_revision is not None
 
-    def stage_record(self, record: CanonicalMemoryRecord) -> None:
+    def stage_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None:
         self._ensure_open()
+        self._set_authorization(authorization)
         self._pending[record.memory_id] = record.model_copy(deep=True)
 
-    def write_records(self, records: tuple[CanonicalMemoryRecord, ...]) -> int:
+    def write_records(
+        self,
+        records: tuple[CanonicalMemoryRecord, ...],
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> int:
         self._ensure_open()
+        self._set_authorization(authorization)
         for record in records:
-            self.stage_record(record)
+            self._pending[record.memory_id] = record.model_copy(deep=True)
         return self._base_revision
 
-    def upsert_record(self, record: CanonicalMemoryRecord) -> None:
-        self.stage_record(record)
+    def upsert_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None:
+        self.stage_record(record, authorization=authorization)
 
     def revision(self) -> int:
         return self._base_revision
+
+    def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
+        self._ensure_open()
+        if self._pending:
+            raise RuntimeError("cannot install a governed-write policy after staging records")
+        self._store.install_governed_write_policy(policy)
 
     def apply_batch(
         self,
@@ -52,8 +81,10 @@ class MemoryPlaneUnitOfWork:
         *,
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         self._ensure_open()
+        self._set_authorization(authorization)
         if expected_revision != self._base_revision:
             raise ValueError(
                 f"unit-of-work revision mismatch: expected {expected_revision}, base {self._base_revision}"
@@ -110,6 +141,7 @@ class MemoryPlaneUnitOfWork:
             records,
             expected_revision=expected_revision,
             preconditions=effective_preconditions,
+            authorization=self._authorization,
         )
         return self._committed_revision
 
@@ -119,3 +151,10 @@ class MemoryPlaneUnitOfWork:
     def _ensure_open(self) -> None:
         if self.committed:
             raise RuntimeError("memory-plane unit of work is already committed")
+
+    def _set_authorization(self, authorization: MemoryPlaneWriteAuthorization | None) -> None:
+        if authorization is None:
+            return
+        if self._authorization is not None and self._authorization != authorization:
+            raise ValueError("unit-of-work write authorization changed")
+        self._authorization = authorization

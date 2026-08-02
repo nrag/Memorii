@@ -38,6 +38,7 @@ from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
     MemoryPlanePrecondition,
     MemoryPlaneRevisionConflictError,
+    MemoryPlaneWriteAuthorization,
 )
 from memorii.core.provider.models import ProviderOperation
 from memorii.domain.enums import CommitStatus, MemoryDomain
@@ -151,6 +152,7 @@ class _OneConflictStore(InMemoryMemoryPlaneStore):
         *,
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         if self.conflict_next_batch:
             self.conflict_next_batch = False
@@ -159,6 +161,7 @@ class _OneConflictStore(InMemoryMemoryPlaneStore):
             records,
             expected_revision=expected_revision,
             preconditions=preconditions,
+            authorization=authorization,
         )
 
 
@@ -173,11 +176,13 @@ class _LostAcknowledgementStore(InMemoryMemoryPlaneStore):
         *,
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         revision = super().apply_batch(
             records,
             expected_revision=expected_revision,
             preconditions=preconditions,
+            authorization=authorization,
         )
         if self.lose_completion_acknowledgement and any(_is_committed_operation(record) for record in records):
             self.lose_completion_acknowledgement = False
@@ -197,6 +202,7 @@ class _BlockingCompletionStore(InMemoryMemoryPlaneStore):
         *,
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         if any(_is_committed_operation(record) for record in records):
             self.completion_started.wait(timeout=5)
@@ -205,6 +211,7 @@ class _BlockingCompletionStore(InMemoryMemoryPlaneStore):
             records,
             expected_revision=expected_revision,
             preconditions=preconditions,
+            authorization=authorization,
         )
 
 
@@ -221,6 +228,7 @@ class _OwnershipTransferStore(InMemoryMemoryPlaneStore):
         *,
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         if not self._blocked_once and any(_is_committed_operation(record) for record in records):
             self._blocked_once = True
@@ -230,6 +238,7 @@ class _OwnershipTransferStore(InMemoryMemoryPlaneStore):
             records,
             expected_revision=expected_revision,
             preconditions=preconditions,
+            authorization=authorization,
         )
 
 
