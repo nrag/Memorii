@@ -249,7 +249,7 @@ def test_jsonl_truncated_batch_blocks_reopen_instead_of_exposing_partial_state(t
         JsonlMemoryPlaneStore(path).read_snapshot()
 
 
-def test_m2_atomic_admission_publishes_m1_evidence_and_pending_generation_together() -> None:
+def test_atomic_admission_publishes_source_evidence_and_pending_generation_together() -> None:
     plane = MemoryPlaneService()
     principal = DeliveryPrincipalBinding.create(
         principal_subject_id="principal:a", tenant_partition_id="tenant:a", provider_identity="provider:test"

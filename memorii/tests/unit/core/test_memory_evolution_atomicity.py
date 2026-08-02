@@ -18,6 +18,7 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     MemoryPlanePrecondition,
+    MemoryPlaneWriteAuthorization,
     RecordAbsentPrecondition,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain
@@ -54,6 +55,7 @@ class _FailingBatchStore(InMemoryMemoryPlaneStore):
         *,
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         if self.fail_batch:
             raise OSError("injected batch failure")
@@ -61,6 +63,7 @@ class _FailingBatchStore(InMemoryMemoryPlaneStore):
             records,
             expected_revision=expected_revision,
             preconditions=preconditions,
+            authorization=authorization,
         )
 
 
