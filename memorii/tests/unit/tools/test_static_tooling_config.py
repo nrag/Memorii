@@ -202,13 +202,18 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     shards = jobs["unit-test-shards"]
     compatibility = jobs["provider-compatibility"]
     umbrella = jobs["unit-tests"]
+    timing = jobs["unit-timing-inventory"]
 
     assert shards["timeout-minutes"] == "15"
     assert shards["strategy"]["fail-fast"] == "false"
     assert shards["strategy"]["matrix"]["shard"] == ["0", "1", "2", "3"]
     shard_run = next(step for step in shards["steps"] if step["name"] == "Run deterministic unit shard")
     assert "memorii.tools.test_shards run" in shard_run["run"]
-    assert "--timing-output" in shard_run["run"]
+    shard_timing_path = '${RUNNER_TEMP}/unit-shard-${{ matrix.shard }}-timings.json'
+    assert f'--timing-output "{shard_timing_path}"' in shard_run["run"]
+    shard_upload = next(step for step in shards["steps"] if step["name"] == "Upload shard timing evidence")
+    assert shard_upload["with"]["name"] == "unit-shard-${{ matrix.shard }}-timings"
+    assert shard_upload["with"]["path"] == "${{ runner.temp }}/unit-shard-${{ matrix.shard }}-timings.json"
     assert umbrella["name"] == "Unit Tests"
     assert umbrella["if"] == "always()"
     assert umbrella["needs"] == [
@@ -219,8 +224,37 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "unit-timing-inventory",
     ]
     umbrella_run = umbrella["steps"][0]
-    assert umbrella_run["env"]["COMPATIBILITY_RESULT"] == "${{ needs.provider-compatibility.result }}"
-    assert 'test "$COMPATIBILITY_RESULT" = success' in umbrella_run["run"]
+    expected_results = {
+        "STATIC_RESULT": "static-analysis",
+        "PACKAGE_RESULT": "package-smoke",
+        "COMPATIBILITY_RESULT": "provider-compatibility",
+        "SHARD_RESULT": "unit-test-shards",
+        "TIMING_RESULT": "unit-timing-inventory",
+    }
+    for variable, dependency in expected_results.items():
+        assert umbrella_run["env"][variable] == f"${{{{ needs.{dependency}.result }}}}"
+        assert f'test "${variable}" = success' in umbrella_run["run"]
+
+    assert timing["needs"] == ["unit-test-shards"]
+    timing_download = next(
+        step for step in timing["steps"] if step["name"] == "Download shard timing evidence"
+    )
+    assert timing_download["uses"] == "actions/download-artifact@v4"
+    assert timing_download["with"]["pattern"] == "unit-shard-*-timings"
+    assert timing_download["with"]["path"] == "${{ runner.temp }}/unit-shard-timings"
+    assert timing_download["with"]["merge-multiple"] == "true"
+    timing_merge = next(step for step in timing["steps"] if step["name"] == "Merge timing inventory")
+    assert "memorii.tools.test_shards merge" in timing_merge["run"]
+    assert "--config tests/ci/unit-shards.json" in timing_merge["run"]
+    assert '--input-dir "${RUNNER_TEMP}/unit-shard-timings"' in timing_merge["run"]
+    assert '--output "${RUNNER_TEMP}/unit-test-durations.json"' in timing_merge["run"]
+    timing_upload = next(
+        step for step in timing["steps"] if step["name"] == "Upload complete timing inventory"
+    )
+    assert timing_upload["uses"] == "actions/upload-artifact@v4"
+    assert timing_upload["with"]["name"] == "unit-test-timing-inventory"
+    assert timing_upload["with"]["path"] == "${{ runner.temp }}/unit-test-durations.json"
+    assert timing_upload["with"]["if-no-files-found"] == "error"
     assert compatibility["name"] == "Provider Compatibility Recapture"
     compatibility_checkout = compatibility["steps"][0]
     assert compatibility_checkout["name"] == "Checkout"
@@ -272,6 +306,86 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     assert all(int(jobs[name]["timeout-minutes"]) <= 15 for name in bounded_jobs)
     assert jobs["benchmark-contracts"]["name"] == "Benchmark Contracts"
     assert jobs["benchmark-contracts"]["needs"] == ["benchmark-contract-tests", "benchmark-artifacts"]
+
+
+def test_repository_workflow_skills_share_fail_closed_closure_contract() -> None:
+    root_names = {path.name for path in REPO_ROOT.iterdir()}
+    assert "AGENTS.md" in root_names
+    assert "agents.md" not in root_names
+
+    plans = (REPO_ROOT / ".agents" / "PLANS.md").read_text(encoding="utf-8")
+    required_common_fields = {
+        "remaining_validated_p1_p2: []",
+        "remaining_blocks_approval: []",
+        "remaining_changes_required: []",
+        "ci_executed_sha:",
+        "ci_executed_ref:",
+        "acceptance_gate_inventory: []",
+    }
+    assert required_common_fields <= set(plans.splitlines())
+
+    required_skill_tokens = {
+        "implement-design": ["remaining_validated_p1_p2: []", "merge-group SHAs"],
+        "debug-problem": ["remaining_validated_p1_p2: []", "external acceptance gates"],
+        "design-tests": ["remaining_validated_p1_p2: []", "owner-or-exemption ledger"],
+        "review-pr": ["merge_group", "acceptance-gate inventory", "cannot be retrieved authoritatively"],
+    }
+    for skill_name, tokens in required_skill_tokens.items():
+        skill_path = REPO_ROOT / ".agents" / "skills" / skill_name / "SKILL.md"
+        content = skill_path.read_text(encoding="utf-8")
+        assert all(token in content for token in tokens), skill_name
+
+    review_skill = (
+        REPO_ROOT / ".agents" / "skills" / "review-pr" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "passes on its actual\n  current executed ref" in review_skill
+    assert "required checks pass on the head" not in review_skill
+    for decision_token in (
+        "decision table as normative precedence",
+        "Do not downgrade `blocked`",
+        "unavailable or forbidden | `blocked`",
+        "stale or mismatched executed SHA/ref | `blocked`",
+        "skipped, neutral, or incomplete | `changes_required`",
+        "thread remains unresolved | `changes_required`",
+    ):
+        assert decision_token in review_skill
+    plans_template = re.search(r"For every milestone or final closure.*?```yaml\n(.*?)\n```", plans, re.DOTALL)
+    review_template = re.search(r"Record:\n\n```yaml\n(.*?)\n```", review_skill, re.DOTALL)
+    assert plans_template is not None
+    assert review_template is not None
+    common_keys = set(yaml.load(plans_template.group(1), Loader=yaml.BaseLoader))
+    review_keys = set(yaml.load(review_template.group(1), Loader=yaml.BaseLoader))
+    assert common_keys <= review_keys
+    assert {"unresolved_review_threads", "decision"} <= review_keys
+
+
+def test_dedicated_deterministic_pytest_jobs_have_timing_owners_or_exemptions() -> None:
+    config = _workflow_config("pr-gates.yml")
+    jobs = config["jobs"]
+    observed_jobs = {
+        job_name
+        for job_name, job in jobs.items()
+        if job_name != "unit-test-shards"
+        if any(
+            "pytest" in step.get("run", "")
+            and "pip install" not in step.get("run", "")
+            for step in job.get("steps", [])
+        )
+    }
+    ledger = json.loads(
+        (PROJECT_ROOT / "tests" / "ci" / "deterministic-job-owners.json").read_text(
+            encoding="utf-8"
+        )
+    )["dedicated_pytest_jobs"]
+
+    assert set(ledger) == observed_jobs
+    for job_name, entry in ledger.items():
+        timeout_seconds = int(jobs[job_name]["timeout-minutes"]) * 60
+        assert entry["timeout_minutes"] * 60 == timeout_seconds
+        assert entry["runtime_budget_seconds"] > 0
+        assert entry["timeout_headroom_seconds"] > 0
+        assert entry["runtime_budget_seconds"] + entry["timeout_headroom_seconds"] <= timeout_seconds
+        assert entry["timing_exemption_reason"].strip()
 
 
 def test_test_symbols_use_behavioral_names_instead_of_requirement_or_milestone_ids() -> None:

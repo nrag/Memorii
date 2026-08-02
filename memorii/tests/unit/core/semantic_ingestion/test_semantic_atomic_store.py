@@ -82,7 +82,7 @@ def test_preplanning_publication_is_atomic_idempotent_and_has_empty_future_effec
     assert len([r for r in plane.list_records() if r.source_kind == "semantic_ingestion_preplanning_artifact"]) == 3
 
 
-def test_same_public_operation_id_has_distinct_fence_derived_m2_namespaces() -> None:
+def test_same_public_operation_id_has_distinct_fence_derived_writer_namespaces() -> None:
     plane = MemoryPlaneService()
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(writers.create_initial_evidence_only(

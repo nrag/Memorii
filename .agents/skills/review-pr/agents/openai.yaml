@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Memorii PR"
+  short_description: "Review a Memorii PR for safe approval"
+  default_prompt: "Use $review-pr to review this pull request for approval readiness."

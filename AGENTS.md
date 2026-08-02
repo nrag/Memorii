@@ -76,6 +76,7 @@ Classify long-running work before beginning.
 | Implement an approved design           | `$implement-design` |
 | Investigate and fix a complex failure  | `$debug-problem`    |
 | Design, reorganize, or prune test architecture | `$design-tests` |
+| Review a pull request for approval or merge readiness | `$review-pr` |
 
 A task is long-running when it:
 
@@ -91,7 +92,8 @@ Small, bounded changes do not require a WorkPlan unless the applicable design,
 issue, or user instruction requires one. They must still follow the governing
 documents and repository invariants.
 
-Do not combine design, implementation, and debugging into one WorkPlan.
+Do not combine design, implementation, debugging, testing, or PR review into
+one WorkPlan.
 
 When work crosses operation boundaries:
 

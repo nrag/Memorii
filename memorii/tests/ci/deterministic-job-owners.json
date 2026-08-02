@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "dedicated_pytest_jobs": {
+    "benchmark-contract-tests": {
+      "runtime_budget_seconds": 600,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 15,
+      "timing_exemption_reason": "Dedicated mixed contract and integration partition with its own timeout budget."
+    },
+    "ctv-binding-authority-compiler-parity": {
+      "runtime_budget_seconds": 180,
+      "timeout_headroom_seconds": 120,
+      "timeout_minutes": 5,
+      "timing_exemption_reason": "Hermetic Python 3.12 compiler-parity partition outside the package unit environment."
+    },
+    "ctv-binding-authority-pr-gate": {
+      "runtime_budget_seconds": 180,
+      "timeout_headroom_seconds": 120,
+      "timeout_minutes": 5,
+      "timing_exemption_reason": "Hermetic Python 3.12 tamper partition with separately installed dependencies."
+    },
+    "provider-compatibility": {
+      "runtime_budget_seconds": 600,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 15,
+      "timing_exemption_reason": "Historical-revision integration recapture requires a dedicated checkout and fetch boundary."
+    },
+    "semantic-ingestion-acceptance": {
+      "runtime_budget_seconds": 600,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 15,
+      "timing_exemption_reason": "Public acceptance partition is budgeted independently from isolated unit shards."
+    },
+    "semantic-ingestion-generation": {
+      "runtime_budget_seconds": 600,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 15,
+      "timing_exemption_reason": "Generation-closure acceptance has a dedicated deterministic gate and timeout."
+    },
+    "semantic-ingestion-scenario": {
+      "runtime_budget_seconds": 600,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 15,
+      "timing_exemption_reason": "Scenario-authority acceptance has a dedicated deterministic gate and timeout."
+    }
+  }
+}
