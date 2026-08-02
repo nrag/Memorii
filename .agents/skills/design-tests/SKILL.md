@@ -27,6 +27,7 @@ For every requirement or risk, record:
 - oracle and fixture authority
 - observable failure signal
 - expected runtime and intended gate
+- exact workflow job, matrix entry, shard, aggregate, and timing owner
 
 Separate evidence gaps from product defects. Missing tests do not establish P1
 or P2 without demonstrated product impact.
@@ -127,6 +128,25 @@ Run focused tests first, then applicable gates. Record:
 - gate placement and timeout headroom
 - retained, migrated, deleted, and intentionally deferred cases
 - source/wheel isolation when fixture authority is test-only
+- workflow identity and local command-equivalence evidence
+- complete timing ownership for the duration-balanced unit inventory
+
+Read current GitHub workflows directly. Prove every added or moved test is
+collected by a required job, included in the correct matrix or deterministic
+shard, represented in timing evidence, and reflected in the aggregate check.
+Do not accept median or default timing assignments as final closure evidence
+for new tests. Add a workflow-structure contract when a gate's triggers, argv,
+matrix, timeout, or aggregation is required behavior.
+
+Maintain an owner-or-exemption ledger for dedicated deterministic jobs outside
+the duration-balanced unit inventory. Each dedicated target must name its job,
+runtime budget, timeout headroom, and reason it does not use unit-shard timing.
+
+Before completing any testing milestone, append the revision-bound closure
+record from `.agents/PLANS.md` and require
+`remaining_validated_p1_p2: []`. For PR-associated changes, verify all
+scope-required GitHub and external acceptance gates on their actual event and
+executed SHA/ref.
 
 Use mutation, temporary implementation breakage, or an equivalent discriminating
 experiment for high-risk tests to prove they fail for the intended reason.
@@ -141,4 +161,6 @@ Complete only when requirements map to current tests, every retained test has a
 distinct failure signal, obsolete artifacts are removed, suite topology and CI
 placement match runtime budgets, fast gates remain representative, exhaustive
 coverage remains enforced elsewhere, stable naming is used, and deterministic
-evidence passes at the exact revision.
+evidence passes at the exact revision. Actual scope-required GitHub checks and
+external gates are required before claiming their corresponding enforced or
+operational maturity.

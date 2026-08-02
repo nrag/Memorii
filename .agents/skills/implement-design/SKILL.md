@@ -74,6 +74,7 @@ Each milestone must identify:
 - exact validation commands and toolchain
 - evidence maturity delivered
 - explicit non-goals and completion criteria
+- base/head revision identity for closure evidence
 
 Prefer complete behavior through canonical execution paths. Test risky
 assumptions early.
@@ -161,6 +162,20 @@ Record exact command, working directory, interpreter/tool versions, exit status,
 relevant output, revision, and tree state. Compilation is not evidence that a
 test executed. Local success under a different runtime is not CI parity.
 
+Before calling a milestone complete, read the current GitHub workflow files
+directly and inventory every applicable required job, matrix entry, shard,
+aggregate dependency, environment variable, working directory, interpreter,
+warning mode, and generated or timing artifact. Run the repository
+deterministic commands selected by those workflows. Record workflow identities
+with the results; a hand-maintained substitute is not equivalence evidence.
+
+Record runner, runtime, dependency-resolution, dirty-tree, skipped-job, and
+incomplete-matrix differences as evidence gaps. GitHub-only actions and runner
+behavior require actual workflow evidence. Record the CI event, executed
+SHA/ref, and run URL; PR head, synthetic merge, and merge-group SHAs are
+distinct. Only successful scope-required GitHub and external acceptance gates
+establish their corresponding evidence maturity.
+
 ## Phase 6: Coordinator Integrity Check
 
 Inspect the repository directly. Do not trust the worker summary.
@@ -187,6 +202,12 @@ After a coherent milestone, run concurrently:
 
 Require reviewers to inspect the complete current state and classify findings
 under `AGENTS.md`.
+
+The milestone closure record must explicitly contain
+`remaining_validated_p1_p2: []`. A confirmed P1/P2 finding prevents completion.
+An unresolved `blocks_approval` or `changes_required` evidence or governance
+finding required by the milestone contract also prevents completion, even when
+its product priority is `Not applicable`.
 
 Each finding must:
 
@@ -251,6 +272,15 @@ When all milestones appear complete:
    fallbacks, bypasses, duplicated state, hard-coded identifiers, and stale docs
 6. verify migration, rollback, compatibility, observability, and failure behavior
 7. run fresh whole-branch reviews with all three reviewers
+8. record the structured closure evidence required by `.agents/PLANS.md`
+
+Any production, test, fixture, generated-artifact, dependency, or workflow
+change after final review invalidates closure. Repeat affected gates and a
+fresh whole-branch review at the new revision.
+
+When the branch is a pull request, use `$review-pr` after implementation closure
+to evaluate the complete approval unit, GitHub checks, review threads, and
+head-SHA identity.
 
 Complete the WorkPlan only when `.agents/PLANS.md` is satisfied. Do not claim
 completion from test success or an agent summary alone. Stop as blocked when the

@@ -14,12 +14,20 @@ from memorii.core.memory_evolution.admission import (
 from memorii.core.memory_evolution.bootstrap_profile import (
     BOOTSTRAP_COORDINATE,
     BootstrapGrammarCorpusCase,
+    BootstrapLocalProfileManifest,
+    BootstrapProfileArtifacts,
     BootstrapProfileReleaseMetadata,
+    BootstrapProfileVerificationError,
+    ComponentSymbolFingerprint,
     HostVerifiedBootstrapMaterial,
     ProfileSelectedPipelinePending,
+    _component_fingerprint_digest,
+    _component_root,
     build_bootstrap_profile_artifacts,
     build_bootstrap_trust_anchor,
     disposition_outcome,
+    serialize_bootstrap_profile_artifacts,
+    verify_bootstrap_profile,
     verify_bootstrap_release,
 )
 from memorii.core.memory_evolution.delivery_coordinate_migration import (
@@ -59,10 +67,14 @@ def _binding() -> DeliveryPrincipalBinding:
     )
 
 
-def _ingress(*scopes: str) -> AuthenticatedIngressContext:
+def _ingress(*scopes: str, required_scopes: tuple[str, ...] | None = None) -> AuthenticatedIngressContext:
     binding = _binding()
+    required = scopes if required_scopes is None else required_scopes
     return AuthenticatedIngressContext(
         delivery_principal_binding=binding,
+        required_outcome_scopes=RequiredOutcomeScopeSet.create(
+            tenant_partition_id=binding.tenant_partition_id, scopes=set(required)
+        ),
         current_authorized_scopes=RequiredOutcomeScopeSet.create(
             tenant_partition_id=binding.tenant_partition_id, scopes=set(scopes)
         ),
@@ -201,6 +213,45 @@ def _complete_corpus_cases() -> tuple[BootstrapGrammarCorpusCase, ...]:
     )
 
 
+def _runtime_mutated_bootstrap_material(
+    mutation: dict[str, object],
+) -> HostVerifiedBootstrapMaterial:
+    artifacts = build_bootstrap_profile_artifacts(_complete_corpus_cases())
+    original = artifacts.profile_manifest.component_fingerprints[0]
+    fingerprint_fields = original.model_dump(mode="python", exclude={"fingerprint_digest"})
+    fingerprint_fields.update(mutation)
+    fingerprint = ComponentSymbolFingerprint(
+        **fingerprint_fields,
+        fingerprint_digest=_component_fingerprint_digest(
+            ComponentSymbolFingerprint.model_construct(**fingerprint_fields, fingerprint_digest="0" * 64)
+        ),
+    )
+    fingerprints = (fingerprint, *artifacts.profile_manifest.component_fingerprints[1:])
+    profile_fields = artifacts.profile_manifest.model_dump(mode="python", exclude={"profile_digest"})
+    profile_fields["component_fingerprints"] = tuple(item.model_dump(mode="python") for item in fingerprints)
+    profile_fields["component_root_digest"] = _component_root(BOOTSTRAP_COORDINATE, fingerprints)
+    profile = BootstrapLocalProfileManifest(
+        **profile_fields,
+        profile_digest=sha256(encode_typed_value(profile_fields)).hexdigest(),
+    )
+    mutated = BootstrapProfileArtifacts(
+        profile_manifest=profile,
+        grammar_capability_manifest=artifacts.grammar_capability_manifest,
+        grammar_corpus=artifacts.grammar_corpus,
+    )
+    anchor = build_bootstrap_trust_anchor(mutated)
+    return HostVerifiedBootstrapMaterial(
+        release_metadata=BootstrapProfileReleaseMetadata(
+            coordinate=BOOTSTRAP_COORDINATE,
+            bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
+        ),
+        trust_anchor=anchor,
+        artifact_payloads=serialize_bootstrap_profile_artifacts(mutated),
+        authenticated_ingress_resolver=_TrustedResolver(),
+        profile_enabled=True,
+    )
+
+
 def test_delivery_id_is_exact_and_rejects_unsafe_forms() -> None:
     value = "  delivery:naive-cafe  "
     assert normalize_delivery_id(value) == value
@@ -214,15 +265,90 @@ def test_delivery_id_is_exact_and_rejects_unsafe_forms() -> None:
     )
 
 
+def test_component_fingerprint_requires_paired_distribution_or_repository_identity() -> None:
+    with pytest.raises(ValueError, match="distribution name and version"):
+        ComponentSymbolFingerprint(
+            module_path="example.module",
+            qualified_symbol="Example",
+            distribution_name="example",
+            distribution_version=None,
+            repository_blob_identity=None,
+            source_or_package_content_digest="0" * 64,
+            fingerprint_digest="0" * 64,
+        )
+
+
+def test_runtime_bootstrap_component_identity_mutations_fail_closed() -> None:
+    original = build_bootstrap_profile_artifacts(_complete_corpus_cases()).profile_manifest.component_fingerprints[0]
+    if original.distribution_name is not None:
+        missing_version = original.model_dump(mode="python")
+        missing_version["distribution_version"] = None
+        with pytest.raises(ValueError, match="distribution name and version"):
+            ComponentSymbolFingerprint.model_validate(missing_version)
+        mutation = {"distribution_version": "9999.0.0"}
+    else:
+        mutation = {"source_or_package_content_digest": "0" * 64}
+    with pytest.raises(BootstrapProfileVerificationError):
+        verify_bootstrap_profile(_runtime_mutated_bootstrap_material(mutation))
+    with pytest.raises(ValueError, match="inventory"):
+        _runtime_mutated_bootstrap_material({"qualified_symbol": "MissingBootstrapSymbol"})
+    with pytest.raises(ValueError, match="repository blob identity"):
+        ComponentSymbolFingerprint(
+            module_path="example.module",
+            qualified_symbol="Example",
+            distribution_name=None,
+            distribution_version=None,
+            repository_blob_identity=None,
+            source_or_package_content_digest="0" * 64,
+            fingerprint_digest="0" * 64,
+        )
+
+
 def test_admission_rejects_partial_scope_before_any_retention() -> None:
     memory_plane = MemoryPlaneService()
     admission = GovernedSourceAdmissionService(memory_plane)
     identity = DeliveryIdentity.create(_binding(), "delivery-1")
     with pytest.raises(ValueError, match="scope coverage"):
         admission.admit(
-            source=_source(), delivery_identity=identity, ingress=_ingress("task:task:one"), operation_id="operation-1"
+            source=_source(),
+            delivery_identity=identity,
+            ingress=_ingress(
+                "task:task:one", required_scopes=("task:task:one", "user:user:alice")
+            ),
+            operation_id="operation-1",
         )
     assert memory_plane.list_records() == []
+
+
+def test_admission_uses_host_required_scopes_not_public_source_metadata() -> None:
+    memory_plane = MemoryPlaneService()
+    admission = GovernedSourceAdmissionService(memory_plane)
+    identity = DeliveryIdentity.create(_binding(), "delivery:host-scopes")
+    ingress = _ingress("host:classification", "host:task")
+    accepted = admission.admit(
+        source=_source().model_copy(update={"session_id": "attacker-session", "task_id": "attacker-task"}),
+        delivery_identity=identity,
+        ingress=ingress,
+        operation_id="operation:host-scopes",
+    )
+    assert accepted.required_outcome_scopes == ingress.required_outcome_scopes
+    index = memory_plane.get_record(f"semantic_ingestion:admission:{identity.delivery_key_digest}")
+    assert index is not None
+    assert index.content["required_scopes"] == ["host:classification", "host:task"]
+
+
+def test_host_required_scopes_are_retained_for_evidence_only_admission() -> None:
+    memory_plane = MemoryPlaneService()
+    admission = GovernedSourceAdmissionService(memory_plane)
+    identity = DeliveryIdentity.create(_binding(), "delivery:evidence-scopes")
+    accepted = admission.admit(
+        source=_source(),
+        delivery_identity=identity,
+        ingress=_ingress("host:session"),
+        operation_id="operation:evidence-scopes",
+        evidence_only=True,
+    )
+    assert accepted.required_outcome_scopes.scopes == ("host:session",)
 
 
 def test_admission_identity_is_stable_and_lookup_is_non_disclosing() -> None:
@@ -238,7 +364,12 @@ def test_admission_identity_is_stable_and_lookup_is_non_disclosing() -> None:
     recovered = admission.admit(
         source=_source(),
         delivery_identity=identity,
-        ingress=_ingress("task:task:one", "user:user:alice", "session:rotated"),
+        ingress=_ingress(
+            "task:task:one",
+            "user:user:alice",
+            "session:rotated",
+            required_scopes=("task:task:one", "user:user:alice"),
+        ),
         operation_id="operation-1",
     )
     assert (
@@ -279,6 +410,9 @@ def test_cross_principal_same_source_cannot_overwrite_retained_evidence() -> Non
     second_identity = DeliveryIdentity.create(second_binding, "delivery-1")
     second_ingress = AuthenticatedIngressContext(
         delivery_principal_binding=second_binding,
+        required_outcome_scopes=RequiredOutcomeScopeSet.create(
+            tenant_partition_id="tenant:one", scopes={"task:task:one", "user:user:alice"}
+        ),
         current_authorized_scopes=RequiredOutcomeScopeSet.create(
             tenant_partition_id="tenant:one", scopes={"task:task:one", "user:user:alice"}
         ),
@@ -326,6 +460,17 @@ class _CorpusResolver:
 class _PartialScopeResolver:
     def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime) -> AuthenticatedIngressContext:
         return _ingress("task:task:one")
+
+
+class _HostGovernanceScopeResolver:
+    def __init__(self, *current_scopes: str) -> None:
+        self._current_scopes = current_scopes
+
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime) -> AuthenticatedIngressContext:
+        return _ingress(
+            *self._current_scopes,
+            required_scopes=("host:classification", "host:retention"),
+        )
 
 
 class _DeniedResolver:
@@ -401,6 +546,47 @@ def test_trusted_provider_path_admits_evidence_before_profile_gate() -> None:
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
     assert len(memory_plane.list_records()) == 10
+
+
+def test_provider_sync_event_uses_host_required_scopes_not_public_event_metadata() -> None:
+    ingress = AuthenticatedHostIngress(
+        provider_identity="provider:test", principal_handle=object(), session_handle=object(), received_at=datetime.now(UTC)
+    )
+    insufficient_plane = MemoryPlaneService()
+    insufficient = _service_with_capability(
+        _TestHostBootstrapCapability(resolver=_HostGovernanceScopeResolver("host:classification")),
+        memory_plane=insufficient_plane,
+    )
+    before = insufficient_plane.list_records()
+    with pytest.raises(ValueError, match="scope coverage"):
+        insufficient.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id="host-governance-denied",
+            task_id="caller-task",
+            user_id="caller-user",
+            authenticated_host_ingress=ingress,
+        )
+    assert insufficient_plane.list_records() == before
+
+    plane = MemoryPlaneService()
+    service = _service_with_capability(
+        _TestHostBootstrapCapability(
+            resolver=_HostGovernanceScopeResolver("host:classification", "host:retention")
+        ),
+        memory_plane=plane,
+    )
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="host-governance-accepted",
+        task_id="caller-task",
+        user_id="caller-user",
+        authenticated_host_ingress=ingress,
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    index = next(record for record in plane.list_records() if record.source_kind == "semantic_ingestion_admission_index")
+    assert index.content["required_scopes"] == ["host:classification", "host:retention"]
 
 
 def test_provider_reprepares_atomic_admission_when_writer_cutover_wins_race(

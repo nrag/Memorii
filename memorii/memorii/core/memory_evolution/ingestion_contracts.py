@@ -213,6 +213,10 @@ class RequiredOutcomeScopeSet(BaseModel):
 
 class AuthenticatedIngressContext(BaseModel):
     delivery_principal_binding: DeliveryPrincipalBinding
+    # The host derives this from authenticated message governance.  It is
+    # deliberately distinct from the current authorization snapshot: callers
+    # may have additional scopes, but cannot shrink retained-source coverage.
+    required_outcome_scopes: RequiredOutcomeScopeSet
     current_authorized_scopes: RequiredOutcomeScopeSet
     language_declaration: str | None = None
     language_evidence_kind: Literal["authenticated_host_declaration", "missing", "untrusted", "mismatched"] = "missing"
@@ -223,8 +227,12 @@ class AuthenticatedIngressContext(BaseModel):
 
     @model_validator(mode="after")
     def validate_tenant(self) -> AuthenticatedIngressContext:
-        if self.current_authorized_scopes.tenant_partition_id != self.delivery_principal_binding.tenant_partition_id:
-            raise ValueError("authorized scopes tenant must match authenticated principal")
+        tenant = self.delivery_principal_binding.tenant_partition_id
+        if (
+            self.current_authorized_scopes.tenant_partition_id != tenant
+            or self.required_outcome_scopes.tenant_partition_id != tenant
+        ):
+            raise ValueError("authorized and required scopes tenant must match authenticated principal")
         evidence = (
             self.language_evidence_kind,
             self.language_evidence_trust,

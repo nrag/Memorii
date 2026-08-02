@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -44,6 +44,7 @@ def _handoff(plane: MemoryPlaneService) -> tuple[SourceAdmissionAccepted, Operat
     )
     ingress = AuthenticatedIngressContext(
         delivery_principal_binding=principal,
+        required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
         current_authorized_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
     )
     admission = GovernedSourceAdmissionService(plane).admit(
@@ -79,6 +80,67 @@ def test_preplanning_publication_is_atomic_idempotent_and_has_empty_future_effec
     assert first == second
     assert first.operation.graph_record_ids == first.operation.event_ids == first.operation.terminal_group_ids == ()
     assert len([r for r in plane.list_records() if r.source_kind == "semantic_ingestion_preplanning_artifact"]) == 3
+
+
+def test_same_public_operation_id_has_distinct_fence_derived_writer_namespaces() -> None:
+    plane = MemoryPlaneService()
+    writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
+    binding = writers.commit_binding(writers.create_initial_evidence_only(
+        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+    ))
+    store = SemanticIngestionAtomicStore(plane, writers)
+    prepared_admissions = []
+    for suffix in ("alice", "bob"):
+        principal = DeliveryPrincipalBinding.create(
+            principal_subject_id=f"principal:{suffix}", tenant_partition_id=f"tenant:{suffix}",
+            provider_identity="provider:test",
+        )
+        identity = DeliveryIdentity.create(principal, "same-public-delivery")
+        source = CanonicalMemoryRecord(
+            memory_id=f"tx:{suffix}", domain=MemoryDomain.TRANSCRIPT, text="source", content={"text": "source"},
+            status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_source",
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC), is_raw_event=True,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        ingress = AuthenticatedIngressContext(
+            delivery_principal_binding=principal,
+            required_outcome_scopes=RequiredOutcomeScopeSet.create(
+                tenant_partition_id=f"tenant:{suffix}", scopes=set()
+            ),
+            current_authorized_scopes=RequiredOutcomeScopeSet.create(
+                tenant_partition_id=f"tenant:{suffix}", scopes=set()
+            ),
+        )
+        prepared_admissions.append(GovernedSourceAdmissionService(plane).prepare_atomic(
+            source=source, delivery_identity=identity, ingress=ingress, operation_id="same-public-operation",
+            evidence_only=True,
+        ))
+    publications = tuple(
+        store.admit_source(prepared=prepared, writer_binding=binding) for prepared in prepared_admissions
+    )
+    assert publications[0].operation.operation_fence.operation_id == publications[1].operation.operation_fence.operation_id
+    assert publications[0].operation.operation_fence.operation_fence_id != publications[1].operation.operation_fence.operation_fence_id
+    control_ids = [record.memory_id for record in plane.list_records() if record.source_kind == "semantic_ingestion_preplanning_control"]
+    assert len(control_ids) == len(set(control_ids)) == 2
+    leased = tuple(
+        store.acquire_lease(
+            operation_fence=publication.operation.operation_fence,
+            writer_binding=binding,
+            execution_token=f"worker:{index}",
+            duration=timedelta(minutes=1),
+        )
+        for index, publication in enumerate(publications)
+    )
+    assert tuple(
+        store.get_operation(publication.operation.operation_fence) for publication in publications
+    ) == leased
+    with pytest.raises(PreplanningStoreError, match="absent or ambiguous"):
+        store.acquire_lease(
+            operation_id="same-public-operation",
+            writer_binding=binding,
+            execution_token="ambiguous",
+            duration=timedelta(minutes=1),
+        )
 
 
 def test_unadmitted_or_mismatched_handoff_changes_no_record_set() -> None:
@@ -263,6 +325,7 @@ def test_atomic_admission_publishes_source_evidence_and_pending_generation_toget
     )
     ingress = AuthenticatedIngressContext(
         delivery_principal_binding=principal,
+        required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
         current_authorized_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
     )
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
@@ -300,6 +363,7 @@ def test_authorization_rotation_preserves_delivery_fence_and_allocation_identity
         source=source, delivery_identity=identity,
         ingress=AuthenticatedIngressContext(
             delivery_principal_binding=principal,
+            required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
             current_authorized_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
         ),
         operation_id="op:rotation", evidence_only=True,
@@ -308,6 +372,7 @@ def test_authorization_rotation_preserves_delivery_fence_and_allocation_identity
         source=source, delivery_identity=identity,
         ingress=AuthenticatedIngressContext(
             delivery_principal_binding=principal,
+            required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
             current_authorized_scopes=RequiredOutcomeScopeSet.create(
                 tenant_partition_id="tenant:a", scopes={"session:new-authority"}
             ),

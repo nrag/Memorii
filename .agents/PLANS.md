@@ -11,10 +11,12 @@ Supported work types are:
 * `implementation`
 * `testing`
 * `debugging`
+* `pr-review`
 * `investigation`
 * `migration`
 
-This document fully defines design, implementation, testing, and debugging.
+This document fully defines design, implementation, testing, debugging, and PR
+review.
 Investigation and migration plans
 must follow the common requirements and add an explicit completion contract
 appropriate to their work.
@@ -33,6 +35,7 @@ Recommended filenames are:
 * `implementation.plan.md`
 * `testing.plan.md`
 * `debug-001.plan.md`
+* `pr-review.plan.md`
 * `investigation-001.plan.md`
 * `migration.plan.md`
 
@@ -235,6 +238,38 @@ Record concrete evidence such as:
 
 An agent summary is not evidence by itself.
 
+For every milestone or final closure, append one revision-bound record:
+
+```yaml
+reviewed_revision:
+tested_revision:
+tree_state:
+workflow_identities: []
+ci_event:
+ci_executed_sha:
+ci_executed_ref:
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity:
+acceptance_gate_inventory: []
+github_run_urls: []
+pr_head_sha:
+pr_base_sha:
+merge_base_sha:
+required_checks_green:
+```
+
+Use `not_applicable` only with a reason. A closure record is invalid when code,
+tests, fixtures, generated artifacts, dependencies, or workflows change after
+the recorded review or verification.
+
+Every milestone and final closure requires
+`remaining_validated_p1_p2: []`. Testing and debugging work may route a newly
+discovered product defect to a linked WorkPlan, but the current milestone is
+not complete until that defect is resolved, explicitly removed from scope by
+an authorized decision, or makes the operation blocked.
+
 ### Decision Log
 
 For each material decision, record:
@@ -394,6 +429,20 @@ Passing tests are necessary when applicable but do not alone prove that all
 requirements are implemented.
 
 Absence of reviewer findings is not proof of correctness.
+
+Local command equivalence and CI enforcement are separate evidence classes.
+Local equivalence requires the repository commands selected by current
+workflow definitions with matching cwd, declared environment, warning mode,
+matrix or shard inputs, and deterministic artifacts. GitHub-only actions,
+artifact transport, runner setup, network steps, and expression evaluation are
+not local commands and must not be claimed as locally reproduced.
+
+Head-bound local verification requires a clean detached worktree, including no
+untracked files. Results from a dirty tree or different runtime are diagnostic
+only. CI enforcement requires the actual GitHub workflow to pass. Record the
+event, run URL, executed SHA/ref, PR head/base/merge-base relationship, and
+workflow identity. A `pull_request` merge SHA, PR head SHA, and `merge_group`
+SHA are distinct identities and must never be substituted for one another.
 
 ## Work Type: Design
 
@@ -648,6 +697,8 @@ Implementation is complete only when:
 * required live or external certification is identified separately and bound
   to the exact reviewed revision
 * no validated `P1` or `P2` implementation defect remains
+* the revision-bound closure record states `remaining_validated_p1_p2: []`
+* no required `blocks_approval` or `changes_required` finding remains
 * no unresolved external authority or semantic decision prevents completion
 * predefined verification evidence is complete, or unavailable evidence is
   recorded without inflating it into a product defect
@@ -655,6 +706,49 @@ Implementation is complete only when:
   incomplete fallback paths remain
 * a final review has inspected the entire branch against the design baseline,
   not only the most recent diff
+
+## Work Type: PR Review
+
+A PR-review WorkPlan evaluates a complete pull request as an approval unit. It
+does not implement corrections. Use a linked implementation, testing, or
+debugging WorkPlan for changes, then review the resulting head revision anew.
+
+### Required PR-Review Sections
+
+In addition to the common sections, include:
+
+* PR identity: repository, number, base/head branches and SHAs, and merge base
+* reconstructed requirement and scope ledger
+* complete changed-file and generated-artifact inventory
+* specialist review results and coordinator dispositions
+* workflow identities and local parity evidence
+* required-check, review-thread, approval, and mergeability state
+* one approval decision: `approve`, `changes_required`, or `blocked`
+
+### PR-Review Completion Contract
+
+A PR review is complete only when:
+
+* the complete base-to-head diff and governing requirements were inspected
+* review evidence names the PR head and base while check evidence names the
+  actual executed event, SHA, and ref
+* the head/base/merge-base and any merge or merge-group result remain current
+* `remaining_validated_p1_p2`, `remaining_blocks_approval`, and
+  `remaining_changes_required` are all empty only for `approve`
+* all actionable review threads are resolved or explicitly dispositioned
+* for `approve`, every required check and aggregate is green on its actual
+  current executed ref and every scope-required manual or external acceptance
+  gate has revision-bound evidence
+* for `changes_required` or `blocked`, failed, unavailable, or incomplete check
+  and acceptance-gate state is recorded and dispositioned
+* local evidence is labeled accurately and is not substituted for CI enforcement
+* scope, generated artifacts, migration, compatibility, rollback, and release
+  implications are reconciled
+* the final decision and any external blocker are explicit
+
+Any change to code, tests, fixtures, generated artifacts, dependencies,
+workflows, base revision, merge result, or merge-group composition invalidates
+an `approve` decision and requires review of the new approval unit.
 
 ## Work Type: Testing
 

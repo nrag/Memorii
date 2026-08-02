@@ -117,6 +117,18 @@ Use `test_reviewer` to confirm the regression test detects the causal defect.
 Run applicable repository gates and record exact commands, environment, exit
 status, revision, and tree state.
 
+For a GitHub Actions failure, read the failing workflow and run the exact failed
+job command, its matrix or shard selection, and every aggregate dependency
+whose outcome it controls. After the correction is pushed, verify the required
+check on its actual event and executed SHA/ref. Local success under a different
+runner is diagnostic or locally verified evidence, not CI enforcement.
+
+Before completing any debugging milestone, append the revision-bound closure
+record from `.agents/PLANS.md` and require
+`remaining_validated_p1_p2: []`. For PR-associated changes, inventory and verify
+all scope-required GitHub and external acceptance gates even when the original
+defect was not a CI failure.
+
 ## Phase 8: Independent Closure Review
 
 Run concurrently:

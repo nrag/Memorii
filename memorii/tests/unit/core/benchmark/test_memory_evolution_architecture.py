@@ -28,9 +28,21 @@ INGESTION_ORACLE = (
     / "ingestion_oracle.py"
 )
 DYNAMIC_IMPORT_OWNERS = {
-    PACKAGE_ROOT / "memory_plane" / "file_lock.py": "platform-specific standard-library lock API",
-    PACKAGE_ROOT / "provider" / "bm25.py": "optional external rank_bm25 dependency",
+    PACKAGE_ROOT / "memory_plane" / "file_lock.py": (
+        frozenset({"importlib"}),
+        "platform-specific standard-library lock API",
+    ),
+    PACKAGE_ROOT / "provider" / "bm25.py": (
+        frozenset({"importlib"}),
+        "optional external rank_bm25 dependency",
+    ),
+    PACKAGE_ROOT / "memory_evolution" / "bootstrap_profile.py": (
+        frozenset({"importlib", "importlib.metadata.EntryPoint.load"}),
+        "installed host capability discovery and post-verification manifest-bound component loading",
+    ),
 }
+
+
 def _imports(path: Path) -> list[tuple[str, tuple[str, ...]]]:
     tree = ast.parse(path.read_text(), filename=str(path))
     imports: list[tuple[str, tuple[str, ...]]] = []
@@ -53,27 +65,105 @@ def _literal_module_references(path: Path) -> list[str]:
     ]
 
 
-def _dynamic_import_capabilities(path: Path) -> list[tuple[int, str]]:
+def _dynamic_import_capabilities(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(), filename=str(path))
-    capabilities: list[tuple[int, str]] = []
+    capabilities: set[str] = set()
+    builtins_names: set[str] = set()
+    entry_points_names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            capabilities.extend(
-                (node.lineno, alias.name)
-                for alias in node.names
-                if alias.name == "builtins" or alias.name.startswith("importlib")
-            )
-        elif isinstance(node, ast.ImportFrom) and node.module in {"builtins", "importlib"}:
-            capabilities.append((node.lineno, node.module))
-        elif isinstance(node, ast.Name) and node.id == "__import__":
-            capabilities.append((node.lineno, node.id))
-        elif isinstance(node, ast.Attribute) and node.attr == "__import__":
-            capabilities.append((node.lineno, node.attr))
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"eval", "exec"}:
-            capabilities.append((node.lineno, node.func.id))
-        elif isinstance(node, ast.Constant) and node.value == "__import__":
-            capabilities.append((node.lineno, "__import__"))
+            for alias in node.names:
+                if alias.name == "builtins" or alias.name.startswith("importlib"):
+                    capabilities.add(alias.name)
+                if alias.name == "builtins":
+                    builtins_names.add(alias.asname or alias.name)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            for alias in node.names:
+                if node.module == "importlib.metadata" and alias.name == "entry_points":
+                    entry_points_names.add(alias.asname or alias.name)
+            if node.module in {"builtins", "importlib"}:
+                capabilities.add(node.module)
+
+    entry_point_collections = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign))
+        if node.value is not None
+        if _is_entry_points_result(node.value, entry_points_names)
+        for target in _assignment_targets(node)
+        if isinstance(target, ast.Name)
+    }
+
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Name)
+            and node.id == "__import__"
+            or isinstance(node, ast.Attribute)
+            and node.attr == "__import__"
+            or isinstance(node, ast.Constant)
+            and node.value == "__import__"
+        ):
+            capabilities.add("__import__")
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in {"eval", "exec"}:
+                capabilities.add(node.func.id)
+            elif (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in builtins_names
+                and node.func.attr in {"eval", "exec"}
+            ):
+                capabilities.add(node.func.attr)
+            elif _is_entry_point_load(node.func, entry_point_collections):
+                capabilities.add("importlib.metadata.EntryPoint.load")
     return capabilities
+
+
+def _assignment_targets(node: ast.Assign | ast.AnnAssign) -> tuple[ast.expr, ...]:
+    if isinstance(node, ast.Assign):
+        return tuple(node.targets)
+    return (node.target,)
+
+
+def _is_entry_points_result(node: ast.expr, entry_points_names: set[str]) -> bool:
+    return any(
+        isinstance(child, ast.Call)
+        and isinstance(child.func, ast.Name)
+        and child.func.id in entry_points_names
+        for child in ast.walk(node)
+    )
+
+
+def _is_entry_point_load(node: ast.expr, entry_point_collections: set[str]) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "load"
+        and isinstance(node.value, ast.Subscript)
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id in entry_point_collections
+    )
+
+
+def _dynamic_import_ownership_violations(paths: list[Path]) -> dict[Path, set[str]]:
+    observed = {
+        path: capabilities
+        for path in paths
+        if (capabilities := _dynamic_import_capabilities(path))
+    }
+    expected = {
+        path: capabilities
+        for path, (capabilities, _reason) in DYNAMIC_IMPORT_OWNERS.items()
+        if path in paths
+    }
+    return {
+        path: capabilities
+        for path, capabilities in observed.items()
+        if capabilities != expected.get(path)
+    } | {
+        path: capabilities
+        for path, capabilities in expected.items()
+        if path not in observed
+    }
 
 
 def _module_name(path: Path) -> str:
@@ -412,14 +502,55 @@ def test_oracle_and_sim_evaluators_contain_no_dynamic_production_pipeline_refere
 
 
 def test_dynamic_import_capabilities_have_explicit_owners() -> None:
-    observed = {
-        path: capabilities
-        for path in SOURCE_ROOT.rglob("*.py")
-        if (capabilities := _dynamic_import_capabilities(path))
-    }
+    violations = _dynamic_import_ownership_violations(list(SOURCE_ROOT.rglob("*.py")))
 
-    assert set(observed) == set(DYNAMIC_IMPORT_OWNERS), observed
-    assert all(reason.strip() for reason in DYNAMIC_IMPORT_OWNERS.values())
+    assert violations == {}
+    assert all(reason.strip() for _capabilities, reason in DYNAMIC_IMPORT_OWNERS.values())
+
+
+def test_dynamic_import_ownership_rejects_extra_capability_in_owned_file(tmp_path: Path) -> None:
+    owned_path = PACKAGE_ROOT / "memory_plane" / "file_lock.py"
+    source_path = tmp_path / "file_lock.py"
+    source_path.write_text(
+        "from importlib import import_module\n"
+        "import_module('msvcrt')\n"
+        "eval('1 + 1')\n"
+    )
+
+    original_owner = DYNAMIC_IMPORT_OWNERS[owned_path]
+    DYNAMIC_IMPORT_OWNERS[source_path] = original_owner
+    try:
+        violations = _dynamic_import_ownership_violations([source_path])
+    finally:
+        del DYNAMIC_IMPORT_OWNERS[source_path]
+
+    assert violations == {source_path: {"importlib", "eval"}}
+
+
+def test_dynamic_import_ownership_rejects_qualified_builtins_eval_and_exec(tmp_path: Path) -> None:
+    for import_statement, receiver in (("import builtins", "builtins"), ("import builtins as b", "b")):
+        for capability in ("eval", "exec"):
+            source_path = tmp_path / f"{receiver}_{capability}.py"
+            source_path.write_text(f"{import_statement}\n{receiver}.{capability}('1 + 1')\n")
+
+            DYNAMIC_IMPORT_OWNERS[source_path] = (frozenset({"builtins"}), "test-only owner")
+            try:
+                violations = _dynamic_import_ownership_violations([source_path])
+            finally:
+                del DYNAMIC_IMPORT_OWNERS[source_path]
+
+            assert violations == {source_path: {"builtins", capability}}
+
+
+def test_dynamic_import_capabilities_recognize_installed_entry_point_load(tmp_path: Path) -> None:
+    source_path = tmp_path / "entry_points.py"
+    source_path.write_text(
+        "from importlib.metadata import entry_points\n"
+        "installed = tuple(entry_points(group='memorii.bootstrap'))\n"
+        "installed[0].load()\n"
+    )
+
+    assert _dynamic_import_capabilities(source_path) == {"importlib.metadata.EntryPoint.load"}
 
 
 def test_source_does_not_import_cross_module_private_symbols() -> None:

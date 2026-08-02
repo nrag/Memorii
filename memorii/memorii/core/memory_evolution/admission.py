@@ -71,20 +71,6 @@ class PreparedSourceAdmission(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-def required_scopes_for_record(record: CanonicalMemoryRecord, *, tenant_partition_id: str) -> RequiredOutcomeScopeSet:
-    """Derive all represented scopes from the retained source, never caller claims."""
-
-    scopes = {
-        f"session:{record.session_id}" if record.session_id is not None else None,
-        f"task:{record.task_id}" if record.task_id is not None else None,
-        f"user:{record.user_id}" if record.user_id is not None else None,
-    }
-    return RequiredOutcomeScopeSet.create(
-        tenant_partition_id=tenant_partition_id,
-        scopes={scope for scope in scopes if scope is not None},
-    )
-
-
 class GovernedSourceAdmissionService:
     """Owns the small M1 admission index and its authorization-before-result rule."""
 
@@ -111,15 +97,10 @@ class GovernedSourceAdmissionService:
         _validate_governed_source(source)
         if delivery_identity.delivery_principal_binding_digest != ingress.delivery_principal_binding.binding_digest:
             raise ValueError("authenticated principal does not own delivery identity")
-        required = (
-            RequiredOutcomeScopeSet.create(
-                tenant_partition_id=ingress.delivery_principal_binding.tenant_partition_id, scopes=()
-            )
-            if evidence_only
-            else required_scopes_for_record(
-                source, tenant_partition_id=ingress.delivery_principal_binding.tenant_partition_id
-            )
-        )
+        # Required scopes are an authenticated host-governance assertion.  Do
+        # not derive them from mutable/public provider-event metadata and do
+        # not erase them for evidence-only outcomes.
+        required = ingress.required_outcome_scopes
         if not set(required.scopes).issubset(ingress.current_authorized_scopes.scopes):
             raise ValueError("authenticated scope coverage is incomplete")
         source_digest = source_admission_source_digest(source)
@@ -233,15 +214,7 @@ class GovernedSourceAdmissionService:
         _validate_governed_source(source)
         if delivery_identity.delivery_principal_binding_digest != ingress.delivery_principal_binding.binding_digest:
             raise ValueError("authenticated principal does not own delivery identity")
-        required = (
-            RequiredOutcomeScopeSet.create(
-                tenant_partition_id=ingress.delivery_principal_binding.tenant_partition_id, scopes=()
-            )
-            if evidence_only
-            else required_scopes_for_record(
-                source, tenant_partition_id=ingress.delivery_principal_binding.tenant_partition_id
-            )
-        )
+        required = ingress.required_outcome_scopes
         if not set(required.scopes).issubset(ingress.current_authorized_scopes.scopes):
             raise ValueError("authenticated scope coverage is incomplete")
         source_digest = source_admission_source_digest(source)

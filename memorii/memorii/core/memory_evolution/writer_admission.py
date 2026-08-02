@@ -521,8 +521,10 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic control binding is corrupt") from exc
         if binding != self._admissions.commit_binding(current_admission):
             raise SemanticWriterAdmissionError("governed semantic control binding is mismatched")
-        operation_fence = OperationFenceBinding.model_validate(controls[0].content["control"]["operation_fence"])
-        control_id = f"semantic_ingestion:operation:{operation_fence.operation_id}"
+        control_body = controls[0].content["control"]
+        operation_fence = OperationFenceBinding.model_validate(control_body["operation_fence"])
+        operation_namespace = control_body.get("persistence_namespace_id") or operation_fence.operation_id
+        control_id = f"semantic_ingestion:operation:{operation_namespace}"
         prior_control = next((record for record in current if record.memory_id == control_id), None)
         if prior_control is None:
             if current_record.content.get("draining", False):
@@ -531,7 +533,7 @@ class SemanticGovernedWritePolicy:
                 record for record in governed
                 if record.source_kind.startswith("semantic_ingestion_preplanning")
             ]
-            _validate_initial_preplanning_generation(preplanning, controls[0], operation_fence)
+            _validate_initial_preplanning_generation(preplanning, controls[0], operation_fence, operation_namespace)
             admission_records = [record for record in governed if record not in preplanning]
             if admission_records:
                 _validate_atomic_admission_records(admission_records, operation_fence, binding)
@@ -540,13 +542,13 @@ class SemanticGovernedWritePolicy:
             record
             for record in current
             if record.memory_id == control_id
-            or record.memory_id.startswith(f"semantic_ingestion:artifact:{operation_fence.operation_id}:")
+            or record.memory_id.startswith(f"semantic_ingestion:artifact:{operation_namespace}:")
         ]
-        _validate_initial_preplanning_generation(current_generation, prior_control, operation_fence)
+        _validate_initial_preplanning_generation(current_generation, prior_control, operation_fence, operation_namespace)
         if len(governed) == 1 and controls[0].memory_id == control_id:
             return
         generation_records = [record for record in governed if record.memory_id.startswith(
-            f"semantic_ingestion:generation:{operation_fence.operation_id}:"
+            f"semantic_ingestion:generation:{operation_namespace}:"
         )]
         if len(generation_records) != len(governed) - 1:
             raise SemanticWriterAdmissionError("generation contains cross-operation governed records")
@@ -578,8 +580,8 @@ def _validate_initial_preplanning_generation(
     records: list[CanonicalMemoryRecord],
     control: CanonicalMemoryRecord,
     fence: OperationFenceBinding,
+    operation_namespace: str,
 ) -> None:
-    operation_id = fence.operation_id
     introduction = encode_typed_value(
         {
             "kind": "operation_introduction",
@@ -608,7 +610,7 @@ def _validate_initial_preplanning_generation(
         }
     )
     expected_artifacts = {
-        f"semantic_ingestion:artifact:{operation_id}:{kind}": (
+        f"semantic_ingestion:artifact:{operation_namespace}:{kind}": (
             f"preplanning_{kind}",
             value,
         )
@@ -618,7 +620,7 @@ def _validate_initial_preplanning_generation(
             ("closure", closure),
         )
     }
-    expected_ids = {f"semantic_ingestion:operation:{operation_id}", *expected_artifacts}
+    expected_ids = {f"semantic_ingestion:operation:{operation_namespace}", *expected_artifacts}
     if {record.memory_id for record in records} != expected_ids:
         raise SemanticWriterAdmissionError("preplanning generation membership is incomplete")
     for record in records:
