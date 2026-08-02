@@ -16,7 +16,7 @@ def build_provider_memory_service_from_env(
     work_state_service: WorkStateService | None = None,
     decision_state_service: DecisionStateService | None | object = _DEFAULT_DECISION_STATE_SERVICE,
 ) -> ProviderMemoryService:
-    """Build the source-only M1 provider composition without ambient model dependencies."""
+    """Build the source-only governed-source admission provider composition without ambient model dependencies."""
 
     return ProviderMemoryService(
         memory_plane=memory_plane,

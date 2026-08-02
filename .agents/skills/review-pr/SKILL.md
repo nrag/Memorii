@@ -34,7 +34,9 @@ trusting the PR description or milestone ledger alone.
 
 Identify intended behavior and non-goals; public, persisted, security,
 compatibility, migration, rollback, and operational effects; generated-artifact
-authority; unrelated or unexplained changes; and overstated evidence maturity.
+authority; unrelated or unexplained changes; overstated evidence maturity; and
+the complete `.agents/PLANS.md` identity ledger for every changed durable
+surface.
 
 ## 3. Review The Complete PR
 
@@ -52,6 +54,15 @@ justify why it is mainstream or important.
 Reconcile every finding as confirmed, duplicate, unsupported, already
 resolved, accepted limitation, design ambiguity, or blocked by missing
 evidence. Reviewer silence is not approval evidence.
+
+Independently scan the complete diff and current affected families for planning/
+evidence coordinates in files, symbols, public or persisted IDs, tests, fixtures,
+generators, goldens, registries, diagnostics, commands, evidence groups, timing
+data, and workflow labels. Verify exact typed traceability/migration exceptions
+and require the field-aware gate plus representative mutations. Classify a
+violation as `identity-governance`, `Not applicable`, `changes_required`, and
+`contract_conformance_action` unless product impact independently supports
+P1/P2.
 
 ## 4. Verify CI And Revision Parity
 
@@ -114,7 +125,8 @@ Report findings first, then exactly one decision:
 - `approve`: no confirmed P1/P2, `blocks_approval`, or `changes_required`
   finding remains; every required check and aggregate passes on its actual
   current executed ref; every applicable acceptance gate has revision-bound
-  evidence
+  evidence; the identity ledger, exact exceptions, and field-aware gate are
+  complete
 - `changes_required`: determinate corrections or evidence actions remain
 - `blocked`: approval needs an external decision, unavailable evidence, access,
   or resolution of a source-of-truth conflict

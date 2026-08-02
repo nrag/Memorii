@@ -2332,7 +2332,7 @@
     "tests/unit/tools/test_static_tooling_config.py::test_ruff_config_is_correctness_oriented": 0.001529,
     "tests/unit/tools/test_static_tooling_config.py::test_runtime_dry_runs_separate_plumbing_from_semantic_quality_gates": 0.043511,
     "tests/unit/tools/test_static_tooling_config.py::test_scheduled_workflow_requires_manual_live_certification_and_opt_in_scheduled_runs": 0.021712,
-    "tests/unit/tools/test_static_tooling_config.py::test_test_symbols_use_behavioral_names_instead_of_requirement_or_milestone_ids": 0.005135,
+    "tests/unit/tools/test_static_tooling_config.py::test_test_symbols_use_behavioral_names": 0.005135,
     "tests/unit/tools/test_test_shards.py::test_config_and_manifest_fail_closed_for_invalid_shapes": 0.003871,
     "tests/unit/tools/test_test_shards.py::test_duration_balancing_is_deterministic_complete_and_disjoint": 0.000905,
     "tests/unit/tools/test_test_shards.py::test_timing_evidence_requires_every_disjoint_shard_and_current_plan": 0.005806,

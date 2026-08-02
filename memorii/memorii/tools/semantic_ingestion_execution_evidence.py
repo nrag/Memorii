@@ -1,4 +1,4 @@
-"""Trusted, revision-bound execution-evidence verification for SIA-R03.
+"""Trusted, revision-bound execution-evidence verification for normative traceability approval.
 
 The verifier is deliberately separate from structural extraction.  Parser
 agreement is accepted only as a precondition and cannot make execution pass.

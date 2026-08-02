@@ -120,6 +120,10 @@ jobs:
         working-directory: memorii
         run: ruff check memorii tests
 
+      - name: Verify behavioral identity hygiene
+        working-directory: memorii
+        run: python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json
+
       - name: Run Pyright
         working-directory: memorii
         run: pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
@@ -332,7 +336,7 @@ jobs:
           tests/unit/tools/test_generation_closure_exactness.py
           -p no:cacheprovider
 
-      - name: Verify exact M3 collection count
+      - name: Verify exact semantic ingestion collection count
         working-directory: memorii
         run: |
           observed="$(pytest --collect-only -q \
@@ -342,7 +346,7 @@ jobs:
             -p no:cacheprovider | tail -n 1)"
           [[ "$observed" == "266 tests collected in "* ]]
 
-      - name: Run exact M3 integration and process closure
+      - name: Run exact semantic ingestion integration and process closure
         working-directory: memorii
         run: >-
           pytest -W error

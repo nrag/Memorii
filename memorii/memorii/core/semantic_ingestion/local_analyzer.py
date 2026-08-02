@@ -1,4 +1,4 @@
-"""Deterministic local M3 proposal and independent source analysis."""
+"""Deterministic local semantic ingestion proposal and independent source analysis."""
 
 from __future__ import annotations
 
@@ -40,9 +40,9 @@ class ProductionLocalSemanticAnalyzer:
         r"(?P<object>[A-Za-z][A-Za-z0-9 _'&.-]*?)\.\Z"
     )
     _PREDICATES = {"works for": "works_for", "owner is": "owner_is"}
-    _PRIMARY_FINGERPRINT = sha256(b"memorii.m3.local-analyzer.primary.v1").hexdigest()
+    _PRIMARY_FINGERPRINT = sha256(b"memorii.semantic-ingestion.local-analyzer.primary.v1").hexdigest()
     _CORROBORATING_FINGERPRINT = sha256(
-        b"memorii.m3.local-analyzer.corroborating.v1"
+        b"memorii.semantic-ingestion.local-analyzer.corroborating.v1"
     ).hexdigest()
 
     def propose(
@@ -56,7 +56,7 @@ class ProductionLocalSemanticAnalyzer:
             return ()
         predicate_id = self._PREDICATES[match.group("relation")]
         candidate_id = contract_digest(
-            b"memorii.m3.local-candidate-id.v1",
+            b"memorii.semantic-ingestion.local-candidate-id.v1",
             {"source_digest": source_digest, "predicate_id": predicate_id},
         )
         return (
@@ -117,7 +117,7 @@ class ProductionLocalSemanticAnalyzer:
             temporal_candidates = (
                 TemporalEvidenceCandidate.create(
                     candidate_id=contract_digest(
-                        b"memorii.m3.local-source-interval-candidate-id.v1",
+                        b"memorii.semantic-ingestion.local-source-interval-candidate-id.v1",
                         source_interval_evidence.evidence_digest,
                     ),
                     kind="authenticated_source_interval",
@@ -135,7 +135,7 @@ class ProductionLocalSemanticAnalyzer:
         temporal = SourceTemporalEvidenceSet(
             **temporal_body,
             attachment_consensus_digest=contract_digest(
-                b"memorii.m3.local-temporal-attachment-consensus.v1", temporal_body
+                b"memorii.semantic-ingestion.local-temporal-attachment-consensus.v1", temporal_body
             ),
         )
         return IndependentSourceAnalysis.create(

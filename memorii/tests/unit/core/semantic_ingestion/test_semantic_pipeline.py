@@ -97,7 +97,7 @@ class RotateBeforeSeal(Authorization):
             return SemanticAuthorizationReadSet(
                 **body,
                 read_set_digest=contract_digest(
-                    b"memorii.m3.authorization-read-set.v1", body
+                    b"memorii.semantic-ingestion.authorization-read-set.v1", body
                 ),
             )
         return read_set

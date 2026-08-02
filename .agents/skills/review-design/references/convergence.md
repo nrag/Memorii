@@ -82,6 +82,10 @@ least one finding through the product-impact remediation gate in
 `.agents/PLANS.md`. A round that finds only P3, unsupported, evidence-maturity,
 documentation, or governance observations closes without product edits.
 
+A determinate `contract_conformance_action` is not a product-remediation round.
+Complete it in a bounded delta even when no P1/P2 defect exists. An unresolved
+`changes_required` conformance finding prevents approval.
+
 Required evidence work is bounded by the validation matrix frozen before
 implementation or review. Do not recursively enlarge that matrix merely
 because a reviewer can propose another negative case.

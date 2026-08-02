@@ -190,7 +190,7 @@ def _verified_runtime_store(plane: MemoryPlaneService | None = None):
         current = writers.current()
     except ValueError:
         current = writers.create_initial_evidence_only(
-            admission_id="m3",
+            admission_id="semantic-ingestion",
             writer_implementation_fingerprint="writer",
             graph_schema_fingerprint="schema",
         )
@@ -200,7 +200,7 @@ def _verified_runtime_store(plane: MemoryPlaneService | None = None):
         )
     binding = writers.commit_binding(current)
     plan = build_migration_plan(
-        migration_plan_id="m3:verified", source_writer_epoch=1,
+        migration_plan_id="semantic-ingestion:verified", source_writer_epoch=1,
         legacy_snapshot_token=sha256(encode_typed_value(())).hexdigest(), entries=(),
     )
     checkpoint_values = {
@@ -212,10 +212,10 @@ def _verified_runtime_store(plane: MemoryPlaneService | None = None):
         checkpoint_digest=sha256(encode_typed_value(checkpoint_values)).hexdigest(),
     )
     certificate = certify_migration(
-        plan, checkpoint, independent_verifier_fingerprint="m3-verifier"
+        plan, checkpoint, independent_verifier_fingerprint="semantic-ingestion-verifier"
     )
     writers.transition(
-        expected=binding, admission_id="m3:verified", runtime_mode="verified_semantic",
+        expected=binding, admission_id="semantic-ingestion:verified", runtime_mode="verified_semantic",
         writer_implementation_fingerprint="writer:verified", graph_schema_fingerprint="schema",
         migration_activation=activate_migration(plan, certificate), migration_plan=plan,
         migration_checkpoint=checkpoint, migration_certificate=certificate, target_records=(),
@@ -490,7 +490,7 @@ class _AuthorizationVerifier:
         return SemanticIngestionRuntimeAuthorization(
             **body,
             decision_digest=contract_digest(
-                b"memorii.m3.verified-deployment-authorization.v1", body
+                b"memorii.semantic-ingestion.verified-deployment-authorization.v1", body
             ),
         )
 
@@ -544,7 +544,7 @@ def test_normal_provider_root_reaches_allowed_transport_once_and_terminalizes() 
         service = ProviderMemoryService(memory_plane=MemoryPlaneService())
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
-        operation_id="m3-normal", task_id="task:one", user_id="user:alice",
+        operation_id="semantic-ingestion-normal", task_id="task:one", user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
@@ -567,7 +567,7 @@ def test_external_deployment_authorization_failure_is_zero_wire(mode: str) -> No
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id=f"m3-authorization-{mode}",
+        operation_id=f"semantic-ingestion-authorization-{mode}",
         task_id="task:one",
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
@@ -625,7 +625,7 @@ def test_public_coordinator_rejects_every_egress_authority_mutation_without_wire
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id=f"m3-egress-{mode}",
+        operation_id=f"semantic-ingestion-egress-{mode}",
         task_id="task:one",
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
@@ -660,7 +660,7 @@ def test_hermes_and_filesystem_roots_use_the_same_semantic_pipeline(tmp_path) ->
     ):
         hermes = HermesMemoryProvider(ProviderMemoryService())
     hermes.sync_turn(
-        "Atlas owner is Bob.", "Receipt is confirmed.", operation_id="m3-hermes",
+        "Atlas owner is Bob.", "Receipt is confirmed.", operation_id="semantic-ingestion-hermes",
         task_id="task:one", user_id="user:alice", authenticated_host_ingress=_host_ingress(),
     )
     assert len(direct_transport.requests) == 2
@@ -670,10 +670,10 @@ def test_hermes_and_filesystem_roots_use_the_same_semantic_pipeline(tmp_path) ->
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(fs_capability),),
     ):
-        filesystem = build_filesystem_provider(tmp_path / "m3-filesystem")
+        filesystem = build_filesystem_provider(tmp_path / "semantic-ingestion-filesystem")
     filesystem.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
-        operation_id="m3-filesystem", task_id="task:one", user_id="user:alice",
+        operation_id="semantic-ingestion-filesystem", task_id="task:one", user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
     assert len(fs_transport.requests) == 1
@@ -681,7 +681,7 @@ def test_hermes_and_filesystem_roots_use_the_same_semantic_pipeline(tmp_path) ->
 
 def test_normal_provider_accepted_control_commits_complete_effect_group() -> None:
     plane, writers, store = _verified_runtime_store()
-    delivery_id = "m3-accepted"
+    delivery_id = "semantic-ingestion-accepted"
     transport, capability = _dependencies(writer_admission=writers, atomic_store=store)
     with patch(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
@@ -719,7 +719,7 @@ def test_ordinary_provider_root_uses_production_local_analyzer_without_wire() ->
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id="m3-local-production",
+        operation_id="semantic-ingestion-local-production",
         task_id="task:one",
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
@@ -755,7 +755,7 @@ def test_public_jsonl_reconcile_resumes_preplanning_outage_without_redelivery(
     failed_service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id=f"m3-reconcile-{stage}",
+        operation_id=f"semantic-ingestion-reconcile-{stage}",
         task_id="task:one",
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
@@ -815,7 +815,7 @@ def test_jsonl_recovery_authority_change_is_zero_learned_calls(
     failed_service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id=f"m3-recovery-{mutation}",
+        operation_id=f"semantic-ingestion-recovery-{mutation}",
         task_id="task:one",
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
@@ -900,7 +900,7 @@ def test_foreign_recovery_plan_is_rejected_before_lease_or_learned_calls(tmp_pat
     foreign_service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id="m3-foreign-plan-source",
+        operation_id="semantic-ingestion-foreign-plan-source",
         task_id="task:one",
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
@@ -935,7 +935,7 @@ def test_foreign_recovery_plan_is_rejected_before_lease_or_learned_calls(tmp_pat
     target_service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id="m3-foreign-plan-target",
+        operation_id="semantic-ingestion-foreign-plan-target",
         task_id="task:one",
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
@@ -985,7 +985,7 @@ def test_identical_redelivery_after_authority_rotation_reuses_plan_without_calls
     event_kwargs = {
         "operation": ProviderOperation.CHAT_USER_TURN,
         "content": "Atlas owner is Bob.",
-        "operation_id": "m3-identical-redelivery-rotation",
+        "operation_id": "semantic-ingestion-identical-redelivery-rotation",
         "task_id": "task:one",
         "user_id": "user:alice",
         "authenticated_host_ingress": _host_ingress(),
@@ -1062,7 +1062,7 @@ def test_public_reconcile_persists_retry_exhaustion_within_attempt_budget(tmp_pa
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id="m3-retry-exhaustion",
+        operation_id="semantic-ingestion-retry-exhaustion",
         task_id="task:one",
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
@@ -1128,7 +1128,7 @@ def test_public_jsonl_lost_ack_reopens_without_duplicate_effects(
         return service.sync_event(
             operation=ProviderOperation.CHAT_USER_TURN,
             content="Atlas owner is Bob.",
-            operation_id=f"m3-lost-ack-{boundary}",
+            operation_id=f"semantic-ingestion-lost-ack-{boundary}",
             task_id="task:one",
             user_id="user:alice",
             authenticated_host_ingress=_host_ingress(),
@@ -1187,7 +1187,7 @@ def test_public_jsonl_service_matches_frozen_wire_and_member_bytes_across_reopen
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
-        operation_id="m3-frozen-public-integration",
+        operation_id="semantic-ingestion-frozen-public-integration",
         task_id="task:one",
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
@@ -1203,14 +1203,14 @@ def test_public_jsonl_service_matches_frozen_wire_and_member_bytes_across_reopen
         },
     }
     assert observed == {
-        "wire": "120162666e97f941eccce46d4db1133bb3709d9eb5dec81b48c9c63ccc745890",
-        "terminal_artifact": "646644a961c15cf9797053f27143e46597d449a0114734a04b98b2ca9e6fc8a8",
-        "graph_delta": "d9c8dc7d3e9883e7261a7cf9cb65e1bde7e4dcef026fb1253ee53c80ffbf3850",
-        "event_batch": "98792f5c77f176da9a1f966f997f56e9201cf90d3a55166be67fe13f4314b9ad",
-        "source_result": "646644a961c15cf9797053f27143e46597d449a0114734a04b98b2ca9e6fc8a8",
+        "wire": "8e03752bbf05c9e9e148a28f1dd2b7d61a69719d9c9022c59cdeda516bee04cc",
+        "terminal_artifact": "9da9ff3ff76bf677cee67b8ee00d0dd3d0eddb1b9a70711c6498284f2c430af4",
+        "graph_delta": "20f7fb17c59267e24b09ea910a40edfaf2d57748a399c6e2f253e92f8b47445e",
+        "event_batch": "26df9ffe1713caa5e05a58dbab51fa92fd2a5b98ed22126e479161390bb303c4",
+        "source_result": "9da9ff3ff76bf677cee67b8ee00d0dd3d0eddb1b9a70711c6498284f2c430af4",
     }
     before = (storage / "memory_records.jsonl").read_bytes()
-    assert sha256(before).hexdigest() == "d887e9f7bd0959a847755a4f132d975f573314e01a83b7eb2c611de716452f86"
+    assert sha256(before).hexdigest() == "dd49f76cb43b13f905576300265e9eeac6bb292e2e858ef8e468a49a8e8ce66e"
     member_map = tuple(sorted(
         (
             int(record.memory_id.rsplit(":", 2)[1]),
@@ -1222,33 +1222,33 @@ def test_public_jsonl_service_matches_frozen_wire_and_member_bytes_across_reopen
         if record.source_kind == "semantic_ingestion_generation_member"
     ))
     assert member_map == (
-        (2, "m3-00-execution-plan", "execution_plan", "805626e0ae8be054d0ac577d7530abc31c6fe3aead1b999461a4849420b9de2d"),
-        (2, "m3-01-progress", "progress", "ccfc9a09532897c40f7780d3c85e815619a4cfeb00cdc35f6242ff597de60efd"),
-        (3, "m3-00-progress", "progress", "7f4ef9eea9a9ca9eb9fd660e7aa28ecb958651d9a91646bba9292ddb0c216e96"),
-        (4, "m3-00-progress", "progress", "d3fc94729e4ad04a46dbcc0c98f2b027a1c740bb95e0bc8b38bf7c41cde5c52f"),
-        (5, "m3-00-progress", "progress", "da5a75d2a010c35f0b33bcad7bf922da09769bf4fe78edc86e0027286621e413"),
-        (6, "m3-00-artifact_closure", "artifact_closure", "5bf8eb60e32cfc1debdbbe2bb4b580b2103590aa01ed4bfe0d40b3b938b17512"),
-        (6, "m3-01-artifact_index", "artifact_index", "2e8a574deb4571802f6dc76ac8189a8a720e599887ea1184a5002a49593890c2"),
-        (6, "m3-02-authorization_read_set", "authorization_read_set", "eeed9cb4ae26f228a2d3f1fde313764e1b49f475d20a1a358faa6d9469814b83"),
-        (6, "m3-03-independence_certificate", "independence_certificate", "f72fffe185ac9b45cd264093d3e513986b4433f2ceca4b72209f2f304f0a9bb2"),
-        (6, "m3-04-lifecycle", "lifecycle", "f263397a1e8d803d9d8f330b0c25c139c6f01c45de460c0c98466ef91cc48a64"),
-        (6, "m3-05-plan", "plan", "4e3c151038b669cf00418c878cb5c3bd476f2705908e7955a25286544a65a15d"),
-        (6, "m3-06-planning_artifact", "planning_artifact", "28cbb486149eb71bdb37429e04031d5910c4aa45457b497a29f3bf4e68b804f4"),
-        (6, "m3-07-planning_authorization", "planning_authorization", "47688a7c0251c87dfd9666fb4f23aa31c005586986aa1169fedc9daaf594fcb5"),
-        (6, "m3-08-progress", "progress", "f18f02c6765951748de166872ce4459550e6aa439fe3fa8f37a05634c58c6d1e"),
-        (6, "m3-09-terminal_artifact", "terminal_artifact", "646644a961c15cf9797053f27143e46597d449a0114734a04b98b2ca9e6fc8a8"),
-        (7, "m3-00-artifact_closure", "artifact_closure", "5bf8eb60e32cfc1debdbbe2bb4b580b2103590aa01ed4bfe0d40b3b938b17512"),
-        (7, "m3-01-artifact_index", "artifact_index", "2e8a574deb4571802f6dc76ac8189a8a720e599887ea1184a5002a49593890c2"),
-        (7, "m3-02-event_batch", "event_batch", "98792f5c77f176da9a1f966f997f56e9201cf90d3a55166be67fe13f4314b9ad"),
-        (7, "m3-03-graph_delta", "graph_delta", "d9c8dc7d3e9883e7261a7cf9cb65e1bde7e4dcef026fb1253ee53c80ffbf3850"),
-        (7, "m3-04-group_result", "group_result", "5898509986686a56c0704baaa5e9a47b80a89f90cfe3702e69dcc5d6435a6dce"),
-        (7, "m3-05-observation_delta", "observation_delta", "fe7d723f7f4f3af606f7cc6e04df914a9d1687b497f040dfde407a09f57d654b"),
-        (8, "m3-00-artifact_closure", "artifact_closure", "5bf8eb60e32cfc1debdbbe2bb4b580b2103590aa01ed4bfe0d40b3b938b17512"),
-        (8, "m3-01-lifecycle", "lifecycle", "afa311ec7a0dfaa33dc55682f517c1d5701dc64307df682b4eb35db7ac366c8e"),
-        (8, "m3-02-observation_delta", "observation_delta", "fe7d723f7f4f3af606f7cc6e04df914a9d1687b497f040dfde407a09f57d654b"),
-        (8, "m3-03-source_result", "source_result", "646644a961c15cf9797053f27143e46597d449a0114734a04b98b2ca9e6fc8a8"),
-        (8, "m3-04-source_summary", "source_summary", "d9f0d986851fd141b630398cf2efa11938e663e830e67a6ed64cd245c0f79cba"),
-        (8, "m3-05-terminal_operation", "terminal_operation", "2515193e844734b68fdbba7faa70f1f387e40b2bdf14e2473709021fb74143c1"),
+        (2, "semantic-ingestion-00-execution-plan", "execution_plan", "a2ed8ca9803b8afae911a11095d584e3554dd16b0283b4cabef8f0d3ee987104"),
+        (2, "semantic-ingestion-01-progress", "progress", "4c95242d0caaee421ba7178d667cbb803c391dee1e6dc6ad29ea0e3aa3eb848f"),
+        (3, "semantic-ingestion-00-progress", "progress", "0f477604f49db7f105a449f045598c3f42f7bec117daf58d81cb03505ea4d190"),
+        (4, "semantic-ingestion-00-progress", "progress", "8da79dc10c9e6df74d4d5c413264ac280d3ad1133728145f29c71a37ddf38c44"),
+        (5, "semantic-ingestion-00-progress", "progress", "2133a5f69794d65b86f288402e6766b397300c354cd8d791d7486261c562e2cb"),
+        (6, "semantic-ingestion-00-artifact_closure", "artifact_closure", "e34c1f606798ec0201fd9f488280f6b354a0132b2174b5ed1cfb66f81b5c0952"),
+        (6, "semantic-ingestion-01-artifact_index", "artifact_index", "031f23edf34997cd120d1891256541ae46c68a37ef3b3e4b48ffa36fcfdd24ce"),
+        (6, "semantic-ingestion-02-authorization_read_set", "authorization_read_set", "5d202114c60a3289be781407eca3cc02e36e4b9c31e5ceffcb3e1dcb01d4ec85"),
+        (6, "semantic-ingestion-03-independence_certificate", "independence_certificate", "97046c95bdfa978d1f2534ab7b432ec78755d2833a96313bb783a7484ced2b7c"),
+        (6, "semantic-ingestion-04-lifecycle", "lifecycle", "4117cef643ccd43a83e1cd11c674f940f09d8fda9692a0343c895cc3548a3276"),
+        (6, "semantic-ingestion-05-plan", "plan", "ff80ca93dbc36259d0db85937357940567919fe39050f2fb5e25fbf82b15b157"),
+        (6, "semantic-ingestion-06-planning_artifact", "planning_artifact", "4b1042b420ceb8bb55760f4daa1d271bada8cc54208c7f22644d23ac75232e75"),
+        (6, "semantic-ingestion-07-planning_authorization", "planning_authorization", "0634307e12a27b67290b2e6d5e4b7197880153042711ad676485946cdd8e5499"),
+        (6, "semantic-ingestion-08-progress", "progress", "d4fd5b7f43987ffddaf3394fa48b234f78e87cba5784b0301d4a839a900de867"),
+        (6, "semantic-ingestion-09-terminal_artifact", "terminal_artifact", "9da9ff3ff76bf677cee67b8ee00d0dd3d0eddb1b9a70711c6498284f2c430af4"),
+        (7, "semantic-ingestion-00-artifact_closure", "artifact_closure", "e34c1f606798ec0201fd9f488280f6b354a0132b2174b5ed1cfb66f81b5c0952"),
+        (7, "semantic-ingestion-01-artifact_index", "artifact_index", "031f23edf34997cd120d1891256541ae46c68a37ef3b3e4b48ffa36fcfdd24ce"),
+        (7, "semantic-ingestion-02-event_batch", "event_batch", "26df9ffe1713caa5e05a58dbab51fa92fd2a5b98ed22126e479161390bb303c4"),
+        (7, "semantic-ingestion-03-graph_delta", "graph_delta", "20f7fb17c59267e24b09ea910a40edfaf2d57748a399c6e2f253e92f8b47445e"),
+        (7, "semantic-ingestion-04-group_result", "group_result", "1a3b7cbf9fa75831597a577efa4b86319832a9ec79cd948ad115464930a32fd7"),
+        (7, "semantic-ingestion-05-observation_delta", "observation_delta", "e1ea5be8b31968d36c23fb8017c7a9a522b11c9fea57028e4d803455705f6cce"),
+        (8, "semantic-ingestion-00-artifact_closure", "artifact_closure", "e34c1f606798ec0201fd9f488280f6b354a0132b2174b5ed1cfb66f81b5c0952"),
+        (8, "semantic-ingestion-01-lifecycle", "lifecycle", "223a0207d584e5e57bb4474182d159da91e125688a19ef3b380db837a011d401"),
+        (8, "semantic-ingestion-02-observation_delta", "observation_delta", "e1ea5be8b31968d36c23fb8017c7a9a522b11c9fea57028e4d803455705f6cce"),
+        (8, "semantic-ingestion-03-source_result", "source_result", "9da9ff3ff76bf677cee67b8ee00d0dd3d0eddb1b9a70711c6498284f2c430af4"),
+        (8, "semantic-ingestion-04-source_summary", "source_summary", "06395ef84dd81a90b215285746bdf381cb6599b444c5d638eb339743e3077b83"),
+        (8, "semantic-ingestion-05-terminal_operation", "terminal_operation", "0417f12b936b2ecc1c8796acd71c99b9b3d21391b075128ba6e87e97cc226496"),
     )
 
     reopened_plane, reopened_writers, reopened_store = _verified_runtime_store(

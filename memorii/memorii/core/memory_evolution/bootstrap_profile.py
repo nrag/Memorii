@@ -1,7 +1,7 @@
-"""Closed, source-only M1 bootstrap profile contracts.
+"""Closed, source-only governed-source admission bootstrap profile contracts.
 
 Operational trust roots are deliberately supplied by the host boundary; this
-module contains no root, credential, network client, or M2 resource state.
+module contains no root, credential, network client, or writer-safe preplanning resource state.
 """
 
 from __future__ import annotations
@@ -538,7 +538,7 @@ def normalized_input_digest(value: bytes) -> str:
 
 
 def disposition_outcome(case: BootstrapGrammarCorpusCase) -> Literal["selected_pipeline_pending", "unsupported_input", "abstained"]:
-    """Map grammar disposition to the only legal M1 semantic result."""
+    """Map grammar disposition to the only legal governed-source admission semantic result."""
 
     if case.disposition == "supported_form":
         return "selected_pipeline_pending"

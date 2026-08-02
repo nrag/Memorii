@@ -285,7 +285,7 @@ class AuthenticatedSemanticSourceInterval(BaseModel):
 
 
 class AuthenticatedSemanticEgressGovernance(BaseModel):
-    """Host-authenticated, source-classification input for remote M3 use.
+    """Host-authenticated, source-classification input for remote semantic ingestion use.
 
     It intentionally contains no source identity: admission supplies the exact
     retained source bytes/digest, preventing callers from swapping an event

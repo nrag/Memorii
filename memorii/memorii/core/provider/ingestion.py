@@ -28,19 +28,19 @@ from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.runtime_manifest import PromptOwner
 from memorii.core.provider.models import ProviderEvent, ProviderEvolutionOutcome, ProviderSyncResult
 from memorii.core.semantic_ingestion.authorization import (
-    M3AuthorizationAuthorityError,
-    M3AuthorizationAuthorityRepository,
+    SemanticAuthorizationAuthorityError,
+    SemanticAuthorizationAuthorityRepository,
 )
 from memorii.core.semantic_ingestion.capability import AuthorizedSemanticIngestionRuntime
 from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedSourceIntervalEvidence,
     AuthorizationStageSnapshot,
     AuthorizationUsePoint,
-    M3ExecutionRetryPlan,
-    M3RecoveryAuthorityBinding,
     SemanticArbitrationPolicyBundle,
     SemanticAuthorizationReadSet,
     SemanticEgressAuthorizationBinding,
+    SemanticExecutionRetryPlan,
+    SemanticRecoveryAuthorityBinding,
     SourceAuthority,
     SourceAuthorityEvidence,
     TimeInterval,
@@ -51,9 +51,9 @@ from memorii.core.semantic_ingestion.egress import (
     verify_current_egress,
 )
 from memorii.core.semantic_ingestion.persistence import (
-    M3AuthorizationReadSetError,
-    M3LeaseSession,
-    M3TerminalPersistenceService,
+    SemanticAuthorizationReadSetError,
+    SemanticIngestionLeaseSession,
+    SemanticTerminalPersistenceService,
 )
 from memorii.core.semantic_ingestion.pipeline import (
     SemanticAnalysisOutage,
@@ -71,8 +71,8 @@ from memorii.domain.enums import (
 )
 
 
-class _M3PolicyReadOutage(OSError):
-    """A mutable M3 authorization owner is retryably unavailable."""
+class _SemanticPolicyReadOutage(OSError):
+    """A mutable semantic ingestion authorization owner is retryably unavailable."""
 
 
 class _ProviderAuthorizationReadSet:
@@ -89,7 +89,7 @@ class _ProviderAuthorizationReadSet:
         source_id: str,
         source_digest: str,
         now_provider: Callable[[], datetime],
-        authority_repository: M3AuthorizationAuthorityRepository,
+        authority_repository: SemanticAuthorizationAuthorityRepository,
         policy_bundle: SemanticArbitrationPolicyBundle | None = None,
     ) -> None:
         self._runtime = runtime
@@ -118,7 +118,7 @@ class _ProviderAuthorizationReadSet:
                 source_id=self._source_id, source_digest=self._source_digest
             )
         except OSError as exc:
-            raise _M3PolicyReadOutage("semantic policy is unavailable") from exc
+            raise _SemanticPolicyReadOutage("semantic policy is unavailable") from exc
         if current_policy is None or current_policy.arbitration_bundle != policy_bundle:
             return None
         self._policy_bundle = policy_bundle
@@ -140,7 +140,7 @@ class _ProviderAuthorizationReadSet:
                 server_time=server_now,
             )
         except OSError as exc:
-            raise _M3PolicyReadOutage("deployment authorization is unavailable") from exc
+            raise _SemanticPolicyReadOutage("deployment authorization is unavailable") from exc
         if deployment is None:
             return None
         current_egress = None
@@ -180,7 +180,7 @@ class _ProviderAuthorizationReadSet:
                 valid_until=valid_until,
                 server_now=server_now,
             )
-        except M3AuthorizationAuthorityError:
+        except SemanticAuthorizationAuthorityError:
             return None
         return AuthorizationStageSnapshot.create(
             use_point=use_point,
@@ -253,12 +253,12 @@ class ProviderIngestionCoordinator:
             semantic_runtime.local_proposal_producer if semantic_runtime is not None else None
         )
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
-        self._authorization_repository = M3AuthorizationAuthorityRepository(
+        self._authorization_repository = SemanticAuthorizationAuthorityRepository(
             atomic_store=atomic_store,
             writer_binding_provider=self._current_writer_binding,
             now_provider=self._now_provider,
         )
-        self._semantic_terminal_persistence = M3TerminalPersistenceService(
+        self._semantic_terminal_persistence = SemanticTerminalPersistenceService(
             atomic_store=atomic_store,
             writer_binding_provider=self._current_writer_binding,
             authorization_repository=self._authorization_repository,
@@ -275,7 +275,7 @@ class ProviderIngestionCoordinator:
         metadata_poor = event.operation.value in {"session_end", "pre_compress"}
         if metadata_poor:
             # Metadata-poor events are evidence-only, but still require the
-            # same authenticated governed-admission boundary as every M1 input.
+            # same authenticated governed-admission boundary as every governed-source admission input.
             if authenticated_ingress is None:
                 return (
                     result.model_copy(update={"transcript_ids": [], "candidate_ids": [], "allowed_candidate_domains": [], "blocked_reasons": {**result.blocked_reasons, "semantic_ingestion": "ingress_unavailable"}}),
@@ -411,7 +411,7 @@ class ProviderIngestionCoordinator:
                             fence=fence,
                             lease_session=lease_session,
                         )
-                    except _M3PolicyReadOutage:
+                    except _SemanticPolicyReadOutage:
                         authority_prepared = False
                     if not authority_prepared:
                         return (result.model_copy(update={
@@ -432,7 +432,7 @@ class ProviderIngestionCoordinator:
                         ),
                     )
                     if recovered_terminal is not None
-                    else self._run_m3(
+                    else self._run_semantic_ingestion(
                         operation_id=execution_plan.operation_id,
                         source_id=execution_plan.source_id,
                         source_digest=execution_plan.source_digest,
@@ -450,7 +450,7 @@ class ProviderIngestionCoordinator:
                         None,
                     )
                 )
-            except _M3PolicyReadOutage:
+            except _SemanticPolicyReadOutage:
                 lease_session.checkpoint_retryable(
                     stage="policy_read", failure_kind="policy_outage",
                 )
@@ -500,18 +500,18 @@ class ProviderIngestionCoordinator:
                 )
             terminal, authorization_guard = terminal_with_guard
             try:
-                self._persist_m3_terminal(
+                self._persist_semantic_terminal(
                     fence,
                     terminal,
                     authorization_guard=authorization_guard,
                 )
-            except M3AuthorizationReadSetError:
+            except SemanticAuthorizationReadSetError:
                 lease_session.checkpoint_retryable(
                     stage="group",
                     failure_kind="policy_outage",
                     terminal=terminal,
                 )
-            except _M3PolicyReadOutage:
+            except _SemanticPolicyReadOutage:
                 lease_session.checkpoint_retryable(
                     stage="group",
                     failure_kind="policy_outage",
@@ -563,7 +563,7 @@ class ProviderIngestionCoordinator:
                         fence=control.operation_fence,
                         lease_session=lease_session,
                     )
-                except _M3PolicyReadOutage:
+                except _SemanticPolicyReadOutage:
                     lease_session.checkpoint_retryable(
                         stage="policy_read", failure_kind="policy_outage"
                     )
@@ -573,7 +573,7 @@ class ProviderIngestionCoordinator:
                     outcomes.append(self._retryable_outcome(control))
                     continue
                 try:
-                    terminal, guard = self._run_m3(
+                    terminal, guard = self._run_semantic_ingestion(
                         operation_id=plan.operation_id,
                         source_id=plan.source_id,
                         source_digest=plan.source_digest,
@@ -581,7 +581,7 @@ class ProviderIngestionCoordinator:
                         authenticated_ingress=plan.authenticated_ingress,
                         lease_session=lease_session,
                     )
-                except _M3PolicyReadOutage:
+                except _SemanticPolicyReadOutage:
                     lease_session.checkpoint_retryable(
                         stage="policy_read", failure_kind="policy_outage"
                     )
@@ -605,7 +605,7 @@ class ProviderIngestionCoordinator:
                         terminal=terminal,
                         authorization_verifier=guard,
                     )
-                except (M3AuthorizationReadSetError, OSError):
+                except (SemanticAuthorizationReadSetError, OSError):
                     lease_session.checkpoint_retryable(
                         stage="group", failure_kind="policy_outage", terminal=terminal
                     )
@@ -620,7 +620,7 @@ class ProviderIngestionCoordinator:
                     terminal=terminal,
                     authorization_verifier=guard,
                 )
-            except (M3AuthorizationReadSetError, OSError):
+            except (SemanticAuthorizationReadSetError, OSError):
                 outcomes.append(self._retryable_outcome(control))
                 continue
             outcomes.append(self._committed_outcome(control, terminal))
@@ -668,11 +668,11 @@ class ProviderIngestionCoordinator:
         fence: OperationFenceBinding,
         source_text: str,
         authenticated_ingress: AuthenticatedIngressContext,
-    ) -> tuple[M3ExecutionRetryPlan, Literal["verified", "outage", "denied"]]:
+    ) -> tuple[SemanticExecutionRetryPlan, Literal["verified", "outage", "denied"]]:
         runtime = self._semantic_runtime
         profile = self._bootstrap_profile
         if runtime is None or profile is None:
-            raise ValueError("authorized M3 runtime is unavailable for retry planning")
+            raise ValueError("authorized semantic ingestion runtime is unavailable for retry planning")
         state: Literal["verified", "outage", "denied"]
         try:
             deployment = runtime.verify_authorization(
@@ -687,7 +687,7 @@ class ProviderIngestionCoordinator:
             source_id=fence.source_id, source_digest=fence.source_digest
         )
         current_authority = self._atomic_store.authorization_authority(authority_scope_id)
-        plan = M3ExecutionRetryPlan.create(
+        plan = SemanticExecutionRetryPlan.create(
             operation_id=fence.operation_id,
             operation_fence_binding_digest=fence.binding_digest,
             source_id=fence.source_id,
@@ -725,7 +725,7 @@ class ProviderIngestionCoordinator:
     def _validate_execution_plan_source(
         self,
         *,
-        plan: M3ExecutionRetryPlan,
+        plan: SemanticExecutionRetryPlan,
         fence: OperationFenceBinding,
         expected_source_utf8: bytes | None = None,
     ) -> None:
@@ -733,9 +733,9 @@ class ProviderIngestionCoordinator:
         plan.validate_for_fence(fence)
         source = self._memory_plane.get_record(plan.admitted_source_id)
         if source is None or source.text.encode("utf-8") != plan.source_utf8_bytes:
-            raise ValueError("M3 execution retry plan source bytes are unavailable")
+            raise ValueError("semantic ingestion execution retry plan source bytes are unavailable")
         if expected_source_utf8 is not None and expected_source_utf8 != plan.source_utf8_bytes:
-            raise ValueError("M3 redelivery source bytes differ from persisted plan")
+            raise ValueError("semantic ingestion redelivery source bytes differ from persisted plan")
 
     def _authorization_guard_for_terminal(
         self,
@@ -784,12 +784,12 @@ class ProviderIngestionCoordinator:
                     raise
         raise AssertionError("unreachable writer retry loop")
 
-    def _run_m3(
+    def _run_semantic_ingestion(
         self, *, operation_id: str, source_id: str, source_digest: str, source_text: str,
         authenticated_ingress: AuthenticatedIngressContext,
-        lease_session: M3LeaseSession,
+        lease_session: SemanticIngestionLeaseSession,
     ) -> tuple[SemanticTerminalOutcome, _ProviderAuthorizationReadSet | None]:
-        """Invoke M3 only with a current server-owned policy snapshot.
+        """Invoke semantic ingestion only with a current server-owned policy snapshot.
 
         Missing control-plane policy is terminal evidence, never permission to
         serialize a source to a remote transport.
@@ -806,7 +806,7 @@ class ProviderIngestionCoordinator:
                 source_id=source_id, source_digest=source_digest
             )
         except OSError as exc:
-            raise _M3PolicyReadOutage("semantic policy is unavailable") from exc
+            raise _SemanticPolicyReadOutage("semantic policy is unavailable") from exc
         if policy is None:
             return SemanticTerminalOutcome.create(
                 operation_id=operation_id,
@@ -816,7 +816,7 @@ class ProviderIngestionCoordinator:
             ), None
         pipeline = self._semantic_pipeline
         if pipeline is None:
-            raise RuntimeError("M3 pipeline was removed during execution")
+            raise RuntimeError("semantic ingestion pipeline was removed during execution")
         source_evidence = self._authenticated_source_evidence(
             source_id=source_id,
             source_digest=source_digest,
@@ -894,8 +894,8 @@ class ProviderIngestionCoordinator:
         ), authorization_guard
 
     def _prepare_recovery_authority(
-        self, *, plan: M3ExecutionRetryPlan, fence: OperationFenceBinding,
-        lease_session: M3LeaseSession,
+        self, *, plan: SemanticExecutionRetryPlan, fence: OperationFenceBinding,
+        lease_session: SemanticIngestionLeaseSession,
     ) -> bool:
         """Bind exact same-store authority before recovered learned execution."""
         current = self._atomic_store.authorization_authority(
@@ -942,7 +942,7 @@ class ProviderIngestionCoordinator:
                 )
             ):
                 return False
-            binding = M3RecoveryAuthorityBinding.create(
+            binding = SemanticRecoveryAuthorityBinding.create(
                 operation_id=plan.operation_id,
                 plan_digest=plan.plan_digest,
                 authority_scope_id=plan.authorization_authority_scope_id,
@@ -967,7 +967,7 @@ class ProviderIngestionCoordinator:
                 source_id=plan.source_id, source_digest=plan.source_digest
             )
         except OSError as exc:
-            raise _M3PolicyReadOutage("semantic policy is unavailable") from exc
+            raise _SemanticPolicyReadOutage("semantic policy is unavailable") from exc
         if policy is None:
             return False
         egress_binding = (
@@ -997,7 +997,7 @@ class ProviderIngestionCoordinator:
         if snapshot is None:
             return False
         lease_session.checkpoint_recovery_authority_binding(
-            M3RecoveryAuthorityBinding.create(
+            SemanticRecoveryAuthorityBinding.create(
                 operation_id=plan.operation_id,
                 plan_digest=plan.plan_digest,
                 authority_scope_id=plan.authorization_authority_scope_id,
@@ -1023,7 +1023,7 @@ class ProviderIngestionCoordinator:
             source_id=source_id,
             source_digest=source_digest,
             segment_id=sha256(
-                ("memorii.m3.segment.v1:" + source_digest).encode()
+                ("memorii.semantic-ingestion.segment.v1:" + source_digest).encode()
             ).hexdigest(),
             classification=governance.classification,
             provider=governance.provider,
@@ -1033,14 +1033,14 @@ class ProviderIngestionCoordinator:
             training_use=governance.training_use,
         )
 
-    def _persist_m3_terminal(
+    def _persist_semantic_terminal(
         self,
         fence,
         terminal: SemanticTerminalOutcome,
         *,
         authorization_guard: _ProviderAuthorizationReadSet | None,
     ) -> None:
-        """Publish the closed terminal through M3's sole M2 persistence owner."""
+        """Publish the closed terminal through semantic ingestion's sole writer-safe preplanning persistence owner."""
         self._semantic_terminal_persistence.persist(
             fence=fence,
             terminal=terminal,

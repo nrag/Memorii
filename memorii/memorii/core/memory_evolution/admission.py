@@ -1,7 +1,7 @@
-"""M1 governed source admission and non-disclosing outcome access.
+"""governed-source admission governed source admission and non-disclosing outcome access.
 
 This module deliberately stops at source admission.  It does not allocate a
-writer, acquire a lease, or publish a semantic generation; those are M2
+writer, acquire a lease, or publish a semantic generation; those are writer-safe preplanning
 responsibilities.
 """
 
@@ -78,7 +78,7 @@ class PreparedSourceAdmission(BaseModel):
 
 
 class GovernedSourceAdmissionService:
-    """Owns the small M1 admission index and its authorization-before-result rule."""
+    """Owns the small governed-source admission admission index and its authorization-before-result rule."""
 
     def __init__(self, memory_plane: MemoryPlaneService) -> None:
         self._memory_plane = memory_plane
@@ -165,7 +165,7 @@ class GovernedSourceAdmissionService:
                 operation_fence=operation_fence,
             )
         # A single memory-plane batch makes retained evidence and its protected
-        # authorization index visible together.  It is intentionally not an M2
+        # authorization index visible together.  It is intentionally not an writer-safe preplanning
         # semantic generation or writer protocol.
         try:
             with self._memory_plane.unit_of_work() as unit_of_work:
@@ -216,7 +216,7 @@ class GovernedSourceAdmissionService:
         selection_digest: str | None = None,
         verification_digest: str | None = None,
     ) -> PreparedSourceAdmission:
-        """Prepare, but do not publish, the M1 evidence for M2 atomic admission."""
+        """Prepare, but do not publish, the governed-source admission evidence for writer-safe preplanning atomic admission."""
         _validate_governed_source(source)
         if delivery_identity.delivery_principal_binding_digest != ingress.delivery_principal_binding.binding_digest:
             raise ValueError("authenticated principal does not own delivery identity")
@@ -310,7 +310,7 @@ class GovernedSourceAdmissionService:
         required = tuple(content.get("required_scopes", ()))
         if not set(required).issubset(authenticated_ingress.current_authorized_scopes.scopes):
             return SemanticIngestionOutcomeLookupResponse()
-        # Only after every non-disclosing authorization check may M1 read its
+        # Only after every non-disclosing authorization check may governed-source admission read its
         # protected outcome evidence.
         outcome = self._memory_plane.get_record(f"{index_id}:outcome")
         if outcome is None or outcome.source_kind != "semantic_ingestion_profile_outcome":
@@ -411,7 +411,7 @@ class GovernedSourceAdmissionService:
 
     def _lifecycle_transition(self, *, fence: OperationFenceBinding, generation: int):
         from memorii.core.semantic_ingestion.contracts import (
-            M3LifecycleTransition,
+            SemanticLifecycleTransition,
             decode_semantic_contract,
         )
 
@@ -440,7 +440,7 @@ class GovernedSourceAdmissionService:
                 return None
             try:
                 lifecycle = decode_semantic_contract(
-                    payload.encode("utf-8"), M3LifecycleTransition
+                    payload.encode("utf-8"), SemanticLifecycleTransition
                 )
             except (ValueError, TypeError):
                 return None
@@ -576,4 +576,4 @@ def _make_outcome(
                 "matched_corpus_case_id": matched_corpus_case_id,
             }
         )
-    raise ValueError("illegal M1 bootstrap outcome")
+    raise ValueError("illegal governed-source admission bootstrap outcome")

@@ -1,4 +1,4 @@
-"""Independent design-side feasibility checker for scenario-first C2 authority.
+"""Independent design-side feasibility checker for scenario-first scenario-first closure authority.
 
 It deliberately gives the runtime extractor rendered observations only.  The
 scenario world is retained by this process until its normalized output is

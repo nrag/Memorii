@@ -394,7 +394,7 @@ def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
     command = next(
         step["run"]
         for step in steps
-        if step["name"] == "Run exact M3 integration and process closure"
+        if step["name"] == "Run exact semantic ingestion integration and process closure"
     )
     assert command.split() == [
         "pytest",
@@ -409,7 +409,7 @@ def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
     count_command = next(
         step["run"]
         for step in steps
-        if step["name"] == "Verify exact M3 collection count"
+        if step["name"] == "Verify exact semantic ingestion collection count"
     )
     assert '"266 tests collected in "*' in count_command
     assert count_command.count("tests/unit/core/semantic_ingestion") == 1
@@ -417,24 +417,33 @@ def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
     assert count_command.count("tests/integration/test_semantic_ingestion_process_safety.py") == 1
 
 
-def test_test_symbols_use_behavioral_names_instead_of_requirement_or_milestone_ids() -> None:
+def test_test_symbols_use_behavioral_names() -> None:
     identifier_name = re.compile(
         r"^(?:async )?def test_(?:.*_(?:r|m|t|c|p)\d+(?:_|\()|sia_[a-z]\d+(?:_|\())",
         re.IGNORECASE,
     )
-    named_evidence_path = Path("tests/integration/test_semantic_ingestion_pipeline.py")
-    named_evidence = re.compile(
-        r"^def test_sia_t(?:02_candidate|04_lineage|05_consensus|06_temporal|06_tr_[a-z_]+|07_prompt|09_egress|12_pipeline)_[a-z0-9_]+\("
-    )
     violations: list[str] = []
     for path in sorted((PROJECT_ROOT / "tests").rglob("*.py")):
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            relative = path.relative_to(PROJECT_ROOT)
-            if identifier_name.match(line) and not (
-                relative == named_evidence_path and named_evidence.match(line)
-            ):
+            if identifier_name.match(line):
                 violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line_number}:{line.strip()}")
     assert violations == []
+
+
+def test_static_analysis_owns_exact_behavioral_identity_command() -> None:
+    config = _workflow_config("pr-gates.yml")
+    steps = config["jobs"]["static-analysis"]["steps"]
+    step = next(item for item in steps if item["name"] == "Verify behavioral identity hygiene")
+    assert step["working-directory"] == "memorii"
+    assert step["run"].split() == [
+        "python",
+        "-m",
+        "memorii.tools.identity_hygiene",
+        "--root",
+        "..",
+        "--allowlist",
+        "../.agents/identity_hygiene_allowlist.json",
+    ]
 
 
 def test_provider_recapture_documentation_matches_exact_pinned_fetch_contract() -> None:

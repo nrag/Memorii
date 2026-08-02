@@ -1,4 +1,4 @@
-"""Store-owned Section 3.13 writer admission for the bounded M2 slice."""
+"""Store-owned Section 3.13 writer admission for the bounded writer-safe preplanning slice."""
 
 from __future__ import annotations
 
@@ -87,8 +87,8 @@ class SemanticWriterWriteAuthorization(MemoryPlaneWriteAuthorization):
 
 
 def bounded_preplanning_ownership_manifest() -> SemanticRecordOwnershipManifest:
-    """Return the complete M2 governed-write inventory (legacy name retained)."""
-    revision = "m2-semantic-generation-v2"
+    """Return the complete writer-safe preplanning governed-write inventory (legacy name retained)."""
+    revision = "semantic-generation-v2"
     return SemanticRecordOwnershipManifest(
         manifest_revision=revision,
         governed_record_kinds=_KINDS,

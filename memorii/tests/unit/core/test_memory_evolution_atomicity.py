@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import pytest
@@ -56,6 +57,7 @@ class _FailingBatchStore(InMemoryMemoryPlaneStore):
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         if self.fail_batch:
             raise OSError("injected batch failure")
@@ -64,6 +66,7 @@ class _FailingBatchStore(InMemoryMemoryPlaneStore):
             expected_revision=expected_revision,
             preconditions=preconditions,
             authorization=authorization,
+            transaction_precondition=transaction_precondition,
         )
 
 

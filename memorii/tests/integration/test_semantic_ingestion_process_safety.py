@@ -57,7 +57,7 @@ def _publish(path: str, delivery_id: str, operation_id: str, queue, barrier) -> 
         )
         writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
         current = writers.create_initial_evidence_only(
-            admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+            admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
         )
         publication = SemanticIngestionAtomicStore(plane, writers)._publish_preplanning(
             admission=admission, writer_binding=writers.commit_binding(current)

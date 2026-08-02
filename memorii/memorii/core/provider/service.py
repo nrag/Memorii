@@ -190,7 +190,7 @@ class ProviderMemoryService:
             )
             self._semantic_writer_admission.create_initial_evidence_only(
                 admission_id="memorii-provider-semantic-writer-v1",
-                writer_implementation_fingerprint="memorii-provider-m2-evidence-only-v1",
+                writer_implementation_fingerprint="memorii-provider-semantic-evidence-only-v1",
                 graph_schema_fingerprint="memorii-semantic-graph-preactivation-v1",
             )
         else:
@@ -352,7 +352,7 @@ class ProviderMemoryService:
     def memory_evolution_service(self) -> MemoryEvolutionService:
         """Return the runtime evolution service used by provider operations."""
         if self._memory_evolution_service is None:
-            raise RuntimeError("memory evolution is unavailable in the M1 source-only composition")
+            raise RuntimeError("memory evolution is unavailable in the governed-source admission source-only composition")
         return self._memory_evolution_service
 
     def retrieve_evolution_decision(

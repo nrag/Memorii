@@ -1,4 +1,4 @@
-"""Host-owned M3 runtime capability and externally verified deployment authority."""
+"""Host-owned semantic ingestion runtime capability and externally verified deployment authority."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ class SemanticDeploymentAuthorizationUse(BaseModel):
     @model_validator(mode="after")
     def validate_use(self) -> SemanticDeploymentAuthorizationUse:
         body = self.model_dump(mode="python", exclude={"use_digest"})
-        if self.use_digest != contract_digest(b"memorii.m3.deployment-authorization-use.v1", body):
+        if self.use_digest != contract_digest(b"memorii.semantic-ingestion.deployment-authorization-use.v1", body):
             raise ValueError("semantic deployment authorization use digest mismatch")
         return self
 
@@ -55,7 +55,7 @@ class SemanticDeploymentAuthorizationUse(BaseModel):
         }
         return cls(
             **body,
-            use_digest=contract_digest(b"memorii.m3.deployment-authorization-use.v1", body),
+            use_digest=contract_digest(b"memorii.semantic-ingestion.deployment-authorization-use.v1", body),
         )
 
 
@@ -79,7 +79,7 @@ class SemanticIngestionRuntimeAuthorization(BaseModel):
         if self.expires_at.utcoffset() is None:
             raise ValueError("semantic deployment authorization expiry must be timezone-aware")
         body = self.model_dump(mode="python", exclude={"decision_digest"})
-        if self.decision_digest != contract_digest(b"memorii.m3.verified-deployment-authorization.v1", body):
+        if self.decision_digest != contract_digest(b"memorii.semantic-ingestion.verified-deployment-authorization.v1", body):
             raise ValueError("verified semantic deployment authorization digest mismatch")
         return self
 
@@ -167,7 +167,7 @@ def build_authorized_local_semantic_runtime(
     writer_admission: SemanticWriterAdmissionStore | None = None,
     atomic_store: SemanticIngestionAtomicStore | None = None,
 ) -> AuthorizedSemanticIngestionRuntime:
-    """Build the ordinary zero-egress production M3 composition."""
+    """Build the ordinary zero-egress production semantic ingestion composition."""
 
     analyzer = ProductionLocalSemanticAnalyzer()
     return AuthorizedSemanticIngestionRuntime(

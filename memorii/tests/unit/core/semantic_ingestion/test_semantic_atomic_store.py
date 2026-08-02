@@ -67,7 +67,7 @@ def test_preplanning_publication_is_atomic_idempotent_and_has_empty_future_effec
     )
     binding = writers.commit_binding(
         writers.create_initial_evidence_only(
-            admission_id="m2",
+            admission_id="writer-admission",
             writer_implementation_fingerprint="writer-fingerprint",
             graph_schema_fingerprint="schema-fingerprint",
         )
@@ -86,7 +86,7 @@ def test_same_public_operation_id_has_distinct_fence_derived_writer_namespaces()
     plane = MemoryPlaneService()
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     store = SemanticIngestionAtomicStore(plane, writers)
     prepared_admissions = []
@@ -149,7 +149,7 @@ def test_unadmitted_or_mismatched_handoff_changes_no_record_set() -> None:
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(
         writers.create_initial_evidence_only(
-            admission_id="m2",
+            admission_id="writer-admission",
             writer_implementation_fingerprint="writer-fingerprint",
             graph_schema_fingerprint="schema-fingerprint",
         )
@@ -172,7 +172,7 @@ def test_substituted_required_scope_tenant_changes_no_record_set() -> None:
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(
         writers.create_initial_evidence_only(
-            admission_id="m2",
+            admission_id="writer-admission",
             writer_implementation_fingerprint="writer-fingerprint",
             graph_schema_fingerprint="schema-fingerprint",
         )
@@ -211,7 +211,7 @@ def test_invalid_complete_writer_binding_changes_no_revision_or_record_set(field
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(
         writers.create_initial_evidence_only(
-            admission_id="m2",
+            admission_id="writer-admission",
             writer_implementation_fingerprint="writer-fingerprint",
             graph_schema_fingerprint="schema-fingerprint",
         )
@@ -234,7 +234,7 @@ def test_jsonl_reopen_recovers_byte_identical_preplanning_publication(tmp_path: 
     )
     binding = writers.commit_binding(
         writers.create_initial_evidence_only(
-            admission_id="m2",
+            admission_id="writer-admission",
             writer_implementation_fingerprint="writer-fingerprint",
             graph_schema_fingerprint="schema-fingerprint",
         )
@@ -268,7 +268,7 @@ def test_lost_ack_retry_returns_exact_committed_preplanning_generation() -> None
     admission, _ = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     store = SemanticIngestionAtomicStore(plane, writers)
     backend.armed = True
@@ -286,7 +286,7 @@ def test_jsonl_replace_failure_preserves_prior_complete_snapshot(tmp_path: Path,
     admission, _ = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     before = JsonlMemoryPlaneStore(path).read_snapshot()
     monkeypatch.setattr(backend, "_replace_batches", lambda batches: (_ for _ in ()).throw(RuntimeError("failpoint")))
@@ -302,7 +302,7 @@ def test_jsonl_truncated_batch_blocks_reopen_instead_of_exposing_partial_state(t
     admission, _ = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     SemanticIngestionAtomicStore(plane, writers)._publish_preplanning(admission=admission, writer_binding=binding)
     records_path = path / "memory_records.jsonl"
@@ -330,7 +330,7 @@ def test_atomic_admission_publishes_source_evidence_and_pending_generation_toget
     )
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     prepared = GovernedSourceAdmissionService(plane).prepare_atomic(
         source=source, delivery_identity=identity, ingress=ingress,

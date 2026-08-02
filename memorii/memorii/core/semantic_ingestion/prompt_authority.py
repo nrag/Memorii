@@ -78,7 +78,7 @@ class SemanticPromptAuthority(BaseModel):
     @classmethod
     def _digest(cls, body: dict[str, object]) -> str:
         return sha256(
-            b"memorii.m3.registered-semantic-prompt.v1\0" + encode_typed_value(_canonical(body))
+            b"memorii.semantic-ingestion.registered-semantic-prompt.v1\0" + encode_typed_value(_canonical(body))
         ).hexdigest()
 
     @classmethod
@@ -154,14 +154,14 @@ class SemanticPromptAuthority(BaseModel):
 def _load_semantic_contract(*, registry: PromptRegistry, prompt_ref: str, owner: PromptOwner) -> RegisteredPromptContract:
     """Load through the normal registry, retaining its schema/owner checks.
 
-    Semantic candidates are additionally decoded by the M3 transport model;
+    Semantic candidates are additionally decoded by the semantic ingestion transport model;
     this keeps the provider wire schema and domain schema independently gated.
     """
     registration = registry.registrations.get(prompt_ref)
     if registration is None or registration.owning_adapter != owner:
         raise ValueError("semantic prompt registration owner mismatch")
     # The generic registry's output-model parity hook is intentionally not used
-    # here: M3's closed candidate transport is independently validated after
+    # here: semantic ingestion's closed candidate transport is independently validated after
     # provider bytes are received, never trusted from YAML alone.
     path = registry._resolve_prompt_path(prompt_ref)
     payload = yaml.safe_load(path.read_text())

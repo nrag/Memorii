@@ -1,4 +1,4 @@
-"""End-to-end registered R03/R13 approval coordinates."""
+"""End-to-end registered traceability approval coordinates."""
 
 from __future__ import annotations
 
@@ -1533,7 +1533,7 @@ def test_public_acceptance_fails_closed_for_corrupt_persisted_watermark(tmp_path
                 allow_test_watermark_fallback=True,
             )
         ).execute(
-            registry_bytes=inputs["registry_bytes"], group_id="semantic-ingestion-r03",
+            registry_bytes=inputs["registry_bytes"], group_id="semantic-ingestion-normative-traceability-approval",
             report_bytes=inputs["report_bytes"], artifacts=inputs["artifacts"],
             implementation_revision=inputs["implementation_revision"],
             implementation_tree_digest=inputs["implementation_tree_digest"],
@@ -1607,7 +1607,7 @@ def test_public_boundary_rejects_forged_registry_object_argument(tmp_path: Path)
                 allow_test_watermark_fallback=True,
             )
         ).execute(
-            registry_bytes=inputs["registry_bytes"], registry=fake, group_id="semantic-ingestion-r03",
+            registry_bytes=inputs["registry_bytes"], registry=fake, group_id="semantic-ingestion-normative-traceability-approval",
             report_bytes=inputs["report_bytes"], artifacts=inputs["artifacts"],
             implementation_revision=inputs["implementation_revision"], implementation_tree_digest=inputs["implementation_tree_digest"],
             environment_observation_bytes=inputs["environment_observation_bytes"], bootstrap_artifact=inputs["bootstrap_artifact"],

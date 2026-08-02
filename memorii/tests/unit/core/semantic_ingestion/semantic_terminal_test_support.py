@@ -1,4 +1,4 @@
-"""Self-contained M3 persistence fixtures shared without importing test modules."""
+"""Self-contained semantic terminal persistence fixtures shared without importing test modules."""
 
 from datetime import UTC, datetime
 from hashlib import sha256

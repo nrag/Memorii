@@ -1,4 +1,4 @@
-"""Design-side validation for the oracle-free C2 primitive recipe."""
+"""Design-side validation for the oracle-free scenario-first closure primitive recipe."""
 
 from __future__ import annotations
 
@@ -168,7 +168,7 @@ def current_has_path(value: Any, path: tuple[str, ...]) -> bool:
 
 
 def validate_current_primitive_ownership(authority: dict[str, Any]) -> None:
-    """Require an exhaustive, non-heuristic source classification for C2 bodies."""
+    """Require an exhaustive, non-heuristic source classification for scenario-first closure bodies."""
     exact_keys(authority, CURRENT_AUTHORITY_KEYS, "current primitive authority")
     bodies = authority["primitive_body_inputs"]
     ledger = authority["body_leaf_classification"]

@@ -1,4 +1,4 @@
-"""Canonical same-store authorization authority for M3 execution and commit."""
+"""Canonical same-store authorization authority for semantic ingestion execution and commit."""
 
 from __future__ import annotations
 
@@ -20,11 +20,11 @@ from memorii.core.memory_evolution.writer_admission import SemanticWriterCommitB
 from memorii.core.semantic_ingestion.contracts import SemanticAuthorizationReadSet
 
 
-class M3AuthorizationAuthorityError(PreplanningStoreError):
+class SemanticAuthorizationAuthorityError(PreplanningStoreError):
     """A verified authority transition or authoritative read failed closed."""
 
 
-class M3VerifiedAuthorizationTransition(BaseModel):
+class VerifiedSemanticAuthorizationTransition(BaseModel):
     authority_scope_id: str = Field(min_length=1)
     action: Literal["activate", "rotate", "revoke"]
     expected_revision: int = Field(ge=0)
@@ -35,7 +35,7 @@ class M3VerifiedAuthorizationTransition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_transition(self) -> M3VerifiedAuthorizationTransition:
+    def validate_transition(self) -> VerifiedSemanticAuthorizationTransition:
         if self.action == "revoke":
             if self.read_set is not None or self.valid_until is not None:
                 raise ValueError("authorization revocation cannot carry active coordinates")
@@ -47,7 +47,7 @@ class M3VerifiedAuthorizationTransition(BaseModel):
         return self
 
     @classmethod
-    def create(cls, **values: object) -> M3VerifiedAuthorizationTransition:
+    def create(cls, **values: object) -> VerifiedSemanticAuthorizationTransition:
         digest_values = dict(values)
         digest_values.setdefault("read_set", None)
         digest_values.setdefault("valid_until", None)
@@ -60,14 +60,14 @@ class M3VerifiedAuthorizationTransition(BaseModel):
         )
 
 
-class M3AuthorizationTransitionVerifier(Protocol):
+class SemanticAuthorizationTransitionVerifier(Protocol):
     def verify(
         self, *, command_bytes: bytes, server_time: datetime,
-    ) -> M3VerifiedAuthorizationTransition | None: ...
+    ) -> VerifiedSemanticAuthorizationTransition | None: ...
 
 
-class M3AuthorizationAuthorityRepository:
-    """Source-bound authority whose record is CASed with every M3 effect group."""
+class SemanticAuthorizationAuthorityRepository:
+    """Source-bound authority whose record is CASed with every semantic ingestion effect group."""
 
     def __init__(
         self,
@@ -85,12 +85,12 @@ class M3AuthorizationAuthorityRepository:
         return f"source:{source_id}:{source_digest}"
 
     def apply_verified_transition(
-        self, transition: M3VerifiedAuthorizationTransition,
+        self, transition: VerifiedSemanticAuthorizationTransition,
     ) -> AuthorizationReadSetPrecondition:
         current = self._store.authorization_authority(transition.authority_scope_id)
         if transition.action == "activate":
             if transition.expected_revision != 0 or current is not None:
-                raise M3AuthorizationAuthorityError("authorization activation CAS is stale")
+                raise SemanticAuthorizationAuthorityError("authorization activation CAS is stale")
             assert transition.read_set is not None and transition.valid_until is not None
             return self._store.install_authorization_authority(
                 writer_binding=self._writer_binding_provider(),
@@ -100,10 +100,10 @@ class M3AuthorizationAuthorityRepository:
                 ),
             )
         if current is None:
-            raise M3AuthorizationAuthorityError("authorization transition requires active authority")
+            raise SemanticAuthorizationAuthorityError("authorization transition requires active authority")
         authority, precondition = current
         if authority.authority_revision != transition.expected_revision:
-            raise M3AuthorizationAuthorityError("authorization transition CAS is stale")
+            raise SemanticAuthorizationAuthorityError("authorization transition CAS is stale")
         if transition.action == "revoke":
             body = authority.model_dump(mode="python", exclude={"coordinates_digest"})
             body.update({"authority_revision": authority.authority_revision + 1, "state": "revoked"})
@@ -136,7 +136,7 @@ class M3AuthorizationAuthorityRepository:
     ) -> AuthorizationReadSetPrecondition:
         current = self._store.authorization_authority(authority_scope_id)
         if current is None:
-            return self.apply_verified_transition(M3VerifiedAuthorizationTransition.create(
+            return self.apply_verified_transition(VerifiedSemanticAuthorizationTransition.create(
                 authority_scope_id=authority_scope_id,
                 action="activate",
                 expected_revision=0,
@@ -149,7 +149,7 @@ class M3AuthorizationAuthorityRepository:
             or authority.valid_until <= (server_now or self._now())
             or not self._matches(authority, read_set)
         ):
-            raise M3AuthorizationAuthorityError("same-store authorization authority is not current")
+            raise SemanticAuthorizationAuthorityError("same-store authorization authority is not current")
         return precondition
 
     def require_current(
@@ -158,14 +158,14 @@ class M3AuthorizationAuthorityRepository:
     ) -> AuthorizationReadSetPrecondition:
         current = self._store.authorization_authority(authority_scope_id)
         if current is None:
-            raise M3AuthorizationAuthorityError("same-store authorization authority is unavailable")
+            raise SemanticAuthorizationAuthorityError("same-store authorization authority is unavailable")
         authority, precondition = current
         if (
             authority.state != "active"
             or authority.valid_until <= (server_now or self._now())
             or not self._matches(authority, read_set)
         ):
-            raise M3AuthorizationAuthorityError("same-store authorization authority is stale")
+            raise SemanticAuthorizationAuthorityError("same-store authorization authority is stale")
         return precondition
 
     @staticmethod
@@ -214,14 +214,14 @@ class M3AuthorizationAuthorityRepository:
         )
 
 
-class VerifiedM3AuthorizationControlPlane:
+class VerifiedSemanticAuthorizationControlPlane:
     """Adapter: external signature/lifecycle verification precedes same-store CAS."""
 
     def __init__(
         self,
         *,
-        verifier: M3AuthorizationTransitionVerifier,
-        repository: M3AuthorizationAuthorityRepository,
+        verifier: SemanticAuthorizationTransitionVerifier,
+        repository: SemanticAuthorizationAuthorityRepository,
         now_provider: Callable[[], datetime],
     ) -> None:
         self._verifier = verifier
@@ -233,14 +233,14 @@ class VerifiedM3AuthorizationControlPlane:
             command_bytes=bytes(command_bytes), server_time=self._now()
         )
         if transition is None:
-            raise M3AuthorizationAuthorityError("authorization transition verification failed")
+            raise SemanticAuthorizationAuthorityError("authorization transition verification failed")
         return self._repository.apply_verified_transition(transition)
 
 
 __all__ = [
-    "M3AuthorizationAuthorityError",
-    "M3AuthorizationAuthorityRepository",
-    "M3AuthorizationTransitionVerifier",
-    "M3VerifiedAuthorizationTransition",
-    "VerifiedM3AuthorizationControlPlane",
+    "SemanticAuthorizationAuthorityError",
+    "SemanticAuthorizationAuthorityRepository",
+    "SemanticAuthorizationTransitionVerifier",
+    "VerifiedSemanticAuthorizationTransition",
+    "VerifiedSemanticAuthorizationControlPlane",
 ]

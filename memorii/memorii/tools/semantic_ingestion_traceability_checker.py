@@ -64,6 +64,11 @@ class TraceabilityCoverageError(ValueError):
     pass
 
 
+def _independent_expected_requirement_ids() -> tuple[str, ...]:
+    """Reconstruct the closed requirement universe without registry imports."""
+    return tuple("SIA-R" + str(number).zfill(2) for number in range(1, 24))
+
+
 def _independently_validate_raw_registry_complexity(raw: bytes) -> None:
     """Bound decoder-sensitive JSON transport features on the approval path.
 
@@ -607,7 +612,8 @@ def _load_independent_registry_bytes(raw: bytes) -> dict[str, Any]:
         raise
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError) as exc:
         raise TraceabilityCoverageError("registry bytes are not strict JSON") from exc
-    requirements = {f"SIA-R{number:02d}" for number in range(1, 24)}
+    expected_requirement_ids = _independent_expected_requirement_ids()
+    requirements = set(expected_requirement_ids)
     for root, expected_keys in _INDEPENDENT_ORDINARY_ITEM_KEYS.items():
         if any(not isinstance(item, dict) or set(item) != expected_keys for item in source[root]):
             raise TraceabilityCoverageError(f"registry {root} member shape is not closed")
@@ -619,14 +625,14 @@ def _load_independent_registry_bytes(raw: bytes) -> dict[str, Any]:
     templates = source["assertion_templates"]
     if not all(isinstance(item, dict) for item in bindings + defaults + groups + templates):
         raise TraceabilityCoverageError("registry collections contain an invalid item")
-    expected_binding_ids = [f"SIA-R{number:02d}" for number in range(1, 24)]
+    expected_binding_ids = expected_requirement_ids
     if any(not isinstance(item["requirement_id"], str) for item in bindings):
         raise TraceabilityCoverageError("registry requirement binding IDs are malformed")
     binding_ids = {item["requirement_id"] for item in bindings}
     if (
         binding_ids != requirements
         or len(bindings) != 23
-        or [item["requirement_id"] for item in bindings] != expected_binding_ids
+        or tuple(item["requirement_id"] for item in bindings) != expected_binding_ids
         or any(
             not isinstance(item["assertion_template_id"], str)
             or type(item["assertion_version"]) is not int
@@ -635,7 +641,7 @@ def _load_independent_registry_bytes(raw: bytes) -> dict[str, Any]:
             for item in bindings
         )
     ):
-        raise TraceabilityCoverageError("registry does not bind exactly R01 through R23")
+        raise TraceabilityCoverageError("registry does not bind the complete requirement set")
     if any(
         not isinstance(item["heading_path"], str)
         or not isinstance(item["requirements"], list)

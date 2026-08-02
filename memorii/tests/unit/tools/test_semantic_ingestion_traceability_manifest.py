@@ -78,11 +78,11 @@ def test_both_structural_paths_require_exact_section_heading_paths(tmp_path: Pat
     design = (root / "docs" / "design" / "semantic_ingestion_architecture.md").read_bytes()
     registry_path = root / "docs" / "design" / "semantic_ingestion" / "traceability_registry" / "registry-v1.json"
     source = __import__("json").loads(registry_path.read_text())
-    heading = b"#### 3.23.4.2.1 C2-only canonical typed-value profile v2"
+    heading = b"#### 3.23.4.2.1 scenario-first closure-only canonical typed-value profile v2"
     replacements = {
-        "missing": b"#### Appendix C2-only canonical typed-value profile v2",
-        "extra": b"#### 3.23.4.2.2 C2-only canonical typed-value profile v2",
-        "parent_fallback": b"#### 3.23.4 C2-only canonical typed-value profile v2",
+        "missing": b"#### Appendix scenario-first closure-only canonical typed-value profile v2",
+        "extra": b"#### 3.23.4.2.2 scenario-first closure-only canonical typed-value profile v2",
+        "parent_fallback": b"#### 3.23.4 scenario-first closure-only canonical typed-value profile v2",
     }
     assert design.count(heading) == 1
     design = design.replace(heading, replacements[mutation], 1)

@@ -82,7 +82,7 @@ def _inputs() -> dict[str, Any]:
             ROOT
             / "docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json"
         ).read_bytes(),
-        group_id="semantic-ingestion-r03",
+        group_id="semantic-ingestion-normative-traceability-approval",
     )
     authority = scenario["authority"]
     roots = scenario["roots"]
@@ -316,7 +316,7 @@ def test_scenario_fixture_authority_passes_only_when_installed_as_explicit_autho
         result = RegisteredApprovalExecutor(authority).execute(
             registry_bytes=(ROOT / "docs/design/semantic_ingestion/traceability_registry/registry-v1.json").read_bytes(),
             group_id=built["group_id"], report_bytes=built["report_bytes"],
-            artifacts=built["artifacts"], implementation_revision="scenario-c2",
+            artifacts=built["artifacts"], implementation_revision="scenario-first-closure",
             implementation_tree_digest="a" * 64, environment_observation_bytes=built["environment"],
             bootstrap_artifact=typed["bootstrap_anchor"], recovery_artifact=typed["recovery_root"],
             lifecycle_artifact=typed["trust_lifecycle_root"], release_artifact=typed["release"],
@@ -360,7 +360,7 @@ def test_registered_scenario_publishes_sequence_two_after_sequence_one() -> None
             group_id=built["group_id"],
             report_bytes=built["report_bytes"] if report_bytes is None else report_bytes,
             artifacts=built["artifacts"] if artifacts is None else artifacts,
-            implementation_revision="scenario-c2",
+            implementation_revision="scenario-first-closure",
             implementation_tree_digest="a" * 64,
             environment_observation_bytes=(
                 built["environment"]
@@ -632,7 +632,7 @@ def test_foreign_trust_rejects_without_advancing_watermark() -> None:
         before = watermark_path.read_bytes()
         try:
             RegisteredApprovalExecutor(foreign).execute(
-                registry_bytes=(ROOT / "docs/design/semantic_ingestion/traceability_registry/registry-v1.json").read_bytes(), group_id=built["group_id"], report_bytes=built["report_bytes"], artifacts=built["artifacts"], implementation_revision="scenario-c2", implementation_tree_digest="a" * 64, environment_observation_bytes=built["environment"], bootstrap_artifact=typed["bootstrap_anchor"], recovery_artifact=typed["recovery_root"], lifecycle_artifact=typed["trust_lifecycle_root"], release_artifact=typed["release"], active_pointer_artifact=typed["active_pointer"], release_history_artifact=typed["release_history"], now=built["now"],
+                registry_bytes=(ROOT / "docs/design/semantic_ingestion/traceability_registry/registry-v1.json").read_bytes(), group_id=built["group_id"], report_bytes=built["report_bytes"], artifacts=built["artifacts"], implementation_revision="scenario-first-closure", implementation_tree_digest="a" * 64, environment_observation_bytes=built["environment"], bootstrap_artifact=typed["bootstrap_anchor"], recovery_artifact=typed["recovery_root"], lifecycle_artifact=typed["trust_lifecycle_root"], release_artifact=typed["release"], active_pointer_artifact=typed["active_pointer"], release_history_artifact=typed["release_history"], now=built["now"],
             )
         except ExecutionEvidenceError as exc:
             assert "trust_not_independently_provisioned" in str(exc)
@@ -653,6 +653,6 @@ def test_default_resolver_rejects_exact_scenario_bytes_without_watermark_change(
         before = watermark_path.read_bytes()
         with pytest.raises(ExecutionEvidenceError, match="registered trust authority is unavailable"):
             RegisteredApprovalExecutor.from_resolver(DefaultAcceptanceTrustResolver()).execute(
-                registry_bytes=(ROOT / "docs/design/semantic_ingestion/traceability_registry/registry-v1.json").read_bytes(), group_id=built["group_id"], report_bytes=built["report_bytes"], artifacts=built["artifacts"], implementation_revision="scenario-c2", implementation_tree_digest="a" * 64, environment_observation_bytes=built["environment"], bootstrap_artifact=typed["bootstrap_anchor"], recovery_artifact=typed["recovery_root"], lifecycle_artifact=typed["trust_lifecycle_root"], release_artifact=typed["release"], active_pointer_artifact=typed["active_pointer"], release_history_artifact=typed["release_history"], now=built["now"],
+                registry_bytes=(ROOT / "docs/design/semantic_ingestion/traceability_registry/registry-v1.json").read_bytes(), group_id=built["group_id"], report_bytes=built["report_bytes"], artifacts=built["artifacts"], implementation_revision="scenario-first-closure", implementation_tree_digest="a" * 64, environment_observation_bytes=built["environment"], bootstrap_artifact=typed["bootstrap_anchor"], recovery_artifact=typed["recovery_root"], lifecycle_artifact=typed["trust_lifecycle_root"], release_artifact=typed["release"], active_pointer_artifact=typed["active_pointer"], release_history_artifact=typed["release_history"], now=built["now"],
             )
         assert watermark_path.read_bytes() == before

@@ -24,7 +24,7 @@ def test_certified_current_writer_is_recoverable_and_exact() -> None:
         now_provider=lambda: datetime(2026, 1, 1, tzinfo=UTC),
     )
     current = admission.create_initial_evidence_only(
-        admission_id="m2",
+        admission_id="writer-admission",
         writer_implementation_fingerprint="writer-fingerprint",
         graph_schema_fingerprint="schema-fingerprint",
     )
@@ -33,7 +33,7 @@ def test_certified_current_writer_is_recoverable_and_exact() -> None:
     assert admission.require_current(binding).content["admission"] == current.model_dump(mode="json")
     assert (
         admission.create_initial_evidence_only(
-            admission_id="m2",
+            admission_id="writer-admission",
             writer_implementation_fingerprint="writer-fingerprint",
             graph_schema_fingerprint="schema-fingerprint",
         )
@@ -44,7 +44,7 @@ def test_certified_current_writer_is_recoverable_and_exact() -> None:
 def test_stale_unbound_and_mismatched_writers_are_rejected() -> None:
     admission = SemanticWriterAdmissionStore(MemoryPlaneService(), bounded_preplanning_ownership_manifest())
     current = admission.create_initial_evidence_only(
-        admission_id="m2",
+        admission_id="writer-admission",
         writer_implementation_fingerprint="writer-fingerprint",
         graph_schema_fingerprint="schema-fingerprint",
     )
@@ -90,7 +90,7 @@ def test_governed_writer_records_reject_every_unbound_generic_route(
     plane = MemoryPlaneService(record_store=backend)
     admissions = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     current = admissions.create_initial_evidence_only(
-        admission_id="m2",
+        admission_id="writer-admission",
         writer_implementation_fingerprint="writer-fingerprint",
         graph_schema_fingerprint="schema-fingerprint",
     )
@@ -137,7 +137,7 @@ def test_reopened_jsonl_backend_denies_governed_write_before_policy_reinstall(tm
     first_plane = MemoryPlaneService(record_store=first_backend)
     admissions = SemanticWriterAdmissionStore(first_plane, bounded_preplanning_ownership_manifest())
     current = admissions.create_initial_evidence_only(
-        admission_id="m2",
+        admission_id="writer-admission",
         writer_implementation_fingerprint="writer-fingerprint",
         graph_schema_fingerprint="schema-fingerprint",
     )
@@ -173,7 +173,7 @@ def test_admission_records_reject_unbound_generic_writes(
     plane = MemoryPlaneService(record_store=backend)
     admissions = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
     current = admissions.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     )
     forged = admissions.require_current(admissions.commit_binding(current)).model_copy(update={
         "memory_id": f"semantic_ingestion:forged:{source_kind}", "source_kind": source_kind

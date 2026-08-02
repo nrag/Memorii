@@ -1,8 +1,8 @@
-"""Named M3 integration evidence for SIA-T02/T04/T05/T06/T07/T09/T12.
+"""Named semantic ingestion integration evidence for SIA-T02/T04/T05/T06/T07/T09/T12.
 
-These tests also exercise the R19 composition, R20 lease-lineage, R21 atomic
-artifact, and R22 truthful-result contracts without using those requirement
-IDs as substitutes for the required M3 evidence IDs. Fixtures are authored in
+These tests also exercise the Reliable production composition, lease-lineage, atomic
+artifact, and protected truthful-result contracts without using those requirement
+IDs as substitutes for the required semantic ingestion evidence IDs. Fixtures are authored in
 this module and expected values are independent of production helper output.
 """
 
@@ -274,14 +274,14 @@ def _resolve(
     )
 
 
-def test_sia_t02_candidate_proposal_cannot_supply_source_authority() -> None:
+def test_candidate_proposal_cannot_supply_source_authority() -> None:
     with pytest.raises(ValueError):
         SemanticCandidate.model_validate(
             _proposal().model_dump(mode="python") | {"source_authority": {}}
         )
 
 
-def test_sia_t04_lineage_closes_proposal_analysis_seal_and_policy() -> None:
+def test_lineage_closes_proposal_analysis_seal_and_policy() -> None:
     outcome = _outcome()
     assert outcome.status == "accepted" and outcome.execution_lineage is not None
     assert outcome.execution_lineage.source_analysis_digests == (
@@ -296,12 +296,12 @@ def test_sia_t04_lineage_closes_proposal_analysis_seal_and_policy() -> None:
     )
 
 
-def test_sia_t05_consensus_disagreement_is_nonpromoting() -> None:
+def test_consensus_disagreement_is_nonpromoting() -> None:
     outcome = _outcome(stable=False)
     assert outcome.status == "unresolved" and outcome.accepted_carriers == ()
 
 
-def test_sia_t06_temporal_required_interval_reaches_exact_carrier() -> None:
+def test_temporal_required_interval_reaches_exact_carrier() -> None:
     outcome = _outcome(candidates=(_candidate("exact", start_day=2, end_day=9),))
     assert outcome.accepted_carriers[0].valid_interval == TimeInterval(
         start=datetime(2026, 1, 2, tzinfo=UTC),
@@ -309,7 +309,7 @@ def test_sia_t06_temporal_required_interval_reaches_exact_carrier() -> None:
     )
 
 
-def test_sia_t06_tr_eligibility_retains_but_never_selects_ineligible() -> None:
+def test_trust_eligibility_retains_but_never_selects_ineligible() -> None:
     policy = _policies()
     trust = TrustPolicySnapshot.create(
         policy_revision="trust-1",
@@ -328,14 +328,14 @@ def test_sia_t06_tr_eligibility_retains_but_never_selects_ineligible() -> None:
     assert closure.selected_candidate_ids == ("official",) and closure.candidates == values
 
 
-def test_sia_t06_tr_rank_unique_highest_wins_every_input_order() -> None:
+def test_trust_rank_unique_highest_wins_every_input_order() -> None:
     high = _candidate("a-high", start_day=1)
     low = _candidate("b-low", authority="reported", start_day=5)
     assert _resolve((high, low)).selected_candidate_ids == ("a-high",)
     assert _resolve((low, high)).selected_candidate_ids == ("a-high",)
 
 
-def test_sia_t06_tr_incomparability_nonidentical_top_is_contested() -> None:
+def test_trust_incomparability_nonidentical_top_is_contested() -> None:
     closure = _resolve(
         (_candidate("a"), _candidate("b", authority="reported", start_day=5)),
         incomparable=True,
@@ -343,13 +343,13 @@ def test_sia_t06_tr_incomparability_nonidentical_top_is_contested() -> None:
     assert closure.outcome == "contested" and closure.contested_candidate_ids == ("a", "b")
 
 
-def test_sia_t06_tr_equality_cosupports_without_provenance_collapse() -> None:
+def test_trust_equality_cosupports_without_provenance_collapse() -> None:
     closure = _resolve((_candidate("a"), _candidate("b", authority="reported")))
     assert closure.selected_candidate_ids == ("a", "b")
     assert len({value.candidate_digest for value in closure.candidates}) == 2
 
 
-def test_sia_t06_tr_nostitch_never_constructs_a_third_interval() -> None:
+def test_trust_resolution_never_constructs_a_third_interval() -> None:
     values = (_candidate("a", start_day=1, end_day=None), _candidate("b", authority="reported", start_day=5, end_day=20))
     closure = _resolve(values, incomparable=True)
     assert closure.resolved_interval is None
@@ -358,7 +358,7 @@ def test_sia_t06_tr_nostitch_never_constructs_a_third_interval() -> None:
     )
 
 
-def test_sia_t06_tr_text_many_retains_every_independent_text_candidate() -> None:
+def test_temporal_text_many_retains_every_independent_text_candidate() -> None:
     values = (
         _candidate("a", authority="reported"),
         _candidate("b", authority="reported", start_day=5),
@@ -367,7 +367,7 @@ def test_sia_t06_tr_text_many_retains_every_independent_text_candidate() -> None
     assert closure.outcome == "contested" and closure.candidates == values
 
 
-def test_sia_t06_tr_schema_rejects_impossible_candidate_shape() -> None:
+def test_temporal_schema_rejects_impossible_candidate_shape() -> None:
     with pytest.raises(ValueError, match="invalid evidence shape"):
         TemporalEvidenceCandidate.create(
             candidate_id="bad",
@@ -381,7 +381,7 @@ def test_sia_t06_tr_schema_rejects_impossible_candidate_shape() -> None:
         )
 
 
-def test_sia_t06_tr_closure_rejects_selected_subset_mutation() -> None:
+def test_temporal_closure_rejects_selected_subset_mutation() -> None:
     closure = _resolve((_candidate("a"),))
     with pytest.raises(ValueError, match="requires selected"):
         TemporalEvidenceDecisionClosure.model_validate(
@@ -389,14 +389,14 @@ def test_sia_t06_tr_closure_rejects_selected_subset_mutation() -> None:
         )
 
 
-def test_sia_t06_tr_transitions_preserve_distinct_correction_roles() -> None:
+def test_temporal_transitions_preserve_distinct_correction_roles() -> None:
     outcome = _outcome("correction")
     roles = tuple(value.temporal_role for value in outcome.sealed_operations[0].temporal_bindings)
     assert roles == ("replacement", "transition")
     assert len({value.binding_digest for value in outcome.sealed_operations[0].temporal_bindings}) == 2
 
 
-def test_sia_t06_tr_role_schema_rejects_binding_role_swap() -> None:
+def test_temporal_role_schema_rejects_binding_role_swap() -> None:
     outcome = _outcome("correction")
     operation = outcome.sealed_operations[0]
     swapped = operation.temporal_bindings[0].model_copy(update={"temporal_role": "transition"})
@@ -406,14 +406,14 @@ def test_sia_t06_tr_role_schema_rejects_binding_role_swap() -> None:
         )
 
 
-def test_sia_t06_tr_attach_plan_retains_exact_text_spans() -> None:
+def test_temporal_attachment_plan_retains_exact_text_spans() -> None:
     text = _candidate("text", authority="reported")
     outcome = _outcome(candidates=(text,))
     binding = outcome.sealed_operations[0].temporal_bindings[0]
     assert binding.temporal_attachment.candidate_spans == text.evidence_spans
 
 
-def test_sia_t06_tr_preimage_rejects_binding_digest_mutation() -> None:
+def test_temporal_preimage_rejects_binding_digest_mutation() -> None:
     binding = _outcome().sealed_operations[0].temporal_bindings[0]
     with pytest.raises(ValueError, match="digest mismatch"):
         type(binding).model_validate(
@@ -421,7 +421,7 @@ def test_sia_t06_tr_preimage_rejects_binding_digest_mutation() -> None:
         )
 
 
-def test_sia_t06_tr_consensus_source_substitution_is_rejected() -> None:
+def test_temporal_consensus_source_substitution_is_rejected() -> None:
     proposal = _proposal()
     analysis = _analysis(proposal).model_copy(update={"source_digest": "0" * 64})
     outcome = SemanticIngestionPipeline(transport=None).run(
@@ -435,12 +435,12 @@ def test_sia_t06_tr_consensus_source_substitution_is_rejected() -> None:
     assert outcome.status == "rejected" and outcome.accepted_carriers == ()
 
 
-def test_sia_t06_tr_store_round_trips_complete_terminal_bytes() -> None:
+def test_terminal_store_round_trips_complete_terminal_bytes() -> None:
     outcome = _outcome()
     assert decode_semantic_contract(encode_semantic_contract(outcome), type(outcome)) == outcome
 
 
-def test_sia_t06_tr_policy_rejects_snapshot_substitution() -> None:
+def test_temporal_policy_rejects_snapshot_substitution() -> None:
     policy = _policies()
     with pytest.raises(ValueError, match="digest mismatch"):
         TrustPolicySnapshot.model_validate(
@@ -448,7 +448,7 @@ def test_sia_t06_tr_policy_rejects_snapshot_substitution() -> None:
         )
 
 
-def test_sia_t06_tr_legacy_rejects_preclosure_terminal_bytes() -> None:
+def test_legacy_rejects_preclosure_terminal_bytes() -> None:
     outcome = _outcome()
     with pytest.raises(SemanticContractCodecError, match="legacy|mismatched"):
         decode_semantic_contract(
@@ -461,7 +461,7 @@ def test_sia_t06_tr_legacy_rejects_preclosure_terminal_bytes() -> None:
         )
 
 
-def test_sia_t07_prompt_remote_path_without_registered_authority_is_zero_wire() -> None:
+def test_prompt_remote_path_without_registered_authority_is_zero_wire() -> None:
     class Transport:
         calls = 0
 
@@ -479,7 +479,7 @@ def test_sia_t07_prompt_remote_path_without_registered_authority_is_zero_wire() 
     assert outcome.status == "evidence_only" and transport.calls == 0
 
 
-def test_sia_t09_egress_missing_current_policy_is_zero_wire() -> None:
+def test_egress_missing_current_policy_is_zero_wire() -> None:
     # The registered prompt path is covered by the unit authority suite; this
     # integration oracle proves that absent egress authority cannot be replaced
     # by the typed local-proposal path or a raw boolean.
@@ -491,14 +491,14 @@ def test_sia_t09_egress_missing_current_policy_is_zero_wire() -> None:
     assert outcome.reason_codes == ("remote_proposal_authority_unavailable",)
 
 
-def test_sia_t12_pipeline_closed_codec_rejects_wrong_contract_kind() -> None:
+def test_pipeline_closed_codec_rejects_wrong_contract_kind() -> None:
     outcome = _outcome("identity")
     encoded = encode_semantic_contract(outcome)
     with pytest.raises(SemanticContractCodecError, match="unsupported|mismatched"):
         decode_semantic_contract(encoded, IndependentSourceAnalysis)
 
 
-def test_sia_t12_pipeline_slow_stage_renews_lease_heartbeat() -> None:
+def test_pipeline_slow_stage_renews_lease_heartbeat() -> None:
     proposal = _proposal()
     analysis = _analysis(proposal)
     heartbeats: list[int] = []

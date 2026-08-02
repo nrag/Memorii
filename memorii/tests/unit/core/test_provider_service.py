@@ -53,7 +53,7 @@ def test_default_provider_composition_is_source_admission_only() -> None:
         task_id="task:default-evolution",
     )
 
-    with pytest.raises(RuntimeError, match="M1 source-only"):
+    with pytest.raises(RuntimeError, match="governed source admission"):
         _ = service.memory_evolution_service
     assert service.last_memory_evolution_result() is None
 
@@ -278,7 +278,7 @@ def test_provider_exposes_structured_evolution_decision() -> None:
         memory_evolution_extractor=EnglishRuleMemoryExtractor(),
     )
 
-    with pytest.raises(RuntimeError, match="M1 source-only"):
+    with pytest.raises(RuntimeError, match="governed source admission"):
         service.retrieve_evolution_decision(
             request=MemoryQueryRequest(query="What is the current owner?", query_language="en")
         )
@@ -488,7 +488,7 @@ def test_prefetch_execution_uses_production_evolution_decision_as_authority() ->
         memory_plane=plane,
         memory_evolution_extractor=EnglishRuleMemoryExtractor(),
     )
-    with pytest.raises(RuntimeError, match="M1 source-only"):
+    with pytest.raises(RuntimeError, match="governed source admission"):
         _ = service.memory_evolution_service
 
 

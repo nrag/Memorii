@@ -1,8 +1,8 @@
-# Scenario-First C2 Fixture Authority
+# Scenario-First scenario-first closure Fixture Authority
 
 ## Status and scope
 
-This is the normative replacement for C2's field-by-field expected-output
+This is the normative replacement for scenario-first closure's field-by-field expected-output
 authority. It applies only to non-operational semantic-ingestion fixtures. It
 does not provision production trust, activate a production release, certify an
 operational run, or change M1 behavior.
@@ -112,7 +112,7 @@ applied only where the declared grammar preserves unique spans. Each must keep
 the normalized result unchanged. A changed claim, provenance, scope, temporal
 boundary, polarity, or cardinality must fail.
 
-## C2 derivation
+## scenario-first closure derivation
 
 Fixture 35 becomes a current-v2 typed input containing the rendered interaction
 bytes, source-envelope metadata, span map, extractor identity, and actual
@@ -149,7 +149,7 @@ the semantic cause, while generated artifacts retain byte-level checks.
 
 ## Migration, resources, and rollback
 
-The historical recipe and v1 fixture 35 are provenance only. New C2 consumers
+The historical recipe and v1 fixture 35 are provenance only. New scenario-first closure consumers
 accept only current-v2 scenario-derived outputs. During migration, run both
 legacy inspection (read-only) and scenario-first generation; do not compare
 their bytes as compatibility evidence. Rollback disables the scenario-first
@@ -185,7 +185,7 @@ claim live-LLM quality or production persistence certification.
 The public-ingress and clean-room elaboration feasibility command is:
 
 ```sh
-run_dir=$(mktemp -d /private/tmp/memorii-scenario-c2.XXXXXX)
+run_dir=$(mktemp -d /private/tmp/memorii-scenario-first-closure.XXXXXX)
 PYTHONPATH=memorii .venv/bin/python docs/design/semantic_ingestion/traceability_golden_vectors/run_scenario_ingress.py docs/design/semantic_ingestion/traceability_golden_vectors/scenario-first-v1.json "$run_dir/run.json" --design docs/design/semantic_ingestion_architecture.md --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json
 .venv/bin/python docs/design/semantic_ingestion/traceability_golden_vectors/elaborate_scenario_a.py docs/design/semantic_ingestion/traceability_golden_vectors/scenario-first-v1.json "$run_dir/run.json" docs/design/semantic_ingestion_architecture.md docs/design/semantic_ingestion/traceability_registry/registry-v1.json "$run_dir/a.json"
 .venv/bin/python docs/design/semantic_ingestion/traceability_golden_vectors/elaborate_scenario_b.py docs/design/semantic_ingestion/traceability_golden_vectors/scenario-first-v1.json "$run_dir/run.json" docs/design/semantic_ingestion_architecture.md docs/design/semantic_ingestion/traceability_registry/registry-v1.json "$run_dir/b.json"

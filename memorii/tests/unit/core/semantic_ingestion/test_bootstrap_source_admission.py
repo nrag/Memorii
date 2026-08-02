@@ -1322,7 +1322,7 @@ def test_bootstrap_construction_and_ingestion_attempt_no_network(monkeypatch: py
     )
 
     def network_forbidden(*args, **kwargs):
-        raise AssertionError("M1 attempted network access")
+        raise AssertionError("governed source admission attempted network access")
 
     monkeypatch.setattr("socket.getaddrinfo", network_forbidden)
     monkeypatch.setattr("socket.create_connection", network_forbidden)

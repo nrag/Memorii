@@ -1,4 +1,4 @@
-"""Test-only CLI for deterministic M2 runtime benchmark evidence."""
+"""Test-only CLI for deterministic memory evolution runtime benchmark evidence."""
 
 from __future__ import annotations
 

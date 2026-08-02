@@ -1,4 +1,4 @@
-"""Atomic, evidence-only M2 admission-to-preplanning persistence."""
+"""Atomic, evidence-only writer-safe preplanning admission-to-preplanning persistence."""
 
 from __future__ import annotations
 
@@ -169,7 +169,7 @@ class AuthorizationReadSetPrecondition(BaseModel):
 
 
 class SemanticAuthorizationAuthorityRecord(BaseModel):
-    """Authoritative mutable M3 authorization coordinates stored beside effects."""
+    """Authoritative mutable semantic ingestion authorization coordinates stored beside effects."""
 
     authority_record_id: str = Field(min_length=1)
     authority_scope_id: str = Field(min_length=1)
@@ -228,7 +228,7 @@ class SourceFinalizationAtomicWriteRequest(AtomicGenerationRequest):
 
 
 class SemanticIngestionAtomicStore:
-    """The only M2 owner permitted to publish preplanning control evidence."""
+    """The only writer-safe preplanning owner permitted to publish preplanning control evidence."""
 
     def __init__(
         self,
@@ -949,7 +949,7 @@ class SemanticIngestionAtomicStore:
             or index.content.get("required_scope_set_digest")
             != admission.required_outcome_scopes.required_scope_set_digest
         ):
-            raise PreplanningStoreError("source handoff is not already M1-admitted")
+            raise PreplanningStoreError("source handoff is not already governed-source admission-admitted")
         admitted_epoch = index.content.get("admitted_writer_epoch")
         admitted_digest = index.content.get("writer_admission_digest")
         if admitted_epoch is not None:

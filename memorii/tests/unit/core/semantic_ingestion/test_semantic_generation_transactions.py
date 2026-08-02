@@ -48,7 +48,7 @@ def _setup(*, verified: bool = False, planned: bool = False, backend: MemoryPlan
     admission, _ = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW)
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     if verified:
         plan = build_migration_plan(
@@ -66,7 +66,7 @@ def _setup(*, verified: bool = False, planned: bool = False, backend: MemoryPlan
         certificate = certify_migration(plan, checkpoint, independent_verifier_fingerprint="verifier")
         activation = activate_migration(plan, certificate)
         binding = writers.commit_binding(writers.transition(
-            expected=binding, admission_id="m2:verified", runtime_mode="verified_semantic",
+            expected=binding, admission_id="writer-admission:verified", runtime_mode="verified_semantic",
             writer_implementation_fingerprint="writer:verified", graph_schema_fingerprint="schema",
             migration_activation=activation, migration_plan=plan, migration_checkpoint=checkpoint,
             migration_certificate=certificate, target_records=(),
@@ -610,7 +610,7 @@ def test_jsonl_same_public_operation_id_has_two_fence_isolated_generations_after
     plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW)
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: NOW)
     publications = []

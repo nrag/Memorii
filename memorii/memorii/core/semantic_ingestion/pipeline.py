@@ -1,4 +1,4 @@
-"""M3 fail-closed candidate-to-terminal semantic pipeline."""
+"""semantic ingestion fail-closed candidate-to-terminal semantic pipeline."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from memorii.core.semantic_ingestion.contracts import (
     AuthorizationUsePoint,
     CandidateTransportError,
     IndependentSourceAnalysis,
-    M3ExecutionLineage,
     OperationTemporalAttachmentBinding,
     OperationTemporalDecisionBinding,
     ParserConsensusAssessment,
@@ -29,6 +28,7 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticAuthorizationReadSetProvider,
     SemanticCandidate,
     SemanticCandidateAssessor,
+    SemanticExecutionLineage,
     SemanticPipelinePolicy,
     SemanticPipelinePolicyProvider,
     SemanticTerminalBindingSet,
@@ -94,7 +94,7 @@ class _ThreadedLearnedStageRenewalScheduler:
                     lease_errors.append(exc)
                     stopped.set()
 
-        thread = Thread(target=renew, name="memorii-m3-lease-heartbeat", daemon=True)
+        thread = Thread(target=renew, name="memorii-semantic-ingestion-lease-heartbeat", daemon=True)
         thread.start()
         call_error: BaseException | None = None
         results: list[_StageResult] = []
@@ -228,12 +228,12 @@ class TemporalEvidenceResolver:
         }
         return TemporalEvidenceDecisionClosure(
             **body,
-            closure_digest=contract_digest(b"memorii.m3.temporal-decision-closure.v1", body),
+            closure_digest=contract_digest(b"memorii.semantic-ingestion.temporal-decision-closure.v1", body),
         )
 
 
 class SemanticIngestionPipeline:
-    """One bounded proposal repair followed by deterministic M3 reconciliation."""
+    """One bounded proposal repair followed by deterministic semantic ingestion reconciliation."""
 
     _HEARTBEAT_INTERVAL_SECONDS = 10.0
 
@@ -344,7 +344,7 @@ class SemanticIngestionPipeline:
                 )
             authorization_read_set = initial_snapshot.read_set
             proposal_attempt_digests.append(
-                contract_digest(b"memorii.m3.local-proposal-attempt.v1", parsed)
+                contract_digest(b"memorii.semantic-ingestion.local-proposal-attempt.v1", parsed)
             )
             self._observe_stage(stage_observer, "proposal_complete", proposal_attempt_digests[-1])
             attempt = 0
@@ -395,7 +395,7 @@ class SemanticIngestionPipeline:
                         lease_heartbeat,
                     )
                     proposal_attempt_digests.append(contract_digest(
-                        b"memorii.m3.remote-proposal-attempt.v1",
+                        b"memorii.semantic-ingestion.remote-proposal-attempt.v1",
                         {"request_digest": sha256(request_bytes).hexdigest(), "response_digest": sha256(raw).hexdigest()},
                     ))
                     self._observe_stage(
@@ -561,7 +561,7 @@ class SemanticIngestionPipeline:
             if sealed is not None:
                 sealed_values.append(sealed)
         sealed_operations = tuple(sorted(sealed_values, key=lambda value: value.candidate_id))
-        execution_lineage = M3ExecutionLineage.create(
+        execution_lineage = SemanticExecutionLineage.create(
             operation_id=operation_id,
             proposal_attempt_digests=tuple(proposal_attempt_digests),
             source_analysis_digests=tuple(value.analysis_digest for value in source_analyses),
@@ -621,7 +621,7 @@ class SemanticIngestionPipeline:
             for operation in sorted(sealed_operations, key=lambda value: value.operation_id)
         )
         carrier_artifact_digest = contract_digest(
-            b"memorii.m3.terminal-carrier-artifact.v1",
+            b"memorii.semantic-ingestion.terminal-carrier-artifact.v1",
             {
                 "operation_id": operation_id,
                 "sealed_operations": sealed_operations,
@@ -680,7 +680,7 @@ class SemanticIngestionPipeline:
         if read_set is None:
             return None
         synthetic = contract_digest(
-            b"memorii.m3.test-authorization-authority.v1", read_set
+            b"memorii.semantic-ingestion.test-authorization-authority.v1", read_set
         )
         return AuthorizationStageSnapshot.create(
             use_point=use_point,
@@ -821,7 +821,7 @@ class SemanticIngestionPipeline:
         source_analyses: tuple[IndependentSourceAnalysis, ...] = (),
         arbitration_policy_bundle: SemanticArbitrationPolicyBundle | None = None,
         authorization_read_set: SemanticAuthorizationReadSet | None = None,
-        execution_lineage: M3ExecutionLineage | None = None,
+        execution_lineage: SemanticExecutionLineage | None = None,
         sealed_operations: tuple[SealedSemanticOperation, ...] = (),
         terminal_binding_sets: tuple[SemanticTerminalBindingSet, ...] = (),
     ) -> SemanticTerminalOutcome:

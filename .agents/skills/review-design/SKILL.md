@@ -91,6 +91,14 @@ Identify applicable:
   duplicates, and version behavior
 - canonical owners and trust boundaries
 - authority chain from source bytes to artifacts, implementation, and gates
+- identity classification for every proposed file, symbol, protocol,
+  persisted value, test, fixture, artifact, command, diagnostic, and CI label
+
+Independently apply the durability test and identity ledger in
+`.agents/PLANS.md`. Requirement traceability does not authorize requirement IDs
+as executable or durable names. A design is not implementation-ready when its
+names depend on milestone, phase, WorkPlan, issue, review, requirement, or
+evidence coordinates.
 
 For every requirement, classify evidence maturity:
 
@@ -136,6 +144,10 @@ applicable.
 Do not report one syntax form and leave readily inspectable siblings for later
 rounds.
 
+Require a field-aware identity gate with exact typed exceptions, the fixed
+positive corpus, and rejection mutations for each affected structured surface.
+Reject blanket substring scans and whole-file or directory exemptions.
+
 ## Phase 6: Run Independent Reviewers
 
 Run concurrently:
@@ -160,6 +172,11 @@ Mandates:
 - `test_reviewer`: behavioral proof, negative and boundary cases, failure,
   retry, concurrency, migration, rollback, benchmark, and evidence maturity
 
+All reviewers must report planning/evidence-coordinate leakage as finding type
+`identity-governance`, product priority `Not applicable`, disposition
+`changes_required`, and remediation `contract_conformance_action` unless direct
+product-impact evidence justifies P1/P2.
+
 Require the finding contract in
 [references/finding-contract.md](references/finding-contract.md).
 
@@ -173,19 +190,22 @@ For each confirmed finding:
 
 1. validate the violated governing requirement
 2. validate product priority independently from approval disposition
-3. identify a supported broken scenario and its prevalence or importance
+3. for P1/P2 only, identify supported broken product behavior and justify its
+   prevalence or importance; otherwise identify the violated contract surface
 4. identify the root invariant or contract boundary
 5. require the complete known equivalence class and adjacent bypass inventory
 6. reject recommendations that expand scope or introduce a larger defect
 7. define invariant-level correction and behavioral proof
 8. assign remediation eligibility under `.agents/PLANS.md`
 
-Only validated `P1` or `P2` design defects are eligible for design remediation.
+Only validated `P1` or `P2` design defects are eligible for product remediation.
 Missing tests, weak proof, evidence-maturity gaps, governance concerns, and
 hypothetical unsupported inputs must not be relabeled P1/P2 without direct
 product-impact evidence.
 
-Cluster eligible findings by root cause before handing them to a writer.
+Determinate `contract_conformance_action` findings are eligible for bounded
+conformance remediation and block approval until corrected. Cluster eligible
+product and conformance findings by root cause before handing them to a writer.
 
 If two successive findings affect the same boundary, stop accepting
 case-by-case patches. Require a closed grammar, typed contract, state machine,
@@ -205,7 +225,8 @@ Use:
 Do not restart unrelated exploratory review after every micro-edit.
 
 When the candidate has no newly validated P1/P2 defect, do not request another
-design revision. Record P3 and nonblocking observations as follow-ups. Route a
+product revision. Complete required contract-conformance actions before
+approval. Record P3 and nonblocking observations as follow-ups. Route a
 predefined missing proof to one bounded evidence action. If an external
 authority or semantic decision is missing, report `Blocked` once with the exact
 decision required instead of starting another revision round.
@@ -219,7 +240,8 @@ Outcomes:
 
 Approve when no validated P1/P2 design defect remains, every requirement is
 traceable, predefined acceptance evidence is sufficient, material choices are
-explicit, and implementation needs no hidden semantic decision. Approval
+explicit, the identity ledger and enforcement are complete, and implementation
+needs no hidden semantic decision. Approval
 disposition alone does not establish product priority or justify another
 revision.
 

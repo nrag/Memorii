@@ -1,4 +1,4 @@
-"""Source-bound, deny-by-default remote egress authority for M3.
+"""Source-bound, deny-by-default remote egress authority for semantic ingestion.
 
 This module deliberately owns policy lifecycle separately from transport.  A
 provider can ask for a decision, but cannot install, activate, or revive one.
@@ -80,7 +80,7 @@ class ProviderEgressDecision(BaseModel):
     @model_validator(mode="after")
     def validate_digest(self) -> ProviderEgressDecision:
         body = self.model_dump(mode="python", exclude={"decision_digest"})
-        if self.decision_digest != _digest(b"memorii.m3.egress-decision.v1", body):
+        if self.decision_digest != _digest(b"memorii.semantic-ingestion.egress-decision.v1", body):
             raise ValueError("provider egress decision digest mismatch")
         return self
 
@@ -93,7 +93,7 @@ class ProviderEgressDecision(BaseModel):
             "binding": binding, "policy_id": policy_id, "policy_revision": policy_revision,
             "policy_fingerprint": policy_fingerprint, "expires_at": expires_at,
         }
-        return cls(**body, decision_digest=_digest(b"memorii.m3.egress-decision.v1", body))
+        return cls(**body, decision_digest=_digest(b"memorii.semantic-ingestion.egress-decision.v1", body))
 
 
 class SignedEgressPolicyCommand(BaseModel):
@@ -228,7 +228,7 @@ class _PersistedEgressCommand(BaseModel):
     @model_validator(mode="after")
     def validate_record(self) -> _PersistedEgressCommand:
         body = {"principal": self.principal, "command": self.command}
-        if self.record_digest != _digest(b"memorii.m3.egress-command-record.v1", body):
+        if self.record_digest != _digest(b"memorii.semantic-ingestion.egress-command-record.v1", body):
             raise ValueError("persisted egress command digest mismatch")
         return self
 
@@ -239,7 +239,7 @@ class _PersistedEgressCommand(BaseModel):
         body = {"principal": principal, "command": command}
         return cls(
             **body,
-            record_digest=_digest(b"memorii.m3.egress-command-record.v1", body),
+            record_digest=_digest(b"memorii.semantic-ingestion.egress-command-record.v1", body),
         )
 
 

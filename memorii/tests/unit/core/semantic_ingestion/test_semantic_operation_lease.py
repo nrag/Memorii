@@ -67,7 +67,7 @@ def test_lease_renews_fences_stale_tokens_and_bounds_recovery() -> None:
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: now[0])
     binding = writers.commit_binding(
         writers.create_initial_evidence_only(
-            admission_id="m2",
+            admission_id="writer-admission",
             writer_implementation_fingerprint="writer-fingerprint",
             graph_schema_fingerprint="schema-fingerprint",
         )
@@ -123,7 +123,7 @@ def test_lease_acquisition_exact_retry_returns_persisted_binding() -> None:
     admission, fence = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: now)
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: now)
     store._publish_preplanning(admission=admission, writer_binding=binding)
@@ -143,7 +143,7 @@ def test_planned_operation_lease_expires_and_reclaims_with_next_fence_epoch() ->
     admission, fence = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: now[0])
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: now[0])
     store._publish_preplanning(admission=admission, writer_binding=binding)
@@ -183,7 +183,7 @@ def test_renewal_that_crosses_expiry_before_storage_cas_is_rejected() -> None:
     admission, fence = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: current[0])
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: current[0])
     store._publish_preplanning(admission=admission, writer_binding=binding)
@@ -210,7 +210,7 @@ def test_jsonl_restart_reclaims_same_operation_identity_and_fences_old_owner(tmp
     admission, fence = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: now[0])
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: now[0])
     store._publish_preplanning(admission=admission, writer_binding=binding)
@@ -264,7 +264,7 @@ def test_jsonl_lease_lost_ack_reopens_to_exact_same_owner_binding(
     admission, fence = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: now)
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: now)
     store._publish_preplanning(admission=admission, writer_binding=binding)

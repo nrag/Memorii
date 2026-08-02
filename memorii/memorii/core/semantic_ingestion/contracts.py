@@ -1,10 +1,10 @@
-"""Closed, content-addressed contracts shared by the M3 ingestion pipeline.
+"""Closed, content-addressed contracts shared by the semantic ingestion ingestion pipeline.
 
 This module is deliberately a dependency leaf.  Candidate validation,
 operation sealing, durable carrier compilation, provider orchestration, and
-M2 persistence all consume these types; none of the types imports those
+writer-safe preplanning persistence all consume these types; none of the types imports those
 services back.  That makes the accepted/non-accepted boundary auditable and
-keeps replay execution outside M3.
+keeps replay execution outside semantic ingestion.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class CandidateTransportError(ValueError):
 
 
 class SemanticContractCodecError(ValueError):
-    """Serialized M3 bytes do not match the active closed contract."""
+    """Serialized semantic ingestion bytes do not match the active closed contract."""
 
 
 class TimeInterval(BaseModel):
@@ -88,7 +88,7 @@ class SourceAuthorityEvidence(BaseModel):
     @model_validator(mode="after")
     def validate_evidence(self) -> SourceAuthorityEvidence:
         body = self.model_dump(mode="python", exclude={"evidence_digest"})
-        if self.evidence_digest != contract_digest(b"memorii.m3.source-authority-evidence.v1", body):
+        if self.evidence_digest != contract_digest(b"memorii.semantic-ingestion.source-authority-evidence.v1", body):
             raise ValueError("source authority evidence digest mismatch")
         return self
 
@@ -110,7 +110,7 @@ class SourceAuthorityEvidence(BaseModel):
         }
         return cls(
             **body,
-            evidence_digest=contract_digest(b"memorii.m3.source-authority-evidence.v1", body),
+            evidence_digest=contract_digest(b"memorii.semantic-ingestion.source-authority-evidence.v1", body),
         )
 
 
@@ -127,7 +127,7 @@ class AuthenticatedEventTimeReference(BaseModel):
     @model_validator(mode="after")
     def validate_digest(self) -> AuthenticatedEventTimeReference:
         body = self.model_dump(mode="python", exclude={"reference_digest"})
-        if self.reference_digest != contract_digest(b"memorii.m3.temporal-reference.v1", body):
+        if self.reference_digest != contract_digest(b"memorii.semantic-ingestion.temporal-reference.v1", body):
             raise ValueError("temporal reference digest mismatch")
         return self
 
@@ -136,7 +136,7 @@ class AuthenticatedEventTimeReference(BaseModel):
         body = {"kind": "authenticated_event_time", "source_field": "event_time", **values}
         return cls(
             **body,
-            reference_digest=contract_digest(b"memorii.m3.temporal-reference.v1", body),
+            reference_digest=contract_digest(b"memorii.semantic-ingestion.temporal-reference.v1", body),
         )
 
 
@@ -153,7 +153,7 @@ class AuthenticatedDocumentTimeReference(BaseModel):
     @model_validator(mode="after")
     def validate_digest(self) -> AuthenticatedDocumentTimeReference:
         body = self.model_dump(mode="python", exclude={"reference_digest"})
-        if self.reference_digest != contract_digest(b"memorii.m3.temporal-reference.v1", body):
+        if self.reference_digest != contract_digest(b"memorii.semantic-ingestion.temporal-reference.v1", body):
             raise ValueError("temporal reference digest mismatch")
         return self
 
@@ -166,7 +166,7 @@ class AuthenticatedDocumentTimeReference(BaseModel):
         }
         return cls(
             **body,
-            reference_digest=contract_digest(b"memorii.m3.temporal-reference.v1", body),
+            reference_digest=contract_digest(b"memorii.semantic-ingestion.temporal-reference.v1", body),
         )
 
 
@@ -214,11 +214,11 @@ class TrustPolicySnapshot(BaseModel):
         ids = tuple(rule.predicate_id for rule in self.rules)
         if ids != tuple(sorted(set(ids))):
             raise ValueError("trust rules must be ordered and unique")
-        fingerprint = contract_digest(b"memorii.m3.trust-policy-rules.v1", self.rules)
+        fingerprint = contract_digest(b"memorii.semantic-ingestion.trust-policy-rules.v1", self.rules)
         if self.fingerprint != fingerprint:
             raise ValueError("trust policy fingerprint mismatch")
         body = self.model_dump(mode="python", exclude={"snapshot_digest"})
-        if self.snapshot_digest != contract_digest(b"memorii.m3.trust-policy-snapshot.v1", body):
+        if self.snapshot_digest != contract_digest(b"memorii.semantic-ingestion.trust-policy-snapshot.v1", body):
             raise ValueError("trust policy snapshot digest mismatch")
         return self
 
@@ -227,13 +227,13 @@ class TrustPolicySnapshot(BaseModel):
         cls, *, policy_revision: str, system_effective_interval: TimeInterval,
         rules: tuple[PredicateTrustRule, ...],
     ) -> TrustPolicySnapshot:
-        fingerprint = contract_digest(b"memorii.m3.trust-policy-rules.v1", rules)
+        fingerprint = contract_digest(b"memorii.semantic-ingestion.trust-policy-rules.v1", rules)
         body = {
             "schema_id": "memorii.semantic_ingestion.trust_policy", "schema_version": 1,
             "policy_revision": policy_revision, "system_effective_interval": system_effective_interval,
             "fingerprint": fingerprint, "rules": rules,
         }
-        return cls(**body, snapshot_digest=contract_digest(b"memorii.m3.trust-policy-snapshot.v1", body))
+        return cls(**body, snapshot_digest=contract_digest(b"memorii.semantic-ingestion.trust-policy-snapshot.v1", body))
 
     def active_at(self, coordinate: datetime) -> bool:
         return self.system_effective_interval.start <= coordinate and (
@@ -272,11 +272,11 @@ class TemporalPolicySnapshot(BaseModel):
         ids = tuple(rule.predicate_id for rule in self.rules)
         if ids != tuple(sorted(set(ids))):
             raise ValueError("temporal rules must be ordered and unique")
-        fingerprint = contract_digest(b"memorii.m3.temporal-policy-rules.v1", self.rules)
+        fingerprint = contract_digest(b"memorii.semantic-ingestion.temporal-policy-rules.v1", self.rules)
         if self.fingerprint != fingerprint:
             raise ValueError("temporal policy fingerprint mismatch")
         body = self.model_dump(mode="python", exclude={"snapshot_digest"})
-        if self.snapshot_digest != contract_digest(b"memorii.m3.temporal-policy-snapshot.v1", body):
+        if self.snapshot_digest != contract_digest(b"memorii.semantic-ingestion.temporal-policy-snapshot.v1", body):
             raise ValueError("temporal policy snapshot digest mismatch")
         return self
 
@@ -285,13 +285,13 @@ class TemporalPolicySnapshot(BaseModel):
         cls, *, policy_revision: str, system_effective_interval: TimeInterval,
         rules: tuple[PredicateTemporalRule, ...],
     ) -> TemporalPolicySnapshot:
-        fingerprint = contract_digest(b"memorii.m3.temporal-policy-rules.v1", rules)
+        fingerprint = contract_digest(b"memorii.semantic-ingestion.temporal-policy-rules.v1", rules)
         body = {
             "schema_id": "memorii.semantic_ingestion.temporal_policy", "schema_version": 1,
             "policy_revision": policy_revision, "system_effective_interval": system_effective_interval,
             "fingerprint": fingerprint, "rules": rules,
         }
-        return cls(**body, snapshot_digest=contract_digest(b"memorii.m3.temporal-policy-snapshot.v1", body))
+        return cls(**body, snapshot_digest=contract_digest(b"memorii.semantic-ingestion.temporal-policy-snapshot.v1", body))
 
     def active_at(self, coordinate: datetime) -> bool:
         return self.system_effective_interval.start <= coordinate and (
@@ -306,7 +306,7 @@ class TemporalPolicySnapshot(BaseModel):
 
 
 class SemanticArbitrationPolicyBundle(BaseModel):
-    """The unique immutable trust/temporal pair used by one M3 operation."""
+    """The unique immutable trust/temporal pair used by one semantic ingestion operation."""
 
     trust_policy: TrustPolicySnapshot
     temporal_policy: TemporalPolicySnapshot
@@ -322,7 +322,7 @@ class SemanticArbitrationPolicyBundle(BaseModel):
         if not self.temporal_policy.active_at(self.arbitration_as_of):
             raise ValueError("temporal policy is not active at arbitration coordinate")
         body = self.model_dump(mode="python", exclude={"bundle_digest"})
-        if self.bundle_digest != contract_digest(b"memorii.m3.arbitration-policy-bundle.v1", body):
+        if self.bundle_digest != contract_digest(b"memorii.semantic-ingestion.arbitration-policy-bundle.v1", body):
             raise ValueError("arbitration policy bundle digest mismatch")
         return self
 
@@ -335,7 +335,7 @@ class SemanticArbitrationPolicyBundle(BaseModel):
             "trust_policy": trust_policy, "temporal_policy": temporal_policy,
             "arbitration_as_of": arbitration_as_of,
         }
-        return cls(**body, bundle_digest=contract_digest(b"memorii.m3.arbitration-policy-bundle.v1", body))
+        return cls(**body, bundle_digest=contract_digest(b"memorii.semantic-ingestion.arbitration-policy-bundle.v1", body))
 
 
 class SemanticEgressAuthorizationBinding(BaseModel):
@@ -377,7 +377,7 @@ class SemanticAuthorizationReadSet(BaseModel):
         }) != 1:
             raise ValueError("egress authorization coordinates must be present together")
         body = self.model_dump(mode="python", exclude={"read_set_digest"})
-        if self.read_set_digest != contract_digest(b"memorii.m3.authorization-read-set.v1", body):
+        if self.read_set_digest != contract_digest(b"memorii.semantic-ingestion.authorization-read-set.v1", body):
             raise ValueError("semantic authorization read-set digest mismatch")
         return self
 
@@ -396,7 +396,7 @@ class SemanticAuthorizationReadSet(BaseModel):
         body = {
             "policy_bundle_digest": policy_bundle.bundle_digest,
             "policy_revision_digest": contract_digest(
-                b"memorii.m3.policy-revision-pair.v1",
+                b"memorii.semantic-ingestion.policy-revision-pair.v1",
                 {
                     "trust": policy_bundle.trust_policy.snapshot_digest,
                     "temporal": policy_bundle.temporal_policy.snapshot_digest,
@@ -411,7 +411,7 @@ class SemanticAuthorizationReadSet(BaseModel):
         }
         return cls(
             **body,
-            read_set_digest=contract_digest(b"memorii.m3.authorization-read-set.v1", body),
+            read_set_digest=contract_digest(b"memorii.semantic-ingestion.authorization-read-set.v1", body),
         )
 
 
@@ -468,7 +468,7 @@ class AuthorizationStageSnapshot(BaseModel):
                 "expires_at": self.egress_expires_at,
             }
             if self.read_set.egress_decision_digest != contract_digest(
-                b"memorii.m3.egress-decision.v1", egress_decision
+                b"memorii.semantic-ingestion.egress-decision.v1", egress_decision
             ):
                 raise ValueError(
                     "authorization snapshot egress decision coordinates are invalid"
@@ -479,7 +479,7 @@ class AuthorizationStageSnapshot(BaseModel):
             raise ValueError("authorization snapshot contains expired authority")
         body = self.model_dump(mode="python", exclude={"snapshot_digest"})
         if self.snapshot_digest != contract_digest(
-            b"memorii.m3.authorization-stage-snapshot.v1", body
+            b"memorii.semantic-ingestion.authorization-stage-snapshot.v1", body
         ):
             raise ValueError("authorization stage snapshot digest mismatch")
         return self
@@ -489,7 +489,7 @@ class AuthorizationStageSnapshot(BaseModel):
         return cls(
             **values,
             snapshot_digest=contract_digest(
-                b"memorii.m3.authorization-stage-snapshot.v1", values
+                b"memorii.semantic-ingestion.authorization-stage-snapshot.v1", values
             ),
         )
 
@@ -529,7 +529,7 @@ class AuthenticatedSourceIntervalEvidence(BaseModel):
     @model_validator(mode="after")
     def validate_evidence(self) -> AuthenticatedSourceIntervalEvidence:
         body = self.model_dump(mode="python", exclude={"evidence_digest"})
-        if self.evidence_digest != contract_digest(b"memorii.m3.source-interval-evidence.v1", body):
+        if self.evidence_digest != contract_digest(b"memorii.semantic-ingestion.source-interval-evidence.v1", body):
             raise ValueError("authenticated source interval evidence digest mismatch")
         return self
 
@@ -558,7 +558,7 @@ class AuthenticatedSourceIntervalEvidence(BaseModel):
         }
         return cls(
             **body,
-            evidence_digest=contract_digest(b"memorii.m3.source-interval-evidence.v1", body),
+            evidence_digest=contract_digest(b"memorii.semantic-ingestion.source-interval-evidence.v1", body),
         )
 
 
@@ -589,7 +589,7 @@ class TemporalEvidenceCandidate(BaseModel):
         ):
             raise ValueError("certified text candidate requires its exact nonempty source spans")
         body = self.model_dump(mode="python", exclude={"candidate_digest"})
-        if self.candidate_digest != contract_digest(b"memorii.m3.temporal-candidate.v1", body):
+        if self.candidate_digest != contract_digest(b"memorii.semantic-ingestion.temporal-candidate.v1", body):
             raise ValueError("temporal candidate digest mismatch")
         return self
 
@@ -614,7 +614,7 @@ class TemporalEvidenceCandidate(BaseModel):
             "certified_text_candidate_id": certified_text_candidate_id,
             "evidence_spans": evidence_spans,
         }
-        return cls(**body, candidate_digest=contract_digest(b"memorii.m3.temporal-candidate.v1", body))
+        return cls(**body, candidate_digest=contract_digest(b"memorii.semantic-ingestion.temporal-candidate.v1", body))
 
 
 class TemporalEvidenceDecisionClosure(BaseModel):
@@ -675,7 +675,7 @@ class TemporalEvidenceDecisionClosure(BaseModel):
         elif selected or contested or self.resolved_interval is not None or self.resolution_rule != "unresolved":
             raise ValueError("unknown closure must be non-promoting")
         body = self.model_dump(mode="python", exclude={"closure_digest"})
-        if self.closure_digest != contract_digest(b"memorii.m3.temporal-decision-closure.v1", body):
+        if self.closure_digest != contract_digest(b"memorii.semantic-ingestion.temporal-decision-closure.v1", body):
             raise ValueError("temporal decision closure digest mismatch")
         return self
 
@@ -739,7 +739,7 @@ class ParserConsensusAssessment(BaseModel):
         if self.status != expected_status:
             raise ValueError("parser consensus status is not reproducible")
         body = self.model_dump(mode="python", exclude={"assessment_digest"})
-        if self.assessment_digest != contract_digest(b"memorii.m3.parser-consensus.v1", body):
+        if self.assessment_digest != contract_digest(b"memorii.semantic-ingestion.parser-consensus.v1", body):
             raise ValueError("parser consensus digest mismatch")
         return self
 
@@ -747,7 +747,7 @@ class ParserConsensusAssessment(BaseModel):
     def create(cls, *, primary: AnalyzerRoleInterpretation, corroborating: AnalyzerRoleInterpretation) -> ParserConsensusAssessment:
         stable = cls._equivalent(primary, corroborating)
         body = {"primary": primary, "corroborating": corroborating, "status": "stable" if stable else "unresolved"}
-        return cls(**body, assessment_digest=contract_digest(b"memorii.m3.parser-consensus.v1", body))
+        return cls(**body, assessment_digest=contract_digest(b"memorii.semantic-ingestion.parser-consensus.v1", body))
 
     @staticmethod
     def _equivalent(left: AnalyzerRoleInterpretation, right: AnalyzerRoleInterpretation) -> bool:
@@ -796,7 +796,7 @@ class OperationTemporalAttachmentBinding(BaseModel):
         if self.candidate_ids != tuple(sorted(set(self.candidate_ids))):
             raise ValueError("temporal attachment IDs must be ordered and unique")
         body = self.model_dump(mode="python", exclude={"binding_digest"})
-        if self.binding_digest != contract_digest(b"memorii.m3.temporal_attachment_binding.v1", body):
+        if self.binding_digest != contract_digest(b"memorii.semantic-ingestion.temporal_attachment_binding.v1", body):
             raise ValueError("temporal attachment binding digest mismatch")
         return self
 
@@ -813,7 +813,7 @@ class OperationTemporalAttachmentBinding(BaseModel):
             "candidate_ids": candidate_ids,
             "candidate_spans": candidate_spans,
         }
-        return cls(**body, binding_digest=contract_digest(b"memorii.m3.temporal_attachment_binding.v1", body))
+        return cls(**body, binding_digest=contract_digest(b"memorii.semantic-ingestion.temporal_attachment_binding.v1", body))
 
 
 class OperationTemporalDecisionBinding(BaseModel):
@@ -843,7 +843,7 @@ class OperationTemporalDecisionBinding(BaseModel):
         elif self.reference_evidence is not None and self.decision_closure.resolution_rule != "atemporal":
             raise ValueError("unselected reference evidence cannot be attached to an interval")
         body = self.model_dump(mode="python", exclude={"binding_digest"})
-        if self.binding_digest != contract_digest(b"memorii.m3.temporal_decision_binding.v1", body):
+        if self.binding_digest != contract_digest(b"memorii.semantic-ingestion.temporal_decision_binding.v1", body):
             raise ValueError("temporal decision binding digest mismatch")
         return self
 
@@ -864,7 +864,7 @@ class OperationTemporalDecisionBinding(BaseModel):
             "reference_evidence": reference_evidence,
             "decision_closure": decision_closure,
         }
-        return cls(**body, binding_digest=contract_digest(b"memorii.m3.temporal_decision_binding.v1", body))
+        return cls(**body, binding_digest=contract_digest(b"memorii.semantic-ingestion.temporal_decision_binding.v1", body))
 
 
 class ProposalAlignmentReference(BaseModel):
@@ -896,7 +896,7 @@ class SemanticCandidate(BaseModel):
 
     @property
     def candidate_digest(self) -> str:
-        return contract_digest(b"memorii.m3.semantic-candidate.v1", self)
+        return contract_digest(b"memorii.semantic-ingestion.semantic-candidate.v1", self)
 
 
 class SourceTemporalEvidenceSet(BaseModel):
@@ -961,7 +961,7 @@ class IndependentSourceAnalysis(BaseModel):
         if any(span.source_id != self.source_id for value in self.temporal_evidence for span in value.attachment_spans):
             raise ValueError("temporal attachment span does not belong to source analysis")
         body = self.model_dump(mode="python", exclude={"analysis_digest"})
-        if self.analysis_digest != contract_digest(b"memorii.m3.independent-source-analysis.v1", body):
+        if self.analysis_digest != contract_digest(b"memorii.semantic-ingestion.independent-source-analysis.v1", body):
             raise ValueError("independent source analysis digest mismatch")
         return self
 
@@ -970,7 +970,7 @@ class IndependentSourceAnalysis(BaseModel):
         return cls.model_validate({
             **values,
             "analysis_digest": contract_digest(
-                b"memorii.m3.independent-source-analysis.v1", values
+                b"memorii.semantic-ingestion.independent-source-analysis.v1", values
             ),
         })
 
@@ -1002,17 +1002,17 @@ class SealedSemanticOperation(BaseModel):
         if {value.temporal_role for value in ordered} != expected_roles or len(ordered) != len(expected_roles):
             raise ValueError("sealed operation has an invalid temporal role set")
         expected_scope_digest = contract_digest(
-            b"memorii.m3.operation-scope-assessments.v1",
+            b"memorii.semantic-ingestion.operation-scope-assessments.v1",
             tuple(value.scope_assessment_digest for value in ordered),
         )
         expected_semantic_digest = contract_digest(
-            b"memorii.m3.operation-semantic-assessments.v1",
+            b"memorii.semantic-ingestion.operation-semantic-assessments.v1",
             tuple(value.semantic_assessment_digest for value in ordered),
         )
         if self.scope_assessment_digest != expected_scope_digest or self.semantic_assessment_digest != expected_semantic_digest:
             raise ValueError("sealed operation assessment closure mismatch")
         body = self.model_dump(mode="python", exclude={"sealed_operation_digest"})
-        if self.sealed_operation_digest != contract_digest(b"memorii.m3.sealed-operation.v1", body):
+        if self.sealed_operation_digest != contract_digest(b"memorii.semantic-ingestion.sealed-operation.v1", body):
             raise ValueError("sealed operation digest mismatch")
         return self
 
@@ -1062,7 +1062,7 @@ class _TemporalCarrier(BaseModel):
         if self.valid_interval != closure.resolved_interval:
             raise ValueError("temporal carrier valid interval mismatch")
         body = self.model_dump(mode="python", exclude={"record_digest"})
-        if self.record_digest != contract_digest(b"memorii.m3.temporal-carrier.v1", body):
+        if self.record_digest != contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", body):
             raise ValueError("temporal carrier digest mismatch")
         return self
 
@@ -1092,7 +1092,7 @@ class TemporalTransitionRecord(_TemporalCarrier):
     statement_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-M3DurableCarrier = Annotated[
+SemanticDurableCarrier = Annotated[
     ClaimAssertion | ActionRevision | IdentityLineageRecord | TemporalTransitionRecord,
     Field(discriminator="record_kind"),
 ]
@@ -1113,17 +1113,17 @@ class SemanticTerminalBindingSet(BaseModel):
         if len({value.temporal_role for value in self.bindings}) != len(self.bindings):
             raise ValueError("terminal temporal roles must be unique")
         body = self.model_dump(mode="python", exclude={"binding_set_digest"})
-        if self.binding_set_digest != contract_digest(b"memorii.m3.terminal-binding-set.v1", body):
+        if self.binding_set_digest != contract_digest(b"memorii.semantic-ingestion.terminal-binding-set.v1", body):
             raise ValueError("terminal binding-set digest mismatch")
         return self
 
     @classmethod
     def create(cls, *, operation_id: str, bindings: tuple[OperationTemporalDecisionBinding, ...]) -> SemanticTerminalBindingSet:
         body = {"operation_id": operation_id, "bindings": bindings}
-        return cls(**body, binding_set_digest=contract_digest(b"memorii.m3.terminal-binding-set.v1", body))
+        return cls(**body, binding_set_digest=contract_digest(b"memorii.semantic-ingestion.terminal-binding-set.v1", body))
 
 
-class M3ExecutionLineage(BaseModel):
+class SemanticExecutionLineage(BaseModel):
     operation_id: str = Field(min_length=1)
     proposal_attempt_digests: tuple[str, ...]
     source_analysis_digests: tuple[str, ...]
@@ -1137,23 +1137,23 @@ class M3ExecutionLineage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_lineage(self) -> M3ExecutionLineage:
+    def validate_lineage(self) -> SemanticExecutionLineage:
         for values in (
             self.proposal_attempt_digests, self.source_analysis_digests,
             self.sealed_operation_digests, self.egress_decision_digests,
         ):
             if any(len(value) != 64 for value in values):
-                raise ValueError("M3 lineage contains a non-digest coordinate")
+                raise ValueError("semantic ingestion lineage contains a non-digest coordinate")
         body = self.model_dump(mode="python", exclude={"lineage_digest"})
-        if self.lineage_digest != contract_digest(b"memorii.m3.execution-lineage.v1", body):
-            raise ValueError("M3 execution lineage digest mismatch")
+        if self.lineage_digest != contract_digest(b"memorii.semantic-ingestion.execution-lineage.v1", body):
+            raise ValueError("semantic ingestion execution lineage digest mismatch")
         return self
 
     @classmethod
-    def create(cls, **values: object) -> M3ExecutionLineage:
+    def create(cls, **values: object) -> SemanticExecutionLineage:
         return cls.model_validate({
             **values,
-            "lineage_digest": contract_digest(b"memorii.m3.execution-lineage.v1", values),
+            "lineage_digest": contract_digest(b"memorii.semantic-ingestion.execution-lineage.v1", values),
         })
 
 
@@ -1165,11 +1165,11 @@ class SemanticTerminalOutcome(BaseModel):
     source_analyses: tuple[IndependentSourceAnalysis, ...] = ()
     arbitration_policy_bundle: SemanticArbitrationPolicyBundle | None = None
     authorization_read_set: SemanticAuthorizationReadSet | None = None
-    execution_lineage: M3ExecutionLineage | None = None
+    execution_lineage: SemanticExecutionLineage | None = None
     temporal_closures: tuple[TemporalEvidenceDecisionClosure, ...]
     carrier_artifact_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     sealed_operations: tuple[SealedSemanticOperation, ...] = ()
-    accepted_carriers: tuple[M3DurableCarrier, ...] = ()
+    accepted_carriers: tuple[SemanticDurableCarrier, ...] = ()
     terminal_binding_sets: tuple[SemanticTerminalBindingSet, ...] = ()
     attempt_count: int = Field(ge=0, le=2)
     terminal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -1178,7 +1178,7 @@ class SemanticTerminalOutcome(BaseModel):
 
     @property
     def candidate_set_digest(self) -> str:
-        return contract_digest(b"memorii.m3.semantic-candidate-set.v1", self.candidates)
+        return contract_digest(b"memorii.semantic-ingestion.semantic-candidate-set.v1", self.candidates)
 
     @model_validator(mode="after")
     def validate_terminal(self) -> SemanticTerminalOutcome:
@@ -1241,7 +1241,7 @@ class SemanticTerminalOutcome(BaseModel):
             if bound_closures != self.temporal_closures:
                 raise ValueError("accepted terminal closures do not equal sealed role bindings")
             expected_carrier_digest = contract_digest(
-                b"memorii.m3.terminal-carrier-artifact.v1",
+                b"memorii.semantic-ingestion.terminal-carrier-artifact.v1",
                 {
                     "operation_id": self.operation_id,
                     "sealed_operations": self.sealed_operations,
@@ -1270,7 +1270,7 @@ class SemanticTerminalOutcome(BaseModel):
             ):
                 raise ValueError("non-accepted terminal omitted a sealed temporal closure")
         body = self.model_dump(mode="python", exclude={"terminal_digest"})
-        if self.terminal_digest != contract_digest(b"memorii.m3.semantic-terminal.v1", body):
+        if self.terminal_digest != contract_digest(b"memorii.semantic-ingestion.semantic-terminal.v1", body):
             raise ValueError("semantic terminal digest mismatch")
         return self
 
@@ -1285,11 +1285,11 @@ class SemanticTerminalOutcome(BaseModel):
         source_analyses: tuple[IndependentSourceAnalysis, ...] = (),
         arbitration_policy_bundle: SemanticArbitrationPolicyBundle | None = None,
         authorization_read_set: SemanticAuthorizationReadSet | None = None,
-        execution_lineage: M3ExecutionLineage | None = None,
+        execution_lineage: SemanticExecutionLineage | None = None,
         temporal_closures: tuple[TemporalEvidenceDecisionClosure, ...],
         carrier_artifact_digest: str | None = None,
         sealed_operations: tuple[SealedSemanticOperation, ...] = (),
-        accepted_carriers: tuple[M3DurableCarrier, ...] = (),
+        accepted_carriers: tuple[SemanticDurableCarrier, ...] = (),
         terminal_binding_sets: tuple[SemanticTerminalBindingSet, ...] = (),
         attempt_count: int,
     ) -> SemanticTerminalOutcome:
@@ -1309,10 +1309,10 @@ class SemanticTerminalOutcome(BaseModel):
             "terminal_binding_sets": terminal_binding_sets,
             "attempt_count": attempt_count,
         }
-        return cls(**values, terminal_digest=contract_digest(b"memorii.m3.semantic-terminal.v1", values))
+        return cls(**values, terminal_digest=contract_digest(b"memorii.semantic-ingestion.semantic-terminal.v1", values))
 
 
-class M3LifecycleTransition(BaseModel):
+class SemanticLifecycleTransition(BaseModel):
     """Append-only persisted transition for the protected provider lifecycle."""
 
     operation_id: str = Field(min_length=1)
@@ -1331,7 +1331,7 @@ class M3LifecycleTransition(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_transition(self) -> M3LifecycleTransition:
+    def validate_transition(self) -> SemanticLifecycleTransition:
         if self.to_kind == "accepted_candidate":
             if (
                 self.from_kind != "selected_pipeline_pending"
@@ -1359,14 +1359,14 @@ class M3LifecycleTransition(BaseModel):
         ):
             raise ValueError("nonpromoting terminal lifecycle transition is invalid")
         body = self.model_dump(mode="python", exclude={"transition_digest"})
-        if self.transition_digest != contract_digest(b"memorii.m3.lifecycle-transition.v1", body):
-            raise ValueError("M3 lifecycle transition digest mismatch")
+        if self.transition_digest != contract_digest(b"memorii.semantic-ingestion.lifecycle-transition.v1", body):
+            raise ValueError("semantic ingestion lifecycle transition digest mismatch")
         return self
 
     @classmethod
     def accepted_candidate(
         cls, *, operation_id: str, candidate_digest: str,
-    ) -> M3LifecycleTransition:
+    ) -> SemanticLifecycleTransition:
         body = {
             "operation_id": operation_id,
             "from_kind": "selected_pipeline_pending",
@@ -1378,7 +1378,7 @@ class M3LifecycleTransition(BaseModel):
         }
         return cls(
             **body,
-            transition_digest=contract_digest(b"memorii.m3.lifecycle-transition.v1", body),
+            transition_digest=contract_digest(b"memorii.semantic-ingestion.lifecycle-transition.v1", body),
         )
 
     @classmethod
@@ -1386,8 +1386,8 @@ class M3LifecycleTransition(BaseModel):
         cls,
         *,
         terminal: SemanticTerminalOutcome,
-        accepted_transition: M3LifecycleTransition,
-    ) -> M3LifecycleTransition:
+        accepted_transition: SemanticLifecycleTransition,
+    ) -> SemanticLifecycleTransition:
         body = {
             "operation_id": terminal.operation_id,
             "from_kind": "accepted_candidate",
@@ -1399,7 +1399,7 @@ class M3LifecycleTransition(BaseModel):
         }
         return cls(
             **body,
-            transition_digest=contract_digest(b"memorii.m3.lifecycle-transition.v1", body),
+            transition_digest=contract_digest(b"memorii.semantic-ingestion.lifecycle-transition.v1", body),
         )
 
     @classmethod
@@ -1413,8 +1413,8 @@ class M3LifecycleTransition(BaseModel):
             "non_english_language", "mixed_residue", "unsupported_grammar",
             "extractor_abstained", "retry_budget_exhausted",
         ],
-        accepted_transition: M3LifecycleTransition | None = None,
-    ) -> M3LifecycleTransition:
+        accepted_transition: SemanticLifecycleTransition | None = None,
+    ) -> SemanticLifecycleTransition:
         body = {
             "operation_id": terminal.operation_id,
             "from_kind": "accepted_candidate" if accepted_transition is not None else "selected_pipeline_pending",
@@ -1428,11 +1428,11 @@ class M3LifecycleTransition(BaseModel):
         }
         return cls(
             **body,
-            transition_digest=contract_digest(b"memorii.m3.lifecycle-transition.v1", body),
+            transition_digest=contract_digest(b"memorii.semantic-ingestion.lifecycle-transition.v1", body),
         )
 
 
-class M3RetryableProgress(BaseModel):
+class SemanticRetryableProgress(BaseModel):
     operation_id: str = Field(min_length=1)
     stage: Literal["policy_read", "proposal", "analysis", "planning", "group", "finalization"]
     failure_kind: Literal["policy_outage", "transport_outage", "store_outage"]
@@ -1443,10 +1443,10 @@ class M3RetryableProgress(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_progress(self) -> M3RetryableProgress:
+    def validate_progress(self) -> SemanticRetryableProgress:
         body = self.model_dump(mode="python", exclude={"progress_digest"})
-        if self.progress_digest != contract_digest(b"memorii.m3.retryable-progress.v1", body):
-            raise ValueError("M3 retryable progress digest mismatch")
+        if self.progress_digest != contract_digest(b"memorii.semantic-ingestion.retryable-progress.v1", body):
+            raise ValueError("semantic ingestion retryable progress digest mismatch")
         return self
 
     @classmethod
@@ -1458,7 +1458,7 @@ class M3RetryableProgress(BaseModel):
         failure_kind: Literal["policy_outage", "transport_outage", "store_outage"],
         attempt_count: int,
         terminal_artifact_digest: str | None = None,
-    ) -> M3RetryableProgress:
+    ) -> SemanticRetryableProgress:
         body = {
             "operation_id": operation_id,
             "stage": stage,
@@ -1468,11 +1468,11 @@ class M3RetryableProgress(BaseModel):
         }
         return cls(
             **body,
-            progress_digest=contract_digest(b"memorii.m3.retryable-progress.v1", body),
+            progress_digest=contract_digest(b"memorii.semantic-ingestion.retryable-progress.v1", body),
         )
 
 
-class M3ExecutionRetryPlan(BaseModel):
+class SemanticExecutionRetryPlan(BaseModel):
     """Authenticated, secret-free inputs needed to resume before learned stages."""
 
     operation_id: str = Field(min_length=1)
@@ -1508,13 +1508,13 @@ class M3ExecutionRetryPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_plan(self) -> M3ExecutionRetryPlan:
+    def validate_plan(self) -> SemanticExecutionRetryPlan:
         if (
             self.admitted_source_id != self.source_id
             or self.admitted_source_digest != self.source_digest
             or self.admitted_source_bytes_digest != sha256(self.source_utf8_bytes).hexdigest()
         ):
-            raise ValueError("M3 retry plan admitted source binding is invalid")
+            raise ValueError("semantic ingestion retry plan admitted source binding is invalid")
         admitted_source = {
             "operation_fence_binding_digest": self.operation_fence_binding_digest,
             "admitted_source_id": self.admitted_source_id,
@@ -1522,22 +1522,22 @@ class M3ExecutionRetryPlan(BaseModel):
             "admitted_source_bytes_digest": self.admitted_source_bytes_digest,
         }
         if self.admitted_source_binding_digest != contract_digest(
-            b"memorii.m3.admitted-source-binding.v1", admitted_source
+            b"memorii.semantic-ingestion.admitted-source-binding.v1", admitted_source
         ):
-            raise ValueError("M3 retry plan admitted source digest mismatch")
+            raise ValueError("semantic ingestion retry plan admitted source digest mismatch")
         if self.policy_source_id != self.source_id or self.policy_source_digest != self.source_digest:
-            raise ValueError("M3 retry plan policy coordinates do not bind its source")
+            raise ValueError("semantic ingestion retry plan policy coordinates do not bind its source")
         if self.deployment_authorization_state == "verified":
             if self.deployment_active_epoch is None or self.deployment_decision_digest is None:
-                raise ValueError("verified M3 retry plan lacks deployment coordinates")
+                raise ValueError("verified semantic ingestion retry plan lacks deployment coordinates")
         elif self.deployment_active_epoch is not None or self.deployment_decision_digest is not None:
-            raise ValueError("unavailable M3 retry plan invents deployment coordinates")
+            raise ValueError("unavailable semantic ingestion retry plan invents deployment coordinates")
         expected_record_id = (
             "semantic_ingestion:authorization:"
             + sha256(self.authorization_authority_scope_id.encode("utf-8")).hexdigest()
         )
         if self.authorization_authority_record_id != expected_record_id:
-            raise ValueError("M3 retry plan authority record does not bind its scope")
+            raise ValueError("semantic ingestion retry plan authority record does not bind its scope")
         reference = {
             "authorization_authority_scope_id": self.authorization_authority_scope_id,
             "authorization_authority_record_id": self.authorization_authority_record_id,
@@ -1545,12 +1545,12 @@ class M3ExecutionRetryPlan(BaseModel):
             "expected_authority_coordinates_digest": self.expected_authority_coordinates_digest,
         }
         if self.authority_reference_digest != contract_digest(
-            b"memorii.m3.authorization-authority-reference.v1", reference
+            b"memorii.semantic-ingestion.authorization-authority-reference.v1", reference
         ):
-            raise ValueError("M3 retry plan authority reference digest mismatch")
+            raise ValueError("semantic ingestion retry plan authority reference digest mismatch")
         body = self.model_dump(mode="python", exclude={"plan_digest"})
-        if self.plan_digest != contract_digest(b"memorii.m3.execution-retry-plan.v1", body):
-            raise ValueError("M3 execution retry plan digest mismatch")
+        if self.plan_digest != contract_digest(b"memorii.semantic-ingestion.execution-retry-plan.v1", body):
+            raise ValueError("semantic ingestion execution retry plan digest mismatch")
         return self
 
     def validate_for_fence(self, fence: OperationFenceBinding) -> None:
@@ -1565,10 +1565,10 @@ class M3ExecutionRetryPlan(BaseModel):
             or self.source_id != fence.source_id
             or self.source_digest != fence.source_digest
         ):
-            raise ValueError("M3 execution retry plan fence/source binding is invalid")
+            raise ValueError("semantic ingestion execution retry plan fence/source binding is invalid")
 
     @classmethod
-    def create(cls, **values: object) -> M3ExecutionRetryPlan:
+    def create(cls, **values: object) -> SemanticExecutionRetryPlan:
         scope_id = values["authorization_authority_scope_id"]
         if not isinstance(scope_id, str):
             raise TypeError("authorization authority scope must be a string")
@@ -1589,7 +1589,7 @@ class M3ExecutionRetryPlan(BaseModel):
             )
         }
         values["authority_reference_digest"] = contract_digest(
-            b"memorii.m3.authorization-authority-reference.v1", reference
+            b"memorii.semantic-ingestion.authorization-authority-reference.v1", reference
         )
         source_id = values.get("source_id")
         source_digest = values.get("source_digest")
@@ -1601,7 +1601,7 @@ class M3ExecutionRetryPlan(BaseModel):
             or not isinstance(source_bytes, bytes)
             or not isinstance(fence_digest, str)
         ):
-            raise TypeError("M3 retry plan source/fence inputs are invalid")
+            raise TypeError("semantic ingestion retry plan source/fence inputs are invalid")
         admitted_source = {
             "operation_fence_binding_digest": fence_digest,
             "admitted_source_id": source_id,
@@ -1610,15 +1610,15 @@ class M3ExecutionRetryPlan(BaseModel):
         }
         values.update(admitted_source)
         values["admitted_source_binding_digest"] = contract_digest(
-            b"memorii.m3.admitted-source-binding.v1", admitted_source
+            b"memorii.semantic-ingestion.admitted-source-binding.v1", admitted_source
         )
         return cls(
             **values,
-            plan_digest=contract_digest(b"memorii.m3.execution-retry-plan.v1", values),
+            plan_digest=contract_digest(b"memorii.semantic-ingestion.execution-retry-plan.v1", values),
         )
 
 
-class M3RecoveryAuthorityBinding(BaseModel):
+class SemanticRecoveryAuthorityBinding(BaseModel):
     """First authoritative coordinates appended before recovered learned work."""
 
     operation_id: str = Field(min_length=1)
@@ -1634,7 +1634,7 @@ class M3RecoveryAuthorityBinding(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_binding(self) -> M3RecoveryAuthorityBinding:
+    def validate_binding(self) -> SemanticRecoveryAuthorityBinding:
         expected_id = (
             "semantic_ingestion:authorization:"
             + sha256(self.authority_scope_id.encode("utf-8")).hexdigest()
@@ -1643,17 +1643,17 @@ class M3RecoveryAuthorityBinding(BaseModel):
             raise ValueError("recovery authority record does not bind its scope")
         body = self.model_dump(mode="python", exclude={"binding_digest"})
         if self.binding_digest != contract_digest(
-            b"memorii.m3.recovery-authority-binding.v1", body
+            b"memorii.semantic-ingestion.recovery-authority-binding.v1", body
         ):
             raise ValueError("recovery authority binding digest mismatch")
         return self
 
     @classmethod
-    def create(cls, **values: object) -> M3RecoveryAuthorityBinding:
+    def create(cls, **values: object) -> SemanticRecoveryAuthorityBinding:
         return cls(
             **values,
             binding_digest=contract_digest(
-                b"memorii.m3.recovery-authority-binding.v1", values
+                b"memorii.semantic-ingestion.recovery-authority-binding.v1", values
             ),
         )
 
@@ -1682,7 +1682,7 @@ class SemanticCandidateAssessor(Protocol):
     ) -> IndependentSourceAnalysis | None: ...
 
 
-class M3ArtifactClosure(BaseModel):
+class SemanticArtifactClosure(BaseModel):
     operation_id: str
     terminal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     sealed_operation_digests: tuple[str, ...]
@@ -1696,17 +1696,17 @@ class M3ArtifactClosure(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_closure(self) -> M3ArtifactClosure:
+    def validate_closure(self) -> SemanticArtifactClosure:
         for values in (self.sealed_operation_digests, self.accepted_carrier_digests, self.terminal_binding_set_digests):
             if values != tuple(sorted(set(values))):
                 raise ValueError("artifact closure digests must be canonical")
         body = self.model_dump(mode="python", exclude={"closure_digest"})
-        if self.closure_digest != contract_digest(b"memorii.m3.artifact-closure.v1", body):
-            raise ValueError("M3 artifact closure digest mismatch")
+        if self.closure_digest != contract_digest(b"memorii.semantic-ingestion.artifact-closure.v1", body):
+            raise ValueError("semantic ingestion artifact closure digest mismatch")
         return self
 
     @classmethod
-    def create(cls, terminal: SemanticTerminalOutcome) -> M3ArtifactClosure:
+    def create(cls, terminal: SemanticTerminalOutcome) -> SemanticArtifactClosure:
         body = {
             "operation_id": terminal.operation_id,
             "terminal_digest": terminal.terminal_digest,
@@ -1725,35 +1725,35 @@ class M3ArtifactClosure(BaseModel):
                 if terminal.authorization_read_set is not None else None
             ),
         }
-        return cls(**body, closure_digest=contract_digest(b"memorii.m3.artifact-closure.v1", body))
+        return cls(**body, closure_digest=contract_digest(b"memorii.semantic-ingestion.artifact-closure.v1", body))
 
 
-class M3GraphDelta(BaseModel):
-    kind: Literal["m3_graph_delta"] = "m3_graph_delta"
+class SemanticGraphDelta(BaseModel):
+    kind: Literal["semantic_graph_delta"] = "semantic_graph_delta"
     operation_id: str
-    carriers: tuple[M3DurableCarrier, ...]
+    carriers: tuple[SemanticDurableCarrier, ...]
     terminal_binding_sets: tuple[SemanticTerminalBindingSet, ...]
     delta_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_delta(self) -> M3GraphDelta:
+    def validate_delta(self) -> SemanticGraphDelta:
         body = self.model_dump(mode="python", exclude={"delta_digest"})
-        if not self.carriers or self.delta_digest != contract_digest(b"memorii.m3.graph-delta.v1", body):
-            raise ValueError("M3 graph delta is incomplete or has an invalid digest")
+        if not self.carriers or self.delta_digest != contract_digest(b"memorii.semantic-ingestion.graph-delta.v1", body):
+            raise ValueError("semantic ingestion graph delta is incomplete or has an invalid digest")
         return self
 
     @classmethod
-    def create(cls, terminal: SemanticTerminalOutcome) -> M3GraphDelta:
+    def create(cls, terminal: SemanticTerminalOutcome) -> SemanticGraphDelta:
         if terminal.status != "accepted":
             raise ValueError("only accepted terminals produce graph deltas")
-        body = {"kind": "m3_graph_delta", "operation_id": terminal.operation_id, "carriers": terminal.accepted_carriers, "terminal_binding_sets": terminal.terminal_binding_sets}
-        return cls(**body, delta_digest=contract_digest(b"memorii.m3.graph-delta.v1", body))
+        body = {"kind": "semantic_graph_delta", "operation_id": terminal.operation_id, "carriers": terminal.accepted_carriers, "terminal_binding_sets": terminal.terminal_binding_sets}
+        return cls(**body, delta_digest=contract_digest(b"memorii.semantic-ingestion.graph-delta.v1", body))
 
 
-class M3EventBatch(BaseModel):
-    kind: Literal["m3_event_input_batch"] = "m3_event_input_batch"
+class SemanticEventInputBatch(BaseModel):
+    kind: Literal["semantic_event_input_batch"] = "semantic_event_input_batch"
     operation_id: str
     graph_delta_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     terminal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -1763,29 +1763,29 @@ class M3EventBatch(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_batch(self) -> M3EventBatch:
+    def validate_batch(self) -> SemanticEventInputBatch:
         if self.carrier_digests != tuple(sorted(set(self.carrier_digests))):
             raise ValueError("event carrier digests must be canonical")
         body = self.model_dump(mode="python", exclude={"event_input_digest"})
-        if self.event_input_digest != contract_digest(b"memorii.m3.event-input-batch.v1", body):
-            raise ValueError("M3 event input digest mismatch")
+        if self.event_input_digest != contract_digest(b"memorii.semantic-ingestion.event-input-batch.v1", body):
+            raise ValueError("semantic ingestion event input digest mismatch")
         return self
 
     @classmethod
-    def create(cls, *, terminal: SemanticTerminalOutcome, graph_delta: M3GraphDelta) -> M3EventBatch:
+    def create(cls, *, terminal: SemanticTerminalOutcome, graph_delta: SemanticGraphDelta) -> SemanticEventInputBatch:
         if terminal.status != "accepted" or graph_delta.operation_id != terminal.operation_id:
             raise ValueError("event input requires one accepted terminal graph delta")
         body = {
-            "kind": "m3_event_input_batch",
+            "kind": "semantic_event_input_batch",
             "operation_id": terminal.operation_id,
             "graph_delta_digest": graph_delta.delta_digest,
             "terminal_digest": terminal.terminal_digest,
             "carrier_digests": tuple(sorted(value.record_digest for value in terminal.accepted_carriers)),
         }
-        return cls(**body, event_input_digest=contract_digest(b"memorii.m3.event-input-batch.v1", body))
+        return cls(**body, event_input_digest=contract_digest(b"memorii.semantic-ingestion.event-input-batch.v1", body))
 
 
-class M3ObservationDelta(BaseModel):
+class SemanticObservationDelta(BaseModel):
     operation_id: str
     graph_effect: Literal["committed", "none"]
     terminal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -1796,18 +1796,18 @@ class M3ObservationDelta(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_delta(self) -> M3ObservationDelta:
+    def validate_delta(self) -> SemanticObservationDelta:
         if (self.graph_effect == "committed") != (self.graph_delta_digest is not None):
             raise ValueError("observation graph effect and delta must agree")
         body = self.model_dump(mode="python", exclude={"observation_digest"})
-        if self.observation_digest != contract_digest(b"memorii.m3.observation-delta.v1", body):
-            raise ValueError("M3 observation digest mismatch")
+        if self.observation_digest != contract_digest(b"memorii.semantic-ingestion.observation-delta.v1", body):
+            raise ValueError("semantic ingestion observation digest mismatch")
         return self
 
     @classmethod
     def create(
-        cls, *, terminal: SemanticTerminalOutcome, graph_delta: M3GraphDelta | None
-    ) -> M3ObservationDelta:
+        cls, *, terminal: SemanticTerminalOutcome, graph_delta: SemanticGraphDelta | None
+    ) -> SemanticObservationDelta:
         if (terminal.status == "accepted") != (graph_delta is not None):
             raise ValueError("accepted status and graph delta must agree")
         body = {
@@ -1817,55 +1817,55 @@ class M3ObservationDelta(BaseModel):
             "graph_delta_digest": graph_delta.delta_digest if graph_delta is not None else None,
             "reason_codes": terminal.reason_codes,
         }
-        return cls(**body, observation_digest=contract_digest(b"memorii.m3.observation-delta.v1", body))
+        return cls(**body, observation_digest=contract_digest(b"memorii.semantic-ingestion.observation-delta.v1", body))
 
 
-class M3GroupResult(BaseModel):
+class SemanticEffectGroupResult(BaseModel):
     operation_id: str
     status: Literal["accepted", "unresolved", "rejected", "evidence_only"]
     terminal: SemanticTerminalOutcome
-    artifact_closure: M3ArtifactClosure
+    artifact_closure: SemanticArtifactClosure
     group_result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
-    def validate_result(self) -> M3GroupResult:
+    def validate_result(self) -> SemanticEffectGroupResult:
         if self.operation_id != self.terminal.operation_id or self.status != self.terminal.status:
             raise ValueError("group result does not bind its terminal")
         if self.artifact_closure.terminal_digest != self.terminal.terminal_digest:
             raise ValueError("group result artifact closure does not bind its terminal")
         body = self.model_dump(mode="python", exclude={"group_result_digest"})
-        if self.group_result_digest != contract_digest(b"memorii.m3.group-result.v1", body):
-            raise ValueError("M3 group result digest mismatch")
+        if self.group_result_digest != contract_digest(b"memorii.semantic-ingestion.group-result.v1", body):
+            raise ValueError("semantic ingestion group result digest mismatch")
         return self
 
     @classmethod
     def create(
-        cls, *, terminal: SemanticTerminalOutcome, artifact_closure: M3ArtifactClosure
-    ) -> M3GroupResult:
+        cls, *, terminal: SemanticTerminalOutcome, artifact_closure: SemanticArtifactClosure
+    ) -> SemanticEffectGroupResult:
         body = {
             "operation_id": terminal.operation_id,
             "status": terminal.status,
             "terminal": terminal,
             "artifact_closure": artifact_closure,
         }
-        return cls(**body, group_result_digest=contract_digest(b"memorii.m3.group-result.v1", body))
+        return cls(**body, group_result_digest=contract_digest(b"memorii.semantic-ingestion.group-result.v1", body))
 
 
 _ContractModel = TypeVar("_ContractModel", bound=BaseModel)
 _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     SemanticTerminalOutcome: "semantic_terminal",
     SemanticAuthorizationReadSet: "authorization_read_set",
-    M3LifecycleTransition: "lifecycle_transition",
-    M3RetryableProgress: "retryable_progress",
-    M3ExecutionRetryPlan: "execution_retry_plan",
-    M3RecoveryAuthorityBinding: "recovery_authority_binding",
-    M3ArtifactClosure: "artifact_closure",
-    M3GraphDelta: "graph_delta",
-    M3EventBatch: "event_batch",
-    M3ObservationDelta: "observation_delta",
-    M3GroupResult: "group_result",
+    SemanticLifecycleTransition: "lifecycle_transition",
+    SemanticRetryableProgress: "retryable_progress",
+    SemanticExecutionRetryPlan: "execution_retry_plan",
+    SemanticRecoveryAuthorityBinding: "recovery_authority_binding",
+    SemanticArtifactClosure: "artifact_closure",
+    SemanticGraphDelta: "graph_delta",
+    SemanticEventInputBatch: "event_batch",
+    SemanticObservationDelta: "observation_delta",
+    SemanticEffectGroupResult: "group_result",
     ClaimAssertion: "claim_assertion",
     ActionRevision: "action_revision",
     IdentityLineageRecord: "identity_lineage",
@@ -1874,37 +1874,37 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
 
 
 def encode_semantic_contract(value: BaseModel) -> bytes:
-    """Encode one active M3 contract with no legacy/upcast fallback."""
+    """Encode one active semantic ingestion contract with no legacy/upcast fallback."""
     kind = _CONTRACT_KINDS.get(type(value))
     if kind is None:
-        raise SemanticContractCodecError(f"unsupported M3 contract type: {type(value).__name__}")
+        raise SemanticContractCodecError(f"unsupported semantic ingestion contract type: {type(value).__name__}")
     payload = canonical_contract_value(value)
-    return encode_typed_value({"schema": "memorii.semantic-ingestion.m3.v1", "kind": kind, "payload": payload})
+    return encode_typed_value({"schema": "memorii.semantic-ingestion.contract-envelope.v1", "kind": kind, "payload": payload})
 
 
 def decode_semantic_contract(raw: bytes, expected_type: type[_ContractModel]) -> _ContractModel:
     """Decode only exact active bytes; pre-closure and unknown variants reject."""
     expected_kind = _CONTRACT_KINDS.get(expected_type)
     if expected_kind is None:
-        raise SemanticContractCodecError(f"unsupported M3 contract type: {expected_type.__name__}")
+        raise SemanticContractCodecError(f"unsupported semantic ingestion contract type: {expected_type.__name__}")
     try:
         decoded = decode_typed_value(raw)
         if not isinstance(decoded, dict) or set(decoded) != {"schema", "kind", "payload"}:
-            raise SemanticContractCodecError("M3 contract envelope is not closed")
-        if decoded["schema"] != "memorii.semantic-ingestion.m3.v1" or decoded["kind"] != expected_kind:
-            raise SemanticContractCodecError("legacy or mismatched M3 contract variant")
+            raise SemanticContractCodecError("semantic ingestion contract envelope is not closed")
+        if decoded["schema"] != "memorii.semantic-ingestion.contract-envelope.v1" or decoded["kind"] != expected_kind:
+            raise SemanticContractCodecError("legacy or mismatched semantic ingestion contract variant")
         return expected_type.model_validate(decoded["payload"])
     except (TypeError, ValueError) as exc:
         if isinstance(exc, SemanticContractCodecError):
             raise
-        raise SemanticContractCodecError("M3 contract validation failed") from exc
+        raise SemanticContractCodecError("semantic ingestion contract validation failed") from exc
 
 
 __all__ = [
     "AcceptedTemporalEvidence", "ActionRevision", "AnalyzerRoleInterpretation",
     "CandidateTransportError", "ClaimAssertion", "IdentityLineageRecord",
-    "M3ArtifactClosure", "M3DurableCarrier", "M3EventBatch", "M3GraphDelta",
-    "M3GroupResult", "M3ObservationDelta", "OperationKind",
+    "SemanticArtifactClosure", "SemanticDurableCarrier", "SemanticEventInputBatch", "SemanticGraphDelta",
+    "SemanticEffectGroupResult", "SemanticObservationDelta", "OperationKind",
     "OperationTemporalAttachmentBinding", "OperationTemporalDecisionBinding",
     "ParserConsensusAssessment", "PredicateTemporalRule", "PredicateTrustRule",
     "SealedSemanticOperation", "SemanticCandidate", "SemanticContractCodecError",

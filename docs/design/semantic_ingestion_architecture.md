@@ -218,7 +218,7 @@ because a related CFP or ING row is marked closed.
 | SIA-R05 | Require certified independent role, scope, attribution-bearer, and attachment evidence before promotion. Sources: Memorii spec Sections 16.25-16.27 and 25.1-25.3; implementation rules, commit gating. | Required | Linguistic consensus, scope interpreter, source-local identity, and canonical identity resolver | Analyzer disagreement, incomplete ancestor closure, unsupported attachment, or missing/ambiguous/noncanonical reported-source bearer yields unresolved and zero graph effect. | Active/passive, negation, quotation, direct/reported/nested attribution, bearer/identity substitution, coordination, and analyzer-mutation tests. |
 | SIA-R06 | Detect and attach textual valid time independently of proposer completeness, and combine it with authenticated non-text temporal evidence only through the closed matrix in Section 3.5. Sources: Memorii spec Sections 7.2, 17, and 25; implementation rules, commit gating. | Required | Temporal resolver and attachment consensus | Source-present temporal text omitted by the proposer, ambiguous or misattached text, and unsupported text/non-text combinations cannot be promoted. Genuinely absent text follows the predicate mode and authenticated-evidence matrix rather than being treated as proposer omission. | Absolute/relative/interval, omission versus absence, event/document reference provenance, authenticated interval, atemporal, misattachment, timezone, DST, and replay tests covering every matrix cell. |
 | SIA-R07 | Bind prompt text, schema, owner, redaction, and visibility policy through one registered prompt authority. Source: prompt contracts. | Required | Prompt registry/renderer and proposer transport | Any registration-coordinate substitution blocks transport before a provider or local model call; a valid policy removes registered non-source secrets from rendered prompt, transport metadata, and traces without rewriting source text. | YAML/schema/owner/visibility/redaction/digest mutation tests plus independent serialized-byte observation for valid nested redaction and immutable sanitized copies. |
-| SIA-R08 | Preserve a certifiable local-only active ingestion path and make the built-in bootstrap profile the ordinary production default; cloud proposal is explicit opt-in. Source: storage-details local-first requirement. | Required | `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)`, provider factory, and composition roots | Normal construction selects the Section 3.23.0 deterministic English rule profile with network denied. The complete M1 no-semantic outcome set is selected-pipeline-pending, disabled, unavailable, unsupported-input, and abstained; remote is explicit only and never a fallback. | Default-composition, no-network local, disable/failure/evidence-only, supported-English, unsupported-language/form, explicit remote-opt-in, and remote-deny zero-call tests. |
+| SIA-R08 | Preserve a certifiable local-only active ingestion path and make the built-in bootstrap profile the ordinary production default; cloud proposal is explicit opt-in. Source: storage-details local-first requirement. | Required | `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)`, provider factory, and composition roots | Normal construction selects the Section 3.23.0 deterministic English rule profile with network denied. The complete governed-source-admission no-semantic outcome set is selected-pipeline-pending, disabled, unavailable, unsupported-input, and abstained; remote is explicit only and never a fallback. | Default-composition, no-network local, disable/failure/evidence-only, supported-English, unsupported-language/form, explicit remote-opt-in, and remote-deny zero-call tests. |
 | SIA-R09 | Authorize remote egress only under the current active source-bound policy. Sources: storage details; Memorii spec Sections 15 and 25. | Required | Source governance and provider transport | Each segment uses only its exact classification/context-bound decision; revoked, expired, superseded, stale, swapped-segment, or mismatched policy produces zero remote calls. | Mixed classification/modality/authority/egress routing, policy rotation, rollback, concurrent change, provider/model/region, swapped/missing/extra decision, and replay tests. |
 | SIA-R10 | Emit canonical idempotent full-state memory events for every committed semantic mutation, retain canonical ingestion-observation deltas for every terminal source-visible operation, and reconstruct both materialized authorities and every acknowledged replay dependency from their logs. Sources: Memorii spec Sections 18.2-18.3; event model Sections 3-5, 8-9, and 14-16. | Required | Transaction coordinator, graph event/replay authority, ingestion-observation ledger, and atomic replay-artifact store | Genesis and signed-checkpoint replay across every active read schema reproduce the exact committed graph revision, ingestion-observation ledger, progress state, and replay-authoritative artifact closure without prior materialized state, provider, analyzer, or read-time reconstruction. No visible state references an artifact absent from the same or an earlier complete generation. Envelope `event_id`, logical-retry `dedupe_key`, and record identity are distinct; only `payload.entity_id == payload.record_id == GraphRecordMutation.record_id`. One typed `create|update` mutation kind is carried unchanged from compiler delta through event identity and replay; one logical mutation has one stable dedupe key across retries. Every terminal operation has exactly one immutable introduction and terminal-outcome record; committed outcomes link exactly one graph delta and terminal non-committing outcomes forbid one. Exact duplicate envelopes remain idempotent and current-writer same-record/version collisions reject before visibility. Non-identical historical equal-version conflicts fail closed without selecting or materializing a winner until `SIA-ED-REPLAY-001` is resolved. | Every-record-kind create/update/retirement mapping, introduction/outcome replay, zero-mutation terminals, artifact/state publication failpoints, pre-planning resume, identity mutations, envelope/dedupe/record identity separation, exact-duplicate idempotency, current-writer version-collision rejection, non-identical historical equal-version fail-closed behavior from genesis and checkpoints, conflicting-dedupe, reordered, supported/retired/future schema, deterministic upcast, corrupt, partial-commit, checkpoint trust/rollback, and replay-resume tests. |
 | SIA-R11 | Enforce one certified semantic writer across embedded, sidecar, event-consumer, legacy, and generic-store paths. Sources: Memorii spec Sections 17.3 and 19.2; implementation rules, commit gating. | Required | Store-owned writer admission, delivery-coordinate migration owner, semantic-record ownership manifest, and common storage boundary | Every governed semantic mutation carries one current writer binding. Activation stops new legacy admissions, drains or terminalizes every old-epoch operation, and atomically publishes one independently certified complete target-coordinate generation before advancing the epoch. A stale or binding-free writer changes no semantic or lifecycle revision. | Shared-store mixed-version, every atomic and generic write entry point, finite migration inventory/certificate, ambiguity/collision, crash/restart, cutover, rollback, cross-cutover retry, drain, active-lease, and paused in-flight process tests. |
@@ -229,7 +229,7 @@ because a related CFP or ING row is marked closed.
 | SIA-R16 | Declare one unambiguous initial dependency topology and certification set. Sources: Memorii spec Sections 16.25-16.27 and 25; storage-details local-first requirement; selected architecture decisions in Sections 3.3-3.5 implementing SIA-R05, SIA-R08, and SIA-R14. | Required | Bootstrap profile owner and capability registry | The v1 bootstrap topology contains only the named deterministic repository components and no model/tokenizer/runtime asset or remote dependency; Section 3.23.0 defines its startup verification. Every later profile requires its own manifest/resource authorization. | Bootstrap component/integrity/no-network checks; unsupported-profile and future manifest/module/package/asset/profile consistency tests. |
 | SIA-R17 | Compare a pre-ingest expected ingestion graph with direct, scope-authorized structural observations, including terminal zero-mutation outcomes, never retrieval or production semantic helpers. Sources: Memorii spec Sections 16.27, 17, and 25; storage-details scoped-access requirement; implementation rules, commit gating. | Required | Acceptance-only oracle and graph observation API | One unique global operation/fence bijection is established before source/entity alignment; zero or multiple solutions fail. Production-only source-outcome integrity coordinates are independently checked against public production records before fixture equality. One-field, missing, and unexpected-record mutations fail at the first structural divergence; every expected operation aligns through one persisted introduction and terminal outcome; committed and non-committing outcomes have exact, disjoint effect shapes; cross-principal, cross-scope, mixed-seed, forged-cursor, and revoked access fail without record, digest, cohort, page, or existence disclosure. Hand-authored fixture semantics require current content-bound independent review evidence before ingest. | Static import boundary, reviewed-fixture evidence, global-bijection permutation/ambiguity tests, source-outcome consistency mutation tests, closed-world comparator, zero-mutation and mixed-outcome cohorts, fence alignment, view, revision, pagination, cross-principal/scope, cursor-integrity, and authorization-revocation tests through the production boundary. |
 | SIA-R18 | Preserve immutable historical truth, trust evolution, and entity lineage. Sources: Memorii spec Sections 7.2, 17, 18, and 25; canonical event model Sections 5-10. | Required | Graph compiler, projection scheduler, and persistence | Required current, historical, contested, and lineage views remain replayable after late arrival, policy migration, rekey, merge, and split. | Interval/trust/identity prefix matrices, migration races, and exact structural comparison. |
-| SIA-R19 | Activate semantic ingestion through the normal production provider composition selected by the bootstrap profile. Source: engineering-hardening closure matrix C3. | Required | Provider factory, `ProviderMemoryService`, ingestion coordinator, and bootstrap profile owner | Normal production builders route governed sources through `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` with no legacy writer or fallback authority. Every M1 no-semantic outcome retains governed evidence without semantic promotion. | Owner-stripping and default-constructor provider/Hermes/filesystem tests for bootstrap, disablement, failure, unsupported/abstained, and later approved profiles. |
+| SIA-R19 | Activate semantic ingestion through the normal production provider composition selected by the bootstrap profile. Source: engineering-hardening closure matrix C3. | Required | Provider factory, `ProviderMemoryService`, ingestion coordinator, and bootstrap profile owner | Normal production builders route governed sources through `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` with no legacy writer or fallback authority. Every governed-source-admission no-semantic outcome retains governed evidence without semantic promotion. | Owner-stripping and default-constructor provider/Hermes/filesystem tests for bootstrap, disablement, failure, unsupported/abstained, and later approved profiles. |
 | SIA-R20 | Fence long-running work with renewable leases, bounded stale recovery, terminal exhaustion, and a separate stable allocation namespace. Source: engineering-hardening closure matrix C13. | Required | Operation repository, lease heartbeat, semantic ingestion coordinator, and identity/action planners | Only the current lease owner may persist or commit; reclaim preserves allocation namespace and byte-identical planned IDs. Fence/allocation coordinates derive only from the version-bound stable delivery identity, immutable admitted source coordinates, and operation ID; current authorization evidence is excluded. Abandoned work recovers within the fixed budget and then becomes terminal. | Fake-clock, session/scope/policy/trust/revocation rotation identity-stability, multiprocess token-fencing, crash/reclaim before and after planning, namespace substitution, slow-stage renewal, lost-acknowledgement, restart, stale-recovery, and exhaustion tests. |
 | SIA-R21 | Make semantic-ingestion admission, checkpoint progress, terminal-group persistence, and source finalization process-safe and crash-atomic; the filesystem/JSONL backend must publish each complete batch as one generation. Source: engineering-hardening closure matrix C12. | Required | Semantic-ingestion atomic-store protocol and filesystem storage adapter | Readers observe the prior state or one complete admission, progress checkpoint, group, or finalization transaction, never a subset. First visibility of every replay-authoritative artifact is atomic with the state that references it. A terminal-group transaction atomically publishes its group result and ingestion-observation delta and, only when committed, its graph delta/event batch. Every transaction validates its exact graph/control/observation/artifact revisions, artifact closure, lease, writer epoch, and stable idempotency fence; checkpoint/group/finalization equality excludes current authorization evidence and ingress context. | Backend-neutral in-memory/filesystem conformance plus pre-planning/planned checkpoints, committed, zero-mutation, and mixed-outcome group transactions; session/scope/policy/trust/revocation rotation with stable durable equality, deterministic artifact/index/state failpoints, multiprocess same/distinct delivery, failed replace, reopen, corruption, lost acknowledgement, and idempotent retry schedules. |
 | SIA-R22 | Preserve the immutable provider envelope contract while exposing truthful semantic-ingestion state only through the protected accessor. Sources: current provider operation contract; implementation rules; normal production composition requirement C3. | Required | Provider service, result-access authorizer, protected admission authorization index, operation repository, and semantic-result repository | Compatibility freezes declaration order, field names/types, enums, defaults, nullability, validators, serialization shape, and independent legacy-reader decoding. Dynamic outcome fixtures are profile-versioned behavior, not envelope authority: the old fixture remains historical reader input but is retired as bootstrap behavior authority. Semantic-aware callers use only `SemanticIngestionOutcomeLookupRequest`; it authorizes before result/artifact lookup and is non-disclosing when unavailable. | Static schema/declaration/validator/reader audit; historical-reader input decoding; profile-versioned truthful outcome matrix; protected-accessor authorization matrix; and a transition audit rejecting use of retired outcome bytes as bootstrap expected behavior. |
@@ -310,7 +310,7 @@ weaken another.
 
 | Decision ID | External owner | Affected requirements | Required artifact | Fail-closed behavior while unresolved | Exact unblock condition |
 | --- | --- | --- | --- | --- | --- |
-| `SIA-ED-TOPOLOGY-001` | Resolved by the unshipped-product bootstrap decision in Section 3.23.0 | SIA-R08, SIA-R16, SIA-R19, SIA-R22 | Built-in `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` names deterministic components, network-denial requirement, startup verification, disablement, rollback, and M1 outcomes. A future profile still requires its own reviewed deployment artifact. | Normal construction automatically selects the verified bootstrap local profile. It retains governed evidence for the complete closed M1 no-semantic outcome set and never falls back to remote. | The normal constructor, filesystem root, and Hermes root pass the Section 3.23.0 acceptance matrix with local network denial and truthful outcomes. |
+| `SIA-ED-TOPOLOGY-001` | Resolved by the unshipped-product bootstrap decision in Section 3.23.0 | SIA-R08, SIA-R16, SIA-R19, SIA-R22 | Built-in `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` names deterministic components, network-denial requirement, startup verification, disablement, rollback, and governed-source-admission outcomes. A future profile still requires its own reviewed deployment artifact. | Normal construction automatically selects the verified bootstrap local profile. It retains governed evidence for the complete closed governed-source-admission no-semantic outcome set and never falls back to remote. | The normal constructor, filesystem root, and Hermes root pass the Section 3.23.0 acceptance matrix with local network denial and truthful outcomes. |
 | `SIA-ED-REPLAY-001` | Event-model owner | SIA-R10, SIA-R18, SIA-R21 | One governing `EqualVersionReplayDecisionArtifact` plus a consistent update to `docs/design/event_model.md` defining exact duplicates, non-identical historical equal-version events, current-writer collisions, genesis replay, and checkpoint replay. | Exact duplicates remain idempotent and current-writer collisions reject; non-identical historical equal-version replay rejects before materialization or winner selection. | The event-model update and artifact select one genesis/checkpoint-consistent algebra and every arrival-order, checkpoint, upcast, and mixed-version permutation passes independently. |
 | `SIA-ED-POLICY-001` | Product/ML acceptance owner | SIA-R14, SIA-R15 | One signed, content-bound `InitialSemanticIngestionPolicyArtifact` containing all statistical thresholds, multiplicity allocation, cluster minima, unsupported cells, freshness deadlines, and monitoring limits. | Capability activation and local learned execution remain evidence-only; no implementation default, held-out-derived value, or runtime traffic may fill an absent value. | The complete artifact is deployment-authorized for the exact capability/dependency bundle and independent event-level recomputation validates every metric, cluster, bound, multiplicity, freshness, activation, and rollback rule. |
 | `SIA-ED-TRACEABILITY-001` | Traceability approval authority and independently provisioned trust-root owner | SIA-R03, SIA-R13 | Separately authenticated `TraceabilityBootstrapTrustAnchor` and `TraceabilityRecoveryTrustRoot` artifacts provisioned outside the release channel; one signed `TraceabilityRecoveryTrustPolicy`; the signed append-only `TraceabilityTrustLifecycleRoot`; and one signed `SemanticIngestionTraceabilityRelease` conforming to Section 3.23.4 and naming the qualified coverage reviewers, normative-evidence issuers, their public keys and trust snapshot, and the initial active release. These artifacts fix purpose/target, signer eligibility, canonical/signature profiles, key or certificate digests, effective/recorded times, predecessors, monotonic sequences, activation, rotation, revocation, compromise, recovery, and historical-verification coordinates. | No registry source package, release-contained trust snapshot, coverage approval, execution evidence, or caller-supplied signature is bootstrap or recovery authority; an absent, ambiguous, backdated, expired, revoked, compromised, wrong-purpose/profile, rollback, same-coordinate-substituted, or self-authorizing root/record makes every traceability gate fail closed. | The root owner independently provisions and authenticates the complete bootstrap and recovery roots before release retrieval; publishes the signed recovery policy and lifecycle root; the release authority publishes the complete signed all-root release and trust snapshot; and independent lifecycle, release, coverage, and execution-evidence verifiers accept the exact topologically constructed bytes and every activation, rotation, revocation, compromise, recovery, and historical check. |
@@ -2058,7 +2058,8 @@ The server selects both the `TemporalPolicySnapshot` and `TrustPolicySnapshot`
 at the same immutable server-owned `arbitration_as_of` coordinate. Their exact
 fingerprints and snapshot digests are part of the assessment and every accepted
 artifact. "High enough" means eligible under the selected
-`PredicateTrustRule`; it introduces no numeric threshold. M3 candidate rank is
+`PredicateTrustRule`; it introduces no numeric threshold. Candidate-to-terminal
+resolution rank is
 the immutable `authority_rank_by_class` integer for that candidate's
 authenticated source authority. Trust decay is deliberately not evaluated here:
 its `assertion_system_start` basis may not exist before acceptance, and later
@@ -3528,12 +3529,13 @@ class DeploymentAuthorizationVerifier(Protocol):
     ) -> DeploymentAuthorizationDecision: ...
 ```
 
-`LocalAdmissionOutcome` is an M2-and-later resource protocol. It is forbidden
-in M1: an M1 bootstrap outcome neither contains nor implies an
+`LocalAdmissionOutcome` is a writer-safe-preplanning-and-later resource
+protocol. It is forbidden during governed-source admission: a bootstrap
+outcome neither contains nor implies an
 `OperationFenceBinding`, resource-profile digest, reservation, lease, writer,
 or allocation. In particular, `admitted`, `profile_disabled`, and
-`resource_unavailable` are not M1 projections or aliases. They retain their
-resource meaning only after M2 owns writer-safe resource admission.
+`resource_unavailable` are not governed-source-admission projections or aliases. They retain their
+resource meaning only after writer-safe preplanning owns resource admission.
 `profile_unapproved` is not a bootstrap ordinary outcome and remains reserved
 for future unresolved profiles.
 
@@ -3652,7 +3654,7 @@ of those values. Until the external policy artifact exists and is independently
 approved, deployment authorization cannot issue and the capability remains
 evidence-only. All three registered external decisions remain unresolved.
 
-M2-and-later local execution is governed by a separately approved `LocalExecutionResourceProfile`
+Writer-safe-preplanning-and-later local execution is governed by a separately approved `LocalExecutionResourceProfile`
 bound to the deployment manifest and capability fingerprint. It declares only
 typed profile coordinates: startup prerequisites, disk and memory reservation,
 maximum concurrent admissions, maximum queued admissions, per-stage deadline,
@@ -3660,9 +3662,10 @@ and queue deadline. `LocalAdmissionDecision` is one of `admitted`,
 `queue_full`, `deadline_expired`, `resource_unavailable`, `profile_unapproved`,
 or `profile_disabled`. `admitted` requires the exact approved profile digest;
 `profile_unapproved` requires a null profile digest, and the other outcomes
-name the evaluated approved profile. Every M2-and-later outcome binds the accepted source
+name the evaluated approved profile. Every writer-safe-preplanning-and-later outcome binds the accepted source
 and the stable principal/key pair plus separate admission-authorization
-evidence. A source result for a selected local capability after M2 must
+evidence. A source result for a selected local capability after writer-safe
+preplanning must
 carry exactly one outcome; graph-bound local execution requires `admitted`.
 An explicitly selected remote capability carries null and remains governed by
 the egress decision instead. The latter four are evidence-only/no-mutation outcomes:
@@ -4534,8 +4537,9 @@ binding. The trust-anchor preimage similarly excludes only `trust_anchor_digest`
 Add, remove, reorder, duplicate, field, digest, coordinate-suffix, disposition,
 language tuple, or reason mutation must fail the gate.
 
-**Closed outcome algebra.** M1 uses a governed-source admission fact, not the
-M2 `LocalAdmissionOutcome`. The fact records only source/governance admission
+**Closed outcome algebra.** Governed-source admission uses a source-admission
+fact, not the writer-safe-preplanning `LocalAdmissionOutcome`. The fact records
+only source/governance admission
 and deliberately has no operation fence, resource profile digest, reservation,
 lease, writer, or allocation. The protected accessor serializes exactly one
 `BootstrapProfileOutcome`; each variant references that fact and every model is
@@ -4615,32 +4619,33 @@ unavailable shape.
 
 | From | To | Legal stage |
 | --- | --- | --- |
-| selected_pipeline_pending | disabled, unavailable, unsupported_input, abstained | M1 |
-| selected_pipeline_pending | accepted_candidate | M3, after M2 writer safety |
-| accepted_candidate | committed_terminal, unsupported_input, abstained | M3 |
+| selected_pipeline_pending | disabled, unavailable, unsupported_input, abstained | governed-source admission |
+| selected_pipeline_pending | accepted_candidate | candidate-to-terminal resolution, after writer-safe preplanning |
+| accepted_candidate | committed_terminal, unsupported_input, abstained | candidate-to-terminal resolution |
 | disabled, unavailable, unsupported_input, abstained, committed_terminal | any other variant | forbidden; a new delivery starts anew |
 
-M1 persists exactly raw governed source, protected admission index, and profile
+Governed-source admission persists exactly raw governed source, protected admission index, and profile
 selection, verification, and outcome evidence. It persists zero semantic
 candidate, commit, graph, event, reservation, fence, lease, writer, allocation,
 or remote artifact. Its complete and authoritative outcome set is
 selected-pipeline-pending, disabled, unavailable, unsupported-input, and
-abstained; accepted-candidate and committed-terminal are illegal before M2/M3
-stage prerequisites.
+abstained; accepted-candidate and committed-terminal are illegal before
+writer-safe-preplanning and candidate-to-terminal prerequisites.
 
 **Host ownership and staged execution.** `ProviderMemoryService`, Hermes, and
 filesystem host adapters automatically construct and authorize the manifest at
 normal construction, provide authenticated ingress, and retain the canonical
 writeback authorization. The core receives that authority; it cannot invent or
-elevate it. M1 performs selection, prerequisite verification, governed source
+elevate it. Governed-source admission performs selection, prerequisite verification, governed source
 admission, and deterministic unsupported/abstention classification only. Its
 complete outcome set is selected-pipeline-pending, disabled, unavailable,
 unsupported-input, and abstained; it has zero semantic candidate, committed,
-or graph effect and starts no M2 lease/writer/generation behavior. M2 supplies
-writer safety; M3 supplies the candidate-to-terminal pipeline and only then may
+or graph effect and starts no writer-safe-preplanning lease/writer/generation
+behavior. Writer-safe preplanning supplies writer safety; candidate-to-terminal
+resolution supplies the semantic pipeline and only then may
 the host-authorized canonical writer persist a semantic result. The final
-shipped product therefore auto-runs without user configuration, while M1 can
-complete without claiming M2/M3 behavior.
+shipped product therefore auto-runs without user configuration, while
+governed-source admission can complete without claiming later behavior.
 
 **Network confinement.** The factory dependency graph must not build, inject,
 or retain a network-capable LLM client, promotion provider, query provider,
@@ -4660,25 +4665,26 @@ retention. Every live unsupported/abstained outcome carries the normalized-input
 digest and names a corpus case only when its normalized bytes exactly match that
 case; no live input is required to match a corpus case. Content-language
 detection is not a bootstrap feature.
-`supported_form` maps only to `selected_pipeline_pending` in M1 and may map to
-`accepted_candidate` only after the M2 writer-safety and M3 pipeline
+`supported_form` maps only to `selected_pipeline_pending` during governed-source
+admission and may map to `accepted_candidate` only after writer-safe-preplanning
+and candidate-to-terminal-resolution
 prerequisites; it is not itself a candidate. `unsupported_form` maps exactly to
 `unsupported_input`, and `abstain_form` maps exactly to `abstained`, at every
 stage; both retain evidence only and never later become candidates for that
-delivery. Before M3, selected-pipeline-pending, disabled, unavailable,
+delivery. Before candidate-to-terminal resolution, selected-pipeline-pending, disabled, unavailable,
 unsupported-input, and abstained are the complete typed bootstrap outcomes.
 The coarse public provider envelope remains schema-compatible; exact profile
 outcome, source result, and reason are available only through the protected
 semantic accessor.
 
-**R22 transition matrix.**
+**Protected semantic result-access transition matrix.**
 
 | Input | Authority after this revision | Required handling |
 | --- | --- | --- |
 | Frozen schema/declaration/default/validator and legacy-reader bytes | Immutable compatibility authority | Must remain byte/schema/reader compatible |
 | Old dynamic outcome fixture | Historical reader input only | Retain and decode; reject it as bootstrap expected behavior |
-| Bootstrap coordinate M1 outcome | Versioned truthful behavior | selected-pipeline-pending, disabled, unavailable, unsupported-input, or abstained only |
-| Bootstrap coordinate after M3 | Versioned truthful behavior | Supported success or abstention only |
+| Bootstrap coordinate governed-source-admission outcome | Versioned truthful behavior | selected-pipeline-pending, disabled, unavailable, unsupported-input, or abstained only |
+| Bootstrap coordinate after candidate-to-terminal resolution | Versioned truthful behavior | Supported success or abstention only |
 | Future profile outcome | Its own versioned contract | Cannot change bootstrap coordinate or public schema silently |
 
 No adapter may fabricate historical IDs, attempts, fallback provenance, or
@@ -4714,7 +4720,8 @@ semantic promotion as applicable.
 **Rollout and traceability gate.** Rollout selects v1 automatically; rollback
 is explicit disablement to evidence-only behavior and never restores a legacy
 writer. This revision changes normative topology, R08/R19/R22, and outcome
-authority. Before M1 resumes, the design checksum, registry mappings, CTV/profile
+authority. Before governed-source admission resumes, the design checksum,
+registry mappings, CTV/profile
 binding, traceability authority, and execution evidence must be regenerated and
 freshly reviewed by the controlled traceability operation, including the active
 signed bootstrap release binding the independently rooted anchor digest and the
@@ -8219,7 +8226,7 @@ The previous `v1.json` bytes are retained only as
 digest. They are not checked outputs, implementation inputs, review evidence,
 or expected bytes. New checked outputs may be created only by the future linked
 implementation operation after isolated A/B derivation agrees. Consequently,
-all earlier M1-M3 execution, stability, equality, vector, and checked-output
+all earlier staged execution, stability, equality, vector, and checked-output
 claims are invalidated for v3.
 
 **Round-4 oracle-free authority (v4).** Format
@@ -13563,9 +13570,9 @@ match is a non-committing failure.
 The scope-assessment canonical preimage includes the complete attachment binding
 and rejects a mismatched digest; replay recomputes it before accepting the scope
 digest. Attachment-binding digest is the domain-separated canonical typed-value
-preimage `memorii.m3.temporal_attachment_binding.v1` over every binding field
+preimage `memorii.semantic-ingestion.temporal_attachment_binding.v1` over every binding field
 except `binding_digest`. Decision-binding digest is likewise
-`memorii.m3.temporal_decision_binding.v1` over every decision field except its
+`memorii.semantic-ingestion.temporal_decision_binding.v1` over every decision field except its
 own digest, including the complete attachment binding. Self-inclusion, omitted
 field, cross-domain, or substituted-field bytes reject. Expected and observed
 bindings use the corresponding public canonical preimages and must reproduce
@@ -14534,7 +14541,7 @@ class PlanningTemporalTransitionRecord(BaseModel):
     provenance_ids: tuple[str, ...]
     planning_record_digest: str
 
-# The M3 durable/planning pair is explicit; these payloads own temporal bytes.
+# The semantic durable/planning pair is explicit; these payloads own temporal bytes.
 class ClaimAssertion(BaseModel):
     record_kind: Literal["claim_assertion"]
     claim_assertion_id: str
@@ -14611,7 +14618,7 @@ class PlanningIdentityLineageTransition(BaseModel):
 ```
 
 `ClaimAssertion`, `ActionRevision`, and `IdentityLineageRecord` are the sole
-M3 durable owners of their role-bound temporal evidence; their planning mirrors
+semantic-ingestion durable owners of their role-bound temporal evidence; their planning mirrors
 preserve exactly the same `TimeInterval | None` as the closure's resolved
 interval. Only `PlanningIdentityLineageTransition.recorded_at` is a declared
 planning commit coordinate; it materializes deterministically at transaction
@@ -14625,10 +14632,10 @@ propagation step validates exact temporal evidence and binding bytes, role,
 operation, and valid interval before recomputing its enclosing digest.
 Carrier audit: `EntityRevision`, `AliasRevision`, `TypeEvidence`,
 `ClaimProjection`, `RelationRevision`, `CitationRecord`, `ProvenanceRecord`,
-and `ReferenceDispositionRecord` are non-M3 temporal-evidence owners; none may
-introduce, transform, or omit an M3 binding. Their canonical/planning schemas
+and `ReferenceDispositionRecord` are non-owning temporal-evidence records; none may
+introduce, transform, or omit a semantic-ingestion binding. Their canonical/planning schemas
 remain governed by their existing record-kind contracts and may reference an
-M3 record only through its exact record ID/digest.
+semantic-ingestion record only through its exact record ID/digest.
 
 ```python
 GraphRecordKind = Literal[
@@ -16333,12 +16340,12 @@ available for audit. A mixed-version stream decodes each envelope independently
 and then undergoes the same canonical dedupe, ordering, version, batch/delta,
 and graph-revision checks.
 
-The M3 temporal-decision closure is a write-schema change for accepted claim
+The semantic temporal-decision closure is a write-schema change for accepted claim
 and action records, planning records, event payload records, replay artifacts,
 expected/observed comparison contracts, and non-committing terminal outcomes.
-M3 is unshipped: every pre-closure or legacy accepted byte sequence, including
+The candidate-to-terminal contract is unshipped: every pre-closure or legacy accepted byte sequence, including
 any historical resolution tag, is rejected before publication, decode, replay,
-or upcast. There is no M3 temporal-closure upcaster and no compatibility
+or upcast. There is no semantic temporal-closure upcaster and no compatibility
 outcome that can stand in for the missing decision. The current schema requires
 the complete closure, including every retained candidate, selected/contested
 IDs, temporal/trust policy identities, and `arbitration_as_of`.
@@ -20797,6 +20804,255 @@ identity-lineage state remain independently observable.
 
 Exit: rollback means evidence-only abstention, never reactivation of the
 legacy permissive matcher.
+
+#### 5.9.8 Behavioral contract identities before first release
+
+Delivery milestones are planning coordinates, not product concepts. No public
+Python symbol, persisted schema, digest domain separator, codec fingerprint,
+record/source kind, test module, fixture helper, or CI job may encode `M1`,
+`M2`, `M3`, a later milestone number, a review round, or a task ID. Real
+contract versions remain explicit through suffixes such as `.v1`.
+
+The candidate-to-terminal contract is unshipped. Its milestone-derived bytes
+therefore have no compatibility standing: readers reject them as unknown
+schemas or invalid digests. There is no alias, dual-read period, upcaster, or
+fallback. Rollback restores evidence-only behavior; it does not reactivate the
+old milestone-derived identity family.
+
+The complete persisted and digest-domain rewrite is algorithmic and closed:
+
+| Old identity family | Canonical behavioral identity |
+| --- | --- |
+| `memorii.m3.<contract>.v1` | `memorii.semantic-ingestion.<contract>.v1` |
+| `memorii.semantic-ingestion.m3.v1` | `memorii.semantic-ingestion.contract-envelope.v1` |
+| `memorii.semantic-ingestion.m3.closed-codec.v1` | `memorii.semantic-ingestion.closed-codec.v1` |
+| `m3_graph_delta` | `semantic_graph_delta` |
+| `m3_event_input_batch` | `semantic_event_input_batch` |
+| `m3_committed` | `semantic_terminal_committed` |
+| `m3_non_committing` | `semantic_terminal_non_committing` |
+| `m3-semantic-pipeline` | `semantic-ingestion-pipeline` |
+| `m3:<operation-fence-id>` | `semantic-ingestion:<operation-fence-id>` |
+| `m3-<two-digit-index>-<member-kind>` | `semantic-ingestion-<two-digit-index>-<member-kind>` |
+| `memorii-m3-lease-heartbeat` | `memorii-semantic-ingestion-lease-heartbeat` |
+| `m2-semantic-generation-v2` | `semantic-generation-v2` |
+| `memorii-provider-m2-evidence-only-v1` | `memorii-provider-semantic-evidence-only-v1` |
+| `scenario-c2/m1/<suffix>` | `scenario-first-closure/governed-source-admission/<suffix>` |
+| `scenario-c2/m2/<suffix>` | `scenario-first-closure/writer-safe-preplanning/<suffix>` |
+| `scenario-c2/<suffix>` where the first suffix segment is neither `m1` nor `m2` | `scenario-first-closure/<suffix>` |
+| `scenario-c2-<suffix>` | `scenario-first-closure-<suffix>` |
+| bare `scenario-c2` | `scenario-first-closure` |
+| `memorii-sia-scenario-c2-milestone-2` | `memorii-sia-scenario-first-closure-v1` |
+| `sia-c2-semantic-roundtrip-v1` | `sia-scenario-first-semantic-roundtrip-v1` |
+| `scenario-c2-semantic-ingestion-r03-release` | `scenario-first-closure-normative-traceability-approval-release` |
+
+`<contract>`, `<operation-fence-id>`, and `<member-kind>` are preserved
+byte-for-byte, including existing hyphen or underscore spelling; this
+correction changes only the milestone namespace or discriminator. Every
+production occurrence must match exactly one row. Any remaining
+`memorii.m[0-9]` or `memorii.semantic-ingestion.m[0-9]` production identity is
+an error. Tests may contain an old identity only as an explicitly named
+negative compatibility vector that proves fail-closed rejection.
+
+The exact R03 release row is excluded from the generic hyphenated row. The
+scenario-coordinate rows are mutually exclusive. A generator or validator
+must reject an old coordinate that matches zero rows or more than one row.
+Both independent scenario elaborators must map the complete active old
+coordinate set and produce byte-identical corrected manifest and spool output;
+the comparison exercises bare, hyphenated, plain slash, `m1`, `m2`, format,
+release, pointer/history, bootstrap, recovery, and implementation-revision
+forms. Historical rejected recipe bytes remain unchanged and are not accepted
+as current authority.
+
+`docs/design/semantic_ingestion/traceability_golden_vectors/scenario-coordinate-migration-v1.json`
+is the hand-authored, frozen legacy-coordinate inventory and independent
+mapping oracle. It lists every active old coordinate exactly once with its
+single expected behavioral coordinate and identity class. It is not generated
+by either elaborator or the scenario validator. An independent test extracts
+the complete old-coordinate set from both elaborators, the validator, the
+scenario input, and fixture authority; it requires exact set equality with the
+inventory, exactly one rule match per row, and exact target equality. Mutation
+coverage changes every row into zero-match and multi-match forms and requires
+rejection, explicitly including the R03 release. Current runtime authority
+rejects the legacy inventory as executable input.
+
+Public and internal Python ownership names are behavioral as well:
+
+| Milestone-derived symbol | Canonical symbol |
+| --- | --- |
+| `M3DurableCarrier` | `SemanticDurableCarrier` |
+| `M3ExecutionLineage` | `SemanticExecutionLineage` |
+| `M3LifecycleTransition` | `SemanticLifecycleTransition` |
+| `M3RetryableProgress` | `SemanticRetryableProgress` |
+| `M3ExecutionRetryPlan` | `SemanticExecutionRetryPlan` |
+| `M3RecoveryAuthorityBinding` | `SemanticRecoveryAuthorityBinding` |
+| `M3ArtifactClosure` | `SemanticArtifactClosure` |
+| `M3GraphDelta` | `SemanticGraphDelta` |
+| `M3EventBatch` | `SemanticEventInputBatch` |
+| `M3ObservationDelta` | `SemanticObservationDelta` |
+| `M3GroupResult` | `SemanticEffectGroupResult` |
+| `M3AuthorizationAuthorityError` | `SemanticAuthorizationAuthorityError` |
+| `M3VerifiedAuthorizationTransition` | `VerifiedSemanticAuthorizationTransition` |
+| `M3AuthorizationTransitionVerifier` | `SemanticAuthorizationTransitionVerifier` |
+| `M3AuthorizationAuthorityRepository` | `SemanticAuthorizationAuthorityRepository` |
+| `VerifiedM3AuthorizationControlPlane` | `VerifiedSemanticAuthorizationControlPlane` |
+| `M3AuthorizationReadSetError` | `SemanticAuthorizationReadSetError` |
+| `M3TerminalPersistenceService` | `SemanticTerminalPersistenceService` |
+| `M3LeaseSession` | `SemanticIngestionLeaseSession` |
+| `M3_CODEC_FINGERPRINT` | `SEMANTIC_INGESTION_CODEC_FINGERPRINT` |
+
+Private names and diagnostics follow the same rule: use `Semantic` or
+`semantic ingestion` plus the owned behavior. No compatibility exports retain
+the old names.
+
+Requirement IDs remain stable traceability keys, but they may not double as
+executable names. `SIA-Rxx` and `SIA-T-*` remain legal only in typed registry
+fields, design requirement tables, traceability reports, and explicit
+unknown/legacy-input vectors. Test functions, command IDs, evidence-group IDs,
+fixture/helper names, CI names, and runtime diagnostics use this closed
+behavioral slug map:
+
+| Requirement key | Behavioral executable slug |
+| --- | --- |
+| `SIA-R01` | `source-governance-recovery` |
+| `SIA-R02` | `candidate-validation-commit` |
+| `SIA-R03` | `normative-traceability-approval` |
+| `SIA-R04` | `typed-owner-chain` |
+| `SIA-R05` | `semantic-evidence-closure` |
+| `SIA-R06` | `temporal-evidence-closure` |
+| `SIA-R07` | `prompt-authority` |
+| `SIA-R08` | `local-profile-routing` |
+| `SIA-R09` | `egress-authorization` |
+| `SIA-R10` | `event-replay-integrity` |
+| `SIA-R11` | `writer-cutover` |
+| `SIA-R12` | `temporal-lifecycle-codec` |
+| `SIA-R13` | `acceptance-release-trust` |
+| `SIA-R14` | `statistical-acceptance-design` |
+| `SIA-R15` | `monitoring-fail-closed` |
+| `SIA-R16` | `dependency-capability-topology` |
+| `SIA-R17` | `independent-graph-observation` |
+| `SIA-R18` | `historical-truth-evolution` |
+| `SIA-R19` | `production-composition` |
+| `SIA-R20` | `lease-recovery` |
+| `SIA-R21` | `crash-atomic-persistence` |
+| `SIA-R22` | `protected-semantic-result-access` |
+| `SIA-R23` | `public-delivery-replay` |
+
+For each row, the evidence-group ID is
+`semantic-ingestion-<behavioral-slug>`, the command ID is
+`pytest-<behavioral-slug>-v1`, and the primary acceptance node is
+`test_<behavioral_slug_with_underscores>`. Supporting test nodes use their
+already behavioral names. `test_id` and requirement-link fields retain the
+stable traceability key because those values describe the requirement
+relationship rather than execute it.
+
+The named semantic pipeline integration nodes retain their behavioral suffixes
+and drop only evidence-coordinate prefixes:
+
+| Old node suffix after `test_` | New node suffix after `test_` |
+| --- | --- |
+| `sia_t02_candidate_proposal_cannot_supply_source_authority` | `candidate_proposal_cannot_supply_source_authority` |
+| `sia_t04_lineage_closes_proposal_analysis_seal_and_policy` | `lineage_closes_proposal_analysis_seal_and_policy` |
+| `sia_t05_consensus_disagreement_is_nonpromoting` | `consensus_disagreement_is_nonpromoting` |
+| `sia_t06_temporal_required_interval_reaches_exact_carrier` | `temporal_required_interval_reaches_exact_carrier` |
+| `sia_t06_tr_eligibility_retains_but_never_selects_ineligible` | `trust_eligibility_retains_but_never_selects_ineligible` |
+| `sia_t06_tr_rank_unique_highest_wins_every_input_order` | `trust_rank_unique_highest_wins_every_input_order` |
+| `sia_t06_tr_incomparability_nonidentical_top_is_contested` | `trust_incomparability_nonidentical_top_is_contested` |
+| `sia_t06_tr_equality_cosupports_without_provenance_collapse` | `trust_equality_cosupports_without_provenance_collapse` |
+| `sia_t06_tr_nostitch_never_constructs_a_third_interval` | `trust_resolution_never_constructs_a_third_interval` |
+| `sia_t06_tr_text_many_retains_every_independent_text_candidate` | `trust_resolution_retains_every_independent_text_candidate` |
+| `sia_t06_tr_schema_rejects_impossible_candidate_shape` | `trust_schema_rejects_impossible_candidate_shape` |
+| `sia_t06_tr_closure_rejects_selected_subset_mutation` | `trust_closure_rejects_selected_subset_mutation` |
+| `sia_t06_tr_transitions_preserve_distinct_correction_roles` | `trust_transitions_preserve_distinct_correction_roles` |
+| `sia_t06_tr_role_schema_rejects_binding_role_swap` | `trust_role_schema_rejects_binding_role_swap` |
+| `sia_t06_tr_attach_plan_retains_exact_text_spans` | `trust_attachment_plan_retains_exact_text_spans` |
+| `sia_t06_tr_preimage_rejects_binding_digest_mutation` | `trust_preimage_rejects_binding_digest_mutation` |
+| `sia_t06_tr_consensus_source_substitution_is_rejected` | `trust_consensus_source_substitution_is_rejected` |
+| `sia_t06_tr_store_round_trips_complete_terminal_bytes` | `trust_store_round_trips_complete_terminal_bytes` |
+| `sia_t06_tr_policy_rejects_snapshot_substitution` | `trust_policy_rejects_snapshot_substitution` |
+| `sia_t06_tr_legacy_rejects_preclosure_terminal_bytes` | `legacy_schema_rejects_preclosure_terminal_bytes` |
+| `sia_t07_prompt_remote_path_without_registered_authority_is_zero_wire` | `prompt_remote_path_without_registered_authority_is_zero_wire` |
+| `sia_t09_egress_missing_current_policy_is_zero_wire` | `egress_missing_current_policy_is_zero_wire` |
+| `sia_t12_pipeline_closed_codec_rejects_wrong_contract_kind` | `pipeline_closed_codec_rejects_wrong_contract_kind` |
+| `sia_t12_pipeline_slow_stage_renews_lease_heartbeat` | `pipeline_slow_stage_renews_lease_heartbeat` |
+
+The retention and regeneration matrix is closed:
+
+| Family | Retained assertion | Allowed old-ID exception | Generator or owner | Failure signal and gate impact |
+| --- | --- | --- | --- | --- |
+| 66 digest domains, envelope, and codec fingerprint | Domain separation and strict typed decoding | Explicit old-envelope rejection vector only | Semantic contract/carrier owners | Old bytes reject; exact semantic selector remains 266 |
+| Public/private Python owners | Same runtime behavior and type safety | None; no aliases | Semantic-ingestion package | Import/export scan plus Ruff/Pyright |
+| Lease, member, discriminator, plan, admission, and writer identities | Fencing, retry, lost-ack, and startup admission remain exact | Explicit old-store rejection vector only | Persistence, admission, provider owners | Recovery matrices and process tests fail on stale identity |
+| 24 integration nodes | Each existing assertion in the table above | None | `test_semantic_ingestion_pipeline.py` | Exact node collection and 266-count lock |
+| R01-R23 executable bindings | Same `behavioral_assertion` and typed `test_id` relationship | Requirement keys remain in typed metadata | Traceability registry plus acceptance suite | Every registered behavioral command resolves to its exact node |
+| Positive fixture/helper IDs | Same test scenario and failure injection | Named malformed/legacy vectors only | Owning unit/integration test | Static field-aware scan and focused suite |
+| CI step labels | Same selectors, warning mode, working directory, and count | None | `pr-gates.yml` and workflow-structure test | Structural test compares behavioral labels and argv |
+| Scenario authority | Same complete A/B structural closure | Historical rejected recipes and the non-executable frozen coordinate-migration oracle only | Hand-authored `scenario-coordinate-migration-v1.json`, independent scenario elaborators, validator, and independent inventory test | Exact legacy-set equality, zero/multi-match mutation rejection, explicit R03 mapping, and byte-identical manifest/spool |
+| Traceability authority | Same requirement coverage and release lifecycle | Typed SIA requirement/test metadata | Registry, CTV compiler, CGS compiler, release validators | Registry/authority/prototype checks and acceptance suite |
+| Public terminal wire vector | Exact request wire, JSONL bytes, member IDs/digests, and reopen stability | Old vector only as rejection input | `tests/support/generate_semantic_terminal_public_wire.py` and `tests/fixtures/semantic_ingestion/semantic_terminal_public_wire_v1.json` | `--verify` regenerates twice from fresh stores, reopens both, requires byte equality, then compares checked-in bytes |
+| Unit timing and exact collection | No test lost, duplicated, skipped, or silently default-timed | None | Shard verifier and timing inventory | 2,584 baseline unit collection and 266 semantic selector remain explicit; renamed unit nodes require measured timing updates |
+
+The public terminal wire generator is test-only and invokes the ordinary public
+composition. Its default mode writes nothing and verifies the checked-in
+vector. `--write` is an explicit maintainer action that first constructs two
+fresh stores, performs the same delivery in each, reopens both, and requires
+identical request wire, complete JSONL, generation members, and digests before
+atomically replacing the vector. The generator and runtime test use independent
+decoders/comparators; neither may import expected values from the other. Copying
+hashes from a single implementation run is not valid regeneration evidence.
+
+The field-aware naming guard rejects milestone, phase, review-round, task-ID,
+or requirement-coordinate patterns in production identifiers, Python exports,
+test filenames/symbols/helpers/positive fixture IDs, registry `group_id`,
+registry `command_id`, registry command argv/node IDs, and CI display names. It
+allows requirement/evidence IDs only through this machine-checkable context
+allowlist:
+
+| Owner | Exact allowed context |
+| --- | --- |
+| Traceability registry JSON | `requirement_bindings[*].requirement_id`; `heading_defaults[*].requirements[*]`; `structural_rules[*].selector_values[*]`; `test_evidence_groups[*].selected_tests[*].test_id` |
+| Traceability report/result JSON | Schema-declared fields named `requirement_id`, `requirement_ids`, `requirements`, `approved_requirement_ids`, `test_id`, `invariant_id`, or `anchor_id` only |
+| Python traceability constructors | A string value supplied through a keyword with one of those exact field names; positional requirement/test-ID construction is forbidden and must be converted to named fields |
+| Closed requirement-universe validators | Only `memorii.tools.semantic_ingestion_traceability_registry.expected_requirement_ids()` and the intentionally independent `memorii.tools.semantic_ingestion_traceability_checker._independent_expected_requirement_ids()` may construct the exact `SIA-R01` through `SIA-R23` tuple; the checker must not import or call the registry helper |
+| Canonical design | Requirement tables, traceability mapping columns, and the explicit old-to-new identity tables in this section |
+| Negative vectors | A string literal inside a test function whose behavioral name contains `legacy`, `unknown_requirement`, `duplicate_requirement`, or `malformed_traceability`, and whose assertion proves rejection |
+
+`test_evidence_groups[*].selected_tests[*].behavioral_assertion` is not an ID
+field and must use behavioral prose without `SIA-Rxx`/`SIA-T-*`. No whole-file
+or directory exemption is permitted. A neighboring arbitrary field, Python
+identifier, helper, fixture, CI label, command/node ID, or positive sample
+containing a requirement coordinate is rejected.
+
+The guard inspects Python identifiers and string/format-string literals. Its
+sole literal-construction exceptions are the bodies of
+`expected_requirement_ids()` and `_independent_expected_requirement_ids()`.
+The static test verifies that their implementations share no helper, constant,
+or import path and still produce equal tuples. Validation diagnostics and module/class/function
+docstrings use behavioral language and never echo requirement coordinates;
+structured error payloads may carry a rejected ID only in a schema-declared
+requirement field.
+
+This identity correction invalidates every derived digest, carrier ID,
+terminal byte sequence, JSONL release hash, fixture member digest, and expected
+wire vector whose preimage includes an old domain separator. Those artifacts
+must be regenerated through their canonical generators from the corrected
+design and code. Hand-editing expected hashes is forbidden. The traceability
+registry and CTV binding authority are regenerated only when their own source
+bytes or declared design binding require it; unchanged authority is verified
+by checksum rather than rewritten gratuitously.
+
+Acceptance requires all of the following:
+
+- a production/static scan finds no milestone-derived identity or symbol;
+- every old persisted identity is rejected without partial graph, event,
+  observation, lifecycle, or authorization effects;
+- deterministic reconstruction produces identical corrected bytes across
+  fresh stores and process reopen;
+- lost-ack, retry, authorization rotation, lease fencing, and source-binding
+  behavior remain unchanged except for the intentional digest identities;
+- public integration, frozen-wire, generation-exactness, traceability, static,
+  package, and deterministic shard gates pass at one revision; and
+- filename/symbol guards reject future milestone-derived test and production
+  names.
 
 ### 5.10 Canonical failure-pattern coverage matrix
 

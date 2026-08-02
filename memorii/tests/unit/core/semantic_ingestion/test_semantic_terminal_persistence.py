@@ -2,7 +2,6 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 
 import pytest
-from m3_test_support import accepted_terminal, handoff
 from memorii.core.memory_evolution.atomic_store import (
     PreplanningStoreError,
     SemanticAuthorizationAuthorityRecord,
@@ -28,12 +27,13 @@ from memorii.core.memory_plane.store import (
     _PersistedBatch,
 )
 from memorii.core.semantic_ingestion.authorization import (
-    M3AuthorizationAuthorityRepository,
-    M3VerifiedAuthorizationTransition,
-    VerifiedM3AuthorizationControlPlane,
+    SemanticAuthorizationAuthorityRepository,
+    VerifiedSemanticAuthorizationControlPlane,
+    VerifiedSemanticAuthorizationTransition,
 )
 from memorii.core.semantic_ingestion.contracts import SemanticTerminalOutcome
-from memorii.core.semantic_ingestion.persistence import M3TerminalPersistenceService
+from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
+from semantic_terminal_test_support import accepted_terminal, handoff
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -72,11 +72,11 @@ def _setup(
         plane, bounded_preplanning_ownership_manifest(), now_provider=now_provider
     )
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m3", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="semantic-ingestion", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     if verified:
         plan = build_migration_plan(
-            migration_plan_id="m3:verified", source_writer_epoch=1,
+            migration_plan_id="semantic-ingestion:verified", source_writer_epoch=1,
             legacy_snapshot_token=sha256(encode_typed_value(())).hexdigest(), entries=(),
         )
         checkpoint_values = {
@@ -89,22 +89,22 @@ def _setup(
             **checkpoint_values,
             checkpoint_digest=sha256(encode_typed_value(checkpoint_values)).hexdigest(),
         )
-        certificate = certify_migration(plan, checkpoint, independent_verifier_fingerprint="m3-verifier")
+        certificate = certify_migration(plan, checkpoint, independent_verifier_fingerprint="semantic-ingestion-verifier")
         activation = activate_migration(plan, certificate)
         binding = writers.commit_binding(writers.transition(
-            expected=binding, admission_id="m3:verified", runtime_mode="verified_semantic",
+            expected=binding, admission_id="semantic-ingestion:verified", runtime_mode="verified_semantic",
             writer_implementation_fingerprint="writer:verified", graph_schema_fingerprint="schema",
             migration_activation=activation, migration_plan=plan, migration_checkpoint=checkpoint,
             migration_certificate=certificate, target_records=(),
         ))
     store = SemanticIngestionAtomicStore(plane, writers, now_provider=now_provider)
     store._publish_preplanning(admission=admission, writer_binding=binding)
-    repository = M3AuthorizationAuthorityRepository(
+    repository = SemanticAuthorizationAuthorityRepository(
         atomic_store=store,
         writer_binding_provider=lambda: binding,
         now_provider=now_provider,
     )
-    service = M3TerminalPersistenceService(
+    service = SemanticTerminalPersistenceService(
         atomic_store=store,
         writer_binding_provider=lambda: binding,
         authorization_repository=repository,
@@ -225,13 +225,13 @@ def test_verified_revocation_rejects_policy_bearing_noncommit_before_any_effect(
         def verify(self, *, command_bytes: bytes, server_time: datetime):
             assert command_bytes == b"signed-revoke"
             assert server_time == NOW
-            return M3VerifiedAuthorizationTransition.create(
+            return VerifiedSemanticAuthorizationTransition.create(
                 authority_scope_id=scope_id,
                 action="revoke",
                 expected_revision=1,
             )
 
-    VerifiedM3AuthorizationControlPlane(
+    VerifiedSemanticAuthorizationControlPlane(
         verifier=_Verifier(), repository=repository, now_provider=lambda: NOW
     ).apply(b"signed-revoke")
     terminal = SemanticTerminalOutcome.create(
@@ -301,19 +301,19 @@ def test_retry_and_lost_ack_are_byte_idempotent(
 
 
 def test_filesystem_reopen_recovers_exact_terminal_without_duplicate_effects(tmp_path) -> None:
-    backend = JsonlMemoryPlaneStore(tmp_path / "m3-store")
+    backend = JsonlMemoryPlaneStore(tmp_path / "semantic-terminal-store")
     _, _, store, _, fence, service, repository = _setup(verified=True, backend=backend)
     terminal = accepted_terminal(operation_id=fence.operation_id)
     _activate(repository, fence, terminal)
     service.persist(fence=fence, terminal=terminal, authorization_verifier=AUTHORIZATION)
 
-    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "m3-store"))
+    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "semantic-terminal-store"))
     reopened_writers = SemanticWriterAdmissionStore(
         reopened_plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW
     )
     reopened_binding = reopened_writers.commit_binding(reopened_writers.current())
     reopened_store = SemanticIngestionAtomicStore(reopened_plane, reopened_writers, now_provider=lambda: NOW)
-    reopened = M3TerminalPersistenceService(
+    reopened = SemanticTerminalPersistenceService(
         atomic_store=reopened_store, writer_binding_provider=lambda: reopened_binding
     )
     reopened.persist(fence=fence, terminal=terminal, authorization_verifier=AUTHORIZATION)
@@ -321,7 +321,7 @@ def test_filesystem_reopen_recovers_exact_terminal_without_duplicate_effects(tmp
 
 
 def test_filesystem_reopen_rejects_malformed_terminal_artifact_batch(tmp_path) -> None:
-    backend = JsonlMemoryPlaneStore(tmp_path / "m3-malformed-terminal")
+    backend = JsonlMemoryPlaneStore(tmp_path / "semantic-malformed-terminal")
     _, _, _, _, fence, service, repository = _setup(verified=True, backend=backend)
     terminal = accepted_terminal(operation_id=fence.operation_id)
     _activate(repository, fence, terminal)
@@ -356,7 +356,7 @@ def test_filesystem_reopen_rejects_malformed_terminal_artifact_batch(tmp_path) -
     backend._replace_batches(rewritten)
 
     reopened_plane = MemoryPlaneService(
-        record_store=JsonlMemoryPlaneStore(tmp_path / "m3-malformed-terminal")
+        record_store=JsonlMemoryPlaneStore(tmp_path / "semantic-malformed-terminal")
     )
     reopened_writers = SemanticWriterAdmissionStore(
         reopened_plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW
@@ -364,7 +364,7 @@ def test_filesystem_reopen_rejects_malformed_terminal_artifact_batch(tmp_path) -
     reopened_store = SemanticIngestionAtomicStore(
         reopened_plane, reopened_writers, now_provider=lambda: NOW
     )
-    reopened = M3TerminalPersistenceService(
+    reopened = SemanticTerminalPersistenceService(
         atomic_store=reopened_store,
         writer_binding_provider=lambda: reopened_writers.commit_binding(
             reopened_writers.current()

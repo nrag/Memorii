@@ -27,6 +27,9 @@ Record:
 - included scope, excluded scope, non-goals, and approved deviations
 - canonical design path and reproducible baseline
 - stable requirement IDs and measurable acceptance criteria
+- the identity ledger required by `.agents/PLANS.md`, classifying every
+  proposed file, symbol, persisted value, test, fixture, artifact, command, and
+  CI name independently from its requirement or milestone coordinate
 - assumptions, external decisions, and unresolved questions
 
 Do not invent externally visible or persisted behavior to close an ambiguity.
@@ -44,6 +47,12 @@ Before drafting algorithms or schemas, define every applicable boundary:
   integration, and command-line boundaries
 - authority chain from source bytes to derived artifacts and gates
 - unsupported inputs and fail-closed behavior
+
+Treat requirement and milestone coordinates as planning metadata, never as a
+source of product names. Specify behavioral public, persisted, code, test,
+fixture, artifact, and workflow identities explicitly. Apply the durability
+test in `.agents/PLANS.md`; if a name only makes sense with the delivery plan
+visible, replace it before design review.
 
 For parsers, compilers, registries, or generated authority, inventory every
 accepted declaration form before claiming the language is closed. Define alias,
@@ -101,6 +110,9 @@ Before the first full review, create:
   transitions
 - environment and toolchain matrix
 - deterministic versus live or operational evidence boundary
+- a field-aware identity-hygiene check, exact typed exceptions, and mutations
+  proving planning/evidence coordinates are rejected on every affected durable
+  surface while legitimate behavioral numerals and protocol versions pass
 
 For each attack family, name the invariant and enumerate sibling forms. Prefer
 one grammar, typed contract, state machine, or property check over a list of
@@ -145,8 +157,9 @@ tests, WorkPlan, contract boundaries, and attack matrix directly.
 Require every finding to:
 
 - cite a governing requirement and observable contradiction
-- identify a supported scenario that the proposed design leaves broken
-- justify `P1` or `P2` using scenario prevalence or importance
+- identify the affected scenario or repository-contract surface
+- for P1/P2 only, identify supported broken product behavior and justify its
+  prevalence or importance
 - identify the violated invariant or root cause
 - enumerate the complete known equivalence class and adjacent bypasses
 - distinguish product behavior, design completeness, implementation evidence,
@@ -158,17 +171,21 @@ Do not accept one syntax variant as a complete finding when adjacent variants
 can be inspected in the same pass.
 
 Apply the product-impact remediation gate in `.agents/PLANS.md` before editing.
-Only validated `P1` or `P2` design defects enter a design-remediation round.
+Only validated `P1` or `P2` design defects enter a product-remediation round.
 Missing tests, evidence-maturity gaps, hypothetical unsupported inputs, and
 governance observations do not become product defects without demonstrated
 product impact.
 
-Classify non-P1/P2 findings as a bounded evidence action, record-only follow-up,
-or external blocker. An external blocker stops the design operation and names
-the required decision; it does not justify speculative revision.
+Classify non-P1/P2 findings as a bounded evidence action, a bounded
+`contract_conformance_action`, record-only follow-up, or external blocker.
+Determinate identity-governance violations enter conformance remediation and
+block approval until corrected; do not relabel them P1/P2. An external blocker
+stops the design operation and names the required decision; it does not justify
+speculative revision.
 
-Reconcile all reviewers before editing. Cluster eligible P1/P2 findings by root
-cause and send one coherent remediation batch to the sole writer.
+Reconcile all reviewers before editing. Cluster eligible P1/P2 and contract-
+conformance findings by root cause and send one coherent remediation batch to
+the sole writer.
 
 Use this cadence:
 
@@ -181,10 +198,10 @@ case-by-case remediation. Reconstruct that boundary and replace patches with a
 closed grammar, typed contract, state machine, ownership rule, or explicit
 scope decision.
 
-If a review produces no new validated P1/P2 defect, do not start another design
-remediation round. Complete the predefined evidence action, record nonblocking
-follow-ups, approve when the completion contract is met, or stop once with the
-exact external blocker.
+If a review produces no new validated P1/P2 defect, do not start another
+product-remediation round. Complete predefined evidence and contract-
+conformance actions, record nonblocking follow-ups, approve when the completion
+contract is met, or stop once with the exact external blocker.
 
 ## Phase 7: Final Design Review
 
@@ -195,7 +212,9 @@ When the design appears complete:
 3. verify contract and evidence-maturity boundaries
 4. verify every confirmed finding family is closed
 5. confirm implementation needs no hidden semantic decision
-6. run one fresh whole-design review with all three reviewers
+6. independently reconstruct the identity ledger and confirm requirement IDs
+   occur only as typed traceability values
+7. run one fresh whole-design review with all three reviewers
 
 Complete the WorkPlan only when the design completion contract in
 `.agents/PLANS.md` is satisfied.

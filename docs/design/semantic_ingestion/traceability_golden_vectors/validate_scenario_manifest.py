@@ -1,4 +1,4 @@
-"""Fail-closed verifier for the registered CTV milestone-1 scenario package."""
+"""Fail-closed verifier for the registered CTV scenario package."""
 
 from __future__ import annotations
 
@@ -79,7 +79,8 @@ def _raw_members(document: dict[str, Any]) -> tuple[dict[str, bytes], dict[str, 
         }:
             raise ValueError("raw member shape")
         if (
-            row["coordinate"] != f"scenario-c2/m1/{index:02d}/{name}"
+            row["coordinate"]
+            != f"scenario-first-closure/governed-source-admission/{index:02d}/{name}"
             or row["kind"] != "raw_input"
             or row["name"] != name
             or row["dependencies"] != []
@@ -105,7 +106,7 @@ def _raw_members(document: dict[str, Any]) -> tuple[dict[str, bytes], dict[str, 
         raise ValueError("fixture member shape")
     if (
         fixture["coordinate"]
-        != f"scenario-c2/m1/{len(RAW_NAMES) + 1:02d}/fixture_35_golden_typed_input"
+        != f"scenario-first-closure/governed-source-admission/{len(RAW_NAMES) + 1:02d}/fixture_35_golden_typed_input"
         or fixture["kind"] != "golden_typed_input_fixture"
         or fixture["name"] != "fixture_35"
     ):
@@ -189,7 +190,7 @@ def _validate_run(run: dict[str, Any], raw: dict[str, bytes]) -> None:
 def validate(document: dict[str, Any], spool: bytes) -> None:
     if set(document) != {
         "format",
-        "milestone",
+        "closure_version",
         "profile",
         "profile_version",
         "spool_digest",
@@ -199,13 +200,13 @@ def validate(document: dict[str, Any], spool: bytes) -> None:
         raise ValueError("manifest root")
     if (
         document["format"] != FORMAT
-        or document["milestone"] != 2
+        or document["closure_version"] != 1
         or document["profile"] != PROFILE_ID
         or document["profile_version"] != PROFILE_VERSION
     ):
         raise ValueError("manifest identity")
     if document["spool_digest"] != sha(spool):
-        raise ValueError("milestone spool")
+        raise ValueError("scenario closure spool")
     raw, fixture = _raw_members(document)
     if (
         raw["ctv_binding_authority"] != AUTHORITY.read_bytes()
@@ -323,14 +324,19 @@ def validate(document: dict[str, Any], spool: bytes) -> None:
         raise ValueError("registered closure missing")
     built = build_scenario_test_authority(
         design_bytes=raw["design"], registry_bytes=raw["registry"],
-        authority_bytes=raw["ctv_binding_authority"], group_id="semantic-ingestion-r03",
+        authority_bytes=raw["ctv_binding_authority"], group_id="semantic-ingestion-normative-traceability-approval",
     )
     expected_manifest, expected_members = build_generation_package(
         built=built, design_bytes=raw["design"], registry_bytes=raw["registry"]
     )
     expected_rows = [
         (coordinate, data) for coordinate, data in sorted(expected_members.items())
-    ] + [("scenario-c2/m2/generation_manifest", expected_manifest)]
+    ] + [
+        (
+            "scenario-first-closure/writer-safe-preplanning/generation_manifest",
+            expected_manifest,
+        )
+    ]
     if len(closure) != len(expected_rows):
         raise ValueError("registered closure member count")
     closure_bytes: dict[str, bytes] = {}

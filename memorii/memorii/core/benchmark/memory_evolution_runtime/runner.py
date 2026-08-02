@@ -165,8 +165,8 @@ def run_runtime_scenarios(
 ) -> RuntimeSuiteRows:
     if provider_factory is None:
         raise RuntimeError(
-            "memory-evolution runtime benchmarks require the M2 provider composition, "
-            "which is unavailable in the M1 source-only milestone"
+            "memory-evolution runtime benchmarks require the writer-safe preplanning provider composition, "
+            "which is unavailable in the governed-source admission source-only configuration"
         )
     requested_mode = decision_mode(mode)
     effective_mode, runtime_config = validate_runtime_live_safety(mode=mode, dry_run=dry_run, allow_live=allow_live)

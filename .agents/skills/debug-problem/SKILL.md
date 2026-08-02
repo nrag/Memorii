@@ -31,6 +31,13 @@ Classify the problem as implementation, requirement, documentation,
 environment, dependency, data, test, evaluation, operational, or unknown.
 Do not infer an implementation defect merely because a test fails.
 
+Inventory affected identities under `.agents/PLANS.md` when the symptom, fix,
+or regression proof touches names, schemas, persisted bytes, fixtures,
+generated artifacts, commands, or workflows. Treat a leaked milestone or
+requirement coordinate as a leaked planning/evidence coordinate and an identity-
+governance cause or contributing control failure, not harmless historical
+context.
+
 ## Phase 2: Build A Reproducer
 
 Create the smallest practical reproduction and define:
@@ -99,6 +106,9 @@ validators, transactions, provenance, lifecycle policy, warnings, tests,
 benchmarks, and failure reporting.
 
 Prefer an invariant-level correction over one branch per reproduced example.
+Name every new or renamed artifact after behavior. Do not carry the incident,
+issue, hypothesis, experiment, milestone, or requirement coordinate into a
+durable product or test identity.
 
 ## Phase 7: Prove The Fix
 
@@ -111,6 +121,9 @@ Where feasible, prove:
 5. surrounding deterministic checks pass
 6. public, persisted, replay, transaction, temporal, and lifecycle semantics
    remain correct
+7. the affected identity family and sibling spellings are clean, exact typed
+   exceptions are ledgered, and the field-aware identity gate rejects a
+   representative recurrence
 
 Use `test_reviewer` to confirm the regression test detects the causal defect.
 
@@ -143,6 +156,9 @@ cause, and report whole failure families rather than isolated sibling examples.
 Reconcile all findings before remediation. If a second closure round exposes
 the same causal boundary, reopen the root-cause model instead of adding another
 patch.
+
+Use `contract_conformance_action` for a determinate identity-governance fix
+without manufacturing P1/P2 product impact.
 
 Update the hypothesis, experiment, evidence, and review logs and set exactly
 one next action.

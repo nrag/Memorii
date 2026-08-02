@@ -1,4 +1,4 @@
-"""Regenerate the round-19 enum-qualified C2 authority package."""
+"""Regenerate the round-19 enum-qualified scenario-first closure authority package."""
 
 from __future__ import annotations
 

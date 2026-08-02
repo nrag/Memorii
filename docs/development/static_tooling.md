@@ -116,20 +116,34 @@ Run the full lint check:
 python -m ruff check memorii tests
 ```
 
+Run the field-aware behavioral identity check:
+
+```bash
+python -m memorii.tools.identity_hygiene \
+  --root .. \
+  --allowlist ../.agents/identity_hygiene_allowlist.json
+```
+
+The checker rejects planning and evidence coordinates in durable filenames,
+symbols, identity-bearing structured fields, generated artifacts, and workflow
+labels. Its allowlist accepts only exact typed traceability, explicit legacy
+rejection, or shipped migration occurrences, and every entry must name a
+machine-checked registry, rejecting test, or compatibility artifact; stale
+exceptions fail. Mutation tests cover the rejected coordinate corpus, while
+`DeliveryCoordinate`, `BM25`, real wire/schema versions, and retained
+compatibility identities form the positive corpus.
+
 Run scoped type checks:
 
 ```bash
 pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
 ```
 
-Test function names are behavioral by default. The sole exception is
-`tests/integration/test_semantic_ingestion_pipeline.py`, whose exact
-`SIA-T02`, `SIA-T04`, `SIA-T05`, `SIA-T06`, `SIA-T07`, `SIA-T09`, and
-`SIA-T12` prefixes are the canonical M3 evidence coordinates required by the
-approved implementation WorkPlan. The static check permits only those prefixes
-in that file; it does not permit requirement or milestone IDs elsewhere.
+Test function names and executable evidence coordinates are behavioral.
+Requirement and evidence IDs remain values only in exact typed traceability
+fields or explicit rejection vectors.
 
-Historical-only (not a current gate): the following C2 recipe command verifies
+Historical-only (not a current gate): the following recipe command verifies
 its immutable historical design and registry bytes. It must not be run against
 the current CGS design or used as current-contract evidence.
 

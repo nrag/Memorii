@@ -1,4 +1,4 @@
-"""Migrate the frozen v14 C2 recipe to explicit canonical-content boundaries."""
+"""Migrate the frozen v14 scenario-first closure recipe to explicit canonical-content boundaries."""
 
 from __future__ import annotations
 

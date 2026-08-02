@@ -1,15 +1,15 @@
-"""Closed M3 candidate-to-terminal semantic-ingestion contracts.
+"""Closed semantic ingestion candidate-to-terminal semantic-ingestion contracts.
 
 This package deliberately owns candidate validation and non-promoting terminal
 evidence.  It does not own graph arbitration or a provider-specific model.
 """
 
 from memorii.core.semantic_ingestion.authorization import (
-    M3AuthorizationAuthorityError,
-    M3AuthorizationAuthorityRepository,
-    M3AuthorizationTransitionVerifier,
-    M3VerifiedAuthorizationTransition,
-    VerifiedM3AuthorizationControlPlane,
+    SemanticAuthorizationAuthorityError,
+    SemanticAuthorizationAuthorityRepository,
+    SemanticAuthorizationTransitionVerifier,
+    VerifiedSemanticAuthorizationControlPlane,
+    VerifiedSemanticAuthorizationTransition,
 )
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
@@ -30,16 +30,16 @@ from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedSourceIntervalEvidence,
     AuthorizationStageSnapshot,
     IndependentSourceAnalysis,
-    M3ArtifactClosure,
-    M3EventBatch,
-    M3ExecutionLineage,
-    M3ExecutionRetryPlan,
-    M3GraphDelta,
-    M3GroupResult,
-    M3ObservationDelta,
-    M3RecoveryAuthorityBinding,
     SemanticArbitrationPolicyBundle,
+    SemanticArtifactClosure,
     SemanticContractCodecError,
+    SemanticEffectGroupResult,
+    SemanticEventInputBatch,
+    SemanticExecutionLineage,
+    SemanticExecutionRetryPlan,
+    SemanticGraphDelta,
+    SemanticObservationDelta,
+    SemanticRecoveryAuthorityBinding,
     SemanticTerminalBindingSet,
     SourceTemporalEvidenceSet,
     TemporalReferenceEvidence,
@@ -58,7 +58,7 @@ from memorii.core.semantic_ingestion.local_analyzer import (
     LocalSemanticProposalProducer,
     ProductionLocalSemanticAnalyzer,
 )
-from memorii.core.semantic_ingestion.persistence import M3TerminalPersistenceService
+from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
 from memorii.core.semantic_ingestion.pipeline import (
     AnalyzerRoleInterpretation,
     CandidateTransportError,
@@ -87,11 +87,11 @@ from memorii.core.semantic_ingestion.prompt_authority import (
 
 __all__ = [
     "CandidateTransportError",
-    "M3AuthorizationAuthorityError",
-    "M3AuthorizationAuthorityRepository",
-    "M3AuthorizationTransitionVerifier",
-    "M3VerifiedAuthorizationTransition",
-    "VerifiedM3AuthorizationControlPlane",
+    "SemanticAuthorizationAuthorityError",
+    "SemanticAuthorizationAuthorityRepository",
+    "SemanticAuthorizationTransitionVerifier",
+    "VerifiedSemanticAuthorizationTransition",
+    "VerifiedSemanticAuthorizationControlPlane",
     "AuthorizedSemanticIngestionRuntime",
     "build_authorized_local_semantic_runtime",
     "AuthenticatedSourceIntervalEvidence",
@@ -104,15 +104,15 @@ __all__ = [
     "ClaimAssertion",
     "IdentityLineageRecord",
     "HostSemanticIngestionRuntimeBuilder",
-    "M3ArtifactClosure",
-    "M3ExecutionRetryPlan",
-    "M3EventBatch",
-    "M3ExecutionLineage",
-    "M3GraphDelta",
-    "M3GroupResult",
-    "M3ObservationDelta",
-    "M3RecoveryAuthorityBinding",
-    "M3TerminalPersistenceService",
+    "SemanticArtifactClosure",
+    "SemanticExecutionRetryPlan",
+    "SemanticEventInputBatch",
+    "SemanticExecutionLineage",
+    "SemanticGraphDelta",
+    "SemanticEffectGroupResult",
+    "SemanticObservationDelta",
+    "SemanticRecoveryAuthorityBinding",
+    "SemanticTerminalPersistenceService",
     "LocalSemanticProposalProducer",
     "ProductionLocalSemanticAnalyzer",
     "AnalyzerRoleInterpretation",

@@ -1,4 +1,4 @@
-"""Deterministic operation sealing after independent M3 assessments."""
+"""Deterministic operation sealing after independent semantic ingestion assessments."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def seal_semantic_operation(
     if actual_roles != expected_roles or len(set(actual_roles)) != len(actual_roles):
         raise ValueError("resolved temporal roles do not match the typed candidate")
     operation_id = contract_digest(
-        b"memorii.m3.operation-coordinate.v1",
+        b"memorii.semantic-ingestion.operation-coordinate.v1",
         {
             "source_id": source_id,
             "source_digest": source_digest,
@@ -62,7 +62,7 @@ def seal_semantic_operation(
             candidate_spans=source_temporal.attachment_spans,
         )
         scope = contract_digest(
-            b"memorii.m3.scope-assessment.v1",
+            b"memorii.semantic-ingestion.scope-assessment.v1",
             {
                 "operation_id": operation_id,
                 "candidate_id": candidate.candidate_id,
@@ -73,7 +73,7 @@ def seal_semantic_operation(
             },
         )
         semantic = contract_digest(
-            b"memorii.m3.semantic-assessment.v1",
+            b"memorii.semantic-ingestion.semantic-assessment.v1",
             {
                 "operation_id": operation_id,
                 "scope_assessment_digest": scope,
@@ -95,11 +95,11 @@ def seal_semantic_operation(
         )
     ordered = tuple(sorted(bindings, key=lambda value: (value.operation_id, value.temporal_role, value.binding_digest)))
     scope_digest = contract_digest(
-        b"memorii.m3.operation-scope-assessments.v1",
+        b"memorii.semantic-ingestion.operation-scope-assessments.v1",
         tuple(value.scope_assessment_digest for value in ordered),
     )
     semantic_digest = contract_digest(
-        b"memorii.m3.operation-semantic-assessments.v1",
+        b"memorii.semantic-ingestion.operation-semantic-assessments.v1",
         tuple(value.semantic_assessment_digest for value in ordered),
     )
     body = {
@@ -112,7 +112,7 @@ def seal_semantic_operation(
     }
     return SealedSemanticOperation(
         **body,
-        sealed_operation_digest=contract_digest(b"memorii.m3.sealed-operation.v1", body),
+        sealed_operation_digest=contract_digest(b"memorii.semantic-ingestion.sealed-operation.v1", body),
     )
 
 
@@ -121,7 +121,7 @@ def seal_assertion_operation(
     source_analysis: IndependentSourceAnalysis,
     closure: TemporalEvidenceDecisionClosure,
 ) -> SealedSemanticOperation | None:
-    """Compatibility wrapper for the original fact-only M3 API."""
+    """Compatibility wrapper for the original fact-only semantic ingestion API."""
     if candidate.operation_kind not in {"fact", "action"}:
         raise ValueError("assertion sealing is valid only for fact or action candidates")
     return seal_semantic_operation(

@@ -42,7 +42,8 @@ migration, compatibility, and failure coverage. Identify:
 - expensive tests mislabeled as unit tests
 - fixture generators or trust material shipped in production packages
 - tests whose assertions cannot fail when the target behavior regresses
-- suites and symbols named after temporary milestones, review rounds, or task IDs
+- suites, nodes, fixtures, helpers, commands, or jobs named after requirements,
+  evidence coordinates, temporary milestones, review rounds, or task IDs
 
 Do not add a new test until its distinct failure signal is stated. Prefer
 extending the canonical current-contract suite over creating a parallel suite.
@@ -51,7 +52,10 @@ extending the canonical current-contract suite over creating a parallel suite.
 
 Use stable behavioral names. Name files, fixtures, helpers, symbols, and jobs
 after the contract they validate, never after internal milestones such as M0,
-M1, C2, review rounds, issue numbers, or temporary implementation phases.
+M1, C2, requirement IDs such as R22 or SIA-R22, evidence IDs, review rounds,
+issue numbers, or temporary implementation phases. Requirement IDs are values
+only in exact typed traceability fields and explicit rejection vectors; they
+never name executable tests, groups, commands, or general fixtures.
 Preserve version labels only when they are genuine public, wire, schema,
 fixture-format, or migration identities.
 
@@ -113,6 +117,8 @@ Use one writer for overlapping tests and fixtures. When replacing a suite:
 3. run the migrated cases and prove their failure signals
 4. delete obsolete tests, fixtures, helpers, and CI references in the same change
 5. search for stale imports, paths, names, WorkPlan references, and packaged bytes
+6. update the `.agents/PLANS.md` identity ledger across tests, fixtures,
+   generators, goldens, registries, timing data, and workflow labels
 
 Do not retain historical tests merely because they once caught a bug. Preserve
 the invariant in a current test; remove the obsolete mechanism. Do not delete a
@@ -130,6 +136,9 @@ Run focused tests first, then applicable gates. Record:
 - source/wheel isolation when fixture authority is test-only
 - workflow identity and local command-equivalence evidence
 - complete timing ownership for the duration-balanced unit inventory
+- field-aware identity-gate coverage, exact exception inventory, and mutations
+  proving each changed surface rejects planning/evidence coordinates and
+  accepts the fixed legitimate-name corpus from `.agents/PLANS.md`
 
 Read current GitHub workflows directly. Prove every added or moved test is
 collected by a required job, included in the correct matrix or deterministic
@@ -160,7 +169,8 @@ completion contract in `.agents/PLANS.md`.
 Complete only when requirements map to current tests, every retained test has a
 distinct failure signal, obsolete artifacts are removed, suite topology and CI
 placement match runtime budgets, fast gates remain representative, exhaustive
-coverage remains enforced elsewhere, stable naming is used, and deterministic
-evidence passes at the exact revision. Actual scope-required GitHub checks and
+coverage remains enforced elsewhere, behavioral naming is used, the field-aware
+identity gate and its mutation tests pass, and deterministic evidence passes at
+the exact revision. Actual scope-required GitHub checks and
 external gates are required before claiming their corresponding enforced or
 operational maturity.
