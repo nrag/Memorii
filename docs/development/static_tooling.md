@@ -8,17 +8,17 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_c
   --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json \
   --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json \
   --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py \
-  --expected-design-sha256 e7de038a5cad8f8d95536d60d35621472a79588e100c2da8633a9dd1fcfb5e7a \
-  --expected-registry-sha256 35396897f98833b3eeb9572b16d7eab38ea34741ca876a4a72048424de676ea3 \
-  --expected-authority-sha256 0dff4f2c0c8a33b7a23ba067de07ae16e556d60b5f94192223b4c76a2246c056 \
+  --expected-design-sha256 45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c \
+  --expected-registry-sha256 d38aa788adfb7703d970507f496b903ddf460797fe60274ddd5ebf9c22054c46 \
+  --expected-authority-sha256 9f650d2f018e3863ad5f5512bf80dbdac1d22fa584cebe9f868c347a2f0143a4 \
   --expected-validator-sha256 826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e \
   --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
 ```
 
 The gate requires architecture SHA-256
-`e7de038a5cad8f8d95536d60d35621472a79588e100c2da8633a9dd1fcfb5e7a`,
+`45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c`,
 authority SHA-256
-`0dff4f2c0c8a33b7a23ba067de07ae16e556d60b5f94192223b4c76a2246c056`,
+`9f650d2f018e3863ad5f5512bf80dbdac1d22fa584cebe9f868c347a2f0143a4`,
 validator SHA-256
 `826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e`,
 hermetic gate SHA-256
@@ -36,12 +36,12 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_l
   --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json \
   --fixture docs/design/semantic_ingestion/traceability_golden_vectors/lifecycle-root-signer-provenance-witness-v1.json \
   --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_lifecycle_root_signer_provenance_v1.py \
-  --expected-checker-sha256 c4168249dbf4845d90e9593819323dc331e22e3bdfa5a9df70b076ed10449f01 \
+  --expected-checker-sha256 2ec8baffd86acdfc21e9c4fbcbd791d1bacd96a0b4623418bf51ee34b219e69c \
   --self-test
 ```
 
 The current semantic gate pins design SHA-256
-`e7de038a5cad8f8d95536d60d35621472a79588e100c2da8633a9dd1fcfb5e7a`,
+`45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c`,
 matrix SHA-256
 `a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604`,
 witness SHA-256
@@ -49,7 +49,7 @@ witness SHA-256
 validator SHA-256
 `46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb`,
 and checker SHA-256
-`c4168249dbf4845d90e9593819323dc331e22e3bdfa5a9df70b076ed10449f01`.
+`2ec8baffd86acdfc21e9c4fbcbd791d1bacd96a0b4623418bf51ee34b219e69c`.
 It must report exactly six accepted witnesses, 41 rejected witnesses, and two
 identical isolated replicas. The totals include two canonical accepted roots,
 four accepted inclusive-endpoint witnesses, four rejected outside-boundary
@@ -122,6 +122,13 @@ Run scoped type checks:
 pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
 ```
 
+Test function names are behavioral by default. The sole exception is
+`tests/integration/test_semantic_ingestion_pipeline.py`, whose exact
+`SIA-T02`, `SIA-T04`, `SIA-T05`, `SIA-T06`, `SIA-T07`, `SIA-T09`, and
+`SIA-T12` prefixes are the canonical M3 evidence coordinates required by the
+approved implementation WorkPlan. The static check permits only those prefixes
+in that file; it does not permit requirement or milestone IDs elsewhere.
+
 Historical-only (not a current gate): the following C2 recipe command verifies
 its immutable historical design and registry bytes. It must not be run against
 the current CGS design or used as current-contract evidence.
@@ -170,9 +177,9 @@ raw SHA-256 `a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604`,
 prototype SHA-256
 `b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed`,
 prototype-vector SHA-256
-`7af8aa57cf1b81f243883077fdde27064a638e95bf366cfd1cfd16979340c3ab`,
+`8164e5d207615a2678fc81cce99dee2684c4ad531f095a782930574aa0206a6d`,
 and CGS checker SHA-256
-`212d016465e26b42c101521ecaacc8cd4c475949d19d29aa92ecce93fbaac278`.
+`918c843581b578d3d08bf221715b3c777de15691abd63964147121cf2cea1790`.
 
 Build an installable wheel and verify package-owned prompt contracts:
 

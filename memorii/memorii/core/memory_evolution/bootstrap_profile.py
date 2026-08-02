@@ -514,8 +514,21 @@ class ProfileInputOutcome(BootstrapOutcomeBase):
     matched_corpus_case_id: str | None = None
 
 
+class ProfileAcceptedCandidate(BootstrapOutcomeBase):
+    kind: Literal["accepted_candidate"]
+    candidate_digest: str = _DIGEST
+    operation_fence_binding_digest: str = _DIGEST
+
+
+class ProfileCommittedTerminal(BootstrapOutcomeBase):
+    kind: Literal["committed_terminal"]
+    terminal_result_digest: str = _DIGEST
+    operation_fence_binding_digest: str = _DIGEST
+
+
 BootstrapProfileOutcome = Annotated[
-    ProfileSelectedPipelinePending | ProfileDisabled | ProfileUnavailable | ProfileInputOutcome,
+    ProfileSelectedPipelinePending | ProfileDisabled | ProfileUnavailable | ProfileInputOutcome
+    | ProfileAcceptedCandidate | ProfileCommittedTerminal,
     Field(discriminator="kind"),
 ]
 

@@ -222,6 +222,9 @@ class AuthenticatedIngressContext(BaseModel):
     language_evidence_kind: Literal["authenticated_host_declaration", "missing", "untrusted", "mismatched"] = "missing"
     language_evidence_trust: Literal["trusted", "missing", "untrusted", "mismatched"] = "missing"
     language_governance_agreement: Literal["agrees", "missing", "disagrees"] = "missing"
+    semantic_egress_governance: AuthenticatedSemanticEgressGovernance | None = None
+    semantic_source_authority: AuthenticatedSemanticSourceAuthority | None = None
+    semantic_source_interval: AuthenticatedSemanticSourceInterval | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -249,6 +252,54 @@ class AuthenticatedIngressContext(BaseModel):
         }:
             raise ValueError("language evidence tuple is invalid")
         return self
+
+
+class AuthenticatedSemanticSourceAuthority(BaseModel):
+    """Host-authenticated semantic authority metadata before source admission binds it."""
+
+    authority_class: str = Field(min_length=1)
+    authenticated_provenance_class: str = Field(min_length=1)
+    governing_principal_id: str | None = None
+    policy_revision: str = Field(min_length=1)
+    provenance_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class AuthenticatedSemanticSourceInterval(BaseModel):
+    """Host-authenticated source interval metadata before source binding."""
+
+    start: datetime
+    end: datetime | None = None
+    authority_basis: Literal["server_source_metadata", "authenticated_external_interval"]
+    provenance_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    policy_revision: str = Field(min_length=1)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> AuthenticatedSemanticSourceInterval:
+        if self.end is not None and self.end <= self.start:
+            raise ValueError("authenticated source interval end must be later than start")
+        return self
+
+
+class AuthenticatedSemanticEgressGovernance(BaseModel):
+    """Host-authenticated, source-classification input for remote M3 use.
+
+    It intentionally contains no source identity: admission supplies the exact
+    retained source bytes/digest, preventing callers from swapping an event
+    metadata value into a provider authorization.
+    """
+
+    classification: str = Field(min_length=1)
+    provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    region: str = Field(min_length=1)
+    retention_mode: str = Field(min_length=1)
+    training_use: bool
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class AuthenticatedHostIngress(BaseModel):

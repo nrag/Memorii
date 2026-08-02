@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Lock
 from unittest.mock import patch
 
 import pytest
@@ -545,7 +545,7 @@ def test_trusted_provider_path_admits_evidence_before_profile_gate() -> None:
         ),
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(memory_plane.list_records()) == 10
+    assert len(memory_plane.list_records()) == 32
 
 
 def test_provider_sync_event_uses_host_required_scopes_not_public_event_metadata() -> None:
@@ -646,7 +646,7 @@ def test_hermes_trusted_ingress_uses_internal_composite_coordinates() -> None:
         ),
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(memory_plane.list_records()) == 19
+    assert len(memory_plane.list_records()) == 63
 
 
 def test_authenticated_metadata_poor_snapshot_is_governed_evidence_only() -> None:
@@ -767,7 +767,7 @@ def test_factory_loads_installed_host_capability_and_ignores_public_language_lab
         ),
         authenticated_host_ingress=host_ingress,
     ).outcome
-    assert outcome is not None and outcome.kind == "selected_pipeline_pending"
+    assert outcome is not None and outcome.kind == "abstained"
 
 
 def test_authenticated_non_english_declaration_abstains_even_when_public_label_is_en() -> None:
@@ -825,17 +825,21 @@ def test_every_bootstrap_corpus_case_has_exact_protected_source_admission_outcom
         authenticated_host_ingress=ingress,
     ).outcome
     expected_kind = {
-        "supported_form": "selected_pipeline_pending",
+        "supported_form": "abstained",
         "unsupported_form": "unsupported_input",
         "abstain_form": "abstained",
     }[case.disposition]
     assert outcome is not None and outcome.kind == expected_kind
     if outcome.kind in {"unsupported_input", "abstained"}:
-        assert outcome.reason == case.expected_reason
-        assert outcome.matched_corpus_case_id == case.case_id
+        assert outcome.reason == (
+            "extractor_abstained" if case.disposition == "supported_form" else case.expected_reason
+        )
+        assert outcome.matched_corpus_case_id == (
+            None if case.disposition == "supported_form" else case.case_id
+        )
         assert outcome.input_normalized_digest == sha256(case.normalized_segment_bytes).hexdigest()
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(plane.list_records()) == 10
+    assert len(plane.list_records()) == (32 if case.disposition == "supported_form" else 10)
     assert result.candidate_ids == []
 
 
@@ -1070,8 +1074,8 @@ def test_jsonl_reopen_and_lost_ack_retry_preserve_one_bootstrap_generation(tmp_p
         task_id="task:one",
         authenticated_host_ingress=host_ingress,
     )
-    assert len(reopened_plane.list_records()) == 10
-    assert len((store_path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()) == 2
+    assert len(reopened_plane.list_records()) == 32
+    assert len((store_path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()) == 6
 
 
 @pytest.mark.parametrize("persistent", [False, True], ids=["memory", "jsonl"])
@@ -1095,9 +1099,16 @@ def test_concurrent_exact_delivery_is_idempotent(
     )
     original_apply = store.apply_batch
     rendezvous = Barrier(2)
+    synchronization_lock = Lock()
+    synchronized_calls = 0
 
     def synchronized_apply(*args, **kwargs):
-        rendezvous.wait(timeout=5)
+        nonlocal synchronized_calls
+        with synchronization_lock:
+            synchronized_calls += 1
+            synchronize = synchronized_calls <= 2
+        if synchronize:
+            rendezvous.wait(timeout=5)
         return original_apply(*args, **kwargs)
 
     monkeypatch.setattr(store, "apply_batch", synchronized_apply)
@@ -1115,7 +1126,7 @@ def test_concurrent_exact_delivery_is_idempotent(
         results = tuple(executor.map(lambda _: deliver(), range(2)))
     assert all(result.blocked_reasons["semantic_ingestion"] == "source_only" for result in results)
     assert len({tuple(result.transcript_ids) for result in results}) == 1
-    assert len(plane.list_records()) == 10
+    assert len(plane.list_records()) == 32
 
 
 def test_installed_capability_loader_works_through_hermes_and_filesystem_roots(tmp_path: Path) -> None:
@@ -1280,7 +1291,9 @@ def test_jsonl_replace_failure_is_atomic_and_lost_ack_recovers(
         task_id="task:one",
         authenticated_host_ingress=host_ingress,
     )
-    assert {record.source_kind for record in reopened_plane.list_records()} == expected_kinds
+    assert {record.source_kind for record in reopened_plane.list_records()} == expected_kinds | {
+        "semantic_ingestion_generation_member", "semantic_ingestion_generation_manifest",
+    }
 
 
 def test_unavailable_host_boundary_exposes_no_partial_authority(

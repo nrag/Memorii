@@ -79,4 +79,6 @@ def build_filesystem_provider(
     storage_root: str | Path,
     policy: FilesystemStoragePolicy | None = None,
 ) -> ProviderMemoryService:
-    return FilesystemStorageBundle.from_root(storage_root=storage_root, policy=policy).build_provider_memory_service()
+    return FilesystemStorageBundle.from_root(
+        storage_root=storage_root, policy=policy
+    ).build_provider_memory_service()

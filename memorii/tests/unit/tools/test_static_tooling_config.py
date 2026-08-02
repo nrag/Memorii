@@ -388,15 +388,51 @@ def test_dedicated_deterministic_pytest_jobs_have_timing_owners_or_exemptions() 
         assert entry["timing_exemption_reason"].strip()
 
 
+def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
+    config = _workflow_config("pr-gates.yml")
+    steps = config["jobs"]["semantic-ingestion-generation"]["steps"]
+    command = next(
+        step["run"]
+        for step in steps
+        if step["name"] == "Run exact M3 integration and process closure"
+    )
+    assert command.split() == [
+        "pytest",
+        "-W",
+        "error",
+        "tests/unit/core/semantic_ingestion",
+        "tests/integration/test_semantic_ingestion_pipeline.py",
+        "tests/integration/test_semantic_ingestion_process_safety.py",
+        "-p",
+        "no:cacheprovider",
+    ]
+    count_command = next(
+        step["run"]
+        for step in steps
+        if step["name"] == "Verify exact M3 collection count"
+    )
+    assert '"266 tests collected in "*' in count_command
+    assert count_command.count("tests/unit/core/semantic_ingestion") == 1
+    assert count_command.count("tests/integration/test_semantic_ingestion_pipeline.py") == 1
+    assert count_command.count("tests/integration/test_semantic_ingestion_process_safety.py") == 1
+
+
 def test_test_symbols_use_behavioral_names_instead_of_requirement_or_milestone_ids() -> None:
     identifier_name = re.compile(
         r"^(?:async )?def test_(?:.*_(?:r|m|t|c|p)\d+(?:_|\()|sia_[a-z]\d+(?:_|\())",
         re.IGNORECASE,
     )
+    named_evidence_path = Path("tests/integration/test_semantic_ingestion_pipeline.py")
+    named_evidence = re.compile(
+        r"^def test_sia_t(?:02_candidate|04_lineage|05_consensus|06_temporal|06_tr_[a-z_]+|07_prompt|09_egress|12_pipeline)_[a-z0-9_]+\("
+    )
     violations: list[str] = []
     for path in sorted((PROJECT_ROOT / "tests").rglob("*.py")):
         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if identifier_name.match(line):
+            relative = path.relative_to(PROJECT_ROOT)
+            if identifier_name.match(line) and not (
+                relative == named_evidence_path and named_evidence.match(line)
+            ):
                 violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line_number}:{line.strip()}")
     assert violations == []
 

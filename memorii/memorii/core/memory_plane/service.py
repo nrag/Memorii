@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -144,6 +144,7 @@ class MemoryPlaneService:
         *,
         preconditions: tuple[MemoryPlanePrecondition, ...],
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         if self._active_unit_of_work.get() is not None:
             raise RuntimeError("conditional control writes cannot be nested in a memory-plane unit of work")
@@ -152,6 +153,7 @@ class MemoryPlaneService:
             expected_revision=None,
             preconditions=preconditions,
             authorization=authorization,
+            transaction_precondition=transaction_precondition,
         )
 
     def upsert_record(

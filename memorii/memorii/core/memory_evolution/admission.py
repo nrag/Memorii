@@ -7,8 +7,9 @@ responsibilities.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from hashlib import sha256
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
@@ -17,6 +18,8 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapProfileOutcome,
     BootstrapUnavailableReason,
     GovernedSourceAdmissionFact,
+    ProfileAcceptedCandidate,
+    ProfileCommittedTerminal,
     ProfileDisabled,
     ProfileInputOutcome,
     ProfileSelectedPipelinePending,
@@ -34,6 +37,9 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import MemoryPlaneRevisionConflictError, RecordAbsentPrecondition
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+
+if TYPE_CHECKING:
+    from memorii.core.semantic_ingestion.contracts import SemanticTerminalOutcome
 
 
 class SemanticIngestionOutcomeLookupRequest(BaseModel):
@@ -113,7 +119,7 @@ class GovernedSourceAdmissionService:
         writer_coordinate = _source_admission_writer_coordinate(self._memory_plane)
         index = _index_record(
             delivery_identity=delivery_identity, required=required, operation_fence=operation_fence,
-            writer_coordinate=writer_coordinate,
+            writer_coordinate=writer_coordinate, timestamp=source.timestamp,
         )
         selection_status = (
             "disabled"
@@ -225,7 +231,7 @@ class GovernedSourceAdmissionService:
         writer_coordinate = _source_admission_writer_coordinate(self._memory_plane)
         index = _index_record(
             delivery_identity=delivery_identity, required=required, operation_fence=operation_fence,
-            writer_coordinate=writer_coordinate,
+            writer_coordinate=writer_coordinate, timestamp=source.timestamp,
         )
         selection_status = "disabled" if outcome_kind == "disabled" else (
             "selected" if selection_digest is not None else "unavailable"
@@ -313,7 +319,133 @@ class GovernedSourceAdmissionService:
             decoded = TypeAdapter(BootstrapProfileOutcome).validate_python(outcome.content)
         except ValueError:
             return SemanticIngestionOutcomeLookupResponse()
+        fence_value = content.get("operation_fence_binding")
+        try:
+            fence = OperationFenceBinding.model_validate(fence_value)
+        except ValueError:
+            return SemanticIngestionOutcomeLookupResponse()
+        control = self._memory_plane.get_record(f"semantic_ingestion:operation:{fence.operation_fence_id}")
+        if control is not None and control.source_kind == "semantic_ingestion_preplanning_control":
+            control_value = control.content.get("control")
+            if isinstance(control_value, dict):
+                state = control_value.get("state")
+                generation = control_value.get("generation")
+                if state == "terminal" and isinstance(generation, int):
+                    lifecycle = self._lifecycle_transition(fence=fence, generation=generation)
+                    terminal = self._terminal_result(fence=fence, generation=generation)
+                    if (
+                        terminal is None
+                        or lifecycle is None
+                        or lifecycle.terminal_digest is None
+                        or lifecycle.terminal_digest != terminal.terminal_digest
+                    ):
+                        return SemanticIngestionOutcomeLookupResponse()
+                    if lifecycle.to_kind == "committed_terminal":
+                        decoded = ProfileCommittedTerminal(
+                            kind="committed_terminal", coordinate=decoded.coordinate,
+                            source_admission=decoded.source_admission,
+                            terminal_result_digest=lifecycle.terminal_digest,
+                            operation_fence_binding_digest=fence.binding_digest,
+                        )
+                    elif lifecycle.to_kind in {"unsupported_input", "abstained"}:
+                        source = self._memory_plane.get_record(decoded.source_admission.source_id)
+                        if source is None or lifecycle.reason_code is None:
+                            return SemanticIngestionOutcomeLookupResponse()
+                        reason = (
+                            lifecycle.reason_code
+                            if lifecycle.reason_code != "retry_budget_exhausted"
+                            else "extractor_abstained"
+                        )
+                        decoded = ProfileInputOutcome.model_validate({
+                            "kind": lifecycle.to_kind,
+                            "coordinate": decoded.coordinate,
+                            "source_admission": decoded.source_admission,
+                            "reason": reason,
+                            "input_normalized_digest": normalized_input_digest(source.text.encode("utf-8")),
+                            "matched_corpus_case_id": None,
+                        })
+                    else:
+                        return SemanticIngestionOutcomeLookupResponse()
+                elif state == "planned" and isinstance(generation, int):
+                    lifecycle = self._lifecycle_transition(fence=fence, generation=generation)
+                    if (
+                        lifecycle is None
+                        or lifecycle.to_kind != "accepted_candidate"
+                        or lifecycle.candidate_digest is None
+                    ):
+                        return SemanticIngestionOutcomeLookupResponse()
+                    decoded = ProfileAcceptedCandidate(
+                        kind="accepted_candidate", coordinate=decoded.coordinate,
+                        source_admission=decoded.source_admission,
+                        candidate_digest=lifecycle.candidate_digest,
+                        operation_fence_binding_digest=fence.binding_digest,
+                    )
         return SemanticIngestionOutcomeLookupResponse(available=True, outcome=decoded)
+
+    def _terminal_result(
+        self, *, fence: OperationFenceBinding, generation: int,
+    ) -> SemanticTerminalOutcome | None:
+        from memorii.core.semantic_ingestion.contracts import (
+            SemanticTerminalOutcome,
+            decode_semantic_contract,
+        )
+        manifest = self._memory_plane.get_record(
+            f"semantic_ingestion:generation:{fence.operation_fence_id}:{generation}:manifest"
+        )
+        if manifest is None or manifest.source_kind != "semantic_ingestion_generation_manifest":
+            return None
+        members = manifest.content.get("members")
+        if not isinstance(members, (list, tuple)):
+            return None
+        source_results = tuple(value for value in members if isinstance(value, dict) and value.get("kind") == "source_result")
+        if len(source_results) != 1:
+            return None
+        payload = source_results[0].get("canonical_payload")
+        if not isinstance(payload, str):
+            return None
+        try:
+            terminal = decode_semantic_contract(payload.encode("utf-8"), SemanticTerminalOutcome)
+        except (ValueError, TypeError):
+            return None
+        return terminal if terminal.operation_id == fence.operation_id else None
+
+    def _lifecycle_transition(self, *, fence: OperationFenceBinding, generation: int):
+        from memorii.core.semantic_ingestion.contracts import (
+            M3LifecycleTransition,
+            decode_semantic_contract,
+        )
+
+        for candidate_generation in range(generation, 1, -1):
+            manifest = self._memory_plane.get_record(
+                f"semantic_ingestion:generation:{fence.operation_fence_id}:{candidate_generation}:manifest"
+            )
+            if (
+                manifest is None
+                or manifest.source_kind != "semantic_ingestion_generation_manifest"
+            ):
+                return None
+            members = manifest.content.get("members")
+            if not isinstance(members, (list, tuple)):
+                return None
+            transitions = tuple(
+                value for value in members
+                if isinstance(value, dict) and value.get("kind") == "lifecycle"
+            )
+            if not transitions:
+                continue
+            if len(transitions) != 1:
+                return None
+            payload = transitions[0].get("canonical_payload")
+            if not isinstance(payload, str):
+                return None
+            try:
+                lifecycle = decode_semantic_contract(
+                    payload.encode("utf-8"), M3LifecycleTransition
+                )
+            except (ValueError, TypeError):
+                return None
+            return lifecycle if lifecycle.operation_id == fence.operation_id else None
+        return None
 
 
 def source_admission_source_digest(source: CanonicalMemoryRecord) -> str:
@@ -351,6 +483,7 @@ def _index_record(
     required: RequiredOutcomeScopeSet,
     operation_fence: OperationFenceBinding,
     writer_coordinate: tuple[int, str] | None,
+    timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_index_id(delivery_identity.delivery_key_digest),
@@ -368,7 +501,7 @@ def _index_record(
         },
         status=CommitStatus.COMMITTED,
         source_kind="semantic_ingestion_admission_index",
-        timestamp=datetime.now(UTC),
+        timestamp=timestamp,
         visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
     )
 

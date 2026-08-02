@@ -1442,12 +1442,17 @@ class TrustDecayStep(BaseModel):
     authority_loss: int = Field(ge=0)
     eligibility: Literal["eligible", "ineligible"]
 
+class IncomparableAuthorityClassPair(BaseModel):
+    # Canonical lexical order: lower_authority_class < higher_authority_class.
+    lower_authority_class: str
+    higher_authority_class: str
+
 class PredicateTrustRule(BaseModel):
     predicate_id: str
     scope_pattern: ScopePattern
     eligible_authority_classes: frozenset[str]
     authority_rank_by_class: Mapping[str, int]
-    incomparable_class_sets: tuple[frozenset[str], ...]
+    incomparable_class_pairs: tuple[IncomparableAuthorityClassPair, ...]
     decay_age_basis: Literal[
         "assertion_system_start",
         "authenticated_event_time",
@@ -1461,6 +1466,7 @@ class TrustPolicySnapshot(BaseModel):
     system_effective_interval: TimeInterval
     predicate_rules: tuple[PredicateTrustRule, ...]
     fingerprint: str
+    snapshot_digest: str
 
 class PredicateTemporalRule(BaseModel):
     predicate_id: str
@@ -2019,35 +2025,95 @@ means one unambiguous source span independently attached to the operation.
 itself an effective interval unless the selected predicate rule explicitly
 allows `allow_reference_as_effective_start`.
 
-| Predicate mode | Certified text | Authenticated source interval | Authenticated reference only | No temporal evidence | Ambiguous, misattached, or proposer-omitted source-present text |
-| --- | --- | --- | --- | --- | --- |
-| `required` | Use the exact resolved interval, subject to the combination rule when a source interval also exists | Use exactly; combine with text only through equal or certified complementary bounds | Use `[reference_instant, None)` only when both `allow_reference_as_effective_start` and `allow_open_end` are true; otherwise unresolved | Unresolved | Unresolved |
-| `optional` | Use the exact resolved interval, subject to the same combination rule | Use exactly; combine with text only through equal or certified complementary bounds | Use as an open start only under the same two explicit policy flags; otherwise accept as atemporal with no interval | Accept as atemporal with no interval | Unresolved when source-present text materially attaches to the operation |
-| `atemporal` | Unresolved because the predicate policy forbids valid-time attachment | Unresolved when the interval is operation-scoped; unrelated source metadata remains unattached | The reference may resolve other operations but is not attached and creates no interval | Accept as atemporal with no interval | Unresolved when the temporal expression materially attaches to the operation |
+| Predicate mode | Certified text and/or authenticated source interval | Authenticated reference only | No temporal evidence | Ambiguous, misattached, or proposer-omitted source-present text |
+| --- | --- | --- | --- | --- |
+| `required` | Construct one `TemporalEvidenceCandidate` for each complete asserted interval and resolve only through the trust-selection algebra below. A `resolved` result uses exactly the selected asserted interval; `contested` or any other non-resolved result is unresolved with zero graph effect. | Use `[reference_instant, None)` only when both `allow_reference_as_effective_start` and `allow_open_end` are true; otherwise unresolved. | Unresolved. | Unresolved. |
+| `optional` | Apply the same candidate and trust-selection algebra. A non-resolved result is unresolved when source-present text materially attaches to the operation; genuinely absent temporal evidence remains atemporal. | Use exactly `[reference_instant, None)` only when both `allow_reference_as_effective_start` and `allow_open_end` are true; otherwise accept as atemporal with no interval. | Accept as atemporal with no interval. | Unresolved when source-present text materially attaches to the operation. |
+| `atemporal` | Unresolved because the predicate policy forbids operation valid-time attachment. Unrelated source metadata remains unattached. | The reference may resolve other operations but is not attached and creates no interval. | Accept as atemporal with no interval. | Unresolved when the temporal expression materially attaches to the operation. |
 
-Across every row:
+#### 3.5.1 Temporal evidence trust-selection algebra
 
-- authenticated `source_effective_interval_evidence` and a certified textual
-  interval are retained as separate evidence items;
-- when both exist, they must be equal or satisfy a fingerprinted construction
-  rule that explicitly combines complementary bounds; otherwise temporal
-  assessment is unresolved;
-- a certified textual interval is operation-specific and is used exactly as
-  resolved when no conflicting authenticated interval exists;
-- otherwise the interval in authenticated
-  `source_effective_interval_evidence` is used exactly without detaching it
-  from the evidence object;
-- otherwise an authenticated temporal reference becomes
-  `[reference_instant, None)` only when the matrix and both predicate flags
-  permit it;
+An asserted interval is never reconstructed from bounds. An
+`AuthenticatedSourceIntervalEvidence` produces one candidate containing its
+whole `interval`; a certified textual candidate produces one candidate
+containing its whole `normalized_interval`. The text candidate's source
+authority is the authenticated `SourceAuthority` established for the source
+that contains its certified span. The authenticated source-interval candidate's
+source authority is the authority authenticated for its source metadata.
+Neither source field, provenance basis, span, candidate ID, nor source authority
+may be borrowed from another candidate. A candidate is not a new truth claim;
+it is immutable retained input to this decision.
+
+`TimeInterval` has a required start and optional open end. An open end is a
+complete asserted interval, not a missing bound. A non-null end must be
+strictly later than start; `end == start` and `end < start` are invalid. An open
+end is admissible only where
+`allow_open_end` permits it. An absent interval produces no candidate. A
+malformed interval, an open end forbidden by the selected predicate rule, a
+missing authority, an unknown policy class, a source/provenance mismatch, or an
+unknown candidate variant makes the operation unresolved and cannot be treated
+as absence.
+
+The server selects both the `TemporalPolicySnapshot` and `TrustPolicySnapshot`
+at the same immutable server-owned `arbitration_as_of` coordinate. Their exact
+fingerprints and snapshot digests are part of the assessment and every accepted
+artifact. "High enough" means eligible under the selected
+`PredicateTrustRule`; it introduces no numeric threshold. M3 candidate rank is
+the immutable `authority_rank_by_class` integer for that candidate's
+authenticated source authority. Trust decay is deliberately not evaluated here:
+its `assertion_system_start` basis may not exist before acceptance, and later
+claim-projection decay remains the separately governed trust-arbitration
+operation. Rank comparison is legal only within this exact predicate and scope
+rule.
+
+The resolver uses this total algorithm:
+
+1. Validate every present candidate and policy binding. If any required binding
+   is absent, invalid, stale, ambiguous, or does not reproduce its digest,
+   return `unresolved`.
+2. Retain every candidate as immutable evidence, then exclude candidates that
+   are policy-ineligible from selection. Ineligible evidence never wins and is
+   never discarded.
+3. Partition eligible candidates by semantic interval equality: same start
+   instant and same end variant/value (`None` equals only `None`). Equality
+   ignores evidence identity only; it does not merge provenance or authority.
+4. A candidate is top when no other eligible candidate has a strictly higher
+   comparable base rank. Candidates named by an explicit incomparable class pair
+   are both top; rank, identifier, receipt order, source order, model
+   confidence, and candidate order cannot break that relation.
+5. If there are no eligible candidates, return `unresolved`. If all top
+   candidates belong to one equality partition, return `resolved` for exactly
+   that asserted interval. Every candidate in that equality partition is a
+   distinct co-supporter, including a lower-ranked eligible one; lower-ranked
+   different intervals remain retained, non-selected evidence.
+6. If top candidates occupy two or more non-equal equality partitions, return
+   `contested`. The output contains every top candidate and every retained
+   lower/ineligible candidate, names no winner, and creates no accepted temporal
+   evidence, valid-time assertion, graph mutation, or temporal transition.
+
+Thus a uniquely higher eligible source governs a non-equal lower-ranked source;
+equal-ranked or incomparable non-equal top evidence remains two or more
+explicitly sourced contradictory answers. Equal values co-support even when
+their provenance differs. The algorithm never synthesizes, stitches, narrows,
+widens, intersects, unions, or fills complementary bounds. A textual open-end
+interval and a source interval with a finite end are non-equal intervals, not
+complementary fragments.
+
+Across every matrix row:
+
+- a resolved interval is exactly the typed interval asserted by a selected
+  candidate; it is never a constructed value;
+- `contested`, `unresolved`, and invalid outcomes retain all present evidence
+  and diagnostics in the non-committing terminal artifact, not an accepted
+  operation;
 - an `atemporal` predicate carries no valid-time interval and cannot participate
   in temporal supersession;
-- a `required` temporal predicate without trusted valid-time evidence is
-  unresolved;
+- a `required` temporal predicate without a resolved trusted valid-time
+  interval is unresolved;
 - proposer omission is diagnosed against the independent source-derived
   temporal inventory; it is never conflated with genuinely absent text;
-- no receipt, retention, claim ID, or processing order is used as a missing
-  valid-time value.
+- no receipt, retention, claim ID, processing order, source count, or model
+  confidence is used as a missing valid-time value or trust tie-breaker.
 
 `TemporalPolicySnapshot` is selected by server-owned system time from a
 non-overlapping policy timeline. The accepted operation stores both the
@@ -2067,10 +2133,28 @@ hard-coded conditionals.
 
 `authority_rank_by_class` is local to one predicate/scope rule; a rank from one
 rule is meaningless in another. Larger integers are stronger. Missing classes
-and explicitly incomparable class sets do not receive an inferred ordering.
+and explicitly incomparable class pairs do not receive an inferred ordering.
 `TrustPolicySnapshot` is selected at server-owned `arbitration_as_of` from a
 non-overlapping system-effective policy timeline; zero or multiple matching
 snapshots is an unresolved policy state.
+`TrustPolicySnapshot.snapshot_digest` is the canonical typed-value digest of
+the complete snapshot, including its schema fingerprint/version, policy
+revision, system-effective interval, canonically ordered predicate rules,
+canonical incomparability pairs, decay schedules, and `fingerprint`. It is not
+a digest of a lookup key. Validation recomputes it before selection and again
+at reconciliation, compilation, CAS revalidation, persistence, and replay;
+the exact loaded snapshot bytes, fingerprint, digest, and
+`arbitration_as_of` must agree at every boundary. No stage may refresh, infer,
+or look up a replacement trust policy from a fingerprint or revision.
+
+An `IncomparableAuthorityClassPair` names exactly two distinct classes in
+strict lexical order. Pairs are unique after ordering, every named class occurs
+in the same rule's `authority_rank_by_class`, and a class cannot be incomparable
+with itself. Two candidate classes are incomparable exactly when their canonical
+unordered pair occurs in that rule. Incomparability suppresses numerical rank
+comparison for that pair; it is not transitive and does not create an inferred
+order for any other pair. A malformed, duplicate, unsorted, cross-rule, or
+unknown-class pair prevents activation of the complete trust snapshot.
 Every decay schedule is well formed before activation:
 
 - steps are strictly ordered by non-negative `minimum_age`;
@@ -2082,7 +2166,7 @@ Every decay schedule is well formed before activation:
 - eligibility may transition from `eligible` to `ineligible` at most once and
   can never return to eligible;
 - an ineligible class remains retained as evidence but cannot win a projection;
-- every class named by eligibility, rank, incomparability, or decay belongs to
+- every class named by eligibility, rank, incomparability pair, or decay belongs to
   the same rule;
 - malformed, overlapping, or incomplete rules prevent policy activation.
 
@@ -12561,10 +12645,15 @@ class SourceNormalizationRequest(BaseModel):
     predicate_registry: PredicateRegistry
     scope_policy_registry: ScopePolicyRegistry
     temporal_policy: TemporalPolicySnapshot
+    trust_policy: TrustPolicySnapshot
+    arbitration_as_of: datetime
     capability_registry: CapabilityRegistrySnapshot
 
 class GraphEvidenceNormalizationRequest(BaseModel):
     source_normalization: "SourceNormalizationResult"
+    temporal_policy: TemporalPolicySnapshot
+    trust_policy: TrustPolicySnapshot
+    arbitration_as_of: datetime
     snapshot_bundle: GraphSemanticSnapshotBundle
     allocation_namespace_id: str
     operation_lease_binding: OperationLeaseBinding
@@ -12585,6 +12674,16 @@ other. `SourceNormalizationRequest` is graph-free: its schema cannot contain a
 graph snapshot, graph revision, canonical entity ID, allocation namespace,
 operation lease, graph repository, or graph-derived policy. It produces the
 immutable source alignment once.
+
+The normalization coordinator loads the temporal and trust snapshots once at
+the server-owned `arbitration_as_of` coordinate before source normalization and
+places their complete typed bytes in the request. It recomputes both snapshot
+digests before use. Every capability selection, execution binding, scope
+assessment, reconciliation request, accepted operation, planning artifact, and
+compile request carries the exact same trust fingerprint, trust snapshot digest,
+temporal fingerprint/digest, and coordinate. A missing, changed, stale,
+cross-scope, or non-reproducible snapshot binding produces a non-committing
+terminal result; it never triggers a live policy lookup.
 
 Capability selection is closed per aligned operation and its exact segment
 route within the source request. The selector uses only the sealed source
@@ -12791,12 +12890,17 @@ class OperationCapabilitySelection(BaseModel):
     nli_mode: Literal["required", "optional", "shadow", "disabled"]
     verifier_manifest_digest: str | None
     temporal_policy_snapshot_digest: str
+    trust_policy_fingerprint: str
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
     selection_policy_fingerprint: str
     selection_digest: str
 
 class SourceNormalizationResult(BaseModel):
     source_alignment: SourceProposalAlignment
     capability_selections: tuple[OperationCapabilitySelection, ...]
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
     result_digest: str
 
 class OperationCapabilityExecutionBinding(BaseModel):
@@ -12815,6 +12919,9 @@ class OperationCapabilityExecutionBinding(BaseModel):
     nli_mode: Literal["required", "optional", "shadow", "disabled"]
     verifier_manifest_digest: str | None
     temporal_policy_snapshot_digest: str
+    trust_policy_fingerprint: str
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
     binding_digest: str
 
 class CanonicalAttributionBearerBinding(BaseModel):
@@ -12856,6 +12963,9 @@ class SourceDependencyGroup(BaseModel):
     reason_codes: tuple[str, ...]
 
 class SemanticScopeAssessment(BaseModel):
+    operation_id: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    temporal_attachment: "OperationTemporalAttachmentBinding"
     segment_id: str
     segment_language_route_digest: str
     proposal_id: str
@@ -12867,25 +12977,78 @@ class SemanticScopeAssessment(BaseModel):
     policy_fingerprint: str
     assessment_digest: str
 
-class TemporalEvidenceAssessment(BaseModel):
-    status: Literal["pass", "fail", "unknown"]
-    reference_evidence: TemporalReferenceEvidence | None
+class TemporalEvidenceCandidate(BaseModel):
+    candidate_id: str
+    kind: Literal["authenticated_source_interval", "certified_text_interval"]
+    interval: TimeInterval
+    source_authority: SourceAuthority
     authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
-    certified_text_interval: TimeInterval | None
+    certified_text_candidate_id: str | None
+    evidence_spans: tuple[ProjectionTextSpan, ...]
+    candidate_digest: str
+
+class TemporalEvidenceDecisionClosure(BaseModel):
+    outcome: Literal["pass", "fail", "unknown", "contested"]
+    candidates: tuple[TemporalEvidenceCandidate, ...]
+    selected_candidate_ids: tuple[str, ...]
+    contested_candidate_ids: tuple[str, ...]
     resolved_interval: TimeInterval | None
     resolution_rule: Literal[
-        "text_only",
-        "source_interval_only",
+        "trust_selected_text_interval",
+        "trust_selected_source_interval",
+        "trust_co_supported_equal_interval",
+        "trust_contested_nonidentical_top_evidence",
         "authenticated_reference_open_start",
-        "equal_source_and_text",
-        "certified_complementary_bounds",
         "atemporal",
         "unresolved",
     ]
-    evidence_spans: tuple[ProjectionTextSpan, ...]
     temporal_policy_fingerprint: str
     temporal_policy_snapshot_digest: str
+    trust_policy_fingerprint: str
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
+    closure_digest: str
+
+class TemporalEvidenceAssessment(BaseModel):
+    reference_evidence: TemporalReferenceEvidence | None
+    authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
+    certified_text_candidates: tuple[ResolvedTemporalCandidate, ...]
+    decision_closure: TemporalEvidenceDecisionClosure
+    evidence_spans: tuple[ProjectionTextSpan, ...]
 ```
+
+`TemporalEvidenceCandidate` is closed: an
+`authenticated_source_interval` has its exact authenticated evidence, no
+certified text candidate ID, and no evidence spans; a `certified_text_interval`
+has exactly one certified text candidate ID and its exact source span(s), and
+no authenticated source-interval evidence. Its `source_authority` must be the
+authenticated authority bound to that item, not caller or model input. Candidate
+IDs are unique and canonically ordered by candidate digest.
+`certified_text_candidates` is the complete ordered set of independently
+certified `ResolvedTemporalCandidate` values attached to this operation; each
+text candidate is named by exactly one text temporal-evidence candidate and no
+text candidate may appear twice. The scope interpreter does not choose one by
+position, confidence, or proposer qualifier.
+
+`TemporalEvidenceDecisionClosure` is the content-addressed, complete decision
+record and the sole authoritative temporal result. Its candidate set is the
+retained input set, not merely selected supporters.
+`selected_candidate_ids` is non-empty only for `outcome="pass"`;
+`contested_candidate_ids` is non-empty only for `outcome="contested"`; both are
+sorted, unique subsets of `decision_closure.candidates`, and a candidate cannot
+appear in both. `resolved_interval` is non-null only for `outcome="pass"`,
+except that `atemporal` has no candidates and a null interval. A contested
+closure has a null `resolved_interval` and no
+`AcceptedTemporalEvidence` projection. Unknown enum values, impossible
+kind/field combinations, duplicate IDs, unsorted collections, a candidate
+interval not identical to its underlying evidence, or a policy/digest mismatch
+fail typed validation before any candidate-to-accepted compilation.
+`outcome="contested"` requires
+`resolution_rule="trust_contested_nonidentical_top_evidence"`; `outcome` of
+`fail` or `unknown` requires `resolution_rule="unresolved"`; and
+`outcome="pass"` requires a non-`unresolved` rule whose selected IDs and
+resolved interval satisfy the corresponding rule-specific constraints. These
+are closure validators, not duplicated assessment or accepted-evidence fields.
 
 Attribution kind and attribution bearer are separate decisions. For
 `speaker`, both analyzer bearer spans and the stable bearer span are null. For
@@ -12905,19 +13068,21 @@ coreference construction, analyzer disagreement, non-entity bearers, provider
 reference mismatch, unresolved identity, or cross-snapshot substitution makes
 the containing atomic semantic group unresolved with zero graph effect.
 
-`certified_text_interval` may be copied only from exactly one
+`certified_text_candidates` is the complete, canonically ordered set of every
 `ResolvedTemporalCandidate` named by a `stable`
 `TemporalAttachmentConsensus`, whose resolver fingerprint belongs to the
 selected capability, whose locale matches the selected language, and whose
-reference-time basis satisfies the predicate temporal policy. A proposer
+reference-time basis satisfies the predicate temporal policy. Each is an
+independently certified candidate; the trust-selection algebra evaluates their
+whole intervals without collapsing them before equality partitioning. A proposer
 temporal qualifier is alignment evidence only and cannot create, suppress, or
-select a temporal candidate. Zero candidates, multiple distinct values, a
-duration without an independently grounded anchor, a timezone conflict, parser
-attachment disagreement, or a relative expression without authenticated
-reference time yields `unknown`.
-The scope interpreter may combine already accepted bounds according to the
-closed temporal policy, but it cannot parse a date, call Duckling, or synthesize
-an interval itself.
+select a temporal candidate. Zero candidates, a duration without an
+independently grounded anchor, a timezone conflict, parser attachment
+disagreement, or a relative expression without authenticated reference time
+yields `unknown`. Multiple distinct certified values are retained and either
+resolve through rank or become contested; they are never combined.
+The scope interpreter cannot parse a date, call Duckling, synthesize an
+interval, or combine bounds.
 
 `PredicateEventCandidate` is a source-derived diagnostic anchored to a
 certified lexical or morphological source span without using either dependency
@@ -13234,6 +13399,7 @@ class ReconciliationRequest(BaseModel):
     parser_consensus: tuple[ParserConsensusAssessment, ...]
     scope_consensus: tuple[SemanticScopeConsensus, ...]
     temporal_attachment_consensus: tuple[TemporalAttachmentConsensus, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
     scope_assessments: tuple[SemanticScopeAssessment, ...]
     snapshot_bundle: GraphSemanticSnapshotBundle
     proposal_coverage: ProposalCoverageAudit
@@ -13244,6 +13410,9 @@ class ReconciliationRequest(BaseModel):
     identity_policy_registry: IdentityPolicyRegistry
     capability_registry_snapshot: CapabilityRegistrySnapshot
     capability_bindings: tuple[OperationCapabilityExecutionBinding, ...]
+    temporal_policy: TemporalPolicySnapshot
+    trust_policy: TrustPolicySnapshot
+    arbitration_as_of: datetime
     reconciliation_policy_fingerprint: str
 ```
 
@@ -13281,6 +13450,11 @@ not perform capability lookup. Every binding must reproduce its
 status-record digest exactly. No default policy fills a missing combination,
 and an absent, duplicated, stale, or mismatched binding makes the affected
 atomic group unresolved before acceptance.
+Reconciliation also recomputes the supplied temporal and trust snapshot digests
+from their complete loaded bytes and requires their fingerprints, digests, and
+`arbitration_as_of` to equal every normalization selection, execution binding,
+scope assessment, and temporal decision closure. It has no policy repository
+input and must fail closed rather than refresh either snapshot.
 
 Each promotable predicate has a language-specific policy:
 
@@ -13312,6 +13486,7 @@ class CheckResult(BaseModel):
 
 class SemanticAssessment(BaseModel):
     operation_id: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
     source_dependency_group_id: str
     segment_id: str
     segment_language_route_digest: str
@@ -13334,10 +13509,74 @@ class SemanticAssessment(BaseModel):
     proposal_coverage: CheckResult
     corroboration: CheckResult
     capability: CheckResult
+    scope_assessment_digest: str
     decision: Literal["accepted", "rejected", "unresolved"]
     reason_codes: tuple[str, ...]
     dependency_fingerprints: tuple[str, ...]
+    assessment_digest: str
 
+class OperationTemporalAttachmentBinding(BaseModel):
+    operation_id: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    stable_attachment_consensus_digest: str
+    candidate_ids: tuple[str, ...]
+    candidate_spans: tuple[ProjectionTextSpan, ...]
+    binding_digest: str
+
+class OperationTemporalDecisionBinding(BaseModel):
+    operation_id: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    scope_assessment_digest: str
+    semantic_assessment_digest: str
+    temporal_attachment: OperationTemporalAttachmentBinding
+    decision_closure: TemporalEvidenceDecisionClosure
+    binding_digest: str
+```
+
+`OperationTemporalDecisionBinding` closes temporal identity at the operation
+boundary. Construction is strictly ordered to avoid a digest cycle: (1) scope
+assessment is built first and its preimage includes `(operation_id, temporal_role)`, exact
+post-alignment attachment binding, candidate spans, and temporal evidence but no
+binding; (2) semantic assessment is built next, names that scope-assessment
+digest, and its preimage likewise excludes the binding; (3) the reconciler
+creates the binding from the already sealed scope-assessment and
+semantic-assessment digests plus the exact closure. The binding digest covers
+all six non-digest fields shown. Neither assessment may contain, derive, or be rehashed
+with a binding digest. A binding validates that its operation ID equals both
+assessments, its role equals both assessments, its attachment binding names the same operation/role, and
+every candidate source span and certified-text candidate belongs to that
+operation's certified attachment set. A missing, swapped, reordered, or
+cross-operation span, consensus, assessment, closure, or digest is unresolved
+with zero graph effect.
+`OperationTemporalAttachmentBinding` is created only after proposal-scoped
+analyzer consensus has been aligned to an operation; raw analyzer artifacts
+remain proposal-scoped and never invent an operation ID. Attachment, scope,
+semantic, and decision bindings form an exact bijection by `(operation_id,
+temporal_role)` through expected, observed, event, and replay contracts.
+`SemanticScopeAssessment.temporal_attachment_consensus_digest` must equal its
+embedded `temporal_attachment.stable_attachment_consensus_digest` exactly, and
+the binding's candidate IDs and spans must be the exact canonical projection of
+that named stable consensus. Reconciliation, persistence, and replay recompute
+this equality before accepting their enclosing digest. An A/B consensus
+substitution, candidate-ID substitution, span substitution, or digest-only
+match is a non-committing failure.
+The scope-assessment canonical preimage includes the complete attachment binding
+and rejects a mismatched digest; replay recomputes it before accepting the scope
+digest. Attachment-binding digest is the domain-separated canonical typed-value
+preimage `memorii.m3.temporal_attachment_binding.v1` over every binding field
+except `binding_digest`. Decision-binding digest is likewise
+`memorii.m3.temporal_decision_binding.v1` over every decision field except its
+own digest, including the complete attachment binding. Self-inclusion, omitted
+field, cross-domain, or substituted-field bytes reject. Expected and observed
+bindings use the corresponding public canonical preimages and must reproduce
+the production binding bytes/digests exactly.
+Every cross-boundary binding sequence is duplicate-free and canonically ordered
+by `(operation_id, temporal_role, binding_digest)`. It must be an exact bijection with the
+operation assessments in its enclosing request or outcome; a different order,
+duplicate `(operation_id, temporal_role)`, or same-role different binding is a validation
+failure, not an alternative representation.
+
+```python
 class CanonicalEntityReference(BaseModel):
     source_local_cluster_id: str
     entity_revision_id: str
@@ -13449,20 +13688,65 @@ class GroundedReferenceAssignment(BaseModel):
 class AcceptedTemporalEvidence(BaseModel):
     reference_evidence: TemporalReferenceEvidence | None
     authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
-    certified_text_interval: TimeInterval | None
-    resolved_interval: TimeInterval | None
-    resolution_rule: Literal[
-        "text_only",
-        "source_interval_only",
-        "authenticated_reference_open_start",
-        "equal_source_and_text",
-        "certified_complementary_bounds",
-        "atemporal",
-    ]
-    evidence_spans: tuple[ProjectionTextSpan, ...]
-    temporal_policy_fingerprint: str
-    temporal_policy_snapshot_digest: str
+    certified_text_candidates: tuple[ResolvedTemporalCandidate, ...]
+    decision_closure: TemporalEvidenceDecisionClosure
+```
 
+`AcceptedTemporalEvidence` is representable only from a closure with
+`outcome="pass"`. For a trust-selected interval, the closure's selected IDs
+identify the complete ordered equality partition and every selected member's
+interval equals the closure's `resolved_interval`; the closure preserves,
+rather than collapses, distinct provenance. The source-only and text-only rules
+require one selected candidate of their respective kind.
+`trust_co_supported_equal_interval` requires two or more selected candidates.
+Reference-open-start and atemporal rules have no selected trust candidates and
+carry the selected trust snapshot only through the closure. A contested or
+unresolved closure cannot be coerced
+into this type, cannot be persisted as an accepted operation, and cannot be
+replayed as a temporal assertion.
+Its `decision_closure` must be byte-identical to the closed assessment decision
+and includes non-selected and ineligible retained candidates as well as
+supporters. Durable claim/action records, planning records, events, replay
+artifacts, expected/observed records, and comparator inputs carry this complete
+closure. A terminal contested outcome carries the same closure through the
+non-committing persistence and observation paths but has no accepted evidence
+or graph record.
+
+Every accepted non-correction operation carries exactly one role-bound
+`OperationTemporalDecisionBinding`. Its operation ID must equal the operation
+variant and its semantic-assessment digest must equal the variant's assessment
+digest (or one member of a correction's ordered assessment digests). Every
+embedded `AcceptedTemporalEvidence.decision_closure` must equal that binding's
+closure byte-for-byte. An accepted operation may not point to another
+operation's temporal attachment, scope assessment, semantic assessment, or
+closure.
+For a correction, this statement is role-expanded: it carries exactly one
+`replacement` binding for `replacement_temporal_evidence` and exactly one
+`transition` binding for `transition_temporal_evidence`. Their closures may be
+identical only when the two accepted evidence values are byte-identical; they
+are never interchangeable merely because their intervals match. Retraction and
+identity transitions require a `transition` binding; fact and action assertions
+require an `assertion` binding. Every role binding's closure must equal its
+role's `AcceptedTemporalEvidence.decision_closure` byte-for-byte. Role swaps,
+including replacement-to-transition substitution, fail before compilation.
+
+For every accepted fact or action, its durable/planning/expected/observed
+`valid_interval` must equal the closure's `resolved_interval` exactly, and the
+closure must have `outcome="pass"`; a null valid interval is permitted only
+when the closure rule is `atemporal`. The comparator first compares complete
+closure canonical bytes/digest, then applies this interval equality check. It
+rejects an A/B interval substitution, resolution-rule swap, selected/contested
+subset change, policy/coordinate change, or closure-digest mutation even when a
+record's visible interval is otherwise equal. Terminal `contested`, `unknown`,
+and `fail` outcomes require no accepted claim/action valid interval and retain
+the closure only in terminal artifacts.
+An accepted replacement claim uses its correction's `replacement` binding;
+ordinary fact/action claims use `assertion`; transition and identity records use
+`transition`. Expected and observed claim/action bindings are structurally
+non-null and must carry the same role and bytes as their durable/planning
+counterparts.
+
+```python
 class CertifiedTextEffectiveTime(BaseModel):
     kind: Literal["certified_text_time"]
     effective_at: datetime
@@ -13505,6 +13789,7 @@ class AcceptedFact(BaseModel):
     message_admission_identities: tuple[MessageAdmissionIdentity, ...]
     fact: LanguageNeutralFact
     temporal_evidence: AcceptedTemporalEvidence
+    assertion_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digest: str
 
 class AcceptedCorrection(BaseModel):
@@ -13519,6 +13804,8 @@ class AcceptedCorrection(BaseModel):
     replacement_temporal_evidence: AcceptedTemporalEvidence
     transition_temporal_evidence: AcceptedTemporalEvidence
     effective_time: EffectiveTimeCoordinate
+    replacement_temporal_decision_binding: OperationTemporalDecisionBinding
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digests: tuple[str, ...]
 
 class AcceptedRetraction(BaseModel):
@@ -13532,6 +13819,7 @@ class AcceptedRetraction(BaseModel):
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
     source_evidence: tuple[SourceSpanReference, ...]
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digest: str
 
 class ExistingActionReference(BaseModel):
@@ -13601,6 +13889,7 @@ class AcceptedActionState(BaseModel):
     temporal_evidence: AcceptedTemporalEvidence
     assertion_evidence: tuple[SourceSpanReference, ...]
     action_policy_fingerprint: str
+    assertion_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digest: str
 
 class AcceptedIdentityOperation(BaseModel):
@@ -13617,6 +13906,7 @@ class AcceptedIdentityOperation(BaseModel):
     reference_assignments: tuple[GroundedReferenceAssignment, ...]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digest: str
 
 AcceptedSemanticOperation = Annotated[
@@ -13637,6 +13927,10 @@ class ReconciliationResult(BaseModel):
     governance_carrier_artifact: GovernanceCarrierArtifact
     assessments: tuple[SemanticAssessment, ...]
     accepted_operations: tuple[AcceptedSemanticOperation, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
     status: Literal["complete", "abstained", "unresolved", "rejected", "failed"]
     reconciliation_fingerprint: str
 ```
@@ -14016,6 +14310,7 @@ class GraphCompilationRequest(BaseModel):
     governance_carrier_artifact: GovernanceCarrierArtifact
     transaction_group: TransactionSemanticGroup
     accepted_operations: tuple[AcceptedSemanticOperation, ...]
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     grounded_mentions: tuple[GroundedMention, ...]
     canonical_entity_decisions: tuple[CanonicalEntityDecision, ...]
     reservation_use_authorizations: tuple[ReservationUseAuthorization, ...]
@@ -14062,6 +14357,18 @@ The transaction group must be `commit_eligible`, every `operation_id` must have
 an `accepted` member decision, and `accepted_operations` must cover those IDs
 exactly. A rejected or unresolved member makes the entire graph-dependent group
 non-committing, even when it originated in another source dependency group.
+Before planning, compilation, and the final CAS write, the coordinator
+recomputes the supplied temporal and trust snapshot digests from the sealed
+request bytes and requires exact equality with every accepted temporal evidence
+and its `OperationTemporalDecisionBinding`. It also requires a complete ordered
+bijection between operation assessments, accepted temporal evidence, and request
+bindings. Missing, extra, altered, reordered, swapped-operation, or
+cross-attempt binding/closure bytes, a changed
+`arbitration_as_of`, or any live-policy lookup is a non-committing validation
+failure. The planning artifact, `semantic_effect_digest`, event payload, replay
+bundle, and CAS-authorized persistence request contain those exact canonical
+bindings or content-addressed references to same-generation immutable binding
+artifacts.
 Inputs may
 contain no rejected or unresolved operation IDs.
 `current_graph` is an immutable, snapshot-bound dependency closure containing current and
@@ -14204,6 +14511,7 @@ class TemporalTransitionRecord(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_ids: tuple[str, ...]
     provenance_ids: tuple[str, ...]
@@ -14220,11 +14528,109 @@ class PlanningTemporalTransitionRecord(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: "PlannedCommitCoordinate"
     source_ids: tuple[str, ...]
     provenance_ids: tuple[str, ...]
     planning_record_digest: str
 
+# The M3 durable/planning pair is explicit; these payloads own temporal bytes.
+class ClaimAssertion(BaseModel):
+    record_kind: Literal["claim_assertion"]
+    claim_assertion_id: str
+    operation_id: str
+    valid_interval: TimeInterval | None
+    temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    record_version: int = Field(ge=1)
+    codec_fingerprint: str
+    record_digest: str
+
+class PlanningClaimAssertion(BaseModel):
+    record_kind: Literal["claim_assertion"]
+    claim_assertion_id: str
+    operation_id: str
+    valid_interval: TimeInterval | None
+    temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    record_version: int = Field(ge=1)
+    planning_codec_fingerprint: str
+    planning_record_digest: str
+
+class ActionRevision(BaseModel):
+    record_kind: Literal["action_revision"]
+    action_revision_id: str
+    operation_id: str
+    valid_interval: TimeInterval | None
+    temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    record_version: int = Field(ge=1)
+    codec_fingerprint: str
+    record_digest: str
+
+class PlanningActionRevision(BaseModel):
+    record_kind: Literal["action_revision"]
+    action_revision_id: str
+    operation_id: str
+    valid_interval: TimeInterval | None
+    temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    record_version: int = Field(ge=1)
+    planning_codec_fingerprint: str
+    planning_record_digest: str
+
+class IdentityLineageRecord(BaseModel):
+    record_kind: Literal["identity_lineage"]
+    transition: "IdentityLineageTransition"
+    record_version: int = Field(ge=1)
+    codec_fingerprint: str
+    record_digest: str
+
+class PlanningIdentityLineageRecord(BaseModel):
+    record_kind: Literal["identity_lineage"]
+    transition: "PlanningIdentityLineageTransition"
+    record_version: int = Field(ge=1)
+    planning_codec_fingerprint: str
+    planning_record_digest: str
+
+class PlanningIdentityLineageTransition(BaseModel):
+    operation_id: str
+    operation: Literal["alias", "rekey", "merge", "split"]
+    predecessor_entity_revision_ids: tuple[str, ...]
+    predecessor_logical_entity_ids: tuple[str, ...]
+    successor_entity_revision_ids: tuple[str, ...]
+    successor_logical_entity_ids: tuple[str, ...]
+    effective_time: EffectiveTimeCoordinate
+    transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
+    recorded_at: "PlannedCommitCoordinate"
+    source_evidence: tuple[SourceSpanReference, ...]
+    temporal_policy_fingerprint: str
+    reference_dispositions: tuple[ReferenceDisposition, ...]
+    transition_digest: str
+```
+
+`ClaimAssertion`, `ActionRevision`, and `IdentityLineageRecord` are the sole
+M3 durable owners of their role-bound temporal evidence; their planning mirrors
+preserve exactly the same `TimeInterval | None` as the closure's resolved
+interval. Only `PlanningIdentityLineageTransition.recorded_at` is a declared
+planning commit coordinate; it materializes deterministically at transaction
+commit and must be byte-identical on retry/replay. It is structurally identical
+to `IdentityLineageTransition` except that one `recorded_at` field is a
+`PlannedCommitCoordinate`; materialization replaces only that coordinate and
+recomputes the durable transition digest. Canonical
+record version, codec fingerprint, and digest are required in every mutation,
+event payload, replay artifact, expected record, and observed record. Each
+propagation step validates exact temporal evidence and binding bytes, role,
+operation, and valid interval before recomputing its enclosing digest.
+Carrier audit: `EntityRevision`, `AliasRevision`, `TypeEvidence`,
+`ClaimProjection`, `RelationRevision`, `CitationRecord`, `ProvenanceRecord`,
+and `ReferenceDispositionRecord` are non-M3 temporal-evidence owners; none may
+introduce, transform, or omit an M3 binding. Their canonical/planning schemas
+remain governed by their existing record-kind contracts and may reference an
+M3 record only through its exact record ID/digest.
+
+```python
 GraphRecordKind = Literal[
     "entity_revision",
     "alias_revision",
@@ -14781,6 +15187,7 @@ class CanonicalOperationTerminalOutcomeRecord(BaseModel):
     ]
     retry_disposition: Literal["terminal"]
     graph_revision_delta_digest: str | None
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     authorizing_plan_lineage_entry_digest: str
     execution_manifest_digest: str
     reason_codes: tuple[str, ...]
@@ -14899,6 +15306,7 @@ class CompilationResult(BaseModel):
     temporal_transitions: tuple[TemporalTransition, ...]
     trust_decisions: tuple[TrustArbitrationDecision, ...]
     identity_lineage_transitions: tuple[IdentityLineageTransition, ...]
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     reference_dispositions: tuple[ReferenceDisposition, ...]
     write_set: GraphWriteSet | None
     graph_delta: GraphRevisionDelta | None
@@ -14917,6 +15325,7 @@ class SourceAuthorizedTemporalTransition(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     arbitration_as_of: datetime
     temporal_policy_fingerprint: str
     transition_digest: str
@@ -15150,6 +15559,7 @@ class IdentityLineageTransition(BaseModel):
     successor_logical_entity_ids: tuple[str, ...]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     recorded_at: datetime
     source_evidence: tuple[SourceSpanReference, ...]
     temporal_policy_fingerprint: str
@@ -15170,6 +15580,15 @@ reference digest, or evidence digest even when the resulting valid interval is
 numerically equal. Expected and observed graph contracts expose both evidence
 identities, and the comparator tests exact variant and provenance equality
 before interval equality.
+Every temporal transition carrier--accepted operation, compiler transition,
+durable `TemporalTransitionRecord`, planning mirror, event payload, replay
+artifact, expected record, observed record, and operation terminal outcome--is
+required to carry the exact role-bound `OperationTemporalDecisionBinding` whose
+closure equals its transition evidence byte-for-byte. The terminal record's
+ordered binding set is byte-identical to its group persistence request, replay
+bundle, and observed terminal outcome; its digest includes that set. Omission,
+removal, reorder, role swap, operation swap, or nested closure substitution is
+a non-committing compiler, replay, or comparator failure.
 `AcceptedCorrection.transition_temporal_evidence`,
 `AcceptedRetraction.transition_temporal_evidence`, and
 `AcceptedIdentityOperation.transition_temporal_evidence` are mandatory and are
@@ -15644,6 +16063,8 @@ class ReplayArtifactBundle(BaseModel):
     governance_carrier_artifact: GovernanceCarrierArtifact
     required_outcome_scopes: RequiredOutcomeScopeSet
     message_admission_index_entries: tuple[MessageAdmissionIndexEntry, ...]
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
     artifact_schema_registry_fingerprint: str
     publications: tuple[ReplayArtifactPublication, ...]
     required_artifact_digests: tuple[str, ...]
@@ -15663,6 +16084,8 @@ class CommittedTransactionGroupPersistenceRequest(BaseModel):
     authorizing_attempt_digest: str
     planning_authorization: GroupPlanningAuthorization
     compilation: CompilationResult
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
     group_stage_outcomes: tuple[IngestionStageOutcome, ...]
     expected_graph_revision_before: str
     expected_effective_read_set_digest: str
@@ -15688,6 +16111,8 @@ class NonCommittingTransactionGroupPersistenceRequest(BaseModel):
     authorizing_attempt_digest: str
     planning_authorization: GroupPlanningAuthorization | None
     compilation: CompilationResult | None
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
     group_stage_outcomes: tuple[IngestionStageOutcome, ...]
     terminal_status: Literal["evidence_only", "rejected", "unresolved", "failed"]
     retry_disposition: Literal["terminal", "retryable"]
@@ -15907,6 +16332,16 @@ declared by the registry entry. The original envelope bytes and digest remain
 available for audit. A mixed-version stream decodes each envelope independently
 and then undergoes the same canonical dedupe, ordering, version, batch/delta,
 and graph-revision checks.
+
+The M3 temporal-decision closure is a write-schema change for accepted claim
+and action records, planning records, event payload records, replay artifacts,
+expected/observed comparison contracts, and non-committing terminal outcomes.
+M3 is unshipped: every pre-closure or legacy accepted byte sequence, including
+any historical resolution tag, is rejected before publication, decode, replay,
+or upcast. There is no M3 temporal-closure upcaster and no compatibility
+outcome that can stand in for the missing decision. The current schema requires
+the complete closure, including every retained candidate, selected/contested
+IDs, temporal/trust policy identities, and `arbitration_as_of`.
 
 Supported historical versions are the explicit `supported_read_schemas` in the
 active registry, not an implicit latest-N window. Removing a version requires a
@@ -17779,6 +18214,54 @@ class ExpectedAuthenticatedSourceIntervalEvidence(BaseModel):
     provenance_digest: str
     evidence_digest: str
 
+class ExpectedTemporalEvidenceCandidate(BaseModel):
+    candidate_key: str
+    kind: Literal["authenticated_source_interval", "certified_text_interval"]
+    interval: ExpectedTimeInterval
+    source_authority_class: str
+    authenticated_source_interval_evidence_key: str | None
+    certified_text_candidate_key: str | None
+    evidence_span_keys: tuple[str, ...]
+
+class ExpectedTemporalEvidenceDecisionClosure(BaseModel):
+    outcome: Literal["pass", "fail", "unknown", "contested"]
+    candidates: tuple[ExpectedTemporalEvidenceCandidate, ...]
+    selected_candidate_keys: tuple[str, ...]
+    contested_candidate_keys: tuple[str, ...]
+    resolved_interval: ExpectedTimeInterval | None
+    resolution_rule: Literal[
+        "trust_selected_text_interval",
+        "trust_selected_source_interval",
+        "trust_co_supported_equal_interval",
+        "trust_contested_nonidentical_top_evidence",
+        "authenticated_reference_open_start",
+        "atemporal",
+        "unresolved",
+    ]
+    temporal_policy_fingerprint: str
+    temporal_policy_snapshot_digest: str
+    trust_policy_fingerprint: str
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: ExpectedInstant
+    closure_digest: str
+
+class ExpectedOperationTemporalDecisionBinding(BaseModel):
+    operation_key: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    scope_assessment_digest: str
+    semantic_assessment_digest: str
+    temporal_attachment: "ExpectedOperationTemporalAttachmentBinding"
+    decision_closure: ExpectedTemporalEvidenceDecisionClosure
+    binding_digest: str
+
+class ExpectedOperationTemporalAttachmentBinding(BaseModel):
+    operation_key: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    stable_attachment_consensus_digest: str
+    candidate_keys: tuple[str, ...]
+    candidate_span_keys: tuple[str, ...]
+    binding_digest: str
+
 class ExpectedAcceptedTemporalEvidence(BaseModel):
     temporal_reference_kind: Literal[
         "authenticated_event_time",
@@ -17788,18 +18271,8 @@ class ExpectedAcceptedTemporalEvidence(BaseModel):
     authenticated_source_interval_evidence: (
         ExpectedAuthenticatedSourceIntervalEvidence | None
     )
-    certified_text_interval: ExpectedTimeInterval | None
-    resolved_interval: ExpectedTimeInterval | None
-    resolution_rule: Literal[
-        "text_only",
-        "source_interval_only",
-        "authenticated_reference_open_start",
-        "equal_source_and_text",
-        "certified_complementary_bounds",
-        "atemporal",
-    ]
-    temporal_policy_fingerprint: str
-    temporal_policy_snapshot_digest: str
+    certified_text_candidate_keys: tuple[str, ...]
+    decision_closure: ExpectedTemporalEvidenceDecisionClosure
 
 class ExpectedClaimAssertion(BaseModel):
     kind: Literal["claim_assertion"]
@@ -17821,6 +18294,7 @@ class ExpectedClaimAssertion(BaseModel):
     authenticated_source_interval_evidence: (
         ExpectedAuthenticatedSourceIntervalEvidence | None
     )
+    temporal_decision_binding: ExpectedOperationTemporalDecisionBinding
     system_interval: ExpectedTimeInterval
     source_authority_class: str
     source_ids: tuple[str, ...]
@@ -17878,6 +18352,7 @@ class ExpectedActionRevision(BaseModel):
     authenticated_source_interval_evidence: (
         ExpectedAuthenticatedSourceIntervalEvidence | None
     )
+    temporal_decision_binding: ExpectedOperationTemporalDecisionBinding
     system_interval: ExpectedTimeInterval
     source_ids: tuple[str, ...]
     provenance_keys: tuple[str, ...]
@@ -17914,6 +18389,7 @@ class ExpectedTemporalTransition(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: ExpectedEffectiveTimeCoordinate
     transition_temporal_evidence: ExpectedAcceptedTemporalEvidence
+    transition_temporal_decision_binding: ExpectedOperationTemporalDecisionBinding
     system_interval: ExpectedTimeInterval
     source_ids: tuple[str, ...]
     provenance_keys: tuple[str, ...]
@@ -17927,6 +18403,7 @@ class ExpectedIdentityTransition(BaseModel):
     successor_entities: tuple[OracleEntityReference, ...]
     effective_time: ExpectedEffectiveTimeCoordinate
     transition_temporal_evidence: ExpectedAcceptedTemporalEvidence
+    transition_temporal_decision_binding: ExpectedOperationTemporalDecisionBinding
     system_interval: ExpectedTimeInterval
     source_evidence: tuple[OracleSourceEvidence, ...]
     operation_key: str
@@ -17977,6 +18454,7 @@ class ExpectedOperationTerminalOutcome(BaseModel):
         "committed", "evidence_only", "rejected", "unresolved", "failed"
     ]
     graph_effect: Literal["exact_committed_delta", "no_graph_mutation"]
+    temporal_decision_bindings: tuple[ExpectedOperationTemporalDecisionBinding, ...]
     reason_codes: tuple[str, ...]
     boundary: bool
 
@@ -18336,7 +18814,13 @@ every operation. A committed expectation uses
 `graph_effect="exact_committed_delta"`; `evidence_only`, `rejected`, and
 `unresolved` use `no_graph_mutation`; failed expectations are permitted only for
 explicit terminal failure fixtures. The expected graph cannot infer an outcome
-from missing graph records. It creates exactly one
+from missing graph records. `ExpectedOperationTerminalOutcome.temporal_decision_bindings`
+is the canonically ordered complete binding set for that operation: committed
+outcomes contain exactly the bindings referenced by their accepted claim/action
+records; contested, unresolved, rejected, evidence-only, and failed outcomes
+contain every assessed binding but no accepted projection. The expected/observed
+comparator requires exact membership, operation key, order, canonical bytes,
+binding digest, and nested closure equality before evaluating graph effect. It creates exactly one
 `ExpectedSourceTerminalOutcome` for every source, including pre-graph terminal
 fixtures with an empty operation set. Its operation-key set and final status
 must equal the aggregate of the expected operation outcomes under the same
@@ -18739,6 +19223,7 @@ class ObservedClaimAssertion(BaseModel):
     valid_interval: TimeInterval | None
     temporal_reference_evidence: TemporalReferenceEvidence | None
     authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
+    temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_authority_class: str
     source_ids: tuple[str, ...]
@@ -18797,6 +19282,7 @@ class ObservedActionRevision(BaseModel):
     authenticated_source_interval_evidence: (
         AuthenticatedSourceIntervalEvidence | None
     )
+    temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_ids: tuple[str, ...]
     provenance_ids: tuple[str, ...]
@@ -18835,6 +19321,7 @@ class ObservedTemporalTransition(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: "ObservedEffectiveTimeCoordinate"
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_ids: tuple[str, ...]
     provenance_ids: tuple[str, ...]
@@ -18871,6 +19358,7 @@ class ObservedIdentityTransition(BaseModel):
     successor_entities: tuple[ObservedEntityReference, ...]
     effective_time: ObservedEffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_evidence: tuple[SourceSpanReference, ...]
     operation_id: str
@@ -18942,6 +19430,7 @@ class ObservedOperationTerminalOutcome(BaseModel):
         "committed", "evidence_only", "rejected", "unresolved", "failed"
     ]
     graph_revision_delta_digest: str | None
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     reason_codes: tuple[str, ...]
     record_digest: str
 

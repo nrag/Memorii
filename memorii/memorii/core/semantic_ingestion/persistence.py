@@ -1,0 +1,892 @@
+"""Fenced M3 terminal publication through the canonical M2 atomic store."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from datetime import timedelta
+from hashlib import sha256
+from typing import Literal
+
+from memorii.core.memory_evolution.atomic_store import (
+    AtomicGenerationMember,
+    AuthorizationReadSetPrecondition,
+    CommittedGroupAtomicWriteRequest,
+    NonCommittingGroupAtomicWriteRequest,
+    PreplanningStoreError,
+    SemanticIngestionAtomicStore,
+    SourceCheckpointAtomicWriteRequest,
+    SourceFinalizationAtomicWriteRequest,
+    generation_request_digest,
+)
+from memorii.core.memory_evolution.ingestion_contracts import OperationFenceBinding, encode_typed_value
+from memorii.core.memory_evolution.writer_admission import SemanticWriterCommitBinding
+from memorii.core.semantic_ingestion.authorization import (
+    M3AuthorizationAuthorityError,
+    M3AuthorizationAuthorityRepository,
+)
+from memorii.core.semantic_ingestion.contracts import (
+    M3ArtifactClosure,
+    M3EventBatch,
+    M3ExecutionRetryPlan,
+    M3GraphDelta,
+    M3GroupResult,
+    M3LifecycleTransition,
+    M3ObservationDelta,
+    M3RecoveryAuthorityBinding,
+    M3RetryableProgress,
+    SemanticAuthorizationReadSetVerifier,
+    SemanticTerminalOutcome,
+    decode_semantic_contract,
+    encode_semantic_contract,
+)
+
+_M3MemberKind = Literal[
+    "progress", "group_result", "observation_delta", "graph_delta", "event_batch",
+    "terminal_operation", "source_summary", "source_result", "lifecycle", "artifact_index",
+    "artifact_closure", "plan", "planning_artifact", "independence_certificate",
+    "planning_authorization", "authorization_read_set", "terminal_artifact",
+    "recovery_authority_binding",
+]
+_M3LifecycleReason = Literal[
+    "missing_language_declaration", "untrusted_language", "language_mismatch",
+    "non_english_language", "mixed_residue", "unsupported_grammar",
+    "extractor_abstained", "retry_budget_exhausted",
+]
+
+
+class M3AuthorizationReadSetError(PreplanningStoreError):
+    """Mutable authorization changed after the terminal plan was sealed."""
+
+
+class M3TerminalPersistenceService:
+    """Publish exactly one terminal M3 closure and recover exact lost acks."""
+
+    def __init__(
+        self,
+        *,
+        atomic_store: SemanticIngestionAtomicStore,
+        writer_binding_provider: Callable[[], SemanticWriterCommitBinding],
+        authorization_repository: M3AuthorizationAuthorityRepository | None = None,
+    ) -> None:
+        self._store = atomic_store
+        self._writer_binding_provider = writer_binding_provider
+        self._authorization_repository = authorization_repository
+
+    def open_lease_session(self, *, fence: OperationFenceBinding) -> M3LeaseSession:
+        """Acquire the renewable owner used across proposal through finalization."""
+        return M3LeaseSession(
+            atomic_store=self._store,
+            writer_binding_provider=self._writer_binding_provider,
+            fence=fence,
+        )
+
+    def recover_terminal_artifact(
+        self, *, fence: OperationFenceBinding,
+    ) -> SemanticTerminalOutcome | None:
+        """Reload the newest complete terminal artifact without learned-stage replay."""
+        control = self._store.get_operation(fence)
+        for generation in range(control.generation, 1, -1):
+            members = self._store.generation_members(fence, generation)
+            artifacts = tuple(member for member in members if member.kind == "terminal_artifact")
+            if not artifacts:
+                continue
+            if len(artifacts) != 1:
+                raise ValueError("M3 generation has duplicate terminal artifacts")
+            terminal = decode_semantic_contract(
+                artifacts[0].canonical_payload,
+                SemanticTerminalOutcome,
+            )
+            if terminal.operation_id != fence.operation_id:
+                raise ValueError("M3 terminal artifact operation binding is invalid")
+            return terminal
+        return None
+
+    def recover_execution_plan(
+        self, *, fence: OperationFenceBinding,
+    ) -> M3ExecutionRetryPlan | None:
+        """Reload the unique authenticated plan used for no-redelivery recovery."""
+
+        control = self._store.get_operation(fence)
+        recovered: M3ExecutionRetryPlan | None = None
+        for generation in range(2, control.generation + 1):
+            plans = tuple(
+                member
+                for member in self._store.generation_members(fence, generation)
+                if member.kind == "execution_plan"
+            )
+            if not plans:
+                continue
+            if len(plans) != 1 or recovered is not None:
+                raise ValueError("M3 operation has no unique execution retry plan")
+            recovered = decode_semantic_contract(
+                plans[0].canonical_payload, M3ExecutionRetryPlan
+            )
+            recovered.validate_for_fence(fence)
+        return recovered
+
+    def recover_recovery_authority_binding(
+        self, *, fence: OperationFenceBinding,
+    ) -> M3RecoveryAuthorityBinding | None:
+        control = self._store.get_operation(fence)
+        recovered: M3RecoveryAuthorityBinding | None = None
+        for generation in range(2, control.generation + 1):
+            bindings = tuple(
+                member for member in self._store.generation_members(fence, generation)
+                if member.kind == "recovery_authority_binding"
+            )
+            if not bindings:
+                continue
+            if len(bindings) != 1 or recovered is not None:
+                raise ValueError("M3 operation has no unique recovery authority binding")
+            recovered = decode_semantic_contract(
+                bindings[0].canonical_payload, M3RecoveryAuthorityBinding
+            )
+            if recovered.operation_id != fence.operation_id:
+                raise ValueError("M3 recovery authority binding operation is invalid")
+        return recovered
+
+    def persist(
+        self,
+        *,
+        fence: OperationFenceBinding,
+        terminal: SemanticTerminalOutcome,
+        authorization_verifier: SemanticAuthorizationReadSetVerifier | None = None,
+    ) -> None:
+        SemanticTerminalOutcome.model_validate(terminal.model_dump(mode="python"))
+        if terminal.operation_id != fence.operation_id:
+            raise ValueError("M3 terminal does not bind the admitted source operation")
+        control = self._store.get_operation(fence)
+        if control.state == "terminal":
+            self._verify_completed_terminal(fence=fence, terminal=terminal, generation=control.generation)
+            return
+        writer = self._writer_binding_provider()
+        if control.writer_binding != writer:
+            raise ValueError("M3 terminal writer does not match the admitted source")
+        if control.lease is not None and (
+            control.lease.owner_id != "m3-semantic-pipeline"
+            or control.lease.execution_token != f"m3:{fence.operation_fence_id}"
+        ):
+            raise ValueError("M3 terminal operation is leased by a different execution")
+        # Acquisition is deliberately unconditional. The store returns a live
+        # matching lease idempotently and performs fenced stale-owner recovery,
+        # including an expired lease held by this same logical owner.
+        control = self._store.acquire_lease(
+            operation_fence=fence,
+            writer_binding=writer,
+            execution_token=f"m3:{fence.operation_fence_id}",
+            owner_id="m3-semantic-pipeline",
+            duration=timedelta(seconds=30),
+        )
+        if control.state == "terminal":
+            self._verify_completed_terminal(fence=fence, terminal=terminal, generation=control.generation)
+            return
+        if control.state == "lease_recovery_exhausted":
+            raise ValueError("M3 lease recovery exhausted")
+        lease = self._store.lease_binding(control)
+        artifact_closure = M3ArtifactClosure.create(terminal)
+        self._verify_commit_authorization(
+            terminal=terminal,
+            authorization_verifier=authorization_verifier,
+        )
+        authorization_precondition = self._authorization_precondition(
+            fence=fence, terminal=terminal, authorization_verifier=authorization_verifier,
+        )
+        if control.state == "preplanning":
+            for _ in range(4):
+                control = self._store.get_operation(fence)
+                if control.state == "terminal":
+                    self._verify_completed_terminal(
+                        fence=fence, terminal=terminal, generation=control.generation
+                    )
+                    return
+                if control.state == "planned":
+                    self._verify_planned_closure(
+                        fence=fence, terminal=terminal, closure=artifact_closure,
+                        generation=control.generation,
+                    )
+                    break
+                control = self._store.acquire_lease(
+                    operation_fence=fence,
+                    writer_binding=writer,
+                    execution_token=f"m3:{fence.operation_fence_id}",
+                    owner_id="m3-semantic-pipeline",
+                    duration=timedelta(seconds=30),
+                )
+                lease = self._store.lease_binding(control)
+                checkpoint = SourceCheckpointAtomicWriteRequest(
+                    operation_fence_binding=fence,
+                    operation_lease_binding=lease,
+                    writer_commit_binding=writer,
+                    expected_operation_generation=control.generation,
+                    expected_artifact_generation=control.generation,
+                    members=self._checkpoint_members(terminal, artifact_closure, writer),
+                    required_artifact_digests=(),
+                    request_digest="0" * 64,
+                    progress_state="planned",
+                )
+                try:
+                    self._store.checkpoint_source_progress(self._seal(checkpoint))
+                except PreplanningStoreError:
+                    continue
+            else:
+                raise PreplanningStoreError("M3 planned checkpoint retry budget exhausted")
+            control = self._store.get_operation(fence)
+            if control.state == "terminal":
+                self._verify_completed_terminal(
+                    fence=fence, terminal=terminal, generation=control.generation
+                )
+                return
+            control = self._store.acquire_lease(
+                operation_fence=fence, writer_binding=writer,
+                execution_token=f"m3:{fence.operation_fence_id}", owner_id="m3-semantic-pipeline",
+                duration=timedelta(seconds=30),
+            )
+            lease = self._store.lease_binding(control)
+        group_result = M3GroupResult.create(terminal=terminal, artifact_closure=artifact_closure)
+        if not control.group_result_digests:
+            graph_delta = M3GraphDelta.create(terminal) if terminal.status == "accepted" else None
+            observation = M3ObservationDelta.create(terminal=terminal, graph_delta=graph_delta)
+            for _ in range(4):
+                control = self._store.get_operation(fence)
+                if control.state == "terminal":
+                    self._verify_completed_terminal(
+                        fence=fence, terminal=terminal, generation=control.generation
+                    )
+                    return
+                if control.group_result_digests:
+                    self._verify_group_result(
+                        fence=fence, terminal=terminal, generation=control.generation
+                    )
+                    break
+                if control.state != "planned":
+                    raise PreplanningStoreError("M3 terminal group requires planned progress")
+                control = self._store.acquire_lease(
+                    operation_fence=fence,
+                    writer_binding=writer,
+                    execution_token=f"m3:{fence.operation_fence_id}",
+                    owner_id="m3-semantic-pipeline",
+                    duration=timedelta(seconds=30),
+                )
+                lease = self._store.lease_binding(control)
+                common = {
+                    "operation_fence_binding": fence,
+                    "operation_lease_binding": lease,
+                    "writer_commit_binding": writer,
+                    "expected_operation_generation": control.generation,
+                    "expected_artifact_generation": control.generation,
+                    "required_artifact_digests": (),
+                    "request_digest": "0" * 64,
+                    "expected_observation_revision": control.observation_revision,
+                    "observation_revision_after": self._next_revision(
+                        b"memorii.m3.observation-revision.v1",
+                        control.observation_revision,
+                        terminal.terminal_digest,
+                    ),
+                }
+                if graph_delta is not None:
+                    event_batch = M3EventBatch.create(terminal=terminal, graph_delta=graph_delta)
+                    request = CommittedGroupAtomicWriteRequest(
+                        **common,
+                        members=self._committed_group_members(
+                            terminal, artifact_closure, group_result,
+                            graph_delta, event_batch, observation,
+                        ),
+                        expected_graph_revision=control.graph_revision,
+                        expected_effective_read_set_digest=control.effective_read_set_digest,
+                        graph_revision_after=self._next_revision(
+                            b"memorii.m3.graph-revision.v1",
+                            control.graph_revision,
+                            graph_delta.delta_digest,
+                        ),
+                        authorization_precondition=authorization_precondition,
+                    )
+                else:
+                    request = NonCommittingGroupAtomicWriteRequest(
+                        **common,
+                        members=self._noncommitting_group_members(
+                            terminal, artifact_closure, group_result, observation
+                        ),
+                        authorization_precondition=authorization_precondition,
+                    )
+                if graph_delta is not None:
+                    self._verify_commit_authorization(
+                        terminal=terminal,
+                        authorization_verifier=authorization_verifier,
+                    )
+                try:
+                    self._store.persist_terminal_group(self._seal(request))
+                except PreplanningStoreError:
+                    continue
+            else:
+                raise PreplanningStoreError("M3 terminal-group retry budget exhausted")
+            control = self._store.get_operation(fence)
+            if control.state == "terminal":
+                self._verify_completed_terminal(fence=fence, terminal=terminal, generation=control.generation)
+                return
+            control = self._store.acquire_lease(
+                operation_fence=fence, writer_binding=writer,
+                execution_token=f"m3:{fence.operation_fence_id}", owner_id="m3-semantic-pipeline",
+                duration=timedelta(seconds=30),
+            )
+            lease = self._store.lease_binding(control)
+        else:
+            self._verify_group_result(fence=fence, terminal=terminal, generation=control.generation)
+        final = SourceFinalizationAtomicWriteRequest(
+            operation_fence_binding=fence,
+            operation_lease_binding=lease,
+            writer_commit_binding=writer,
+            expected_operation_generation=control.generation,
+            expected_artifact_generation=control.generation,
+            members=self._final_members(terminal, artifact_closure),
+            required_artifact_digests=(),
+            request_digest="0" * 64,
+            source_summary_kind="graph_bound",
+            expected_group_result_digests=control.group_result_digests,
+        )
+        self._store.finalize_source(self._seal(final))
+
+    @staticmethod
+    def _verify_commit_authorization(
+        *,
+        terminal: SemanticTerminalOutcome,
+        authorization_verifier: SemanticAuthorizationReadSetVerifier | None,
+    ) -> None:
+        read_set = terminal.authorization_read_set
+        if read_set is None:
+            if terminal.status == "accepted":
+                raise M3AuthorizationReadSetError("accepted terminal has no authorization read set")
+            return
+        if (
+            authorization_verifier is None
+            or not authorization_verifier.verify_current(read_set, use_point="pre_commit")
+        ):
+            raise M3AuthorizationReadSetError("M3 authorization read set is stale at commit")
+
+    def _authorization_precondition(
+        self,
+        *,
+        fence: OperationFenceBinding,
+        terminal: SemanticTerminalOutcome,
+        authorization_verifier: SemanticAuthorizationReadSetVerifier | None,
+    ) -> AuthorizationReadSetPrecondition | None:
+        read_set = terminal.authorization_read_set
+        if read_set is None:
+            return None
+        if self._authorization_repository is None:
+            raise M3AuthorizationReadSetError("M3 same-store authorization repository is unavailable")
+        take_snapshot = getattr(authorization_verifier, "take_precommit_snapshot", None)
+        if callable(take_snapshot):
+            snapshot = take_snapshot(read_set)
+            if snapshot is None:
+                raise M3AuthorizationReadSetError("M3 precommit authorization snapshot is unavailable")
+            return AuthorizationReadSetPrecondition(
+                authority_record_id=snapshot.authority_record_id,
+                expected_authority_revision=snapshot.authority_revision,
+                expected_coordinates_digest=snapshot.authority_coordinates_digest,
+                expected_record_digest=snapshot.authority_record_digest,
+            )
+        scope_id = self._authorization_repository.scope_id(
+            source_id=fence.source_id, source_digest=fence.source_digest
+        )
+        try:
+            return self._authorization_repository.require_current(
+                authority_scope_id=scope_id, read_set=read_set,
+            )
+        except M3AuthorizationAuthorityError as exc:
+            raise M3AuthorizationReadSetError(str(exc)) from exc
+
+    def _verify_completed_terminal(
+        self, *, fence: OperationFenceBinding, terminal: SemanticTerminalOutcome, generation: int
+    ) -> None:
+        members = self._store.generation_members(fence, generation)
+        source_results = tuple(value for value in members if value.kind == "source_result")
+        if len(source_results) != 1:
+            raise ValueError("completed M3 source has no unique source result")
+        recovered = decode_semantic_contract(source_results[0].canonical_payload, SemanticTerminalOutcome)
+        if recovered != terminal:
+            raise ValueError("completed M3 source result differs from retry terminal")
+
+    def _verify_group_result(
+        self, *, fence: OperationFenceBinding, terminal: SemanticTerminalOutcome, generation: int
+    ) -> None:
+        results = tuple(
+            value
+            for candidate_generation in range(2, generation + 1)
+            for value in self._store.generation_members(fence, candidate_generation)
+            if value.kind == "group_result"
+        )
+        if len(results) != 1:
+            raise ValueError("planned M3 source has no unique group result")
+        recovered = decode_semantic_contract(results[0].canonical_payload, M3GroupResult)
+        if recovered.terminal != terminal:
+            raise ValueError("planned M3 group result differs from retry terminal")
+
+    def _verify_planned_closure(
+        self, *, fence: OperationFenceBinding, terminal: SemanticTerminalOutcome,
+        closure: M3ArtifactClosure, generation: int,
+    ) -> None:
+        planning_generations = tuple(
+            self._store.generation_members(fence, candidate_generation)
+            for candidate_generation in range(2, generation + 1)
+            if any(
+                member.kind == "plan"
+                for member in self._store.generation_members(fence, candidate_generation)
+            )
+        )
+        if len(planning_generations) != 1:
+            raise ValueError("planned M3 source has no unique planning generation")
+        members = planning_generations[0]
+        closures = tuple(value for value in members if value.kind == "artifact_closure")
+        if len(closures) != 1:
+            raise ValueError("planned M3 source has no unique artifact closure")
+        recovered = decode_semantic_contract(closures[0].canonical_payload, M3ArtifactClosure)
+        if recovered != closure:
+            raise ValueError("planned M3 artifact closure differs from retry terminal")
+        terminal_artifacts = tuple(
+            value for value in members if value.kind == "terminal_artifact"
+        )
+        if (
+            len(terminal_artifacts) != 1
+            or terminal_artifacts[0].canonical_payload != encode_semantic_contract(terminal)
+        ):
+            raise ValueError("planned M3 terminal artifact differs from retry terminal")
+        read_sets = tuple(value for value in members if value.kind == "authorization_read_set")
+        expected_read_set = (
+            encode_semantic_contract(terminal.authorization_read_set)
+            if terminal.authorization_read_set is not None
+            else encode_typed_value(None)
+        )
+        if len(read_sets) != 1 or read_sets[0].canonical_payload != expected_read_set:
+            raise ValueError("planned M3 authorization read set differs from retry terminal")
+
+    @staticmethod
+    def _checkpoint_members(
+        terminal: SemanticTerminalOutcome,
+        closure: M3ArtifactClosure,
+        writer: SemanticWriterCommitBinding,
+    ) -> tuple[AtomicGenerationMember, ...]:
+        lifecycle = (
+            M3LifecycleTransition.accepted_candidate(
+                operation_id=terminal.operation_id,
+                candidate_digest=terminal.candidates[0].candidate_digest,
+            )
+            if terminal.status == "accepted" else None
+        )
+        items: list[tuple[_M3MemberKind, bytes]] = [
+            ("artifact_closure", encode_semantic_contract(closure)),
+            ("artifact_index", encode_typed_value({"terminal": terminal.terminal_digest, "closure": closure.closure_digest})),
+            (
+                "authorization_read_set",
+                (
+                    encode_semantic_contract(terminal.authorization_read_set)
+                    if terminal.authorization_read_set is not None
+                    else encode_typed_value(None)
+                ),
+            ),
+            ("independence_certificate", encode_typed_value({"sealed_operations": tuple(value.sealed_operation_digest for value in terminal.sealed_operations)})),
+            ("plan", encode_typed_value({"kind": "m3_committed" if terminal.status == "accepted" else "m3_non_committing"})),
+            ("planning_artifact", encode_typed_value({
+                "operation_id": terminal.operation_id, "terminal_digest": terminal.terminal_digest,
+                "execution_lineage": (
+                    terminal.execution_lineage.model_dump(mode="python")
+                    if terminal.execution_lineage is not None else None
+                ),
+            })),
+            ("planning_authorization", encode_typed_value({
+                "writer_admission_digest": writer.admission_digest,
+                "policy_bundle_digest": (
+                    terminal.arbitration_policy_bundle.bundle_digest
+                    if terminal.arbitration_policy_bundle is not None else None
+                ),
+                "execution_lineage_digest": (
+                    terminal.execution_lineage.lineage_digest
+                    if terminal.execution_lineage is not None else None
+                ),
+            })),
+            ("progress", encode_typed_value({"state": "planned", "terminal_digest": terminal.terminal_digest})),
+            ("terminal_artifact", encode_semantic_contract(terminal)),
+        ]
+        if lifecycle is not None:
+            items.append(("lifecycle", encode_semantic_contract(lifecycle)))
+        return M3TerminalPersistenceService._members(*items)
+
+    @staticmethod
+    def _committed_group_members(
+        terminal: SemanticTerminalOutcome,
+        closure: M3ArtifactClosure,
+        result: M3GroupResult,
+        graph_delta: M3GraphDelta,
+        event_batch: M3EventBatch,
+        observation: M3ObservationDelta,
+    ) -> tuple[AtomicGenerationMember, ...]:
+        return M3TerminalPersistenceService._members(
+            ("artifact_closure", encode_semantic_contract(closure)),
+            ("artifact_index", encode_typed_value({"terminal": terminal.terminal_digest, "closure": closure.closure_digest})),
+            ("event_batch", encode_semantic_contract(event_batch)),
+            ("graph_delta", encode_semantic_contract(graph_delta)),
+            ("group_result", encode_semantic_contract(result)),
+            ("observation_delta", encode_semantic_contract(observation)),
+        )
+
+    @staticmethod
+    def _noncommitting_group_members(
+        terminal: SemanticTerminalOutcome,
+        closure: M3ArtifactClosure,
+        result: M3GroupResult,
+        observation: M3ObservationDelta,
+    ) -> tuple[AtomicGenerationMember, ...]:
+        return M3TerminalPersistenceService._members(
+            ("artifact_closure", encode_semantic_contract(closure)),
+            ("artifact_index", encode_typed_value({"terminal": terminal.terminal_digest, "closure": closure.closure_digest})),
+            ("group_result", encode_semantic_contract(result)),
+            ("observation_delta", encode_semantic_contract(observation)),
+        )
+
+    @staticmethod
+    def _final_members(
+        terminal: SemanticTerminalOutcome, closure: M3ArtifactClosure
+    ) -> tuple[AtomicGenerationMember, ...]:
+        observation = M3ObservationDelta.create(
+            terminal=terminal,
+            graph_delta=M3GraphDelta.create(terminal) if terminal.status == "accepted" else None,
+        )
+        accepted_transition = (
+            M3LifecycleTransition.accepted_candidate(
+                operation_id=terminal.operation_id,
+                candidate_digest=terminal.candidates[0].candidate_digest,
+            )
+            if terminal.status == "accepted" else None
+        )
+        if accepted_transition is not None:
+            terminal_transition = M3LifecycleTransition.committed_terminal(
+                terminal=terminal,
+                accepted_transition=accepted_transition,
+            )
+        else:
+            unsupported_reasons = {
+                "missing_language_declaration", "untrusted_language", "language_mismatch",
+                "non_english_language", "mixed_residue", "unsupported_grammar",
+            }
+            raw_reason = terminal.reason_codes[0] if terminal.reason_codes else "extractor_abstained"
+            reason_code: _M3LifecycleReason
+            if raw_reason == "missing_language_declaration":
+                reason_code = "missing_language_declaration"
+            elif raw_reason == "untrusted_language":
+                reason_code = "untrusted_language"
+            elif raw_reason == "language_mismatch":
+                reason_code = "language_mismatch"
+            elif raw_reason == "non_english_language":
+                reason_code = "non_english_language"
+            elif raw_reason == "mixed_residue":
+                reason_code = "mixed_residue"
+            elif raw_reason == "unsupported_grammar":
+                reason_code = "unsupported_grammar"
+            elif raw_reason == "retry_budget_exhausted":
+                reason_code = "retry_budget_exhausted"
+            else:
+                reason_code = "extractor_abstained"
+            terminal_transition = M3LifecycleTransition.nonpromoting_terminal(
+                terminal=terminal,
+                to_kind="unsupported_input" if reason_code in unsupported_reasons else "abstained",
+                reason_code=reason_code,
+            )
+        return M3TerminalPersistenceService._members(
+            ("artifact_closure", encode_semantic_contract(closure)),
+            ("lifecycle", encode_semantic_contract(terminal_transition)),
+            ("observation_delta", encode_semantic_contract(observation)),
+            ("source_result", encode_semantic_contract(terminal)),
+            ("source_summary", encode_typed_value({"terminal_digest": terminal.terminal_digest, "artifact_closure_digest": closure.closure_digest})),
+            ("terminal_operation", encode_typed_value({"operation_id": terminal.operation_id, "status": terminal.status})),
+        )
+
+    @staticmethod
+    def _members(
+        *items: tuple[
+            _M3MemberKind,
+            bytes,
+        ],
+    ) -> tuple[AtomicGenerationMember, ...]:
+        ordered = sorted(items, key=lambda item: item[0])
+        return tuple(
+            AtomicGenerationMember(
+                member_id=f"m3-{index:02d}-{kind}",
+                kind=kind,
+                canonical_payload=payload,
+                payload_digest=sha256(payload).hexdigest(),
+            )
+            for index, (kind, payload) in enumerate(ordered)
+        )
+
+    @staticmethod
+    def _seal(request):
+        return request.model_copy(update={"request_digest": generation_request_digest(request)})
+
+    @staticmethod
+    def _next_revision(domain: bytes, current: str, effect_digest: str) -> str:
+        return sha256(domain + b"\0" + current.encode() + b"\0" + effect_digest.encode()).hexdigest()
+
+
+class M3LeaseSession:
+    """Store-owned lease heartbeat and preplanning stage-progress publisher."""
+
+    _DURATION = timedelta(seconds=30)
+
+    def __init__(
+        self,
+        *,
+        atomic_store: SemanticIngestionAtomicStore,
+        writer_binding_provider: Callable[[], SemanticWriterCommitBinding],
+        fence: OperationFenceBinding,
+    ) -> None:
+        self._store = atomic_store
+        self._writer_binding_provider = writer_binding_provider
+        self._fence = fence
+        self._writer = writer_binding_provider()
+        current = self._store.get_operation(fence)
+        self._retry_count = self._recover_retry_count(current.generation)
+        if current.state in {"terminal", "lease_recovery_exhausted"}:
+            self._control = current
+            return
+        self._control = self._store.acquire_lease(
+            operation_fence=fence,
+            writer_binding=self._writer,
+            execution_token=f"m3:{fence.operation_fence_id}",
+            owner_id="m3-semantic-pipeline",
+            duration=self._DURATION,
+        )
+
+    def _recover_retry_count(self, current_generation: int) -> int:
+        recovered = 0
+        for generation in range(2, current_generation + 1):
+            for member in self._store.generation_members(self._fence, generation):
+                if member.kind != "progress":
+                    continue
+                try:
+                    progress = decode_semantic_contract(
+                        member.canonical_payload, M3RetryableProgress
+                    )
+                except (ValueError, TypeError):
+                    continue
+                recovered = max(recovered, progress.attempt_count)
+        return recovered
+
+    @property
+    def exhausted(self) -> bool:
+        return self._control.state == "lease_recovery_exhausted"
+
+    @property
+    def closed(self) -> bool:
+        return self._control.state in {"terminal", "lease_recovery_exhausted"}
+
+    def checkpoint_execution_plan(self, plan: M3ExecutionRetryPlan) -> None:
+        plan.validate_for_fence(self._fence)
+        existing = M3TerminalPersistenceService(
+            atomic_store=self._store,
+            writer_binding_provider=self._writer_binding_provider,
+            authorization_repository=None,
+        ).recover_execution_plan(fence=self._fence)
+        if existing is not None:
+            if existing != plan:
+                raise ValueError("M3 redelivery execution plan differs from persisted plan")
+            return
+        self.heartbeat()
+        plan_bytes = encode_semantic_contract(plan)
+        progress_bytes = encode_typed_value(
+            {"stage": "execution_plan", "artifact_digest": sha256(plan_bytes).hexdigest()}
+        )
+        members = (
+            AtomicGenerationMember(
+                member_id="m3-00-execution-plan",
+                kind="execution_plan",
+                canonical_payload=plan_bytes,
+                payload_digest=sha256(plan_bytes).hexdigest(),
+            ),
+            AtomicGenerationMember(
+                member_id="m3-01-progress",
+                kind="progress",
+                canonical_payload=progress_bytes,
+                payload_digest=sha256(progress_bytes).hexdigest(),
+            ),
+        )
+        request = SourceCheckpointAtomicWriteRequest(
+            operation_fence_binding=self._fence,
+            operation_lease_binding=self._store.lease_binding(self._control),
+            writer_commit_binding=self._writer,
+            expected_operation_generation=self._control.generation,
+            expected_artifact_generation=self._control.generation,
+            members=members,
+            required_artifact_digests=(),
+            request_digest="0" * 64,
+            progress_state="preplanning",
+        )
+        self._store.checkpoint_source_progress(M3TerminalPersistenceService._seal(request))
+        self._control = self._store.get_operation(self._fence)
+
+    def checkpoint_recovery_authority_binding(
+        self, binding: M3RecoveryAuthorityBinding,
+    ) -> None:
+        service = M3TerminalPersistenceService(
+            atomic_store=self._store,
+            writer_binding_provider=self._writer_binding_provider,
+            authorization_repository=None,
+        )
+        existing = service.recover_recovery_authority_binding(fence=self._fence)
+        if existing is not None:
+            if existing != binding:
+                raise ValueError("M3 recovery authority binding changed")
+            return
+        self.heartbeat()
+        payload = encode_semantic_contract(binding)
+        member = AtomicGenerationMember(
+            member_id="m3-00-recovery-authority-binding",
+            kind="recovery_authority_binding",
+            canonical_payload=payload,
+            payload_digest=sha256(payload).hexdigest(),
+        )
+        progress_payload = encode_typed_value(
+            {
+                "stage": "recovery_authority_bound",
+                "artifact_digest": binding.binding_digest,
+            }
+        )
+        progress = AtomicGenerationMember(
+            member_id="m3-01-progress",
+            kind="progress",
+            canonical_payload=progress_payload,
+            payload_digest=sha256(progress_payload).hexdigest(),
+        )
+        request = SourceCheckpointAtomicWriteRequest(
+            operation_fence_binding=self._fence,
+            operation_lease_binding=self._store.lease_binding(self._control),
+            writer_commit_binding=self._writer,
+            expected_operation_generation=self._control.generation,
+            expected_artifact_generation=self._control.generation,
+            members=(member, progress),
+            required_artifact_digests=(),
+            request_digest="0" * 64,
+            progress_state="preplanning",
+        )
+        self._store.checkpoint_source_progress(M3TerminalPersistenceService._seal(request))
+        self._control = self._store.get_operation(self._fence)
+
+    def heartbeat(self) -> None:
+        if self.closed:
+            raise ValueError("M3 lease session is terminal")
+        lease = self._control.lease
+        if lease is None:
+            raise ValueError("M3 lease session has no active lease")
+        self._control = self._store.renew_lease(
+            operation_fence=self._fence,
+            writer_binding=self._writer,
+            lease=lease,
+            duration=self._DURATION,
+        )
+
+    def checkpoint(self, stage: str, artifact_digest: str) -> None:
+        if not stage or len(artifact_digest) != 64:
+            raise ValueError("M3 stage progress must be content addressed")
+        self.heartbeat()
+        if self._control.state != "preplanning":
+            raise ValueError("M3 learned-stage progress cannot be written after planning")
+        payload = encode_typed_value({"stage": stage, "artifact_digest": artifact_digest})
+        member = AtomicGenerationMember(
+            member_id="m3-00-progress",
+            kind="progress",
+            canonical_payload=payload,
+            payload_digest=sha256(payload).hexdigest(),
+        )
+        request = SourceCheckpointAtomicWriteRequest(
+            operation_fence_binding=self._fence,
+            operation_lease_binding=self._store.lease_binding(self._control),
+            writer_commit_binding=self._writer,
+            expected_operation_generation=self._control.generation,
+            expected_artifact_generation=self._control.generation,
+            members=(member,),
+            required_artifact_digests=(),
+            request_digest="0" * 64,
+            progress_state="preplanning",
+        )
+        self._store.checkpoint_source_progress(M3TerminalPersistenceService._seal(request))
+        self._control = self._store.get_operation(self._fence)
+
+    def checkpoint_retryable(
+        self,
+        *,
+        stage: Literal["policy_read", "proposal", "analysis", "planning", "group", "finalization"],
+        failure_kind: Literal["policy_outage", "transport_outage", "store_outage"],
+        terminal: SemanticTerminalOutcome | None = None,
+    ) -> None:
+        self._control = self._store.get_operation(self._fence)
+        if self.closed:
+            return
+        if self._control.state == "planned" and stage in {"policy_read", "proposal", "analysis"}:
+            raise ValueError("planned M3 operation cannot regress to a learned stage")
+        self._retry_count += 1
+        if self._retry_count > 3:
+            exhausted_terminal = SemanticTerminalOutcome.create(
+                operation_id=self._fence.operation_id,
+                status="evidence_only",
+                reason_codes=("retry_budget_exhausted",),
+                candidates=(),
+                temporal_closures=(),
+                attempt_count=2,
+            )
+            M3TerminalPersistenceService(
+                atomic_store=self._store,
+                writer_binding_provider=self._writer_binding_provider,
+                authorization_repository=None,
+            ).persist(fence=self._fence, terminal=exhausted_terminal)
+            self._control = self._store.get_operation(self._fence)
+            return
+        self._control = self._store.acquire_lease(
+            operation_fence=self._fence,
+            writer_binding=self._writer,
+            execution_token=f"m3:{self._fence.operation_fence_id}",
+            owner_id="m3-semantic-pipeline",
+            duration=self._DURATION,
+        )
+        self.heartbeat()
+        terminal_bytes = encode_semantic_contract(terminal) if terminal is not None else None
+        progress = M3RetryableProgress.create(
+            operation_id=self._fence.operation_id,
+            stage=stage,
+            failure_kind=failure_kind,
+            attempt_count=self._retry_count,
+            terminal_artifact_digest=(
+                sha256(terminal_bytes).hexdigest() if terminal_bytes is not None else None
+            ),
+        )
+        progress_bytes = encode_semantic_contract(progress)
+        members = [AtomicGenerationMember(
+            member_id="m3-00-progress",
+            kind="progress",
+            canonical_payload=progress_bytes,
+            payload_digest=sha256(progress_bytes).hexdigest(),
+        )]
+        if terminal_bytes is not None:
+            members.append(AtomicGenerationMember(
+                member_id="m3-01-terminal-artifact",
+                kind="terminal_artifact",
+                canonical_payload=terminal_bytes,
+                payload_digest=sha256(terminal_bytes).hexdigest(),
+            ))
+        request = SourceCheckpointAtomicWriteRequest(
+            operation_fence_binding=self._fence,
+            operation_lease_binding=self._store.lease_binding(self._control),
+            writer_commit_binding=self._writer,
+            expected_operation_generation=self._control.generation,
+            expected_artifact_generation=self._control.generation,
+            members=tuple(members),
+            required_artifact_digests=(),
+            request_digest="0" * 64,
+            progress_state=("planned" if self._control.state == "planned" else "preplanning"),
+        )
+        self._store.checkpoint_source_progress(M3TerminalPersistenceService._seal(request))
+        self._control = self._store.get_operation(self._fence)
+
+
+__all__ = [
+    "M3AuthorizationReadSetError",
+    "M3LeaseSession",
+    "M3TerminalPersistenceService",
+]

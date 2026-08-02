@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.store import (
     GovernedWritePolicy,
@@ -82,8 +84,11 @@ class MemoryPlaneUnitOfWork:
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         self._ensure_open()
+        if transaction_precondition is not None:
+            raise RuntimeError("transaction preconditions require the root memory-plane store")
         self._set_authorization(authorization)
         if expected_revision != self._base_revision:
             raise ValueError(

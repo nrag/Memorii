@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import cast
 
@@ -75,6 +76,10 @@ from memorii.core.provider.tool_schemas import provider_tool_schemas
 from memorii.core.provider.tools import ProviderToolCallResult
 from memorii.core.provider.work_state_projection import WorkStateMemoryProjector
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
+from memorii.core.semantic_ingestion.capability import (
+    AuthorizedSemanticIngestionRuntime,
+    HostSemanticIngestionRuntimeBuilder,
+)
 from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
 from memorii.core.work_state.selector import WorkStateSelector
@@ -134,6 +139,23 @@ class ProviderMemoryService:
                 self._bootstrap_profile = None
                 self._bootstrap_unavailable_reason = "invalid_manifest"
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None
+        runtime_builder = cast(HostSemanticIngestionRuntimeBuilder | None, host_bootstrap_capability)
+        if self._bootstrap_profile is not None and runtime_builder is not None and hasattr(
+            runtime_builder, "build_semantic_ingestion_runtime"
+        ):
+            try:
+                semantic_runtime = runtime_builder.build_semantic_ingestion_runtime(
+                    memory_plane=self._memory_plane, now_provider=self._now_provider,
+                )
+                if semantic_runtime is not None:
+                    with suppress(OSError):
+                        semantic_runtime.validate(
+                            profile=self._bootstrap_profile,
+                            server_time=self._now_provider(),
+                        )
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+                semantic_runtime = None
         self._work_state_service = work_state_service
         self._work_state_selector = WorkStateSelector(work_state_service)
         self._solver_frontier_planner = solver_frontier_planner
@@ -160,15 +182,24 @@ class ProviderMemoryService:
         self._emit_work_state_event_candidates = emit_work_state_event_candidates
         self._memory_evolution_service: MemoryEvolutionService | None = None
         self._semantic_ingestion_admission = GovernedSourceAdmissionService(self._memory_plane)
-        self._semantic_writer_admission = SemanticWriterAdmissionStore(
-            self._memory_plane, bounded_preplanning_ownership_manifest(), now_provider=self._now_provider
-        )
-        self._semantic_writer_admission.create_initial_evidence_only(
-            admission_id="memorii-provider-semantic-writer-v1",
-            writer_implementation_fingerprint="memorii-provider-m2-evidence-only-v1",
-            graph_schema_fingerprint="memorii-semantic-graph-preactivation-v1",
-        )
-        self._semantic_atomic_store = SemanticIngestionAtomicStore(
+        runtime_writer = semantic_runtime.writer_admission if semantic_runtime is not None else None
+        runtime_store = semantic_runtime.atomic_store if semantic_runtime is not None else None
+        if runtime_writer is None:
+            self._semantic_writer_admission = SemanticWriterAdmissionStore(
+                self._memory_plane, bounded_preplanning_ownership_manifest(), now_provider=self._now_provider
+            )
+            self._semantic_writer_admission.create_initial_evidence_only(
+                admission_id="memorii-provider-semantic-writer-v1",
+                writer_implementation_fingerprint="memorii-provider-m2-evidence-only-v1",
+                graph_schema_fingerprint="memorii-semantic-graph-preactivation-v1",
+            )
+        else:
+            # Active semantic composition is explicit: the host supplies the
+            # already migrated/certified writer owner instead of a boolean
+            # bypass that could silently activate graph writes.
+            runtime_writer.current()
+            self._semantic_writer_admission = runtime_writer
+        self._semantic_atomic_store = runtime_store or SemanticIngestionAtomicStore(
             self._memory_plane, self._semantic_writer_admission, now_provider=self._now_provider
         )
         self._provider_ingestion = ProviderIngestionCoordinator(
@@ -178,6 +209,16 @@ class ProviderMemoryService:
             bootstrap_unavailable_reason=self._bootstrap_unavailable_reason,
             atomic_store=self._semantic_atomic_store,
             writer_admission=self._semantic_writer_admission,
+            semantic_pipeline=semantic_runtime.pipeline if semantic_runtime is not None else None,
+            semantic_policy_provider=semantic_runtime.policy_provider if semantic_runtime is not None else None,
+            semantic_egress_policy_provider=(
+                semantic_runtime.egress_policy_provider if semantic_runtime is not None else None
+            ),
+            semantic_candidate_assessor=(
+                semantic_runtime.candidate_assessor if semantic_runtime is not None else None
+            ),
+            semantic_runtime=semantic_runtime,
+            now_provider=self._now_provider,
         )
         self._work_state_memory_projector = WorkStateMemoryProjector(
             memory_plane=self._memory_plane,
@@ -635,7 +676,7 @@ class ProviderMemoryService:
     def reconcile_memory_evolution(self) -> list[ProviderEvolutionOutcome]:
         """Retry pending and retryable failed evolution operations."""
 
-        return []
+        return self._provider_ingestion.reconcile()
 
     @staticmethod
     def _format_work_state_section(work_states: list[WorkStateSummary]) -> str:

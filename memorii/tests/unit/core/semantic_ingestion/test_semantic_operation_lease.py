@@ -108,13 +108,13 @@ def test_lease_renews_fences_stale_tokens_and_bounds_recovery() -> None:
         duration=timedelta(seconds=10),
     )
     assert exhausted.state == "lease_recovery_exhausted"
-    with pytest.raises(PreplanningStoreError):
-        store.acquire_lease(
-            operation_id=fence.operation_id,
-            writer_binding=binding,
-            execution_token="token:four",
-            duration=timedelta(seconds=10),
-        )
+    replayed_exhaustion = store.acquire_lease(
+        operation_id=fence.operation_id,
+        writer_binding=binding,
+        execution_token="token:four",
+        duration=timedelta(seconds=10),
+    )
+    assert replayed_exhaustion == exhausted
 
 
 def test_lease_acquisition_exact_retry_returns_persisted_binding() -> None:

@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import Any
 
 EXPECTED = {
-    "design": "e7de038a5cad8f8d95536d60d35621472a79588e100c2da8633a9dd1fcfb5e7a",
-    "registry": "35396897f98833b3eeb9572b16d7eab38ea34741ca876a4a72048424de676ea3",
+    "design": "45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c",
+    "registry": "d38aa788adfb7703d970507f496b903ddf460797fe60274ddd5ebf9c22054c46",
     "ledger": "085921e6c4e995f0d6259c9f6f6eabeec3f1455bba344105ef0e16d24eb81671",
     "matrix": "a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604",
     "prototype": "b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed",
-    "vector": "7af8aa57cf1b81f243883077fdde27064a638e95bf366cfd1cfd16979340c3ab",
+    "vector": "8164e5d207615a2678fc81cce99dee2684c4ad531f095a782930574aa0206a6d",
 }
 WORKPLAN_PATH = Path(
     "docs/work/semantic_ingestion/"
