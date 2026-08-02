@@ -17,9 +17,11 @@ from memorii.core.memory_plane.models import (
     to_provider_stored_record,
 )
 from memorii.core.memory_plane.store import (
+    GovernedWritePolicy,
     InMemoryMemoryPlaneStore,
     MemoryPlanePrecondition,
     MemoryPlaneStore,
+    MemoryPlaneWriteAuthorization,
 )
 from memorii.core.memory_plane.unit_of_work import MemoryPlaneUnitOfWork
 from memorii.core.provider.blocking_policy import evaluate_operation_policy
@@ -87,6 +89,12 @@ class MemoryPlaneService:
     def _record_store(self) -> MemoryPlaneStore:
         return self._active_unit_of_work.get() or self._records
 
+    def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
+        installer = getattr(self._records, "install_governed_write_policy", None)
+        if installer is None:
+            raise RuntimeError("memory-plane backend does not support governed-write policy")
+        installer(policy)
+
     # Runtime-facing canonical methods
     def seed_runtime_memory_object(self, memory_object: MemoryObject) -> None:
         self._record_store().stage_record(from_memory_object(memory_object))
@@ -117,17 +125,25 @@ class MemoryPlaneService:
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
         return self._record_store().get_record(memory_id)
 
-    def stage_record(self, record: CanonicalMemoryRecord) -> None:
-        self._record_store().stage_record(record)
+    def stage_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None:
+        self._record_store().stage_record(record, authorization=authorization)
 
-    def write_records(self, records: tuple[CanonicalMemoryRecord, ...]) -> int:
-        return self._record_store().write_records(records)
+    def write_records(
+        self, records: tuple[CanonicalMemoryRecord, ...], *, authorization: MemoryPlaneWriteAuthorization | None = None
+    ) -> int:
+        return self._record_store().write_records(records, authorization=authorization)
 
     def conditionally_write_records(
         self,
         records: tuple[CanonicalMemoryRecord, ...],
         *,
         preconditions: tuple[MemoryPlanePrecondition, ...],
+        authorization: MemoryPlaneWriteAuthorization | None = None,
     ) -> int:
         if self._active_unit_of_work.get() is not None:
             raise RuntimeError("conditional control writes cannot be nested in a memory-plane unit of work")
@@ -135,10 +151,16 @@ class MemoryPlaneService:
             records,
             expected_revision=None,
             preconditions=preconditions,
+            authorization=authorization,
         )
 
-    def upsert_record(self, record: CanonicalMemoryRecord) -> None:
-        self._record_store().upsert_record(record)
+    def upsert_record(
+        self,
+        record: CanonicalMemoryRecord,
+        *,
+        authorization: MemoryPlaneWriteAuthorization | None = None,
+    ) -> None:
+        self._record_store().upsert_record(record, authorization=authorization)
 
     def update_candidate_lifecycle(
         self,

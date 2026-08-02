@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
-from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService
+from collections.abc import Callable
+
+from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService, PreparedSourceAdmission
+from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.bootstrap_profile import VerifiedBootstrapProfile, classify_bootstrap_input
-from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedIngressContext, DeliveryIdentity
+from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedIngressContext,
+    DeliveryIdentity,
+)
+from memorii.core.memory_evolution.writer_admission import (
+    SemanticWriterAdmissionError,
+    SemanticWriterAdmissionStore,
+)
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.models import ProviderEvent, ProviderEvolutionOutcome, ProviderSyncResult
@@ -19,11 +29,15 @@ class ProviderIngestionCoordinator:
         admission_service: GovernedSourceAdmissionService,
         bootstrap_profile: VerifiedBootstrapProfile | None,
         bootstrap_unavailable_reason: str,
+        atomic_store: SemanticIngestionAtomicStore,
+        writer_admission: SemanticWriterAdmissionStore,
     ) -> None:
         self._memory_plane = memory_plane
         self._admission_service = admission_service
         self._bootstrap_profile = bootstrap_profile
         self._bootstrap_unavailable_reason = bootstrap_unavailable_reason
+        self._atomic_store = atomic_store
+        self._writer_admission = writer_admission
 
     def ingest(
         self,
@@ -56,7 +70,8 @@ class ProviderIngestionCoordinator:
                 else:
                     outcome = "disabled"
                     reason = "operator_disabled"
-            self._admission_service.admit(
+            def prepare() -> PreparedSourceAdmission:
+                return self._admission_service.prepare_atomic(
                 source=_governed_source(raw_sources[0], identity, metadata_poor=True),
                 delivery_identity=identity,
                 ingress=authenticated_ingress,
@@ -67,7 +82,8 @@ class ProviderIngestionCoordinator:
                 evidence_only=True,
                 selection_digest=(self._bootstrap_profile.selection_digest if self._bootstrap_profile else None),
                 verification_digest=(self._bootstrap_profile.verification_digest if self._bootstrap_profile else None),
-            )
+                )
+            self._admit_with_writer_retry(prepare)
             return (
                 result.model_copy(update={"transcript_ids": [f"semantic_ingestion:source:{identity.delivery_key_digest}"], "candidate_ids": [], "allowed_candidate_domains": [], "blocked_reasons": {**result.blocked_reasons, "semantic_ingestion": "source_only"}}),
                 None,
@@ -100,8 +116,9 @@ class ProviderIngestionCoordinator:
                 ingress=authenticated_ingress,
                 normalized_segment=(event.content or "").encode("utf-8"),
             )
-        self._admission_service.admit(
-            source=governed_source,
+        def prepare() -> PreparedSourceAdmission:
+            return self._admission_service.prepare_atomic(
+                source=governed_source,
             delivery_identity=identity,
             ingress=authenticated_ingress,
             operation_id=event.event_id,
@@ -111,11 +128,29 @@ class ProviderIngestionCoordinator:
             matched_corpus_case_id=matched_case_id,
             selection_digest=(self._bootstrap_profile.selection_digest if self._bootstrap_profile else None),
             verification_digest=(self._bootstrap_profile.verification_digest if self._bootstrap_profile else None),
-        )
+            )
+        self._admit_with_writer_retry(prepare)
         return (result.model_copy(update={"transcript_ids": [governed_source.memory_id], "candidate_ids": [], "allowed_candidate_domains": [], "blocked_reasons": {**result.blocked_reasons, "semantic_ingestion": "source_only"}}), None, None)
 
     def reconcile(self) -> list[ProviderEvolutionOutcome]:
         return []
+
+    def _current_writer_binding(self):
+        return self._writer_admission.commit_binding(self._writer_admission.current())
+
+    def _admit_with_writer_retry(self, prepare: Callable[[], PreparedSourceAdmission]) -> None:
+        for attempt in range(2):
+            prepared = prepare()
+            try:
+                self._atomic_store.admit_source(
+                    prepared=prepared,
+                    writer_binding=self._current_writer_binding(),
+                )
+                return
+            except SemanticWriterAdmissionError as exc:
+                if attempt or "atomic admission index binding is mismatched" not in str(exc):
+                    raise
+        raise AssertionError("unreachable writer retry loop")
 
 
 def _governed_source(

@@ -6,6 +6,19 @@ from memorii.core.memory_evolution.admission import (
     SemanticIngestionOutcomeLookupResponse,
     SourceAdmissionAccepted,
 )
+from memorii.core.memory_evolution.atomic_store import (
+    AtomicGenerationMember,
+    CommittedGroupAtomicWriteRequest,
+    NonCommittingGroupAtomicWriteRequest,
+    PreplanningLease,
+    PreplanningOperationControl,
+    PreplanningPublication,
+    PreplanningStoreError,
+    SemanticIngestionAtomicStore,
+    SourceCheckpointAtomicWriteRequest,
+    SourceFinalizationAtomicWriteRequest,
+    generation_request_digest,
+)
 from memorii.core.memory_evolution.bootstrap_profile import (
     BOOTSTRAP_COORDINATE,
     BootstrapGrammarCorpusCase,
@@ -15,6 +28,16 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapProfileTrustAnchor,
     BootstrapTrustRootProvider,
     GovernedSourceAdmissionFact,
+)
+from memorii.core.memory_evolution.delivery_coordinate_migration import (
+    DeliveryCoordinateMigrationActivation,
+    DeliveryCoordinateMigrationCertificate,
+    DeliveryCoordinateMigrationCheckpoint,
+    DeliveryCoordinateMigrationEntry,
+    DeliveryCoordinateMigrationPlan,
+    activate_migration,
+    build_migration_plan,
+    certify_migration,
 )
 from memorii.core.memory_evolution.entity_resolution import EntityResolutionService
 from memorii.core.memory_evolution.execution import (
@@ -56,6 +79,9 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     NormalizedDeliveryId,
     OperationFenceBinding,
     RequiredOutcomeScopeSet,
+    SemanticRecordOwnershipManifest,
+    SemanticWriterAdmission,
+    SemanticWriterCommitBinding,
     normalize_delivery_id,
 )
 from memorii.core.memory_evolution.language_support import (
@@ -190,8 +216,14 @@ from memorii.core.memory_evolution.temporal_contracts import (
     candidate_matches_frame,
 )
 from memorii.core.memory_evolution.validation import MemoryEvolutionValidator
+from memorii.core.memory_evolution.writer_admission import (
+    SemanticWriterAdmissionError,
+    SemanticWriterAdmissionStore,
+    bounded_preplanning_ownership_manifest,
+)
 
 __all__ = [
+    "AtomicGenerationMember",
     "AuthenticatedIngressContext",
     "BOOTSTRAP_COORDINATE",
     "BootstrapGrammarCorpusCase",
@@ -202,12 +234,36 @@ __all__ = [
     "BootstrapTrustRootProvider",
     "ClaimKey",
     "DeliveryIdentity",
+    "DeliveryCoordinateMigrationActivation",
+    "DeliveryCoordinateMigrationCertificate",
+    "DeliveryCoordinateMigrationCheckpoint",
+    "DeliveryCoordinateMigrationEntry",
+    "DeliveryCoordinateMigrationPlan",
     "DeliveryPrincipalBinding",
     "GovernedSourceAdmissionService",
     "GovernedSourceAdmissionFact",
     "NormalizedDeliveryId",
     "OperationFenceBinding",
     "RequiredOutcomeScopeSet",
+    "SemanticWriterAdmission",
+    "SemanticWriterCommitBinding",
+    "SemanticRecordOwnershipManifest",
+    "CommittedGroupAtomicWriteRequest",
+    "NonCommittingGroupAtomicWriteRequest",
+    "SourceCheckpointAtomicWriteRequest",
+    "SourceFinalizationAtomicWriteRequest",
+    "activate_migration",
+    "build_migration_plan",
+    "certify_migration",
+    "generation_request_digest",
+    "SemanticWriterAdmissionStore",
+    "SemanticWriterAdmissionError",
+    "SemanticIngestionAtomicStore",
+    "PreplanningLease",
+    "PreplanningOperationControl",
+    "PreplanningPublication",
+    "PreplanningStoreError",
+    "bounded_preplanning_ownership_manifest",
     "SemanticIngestionOutcomeLookupRequest",
     "SemanticIngestionOutcomeLookupResponse",
     "SourceAdmissionAccepted",

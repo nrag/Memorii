@@ -76,7 +76,9 @@ def test_provider_preserves_caller_owned_event_time() -> None:
     )
 
     assert service.last_memory_evolution_result() is None
-    assert memory_plane.list_records() == []
+    assert {record.source_kind for record in memory_plane.list_records()} == {
+        "semantic_ingestion_writer_admission"
+    }
 
 
 @pytest.mark.parametrize(

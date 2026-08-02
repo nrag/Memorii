@@ -26,6 +26,7 @@ from memorii.core.memory_evolution.bootstrap_profile import (
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
     DeliveryIdentity,
+    OperationFenceBinding,
     RequiredOutcomeScopeSet,
     encode_typed_value,
 )
@@ -58,6 +59,14 @@ class SourceAdmissionAccepted(BaseModel):
     delivery_identity: DeliveryIdentity
     required_outcome_scopes: RequiredOutcomeScopeSet
     admission_index_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    operation_fence_binding: OperationFenceBinding
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class PreparedSourceAdmission(BaseModel):
+    accepted: SourceAdmissionAccepted
+    records: tuple[CanonicalMemoryRecord, ...]
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -97,6 +106,8 @@ class GovernedSourceAdmissionService:
         selection_digest: str | None = None,
         verification_digest: str | None = None,
     ) -> SourceAdmissionAccepted:
+        if self._memory_plane.get_record("semantic_ingestion:writer_admission:current") is not None:
+            raise ValueError("governed source admission must use the semantic atomic store")
         _validate_governed_source(source)
         if delivery_identity.delivery_principal_binding_digest != ingress.delivery_principal_binding.binding_digest:
             raise ValueError("authenticated principal does not own delivery identity")
@@ -111,10 +122,22 @@ class GovernedSourceAdmissionService:
         )
         if not set(required.scopes).issubset(ingress.current_authorized_scopes.scopes):
             raise ValueError("authenticated scope coverage is incomplete")
-        source_digest = _source_digest(source)
-        index = _index_record(delivery_identity=delivery_identity, required=required)
-        selection_status = "disabled" if outcome_kind == "disabled" else (
-            "selected" if selection_digest is not None else "unavailable"
+        source_digest = source_admission_source_digest(source)
+        operation_fence = OperationFenceBinding.create(
+            operation_id=operation_id,
+            source_id=source.memory_id,
+            source_digest=source_digest,
+            delivery_identity=delivery_identity,
+        )
+        writer_coordinate = _source_admission_writer_coordinate(self._memory_plane)
+        index = _index_record(
+            delivery_identity=delivery_identity, required=required, operation_fence=operation_fence,
+            writer_coordinate=writer_coordinate,
+        )
+        selection_status = (
+            "disabled"
+            if outcome_kind == "disabled"
+            else ("selected" if selection_digest is not None else "unavailable")
         )
         verification_status = "verified" if verification_digest is not None else "unavailable"
         selection = _profile_evidence_record(
@@ -152,6 +175,7 @@ class GovernedSourceAdmissionService:
                 existing=existing,
                 delivery_identity=delivery_identity,
                 required=required,
+                operation_fence=operation_fence,
             )
         # A single memory-plane batch makes retained evidence and its protected
         # authorization index visible together.  It is intentionally not an M2
@@ -179,6 +203,7 @@ class GovernedSourceAdmissionService:
                 existing=existing,
                 delivery_identity=delivery_identity,
                 required=required,
+                operation_fence=operation_fence,
             )
         return SourceAdmissionAccepted(
             source_id=source.memory_id,
@@ -186,7 +211,77 @@ class GovernedSourceAdmissionService:
             delivery_identity=delivery_identity,
             required_outcome_scopes=required,
             admission_index_digest=_index_digest(index),
+            operation_fence_binding=operation_fence,
         )
+
+    def prepare_atomic(
+        self,
+        *,
+        source: CanonicalMemoryRecord,
+        delivery_identity: DeliveryIdentity,
+        ingress: AuthenticatedIngressContext,
+        operation_id: str,
+        outcome_kind: str = "selected_pipeline_pending",
+        outcome_reason: str | None = None,
+        normalized_input: bytes = b"",
+        evidence_only: bool = False,
+        matched_corpus_case_id: str | None = None,
+        selection_digest: str | None = None,
+        verification_digest: str | None = None,
+    ) -> PreparedSourceAdmission:
+        """Prepare, but do not publish, the M1 evidence for M2 atomic admission."""
+        _validate_governed_source(source)
+        if delivery_identity.delivery_principal_binding_digest != ingress.delivery_principal_binding.binding_digest:
+            raise ValueError("authenticated principal does not own delivery identity")
+        required = (
+            RequiredOutcomeScopeSet.create(
+                tenant_partition_id=ingress.delivery_principal_binding.tenant_partition_id, scopes=()
+            )
+            if evidence_only
+            else required_scopes_for_record(
+                source, tenant_partition_id=ingress.delivery_principal_binding.tenant_partition_id
+            )
+        )
+        if not set(required.scopes).issubset(ingress.current_authorized_scopes.scopes):
+            raise ValueError("authenticated scope coverage is incomplete")
+        source_digest = source_admission_source_digest(source)
+        operation_fence = OperationFenceBinding.create(
+            operation_id=operation_id, source_id=source.memory_id, source_digest=source_digest,
+            delivery_identity=delivery_identity,
+        )
+        writer_coordinate = _source_admission_writer_coordinate(self._memory_plane)
+        index = _index_record(
+            delivery_identity=delivery_identity, required=required, operation_fence=operation_fence,
+            writer_coordinate=writer_coordinate,
+        )
+        selection_status = "disabled" if outcome_kind == "disabled" else (
+            "selected" if selection_digest is not None else "unavailable"
+        )
+        verification_status = "verified" if verification_digest is not None else "unavailable"
+        selection = _profile_evidence_record(index, "semantic_ingestion_profile_selection", {"status": selection_status})
+        verification = _profile_evidence_record(
+            index, "semantic_ingestion_profile_verification", {"status": verification_status}
+        )
+        fact = GovernedSourceAdmissionFact(
+            source_id=source.memory_id, source_digest=source_digest,
+            delivery_principal_binding_digest=delivery_identity.delivery_principal_binding_digest,
+            delivery_key_digest=delivery_identity.delivery_key_digest,
+            required_scope_set_digest=required.required_scope_set_digest,
+            admission_index_digest=_index_digest(index),
+        )
+        typed_outcome = _make_outcome(
+            kind=outcome_kind, reason=outcome_reason, fact=fact, normalized_input=normalized_input,
+            selection_digest=selection_digest or _index_digest(selection),
+            verification_digest=verification_digest or _index_digest(verification),
+            matched_corpus_case_id=matched_corpus_case_id,
+        )
+        outcome = _profile_evidence_record(index, "semantic_ingestion_profile_outcome", typed_outcome.model_dump(mode="json"))
+        accepted = SourceAdmissionAccepted(
+            source_id=source.memory_id, source_digest=source_digest, delivery_identity=delivery_identity,
+            required_outcome_scopes=required, admission_index_digest=_index_digest(index),
+            operation_fence_binding=operation_fence,
+        )
+        return PreparedSourceAdmission(accepted=accepted, records=(source, index, selection, verification, outcome))
 
     def _recover_exact_admission(
         self,
@@ -197,6 +292,7 @@ class GovernedSourceAdmissionService:
         existing: CanonicalMemoryRecord,
         delivery_identity: DeliveryIdentity,
         required: RequiredOutcomeScopeSet,
+        operation_fence: OperationFenceBinding,
     ) -> SourceAdmissionAccepted:
         if existing.source_kind != "semantic_ingestion_admission_index" or existing.content != index.content:
             raise ValueError("delivery identity is already bound to a different admission")
@@ -209,6 +305,7 @@ class GovernedSourceAdmissionService:
             delivery_identity=delivery_identity,
             required_outcome_scopes=required,
             admission_index_digest=_index_digest(index),
+            operation_fence_binding=operation_fence,
         )
 
     def lookup(
@@ -225,8 +322,7 @@ class GovernedSourceAdmissionService:
             return SemanticIngestionOutcomeLookupResponse()
         content = index.content
         if (
-            content.get("principal_binding_digest")
-            != authenticated_ingress.delivery_principal_binding.binding_digest
+            content.get("principal_binding_digest") != authenticated_ingress.delivery_principal_binding.binding_digest
             or content.get("delivery_key_digest") != request.delivery_identity.delivery_key_digest
             or content.get("tenant_partition_id")
             != authenticated_ingress.delivery_principal_binding.tenant_partition_id
@@ -247,7 +343,7 @@ class GovernedSourceAdmissionService:
         return SemanticIngestionOutcomeLookupResponse(available=True, outcome=decoded)
 
 
-def _source_digest(source: CanonicalMemoryRecord) -> str:
+def source_admission_source_digest(source: CanonicalMemoryRecord) -> str:
     return sha256(encode_typed_value(_immutable_source_identity(source))).hexdigest()
 
 
@@ -266,8 +362,7 @@ def _validate_governed_source(source: CanonicalMemoryRecord) -> None:
     if (
         source.domain != MemoryDomain.TRANSCRIPT
         or not source.is_raw_event
-        or source.source_kind
-        not in {"semantic_ingestion_source", "semantic_ingestion_metadata_poor_snapshot"}
+        or source.source_kind not in {"semantic_ingestion_source", "semantic_ingestion_metadata_poor_snapshot"}
         or source.visibility != MemoryRecordVisibility.INTERNAL_CONTROL
     ):
         raise ValueError("admission requires a governed immutable source record")
@@ -277,7 +372,13 @@ def _index_id(delivery_key_digest: str) -> str:
     return f"semantic_ingestion:admission:{delivery_key_digest}"
 
 
-def _index_record(*, delivery_identity: DeliveryIdentity, required: RequiredOutcomeScopeSet) -> CanonicalMemoryRecord:
+def _index_record(
+    *,
+    delivery_identity: DeliveryIdentity,
+    required: RequiredOutcomeScopeSet,
+    operation_fence: OperationFenceBinding,
+    writer_coordinate: tuple[int, str] | None,
+) -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id=_index_id(delivery_identity.delivery_key_digest),
         domain=MemoryDomain.TRANSCRIPT,
@@ -287,6 +388,10 @@ def _index_record(*, delivery_identity: DeliveryIdentity, required: RequiredOutc
             "delivery_key_digest": delivery_identity.delivery_key_digest,
             "tenant_partition_id": required.tenant_partition_id,
             "required_scopes": list(required.scopes),
+            "required_scope_set_digest": required.required_scope_set_digest,
+            "operation_fence_binding": operation_fence.model_dump(mode="json"),
+            "admitted_writer_epoch": writer_coordinate[0] if writer_coordinate is not None else None,
+            "writer_admission_digest": writer_coordinate[1] if writer_coordinate is not None else None,
         },
         status=CommitStatus.COMMITTED,
         source_kind="semantic_ingestion_admission_index",
@@ -295,12 +400,31 @@ def _index_record(*, delivery_identity: DeliveryIdentity, required: RequiredOutc
     )
 
 
-def _profile_evidence_record(index: CanonicalMemoryRecord, kind: str, content: dict[str, object]) -> CanonicalMemoryRecord:
-    return index.model_copy(update={
-        "memory_id": f"{index.memory_id}:{kind.rsplit('_', 1)[-1]}",
-        "source_kind": kind,
-        "content": content,
-    })
+def _source_admission_writer_coordinate(memory_plane: MemoryPlaneService) -> tuple[int, str] | None:
+    record = memory_plane.get_record("semantic_ingestion:writer_admission:current")
+    if record is None:
+        return None
+    try:
+        if record.content.get("draining", False):
+            raise ValueError("semantic writer is draining and source admission is frozen")
+        admission = record.content["admission"]
+        return int(admission["writer_epoch"]), str(admission["admission_digest"])
+    except (KeyError, TypeError, ValueError) as exc:
+        if isinstance(exc, ValueError) and str(exc).startswith("semantic writer is draining"):
+            raise
+        raise ValueError("semantic writer admission coordinate is corrupt") from exc
+
+
+def _profile_evidence_record(
+    index: CanonicalMemoryRecord, kind: str, content: dict[str, object]
+) -> CanonicalMemoryRecord:
+    return index.model_copy(
+        update={
+            "memory_id": f"{index.memory_id}:{kind.rsplit('_', 1)[-1]}",
+            "source_kind": kind,
+            "content": content,
+        }
+    )
 
 
 def _make_outcome(

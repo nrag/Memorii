@@ -25,9 +25,7 @@ _ARTIFACT_DOMAIN = b"semantic-ingestion-canonical-artifact"
 _PROFILE_VERSION = 2
 _PROFILE_DIGEST = "9dc8b3d01e3f78ed6a11c7668cbb576b09f48ddf107c5efe441bb8bad234fd7f"
 _OUTER_ENVELOPE_SCHEMA_ID = "CanonicalEncodedArtifact.v1"
-_OUTER_ENVELOPE_BINDING_DIGEST = (
-    "39222b18e67ffe8f679943676a46a464c804bb2ef9d0e3fd28d27a590fe3fde1"
-)
+_OUTER_ENVELOPE_BINDING_DIGEST = "39222b18e67ffe8f679943676a46a464c804bb2ef9d0e3fd28d27a590fe3fde1"
 _DELIVERY_ID_MAX_UTF8_BYTES = 1024
 
 
@@ -217,9 +215,7 @@ class AuthenticatedIngressContext(BaseModel):
     delivery_principal_binding: DeliveryPrincipalBinding
     current_authorized_scopes: RequiredOutcomeScopeSet
     language_declaration: str | None = None
-    language_evidence_kind: Literal[
-        "authenticated_host_declaration", "missing", "untrusted", "mismatched"
-    ] = "missing"
+    language_evidence_kind: Literal["authenticated_host_declaration", "missing", "untrusted", "mismatched"] = "missing"
     language_evidence_trust: Literal["trusted", "missing", "untrusted", "mismatched"] = "missing"
     language_governance_agreement: Literal["agrees", "missing", "disagrees"] = "missing"
 
@@ -296,10 +292,17 @@ class OperationFenceBinding(BaseModel):
         if self.allocation_namespace_id != _digest(b"memorii.semantic-ingestion.allocation-namespace.v1", *common):
             raise ValueError("allocation namespace mismatch")
         values = (
-            self.operation_id, self.operation_fence_id, self.source_id, self.source_digest,
-            self.delivery_principal_binding_digest, self.delivery_key_digest, self.allocation_namespace_id,
+            self.operation_id,
+            self.operation_fence_id,
+            self.source_id,
+            self.source_digest,
+            self.delivery_principal_binding_digest,
+            self.delivery_key_digest,
+            self.allocation_namespace_id,
         )
-        if self.binding_digest != _digest(b"memorii.semantic-ingestion.operation-fence-binding.v1", *(value.encode() for value in values)):
+        if self.binding_digest != _digest(
+            b"memorii.semantic-ingestion.operation-fence-binding.v1", *(value.encode() for value in values)
+        ):
             raise ValueError("operation fence binding digest mismatch")
         return self
 
@@ -337,6 +340,41 @@ class OperationFenceBinding(BaseModel):
                 b"memorii.semantic-ingestion.operation-fence-binding.v1", *(value.encode() for value in values)
             ),
         )
+
+
+class SemanticWriterAdmission(BaseModel):
+    admission_id: str = Field(min_length=1)
+    writer_namespace: Literal["semantic_ingestion"]
+    active_runtime_mode: Literal["legacy_pre_cutover", "verified_semantic", "evidence_only"]
+    active_writer_implementation_fingerprint: str = Field(min_length=1)
+    accepted_graph_schema_fingerprint: str = Field(min_length=1)
+    writer_epoch: int = Field(ge=1)
+    activated_at: datetime
+    previous_admission_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    admission_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class SemanticWriterCommitBinding(BaseModel):
+    admission_id: str = Field(min_length=1)
+    admission_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    writer_namespace: Literal["semantic_ingestion"]
+    expected_writer_epoch: int = Field(ge=1)
+    runtime_mode: Literal["legacy_pre_cutover", "verified_semantic", "evidence_only"]
+    writer_implementation_fingerprint: str = Field(min_length=1)
+    graph_schema_fingerprint: str = Field(min_length=1)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class SemanticRecordOwnershipManifest(BaseModel):
+    manifest_revision: str = Field(min_length=1)
+    governed_record_kinds: frozenset[str]
+    semantic_store_methods: frozenset[str]
+    manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class CanonicalTypedValueError(ValueError):
@@ -454,7 +492,11 @@ def _strict_json(raw: bytes) -> Any:
     try:
         decoded = raw.decode("utf-8")
         _scalar(decoded)
-        value = json.loads(decoded, object_pairs_hook=_pairs, parse_float=lambda _: (_ for _ in ()).throw(CanonicalTypedValueError("canonical_float_forbidden")))
+        value = json.loads(
+            decoded,
+            object_pairs_hook=_pairs,
+            parse_float=lambda _: (_ for _ in ()).throw(CanonicalTypedValueError("canonical_float_forbidden")),
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise CanonicalTypedValueError("canonical_bytes_invalid") from exc
     if _json(value) != raw:
@@ -468,9 +510,7 @@ def _integer(value: object) -> int:
     return int(value)
 
 
-def _normalized_typed_json(
-    value: Any, *, check: Callable[[], None] | None = None
-) -> Any:
+def _normalized_typed_json(value: Any, *, check: Callable[[], None] | None = None) -> Any:
     """Return the JSON tree for a CTV value before its single final encoding.
 
     Nested CTV members are already JSON-compatible trees.  Keeping them in
@@ -523,9 +563,7 @@ def _normalized_typed_json(
     raise CanonicalTypedValueError("canonical_value_type_invalid")
 
 
-def encode_typed_value(
-    value: Any, *, check: Callable[[], None] | None = None
-) -> bytes:
+def encode_typed_value(value: Any, *, check: Callable[[], None] | None = None) -> bytes:
     """Encode the closed CTV algebra; no runtime numeric coercions are allowed."""
     return _json(
         _normalized_typed_json(value, check=check),
@@ -562,7 +600,11 @@ def decode_typed_value(raw: bytes) -> Any:
             raise CanonicalTypedValueError("canonical_bytes_base64_invalid") from exc
         if base64.b64encode(result).decode("ascii") != value["value"]:
             raise CanonicalTypedValueError("canonical_bytes_base64_invalid")
-    elif tag in {"list", "tuple", "set", "frozenset"} and set(value) == {"$type", "items"} and isinstance(value["items"], list):
+    elif (
+        tag in {"list", "tuple", "set", "frozenset"}
+        and set(value) == {"$type", "items"}
+        and isinstance(value["items"], list)
+    ):
         items = [decode_typed_value(_json(item)) for item in value["items"]]
         if tag in {"set", "frozenset"}:
             encoded = [encode_typed_value(item) for item in items]
@@ -597,16 +639,24 @@ def artifact_preimage(binding: CanonicalTypedValueProfileBinding, canonical_valu
     binding.validate()
     return _length_prefixed(
         _ARTIFACT_DOMAIN,
-        binding.profile_id.encode("utf-8"), str(binding.profile_version).encode("ascii"),
-        binding.profile_digest.encode("ascii"), binding.schema_id.encode("utf-8"),
-        str(binding.schema_version).encode("ascii"), binding.binding_digest.encode("ascii"),
+        binding.profile_id.encode("utf-8"),
+        str(binding.profile_version).encode("ascii"),
+        binding.profile_digest.encode("ascii"),
+        binding.schema_id.encode("utf-8"),
+        str(binding.schema_version).encode("ascii"),
+        binding.binding_digest.encode("ascii"),
         canonical_value_bytes,
     )
 
 
 def encode_artifact(value: Any, binding: CanonicalTypedValueProfileBinding) -> CanonicalEncodedArtifact:
     canonical_value_bytes = encode_typed_value(value)
-    return CanonicalEncodedArtifact(binding, canonical_value_bytes, sha256(canonical_value_bytes).hexdigest(), sha256(artifact_preimage(binding, canonical_value_bytes)).hexdigest())
+    return CanonicalEncodedArtifact(
+        binding,
+        canonical_value_bytes,
+        sha256(canonical_value_bytes).hexdigest(),
+        sha256(artifact_preimage(binding, canonical_value_bytes)).hexdigest(),
+    )
 
 
 def serialize_artifact(value: Any, binding: CanonicalTypedValueProfileBinding) -> bytes:
@@ -624,7 +674,9 @@ def serialize_artifact(value: Any, binding: CanonicalTypedValueProfileBinding) -
     )
 
 
-def decode_artifact(raw: bytes, *, expected_binding: CanonicalTypedValueProfileBinding | None = None) -> CanonicalEncodedArtifact:
+def decode_artifact(
+    raw: bytes, *, expected_binding: CanonicalTypedValueProfileBinding | None = None
+) -> CanonicalEncodedArtifact:
     """Decode only the registered CTV-v2 outer envelope.
 
     The historical JSON wrapper has a diagnostic reader below.  It is kept
@@ -632,10 +684,22 @@ def decode_artifact(raw: bytes, *, expected_binding: CanonicalTypedValueProfileB
     pre-correction transport bytes.
     """
     value = decode_typed_value(raw)
-    if not isinstance(value, dict) or set(value) != {"binding", "canonical_value_bytes", "canonical_value_digest", "artifact_digest"}:
+    if not isinstance(value, dict) or set(value) != {
+        "binding",
+        "canonical_value_bytes",
+        "canonical_value_digest",
+        "artifact_digest",
+    }:
         raise CanonicalTypedValueError("canonical_envelope_shape_invalid")
     binding_value = value["binding"]
-    if not isinstance(binding_value, dict) or set(binding_value) != {"profile_id", "profile_version", "profile_digest", "schema_id", "schema_version", "binding_digest"}:
+    if not isinstance(binding_value, dict) or set(binding_value) != {
+        "profile_id",
+        "profile_version",
+        "profile_digest",
+        "schema_id",
+        "schema_version",
+        "binding_digest",
+    }:
         raise CanonicalTypedValueError("canonical_binding_invalid")
     binding = CanonicalTypedValueProfileBinding(**binding_value)
     binding.validate()
@@ -652,9 +716,7 @@ def decode_artifact(raw: bytes, *, expected_binding: CanonicalTypedValueProfileB
     return CanonicalEncodedArtifact(binding, body, expected_value_digest, expected_artifact_digest)
 
 
-def serialize_legacy_artifact_diagnostic(
-    value: Any, binding: CanonicalTypedValueProfileBinding
-) -> bytes:
+def serialize_legacy_artifact_diagnostic(value: Any, binding: CanonicalTypedValueProfileBinding) -> bytes:
     """Encode the retired JSON wrapper for non-authorizing diagnostics only."""
     artifact = encode_artifact(value, binding)
     return _json(
@@ -672,10 +734,22 @@ def decode_legacy_artifact_diagnostic(
 ) -> CanonicalEncodedArtifact:
     """Read a retired JSON envelope without making it authorization-capable."""
     value = _strict_json(raw)
-    if not isinstance(value, dict) or set(value) != {"binding", "canonical_value_bytes", "canonical_value_digest", "artifact_digest"}:
+    if not isinstance(value, dict) or set(value) != {
+        "binding",
+        "canonical_value_bytes",
+        "canonical_value_digest",
+        "artifact_digest",
+    }:
         raise CanonicalTypedValueError("canonical_envelope_shape_invalid")
     binding_value = value["binding"]
-    if not isinstance(binding_value, dict) or set(binding_value) != {"profile_id", "profile_version", "profile_digest", "schema_id", "schema_version", "binding_digest"}:
+    if not isinstance(binding_value, dict) or set(binding_value) != {
+        "profile_id",
+        "profile_version",
+        "profile_digest",
+        "schema_id",
+        "schema_version",
+        "binding_digest",
+    }:
         raise CanonicalTypedValueError("canonical_binding_invalid")
     binding = CanonicalTypedValueProfileBinding(**binding_value)
     binding.validate()

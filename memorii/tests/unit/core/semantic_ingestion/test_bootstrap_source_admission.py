@@ -22,6 +22,12 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     disposition_outcome,
     verify_bootstrap_release,
 )
+from memorii.core.memory_evolution.delivery_coordinate_migration import (
+    DeliveryCoordinateMigrationCheckpoint,
+    activate_migration,
+    build_migration_plan,
+    certify_migration,
+)
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
@@ -30,6 +36,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     DeliveryPrincipalBinding,
     RequiredOutcomeScopeSet,
     derive_composite_child_delivery_id,
+    encode_typed_value,
     normalize_delivery_id,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
@@ -371,7 +378,9 @@ def test_default_provider_root_is_profile_unapproved_evidence_only() -> None:
     assert result.transcript_ids == []
     assert result.candidate_ids == []
     assert result.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"
-    assert memory_plane.list_records() == []
+    assert {record.source_kind for record in memory_plane.list_records()} == {
+        "semantic_ingestion_writer_admission"
+    }
     with pytest.raises(ValueError, match="reserved composite"):
         service.sync_event(
             operation=ProviderOperation.CHAT_USER_TURN, content="ignored", operation_id="composite:v1:" + "0" * 64
@@ -391,7 +400,52 @@ def test_trusted_provider_path_admits_evidence_before_profile_gate() -> None:
         ),
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(memory_plane.list_records()) == 5
+    assert len(memory_plane.list_records()) == 10
+
+
+def test_provider_reprepares_atomic_admission_when_writer_cutover_wins_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    memory_plane = MemoryPlaneService()
+    service = _service_with_capability(_TestHostBootstrapCapability(), memory_plane=memory_plane)
+    original_admit = service._semantic_atomic_store.admit_source
+    raced = [False]
+
+    def cutover_then_admit(*, prepared, writer_binding):
+        if not raced[0]:
+            raced[0] = True
+            plan = build_migration_plan(
+                migration_plan_id="provider-race", source_writer_epoch=1,
+                legacy_snapshot_token=sha256(encode_typed_value(())).hexdigest(), entries=(),
+            )
+            values = {
+                "migration_plan_id": plan.migration_plan_id, "plan_digest": plan.plan_digest,
+                "completed_entry_digests": (), "target_generation": 1,
+            }
+            checkpoint = DeliveryCoordinateMigrationCheckpoint(
+                **values, checkpoint_digest=sha256(encode_typed_value(values)).hexdigest()
+            )
+            certificate = certify_migration(plan, checkpoint, independent_verifier_fingerprint="verifier")
+            service._semantic_writer_admission.transition(
+                expected=writer_binding, admission_id="provider:2", runtime_mode="evidence_only",
+                writer_implementation_fingerprint="provider:2", graph_schema_fingerprint="schema:2",
+                migration_activation=activate_migration(plan, certificate), migration_plan=plan,
+                migration_checkpoint=checkpoint, migration_certificate=certificate, target_records=(),
+            )
+        return original_admit(prepared=prepared, writer_binding=service._provider_ingestion._current_writer_binding())
+
+    monkeypatch.setattr(service._semantic_atomic_store, "admit_source", cutover_then_admit)
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+        operation_id="cutover-race", task_id="task:one",
+        authenticated_host_ingress=AuthenticatedHostIngress(
+            provider_identity="provider:test", principal_handle=object(), session_handle=object(),
+            received_at=datetime.now(UTC),
+        ),
+    )
+    assert raced[0] and result.blocked_reasons["semantic_ingestion"] == "source_only"
+    index = next(record for record in memory_plane.list_records() if record.source_kind == "semantic_ingestion_admission_index")
+    assert index.content["admitted_writer_epoch"] == 2
 
 
 def test_hermes_trusted_ingress_uses_internal_composite_coordinates() -> None:
@@ -406,7 +460,7 @@ def test_hermes_trusted_ingress_uses_internal_composite_coordinates() -> None:
         ),
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(memory_plane.list_records()) == 10
+    assert len(memory_plane.list_records()) == 19
 
 
 def test_authenticated_metadata_poor_snapshot_is_governed_evidence_only() -> None:
@@ -432,6 +486,9 @@ def test_authenticated_metadata_poor_snapshot_is_governed_evidence_only() -> Non
         "semantic_ingestion_profile_selection",
         "semantic_ingestion_profile_verification",
         "semantic_ingestion_profile_outcome",
+        "semantic_ingestion_writer_admission",
+        "semantic_ingestion_preplanning_control",
+        "semantic_ingestion_preplanning_artifact",
     }
     snapshot = next(
         record for record in records if record.source_kind == "semantic_ingestion_metadata_poor_snapshot"
@@ -592,7 +649,7 @@ def test_every_bootstrap_corpus_case_has_exact_protected_source_admission_outcom
         assert outcome.matched_corpus_case_id == case.case_id
         assert outcome.input_normalized_digest == sha256(case.normalized_segment_bytes).hexdigest()
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(plane.list_records()) == 5
+    assert len(plane.list_records()) == 10
     assert result.candidate_ids == []
 
 
@@ -664,7 +721,7 @@ def test_bootstrap_artifact_payloads_require_canonical_envelope_and_exact_bindin
         ).outcome
         assert outcome is not None and outcome.kind == "unavailable"
         assert outcome.reason == "invalid_manifest"
-        assert len(plane.list_records()) == 5
+        assert len(plane.list_records()) == 10
 
 
 def test_invalid_installed_capability_inventory_fails_closed_at_construction(
@@ -827,8 +884,8 @@ def test_jsonl_reopen_and_lost_ack_retry_preserve_one_bootstrap_generation(tmp_p
         task_id="task:one",
         authenticated_host_ingress=host_ingress,
     )
-    assert len(reopened_plane.list_records()) == 5
-    assert len((store_path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()) == 1
+    assert len(reopened_plane.list_records()) == 10
+    assert len((store_path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()) == 2
 
 
 @pytest.mark.parametrize("persistent", [False, True], ids=["memory", "jsonl"])
@@ -872,7 +929,7 @@ def test_concurrent_exact_delivery_is_idempotent(
         results = tuple(executor.map(lambda _: deliver(), range(2)))
     assert all(result.blocked_reasons["semantic_ingestion"] == "source_only" for result in results)
     assert len({tuple(result.transcript_ids) for result in results}) == 1
-    assert len(plane.list_records()) == 5
+    assert len(plane.list_records()) == 10
 
 
 def test_installed_capability_loader_works_through_hermes_and_filesystem_roots(tmp_path: Path) -> None:
@@ -991,10 +1048,17 @@ def test_jsonl_replace_failure_is_atomic_and_lost_ack_recovers(
             authenticated_host_ingress=host_ingress,
         )
     monkeypatch.undo()
-    assert MemoryPlaneService(record_store=JsonlMemoryPlaneStore(failed_path)).list_records() == []
+    assert {
+        record.source_kind
+        for record in MemoryPlaneService(record_store=JsonlMemoryPlaneStore(failed_path)).list_records()
+    } == {"semantic_ingestion_writer_admission"}
 
     lost_ack_path = tmp_path / "lost-ack"
     lost_ack_store = JsonlMemoryPlaneStore(lost_ack_path)
+    lost_ack_service = _service_with_capability(
+        capability,
+        memory_plane=MemoryPlaneService(record_store=lost_ack_store),
+    )
     original_apply = lost_ack_store.apply_batch
 
     def apply_then_fail(*args, **kwargs):
@@ -1002,10 +1066,6 @@ def test_jsonl_replace_failure_is_atomic_and_lost_ack_recovers(
         raise OSError("injected lost acknowledgement")
 
     monkeypatch.setattr(lost_ack_store, "apply_batch", apply_then_fail)
-    lost_ack_service = _service_with_capability(
-        capability,
-        memory_plane=MemoryPlaneService(record_store=lost_ack_store),
-    )
     with pytest.raises(OSError, match="lost acknowledgement"):
         lost_ack_service.sync_event(
             operation=ProviderOperation.CHAT_USER_TURN,
@@ -1021,6 +1081,9 @@ def test_jsonl_replace_failure_is_atomic_and_lost_ack_recovers(
         "semantic_ingestion_profile_selection",
         "semantic_ingestion_profile_verification",
         "semantic_ingestion_profile_outcome",
+        "semantic_ingestion_writer_admission",
+        "semantic_ingestion_preplanning_control",
+        "semantic_ingestion_preplanning_artifact",
     }
     assert {record.source_kind for record in reopened_plane.list_records()} == expected_kinds
     retry = _service_with_capability(capability, memory_plane=reopened_plane)
@@ -1142,7 +1205,9 @@ def test_expected_host_ingress_denial_uses_non_disclosing_lookup_shape() -> None
         ),
     )
     assert response.available is False and response.outcome is None
-    assert plane.list_records() == []
+    assert {record.source_kind for record in plane.list_records()} == {
+        "semantic_ingestion_writer_admission"
+    }
 
 
 def test_bootstrap_release_and_corpus_fail_closed_without_runtime_state() -> None:
