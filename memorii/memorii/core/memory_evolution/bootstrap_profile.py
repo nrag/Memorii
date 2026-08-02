@@ -9,7 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
-from importlib.metadata import entry_points
+from importlib import import_module
+from importlib.metadata import PackageNotFoundError, entry_points, packages_distributions, version
 from importlib.util import find_spec
 from pathlib import Path
 from typing import Annotated, Literal, Protocol, cast
@@ -226,14 +227,23 @@ class BootstrapGrammarCapabilityManifest(BaseModel):
 class ComponentSymbolFingerprint(BaseModel):
     module_path: str
     qualified_symbol: str
-    module_content_digest: str = _DIGEST
+    distribution_name: str | None = None
+    distribution_version: str | None = None
+    repository_blob_identity: str | None = None
+    source_or_package_content_digest: str = _DIGEST
     fingerprint_digest: str = _DIGEST
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     @model_validator(mode="after")
     def validate_digest(self) -> ComponentSymbolFingerprint:
-        if self.fingerprint_digest != _content_digest(self, "fingerprint_digest"):
+        if (self.distribution_name is None) != (self.distribution_version is None):
+            raise ValueError("component distribution name and version must be paired")
+        if self.distribution_name is None and self.repository_blob_identity is None:
+            raise ValueError("component without distribution identity requires repository blob identity")
+        if self.repository_blob_identity is not None and not self.repository_blob_identity:
+            raise ValueError("component repository blob identity must be non-empty")
+        if self.fingerprint_digest != _component_fingerprint_digest(self):
             raise ValueError("component fingerprint digest mismatch")
         return self
 
@@ -405,8 +415,23 @@ def verify_bootstrap_profile(material: HostVerifiedBootstrapMaterial) -> Verifie
             raise BootstrapProfileVerificationError(
                 BootstrapUnavailableReason.MISSING_COMPONENT
             ) from exc
-        if sha256(component_bytes).hexdigest() != fingerprint.module_content_digest:
+        if sha256(component_bytes).hexdigest() != fingerprint.source_or_package_content_digest:
             raise BootstrapProfileVerificationError(BootstrapUnavailableReason.ALTERED_COMPONENT)
+        if fingerprint.distribution_name is not None:
+            try:
+                installed_version = version(fingerprint.distribution_name)
+            except PackageNotFoundError as exc:
+                raise BootstrapProfileVerificationError(BootstrapUnavailableReason.MISSING_COMPONENT) from exc
+            if installed_version != fingerprint.distribution_version:
+                raise BootstrapProfileVerificationError(BootstrapUnavailableReason.ALTERED_COMPONENT)
+        try:
+            symbol: object = import_module(fingerprint.module_path)
+            for component in fingerprint.qualified_symbol.split("."):
+                symbol = getattr(symbol, component)
+            if symbol is None:
+                raise AttributeError("bootstrap component symbol is null")
+        except (AttributeError, ImportError) as exc:
+            raise BootstrapProfileVerificationError(BootstrapUnavailableReason.MISSING_COMPONENT) from exc
     selection_digest = sha256(
         encode_typed_value(
             {"coordinate": BOOTSTRAP_COORDINATE.model_dump(mode="python"), "enabled": material.profile_enabled}
@@ -555,14 +580,38 @@ def _component_root(
     coordinate: BootstrapProfileCoordinate,
     fingerprints: tuple[ComponentSymbolFingerprint, ...],
 ) -> str:
-    return sha256(
-        encode_typed_value(
-            {
-                "coordinate": coordinate.model_dump(mode="python"),
-                "fingerprint_digests": tuple(item.fingerprint_digest for item in fingerprints),
-            }
-        )
-    ).hexdigest()
+    return _domain_digest(
+        b"memorii.semantic_ingestion.bootstrap_package_root.v1",
+        {
+            "coordinate": coordinate.model_dump(mode="python"),
+            "fingerprint_digests": tuple(item.fingerprint_digest for item in fingerprints),
+        },
+    )
+
+
+def _domain_digest(domain: bytes, value: object) -> str:
+    """Hash a closed CTV body under its named, non-interchangeable domain."""
+
+    return sha256(domain + b"\0" + encode_typed_value(value)).hexdigest()
+
+
+def _component_fingerprint_digest(fingerprint: ComponentSymbolFingerprint) -> str:
+    return _domain_digest(
+        b"memorii.semantic_ingestion.bootstrap_component_fingerprint.v1",
+        fingerprint.model_dump(mode="python", exclude={"fingerprint_digest"}),
+    )
+
+
+def _component_distribution_identity(module_path: str) -> tuple[str | None, str | None]:
+    top_level = module_path.split(".", 1)[0]
+    distributions = packages_distributions().get(top_level, ())
+    if len(distributions) != 1:
+        return None, None
+    distribution_name = distributions[0]
+    try:
+        return distribution_name, version(distribution_name)
+    except PackageNotFoundError:
+        return None, None
 
 
 def build_bootstrap_profile_artifacts(
@@ -601,15 +650,24 @@ def build_bootstrap_profile_artifacts(
         spec = find_spec(module_path)
         if spec is None or spec.origin is None:
             raise ValueError("bootstrap component is missing")
+        distribution_name, distribution_version = _component_distribution_identity(module_path)
+        component_digest = sha256(Path(spec.origin).read_bytes()).hexdigest()
         fields = {
             "module_path": module_path,
             "qualified_symbol": qualified_symbol,
-            "module_content_digest": sha256(Path(spec.origin).read_bytes()).hexdigest(),
+            "distribution_name": distribution_name,
+            "distribution_version": distribution_version,
+            # A source checkout has no installed distribution identity.  Its
+            # exact module digest is the repository-owned blob identity.
+            "repository_blob_identity": None if distribution_name is not None else component_digest,
+            "source_or_package_content_digest": component_digest,
         }
         fingerprints.append(
             ComponentSymbolFingerprint(
                 **fields,
-                fingerprint_digest=sha256(encode_typed_value(fields)).hexdigest(),
+                fingerprint_digest=_domain_digest(
+                    b"memorii.semantic_ingestion.bootstrap_component_fingerprint.v1", fields
+                ),
             )
         )
     ordered = tuple(fingerprints)

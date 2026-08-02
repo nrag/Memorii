@@ -46,6 +46,7 @@ def _handoff(plane: MemoryPlaneService) -> tuple[SourceAdmissionAccepted, Operat
     )
     ingress = AuthenticatedIngressContext(
         delivery_principal_binding=principal,
+        required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
         current_authorized_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
     )
     admission = GovernedSourceAdmissionService(plane).admit(

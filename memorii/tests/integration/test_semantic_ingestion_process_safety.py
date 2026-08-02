@@ -45,6 +45,7 @@ def _publish(path: str, delivery_id: str, operation_id: str, queue, barrier) -> 
         )
         ingress = AuthenticatedIngressContext(
             delivery_principal_binding=principal,
+            required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
             current_authorized_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
         )
         queue.put(("ready", operation_id))
@@ -122,6 +123,7 @@ def _paused_old_epoch_admission(path: str, ready, release, queue) -> None:
             source=source, delivery_identity=identity,
             ingress=AuthenticatedIngressContext(
                 delivery_principal_binding=principal,
+                required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
                 current_authorized_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
             ),
             operation_id="op:stale", evidence_only=True,
