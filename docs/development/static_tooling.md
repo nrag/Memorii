@@ -1,6 +1,6 @@
 # Static Tooling Workflow
 
-## C2 Layer 1 CTV v2 binding authority
+## Canonical typed-value v2 binding authority
 
 ```bash
 python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_ctv_binding_authority_v2.py \
@@ -8,17 +8,17 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_c
   --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json \
   --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json \
   --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py \
-  --expected-design-sha256 45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c \
-  --expected-registry-sha256 d38aa788adfb7703d970507f496b903ddf460797fe60274ddd5ebf9c22054c46 \
-  --expected-authority-sha256 9f650d2f018e3863ad5f5512bf80dbdac1d22fa584cebe9f868c347a2f0143a4 \
+  --expected-design-sha256 2923340bc6417d516983714e5fe69b7bab0f2257652d28a043cfb273b53aaed3 \
+  --expected-registry-sha256 8c5ad6e6260c793472ddbc2df8637230fbb5d5b28405b0b558ac4491c945d37e \
+  --expected-authority-sha256 c4fbd524c6b7c20795f42977aed458248754c04a0b9635ef0dd3e366bd829b0e \
   --expected-validator-sha256 826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e \
   --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
 ```
 
 The gate requires architecture SHA-256
-`45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c`,
+`2923340bc6417d516983714e5fe69b7bab0f2257652d28a043cfb273b53aaed3`,
 authority SHA-256
-`9f650d2f018e3863ad5f5512bf80dbdac1d22fa584cebe9f868c347a2f0143a4`,
+`c4fbd524c6b7c20795f42977aed458248754c04a0b9635ef0dd3e366bd829b0e`,
 validator SHA-256
 `826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e`,
 hermetic gate SHA-256
@@ -36,12 +36,12 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_l
   --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json \
   --fixture docs/design/semantic_ingestion/traceability_golden_vectors/lifecycle-root-signer-provenance-witness-v1.json \
   --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_lifecycle_root_signer_provenance_v1.py \
-  --expected-checker-sha256 2ec8baffd86acdfc21e9c4fbcbd791d1bacd96a0b4623418bf51ee34b219e69c \
+  --expected-checker-sha256 1d618a7e8072cf2a5c95258538bee4ad0fe2646000e0ac4127fc380c9444ab22 \
   --self-test
 ```
 
 The current semantic gate pins design SHA-256
-`45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c`,
+`2923340bc6417d516983714e5fe69b7bab0f2257652d28a043cfb273b53aaed3`,
 matrix SHA-256
 `a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604`,
 witness SHA-256
@@ -49,7 +49,7 @@ witness SHA-256
 validator SHA-256
 `46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb`,
 and checker SHA-256
-`2ec8baffd86acdfc21e9c4fbcbd791d1bacd96a0b4623418bf51ee34b219e69c`.
+`1d618a7e8072cf2a5c95258538bee4ad0fe2646000e0ac4127fc380c9444ab22`.
 It must report exactly six accepted witnesses, 41 rejected witnesses, and two
 identical isolated replicas. The totals include two canonical accepted roots,
 four accepted inclusive-endpoint witnesses, four rejected outside-boundary
@@ -169,31 +169,33 @@ removing such a sentinel requires a fresh three-role design review.
 Run the current CGS ledger, matrix, and known-answer gate from repository root:
 
 ```bash
-python3.12 docs/design/semantic_ingestion/traceability_golden_vectors/cgs_structural_manifest_prototype.py \
+python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/cgs_structural_manifest_prototype.py \
   docs/design/semantic_ingestion_architecture.md \
   docs/design/semantic_ingestion/traceability_registry/registry-v1.json \
   docs/design/semantic_ingestion/traceability_golden_vectors/structural_manifest_derivation_ledger-v1.json \
   docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json --verify
 python3.12 -m json.tool docs/design/semantic_ingestion/traceability_golden_vectors/structural_manifest_derivation_ledger-v1.json
 python3.12 -m json.tool docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
-python3.12 docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py \
+python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py \
   --design docs/design/semantic_ingestion_architecture.md \
   --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json \
   --ledger docs/design/semantic_ingestion/traceability_golden_vectors/structural_manifest_derivation_ledger-v1.json \
   --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json \
   --prototype docs/design/semantic_ingestion/traceability_golden_vectors/cgs_structural_manifest_prototype.py \
-  --vector docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json --self-test
+  --vector docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json \
+  --expected-checker-sha256 3f5ba86e4cc26b7c6b0d518fb8a073ebf7db68a2858afada78dd242b699c826e \
+  --self-test
 ```
 
 The current gate requires ledger raw SHA-256
 `085921e6c4e995f0d6259c9f6f6eabeec3f1455bba344105ef0e16d24eb81671`, matrix
 raw SHA-256 `a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604`,
 prototype SHA-256
-`b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed`,
+`45a8403c387c407617a3b580094177d111c8879a752eca2bff6d1786e1e61df6`,
 prototype-vector SHA-256
-`8164e5d207615a2678fc81cce99dee2684c4ad531f095a782930574aa0206a6d`,
+`32771b9c42bed83e0f7660bd2e6b4c6f44217f9767795725ce492623ad3d6dd1`,
 and CGS checker SHA-256
-`918c843581b578d3d08bf221715b3c777de15691abd63964147121cf2cea1790`.
+`3f5ba86e4cc26b7c6b0d518fb8a073ebf7db68a2858afada78dd242b699c826e`.
 
 Build an installable wheel and verify package-owned prompt contracts:
 
@@ -253,8 +255,8 @@ python -m memorii.tools.run_eval --suite memory_evolution_sim_v1 --mode all --dr
 python -m tests.support.run_memory_evolution_runtime_benchmark --suite memory_evolution_runtime_v1 --mode all --dry-run --storage-root .memorii --sim-profile long_horizon --sim-scenario-count 10 --sim-noise-rate 0.35 --seed 7
 ```
 
-The runtime command is deliberately test-only during M1. Normal installed CLI
-composition remains source-only and fails before M2 runtime setup.
+The runtime command is deliberately test-only. Normal installed CLI composition
+remains source-only and does not configure runtime memory evolution.
 
 Live gates remain explicit and should only be run when intentionally validating provider behavior.
 
@@ -267,8 +269,9 @@ explicitly test-composed runtime artifacts. It does not spend
 provider credits or treat fake-oracle output as live success.
 
 The scheduled workflow runs production-composable simulator plumbing checks
-and has a separate live gate. M2 runtime artifacts remain PR test evidence until
-M2 production composition is authorized. Manual dispatch runs the live matrix for a designated candidate; scheduled
+and has a separate live gate. Explicitly test-composed runtime artifacts remain
+PR evidence until production runtime composition is authorized. Manual dispatch
+runs the live matrix for a designated candidate; scheduled
 execution is independently opt-in through the repository variable
 `MEMORII_RUN_LIVE_GATES=true`. The gate runs ten generator seeds with 25 scenarios per
 seed and two inference replicates. It requires `execution_source=live_llm`,

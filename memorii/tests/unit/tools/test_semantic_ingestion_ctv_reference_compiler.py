@@ -48,8 +48,8 @@ CHECKER = (
     / "traceability_golden_vectors"
     / "check_ctv_binding_authority_v2.py"
 )
-EXPECTED_DESIGN_SHA256 = "45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c"
-EXPECTED_AUTHORITY_SHA256 = "9f650d2f018e3863ad5f5512bf80dbdac1d22fa584cebe9f868c347a2f0143a4"
+EXPECTED_DESIGN_SHA256 = "2923340bc6417d516983714e5fe69b7bab0f2257652d28a043cfb273b53aaed3"
+EXPECTED_AUTHORITY_SHA256 = "c4fbd524c6b7c20795f42977aed458248754c04a0b9635ef0dd3e366bd829b0e"
 EXPECTED_VALIDATOR_SHA256 = "826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e"
 EXPECTED_CHECKER_SHA256 = "e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732"
 EXPECTED_PROFILE_DIGEST = "9dc8b3d01e3f78ed6a11c7668cbb576b09f48ddf107c5efe441bb8bad234fd7f"
@@ -915,6 +915,17 @@ def test_two_fresh_processes_reproduce_the_complete_frozen_authority(tmp_path: P
     assert len(authority["schemas"]) == 56
     assert len(authority["enum_registry"]["rows"]) == 249
     assert authority["profile"]["digest"] == EXPECTED_PROFILE_DIGEST
+
+
+def test_v2_profile_scope_uses_behavioral_identity() -> None:
+    design = DESIGN.read_text(encoding="utf-8")
+    start = design.index("#### 3.23.4.2.1 scenario-first closure-only canonical typed-value profile v2")
+    end = design.index("`[SIA-CTV-GRAMMAR-V2-BEGIN]`", start)
+    scope = design[start:end]
+    assert "Scenario-first closure artifacts" in scope
+    assert "scenario-first closure\nauthority" in scope
+    assert "C2 artifacts" not in scope
+    assert "C2 authority" not in scope
 
 
 def test_valid_reachable_field_mutation_matches_both_compilers_and_formula_validation(

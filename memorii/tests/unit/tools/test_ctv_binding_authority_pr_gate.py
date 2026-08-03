@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shlex
 import shutil
 import subprocess
@@ -25,15 +26,17 @@ WORKFLOW = ROOT / ".github" / "workflows" / "pr-gates.yml"
 SEMANTIC_FIXTURE = VECTORS / "lifecycle-root-signer-provenance-witness-v1.json"
 SEMANTIC_VALIDATOR = VECTORS / "validate_lifecycle_root_signer_provenance_v1.py"
 SEMANTIC_CHECKER = VECTORS / "check_lifecycle_root_signer_provenance_v1.py"
+STRUCTURAL_CHECKER = VECTORS / "check_cgs_structural_contract_v1.py"
 SEMANTIC_EXPECTED = {
     "fixture": "d3c1dce10624365647cbb00926f63b6deabe681e51a138bc3de88d7c60faef69",
     "validator": "46bbda1afb6ccbec5a49ea668752c19a7b1354b94515a33365191cee01745edb",
-    "checker": "2ec8baffd86acdfc21e9c4fbcbd791d1bacd96a0b4623418bf51ee34b219e69c",
+    "checker": "1d618a7e8072cf2a5c95258538bee4ad0fe2646000e0ac4127fc380c9444ab22",
 }
+STRUCTURAL_CHECKER_SHA256 = "3f5ba86e4cc26b7c6b0d518fb8a073ebf7db68a2858afada78dd242b699c826e"
 EXPECTED = {
-    "design": "45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c",
-    "registry": "d38aa788adfb7703d970507f496b903ddf460797fe60274ddd5ebf9c22054c46",
-    "authority": "9f650d2f018e3863ad5f5512bf80dbdac1d22fa584cebe9f868c347a2f0143a4",
+    "design": "2923340bc6417d516983714e5fe69b7bab0f2257652d28a043cfb273b53aaed3",
+    "registry": "8c5ad6e6260c793472ddbc2df8637230fbb5d5b28405b0b558ac4491c945d37e",
+    "authority": "c4fbd524c6b7c20795f42977aed458248754c04a0b9635ef0dd3e366bd829b0e",
     "validator": "826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e",
     "checker": "e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732",
 }
@@ -83,6 +86,21 @@ def _first_bash_command(document: str) -> list[str]:
     return shlex.split(command)
 
 
+def _bash_commands(document: str) -> list[list[str]]:
+    return [
+        shlex.split(match.group(1).replace("\\\n", " "))
+        for match in re.finditer(r"```bash\n(.*?)```", document, flags=re.DOTALL)
+    ]
+
+
+def _contains_token_sequence(commands: list[list[str]], expected: list[str]) -> bool:
+    return any(
+        command[start : start + len(expected)] == expected
+        for command in commands
+        for start in range(len(command) - len(expected) + 1)
+    )
+
+
 def _mutate_first_bash_command(document: str, fragment: str) -> str:
     begin = "```bash\n"
     start = document.find(begin)
@@ -110,6 +128,45 @@ def test_lifecycle_root_semantic_gate_pins_checker_and_isolation() -> None:
     for path in (STATIC_TOOLING, WORKFLOW):
         document = path.read_text(encoding="utf-8")
         assert all(token in document for token in required)
+
+
+def test_structural_checker_rejects_source_drift_and_nonisolated_startup(tmp_path: Path) -> None:
+    assert hashlib.sha256(STRUCTURAL_CHECKER.read_bytes()).hexdigest() == STRUCTURAL_CHECKER_SHA256
+    arguments = [
+        "--design",
+        str(DESIGN),
+        "--registry",
+        str(REGISTRY),
+        "--ledger",
+        str(VECTORS / "structural_manifest_derivation_ledger-v1.json"),
+        "--matrix",
+        str(VECTORS / "cgs_verification_attack_matrix-v1.json"),
+        "--prototype",
+        str(VECTORS / "cgs_structural_manifest_prototype.py"),
+        "--vector",
+        str(VECTORS / "cgs-structural-manifest-prototype-v1.json"),
+        "--expected-checker-sha256",
+        STRUCTURAL_CHECKER_SHA256,
+    ]
+    nonisolated = subprocess.run(
+        ["python3.12", str(STRUCTURAL_CHECKER), *arguments],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert nonisolated.returncode != 0
+    assert "requires isolated Python" in nonisolated.stderr + nonisolated.stdout
+
+    changed_checker = tmp_path / STRUCTURAL_CHECKER.name
+    changed_checker.write_bytes(STRUCTURAL_CHECKER.read_bytes() + b"\n")
+    drifted = subprocess.run(
+        ["python3.12", "-I", str(changed_checker), *arguments],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert drifted.returncode != 0
+    assert "checker SHA-256 mismatch" in drifted.stderr + drifted.stdout
 
 
 @pytest.mark.parametrize(
@@ -307,6 +364,7 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
         "Set up Python",
         "Verify pinned CTV binding authority",
         "Verify lifecycle-root signer provenance semantics",
+        "Verify structural manifest contract",
     ]
     assert exact_steps[1]["with"]["python-version"] == "3.12"
     checker_command = exact_steps[2]["run"]
@@ -333,14 +391,69 @@ def test_pr_workflow_structurally_runs_complete_matrix_and_exact_pinned_checker(
         assert tokens[index + 1] == value
     assert _first_bash_command(STATIC_TOOLING.read_text(encoding="utf-8")) == tokens
     semantic_tokens = shlex.split(exact_steps[3]["run"])
-    assert semantic_tokens[:3] == [
+    assert semantic_tokens == [
         "python3.12",
         "-I",
         "docs/design/semantic_ingestion/traceability_golden_vectors/"
         "check_lifecycle_root_signer_provenance_v1.py",
-    ]
-    assert semantic_tokens[-3:] == [
+        "--design",
+        "docs/design/semantic_ingestion_architecture.md",
+        "--matrix",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "cgs_verification_attack_matrix-v1.json",
+        "--fixture",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "lifecycle-root-signer-provenance-witness-v1.json",
+        "--validator",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "validate_lifecycle_root_signer_provenance_v1.py",
         "--expected-checker-sha256",
         SEMANTIC_EXPECTED["checker"],
         "--self-test",
     ]
+    assert semantic_tokens in _bash_commands(STATIC_TOOLING.read_text(encoding="utf-8"))
+    structural_tokens = shlex.split(exact_steps[4]["run"])
+    assert structural_tokens == [
+        "python3.12",
+        "-I",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "check_cgs_structural_contract_v1.py",
+        "--design",
+        "docs/design/semantic_ingestion_architecture.md",
+        "--registry",
+        "docs/design/semantic_ingestion/traceability_registry/registry-v1.json",
+        "--ledger",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "structural_manifest_derivation_ledger-v1.json",
+        "--matrix",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "cgs_verification_attack_matrix-v1.json",
+        "--prototype",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "cgs_structural_manifest_prototype.py",
+        "--vector",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "cgs-structural-manifest-prototype-v1.json",
+        "--expected-checker-sha256",
+        STRUCTURAL_CHECKER_SHA256,
+        "--self-test",
+    ]
+    assert _contains_token_sequence(
+        _bash_commands(STATIC_TOOLING.read_text(encoding="utf-8")), structural_tokens
+    )
+    prototype_tokens = [
+        "python3.12",
+        "-I",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "cgs_structural_manifest_prototype.py",
+        "docs/design/semantic_ingestion_architecture.md",
+        "docs/design/semantic_ingestion/traceability_registry/registry-v1.json",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "structural_manifest_derivation_ledger-v1.json",
+        "docs/design/semantic_ingestion/traceability_golden_vectors/"
+        "cgs-structural-manifest-prototype-v1.json",
+        "--verify",
+    ]
+    assert _contains_token_sequence(
+        _bash_commands(STATIC_TOOLING.read_text(encoding="utf-8")), prototype_tokens
+    )

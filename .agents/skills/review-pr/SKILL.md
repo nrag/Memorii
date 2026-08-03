@@ -38,6 +38,12 @@ authority; unrelated or unexplained changes; overstated evidence maturity; and
 the complete `.agents/PLANS.md` identity ledger for every changed durable
 surface.
 
+Reconstruct the changed-surface ledger from the actual base-to-head diff and
+compare it with every related WorkPlan. Reject unowned or unmapped paths. For
+each normative source, registry, schema, generator, or workflow change, follow
+the complete authority chain through generated artifacts, cardinalities,
+checksums, workflow pins, validators, shards, and aggregates.
+
 ## 3. Review The Complete PR
 
 Run concurrently when available:
@@ -80,6 +86,10 @@ For local command-equivalence evidence:
    network steps as CI-only evidence
 5. require a clean detached worktree, including untracked files; dirty-tree or
    different-runtime results are diagnostic only
+
+Compare the recorded required-local-job set with the commands actually run.
+Any missing or failing job, stale authority-chain node, or failure excluded
+without identical clean-merge-base reproduction is `changes_required`.
 
 GitHub required checks are authoritative for CI enforcement. Confirm every
 required check and aggregate passes on its actual current executed SHA/ref.
@@ -134,12 +144,21 @@ Report findings first, then exactly one decision:
 Record:
 
 ```yaml
+base_revision:
 reviewed_revision:
 tested_revision:
+tested_tree_digest:
 pr_base_sha:
 pr_head_sha:
 merge_base_sha:
 tree_state:
+changed_surface_inventory_complete:
+scope_delta_resolved:
+authority_chains_complete:
+required_local_jobs: []
+passed_local_jobs: []
+known_local_failures: []
+failure_exclusions: []
 workflow_identities: []
 ci_event:
 ci_executed_sha:

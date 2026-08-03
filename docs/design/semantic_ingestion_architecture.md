@@ -10583,13 +10583,14 @@ stringification, numeric/boolean coercion, and aliases reject. Registry and
 token identity is `(schema, typed member)`; boolean `true`, integer `1`, string
 `"1"`, and string `"true"` are four distinct members.
 
-#### 3.23.4.2.1 C2-only canonical typed-value profile v2
+#### 3.23.4.2.1 scenario-first closure-only canonical typed-value profile v2
 
 All preceding v1 profile text remains legacy authority and is not amended by
-this subsection. C2 artifacts use profile ID
+this subsection. Scenario-first closure artifacts use profile ID
 `semantic_ingestion_typed_value`, version `2`, exclusively. A v1 binding,
 decoder, fingerprint, digest, or encoded value is never interchangeable with
-v2 and must fail before body decoding when presented as C2 authority.
+v2 and must fail before body decoding when presented as scenario-first closure
+authority.
 
 `[SIA-CTV-GRAMMAR-V2-BEGIN]`
 ```text
@@ -20843,7 +20844,6 @@ The complete persisted and digest-domain rewrite is algorithmic and closed:
 | bare `scenario-c2` | `scenario-first-closure` |
 | `memorii-sia-scenario-c2-milestone-2` | `memorii-sia-scenario-first-closure-v1` |
 | `sia-c2-semantic-roundtrip-v1` | `sia-scenario-first-semantic-roundtrip-v1` |
-| `scenario-c2-semantic-ingestion-r03-release` | `scenario-first-closure-normative-traceability-approval-release` |
 
 `<contract>`, `<operation-fence-id>`, and `<member-kind>` are preserved
 byte-for-byte, including existing hyphen or underscore spelling; this
@@ -20853,8 +20853,7 @@ production occurrence must match exactly one row. Any remaining
 an error. Tests may contain an old identity only as an explicitly named
 negative compatibility vector that proves fail-closed rejection.
 
-The exact R03 release row is excluded from the generic hyphenated row. The
-scenario-coordinate rows are mutually exclusive. A generator or validator
+The scenario-coordinate rows are mutually exclusive. A generator or validator
 must reject an old coordinate that matches zero rows or more than one row.
 Both independent scenario elaborators must map the complete active old
 coordinate set and produce byte-identical corrected manifest and spool output;

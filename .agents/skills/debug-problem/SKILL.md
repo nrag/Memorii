@@ -51,6 +51,12 @@ Prefer a deterministic failing test. If reproduction is impossible, preserve
 the strongest evidence and identify the observation that would distinguish
 likely causes.
 
+Do not label a failure pre-existing or unrelated from memory, an earlier red
+run, or a different failure in the same suite. Run the exact command on a clean
+worktree at the recorded merge base and require the same causal signature. If
+the current diff changes any node in the failure's authority chain, keep the
+failure in scope until a discriminating experiment proves otherwise.
+
 ## Phase 3: Generate Competing Hypotheses
 
 Use parallel read-only agents when useful. Record at least two plausible
@@ -129,6 +135,10 @@ Use `test_reviewer` to confirm the regression test detects the causal defect.
 
 Run applicable repository gates and record exact commands, environment, exit
 status, revision, and tree state.
+
+Reconcile the live changed-surface, authority-chain, gate, and known-failure
+ledgers from `.agents/PLANS.md`. A focused reproducer proves the correction but
+does not replace affected shard, artifact, aggregate, or workflow commands.
 
 For a GitHub Actions failure, read the failing workflow and run the exact failed
 job command, its matrix or shard selection, and every aggregate dependency

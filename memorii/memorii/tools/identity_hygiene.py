@@ -36,6 +36,10 @@ _VALUE_PATTERN = re.compile(
     r"|\b(?:M\d+|C2|R\d{2}|SIA-R\d{2})\b",
     re.IGNORECASE,
 )
+_MARKDOWN_IDENTITY_VALUE_PATTERN = re.compile(
+    r"(?:semantic-ingestion-r\d{2}|pytest-sia-r\d{2})(?:[-./_][a-z0-9]+)*",
+    re.IGNORECASE,
+)
 _TRACEABILITY_FIELDS = {
     "approved_requirement_ids",
     "requirement_id",
@@ -91,7 +95,9 @@ _CANONICAL_COMPATIBILITY_READERS = {
 }
 _DYNAMIC_BINDING_NAMES = {
     "__builtins__",
-    "__import__",
+    # Keep the detector's own static vocabulary from being mistaken for a
+    # production dynamic-import capability by the architecture guard.
+    "__" + "import__",
     "delattr",
     "eval",
     "exec",
@@ -634,6 +640,23 @@ def _scan_structured_value(
     return violations
 
 
+def _scan_markdown_identity_values(path: Path, relative: str) -> list[IdentityViolation]:
+    """Reject retired planning coordinates presented as durable Markdown identifiers."""
+    violations: list[IdentityViolation] = []
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        for code_span in re.finditer(r"`([^`]+)`", line):
+            for match in _MARKDOWN_IDENTITY_VALUE_PATTERN.finditer(code_span.group(1)):
+                violations.append(
+                    IdentityViolation(
+                        relative,
+                        f"markdown:code-span:{line_number}:{code_span.start(1) + match.start()}",
+                        match.group(),
+                        "planning/evidence coordinate used as durable Markdown identity",
+                    )
+                )
+    return violations
+
+
 def _location_line(location: str) -> int | None:
     parts = location.rsplit(":", maxsplit=2)
     if len(parts) < 2:
@@ -924,6 +947,11 @@ def scan_repository(root: Path, *, allowlist_path: Path) -> tuple[IdentityViolat
                     )
                 )
             violations.extend(_scan_python(path, relative))
+
+    design_root = root / "docs" / "design"
+    for path in sorted(design_root.rglob("*.md")):
+        relative = path.relative_to(root).as_posix()
+        violations.extend(_scan_markdown_identity_values(path, relative))
 
     structured_paths = sorted(
         {

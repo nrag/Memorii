@@ -282,7 +282,7 @@ def build_scenario_test_authority(
         "trust_snapshot_digest",
     )
     structural_envelope = typed["structural_manifest"]
-    result = IndependentGenerationVerificationResult("memorii-sia-clean-room-b-v1", "b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed", structural, structural_envelope, structural_verification_spool(structural, structural_envelope))
+    result = IndependentGenerationVerificationResult("memorii-sia-clean-room-b-v1", "45a8403c387c407617a3b580094177d111c8879a752eca2bff6d1786e1e61df6", structural, structural_envelope, structural_verification_spool(structural, structural_envelope))
     return {"authority": authority, "typed": typed, "roots": roots, "expected_release_roots": {key: roots[key] for key in expected_root_fields}, "report_bytes": canonical_document(report), "artifacts": {artifact_digest(passed): passed, artifact_digest(environment): environment}, "environment": environment, "material": VerifierHeldTrustMaterial(typed["bootstrap_anchor"], (typed["recovery_root"],), verifier, typed["recovery_policy"]), "now": now, "release_digest": release_value["release_digest"], "group_id": group_id, "independent_generation_verifier": ExplicitTestIndependentGenerationVerifier(result)}
 
 

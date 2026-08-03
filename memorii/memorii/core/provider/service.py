@@ -352,7 +352,9 @@ class ProviderMemoryService:
     def memory_evolution_service(self) -> MemoryEvolutionService:
         """Return the runtime evolution service used by provider operations."""
         if self._memory_evolution_service is None:
-            raise RuntimeError("memory evolution is unavailable in the governed-source admission source-only composition")
+            raise RuntimeError(
+                "memory evolution is unavailable in the governed-source admission source-only configuration"
+            )
         return self._memory_evolution_service
 
     def retrieve_evolution_decision(

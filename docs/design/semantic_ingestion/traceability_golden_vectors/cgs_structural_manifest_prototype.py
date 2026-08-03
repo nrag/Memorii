@@ -16,6 +16,7 @@ import hashlib
 import json
 import re
 import signal
+import sys
 import unicodedata
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -23,6 +24,8 @@ from functools import wraps
 from pathlib import Path
 from time import monotonic
 from typing import Any
+
+ISOLATION_DIAGNOSTIC = "CGS structural prototype requires isolated Python (-I)"
 
 BODY_BINDING = {
     "profile_id": "semantic_ingestion_typed_value",
@@ -484,6 +487,8 @@ def derive(design: bytes, registry: bytes, ledger_bytes: bytes) -> dict[str, obj
 
 
 def main() -> None:
+    if not sys.flags.isolated:
+        raise SystemExit(ISOLATION_DIAGNOSTIC)
     parser = argparse.ArgumentParser()
     parser.add_argument("design", type=Path)
     parser.add_argument("registry", type=Path)

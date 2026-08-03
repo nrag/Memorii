@@ -233,6 +233,68 @@ each newly covered behavioral or protocol surface. A fixed positive corpus
 must prove that `BM25`, genuine wire or schema versions, and a real retained
 compatibility or migration identity remain accepted in their valid fields.
 
+### Change Impact And Verification Closure
+
+Treat the live repository diff as the authoritative change scope. At the start
+of work, after every material edit, before review, and before closure, compare
+the current tree with the recorded base or merge base and reconcile every
+changed path. A WorkPlan's intended scope does not override an observed change.
+
+Maintain a changed-surface ledger:
+
+| Path or pattern | Surface class | Intended scope owner | Authority chain | Required gates | Status |
+| --------------- | ------------- | -------------------- | --------------- | -------------- | ------ |
+
+Use the narrowest applicable surface class, including product code, test or
+fixture, normative design, schema or registry, generator, generated or frozen
+artifact, checksum or workflow pin, workflow or gate, dependency, and
+documentation-only. When a changed path is not owned by the active operation,
+pause and explicitly expand scope, split it into a linked WorkPlan, or restore
+it through an authorized action. Never silently classify it as unrelated.
+
+For every changed source of derived state, maintain its complete authority
+chain from canonical source through every dependent artifact and gate. A
+typical chain may include:
+
+```text
+design -> registry -> structural manifest -> compiled authority -> frozen
+vectors -> checksums -> workflow arguments -> tests -> aggregate gates
+```
+
+Record each node, its owner, regeneration or validation command, expected
+identity or cardinality, and current status. The exact chain is subsystem-
+specific; the example is not permission to omit additional links. A source
+change is incomplete until every affected downstream artifact, pin, validator,
+test, and aggregate gate is reconciled.
+
+Maintain a gate ledger derived from the current workflow files and repository
+tooling:
+
+| Job, matrix entry, shard, or aggregate | Exact local command or CI-only action | Changed surfaces covered | Required | Result and revision |
+| -------------------------------------- | ------------------------------------- | ------------------------ | -------- | ------------------- |
+
+Focused tests are diagnostic evidence only when an affected required job,
+matrix entry, shard, aggregate, generated-artifact check, or warning mode has
+not also been executed. A hand-written substitute is not command-equivalence
+evidence. CI-only behavior remains unverified locally and must be recorded as
+such.
+
+Maintain a known-failure ledger with the exact command, failure signature,
+affected authority chain, disposition, and evidence. A failure may be called
+pre-existing or unrelated only when the same command produces the same causal
+signature on a clean worktree at the recorded merge base. If the live diff
+changes any node in the failure's authority chain, presume the failure is in
+scope until discriminating evidence proves otherwise. Historical memory, a
+previously red branch, or a different failure in the same suite is not enough.
+
+Any material change invalidates the affected review and verification records.
+Recompute the changed-surface, authority-chain, and gate ledgers, then rerun the
+affected gates. Closure is prohibited while any changed surface is unowned,
+any authority-chain node is stale or unexplained, any required local command is
+unrun or failing, any known failure lacks the required disposition evidence, or
+any required current-revision CI check is non-green or unavailable without an
+explicit blocked outcome.
+
 ### Sources Of Truth
 
 List the exact specifications, code, tests, logs, incidents, measurements, or
@@ -319,9 +381,18 @@ An agent summary is not evidence by itself.
 For every milestone or final closure, append one revision-bound record:
 
 ```yaml
+base_revision:
 reviewed_revision:
 tested_revision:
+tested_tree_digest:
 tree_state:
+changed_surface_inventory_complete:
+scope_delta_resolved:
+authority_chains_complete:
+required_local_jobs: []
+passed_local_jobs: []
+known_local_failures: []
+failure_exclusions: []
 workflow_identities: []
 ci_event:
 ci_executed_sha:
@@ -340,7 +411,11 @@ required_checks_green:
 
 Use `not_applicable` only with a reason. A closure record is invalid when code,
 tests, fixtures, generated artifacts, dependencies, or workflows change after
-the recorded review or verification.
+the recorded review or verification. It is also invalid when the live diff is
+not fully represented in the changed-surface ledger, an affected authority
+chain is incomplete, required local jobs and passed local jobs differ, a known
+failure lacks clean-merge-base exclusion evidence, or required current-
+revision checks are not green.
 
 Every milestone and final closure requires
 `remaining_validated_p1_p2: []`. Testing and debugging work may route a newly
@@ -798,6 +873,10 @@ Implementation is complete only when:
   recorded without inflating it into a product defect
 * no accidental stubs, skipped tests, ignored errors, undocumented TODOs, or
   incomplete fallback paths remain
+* the live diff is fully classified, every scope delta is resolved, every
+  affected authority chain is current, and every required local job passes
+* no known failure is excluded without identical clean-merge-base reproduction
+  and no required current-revision PR check remains red, stale, or unexplained
 * no planning/evidence coordinate remains in a behavioral or protocol identity, all
   allowed traceability/migration occurrences are field-specific and ledgered,
   and the field-aware identity gate plus representative mutations pass
@@ -841,6 +920,9 @@ A PR review is complete only when:
 * local evidence is labeled accurately and is not substituted for CI enforcement
 * scope, generated artifacts, migration, compatibility, rollback, and release
   implications are reconciled
+* the actual diff matches the changed-surface ledger, every affected authority
+  chain and workflow pin is current, and every failed check is either corrected
+  or supported by identical clean-merge-base reproduction
 * the complete diff passes the identity-hygiene contract, including files,
   symbols, persisted/generated values, tests, fixtures, commands, and workflow
   labels, with only exact ledgered exceptions

@@ -34,6 +34,8 @@ Record:
 - migration, rollout, rollback, compatibility, and observability obligations
 - the complete identity ledger from `.agents/PLANS.md`, including existing
   planning-derived sibling names and generated or persisted occurrences
+- the changed-surface, authority-chain, gate, and known-failure ledgers from
+  `.agents/PLANS.md`, initialized from the live diff and current workflows
 
 Reconstruct requirements independently from the design. Do not rely only on an
 existing requirements table.
@@ -144,6 +146,8 @@ Spawn exactly one worker for overlapping changes. Require the worker to:
 10. report requirements, files, decisions, commands, results, and limitations
 11. update the identity ledger and reject planning-derived names before they
     enter code, serialized bytes, tests, fixtures, generators, or workflows
+12. after each material edit, reconcile the live diff and refresh every
+    affected downstream artifact, checksum, workflow pin, validator, and gate
 
 Do not hard-code fixtures, add test-only production branches, bypass canonical
 owners, introduce parallel truth, hide invalid state with casts or defaults, or
@@ -190,6 +194,12 @@ behavior require actual workflow evidence. Record the CI event, executed
 SHA/ref, and run URL; PR head, synthetic merge, and merge-group SHAs are
 distinct. Only successful scope-required GitHub and external acceptance gates
 establish their corresponding evidence maturity.
+
+Focused success cannot close a milestone after a normative design, registry,
+schema, generator, golden, checksum, workflow, or dependency change. Follow
+the complete affected authority chain and execute every required local job,
+matrix entry, shard, generated-artifact check, and aggregate dependency named
+by the gate ledger.
 
 ## Phase 6: Coordinator Integrity Check
 
@@ -295,7 +305,9 @@ When all milestones appear complete:
 6. verify migration, rollback, compatibility, observability, and failure behavior
 7. rerun the field-aware identity gate and independently audit all exceptions
 8. run fresh whole-branch reviews with all three reviewers
-9. record the structured closure evidence required by `.agents/PLANS.md`
+9. compare the actual base-to-head and working-tree diff with the changed-
+   surface ledger and prove every authority-chain node is current
+10. record the structured closure evidence required by `.agents/PLANS.md`
 
 Any production, test, fixture, generated-artifact, dependency, or workflow
 change after final review invalidates closure. Repeat affected gates and a

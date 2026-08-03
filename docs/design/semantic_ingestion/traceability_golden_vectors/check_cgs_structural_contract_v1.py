@@ -16,18 +16,14 @@ from pathlib import Path
 from typing import Any
 
 EXPECTED = {
-    "design": "45727e6870e2087823bfe6250c3c3319a3d540e45fb66c686267409b087b2c1c",
-    "registry": "d38aa788adfb7703d970507f496b903ddf460797fe60274ddd5ebf9c22054c46",
+    "design": "2923340bc6417d516983714e5fe69b7bab0f2257652d28a043cfb273b53aaed3",
+    "registry": "8c5ad6e6260c793472ddbc2df8637230fbb5d5b28405b0b558ac4491c945d37e",
     "ledger": "085921e6c4e995f0d6259c9f6f6eabeec3f1455bba344105ef0e16d24eb81671",
     "matrix": "a3375bd0d8d01cf7a7c9d7d16d90945d792d932eca7161097f6ee5ba44d3f604",
-    "prototype": "b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed",
-    "vector": "8164e5d207615a2678fc81cce99dee2684c4ad531f095a782930574aa0206a6d",
+    "prototype": "45a8403c387c407617a3b580094177d111c8879a752eca2bff6d1786e1e61df6",
+    "vector": "32771b9c42bed83e0f7660bd2e6b4c6f44217f9767795725ce492623ad3d6dd1",
 }
-WORKPLAN_PATH = Path(
-    "docs/work/semantic_ingestion/"
-    "m0-canonical-genesis-structural-contract-correction-2026-07-30/"
-    "design.plan.md"
-)
+ISOLATION_DIAGNOSTIC = "CGS structural checker requires isolated Python (-I)"
 BODY_BINDING = {
     "profile_id": "semantic_ingestion_typed_value",
     "profile_version": 2,
@@ -516,7 +512,6 @@ def validate(
     matrix_path: Path,
     prototype: Path,
     vector: Path,
-    workplan_path: Path,
     enforce_hashes: bool,
 ) -> None:
     paths = {
@@ -602,31 +597,6 @@ def validate(
     if matrix_match is None or matrix_match.group(1) != sha(matrix_path):
         raise ValueError("architecture matrix pin mismatch")
 
-    workplan = workplan_path.read_text(encoding="utf-8")
-    if "25-field" in workplan or "the 25-field structural ledger" in workplan:
-        raise ValueError("workplan still references 25-field ledger")
-    if "29-field" not in workplan:
-        raise ValueError("workplan missing 29-field evidence")
-    workplan_raw_match = re.search(r"raw ledger SHA-256\s+`([0-9a-f]{64})`", workplan)
-    workplan_derived_match = re.search(
-        r"domain-derived `derivation_ledger_digest`\s+`([0-9a-f]{64})`", workplan
-    )
-    workplan_coordinate_match = re.search(
-        r"`derivation_ledger_coordinate`\s+`([^`]+)`", workplan
-    )
-    if workplan_raw_match is None or workplan_raw_match.group(1) != expected_raw_ledger_sha:
-        raise ValueError("workplan raw ledger pin mismatch")
-    if (
-        workplan_derived_match is None
-        or workplan_derived_match.group(1) != expected_derived_ledger_digest
-    ):
-        raise ValueError("workplan derived ledger pin mismatch")
-    if (
-        workplan_coordinate_match is None
-        or workplan_coordinate_match.group(1) != expected_derived_coordinate
-    ):
-        raise ValueError("workplan derived ledger coordinate pin mismatch")
-
     seen: set[str] = set()
     for case in matrix["cases"]:
         if set(case) != REQUIRED_CASE_KEYS:
@@ -651,6 +621,7 @@ def validate(
     subprocess.run(
         [
             sys.executable,
+            "-I",
             str(prototype),
             str(design),
             str(registry),
@@ -732,7 +703,56 @@ def validate(
         raise ValueError("anchor binding tuple form mismatch")
 
 
+def checker_command(
+    args: argparse.Namespace, *, isolated: bool, expected_checker_sha256: str
+) -> list[str]:
+    command = [sys.executable]
+    if isolated:
+        command.append("-I")
+    command.extend(
+        [
+            str(Path(__file__).resolve()),
+            "--design",
+            str(args.design),
+            "--registry",
+            str(args.registry),
+            "--ledger",
+            str(args.ledger),
+            "--matrix",
+            str(args.matrix),
+            "--prototype",
+            str(args.prototype),
+            "--vector",
+            str(args.vector),
+            "--expected-checker-sha256",
+            expected_checker_sha256,
+        ]
+    )
+    return command
+
+
 def self_test(args: argparse.Namespace) -> None:
+    checker_sha256 = sha(Path(__file__))
+    reject(
+        checker_command(args, isolated=False, expected_checker_sha256=checker_sha256),
+        "non-isolated-invocation",
+    )
+    reject(
+        checker_command(args, isolated=True, expected_checker_sha256="0" * 64),
+        "checker-identity-mutation",
+    )
+    reject(
+        [
+            sys.executable,
+            str(args.prototype),
+            str(args.design),
+            str(args.registry),
+            str(args.ledger),
+            str(args.vector),
+            "--verify",
+        ],
+        "prototype-non-isolated-invocation",
+    )
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         copies: dict[str, Path] = {}
@@ -743,7 +763,6 @@ def self_test(args: argparse.Namespace) -> None:
             ("matrix", args.matrix),
             ("prototype", args.prototype),
             ("vector", args.vector),
-            ("workplan", args.workplan),
         ):
             target = root / path.name
             shutil.copyfile(path, target)
@@ -755,7 +774,6 @@ def self_test(args: argparse.Namespace) -> None:
             copies["matrix"],
             copies["prototype"],
             copies["vector"],
-            copies["workplan"],
             False,
         )
 
@@ -771,6 +789,7 @@ def self_test(args: argparse.Namespace) -> None:
         reject(
             [
                 sys.executable,
+                "-I",
                 str(Path(__file__)),
                 "--design",
                 str(copies["design"]),
@@ -784,41 +803,11 @@ def self_test(args: argparse.Namespace) -> None:
                 str(copies["prototype"]),
                 "--vector",
                 str(copies["vector"]),
-                "--workplan",
-                str(copies["workplan"]),
                 "--unpin",
             ],
             "domain-mapping-mutation",
         )
         shutil.copyfile(args.ledger, copies["ledger"])
-
-        workplan_text = copies["workplan"].read_text(encoding="utf-8").replace(
-            "29-field", "25-field", 1
-        )
-        copies["workplan"].write_text(workplan_text, encoding="utf-8")
-        reject(
-            [
-                sys.executable,
-                str(Path(__file__)),
-                "--design",
-                str(copies["design"]),
-                "--registry",
-                str(copies["registry"]),
-                "--ledger",
-                str(copies["ledger"]),
-                "--matrix",
-                str(copies["matrix"]),
-                "--prototype",
-                str(copies["prototype"]),
-                "--vector",
-                str(copies["vector"]),
-                "--workplan",
-                str(copies["workplan"]),
-                "--unpin",
-            ],
-            "workplan-29-field-pin",
-        )
-        shutil.copyfile(args.workplan, copies["workplan"])
 
         mutated_ledger = json.loads(copies["ledger"].read_text(encoding="utf-8"))
         mutated_ledger["digest_domains"]["outer_envelope"]["domain_ascii_hex"] = (
@@ -852,15 +841,6 @@ def self_test(args: argparse.Namespace) -> None:
             ),
             encoding="utf-8",
         )
-        copies["workplan"].write_text(
-            replace_ledger_pins(
-                copies["workplan"].read_text(encoding="utf-8"),
-                mutated_raw_sha,
-                mutated_derived_digest,
-                mutated_coordinate,
-            ),
-            encoding="utf-8",
-        )
         original_vector = json.loads(copies["vector"].read_text(encoding="utf-8"))
         original_body = decode_typed_value_json(original_vector["body"])
         mutated_outer_domain = require_domain_bytes(mutated_ledger, "outer_envelope")
@@ -885,6 +865,7 @@ def self_test(args: argparse.Namespace) -> None:
         reject(
             [
                 sys.executable,
+                "-I",
                 str(Path(__file__)),
                 "--design",
                 str(copies["design"]),
@@ -898,8 +879,6 @@ def self_test(args: argparse.Namespace) -> None:
                 str(copies["prototype"]),
                 "--vector",
                 str(copies["vector"]),
-                "--workplan",
-                str(copies["workplan"]),
                 "--unpin",
             ],
             "outer-envelope-domain-mutation",
@@ -907,13 +886,24 @@ def self_test(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    if not sys.flags.isolated:
+        raise SystemExit(ISOLATION_DIAGNOSTIC)
     parser = argparse.ArgumentParser()
     for name in ("design", "registry", "ledger", "matrix", "prototype", "vector"):
         parser.add_argument(f"--{name}", type=Path, required=True)
-    parser.add_argument("--workplan", type=Path, default=WORKPLAN_PATH)
+    parser.add_argument("--expected-checker-sha256")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--unpin", action="store_true")
     args = parser.parse_args()
+    if not args.unpin:
+        if args.expected_checker_sha256 is None:
+            raise ValueError("expected checker SHA-256 is required")
+        actual_checker_sha256 = sha(Path(__file__))
+        if actual_checker_sha256 != args.expected_checker_sha256:
+            raise ValueError(
+                "checker SHA-256 mismatch: "
+                f"expected {args.expected_checker_sha256}, got {actual_checker_sha256}"
+            )
     validate(
         args.design,
         args.registry,
@@ -921,7 +911,6 @@ def main() -> None:
         args.matrix,
         args.prototype,
         args.vector,
-        args.workplan,
         not args.unpin,
     )
     if args.self_test:

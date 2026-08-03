@@ -29,6 +29,11 @@ For every requirement or risk, record:
 - expected runtime and intended gate
 - exact workflow job, matrix entry, shard, aggregate, and timing owner
 
+Maintain a machine-readable or mechanically testable path-to-gate map for each
+changed test, fixture, generator, golden, timing artifact, workflow pin, job,
+matrix entry, shard, and aggregate. The map must identify the exact local
+command when one exists and explicitly mark CI-only actions.
+
 Separate evidence gaps from product defects. Missing tests do not establish P1
 or P2 without demonstrated product impact.
 
@@ -146,6 +151,12 @@ shard, represented in timing evidence, and reflected in the aggregate check.
 Do not accept median or default timing assignments as final closure evidence
 for new tests. Add a workflow-structure contract when a gate's triggers, argv,
 matrix, timeout, or aggregation is required behavior.
+
+Reconcile that inventory with the actual live diff and the changed-surface,
+authority-chain, gate, and known-failure ledgers in `.agents/PLANS.md`. A gate
+is not covered merely because a nearby focused suite passed; every affected
+job, matrix entry, shard, generated-artifact check, and aggregate must have a
+current result or an explicit CI-only evidence status.
 
 Maintain an owner-or-exemption ledger for dedicated deterministic jobs outside
 the duration-balanced unit inventory. Each dedicated target must name its job,

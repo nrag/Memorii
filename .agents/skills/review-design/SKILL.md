@@ -100,6 +100,12 @@ as executable or durable names. A design is not implementation-ready when its
 names depend on milestone, phase, WorkPlan, issue, review, requirement, or
 evidence coordinates.
 
+For every normative design, schema, registry, or generator change, review the
+complete downstream authority graph. Require explicit cardinalities, generated
+and frozen artifacts, checksums, workflow pins, validators, shards, and
+aggregates where applicable. An unspecified downstream node is a design gap,
+not an implementation detail to discover after approval.
+
 For every requirement, classify evidence maturity:
 
 | State | Meaning |
@@ -240,8 +246,9 @@ Outcomes:
 
 Approve when no validated P1/P2 design defect remains, every requirement is
 traceable, predefined acceptance evidence is sufficient, material choices are
-explicit, the identity ledger and enforcement are complete, and implementation
-needs no hidden semantic decision. Approval
+explicit, the identity ledger and enforcement are complete, the changed-
+surface and authority-chain ledgers are complete, and implementation needs no
+hidden semantic decision. Approval
 disposition alone does not establish product priority or justify another
 revision.
 

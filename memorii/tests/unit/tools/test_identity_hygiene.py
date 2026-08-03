@@ -248,6 +248,38 @@ def test_behavioral_protocol_and_algorithm_names_pass(tmp_path: Path) -> None:
     assert scan_repository(root, allowlist_path=allowlist) == ()
 
 
+def test_retired_requirement_coordinates_are_rejected_in_durable_markdown_identities(
+    tmp_path: Path,
+) -> None:
+    root, allowlist = _root(tmp_path)
+    (root / "docs/design/identity_examples.md").write_text(
+        "\n".join(
+            (
+                "| retired | replacement |",
+                "| --- | --- |",
+                "| `semantic-ingestion-r03` | `current-contract` |",
+                "| `semantic-ingestion-r13` | `current-contract` |",
+                "| `pytest-sia-r03-v1` | `current-test` |",
+                "| `pytest-sia-r13-v1` | `current-test` |",
+                "| `bm25-contract-v1` | `current-algorithm` |",
+                "| `memorii.semantic-ingestion.contract-envelope.v1` | `current-protocol` |",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    violations = scan_repository(root, allowlist_path=allowlist)
+
+    assert {item.value for item in violations} == {
+        "semantic-ingestion-r03",
+        "semantic-ingestion-r13",
+        "pytest-sia-r03-v1",
+        "pytest-sia-r13-v1",
+    }
+    assert all("durable Markdown identity" in item.reason for item in violations)
+
+
 def test_positive_compatibility_identity_is_backed_by_a_real_retained_fixture() -> None:
     manifest_path = (
         REPO_ROOT

@@ -57,6 +57,10 @@ visible, replace it before design review.
 For parsers, compilers, registries, or generated authority, inventory every
 accepted declaration form before claiming the language is closed. Define alias,
 inheritance, nesting, metadata, ordering, duplicate-name, and version semantics.
+Also enumerate every derived manifest, compiled authority, frozen vector,
+cardinality assertion, checksum, workflow pin, validator, and aggregate gate
+that depends on the normative source. A design change is not bounded if its
+downstream authority-chain consequences are unspecified.
 
 Record evidence maturity separately:
 
@@ -214,7 +218,9 @@ When the design appears complete:
 5. confirm implementation needs no hidden semantic decision
 6. independently reconstruct the identity ledger and confirm requirement IDs
    occur only as typed traceability values
-7. run one fresh whole-design review with all three reviewers
+7. reconcile the live changed-surface and authority-chain ledgers required by
+   `.agents/PLANS.md`, including cardinalities and workflow pins
+8. run one fresh whole-design review with all three reviewers
 
 Complete the WorkPlan only when the design completion contract in
 `.agents/PLANS.md` is satisfied.
