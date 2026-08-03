@@ -1,4 +1,4 @@
-"""Reference milestone-1 scenario elaborator using the production CTV codec."""
+"""Reference scenario elaborator using the production CTV codec."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
 
 ROOT = Path(__file__).parents[4]
 AUTHORITY = Path(__file__).with_name("ctv-binding-authority-v2.json")
-FORMAT = "memorii-sia-scenario-c2-milestone-2"
+FORMAT = "memorii-sia-scenario-first-closure-v1"
 PROFILE_ID = "semantic_ingestion_typed_value"
 PROFILE_VERSION = 2
 FIXTURE_SCHEMA = "TraceabilityGoldenTypedInputFixtureBody.v1"
@@ -102,7 +102,7 @@ def _tool_pins() -> dict[str, str]:
 
 def _raw_member(name: str, data: bytes, ordinal: int) -> dict[str, Any]:
     return {
-        "coordinate": f"scenario-c2/m1/{ordinal:02d}/{name}",
+        "coordinate": f"scenario-first-closure/governed-source-admission/{ordinal:02d}/{name}",
         "kind": "raw_input",
         "name": name,
         "digest": sha(data),
@@ -237,7 +237,7 @@ def elaborate(
     ]
     members.append(
         {
-            "coordinate": f"scenario-c2/m1/{len(members) + 1:02d}/fixture_35_golden_typed_input",
+            "coordinate": f"scenario-first-closure/governed-source-admission/{len(members) + 1:02d}/fixture_35_golden_typed_input",
             "kind": "golden_typed_input_fixture",
             "name": "fixture_35",
             "schema_id": FIXTURE_SCHEMA,
@@ -254,7 +254,7 @@ def elaborate(
         design_bytes=design,
         registry_bytes=registry,
         authority_bytes=authority,
-        group_id="semantic-ingestion-r03",
+        group_id="semantic-ingestion-normative-traceability-approval",
     )
     generation_manifest, generation_members = build_generation_package(
         built=test_authority, design_bytes=design, registry_bytes=registry
@@ -272,7 +272,7 @@ def elaborate(
     ]
     closure_members.append(
         {
-            "coordinate": "scenario-c2/m2/generation_manifest",
+            "coordinate": "scenario-first-closure/writer-safe-preplanning/generation_manifest",
             "kind": "approval_generation_manifest",
             "name": "G1",
             "digest": sha(generation_manifest),
@@ -283,7 +283,7 @@ def elaborate(
     spool.write_bytes(canonical({"generation_members": closure_members}) + b"\n")
     return {
         "format": FORMAT,
-        "milestone": 2,
+        "closure_version": 1,
         "profile": PROFILE_ID,
         "profile_version": PROFILE_VERSION,
         "spool_digest": sha(spool.read_bytes()),

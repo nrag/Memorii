@@ -32,6 +32,10 @@ Record:
 - public, persisted, transaction, lifecycle, prompt, provider, artifact,
   adapter, integration, configuration, and CLI boundaries
 - migration, rollout, rollback, compatibility, and observability obligations
+- the complete identity ledger from `.agents/PLANS.md`, including existing
+  planning-derived sibling names and generated or persisted occurrences
+- the changed-surface, authority-chain, gate, and known-failure ledgers from
+  `.agents/PLANS.md`, initialized from the live diff and current workflows
 
 Reconstruct requirements independently from the design. Do not rely only on an
 existing requirements table.
@@ -76,6 +80,11 @@ Each milestone must identify:
 - explicit non-goals and completion criteria
 - base/head revision identity for closure evidence
 
+Milestones organize work only. Their number, phase, requirement set, WorkPlan
+ID, or review coordinate must not name any output. Resolve filenames, symbols,
+schemas, discriminators, tests, fixtures, artifacts, commands, and CI labels
+from behavior before assigning the milestone.
+
 Prefer complete behavior through canonical execution paths. Test risky
 assumptions early.
 
@@ -95,6 +104,11 @@ For every test, state:
 - why the level is appropriate
 - observable failure signal
 
+Include the field-aware identity gate and representative planning/evidence-coordinate
+mutations for every changed language or structured surface. Use exact typed
+exceptions for traceability metadata and shipped migration identities; never a
+whole-file or directory exemption.
+
 For parsers, validators, registries, and generated authority, create an
 equivalence-class matrix covering direct, aliased, quoted, nested, inherited,
 ordered, duplicate, fast-path, and normal-path forms where applicable.
@@ -105,9 +119,10 @@ For substantial test additions, suite reorganization, stale-test retirement,
 or CI gate changes, use `$design-tests` with a linked testing WorkPlan. Small
 feature-local tests remain in this implementation WorkPlan.
 
-Before adding tests, inventory the current owners and measured runtime. Do not
-name files, fixtures, helpers, symbols, or jobs after milestones, phases, review
-rounds, or task IDs. Keep unit tests isolated and fast. Place packaging,
+Before adding tests, inventory the current owners and measured runtime. Follow
+the complete identity contract in `.agents/PLANS.md`; requirement and evidence
+IDs are prohibited executable names just like milestones, phases, review
+rounds, and task IDs. Keep unit tests isolated and fast. Place packaging,
 subprocess, large-artifact, restart, migration, and exhaustive matrix coverage
 in explicit slower tiers.
 
@@ -129,6 +144,10 @@ Spawn exactly one worker for overlapping changes. Require the worker to:
 8. preserve unrelated changes
 9. run focused checks using the declared toolchain
 10. report requirements, files, decisions, commands, results, and limitations
+11. update the identity ledger and reject planning-derived names before they
+    enter code, serialized bytes, tests, fixtures, generators, or workflows
+12. after each material edit, reconcile the live diff and refresh every
+    affected downstream artifact, checksum, workflow pin, validator, and gate
 
 Do not hard-code fixtures, add test-only production branches, bypass canonical
 owners, introduce parallel truth, hide invalid state with casts or defaults, or
@@ -176,6 +195,12 @@ SHA/ref, and run URL; PR head, synthetic merge, and merge-group SHAs are
 distinct. Only successful scope-required GitHub and external acceptance gates
 establish their corresponding evidence maturity.
 
+Focused success cannot close a milestone after a normative design, registry,
+schema, generator, golden, checksum, workflow, or dependency change. Follow
+the complete affected authority chain and execute every required local job,
+matrix entry, shard, generated-artifact check, and aggregate dependency named
+by the gate ledger.
+
 ## Phase 6: Coordinator Integrity Check
 
 Inspect the repository directly. Do not trust the worker summary.
@@ -187,6 +212,8 @@ Check separately:
 - validation integrity and failure signals
 - generality and canonical ownership
 - evidence maturity and revision identity
+- identity-ledger completeness, exact exception contexts, generated/persisted
+  bytes, and the field-aware gate's mutation proof
 
 Ask whether tests can pass while required behavior is absent, whether a special
 case hides a missing abstraction, and whether behavior is narrower or broader
@@ -212,8 +239,9 @@ its product priority is `Not applicable`.
 Each finding must:
 
 - cite the violated requirement and observable behavior
-- identify a supported scenario that is actually broken
-- justify `P1` or `P2` using scenario prevalence or importance
+- identify the affected scenario or repository-contract surface
+- for P1/P2 only, identify supported broken product behavior and justify its
+  prevalence or importance
 - identify the root invariant, not only one example
 - enumerate the complete known equivalence class and sibling bypasses
 - inspect positive cases that must remain valid
@@ -229,6 +257,8 @@ missing test as proof of product priority.
 Classify other findings as:
 
 - a bounded `evidence_action` already required by the validation matrix
+- a bounded `contract_conformance_action` for determinate identity or
+  repository-contract violations
 - `record_only` follow-up
 - `external_blocker` requiring a decision rather than another edit
 
@@ -237,8 +267,9 @@ unless it is supported input or crosses a reachable trust boundary and causes
 wrong authorization, persistence, availability, or rejection of valid
 supported behavior.
 
-Reconcile all reviewers before editing. Cluster eligible P1/P2 findings by root
-cause and send one coherent batch to the sole writer.
+Reconcile all reviewers before editing. Cluster eligible P1/P2 and contract-
+conformance findings by root cause and send one coherent batch to the sole
+writer.
 
 Use this cadence:
 
@@ -249,11 +280,11 @@ Use this cadence:
 
 Do not run a fresh whole-scope review after every micro-edit.
 
-When a review finds no new validated P1/P2 defect, do not start another product
-remediation round. Complete the milestone if its predefined evidence passes,
-record P3 and nonblocking observations as follow-ups, or stop once with the
-exact external blocker. Reviewer silence is not the goal; verified required
-behavior is.
+When a review finds no new validated P1/P2 defect, do not start another product-
+remediation round. Complete required evidence and contract-conformance actions,
+then complete the milestone if its predefined evidence passes, record P3 and
+nonblocking observations as follow-ups, or stop once with the exact external
+blocker. Reviewer silence is not the goal; verified required behavior is.
 
 If two successive findings affect the same parser, validator, lifecycle, or
 ownership boundary, stop patching examples. Reconstruct the boundary and
@@ -269,10 +300,14 @@ When all milestones appear complete:
 3. inspect the entire branch relative to its base
 4. verify every evidence-maturity claim
 5. search for stubs, placeholders, skipped tests, ignored errors, silent
-   fallbacks, bypasses, duplicated state, hard-coded identifiers, and stale docs
+   fallbacks, bypasses, duplicated state, hard-coded identifiers, stale docs,
+   and planning/evidence coordinates leaked into durable identities
 6. verify migration, rollback, compatibility, observability, and failure behavior
-7. run fresh whole-branch reviews with all three reviewers
-8. record the structured closure evidence required by `.agents/PLANS.md`
+7. rerun the field-aware identity gate and independently audit all exceptions
+8. run fresh whole-branch reviews with all three reviewers
+9. compare the actual base-to-head and working-tree diff with the changed-
+   surface ledger and prove every authority-chain node is current
+10. record the structured closure evidence required by `.agents/PLANS.md`
 
 Any production, test, fixture, generated-artifact, dependency, or workflow
 change after final review invalidates closure. Repeat affected gates and a

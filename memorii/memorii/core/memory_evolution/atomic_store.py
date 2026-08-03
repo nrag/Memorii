@@ -1,4 +1,4 @@
-"""Atomic, evidence-only M2 admission-to-preplanning persistence."""
+"""Atomic, evidence-only writer-safe preplanning admission-to-preplanning persistence."""
 
 from __future__ import annotations
 
@@ -102,6 +102,8 @@ class AtomicGenerationMember(BaseModel):
         "event_batch", "terminal_operation", "source_summary", "source_result", "lifecycle",
         "replay_artifact", "artifact_index", "artifact_closure",
         "plan", "planning_artifact", "independence_certificate", "planning_authorization",
+        "authorization_read_set", "terminal_artifact", "execution_plan",
+        "recovery_authority_binding",
     ]
     canonical_payload: bytes
     payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -155,6 +157,47 @@ class SourceCheckpointAtomicWriteRequest(AtomicGenerationRequest):
     progress_state: Literal["preplanning", "planned"]
 
 
+class AuthorizationReadSetPrecondition(BaseModel):
+    """Exact same-store authorization record expected by one terminal group."""
+
+    authority_record_id: str = Field(min_length=1)
+    expected_authority_revision: int = Field(ge=1)
+    expected_coordinates_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_record_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class SemanticAuthorizationAuthorityRecord(BaseModel):
+    """Authoritative mutable semantic ingestion authorization coordinates stored beside effects."""
+
+    authority_record_id: str = Field(min_length=1)
+    authority_scope_id: str = Field(min_length=1)
+    authority_revision: int = Field(ge=1)
+    state: Literal["active", "revoked"]
+    policy_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    policy_revision_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    egress_policy_revision: int | None = Field(default=None, ge=1)
+    egress_decision_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    deployment_authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    deployment_active_epoch: int = Field(ge=1)
+    deployment_decision_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    valid_until: datetime
+    read_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    coordinates_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_coordinates(self) -> SemanticAuthorizationAuthorityRecord:
+        if self.valid_until.utcoffset() is None:
+            raise ValueError("semantic authorization authority expiry must be timezone-aware")
+        body = self.model_dump(mode="python", exclude={"coordinates_digest"})
+        if self.coordinates_digest != sha256(encode_typed_value(body)).hexdigest():
+            raise ValueError("semantic authorization authority coordinates digest mismatch")
+        return self
+
+
 class CommittedGroupAtomicWriteRequest(AtomicGenerationRequest):
     kind: Literal["committed"] = "committed"
     expected_graph_revision: str = Field(min_length=1)
@@ -162,12 +205,14 @@ class CommittedGroupAtomicWriteRequest(AtomicGenerationRequest):
     expected_effective_read_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     graph_revision_after: str = Field(min_length=1)
     observation_revision_after: str = Field(min_length=1)
+    authorization_precondition: AuthorizationReadSetPrecondition | None = None
 
 
 class NonCommittingGroupAtomicWriteRequest(AtomicGenerationRequest):
     kind: Literal["non_committing"] = "non_committing"
     expected_observation_revision: str = Field(min_length=1)
     observation_revision_after: str = Field(min_length=1)
+    authorization_precondition: AuthorizationReadSetPrecondition | None = None
 
 
 TerminalGroupAtomicWriteRequest = Annotated[
@@ -183,7 +228,7 @@ class SourceFinalizationAtomicWriteRequest(AtomicGenerationRequest):
 
 
 class SemanticIngestionAtomicStore:
-    """The only M2 owner permitted to publish preplanning control evidence."""
+    """The only writer-safe preplanning owner permitted to publish preplanning control evidence."""
 
     def __init__(
         self,
@@ -314,6 +359,8 @@ class SemanticIngestionAtomicStore:
         control = _control_from_record(record)
         if control.writer_binding != writer_binding:
             raise PreplanningStoreError("writer binding does not own operation")
+        if control.state == "lease_recovery_exhausted":
+            return control
         if control.state not in {"preplanning", "planned"}:
             raise PreplanningStoreError("operation is terminal")
         now = self._now()
@@ -350,14 +397,29 @@ class SemanticIngestionAtomicStore:
                 "attempt_count": control.attempt_count + 1,
             }
         )
-        self._replace_control(
-            record,
-            next_control,
-            writer_record,
-            writer_binding=writer_binding,
-            expected_lease=lease,
-            require_active_lease=False,
-        )
+        try:
+            self._replace_control(
+                record,
+                next_control,
+                writer_record,
+                writer_binding=writer_binding,
+                expected_lease=lease,
+                require_active_lease=False,
+            )
+        except MemoryPlaneRevisionConflictError:
+            raced = _control_from_record(
+                self._lease_control_record(operation_fence=operation_fence, operation_id=operation_id)
+            )
+            if raced.state == "terminal":
+                return raced
+            if (
+                raced.lease is not None
+                and raced.lease.expires_at > self._now()
+                and raced.lease.execution_token == execution_token
+                and (owner_id is None or raced.lease.owner_id == owner_id)
+            ):
+                return raced
+            raise
         return next_control
 
     def renew_lease(
@@ -417,17 +479,127 @@ class SemanticIngestionAtomicStore:
         digest_values["operation_fence_binding"] = fence.model_dump(mode="python")
         return OperationLeaseBinding(**values, binding_digest=sha256(encode_typed_value(digest_values)).hexdigest())
 
+    def install_authorization_authority(
+        self,
+        *,
+        writer_binding: SemanticWriterCommitBinding,
+        authority: SemanticAuthorizationAuthorityRecord,
+    ) -> AuthorizationReadSetPrecondition:
+        expected_id = _authorization_authority_id(authority.authority_scope_id)
+        if (
+            authority.authority_record_id != expected_id
+            or authority.authority_revision != 1
+            or authority.state != "active"
+        ):
+            raise PreplanningStoreError("initial authorization authority record is invalid")
+        self._writers.require_current(writer_binding)
+        existing = self._memory_plane.get_record(expected_id)
+        if existing is None:
+            record = _authorization_authority_record(authority, self._now())
+            self._memory_plane.conditionally_write_records(
+                (record,),
+                preconditions=(RecordAbsentPrecondition(memory_id=expected_id),),
+                authorization=self._writers._authorize_atomic(
+                    writer_binding, capability=self._write_capability,
+                ),
+            )
+            existing = self._memory_plane.get_record(expected_id)
+        if existing is None:
+            raise PreplanningStoreError("authorization authority publication was not durable")
+        recovered = _authorization_authority_from_record(existing)
+        if recovered != authority:
+            raise PreplanningStoreError("authorization authority is already bound differently")
+        return _authorization_precondition(existing, recovered)
+
+    def replace_authorization_authority(
+        self,
+        *,
+        writer_binding: SemanticWriterCommitBinding,
+        expected: AuthorizationReadSetPrecondition,
+        authority: SemanticAuthorizationAuthorityRecord,
+    ) -> AuthorizationReadSetPrecondition:
+        if (
+            expected.authority_record_id != _authorization_authority_id(authority.authority_scope_id)
+            or authority.authority_record_id != expected.authority_record_id
+            or authority.authority_revision != expected.expected_authority_revision + 1
+        ):
+            raise PreplanningStoreError("authorization authority replacement is invalid")
+        prior = self._memory_plane.get_record(expected.authority_record_id)
+        if prior is None or record_digest(prior) != expected.expected_record_digest:
+            raise PreplanningStoreError("authorization authority replacement CAS is stale")
+        recovered = _authorization_authority_from_record(prior)
+        if (
+            recovered.authority_revision != expected.expected_authority_revision
+            or recovered.coordinates_digest != expected.expected_coordinates_digest
+        ):
+            raise PreplanningStoreError("authorization authority replacement coordinates are stale")
+        record = _authorization_authority_record(authority, prior.timestamp)
+        self._memory_plane.conditionally_write_records(
+            (record,),
+            preconditions=(RecordDigestPrecondition(
+                memory_id=prior.memory_id, expected_digest=expected.expected_record_digest,
+            ),),
+            authorization=self._writers._authorize_atomic(
+                writer_binding, capability=self._write_capability,
+            ),
+        )
+        current = self._memory_plane.get_record(expected.authority_record_id)
+        if current is None:
+            raise PreplanningStoreError("authorization authority replacement was not durable")
+        return _authorization_precondition(current, authority)
+
+    def authorization_authority(
+        self, authority_scope_id: str,
+    ) -> tuple[SemanticAuthorizationAuthorityRecord, AuthorizationReadSetPrecondition] | None:
+        record = self._memory_plane.get_record(_authorization_authority_id(authority_scope_id))
+        if record is None:
+            return None
+        authority = _authorization_authority_from_record(record)
+        return authority, _authorization_precondition(record, authority)
+
     def get_operation(self, operation_fence: OperationFenceBinding | str) -> PreplanningOperationControl:
         if isinstance(operation_fence, str):
             return _control_from_record(self._required_control_record_by_operation_id(operation_fence))
         return _control_from_record(self._required_control_record(operation_fence))
 
+    def generation_members(
+        self,
+        operation_fence: OperationFenceBinding,
+        generation: int,
+    ) -> tuple[AtomicGenerationMember, ...]:
+        """Read one exact internal generation through its authenticated fence.
+
+        This is an internal recovery boundary, not public outcome lookup.  The
+        complete fence must match the persisted operation before any member is
+        returned, preventing raw operation IDs from becoming read authority.
+        """
+        control = _control_from_record(self._required_control_record(operation_fence))
+        if generation < 2 or generation > control.generation:
+            raise PreplanningStoreError("generation is outside the admitted operation")
+        return self._read_generation_members(control, generation)
+
     def checkpoint_source_progress(self, request: SourceCheckpointAtomicWriteRequest) -> tuple[AtomicGenerationMember, ...]:
         recovered = self._recover_exact_generation_if_current(request)
         if recovered is not None:
             return recovered
-        control = _control_from_record(self._required_control_record(request.operation_fence_binding))
+        control = self._require_current_generation_authority(request)
         counts = _member_kind_counts(request.members)
+        if (
+            request.progress_state == "planned"
+            and control.state == "planned"
+            and counts.get("plan") == 1
+        ):
+            planned_generations_list: list[tuple[AtomicGenerationMember, ...]] = []
+            for generation in range(2, control.generation + 1):
+                members = self._read_generation_members(control, generation)
+                if any(member.kind == "plan" for member in members):
+                    planned_generations_list.append(members)
+            planned_generations = tuple(planned_generations_list)
+            if len(planned_generations) != 1:
+                raise PreplanningStoreError("planned source has no unique planning generation")
+            if planned_generations[0] != request.members:
+                raise PreplanningStoreError("planned source closure differs from checkpoint retry")
+            return planned_generations[0]
         if counts.get("progress") != 1:
             raise PreplanningStoreError("checkpoint requires exactly one progress record")
         if request.progress_state == "preplanning" and counts.get("retry_outcome", 0):
@@ -445,10 +617,15 @@ class SemanticIngestionAtomicStore:
         allowed = {
             "progress", "retry_outcome", "replay_artifact", "artifact_index", "artifact_closure",
             "plan", "planning_artifact", "independence_certificate", "planning_authorization",
+            "authorization_read_set", "terminal_artifact", "lifecycle", "execution_plan",
+            "recovery_authority_binding",
         }
         return self._publish_generation(request, next_state=request.progress_state, allowed_kinds=allowed)
 
-    def persist_terminal_group(self, request: TerminalGroupAtomicWriteRequest) -> tuple[AtomicGenerationMember, ...]:
+    def persist_terminal_group(
+        self,
+        request: TerminalGroupAtomicWriteRequest,
+    ) -> tuple[AtomicGenerationMember, ...]:
         recovered = self._recover_exact_generation_if_current(request)
         if recovered is not None:
             return recovered
@@ -476,6 +653,9 @@ class SemanticIngestionAtomicStore:
         group_results = tuple(member for member in request.members if member.kind == "group_result")
         if len(group_results) != 1:
             raise PreplanningStoreError("terminal group requires exactly one group result")
+        if request.kind == "committed" and request.authorization_precondition is None:
+            raise PreplanningStoreError("committed group requires a same-store authorization precondition")
+
         return self._publish_generation(
             request, next_state="planned", allowed_kinds=allowed,
             terminal_group_result_digest=group_results[0].payload_digest,
@@ -595,28 +775,75 @@ class SemanticIngestionAtomicStore:
         )]
         if len(record_ids) != len(set(record_ids)):
             raise PreplanningStoreError("generation record identities collide")
-        self._memory_plane.conditionally_write_records(
-            (_control_record(next_control, control_record.timestamp), *member_records, manifest_record),
-            preconditions=(
-                RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
-                RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
-                RecordFencePrecondition(
-                    memory_id=control_record.memory_id,
-                    expected_fence=MemoryRecordFence(
-                        execution_token=request.operation_lease_binding.execution_token,
-                        ownership_epoch=request.operation_lease_binding.ownership_epoch,
+        try:
+            self._memory_plane.conditionally_write_records(
+                (_control_record(next_control, control_record.timestamp), *member_records, manifest_record),
+                preconditions=(
+                    RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                    RecordFencePrecondition(
+                        memory_id=control_record.memory_id,
+                        expected_fence=MemoryRecordFence(
+                            execution_token=request.operation_lease_binding.execution_token,
+                            ownership_epoch=request.operation_lease_binding.ownership_epoch,
+                        ),
+                    ),
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in (*member_records, manifest_record)),
+                    *(
+                        (RecordDigestPrecondition(
+                            memory_id=request.authorization_precondition.authority_record_id,
+                            expected_digest=request.authorization_precondition.expected_record_digest,
+                        ),)
+                        if isinstance(request, (CommittedGroupAtomicWriteRequest, NonCommittingGroupAtomicWriteRequest))
+                        and request.authorization_precondition is not None
+                        else ()
                     ),
                 ),
-                *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in (*member_records, manifest_record)),
-            ),
-            authorization=authorization,
-        )
+                authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError:
+            recovered = self._recover_published_generation(request)
+            if recovered is None:
+                raise
+            return recovered
         return request.members
+
+    def _recover_published_generation(
+        self, request: AtomicGenerationRequest,
+    ) -> tuple[AtomicGenerationMember, ...] | None:
+        """Recover an exact raced/lost-ack generation even after later progress."""
+        self._writers.require_current(request.writer_commit_binding)
+        control = _control_from_record(self._required_control_record(request.operation_fence_binding))
+        if control.operation_fence != request.operation_fence_binding or control.writer_binding != request.writer_commit_binding:
+            return None
+        generation = request.expected_operation_generation + 1
+        manifest = self._memory_plane.get_record(
+            _generation_manifest_id(_control_namespace(control), generation)
+        )
+        if manifest is None or manifest.source_kind != "semantic_ingestion_generation_manifest":
+            return None
+        if manifest.content.get("request_digest") != request.request_digest:
+            return None
+        members = self._read_generation_members(control, generation)
+        return members if members == request.members else None
 
     def _recover_exact_generation_if_current(
         self, request: AtomicGenerationRequest
     ) -> tuple[AtomicGenerationMember, ...] | None:
         """Recover only after revalidating every mutable write authority."""
+
+        control = self._require_current_generation_authority(request, allow_terminal_recovery=True)
+        if control.last_request_digest == request.request_digest:
+            return self._read_generation_members(control, control.generation)
+        return None
+
+    def _require_current_generation_authority(
+        self,
+        request: AtomicGenerationRequest,
+        *,
+        allow_terminal_recovery: bool = False,
+    ) -> PreplanningOperationControl:
+        """Return the exact control snapshot only while all mutable authority is current."""
 
         self._writers.require_current(request.writer_commit_binding)
         control = _control_from_record(self._required_control_record(request.operation_fence_binding))
@@ -630,15 +857,15 @@ class SemanticIngestionAtomicStore:
             and request.operation_lease_binding.lease_expires_at > self._now()
         )
         terminal_recovery_matches = (
+            allow_terminal_recovery
+            and
             control.state == "terminal"
             and control.last_request_digest == request.request_digest
             and control.last_completed_lease_binding_digest == request.operation_lease_binding.binding_digest
         )
         if not active_lease_matches and not terminal_recovery_matches:
             raise PreplanningStoreError("generation lease is stale or expired")
-        if control.last_request_digest == request.request_digest:
-            return self._read_generation_members(control, control.generation)
-        return None
+        return control
 
     def _read_generation_members(
         self, control: PreplanningOperationControl, generation: int
@@ -722,7 +949,7 @@ class SemanticIngestionAtomicStore:
             or index.content.get("required_scope_set_digest")
             != admission.required_outcome_scopes.required_scope_set_digest
         ):
-            raise PreplanningStoreError("source handoff is not already M1-admitted")
+            raise PreplanningStoreError("source handoff is not already governed-source admission-admitted")
         admitted_epoch = index.content.get("admitted_writer_epoch")
         admitted_digest = index.content.get("writer_admission_digest")
         if admitted_epoch is not None:
@@ -817,6 +1044,50 @@ def _control_namespace(control: PreplanningOperationControl) -> str:
 
 def _control_id(operation_fence: OperationFenceBinding) -> str:
     return f"semantic_ingestion:operation:{_operation_namespace(operation_fence)}"
+
+
+def _authorization_authority_id(authority_scope_id: str) -> str:
+    return f"semantic_ingestion:authorization:{sha256(authority_scope_id.encode('utf-8')).hexdigest()}"
+
+
+def _authorization_authority_record(
+    authority: SemanticAuthorizationAuthorityRecord, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=authority.authority_record_id,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "authorization_authority",
+            "authority": authority.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_authorization_authority",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _authorization_authority_from_record(
+    record: CanonicalMemoryRecord,
+) -> SemanticAuthorizationAuthorityRecord:
+    if record.source_kind != "semantic_ingestion_authorization_authority":
+        raise PreplanningStoreError("authorization authority record kind is invalid")
+    try:
+        return SemanticAuthorizationAuthorityRecord.model_validate(record.content["authority"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PreplanningStoreError("authorization authority record is corrupt") from exc
+
+
+def _authorization_precondition(
+    record: CanonicalMemoryRecord, authority: SemanticAuthorizationAuthorityRecord,
+) -> AuthorizationReadSetPrecondition:
+    return AuthorizationReadSetPrecondition(
+        authority_record_id=record.memory_id,
+        expected_authority_revision=authority.authority_revision,
+        expected_coordinates_digest=authority.coordinates_digest,
+        expected_record_digest=record_digest(record),
+    )
 
 
 def _legacy_control_id(operation_fence: OperationFenceBinding) -> str:
@@ -983,8 +1254,13 @@ def _control_from_record(record: CanonicalMemoryRecord) -> PreplanningOperationC
         or record.content.get("semantic_ingestion_kind") != "preplanning_operation_control"
     ):
         raise PreplanningStoreError("preplanning control record is corrupt")
+    value = record.content.get("control")
+    if isinstance(value, dict) and value.get("state") == "retry_exhausted":
+        raise PreplanningStoreError(
+            "legacy retry_exhausted control requires explicit terminal migration"
+        )
     try:
-        return PreplanningOperationControl.model_validate(record.content.get("control"))
+        return PreplanningOperationControl.model_validate(value)
     except ValueError as exc:
         raise PreplanningStoreError("preplanning control record is corrupt") from exc
 

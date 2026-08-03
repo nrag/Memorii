@@ -81,9 +81,9 @@ jobs:
           --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json
           --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json
           --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py
-          --expected-design-sha256 e7de038a5cad8f8d95536d60d35621472a79588e100c2da8633a9dd1fcfb5e7a
-          --expected-registry-sha256 35396897f98833b3eeb9572b16d7eab38ea34741ca876a4a72048424de676ea3
-          --expected-authority-sha256 0dff4f2c0c8a33b7a23ba067de07ae16e556d60b5f94192223b4c76a2246c056
+          --expected-design-sha256 2923340bc6417d516983714e5fe69b7bab0f2257652d28a043cfb273b53aaed3
+          --expected-registry-sha256 8c5ad6e6260c793472ddbc2df8637230fbb5d5b28405b0b558ac4491c945d37e
+          --expected-authority-sha256 c4fbd524c6b7c20795f42977aed458248754c04a0b9635ef0dd3e366bd829b0e
           --expected-validator-sha256 826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e
           --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
 
@@ -94,7 +94,19 @@ jobs:
           --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
           --fixture docs/design/semantic_ingestion/traceability_golden_vectors/lifecycle-root-signer-provenance-witness-v1.json
           --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_lifecycle_root_signer_provenance_v1.py
-          --expected-checker-sha256 c4168249dbf4845d90e9593819323dc331e22e3bdfa5a9df70b076ed10449f01
+          --expected-checker-sha256 1d618a7e8072cf2a5c95258538bee4ad0fe2646000e0ac4127fc380c9444ab22
+          --self-test
+
+      - name: Verify structural manifest contract
+        run: >-
+          python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_cgs_structural_contract_v1.py
+          --design docs/design/semantic_ingestion_architecture.md
+          --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json
+          --ledger docs/design/semantic_ingestion/traceability_golden_vectors/structural_manifest_derivation_ledger-v1.json
+          --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
+          --prototype docs/design/semantic_ingestion/traceability_golden_vectors/cgs_structural_manifest_prototype.py
+          --vector docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json
+          --expected-checker-sha256 3f5ba86e4cc26b7c6b0d518fb8a073ebf7db68a2858afada78dd242b699c826e
           --self-test
 
   static-analysis:
@@ -119,6 +131,10 @@ jobs:
       - name: Run Ruff
         working-directory: memorii
         run: ruff check memorii tests
+
+      - name: Verify behavioral identity hygiene
+        working-directory: memorii
+        run: python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json
 
       - name: Run Pyright
         working-directory: memorii
@@ -330,6 +346,25 @@ jobs:
         run: >-
           pytest -W error
           tests/unit/tools/test_generation_closure_exactness.py
+          -p no:cacheprovider
+
+      - name: Verify exact semantic ingestion collection count
+        working-directory: memorii
+        run: |
+          observed="$(pytest --collect-only -q \
+            tests/unit/core/semantic_ingestion \
+            tests/integration/test_semantic_ingestion_pipeline.py \
+            tests/integration/test_semantic_ingestion_process_safety.py \
+            -p no:cacheprovider | tail -n 1)"
+          [[ "$observed" == "266 tests collected in "* ]]
+
+      - name: Run exact semantic ingestion integration and process closure
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/unit/core/semantic_ingestion
+          tests/integration/test_semantic_ingestion_pipeline.py
+          tests/integration/test_semantic_ingestion_process_safety.py
           -p no:cacheprovider
 
   semantic-ingestion-scenario:

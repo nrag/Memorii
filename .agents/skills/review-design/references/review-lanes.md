@@ -31,6 +31,9 @@ Check:
 - absence of bypasses, duplicate truth, circular dependencies, hidden global
   state, unowned abstractions, framework leakage, or dictionary contracts
 - preservation of all universal Memorii invariants in `AGENTS.md`
+- complete identity ledger, behavioral durable names, exact typed traceability
+  and migration exceptions, and no planning/evidence coordinate used as an
+  executable or durable identity
 
 For declared languages and generated authority, check:
 
@@ -85,6 +88,8 @@ Check:
 - evidence maturity is not overstated
 - affected components, owners, sequencing, compatibility, migration, rollout,
   rollback, verification, deferrals, and unresolved decisions are explicit
+- field-aware identity enforcement is owned by a required gate and proves both
+  rejection mutations and the fixed legitimate-name corpus
 
 A design is not implementation-ready when an implementer must invent a material
 semantic choice or reconstruct an unstated authority boundary.

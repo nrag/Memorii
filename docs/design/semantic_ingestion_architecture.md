@@ -218,7 +218,7 @@ because a related CFP or ING row is marked closed.
 | SIA-R05 | Require certified independent role, scope, attribution-bearer, and attachment evidence before promotion. Sources: Memorii spec Sections 16.25-16.27 and 25.1-25.3; implementation rules, commit gating. | Required | Linguistic consensus, scope interpreter, source-local identity, and canonical identity resolver | Analyzer disagreement, incomplete ancestor closure, unsupported attachment, or missing/ambiguous/noncanonical reported-source bearer yields unresolved and zero graph effect. | Active/passive, negation, quotation, direct/reported/nested attribution, bearer/identity substitution, coordination, and analyzer-mutation tests. |
 | SIA-R06 | Detect and attach textual valid time independently of proposer completeness, and combine it with authenticated non-text temporal evidence only through the closed matrix in Section 3.5. Sources: Memorii spec Sections 7.2, 17, and 25; implementation rules, commit gating. | Required | Temporal resolver and attachment consensus | Source-present temporal text omitted by the proposer, ambiguous or misattached text, and unsupported text/non-text combinations cannot be promoted. Genuinely absent text follows the predicate mode and authenticated-evidence matrix rather than being treated as proposer omission. | Absolute/relative/interval, omission versus absence, event/document reference provenance, authenticated interval, atemporal, misattachment, timezone, DST, and replay tests covering every matrix cell. |
 | SIA-R07 | Bind prompt text, schema, owner, redaction, and visibility policy through one registered prompt authority. Source: prompt contracts. | Required | Prompt registry/renderer and proposer transport | Any registration-coordinate substitution blocks transport before a provider or local model call; a valid policy removes registered non-source secrets from rendered prompt, transport metadata, and traces without rewriting source text. | YAML/schema/owner/visibility/redaction/digest mutation tests plus independent serialized-byte observation for valid nested redaction and immutable sanitized copies. |
-| SIA-R08 | Preserve a certifiable local-only active ingestion path and make the built-in bootstrap profile the ordinary production default; cloud proposal is explicit opt-in. Source: storage-details local-first requirement. | Required | `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)`, provider factory, and composition roots | Normal construction selects the Section 3.23.0 deterministic English rule profile with network denied. The complete M1 no-semantic outcome set is selected-pipeline-pending, disabled, unavailable, unsupported-input, and abstained; remote is explicit only and never a fallback. | Default-composition, no-network local, disable/failure/evidence-only, supported-English, unsupported-language/form, explicit remote-opt-in, and remote-deny zero-call tests. |
+| SIA-R08 | Preserve a certifiable local-only active ingestion path and make the built-in bootstrap profile the ordinary production default; cloud proposal is explicit opt-in. Source: storage-details local-first requirement. | Required | `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)`, provider factory, and composition roots | Normal construction selects the Section 3.23.0 deterministic English rule profile with network denied. The complete governed-source-admission no-semantic outcome set is selected-pipeline-pending, disabled, unavailable, unsupported-input, and abstained; remote is explicit only and never a fallback. | Default-composition, no-network local, disable/failure/evidence-only, supported-English, unsupported-language/form, explicit remote-opt-in, and remote-deny zero-call tests. |
 | SIA-R09 | Authorize remote egress only under the current active source-bound policy. Sources: storage details; Memorii spec Sections 15 and 25. | Required | Source governance and provider transport | Each segment uses only its exact classification/context-bound decision; revoked, expired, superseded, stale, swapped-segment, or mismatched policy produces zero remote calls. | Mixed classification/modality/authority/egress routing, policy rotation, rollback, concurrent change, provider/model/region, swapped/missing/extra decision, and replay tests. |
 | SIA-R10 | Emit canonical idempotent full-state memory events for every committed semantic mutation, retain canonical ingestion-observation deltas for every terminal source-visible operation, and reconstruct both materialized authorities and every acknowledged replay dependency from their logs. Sources: Memorii spec Sections 18.2-18.3; event model Sections 3-5, 8-9, and 14-16. | Required | Transaction coordinator, graph event/replay authority, ingestion-observation ledger, and atomic replay-artifact store | Genesis and signed-checkpoint replay across every active read schema reproduce the exact committed graph revision, ingestion-observation ledger, progress state, and replay-authoritative artifact closure without prior materialized state, provider, analyzer, or read-time reconstruction. No visible state references an artifact absent from the same or an earlier complete generation. Envelope `event_id`, logical-retry `dedupe_key`, and record identity are distinct; only `payload.entity_id == payload.record_id == GraphRecordMutation.record_id`. One typed `create|update` mutation kind is carried unchanged from compiler delta through event identity and replay; one logical mutation has one stable dedupe key across retries. Every terminal operation has exactly one immutable introduction and terminal-outcome record; committed outcomes link exactly one graph delta and terminal non-committing outcomes forbid one. Exact duplicate envelopes remain idempotent and current-writer same-record/version collisions reject before visibility. Non-identical historical equal-version conflicts fail closed without selecting or materializing a winner until `SIA-ED-REPLAY-001` is resolved. | Every-record-kind create/update/retirement mapping, introduction/outcome replay, zero-mutation terminals, artifact/state publication failpoints, pre-planning resume, identity mutations, envelope/dedupe/record identity separation, exact-duplicate idempotency, current-writer version-collision rejection, non-identical historical equal-version fail-closed behavior from genesis and checkpoints, conflicting-dedupe, reordered, supported/retired/future schema, deterministic upcast, corrupt, partial-commit, checkpoint trust/rollback, and replay-resume tests. |
 | SIA-R11 | Enforce one certified semantic writer across embedded, sidecar, event-consumer, legacy, and generic-store paths. Sources: Memorii spec Sections 17.3 and 19.2; implementation rules, commit gating. | Required | Store-owned writer admission, delivery-coordinate migration owner, semantic-record ownership manifest, and common storage boundary | Every governed semantic mutation carries one current writer binding. Activation stops new legacy admissions, drains or terminalizes every old-epoch operation, and atomically publishes one independently certified complete target-coordinate generation before advancing the epoch. A stale or binding-free writer changes no semantic or lifecycle revision. | Shared-store mixed-version, every atomic and generic write entry point, finite migration inventory/certificate, ambiguity/collision, crash/restart, cutover, rollback, cross-cutover retry, drain, active-lease, and paused in-flight process tests. |
@@ -229,7 +229,7 @@ because a related CFP or ING row is marked closed.
 | SIA-R16 | Declare one unambiguous initial dependency topology and certification set. Sources: Memorii spec Sections 16.25-16.27 and 25; storage-details local-first requirement; selected architecture decisions in Sections 3.3-3.5 implementing SIA-R05, SIA-R08, and SIA-R14. | Required | Bootstrap profile owner and capability registry | The v1 bootstrap topology contains only the named deterministic repository components and no model/tokenizer/runtime asset or remote dependency; Section 3.23.0 defines its startup verification. Every later profile requires its own manifest/resource authorization. | Bootstrap component/integrity/no-network checks; unsupported-profile and future manifest/module/package/asset/profile consistency tests. |
 | SIA-R17 | Compare a pre-ingest expected ingestion graph with direct, scope-authorized structural observations, including terminal zero-mutation outcomes, never retrieval or production semantic helpers. Sources: Memorii spec Sections 16.27, 17, and 25; storage-details scoped-access requirement; implementation rules, commit gating. | Required | Acceptance-only oracle and graph observation API | One unique global operation/fence bijection is established before source/entity alignment; zero or multiple solutions fail. Production-only source-outcome integrity coordinates are independently checked against public production records before fixture equality. One-field, missing, and unexpected-record mutations fail at the first structural divergence; every expected operation aligns through one persisted introduction and terminal outcome; committed and non-committing outcomes have exact, disjoint effect shapes; cross-principal, cross-scope, mixed-seed, forged-cursor, and revoked access fail without record, digest, cohort, page, or existence disclosure. Hand-authored fixture semantics require current content-bound independent review evidence before ingest. | Static import boundary, reviewed-fixture evidence, global-bijection permutation/ambiguity tests, source-outcome consistency mutation tests, closed-world comparator, zero-mutation and mixed-outcome cohorts, fence alignment, view, revision, pagination, cross-principal/scope, cursor-integrity, and authorization-revocation tests through the production boundary. |
 | SIA-R18 | Preserve immutable historical truth, trust evolution, and entity lineage. Sources: Memorii spec Sections 7.2, 17, 18, and 25; canonical event model Sections 5-10. | Required | Graph compiler, projection scheduler, and persistence | Required current, historical, contested, and lineage views remain replayable after late arrival, policy migration, rekey, merge, and split. | Interval/trust/identity prefix matrices, migration races, and exact structural comparison. |
-| SIA-R19 | Activate semantic ingestion through the normal production provider composition selected by the bootstrap profile. Source: engineering-hardening closure matrix C3. | Required | Provider factory, `ProviderMemoryService`, ingestion coordinator, and bootstrap profile owner | Normal production builders route governed sources through `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` with no legacy writer or fallback authority. Every M1 no-semantic outcome retains governed evidence without semantic promotion. | Owner-stripping and default-constructor provider/Hermes/filesystem tests for bootstrap, disablement, failure, unsupported/abstained, and later approved profiles. |
+| SIA-R19 | Activate semantic ingestion through the normal production provider composition selected by the bootstrap profile. Source: engineering-hardening closure matrix C3. | Required | Provider factory, `ProviderMemoryService`, ingestion coordinator, and bootstrap profile owner | Normal production builders route governed sources through `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` with no legacy writer or fallback authority. Every governed-source-admission no-semantic outcome retains governed evidence without semantic promotion. | Owner-stripping and default-constructor provider/Hermes/filesystem tests for bootstrap, disablement, failure, unsupported/abstained, and later approved profiles. |
 | SIA-R20 | Fence long-running work with renewable leases, bounded stale recovery, terminal exhaustion, and a separate stable allocation namespace. Source: engineering-hardening closure matrix C13. | Required | Operation repository, lease heartbeat, semantic ingestion coordinator, and identity/action planners | Only the current lease owner may persist or commit; reclaim preserves allocation namespace and byte-identical planned IDs. Fence/allocation coordinates derive only from the version-bound stable delivery identity, immutable admitted source coordinates, and operation ID; current authorization evidence is excluded. Abandoned work recovers within the fixed budget and then becomes terminal. | Fake-clock, session/scope/policy/trust/revocation rotation identity-stability, multiprocess token-fencing, crash/reclaim before and after planning, namespace substitution, slow-stage renewal, lost-acknowledgement, restart, stale-recovery, and exhaustion tests. |
 | SIA-R21 | Make semantic-ingestion admission, checkpoint progress, terminal-group persistence, and source finalization process-safe and crash-atomic; the filesystem/JSONL backend must publish each complete batch as one generation. Source: engineering-hardening closure matrix C12. | Required | Semantic-ingestion atomic-store protocol and filesystem storage adapter | Readers observe the prior state or one complete admission, progress checkpoint, group, or finalization transaction, never a subset. First visibility of every replay-authoritative artifact is atomic with the state that references it. A terminal-group transaction atomically publishes its group result and ingestion-observation delta and, only when committed, its graph delta/event batch. Every transaction validates its exact graph/control/observation/artifact revisions, artifact closure, lease, writer epoch, and stable idempotency fence; checkpoint/group/finalization equality excludes current authorization evidence and ingress context. | Backend-neutral in-memory/filesystem conformance plus pre-planning/planned checkpoints, committed, zero-mutation, and mixed-outcome group transactions; session/scope/policy/trust/revocation rotation with stable durable equality, deterministic artifact/index/state failpoints, multiprocess same/distinct delivery, failed replace, reopen, corruption, lost acknowledgement, and idempotent retry schedules. |
 | SIA-R22 | Preserve the immutable provider envelope contract while exposing truthful semantic-ingestion state only through the protected accessor. Sources: current provider operation contract; implementation rules; normal production composition requirement C3. | Required | Provider service, result-access authorizer, protected admission authorization index, operation repository, and semantic-result repository | Compatibility freezes declaration order, field names/types, enums, defaults, nullability, validators, serialization shape, and independent legacy-reader decoding. Dynamic outcome fixtures are profile-versioned behavior, not envelope authority: the old fixture remains historical reader input but is retired as bootstrap behavior authority. Semantic-aware callers use only `SemanticIngestionOutcomeLookupRequest`; it authorizes before result/artifact lookup and is non-disclosing when unavailable. | Static schema/declaration/validator/reader audit; historical-reader input decoding; profile-versioned truthful outcome matrix; protected-accessor authorization matrix; and a transition audit rejecting use of retired outcome bytes as bootstrap expected behavior. |
@@ -310,7 +310,7 @@ weaken another.
 
 | Decision ID | External owner | Affected requirements | Required artifact | Fail-closed behavior while unresolved | Exact unblock condition |
 | --- | --- | --- | --- | --- | --- |
-| `SIA-ED-TOPOLOGY-001` | Resolved by the unshipped-product bootstrap decision in Section 3.23.0 | SIA-R08, SIA-R16, SIA-R19, SIA-R22 | Built-in `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` names deterministic components, network-denial requirement, startup verification, disablement, rollback, and M1 outcomes. A future profile still requires its own reviewed deployment artifact. | Normal construction automatically selects the verified bootstrap local profile. It retains governed evidence for the complete closed M1 no-semantic outcome set and never falls back to remote. | The normal constructor, filesystem root, and Hermes root pass the Section 3.23.0 acceptance matrix with local network denial and truthful outcomes. |
+| `SIA-ED-TOPOLOGY-001` | Resolved by the unshipped-product bootstrap decision in Section 3.23.0 | SIA-R08, SIA-R16, SIA-R19, SIA-R22 | Built-in `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` names deterministic components, network-denial requirement, startup verification, disablement, rollback, and governed-source-admission outcomes. A future profile still requires its own reviewed deployment artifact. | Normal construction automatically selects the verified bootstrap local profile. It retains governed evidence for the complete closed governed-source-admission no-semantic outcome set and never falls back to remote. | The normal constructor, filesystem root, and Hermes root pass the Section 3.23.0 acceptance matrix with local network denial and truthful outcomes. |
 | `SIA-ED-REPLAY-001` | Event-model owner | SIA-R10, SIA-R18, SIA-R21 | One governing `EqualVersionReplayDecisionArtifact` plus a consistent update to `docs/design/event_model.md` defining exact duplicates, non-identical historical equal-version events, current-writer collisions, genesis replay, and checkpoint replay. | Exact duplicates remain idempotent and current-writer collisions reject; non-identical historical equal-version replay rejects before materialization or winner selection. | The event-model update and artifact select one genesis/checkpoint-consistent algebra and every arrival-order, checkpoint, upcast, and mixed-version permutation passes independently. |
 | `SIA-ED-POLICY-001` | Product/ML acceptance owner | SIA-R14, SIA-R15 | One signed, content-bound `InitialSemanticIngestionPolicyArtifact` containing all statistical thresholds, multiplicity allocation, cluster minima, unsupported cells, freshness deadlines, and monitoring limits. | Capability activation and local learned execution remain evidence-only; no implementation default, held-out-derived value, or runtime traffic may fill an absent value. | The complete artifact is deployment-authorized for the exact capability/dependency bundle and independent event-level recomputation validates every metric, cluster, bound, multiplicity, freshness, activation, and rollback rule. |
 | `SIA-ED-TRACEABILITY-001` | Traceability approval authority and independently provisioned trust-root owner | SIA-R03, SIA-R13 | Separately authenticated `TraceabilityBootstrapTrustAnchor` and `TraceabilityRecoveryTrustRoot` artifacts provisioned outside the release channel; one signed `TraceabilityRecoveryTrustPolicy`; the signed append-only `TraceabilityTrustLifecycleRoot`; and one signed `SemanticIngestionTraceabilityRelease` conforming to Section 3.23.4 and naming the qualified coverage reviewers, normative-evidence issuers, their public keys and trust snapshot, and the initial active release. These artifacts fix purpose/target, signer eligibility, canonical/signature profiles, key or certificate digests, effective/recorded times, predecessors, monotonic sequences, activation, rotation, revocation, compromise, recovery, and historical-verification coordinates. | No registry source package, release-contained trust snapshot, coverage approval, execution evidence, or caller-supplied signature is bootstrap or recovery authority; an absent, ambiguous, backdated, expired, revoked, compromised, wrong-purpose/profile, rollback, same-coordinate-substituted, or self-authorizing root/record makes every traceability gate fail closed. | The root owner independently provisions and authenticates the complete bootstrap and recovery roots before release retrieval; publishes the signed recovery policy and lifecycle root; the release authority publishes the complete signed all-root release and trust snapshot; and independent lifecycle, release, coverage, and execution-evidence verifiers accept the exact topologically constructed bytes and every activation, rotation, revocation, compromise, recovery, and historical check. |
@@ -1442,12 +1442,17 @@ class TrustDecayStep(BaseModel):
     authority_loss: int = Field(ge=0)
     eligibility: Literal["eligible", "ineligible"]
 
+class IncomparableAuthorityClassPair(BaseModel):
+    # Canonical lexical order: lower_authority_class < higher_authority_class.
+    lower_authority_class: str
+    higher_authority_class: str
+
 class PredicateTrustRule(BaseModel):
     predicate_id: str
     scope_pattern: ScopePattern
     eligible_authority_classes: frozenset[str]
     authority_rank_by_class: Mapping[str, int]
-    incomparable_class_sets: tuple[frozenset[str], ...]
+    incomparable_class_pairs: tuple[IncomparableAuthorityClassPair, ...]
     decay_age_basis: Literal[
         "assertion_system_start",
         "authenticated_event_time",
@@ -1461,6 +1466,7 @@ class TrustPolicySnapshot(BaseModel):
     system_effective_interval: TimeInterval
     predicate_rules: tuple[PredicateTrustRule, ...]
     fingerprint: str
+    snapshot_digest: str
 
 class PredicateTemporalRule(BaseModel):
     predicate_id: str
@@ -2019,35 +2025,96 @@ means one unambiguous source span independently attached to the operation.
 itself an effective interval unless the selected predicate rule explicitly
 allows `allow_reference_as_effective_start`.
 
-| Predicate mode | Certified text | Authenticated source interval | Authenticated reference only | No temporal evidence | Ambiguous, misattached, or proposer-omitted source-present text |
-| --- | --- | --- | --- | --- | --- |
-| `required` | Use the exact resolved interval, subject to the combination rule when a source interval also exists | Use exactly; combine with text only through equal or certified complementary bounds | Use `[reference_instant, None)` only when both `allow_reference_as_effective_start` and `allow_open_end` are true; otherwise unresolved | Unresolved | Unresolved |
-| `optional` | Use the exact resolved interval, subject to the same combination rule | Use exactly; combine with text only through equal or certified complementary bounds | Use as an open start only under the same two explicit policy flags; otherwise accept as atemporal with no interval | Accept as atemporal with no interval | Unresolved when source-present text materially attaches to the operation |
-| `atemporal` | Unresolved because the predicate policy forbids valid-time attachment | Unresolved when the interval is operation-scoped; unrelated source metadata remains unattached | The reference may resolve other operations but is not attached and creates no interval | Accept as atemporal with no interval | Unresolved when the temporal expression materially attaches to the operation |
+| Predicate mode | Certified text and/or authenticated source interval | Authenticated reference only | No temporal evidence | Ambiguous, misattached, or proposer-omitted source-present text |
+| --- | --- | --- | --- | --- |
+| `required` | Construct one `TemporalEvidenceCandidate` for each complete asserted interval and resolve only through the trust-selection algebra below. A `resolved` result uses exactly the selected asserted interval; `contested` or any other non-resolved result is unresolved with zero graph effect. | Use `[reference_instant, None)` only when both `allow_reference_as_effective_start` and `allow_open_end` are true; otherwise unresolved. | Unresolved. | Unresolved. |
+| `optional` | Apply the same candidate and trust-selection algebra. A non-resolved result is unresolved when source-present text materially attaches to the operation; genuinely absent temporal evidence remains atemporal. | Use exactly `[reference_instant, None)` only when both `allow_reference_as_effective_start` and `allow_open_end` are true; otherwise accept as atemporal with no interval. | Accept as atemporal with no interval. | Unresolved when source-present text materially attaches to the operation. |
+| `atemporal` | Unresolved because the predicate policy forbids operation valid-time attachment. Unrelated source metadata remains unattached. | The reference may resolve other operations but is not attached and creates no interval. | Accept as atemporal with no interval. | Unresolved when the temporal expression materially attaches to the operation. |
 
-Across every row:
+#### 3.5.1 Temporal evidence trust-selection algebra
 
-- authenticated `source_effective_interval_evidence` and a certified textual
-  interval are retained as separate evidence items;
-- when both exist, they must be equal or satisfy a fingerprinted construction
-  rule that explicitly combines complementary bounds; otherwise temporal
-  assessment is unresolved;
-- a certified textual interval is operation-specific and is used exactly as
-  resolved when no conflicting authenticated interval exists;
-- otherwise the interval in authenticated
-  `source_effective_interval_evidence` is used exactly without detaching it
-  from the evidence object;
-- otherwise an authenticated temporal reference becomes
-  `[reference_instant, None)` only when the matrix and both predicate flags
-  permit it;
+An asserted interval is never reconstructed from bounds. An
+`AuthenticatedSourceIntervalEvidence` produces one candidate containing its
+whole `interval`; a certified textual candidate produces one candidate
+containing its whole `normalized_interval`. The text candidate's source
+authority is the authenticated `SourceAuthority` established for the source
+that contains its certified span. The authenticated source-interval candidate's
+source authority is the authority authenticated for its source metadata.
+Neither source field, provenance basis, span, candidate ID, nor source authority
+may be borrowed from another candidate. A candidate is not a new truth claim;
+it is immutable retained input to this decision.
+
+`TimeInterval` has a required start and optional open end. An open end is a
+complete asserted interval, not a missing bound. A non-null end must be
+strictly later than start; `end == start` and `end < start` are invalid. An open
+end is admissible only where
+`allow_open_end` permits it. An absent interval produces no candidate. A
+malformed interval, an open end forbidden by the selected predicate rule, a
+missing authority, an unknown policy class, a source/provenance mismatch, or an
+unknown candidate variant makes the operation unresolved and cannot be treated
+as absence.
+
+The server selects both the `TemporalPolicySnapshot` and `TrustPolicySnapshot`
+at the same immutable server-owned `arbitration_as_of` coordinate. Their exact
+fingerprints and snapshot digests are part of the assessment and every accepted
+artifact. "High enough" means eligible under the selected
+`PredicateTrustRule`; it introduces no numeric threshold. Candidate-to-terminal
+resolution rank is
+the immutable `authority_rank_by_class` integer for that candidate's
+authenticated source authority. Trust decay is deliberately not evaluated here:
+its `assertion_system_start` basis may not exist before acceptance, and later
+claim-projection decay remains the separately governed trust-arbitration
+operation. Rank comparison is legal only within this exact predicate and scope
+rule.
+
+The resolver uses this total algorithm:
+
+1. Validate every present candidate and policy binding. If any required binding
+   is absent, invalid, stale, ambiguous, or does not reproduce its digest,
+   return `unresolved`.
+2. Retain every candidate as immutable evidence, then exclude candidates that
+   are policy-ineligible from selection. Ineligible evidence never wins and is
+   never discarded.
+3. Partition eligible candidates by semantic interval equality: same start
+   instant and same end variant/value (`None` equals only `None`). Equality
+   ignores evidence identity only; it does not merge provenance or authority.
+4. A candidate is top when no other eligible candidate has a strictly higher
+   comparable base rank. Candidates named by an explicit incomparable class pair
+   are both top; rank, identifier, receipt order, source order, model
+   confidence, and candidate order cannot break that relation.
+5. If there are no eligible candidates, return `unresolved`. If all top
+   candidates belong to one equality partition, return `resolved` for exactly
+   that asserted interval. Every candidate in that equality partition is a
+   distinct co-supporter, including a lower-ranked eligible one; lower-ranked
+   different intervals remain retained, non-selected evidence.
+6. If top candidates occupy two or more non-equal equality partitions, return
+   `contested`. The output contains every top candidate and every retained
+   lower/ineligible candidate, names no winner, and creates no accepted temporal
+   evidence, valid-time assertion, graph mutation, or temporal transition.
+
+Thus a uniquely higher eligible source governs a non-equal lower-ranked source;
+equal-ranked or incomparable non-equal top evidence remains two or more
+explicitly sourced contradictory answers. Equal values co-support even when
+their provenance differs. The algorithm never synthesizes, stitches, narrows,
+widens, intersects, unions, or fills complementary bounds. A textual open-end
+interval and a source interval with a finite end are non-equal intervals, not
+complementary fragments.
+
+Across every matrix row:
+
+- a resolved interval is exactly the typed interval asserted by a selected
+  candidate; it is never a constructed value;
+- `contested`, `unresolved`, and invalid outcomes retain all present evidence
+  and diagnostics in the non-committing terminal artifact, not an accepted
+  operation;
 - an `atemporal` predicate carries no valid-time interval and cannot participate
   in temporal supersession;
-- a `required` temporal predicate without trusted valid-time evidence is
-  unresolved;
+- a `required` temporal predicate without a resolved trusted valid-time
+  interval is unresolved;
 - proposer omission is diagnosed against the independent source-derived
   temporal inventory; it is never conflated with genuinely absent text;
-- no receipt, retention, claim ID, or processing order is used as a missing
-  valid-time value.
+- no receipt, retention, claim ID, processing order, source count, or model
+  confidence is used as a missing valid-time value or trust tie-breaker.
 
 `TemporalPolicySnapshot` is selected by server-owned system time from a
 non-overlapping policy timeline. The accepted operation stores both the
@@ -2067,10 +2134,28 @@ hard-coded conditionals.
 
 `authority_rank_by_class` is local to one predicate/scope rule; a rank from one
 rule is meaningless in another. Larger integers are stronger. Missing classes
-and explicitly incomparable class sets do not receive an inferred ordering.
+and explicitly incomparable class pairs do not receive an inferred ordering.
 `TrustPolicySnapshot` is selected at server-owned `arbitration_as_of` from a
 non-overlapping system-effective policy timeline; zero or multiple matching
 snapshots is an unresolved policy state.
+`TrustPolicySnapshot.snapshot_digest` is the canonical typed-value digest of
+the complete snapshot, including its schema fingerprint/version, policy
+revision, system-effective interval, canonically ordered predicate rules,
+canonical incomparability pairs, decay schedules, and `fingerprint`. It is not
+a digest of a lookup key. Validation recomputes it before selection and again
+at reconciliation, compilation, CAS revalidation, persistence, and replay;
+the exact loaded snapshot bytes, fingerprint, digest, and
+`arbitration_as_of` must agree at every boundary. No stage may refresh, infer,
+or look up a replacement trust policy from a fingerprint or revision.
+
+An `IncomparableAuthorityClassPair` names exactly two distinct classes in
+strict lexical order. Pairs are unique after ordering, every named class occurs
+in the same rule's `authority_rank_by_class`, and a class cannot be incomparable
+with itself. Two candidate classes are incomparable exactly when their canonical
+unordered pair occurs in that rule. Incomparability suppresses numerical rank
+comparison for that pair; it is not transitive and does not create an inferred
+order for any other pair. A malformed, duplicate, unsorted, cross-rule, or
+unknown-class pair prevents activation of the complete trust snapshot.
 Every decay schedule is well formed before activation:
 
 - steps are strictly ordered by non-negative `minimum_age`;
@@ -2082,7 +2167,7 @@ Every decay schedule is well formed before activation:
 - eligibility may transition from `eligible` to `ineligible` at most once and
   can never return to eligible;
 - an ineligible class remains retained as evidence but cannot win a projection;
-- every class named by eligibility, rank, incomparability, or decay belongs to
+- every class named by eligibility, rank, incomparability pair, or decay belongs to
   the same rule;
 - malformed, overlapping, or incomplete rules prevent policy activation.
 
@@ -3444,12 +3529,13 @@ class DeploymentAuthorizationVerifier(Protocol):
     ) -> DeploymentAuthorizationDecision: ...
 ```
 
-`LocalAdmissionOutcome` is an M2-and-later resource protocol. It is forbidden
-in M1: an M1 bootstrap outcome neither contains nor implies an
+`LocalAdmissionOutcome` is a writer-safe-preplanning-and-later resource
+protocol. It is forbidden during governed-source admission: a bootstrap
+outcome neither contains nor implies an
 `OperationFenceBinding`, resource-profile digest, reservation, lease, writer,
 or allocation. In particular, `admitted`, `profile_disabled`, and
-`resource_unavailable` are not M1 projections or aliases. They retain their
-resource meaning only after M2 owns writer-safe resource admission.
+`resource_unavailable` are not governed-source-admission projections or aliases. They retain their
+resource meaning only after writer-safe preplanning owns resource admission.
 `profile_unapproved` is not a bootstrap ordinary outcome and remains reserved
 for future unresolved profiles.
 
@@ -3568,7 +3654,7 @@ of those values. Until the external policy artifact exists and is independently
 approved, deployment authorization cannot issue and the capability remains
 evidence-only. All three registered external decisions remain unresolved.
 
-M2-and-later local execution is governed by a separately approved `LocalExecutionResourceProfile`
+Writer-safe-preplanning-and-later local execution is governed by a separately approved `LocalExecutionResourceProfile`
 bound to the deployment manifest and capability fingerprint. It declares only
 typed profile coordinates: startup prerequisites, disk and memory reservation,
 maximum concurrent admissions, maximum queued admissions, per-stage deadline,
@@ -3576,9 +3662,10 @@ and queue deadline. `LocalAdmissionDecision` is one of `admitted`,
 `queue_full`, `deadline_expired`, `resource_unavailable`, `profile_unapproved`,
 or `profile_disabled`. `admitted` requires the exact approved profile digest;
 `profile_unapproved` requires a null profile digest, and the other outcomes
-name the evaluated approved profile. Every M2-and-later outcome binds the accepted source
+name the evaluated approved profile. Every writer-safe-preplanning-and-later outcome binds the accepted source
 and the stable principal/key pair plus separate admission-authorization
-evidence. A source result for a selected local capability after M2 must
+evidence. A source result for a selected local capability after writer-safe
+preplanning must
 carry exactly one outcome; graph-bound local execution requires `admitted`.
 An explicitly selected remote capability carries null and remains governed by
 the egress decision instead. The latter four are evidence-only/no-mutation outcomes:
@@ -4450,8 +4537,9 @@ binding. The trust-anchor preimage similarly excludes only `trust_anchor_digest`
 Add, remove, reorder, duplicate, field, digest, coordinate-suffix, disposition,
 language tuple, or reason mutation must fail the gate.
 
-**Closed outcome algebra.** M1 uses a governed-source admission fact, not the
-M2 `LocalAdmissionOutcome`. The fact records only source/governance admission
+**Closed outcome algebra.** Governed-source admission uses a source-admission
+fact, not the writer-safe-preplanning `LocalAdmissionOutcome`. The fact records
+only source/governance admission
 and deliberately has no operation fence, resource profile digest, reservation,
 lease, writer, or allocation. The protected accessor serializes exactly one
 `BootstrapProfileOutcome`; each variant references that fact and every model is
@@ -4531,32 +4619,33 @@ unavailable shape.
 
 | From | To | Legal stage |
 | --- | --- | --- |
-| selected_pipeline_pending | disabled, unavailable, unsupported_input, abstained | M1 |
-| selected_pipeline_pending | accepted_candidate | M3, after M2 writer safety |
-| accepted_candidate | committed_terminal, unsupported_input, abstained | M3 |
+| selected_pipeline_pending | disabled, unavailable, unsupported_input, abstained | governed-source admission |
+| selected_pipeline_pending | accepted_candidate | candidate-to-terminal resolution, after writer-safe preplanning |
+| accepted_candidate | committed_terminal, unsupported_input, abstained | candidate-to-terminal resolution |
 | disabled, unavailable, unsupported_input, abstained, committed_terminal | any other variant | forbidden; a new delivery starts anew |
 
-M1 persists exactly raw governed source, protected admission index, and profile
+Governed-source admission persists exactly raw governed source, protected admission index, and profile
 selection, verification, and outcome evidence. It persists zero semantic
 candidate, commit, graph, event, reservation, fence, lease, writer, allocation,
 or remote artifact. Its complete and authoritative outcome set is
 selected-pipeline-pending, disabled, unavailable, unsupported-input, and
-abstained; accepted-candidate and committed-terminal are illegal before M2/M3
-stage prerequisites.
+abstained; accepted-candidate and committed-terminal are illegal before
+writer-safe-preplanning and candidate-to-terminal prerequisites.
 
 **Host ownership and staged execution.** `ProviderMemoryService`, Hermes, and
 filesystem host adapters automatically construct and authorize the manifest at
 normal construction, provide authenticated ingress, and retain the canonical
 writeback authorization. The core receives that authority; it cannot invent or
-elevate it. M1 performs selection, prerequisite verification, governed source
+elevate it. Governed-source admission performs selection, prerequisite verification, governed source
 admission, and deterministic unsupported/abstention classification only. Its
 complete outcome set is selected-pipeline-pending, disabled, unavailable,
 unsupported-input, and abstained; it has zero semantic candidate, committed,
-or graph effect and starts no M2 lease/writer/generation behavior. M2 supplies
-writer safety; M3 supplies the candidate-to-terminal pipeline and only then may
+or graph effect and starts no writer-safe-preplanning lease/writer/generation
+behavior. Writer-safe preplanning supplies writer safety; candidate-to-terminal
+resolution supplies the semantic pipeline and only then may
 the host-authorized canonical writer persist a semantic result. The final
-shipped product therefore auto-runs without user configuration, while M1 can
-complete without claiming M2/M3 behavior.
+shipped product therefore auto-runs without user configuration, while
+governed-source admission can complete without claiming later behavior.
 
 **Network confinement.** The factory dependency graph must not build, inject,
 or retain a network-capable LLM client, promotion provider, query provider,
@@ -4576,25 +4665,26 @@ retention. Every live unsupported/abstained outcome carries the normalized-input
 digest and names a corpus case only when its normalized bytes exactly match that
 case; no live input is required to match a corpus case. Content-language
 detection is not a bootstrap feature.
-`supported_form` maps only to `selected_pipeline_pending` in M1 and may map to
-`accepted_candidate` only after the M2 writer-safety and M3 pipeline
+`supported_form` maps only to `selected_pipeline_pending` during governed-source
+admission and may map to `accepted_candidate` only after writer-safe-preplanning
+and candidate-to-terminal-resolution
 prerequisites; it is not itself a candidate. `unsupported_form` maps exactly to
 `unsupported_input`, and `abstain_form` maps exactly to `abstained`, at every
 stage; both retain evidence only and never later become candidates for that
-delivery. Before M3, selected-pipeline-pending, disabled, unavailable,
+delivery. Before candidate-to-terminal resolution, selected-pipeline-pending, disabled, unavailable,
 unsupported-input, and abstained are the complete typed bootstrap outcomes.
 The coarse public provider envelope remains schema-compatible; exact profile
 outcome, source result, and reason are available only through the protected
 semantic accessor.
 
-**R22 transition matrix.**
+**Protected semantic result-access transition matrix.**
 
 | Input | Authority after this revision | Required handling |
 | --- | --- | --- |
 | Frozen schema/declaration/default/validator and legacy-reader bytes | Immutable compatibility authority | Must remain byte/schema/reader compatible |
 | Old dynamic outcome fixture | Historical reader input only | Retain and decode; reject it as bootstrap expected behavior |
-| Bootstrap coordinate M1 outcome | Versioned truthful behavior | selected-pipeline-pending, disabled, unavailable, unsupported-input, or abstained only |
-| Bootstrap coordinate after M3 | Versioned truthful behavior | Supported success or abstention only |
+| Bootstrap coordinate governed-source-admission outcome | Versioned truthful behavior | selected-pipeline-pending, disabled, unavailable, unsupported-input, or abstained only |
+| Bootstrap coordinate after candidate-to-terminal resolution | Versioned truthful behavior | Supported success or abstention only |
 | Future profile outcome | Its own versioned contract | Cannot change bootstrap coordinate or public schema silently |
 
 No adapter may fabricate historical IDs, attempts, fallback provenance, or
@@ -4630,7 +4720,8 @@ semantic promotion as applicable.
 **Rollout and traceability gate.** Rollout selects v1 automatically; rollback
 is explicit disablement to evidence-only behavior and never restores a legacy
 writer. This revision changes normative topology, R08/R19/R22, and outcome
-authority. Before M1 resumes, the design checksum, registry mappings, CTV/profile
+authority. Before governed-source admission resumes, the design checksum,
+registry mappings, CTV/profile
 binding, traceability authority, and execution evidence must be regenerated and
 freshly reviewed by the controlled traceability operation, including the active
 signed bootstrap release binding the independently rooted anchor digest and the
@@ -8135,7 +8226,7 @@ The previous `v1.json` bytes are retained only as
 digest. They are not checked outputs, implementation inputs, review evidence,
 or expected bytes. New checked outputs may be created only by the future linked
 implementation operation after isolated A/B derivation agrees. Consequently,
-all earlier M1-M3 execution, stability, equality, vector, and checked-output
+all earlier staged execution, stability, equality, vector, and checked-output
 claims are invalidated for v3.
 
 **Round-4 oracle-free authority (v4).** Format
@@ -10492,13 +10583,14 @@ stringification, numeric/boolean coercion, and aliases reject. Registry and
 token identity is `(schema, typed member)`; boolean `true`, integer `1`, string
 `"1"`, and string `"true"` are four distinct members.
 
-#### 3.23.4.2.1 C2-only canonical typed-value profile v2
+#### 3.23.4.2.1 scenario-first closure-only canonical typed-value profile v2
 
 All preceding v1 profile text remains legacy authority and is not amended by
-this subsection. C2 artifacts use profile ID
+this subsection. Scenario-first closure artifacts use profile ID
 `semantic_ingestion_typed_value`, version `2`, exclusively. A v1 binding,
 decoder, fingerprint, digest, or encoded value is never interchangeable with
-v2 and must fail before body decoding when presented as C2 authority.
+v2 and must fail before body decoding when presented as scenario-first closure
+authority.
 
 `[SIA-CTV-GRAMMAR-V2-BEGIN]`
 ```text
@@ -12561,10 +12653,15 @@ class SourceNormalizationRequest(BaseModel):
     predicate_registry: PredicateRegistry
     scope_policy_registry: ScopePolicyRegistry
     temporal_policy: TemporalPolicySnapshot
+    trust_policy: TrustPolicySnapshot
+    arbitration_as_of: datetime
     capability_registry: CapabilityRegistrySnapshot
 
 class GraphEvidenceNormalizationRequest(BaseModel):
     source_normalization: "SourceNormalizationResult"
+    temporal_policy: TemporalPolicySnapshot
+    trust_policy: TrustPolicySnapshot
+    arbitration_as_of: datetime
     snapshot_bundle: GraphSemanticSnapshotBundle
     allocation_namespace_id: str
     operation_lease_binding: OperationLeaseBinding
@@ -12585,6 +12682,16 @@ other. `SourceNormalizationRequest` is graph-free: its schema cannot contain a
 graph snapshot, graph revision, canonical entity ID, allocation namespace,
 operation lease, graph repository, or graph-derived policy. It produces the
 immutable source alignment once.
+
+The normalization coordinator loads the temporal and trust snapshots once at
+the server-owned `arbitration_as_of` coordinate before source normalization and
+places their complete typed bytes in the request. It recomputes both snapshot
+digests before use. Every capability selection, execution binding, scope
+assessment, reconciliation request, accepted operation, planning artifact, and
+compile request carries the exact same trust fingerprint, trust snapshot digest,
+temporal fingerprint/digest, and coordinate. A missing, changed, stale,
+cross-scope, or non-reproducible snapshot binding produces a non-committing
+terminal result; it never triggers a live policy lookup.
 
 Capability selection is closed per aligned operation and its exact segment
 route within the source request. The selector uses only the sealed source
@@ -12791,12 +12898,17 @@ class OperationCapabilitySelection(BaseModel):
     nli_mode: Literal["required", "optional", "shadow", "disabled"]
     verifier_manifest_digest: str | None
     temporal_policy_snapshot_digest: str
+    trust_policy_fingerprint: str
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
     selection_policy_fingerprint: str
     selection_digest: str
 
 class SourceNormalizationResult(BaseModel):
     source_alignment: SourceProposalAlignment
     capability_selections: tuple[OperationCapabilitySelection, ...]
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
     result_digest: str
 
 class OperationCapabilityExecutionBinding(BaseModel):
@@ -12815,6 +12927,9 @@ class OperationCapabilityExecutionBinding(BaseModel):
     nli_mode: Literal["required", "optional", "shadow", "disabled"]
     verifier_manifest_digest: str | None
     temporal_policy_snapshot_digest: str
+    trust_policy_fingerprint: str
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
     binding_digest: str
 
 class CanonicalAttributionBearerBinding(BaseModel):
@@ -12856,6 +12971,9 @@ class SourceDependencyGroup(BaseModel):
     reason_codes: tuple[str, ...]
 
 class SemanticScopeAssessment(BaseModel):
+    operation_id: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    temporal_attachment: "OperationTemporalAttachmentBinding"
     segment_id: str
     segment_language_route_digest: str
     proposal_id: str
@@ -12867,25 +12985,78 @@ class SemanticScopeAssessment(BaseModel):
     policy_fingerprint: str
     assessment_digest: str
 
-class TemporalEvidenceAssessment(BaseModel):
-    status: Literal["pass", "fail", "unknown"]
-    reference_evidence: TemporalReferenceEvidence | None
+class TemporalEvidenceCandidate(BaseModel):
+    candidate_id: str
+    kind: Literal["authenticated_source_interval", "certified_text_interval"]
+    interval: TimeInterval
+    source_authority: SourceAuthority
     authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
-    certified_text_interval: TimeInterval | None
+    certified_text_candidate_id: str | None
+    evidence_spans: tuple[ProjectionTextSpan, ...]
+    candidate_digest: str
+
+class TemporalEvidenceDecisionClosure(BaseModel):
+    outcome: Literal["pass", "fail", "unknown", "contested"]
+    candidates: tuple[TemporalEvidenceCandidate, ...]
+    selected_candidate_ids: tuple[str, ...]
+    contested_candidate_ids: tuple[str, ...]
     resolved_interval: TimeInterval | None
     resolution_rule: Literal[
-        "text_only",
-        "source_interval_only",
+        "trust_selected_text_interval",
+        "trust_selected_source_interval",
+        "trust_co_supported_equal_interval",
+        "trust_contested_nonidentical_top_evidence",
         "authenticated_reference_open_start",
-        "equal_source_and_text",
-        "certified_complementary_bounds",
         "atemporal",
         "unresolved",
     ]
-    evidence_spans: tuple[ProjectionTextSpan, ...]
     temporal_policy_fingerprint: str
     temporal_policy_snapshot_digest: str
+    trust_policy_fingerprint: str
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
+    closure_digest: str
+
+class TemporalEvidenceAssessment(BaseModel):
+    reference_evidence: TemporalReferenceEvidence | None
+    authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
+    certified_text_candidates: tuple[ResolvedTemporalCandidate, ...]
+    decision_closure: TemporalEvidenceDecisionClosure
+    evidence_spans: tuple[ProjectionTextSpan, ...]
 ```
+
+`TemporalEvidenceCandidate` is closed: an
+`authenticated_source_interval` has its exact authenticated evidence, no
+certified text candidate ID, and no evidence spans; a `certified_text_interval`
+has exactly one certified text candidate ID and its exact source span(s), and
+no authenticated source-interval evidence. Its `source_authority` must be the
+authenticated authority bound to that item, not caller or model input. Candidate
+IDs are unique and canonically ordered by candidate digest.
+`certified_text_candidates` is the complete ordered set of independently
+certified `ResolvedTemporalCandidate` values attached to this operation; each
+text candidate is named by exactly one text temporal-evidence candidate and no
+text candidate may appear twice. The scope interpreter does not choose one by
+position, confidence, or proposer qualifier.
+
+`TemporalEvidenceDecisionClosure` is the content-addressed, complete decision
+record and the sole authoritative temporal result. Its candidate set is the
+retained input set, not merely selected supporters.
+`selected_candidate_ids` is non-empty only for `outcome="pass"`;
+`contested_candidate_ids` is non-empty only for `outcome="contested"`; both are
+sorted, unique subsets of `decision_closure.candidates`, and a candidate cannot
+appear in both. `resolved_interval` is non-null only for `outcome="pass"`,
+except that `atemporal` has no candidates and a null interval. A contested
+closure has a null `resolved_interval` and no
+`AcceptedTemporalEvidence` projection. Unknown enum values, impossible
+kind/field combinations, duplicate IDs, unsorted collections, a candidate
+interval not identical to its underlying evidence, or a policy/digest mismatch
+fail typed validation before any candidate-to-accepted compilation.
+`outcome="contested"` requires
+`resolution_rule="trust_contested_nonidentical_top_evidence"`; `outcome` of
+`fail` or `unknown` requires `resolution_rule="unresolved"`; and
+`outcome="pass"` requires a non-`unresolved` rule whose selected IDs and
+resolved interval satisfy the corresponding rule-specific constraints. These
+are closure validators, not duplicated assessment or accepted-evidence fields.
 
 Attribution kind and attribution bearer are separate decisions. For
 `speaker`, both analyzer bearer spans and the stable bearer span are null. For
@@ -12905,19 +13076,21 @@ coreference construction, analyzer disagreement, non-entity bearers, provider
 reference mismatch, unresolved identity, or cross-snapshot substitution makes
 the containing atomic semantic group unresolved with zero graph effect.
 
-`certified_text_interval` may be copied only from exactly one
+`certified_text_candidates` is the complete, canonically ordered set of every
 `ResolvedTemporalCandidate` named by a `stable`
 `TemporalAttachmentConsensus`, whose resolver fingerprint belongs to the
 selected capability, whose locale matches the selected language, and whose
-reference-time basis satisfies the predicate temporal policy. A proposer
+reference-time basis satisfies the predicate temporal policy. Each is an
+independently certified candidate; the trust-selection algebra evaluates their
+whole intervals without collapsing them before equality partitioning. A proposer
 temporal qualifier is alignment evidence only and cannot create, suppress, or
-select a temporal candidate. Zero candidates, multiple distinct values, a
-duration without an independently grounded anchor, a timezone conflict, parser
-attachment disagreement, or a relative expression without authenticated
-reference time yields `unknown`.
-The scope interpreter may combine already accepted bounds according to the
-closed temporal policy, but it cannot parse a date, call Duckling, or synthesize
-an interval itself.
+select a temporal candidate. Zero candidates, a duration without an
+independently grounded anchor, a timezone conflict, parser attachment
+disagreement, or a relative expression without authenticated reference time
+yields `unknown`. Multiple distinct certified values are retained and either
+resolve through rank or become contested; they are never combined.
+The scope interpreter cannot parse a date, call Duckling, synthesize an
+interval, or combine bounds.
 
 `PredicateEventCandidate` is a source-derived diagnostic anchored to a
 certified lexical or morphological source span without using either dependency
@@ -13234,6 +13407,7 @@ class ReconciliationRequest(BaseModel):
     parser_consensus: tuple[ParserConsensusAssessment, ...]
     scope_consensus: tuple[SemanticScopeConsensus, ...]
     temporal_attachment_consensus: tuple[TemporalAttachmentConsensus, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
     scope_assessments: tuple[SemanticScopeAssessment, ...]
     snapshot_bundle: GraphSemanticSnapshotBundle
     proposal_coverage: ProposalCoverageAudit
@@ -13244,6 +13418,9 @@ class ReconciliationRequest(BaseModel):
     identity_policy_registry: IdentityPolicyRegistry
     capability_registry_snapshot: CapabilityRegistrySnapshot
     capability_bindings: tuple[OperationCapabilityExecutionBinding, ...]
+    temporal_policy: TemporalPolicySnapshot
+    trust_policy: TrustPolicySnapshot
+    arbitration_as_of: datetime
     reconciliation_policy_fingerprint: str
 ```
 
@@ -13281,6 +13458,11 @@ not perform capability lookup. Every binding must reproduce its
 status-record digest exactly. No default policy fills a missing combination,
 and an absent, duplicated, stale, or mismatched binding makes the affected
 atomic group unresolved before acceptance.
+Reconciliation also recomputes the supplied temporal and trust snapshot digests
+from their complete loaded bytes and requires their fingerprints, digests, and
+`arbitration_as_of` to equal every normalization selection, execution binding,
+scope assessment, and temporal decision closure. It has no policy repository
+input and must fail closed rather than refresh either snapshot.
 
 Each promotable predicate has a language-specific policy:
 
@@ -13312,6 +13494,7 @@ class CheckResult(BaseModel):
 
 class SemanticAssessment(BaseModel):
     operation_id: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
     source_dependency_group_id: str
     segment_id: str
     segment_language_route_digest: str
@@ -13334,10 +13517,74 @@ class SemanticAssessment(BaseModel):
     proposal_coverage: CheckResult
     corroboration: CheckResult
     capability: CheckResult
+    scope_assessment_digest: str
     decision: Literal["accepted", "rejected", "unresolved"]
     reason_codes: tuple[str, ...]
     dependency_fingerprints: tuple[str, ...]
+    assessment_digest: str
 
+class OperationTemporalAttachmentBinding(BaseModel):
+    operation_id: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    stable_attachment_consensus_digest: str
+    candidate_ids: tuple[str, ...]
+    candidate_spans: tuple[ProjectionTextSpan, ...]
+    binding_digest: str
+
+class OperationTemporalDecisionBinding(BaseModel):
+    operation_id: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    scope_assessment_digest: str
+    semantic_assessment_digest: str
+    temporal_attachment: OperationTemporalAttachmentBinding
+    decision_closure: TemporalEvidenceDecisionClosure
+    binding_digest: str
+```
+
+`OperationTemporalDecisionBinding` closes temporal identity at the operation
+boundary. Construction is strictly ordered to avoid a digest cycle: (1) scope
+assessment is built first and its preimage includes `(operation_id, temporal_role)`, exact
+post-alignment attachment binding, candidate spans, and temporal evidence but no
+binding; (2) semantic assessment is built next, names that scope-assessment
+digest, and its preimage likewise excludes the binding; (3) the reconciler
+creates the binding from the already sealed scope-assessment and
+semantic-assessment digests plus the exact closure. The binding digest covers
+all six non-digest fields shown. Neither assessment may contain, derive, or be rehashed
+with a binding digest. A binding validates that its operation ID equals both
+assessments, its role equals both assessments, its attachment binding names the same operation/role, and
+every candidate source span and certified-text candidate belongs to that
+operation's certified attachment set. A missing, swapped, reordered, or
+cross-operation span, consensus, assessment, closure, or digest is unresolved
+with zero graph effect.
+`OperationTemporalAttachmentBinding` is created only after proposal-scoped
+analyzer consensus has been aligned to an operation; raw analyzer artifacts
+remain proposal-scoped and never invent an operation ID. Attachment, scope,
+semantic, and decision bindings form an exact bijection by `(operation_id,
+temporal_role)` through expected, observed, event, and replay contracts.
+`SemanticScopeAssessment.temporal_attachment_consensus_digest` must equal its
+embedded `temporal_attachment.stable_attachment_consensus_digest` exactly, and
+the binding's candidate IDs and spans must be the exact canonical projection of
+that named stable consensus. Reconciliation, persistence, and replay recompute
+this equality before accepting their enclosing digest. An A/B consensus
+substitution, candidate-ID substitution, span substitution, or digest-only
+match is a non-committing failure.
+The scope-assessment canonical preimage includes the complete attachment binding
+and rejects a mismatched digest; replay recomputes it before accepting the scope
+digest. Attachment-binding digest is the domain-separated canonical typed-value
+preimage `memorii.semantic-ingestion.temporal_attachment_binding.v1` over every binding field
+except `binding_digest`. Decision-binding digest is likewise
+`memorii.semantic-ingestion.temporal_decision_binding.v1` over every decision field except its
+own digest, including the complete attachment binding. Self-inclusion, omitted
+field, cross-domain, or substituted-field bytes reject. Expected and observed
+bindings use the corresponding public canonical preimages and must reproduce
+the production binding bytes/digests exactly.
+Every cross-boundary binding sequence is duplicate-free and canonically ordered
+by `(operation_id, temporal_role, binding_digest)`. It must be an exact bijection with the
+operation assessments in its enclosing request or outcome; a different order,
+duplicate `(operation_id, temporal_role)`, or same-role different binding is a validation
+failure, not an alternative representation.
+
+```python
 class CanonicalEntityReference(BaseModel):
     source_local_cluster_id: str
     entity_revision_id: str
@@ -13449,20 +13696,65 @@ class GroundedReferenceAssignment(BaseModel):
 class AcceptedTemporalEvidence(BaseModel):
     reference_evidence: TemporalReferenceEvidence | None
     authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
-    certified_text_interval: TimeInterval | None
-    resolved_interval: TimeInterval | None
-    resolution_rule: Literal[
-        "text_only",
-        "source_interval_only",
-        "authenticated_reference_open_start",
-        "equal_source_and_text",
-        "certified_complementary_bounds",
-        "atemporal",
-    ]
-    evidence_spans: tuple[ProjectionTextSpan, ...]
-    temporal_policy_fingerprint: str
-    temporal_policy_snapshot_digest: str
+    certified_text_candidates: tuple[ResolvedTemporalCandidate, ...]
+    decision_closure: TemporalEvidenceDecisionClosure
+```
 
+`AcceptedTemporalEvidence` is representable only from a closure with
+`outcome="pass"`. For a trust-selected interval, the closure's selected IDs
+identify the complete ordered equality partition and every selected member's
+interval equals the closure's `resolved_interval`; the closure preserves,
+rather than collapses, distinct provenance. The source-only and text-only rules
+require one selected candidate of their respective kind.
+`trust_co_supported_equal_interval` requires two or more selected candidates.
+Reference-open-start and atemporal rules have no selected trust candidates and
+carry the selected trust snapshot only through the closure. A contested or
+unresolved closure cannot be coerced
+into this type, cannot be persisted as an accepted operation, and cannot be
+replayed as a temporal assertion.
+Its `decision_closure` must be byte-identical to the closed assessment decision
+and includes non-selected and ineligible retained candidates as well as
+supporters. Durable claim/action records, planning records, events, replay
+artifacts, expected/observed records, and comparator inputs carry this complete
+closure. A terminal contested outcome carries the same closure through the
+non-committing persistence and observation paths but has no accepted evidence
+or graph record.
+
+Every accepted non-correction operation carries exactly one role-bound
+`OperationTemporalDecisionBinding`. Its operation ID must equal the operation
+variant and its semantic-assessment digest must equal the variant's assessment
+digest (or one member of a correction's ordered assessment digests). Every
+embedded `AcceptedTemporalEvidence.decision_closure` must equal that binding's
+closure byte-for-byte. An accepted operation may not point to another
+operation's temporal attachment, scope assessment, semantic assessment, or
+closure.
+For a correction, this statement is role-expanded: it carries exactly one
+`replacement` binding for `replacement_temporal_evidence` and exactly one
+`transition` binding for `transition_temporal_evidence`. Their closures may be
+identical only when the two accepted evidence values are byte-identical; they
+are never interchangeable merely because their intervals match. Retraction and
+identity transitions require a `transition` binding; fact and action assertions
+require an `assertion` binding. Every role binding's closure must equal its
+role's `AcceptedTemporalEvidence.decision_closure` byte-for-byte. Role swaps,
+including replacement-to-transition substitution, fail before compilation.
+
+For every accepted fact or action, its durable/planning/expected/observed
+`valid_interval` must equal the closure's `resolved_interval` exactly, and the
+closure must have `outcome="pass"`; a null valid interval is permitted only
+when the closure rule is `atemporal`. The comparator first compares complete
+closure canonical bytes/digest, then applies this interval equality check. It
+rejects an A/B interval substitution, resolution-rule swap, selected/contested
+subset change, policy/coordinate change, or closure-digest mutation even when a
+record's visible interval is otherwise equal. Terminal `contested`, `unknown`,
+and `fail` outcomes require no accepted claim/action valid interval and retain
+the closure only in terminal artifacts.
+An accepted replacement claim uses its correction's `replacement` binding;
+ordinary fact/action claims use `assertion`; transition and identity records use
+`transition`. Expected and observed claim/action bindings are structurally
+non-null and must carry the same role and bytes as their durable/planning
+counterparts.
+
+```python
 class CertifiedTextEffectiveTime(BaseModel):
     kind: Literal["certified_text_time"]
     effective_at: datetime
@@ -13505,6 +13797,7 @@ class AcceptedFact(BaseModel):
     message_admission_identities: tuple[MessageAdmissionIdentity, ...]
     fact: LanguageNeutralFact
     temporal_evidence: AcceptedTemporalEvidence
+    assertion_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digest: str
 
 class AcceptedCorrection(BaseModel):
@@ -13519,6 +13812,8 @@ class AcceptedCorrection(BaseModel):
     replacement_temporal_evidence: AcceptedTemporalEvidence
     transition_temporal_evidence: AcceptedTemporalEvidence
     effective_time: EffectiveTimeCoordinate
+    replacement_temporal_decision_binding: OperationTemporalDecisionBinding
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digests: tuple[str, ...]
 
 class AcceptedRetraction(BaseModel):
@@ -13532,6 +13827,7 @@ class AcceptedRetraction(BaseModel):
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
     source_evidence: tuple[SourceSpanReference, ...]
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digest: str
 
 class ExistingActionReference(BaseModel):
@@ -13601,6 +13897,7 @@ class AcceptedActionState(BaseModel):
     temporal_evidence: AcceptedTemporalEvidence
     assertion_evidence: tuple[SourceSpanReference, ...]
     action_policy_fingerprint: str
+    assertion_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digest: str
 
 class AcceptedIdentityOperation(BaseModel):
@@ -13617,6 +13914,7 @@ class AcceptedIdentityOperation(BaseModel):
     reference_assignments: tuple[GroundedReferenceAssignment, ...]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     assessment_digest: str
 
 AcceptedSemanticOperation = Annotated[
@@ -13637,6 +13935,10 @@ class ReconciliationResult(BaseModel):
     governance_carrier_artifact: GovernanceCarrierArtifact
     assessments: tuple[SemanticAssessment, ...]
     accepted_operations: tuple[AcceptedSemanticOperation, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: datetime
     status: Literal["complete", "abstained", "unresolved", "rejected", "failed"]
     reconciliation_fingerprint: str
 ```
@@ -14016,6 +14318,7 @@ class GraphCompilationRequest(BaseModel):
     governance_carrier_artifact: GovernanceCarrierArtifact
     transaction_group: TransactionSemanticGroup
     accepted_operations: tuple[AcceptedSemanticOperation, ...]
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     grounded_mentions: tuple[GroundedMention, ...]
     canonical_entity_decisions: tuple[CanonicalEntityDecision, ...]
     reservation_use_authorizations: tuple[ReservationUseAuthorization, ...]
@@ -14062,6 +14365,18 @@ The transaction group must be `commit_eligible`, every `operation_id` must have
 an `accepted` member decision, and `accepted_operations` must cover those IDs
 exactly. A rejected or unresolved member makes the entire graph-dependent group
 non-committing, even when it originated in another source dependency group.
+Before planning, compilation, and the final CAS write, the coordinator
+recomputes the supplied temporal and trust snapshot digests from the sealed
+request bytes and requires exact equality with every accepted temporal evidence
+and its `OperationTemporalDecisionBinding`. It also requires a complete ordered
+bijection between operation assessments, accepted temporal evidence, and request
+bindings. Missing, extra, altered, reordered, swapped-operation, or
+cross-attempt binding/closure bytes, a changed
+`arbitration_as_of`, or any live-policy lookup is a non-committing validation
+failure. The planning artifact, `semantic_effect_digest`, event payload, replay
+bundle, and CAS-authorized persistence request contain those exact canonical
+bindings or content-addressed references to same-generation immutable binding
+artifacts.
 Inputs may
 contain no rejected or unresolved operation IDs.
 `current_graph` is an immutable, snapshot-bound dependency closure containing current and
@@ -14204,6 +14519,7 @@ class TemporalTransitionRecord(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_ids: tuple[str, ...]
     provenance_ids: tuple[str, ...]
@@ -14220,11 +14536,109 @@ class PlanningTemporalTransitionRecord(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: "PlannedCommitCoordinate"
     source_ids: tuple[str, ...]
     provenance_ids: tuple[str, ...]
     planning_record_digest: str
 
+# The semantic durable/planning pair is explicit; these payloads own temporal bytes.
+class ClaimAssertion(BaseModel):
+    record_kind: Literal["claim_assertion"]
+    claim_assertion_id: str
+    operation_id: str
+    valid_interval: TimeInterval | None
+    temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    record_version: int = Field(ge=1)
+    codec_fingerprint: str
+    record_digest: str
+
+class PlanningClaimAssertion(BaseModel):
+    record_kind: Literal["claim_assertion"]
+    claim_assertion_id: str
+    operation_id: str
+    valid_interval: TimeInterval | None
+    temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    record_version: int = Field(ge=1)
+    planning_codec_fingerprint: str
+    planning_record_digest: str
+
+class ActionRevision(BaseModel):
+    record_kind: Literal["action_revision"]
+    action_revision_id: str
+    operation_id: str
+    valid_interval: TimeInterval | None
+    temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    record_version: int = Field(ge=1)
+    codec_fingerprint: str
+    record_digest: str
+
+class PlanningActionRevision(BaseModel):
+    record_kind: Literal["action_revision"]
+    action_revision_id: str
+    operation_id: str
+    valid_interval: TimeInterval | None
+    temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    record_version: int = Field(ge=1)
+    planning_codec_fingerprint: str
+    planning_record_digest: str
+
+class IdentityLineageRecord(BaseModel):
+    record_kind: Literal["identity_lineage"]
+    transition: "IdentityLineageTransition"
+    record_version: int = Field(ge=1)
+    codec_fingerprint: str
+    record_digest: str
+
+class PlanningIdentityLineageRecord(BaseModel):
+    record_kind: Literal["identity_lineage"]
+    transition: "PlanningIdentityLineageTransition"
+    record_version: int = Field(ge=1)
+    planning_codec_fingerprint: str
+    planning_record_digest: str
+
+class PlanningIdentityLineageTransition(BaseModel):
+    operation_id: str
+    operation: Literal["alias", "rekey", "merge", "split"]
+    predecessor_entity_revision_ids: tuple[str, ...]
+    predecessor_logical_entity_ids: tuple[str, ...]
+    successor_entity_revision_ids: tuple[str, ...]
+    successor_logical_entity_ids: tuple[str, ...]
+    effective_time: EffectiveTimeCoordinate
+    transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
+    recorded_at: "PlannedCommitCoordinate"
+    source_evidence: tuple[SourceSpanReference, ...]
+    temporal_policy_fingerprint: str
+    reference_dispositions: tuple[ReferenceDisposition, ...]
+    transition_digest: str
+```
+
+`ClaimAssertion`, `ActionRevision`, and `IdentityLineageRecord` are the sole
+semantic-ingestion durable owners of their role-bound temporal evidence; their planning mirrors
+preserve exactly the same `TimeInterval | None` as the closure's resolved
+interval. Only `PlanningIdentityLineageTransition.recorded_at` is a declared
+planning commit coordinate; it materializes deterministically at transaction
+commit and must be byte-identical on retry/replay. It is structurally identical
+to `IdentityLineageTransition` except that one `recorded_at` field is a
+`PlannedCommitCoordinate`; materialization replaces only that coordinate and
+recomputes the durable transition digest. Canonical
+record version, codec fingerprint, and digest are required in every mutation,
+event payload, replay artifact, expected record, and observed record. Each
+propagation step validates exact temporal evidence and binding bytes, role,
+operation, and valid interval before recomputing its enclosing digest.
+Carrier audit: `EntityRevision`, `AliasRevision`, `TypeEvidence`,
+`ClaimProjection`, `RelationRevision`, `CitationRecord`, `ProvenanceRecord`,
+and `ReferenceDispositionRecord` are non-owning temporal-evidence records; none may
+introduce, transform, or omit a semantic-ingestion binding. Their canonical/planning schemas
+remain governed by their existing record-kind contracts and may reference an
+semantic-ingestion record only through its exact record ID/digest.
+
+```python
 GraphRecordKind = Literal[
     "entity_revision",
     "alias_revision",
@@ -14781,6 +15195,7 @@ class CanonicalOperationTerminalOutcomeRecord(BaseModel):
     ]
     retry_disposition: Literal["terminal"]
     graph_revision_delta_digest: str | None
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     authorizing_plan_lineage_entry_digest: str
     execution_manifest_digest: str
     reason_codes: tuple[str, ...]
@@ -14899,6 +15314,7 @@ class CompilationResult(BaseModel):
     temporal_transitions: tuple[TemporalTransition, ...]
     trust_decisions: tuple[TrustArbitrationDecision, ...]
     identity_lineage_transitions: tuple[IdentityLineageTransition, ...]
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     reference_dispositions: tuple[ReferenceDisposition, ...]
     write_set: GraphWriteSet | None
     graph_delta: GraphRevisionDelta | None
@@ -14917,6 +15333,7 @@ class SourceAuthorizedTemporalTransition(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     arbitration_as_of: datetime
     temporal_policy_fingerprint: str
     transition_digest: str
@@ -15150,6 +15567,7 @@ class IdentityLineageTransition(BaseModel):
     successor_logical_entity_ids: tuple[str, ...]
     effective_time: EffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     recorded_at: datetime
     source_evidence: tuple[SourceSpanReference, ...]
     temporal_policy_fingerprint: str
@@ -15170,6 +15588,15 @@ reference digest, or evidence digest even when the resulting valid interval is
 numerically equal. Expected and observed graph contracts expose both evidence
 identities, and the comparator tests exact variant and provenance equality
 before interval equality.
+Every temporal transition carrier--accepted operation, compiler transition,
+durable `TemporalTransitionRecord`, planning mirror, event payload, replay
+artifact, expected record, observed record, and operation terminal outcome--is
+required to carry the exact role-bound `OperationTemporalDecisionBinding` whose
+closure equals its transition evidence byte-for-byte. The terminal record's
+ordered binding set is byte-identical to its group persistence request, replay
+bundle, and observed terminal outcome; its digest includes that set. Omission,
+removal, reorder, role swap, operation swap, or nested closure substitution is
+a non-committing compiler, replay, or comparator failure.
 `AcceptedCorrection.transition_temporal_evidence`,
 `AcceptedRetraction.transition_temporal_evidence`, and
 `AcceptedIdentityOperation.transition_temporal_evidence` are mandatory and are
@@ -15644,6 +16071,8 @@ class ReplayArtifactBundle(BaseModel):
     governance_carrier_artifact: GovernanceCarrierArtifact
     required_outcome_scopes: RequiredOutcomeScopeSet
     message_admission_index_entries: tuple[MessageAdmissionIndexEntry, ...]
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
     artifact_schema_registry_fingerprint: str
     publications: tuple[ReplayArtifactPublication, ...]
     required_artifact_digests: tuple[str, ...]
@@ -15663,6 +16092,8 @@ class CommittedTransactionGroupPersistenceRequest(BaseModel):
     authorizing_attempt_digest: str
     planning_authorization: GroupPlanningAuthorization
     compilation: CompilationResult
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
     group_stage_outcomes: tuple[IngestionStageOutcome, ...]
     expected_graph_revision_before: str
     expected_effective_read_set_digest: str
@@ -15688,6 +16119,8 @@ class NonCommittingTransactionGroupPersistenceRequest(BaseModel):
     authorizing_attempt_digest: str
     planning_authorization: GroupPlanningAuthorization | None
     compilation: CompilationResult | None
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
+    temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
     group_stage_outcomes: tuple[IngestionStageOutcome, ...]
     terminal_status: Literal["evidence_only", "rejected", "unresolved", "failed"]
     retry_disposition: Literal["terminal", "retryable"]
@@ -15907,6 +16340,16 @@ declared by the registry entry. The original envelope bytes and digest remain
 available for audit. A mixed-version stream decodes each envelope independently
 and then undergoes the same canonical dedupe, ordering, version, batch/delta,
 and graph-revision checks.
+
+The semantic temporal-decision closure is a write-schema change for accepted claim
+and action records, planning records, event payload records, replay artifacts,
+expected/observed comparison contracts, and non-committing terminal outcomes.
+The candidate-to-terminal contract is unshipped: every pre-closure or legacy accepted byte sequence, including
+any historical resolution tag, is rejected before publication, decode, replay,
+or upcast. There is no semantic temporal-closure upcaster and no compatibility
+outcome that can stand in for the missing decision. The current schema requires
+the complete closure, including every retained candidate, selected/contested
+IDs, temporal/trust policy identities, and `arbitration_as_of`.
 
 Supported historical versions are the explicit `supported_read_schemas` in the
 active registry, not an implicit latest-N window. Removing a version requires a
@@ -17779,6 +18222,54 @@ class ExpectedAuthenticatedSourceIntervalEvidence(BaseModel):
     provenance_digest: str
     evidence_digest: str
 
+class ExpectedTemporalEvidenceCandidate(BaseModel):
+    candidate_key: str
+    kind: Literal["authenticated_source_interval", "certified_text_interval"]
+    interval: ExpectedTimeInterval
+    source_authority_class: str
+    authenticated_source_interval_evidence_key: str | None
+    certified_text_candidate_key: str | None
+    evidence_span_keys: tuple[str, ...]
+
+class ExpectedTemporalEvidenceDecisionClosure(BaseModel):
+    outcome: Literal["pass", "fail", "unknown", "contested"]
+    candidates: tuple[ExpectedTemporalEvidenceCandidate, ...]
+    selected_candidate_keys: tuple[str, ...]
+    contested_candidate_keys: tuple[str, ...]
+    resolved_interval: ExpectedTimeInterval | None
+    resolution_rule: Literal[
+        "trust_selected_text_interval",
+        "trust_selected_source_interval",
+        "trust_co_supported_equal_interval",
+        "trust_contested_nonidentical_top_evidence",
+        "authenticated_reference_open_start",
+        "atemporal",
+        "unresolved",
+    ]
+    temporal_policy_fingerprint: str
+    temporal_policy_snapshot_digest: str
+    trust_policy_fingerprint: str
+    trust_policy_snapshot_digest: str
+    arbitration_as_of: ExpectedInstant
+    closure_digest: str
+
+class ExpectedOperationTemporalDecisionBinding(BaseModel):
+    operation_key: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    scope_assessment_digest: str
+    semantic_assessment_digest: str
+    temporal_attachment: "ExpectedOperationTemporalAttachmentBinding"
+    decision_closure: ExpectedTemporalEvidenceDecisionClosure
+    binding_digest: str
+
+class ExpectedOperationTemporalAttachmentBinding(BaseModel):
+    operation_key: str
+    temporal_role: Literal["assertion", "replacement", "transition"]
+    stable_attachment_consensus_digest: str
+    candidate_keys: tuple[str, ...]
+    candidate_span_keys: tuple[str, ...]
+    binding_digest: str
+
 class ExpectedAcceptedTemporalEvidence(BaseModel):
     temporal_reference_kind: Literal[
         "authenticated_event_time",
@@ -17788,18 +18279,8 @@ class ExpectedAcceptedTemporalEvidence(BaseModel):
     authenticated_source_interval_evidence: (
         ExpectedAuthenticatedSourceIntervalEvidence | None
     )
-    certified_text_interval: ExpectedTimeInterval | None
-    resolved_interval: ExpectedTimeInterval | None
-    resolution_rule: Literal[
-        "text_only",
-        "source_interval_only",
-        "authenticated_reference_open_start",
-        "equal_source_and_text",
-        "certified_complementary_bounds",
-        "atemporal",
-    ]
-    temporal_policy_fingerprint: str
-    temporal_policy_snapshot_digest: str
+    certified_text_candidate_keys: tuple[str, ...]
+    decision_closure: ExpectedTemporalEvidenceDecisionClosure
 
 class ExpectedClaimAssertion(BaseModel):
     kind: Literal["claim_assertion"]
@@ -17821,6 +18302,7 @@ class ExpectedClaimAssertion(BaseModel):
     authenticated_source_interval_evidence: (
         ExpectedAuthenticatedSourceIntervalEvidence | None
     )
+    temporal_decision_binding: ExpectedOperationTemporalDecisionBinding
     system_interval: ExpectedTimeInterval
     source_authority_class: str
     source_ids: tuple[str, ...]
@@ -17878,6 +18360,7 @@ class ExpectedActionRevision(BaseModel):
     authenticated_source_interval_evidence: (
         ExpectedAuthenticatedSourceIntervalEvidence | None
     )
+    temporal_decision_binding: ExpectedOperationTemporalDecisionBinding
     system_interval: ExpectedTimeInterval
     source_ids: tuple[str, ...]
     provenance_keys: tuple[str, ...]
@@ -17914,6 +18397,7 @@ class ExpectedTemporalTransition(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: ExpectedEffectiveTimeCoordinate
     transition_temporal_evidence: ExpectedAcceptedTemporalEvidence
+    transition_temporal_decision_binding: ExpectedOperationTemporalDecisionBinding
     system_interval: ExpectedTimeInterval
     source_ids: tuple[str, ...]
     provenance_keys: tuple[str, ...]
@@ -17927,6 +18411,7 @@ class ExpectedIdentityTransition(BaseModel):
     successor_entities: tuple[OracleEntityReference, ...]
     effective_time: ExpectedEffectiveTimeCoordinate
     transition_temporal_evidence: ExpectedAcceptedTemporalEvidence
+    transition_temporal_decision_binding: ExpectedOperationTemporalDecisionBinding
     system_interval: ExpectedTimeInterval
     source_evidence: tuple[OracleSourceEvidence, ...]
     operation_key: str
@@ -17977,6 +18462,7 @@ class ExpectedOperationTerminalOutcome(BaseModel):
         "committed", "evidence_only", "rejected", "unresolved", "failed"
     ]
     graph_effect: Literal["exact_committed_delta", "no_graph_mutation"]
+    temporal_decision_bindings: tuple[ExpectedOperationTemporalDecisionBinding, ...]
     reason_codes: tuple[str, ...]
     boundary: bool
 
@@ -18336,7 +18822,13 @@ every operation. A committed expectation uses
 `graph_effect="exact_committed_delta"`; `evidence_only`, `rejected`, and
 `unresolved` use `no_graph_mutation`; failed expectations are permitted only for
 explicit terminal failure fixtures. The expected graph cannot infer an outcome
-from missing graph records. It creates exactly one
+from missing graph records. `ExpectedOperationTerminalOutcome.temporal_decision_bindings`
+is the canonically ordered complete binding set for that operation: committed
+outcomes contain exactly the bindings referenced by their accepted claim/action
+records; contested, unresolved, rejected, evidence-only, and failed outcomes
+contain every assessed binding but no accepted projection. The expected/observed
+comparator requires exact membership, operation key, order, canonical bytes,
+binding digest, and nested closure equality before evaluating graph effect. It creates exactly one
 `ExpectedSourceTerminalOutcome` for every source, including pre-graph terminal
 fixtures with an empty operation set. Its operation-key set and final status
 must equal the aggregate of the expected operation outcomes under the same
@@ -18739,6 +19231,7 @@ class ObservedClaimAssertion(BaseModel):
     valid_interval: TimeInterval | None
     temporal_reference_evidence: TemporalReferenceEvidence | None
     authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
+    temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_authority_class: str
     source_ids: tuple[str, ...]
@@ -18797,6 +19290,7 @@ class ObservedActionRevision(BaseModel):
     authenticated_source_interval_evidence: (
         AuthenticatedSourceIntervalEvidence | None
     )
+    temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_ids: tuple[str, ...]
     provenance_ids: tuple[str, ...]
@@ -18835,6 +19329,7 @@ class ObservedTemporalTransition(BaseModel):
     transition_kind: Literal["correction", "retraction"]
     effective_time: "ObservedEffectiveTimeCoordinate"
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_ids: tuple[str, ...]
     provenance_ids: tuple[str, ...]
@@ -18871,6 +19366,7 @@ class ObservedIdentityTransition(BaseModel):
     successor_entities: tuple[ObservedEntityReference, ...]
     effective_time: ObservedEffectiveTimeCoordinate
     transition_temporal_evidence: AcceptedTemporalEvidence
+    transition_temporal_decision_binding: OperationTemporalDecisionBinding
     system_interval: TimeInterval
     source_evidence: tuple[SourceSpanReference, ...]
     operation_id: str
@@ -18942,6 +19438,7 @@ class ObservedOperationTerminalOutcome(BaseModel):
         "committed", "evidence_only", "rejected", "unresolved", "failed"
     ]
     graph_revision_delta_digest: str | None
+    temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     reason_codes: tuple[str, ...]
     record_digest: str
 
@@ -20308,6 +20805,253 @@ identity-lineage state remain independently observable.
 
 Exit: rollback means evidence-only abstention, never reactivation of the
 legacy permissive matcher.
+
+#### 5.9.8 Behavioral contract identities before first release
+
+Delivery milestones are planning coordinates, not product concepts. No public
+Python symbol, persisted schema, digest domain separator, codec fingerprint,
+record/source kind, test module, fixture helper, or CI job may encode `M1`,
+`M2`, `M3`, a later milestone number, a review round, or a task ID. Real
+contract versions remain explicit through suffixes such as `.v1`.
+
+The candidate-to-terminal contract is unshipped. Its milestone-derived bytes
+therefore have no compatibility standing: readers reject them as unknown
+schemas or invalid digests. There is no alias, dual-read period, upcaster, or
+fallback. Rollback restores evidence-only behavior; it does not reactivate the
+old milestone-derived identity family.
+
+The complete persisted and digest-domain rewrite is algorithmic and closed:
+
+| Old identity family | Canonical behavioral identity |
+| --- | --- |
+| `memorii.m3.<contract>.v1` | `memorii.semantic-ingestion.<contract>.v1` |
+| `memorii.semantic-ingestion.m3.v1` | `memorii.semantic-ingestion.contract-envelope.v1` |
+| `memorii.semantic-ingestion.m3.closed-codec.v1` | `memorii.semantic-ingestion.closed-codec.v1` |
+| `m3_graph_delta` | `semantic_graph_delta` |
+| `m3_event_input_batch` | `semantic_event_input_batch` |
+| `m3_committed` | `semantic_terminal_committed` |
+| `m3_non_committing` | `semantic_terminal_non_committing` |
+| `m3-semantic-pipeline` | `semantic-ingestion-pipeline` |
+| `m3:<operation-fence-id>` | `semantic-ingestion:<operation-fence-id>` |
+| `m3-<two-digit-index>-<member-kind>` | `semantic-ingestion-<two-digit-index>-<member-kind>` |
+| `memorii-m3-lease-heartbeat` | `memorii-semantic-ingestion-lease-heartbeat` |
+| `m2-semantic-generation-v2` | `semantic-generation-v2` |
+| `memorii-provider-m2-evidence-only-v1` | `memorii-provider-semantic-evidence-only-v1` |
+| `scenario-c2/m1/<suffix>` | `scenario-first-closure/governed-source-admission/<suffix>` |
+| `scenario-c2/m2/<suffix>` | `scenario-first-closure/writer-safe-preplanning/<suffix>` |
+| `scenario-c2/<suffix>` where the first suffix segment is neither `m1` nor `m2` | `scenario-first-closure/<suffix>` |
+| `scenario-c2-<suffix>` | `scenario-first-closure-<suffix>` |
+| bare `scenario-c2` | `scenario-first-closure` |
+| `memorii-sia-scenario-c2-milestone-2` | `memorii-sia-scenario-first-closure-v1` |
+| `sia-c2-semantic-roundtrip-v1` | `sia-scenario-first-semantic-roundtrip-v1` |
+
+`<contract>`, `<operation-fence-id>`, and `<member-kind>` are preserved
+byte-for-byte, including existing hyphen or underscore spelling; this
+correction changes only the milestone namespace or discriminator. Every
+production occurrence must match exactly one row. Any remaining
+`memorii.m[0-9]` or `memorii.semantic-ingestion.m[0-9]` production identity is
+an error. Tests may contain an old identity only as an explicitly named
+negative compatibility vector that proves fail-closed rejection.
+
+The scenario-coordinate rows are mutually exclusive. A generator or validator
+must reject an old coordinate that matches zero rows or more than one row.
+Both independent scenario elaborators must map the complete active old
+coordinate set and produce byte-identical corrected manifest and spool output;
+the comparison exercises bare, hyphenated, plain slash, `m1`, `m2`, format,
+release, pointer/history, bootstrap, recovery, and implementation-revision
+forms. Historical rejected recipe bytes remain unchanged and are not accepted
+as current authority.
+
+`docs/design/semantic_ingestion/traceability_golden_vectors/scenario-coordinate-migration-v1.json`
+is the hand-authored, frozen legacy-coordinate inventory and independent
+mapping oracle. It lists every active old coordinate exactly once with its
+single expected behavioral coordinate and identity class. It is not generated
+by either elaborator or the scenario validator. An independent test extracts
+the complete old-coordinate set from both elaborators, the validator, the
+scenario input, and fixture authority; it requires exact set equality with the
+inventory, exactly one rule match per row, and exact target equality. Mutation
+coverage changes every row into zero-match and multi-match forms and requires
+rejection, explicitly including the R03 release. Current runtime authority
+rejects the legacy inventory as executable input.
+
+Public and internal Python ownership names are behavioral as well:
+
+| Milestone-derived symbol | Canonical symbol |
+| --- | --- |
+| `M3DurableCarrier` | `SemanticDurableCarrier` |
+| `M3ExecutionLineage` | `SemanticExecutionLineage` |
+| `M3LifecycleTransition` | `SemanticLifecycleTransition` |
+| `M3RetryableProgress` | `SemanticRetryableProgress` |
+| `M3ExecutionRetryPlan` | `SemanticExecutionRetryPlan` |
+| `M3RecoveryAuthorityBinding` | `SemanticRecoveryAuthorityBinding` |
+| `M3ArtifactClosure` | `SemanticArtifactClosure` |
+| `M3GraphDelta` | `SemanticGraphDelta` |
+| `M3EventBatch` | `SemanticEventInputBatch` |
+| `M3ObservationDelta` | `SemanticObservationDelta` |
+| `M3GroupResult` | `SemanticEffectGroupResult` |
+| `M3AuthorizationAuthorityError` | `SemanticAuthorizationAuthorityError` |
+| `M3VerifiedAuthorizationTransition` | `VerifiedSemanticAuthorizationTransition` |
+| `M3AuthorizationTransitionVerifier` | `SemanticAuthorizationTransitionVerifier` |
+| `M3AuthorizationAuthorityRepository` | `SemanticAuthorizationAuthorityRepository` |
+| `VerifiedM3AuthorizationControlPlane` | `VerifiedSemanticAuthorizationControlPlane` |
+| `M3AuthorizationReadSetError` | `SemanticAuthorizationReadSetError` |
+| `M3TerminalPersistenceService` | `SemanticTerminalPersistenceService` |
+| `M3LeaseSession` | `SemanticIngestionLeaseSession` |
+| `M3_CODEC_FINGERPRINT` | `SEMANTIC_INGESTION_CODEC_FINGERPRINT` |
+
+Private names and diagnostics follow the same rule: use `Semantic` or
+`semantic ingestion` plus the owned behavior. No compatibility exports retain
+the old names.
+
+Requirement IDs remain stable traceability keys, but they may not double as
+executable names. `SIA-Rxx` and `SIA-T-*` remain legal only in typed registry
+fields, design requirement tables, traceability reports, and explicit
+unknown/legacy-input vectors. Test functions, command IDs, evidence-group IDs,
+fixture/helper names, CI names, and runtime diagnostics use this closed
+behavioral slug map:
+
+| Requirement key | Behavioral executable slug |
+| --- | --- |
+| `SIA-R01` | `source-governance-recovery` |
+| `SIA-R02` | `candidate-validation-commit` |
+| `SIA-R03` | `normative-traceability-approval` |
+| `SIA-R04` | `typed-owner-chain` |
+| `SIA-R05` | `semantic-evidence-closure` |
+| `SIA-R06` | `temporal-evidence-closure` |
+| `SIA-R07` | `prompt-authority` |
+| `SIA-R08` | `local-profile-routing` |
+| `SIA-R09` | `egress-authorization` |
+| `SIA-R10` | `event-replay-integrity` |
+| `SIA-R11` | `writer-cutover` |
+| `SIA-R12` | `temporal-lifecycle-codec` |
+| `SIA-R13` | `acceptance-release-trust` |
+| `SIA-R14` | `statistical-acceptance-design` |
+| `SIA-R15` | `monitoring-fail-closed` |
+| `SIA-R16` | `dependency-capability-topology` |
+| `SIA-R17` | `independent-graph-observation` |
+| `SIA-R18` | `historical-truth-evolution` |
+| `SIA-R19` | `production-composition` |
+| `SIA-R20` | `lease-recovery` |
+| `SIA-R21` | `crash-atomic-persistence` |
+| `SIA-R22` | `protected-semantic-result-access` |
+| `SIA-R23` | `public-delivery-replay` |
+
+For each row, the evidence-group ID is
+`semantic-ingestion-<behavioral-slug>`, the command ID is
+`pytest-<behavioral-slug>-v1`, and the primary acceptance node is
+`test_<behavioral_slug_with_underscores>`. Supporting test nodes use their
+already behavioral names. `test_id` and requirement-link fields retain the
+stable traceability key because those values describe the requirement
+relationship rather than execute it.
+
+The named semantic pipeline integration nodes retain their behavioral suffixes
+and drop only evidence-coordinate prefixes:
+
+| Old node suffix after `test_` | New node suffix after `test_` |
+| --- | --- |
+| `sia_t02_candidate_proposal_cannot_supply_source_authority` | `candidate_proposal_cannot_supply_source_authority` |
+| `sia_t04_lineage_closes_proposal_analysis_seal_and_policy` | `lineage_closes_proposal_analysis_seal_and_policy` |
+| `sia_t05_consensus_disagreement_is_nonpromoting` | `consensus_disagreement_is_nonpromoting` |
+| `sia_t06_temporal_required_interval_reaches_exact_carrier` | `temporal_required_interval_reaches_exact_carrier` |
+| `sia_t06_tr_eligibility_retains_but_never_selects_ineligible` | `trust_eligibility_retains_but_never_selects_ineligible` |
+| `sia_t06_tr_rank_unique_highest_wins_every_input_order` | `trust_rank_unique_highest_wins_every_input_order` |
+| `sia_t06_tr_incomparability_nonidentical_top_is_contested` | `trust_incomparability_nonidentical_top_is_contested` |
+| `sia_t06_tr_equality_cosupports_without_provenance_collapse` | `trust_equality_cosupports_without_provenance_collapse` |
+| `sia_t06_tr_nostitch_never_constructs_a_third_interval` | `trust_resolution_never_constructs_a_third_interval` |
+| `sia_t06_tr_text_many_retains_every_independent_text_candidate` | `trust_resolution_retains_every_independent_text_candidate` |
+| `sia_t06_tr_schema_rejects_impossible_candidate_shape` | `trust_schema_rejects_impossible_candidate_shape` |
+| `sia_t06_tr_closure_rejects_selected_subset_mutation` | `trust_closure_rejects_selected_subset_mutation` |
+| `sia_t06_tr_transitions_preserve_distinct_correction_roles` | `trust_transitions_preserve_distinct_correction_roles` |
+| `sia_t06_tr_role_schema_rejects_binding_role_swap` | `trust_role_schema_rejects_binding_role_swap` |
+| `sia_t06_tr_attach_plan_retains_exact_text_spans` | `trust_attachment_plan_retains_exact_text_spans` |
+| `sia_t06_tr_preimage_rejects_binding_digest_mutation` | `trust_preimage_rejects_binding_digest_mutation` |
+| `sia_t06_tr_consensus_source_substitution_is_rejected` | `trust_consensus_source_substitution_is_rejected` |
+| `sia_t06_tr_store_round_trips_complete_terminal_bytes` | `trust_store_round_trips_complete_terminal_bytes` |
+| `sia_t06_tr_policy_rejects_snapshot_substitution` | `trust_policy_rejects_snapshot_substitution` |
+| `sia_t06_tr_legacy_rejects_preclosure_terminal_bytes` | `legacy_schema_rejects_preclosure_terminal_bytes` |
+| `sia_t07_prompt_remote_path_without_registered_authority_is_zero_wire` | `prompt_remote_path_without_registered_authority_is_zero_wire` |
+| `sia_t09_egress_missing_current_policy_is_zero_wire` | `egress_missing_current_policy_is_zero_wire` |
+| `sia_t12_pipeline_closed_codec_rejects_wrong_contract_kind` | `pipeline_closed_codec_rejects_wrong_contract_kind` |
+| `sia_t12_pipeline_slow_stage_renews_lease_heartbeat` | `pipeline_slow_stage_renews_lease_heartbeat` |
+
+The retention and regeneration matrix is closed:
+
+| Family | Retained assertion | Allowed old-ID exception | Generator or owner | Failure signal and gate impact |
+| --- | --- | --- | --- | --- |
+| 66 digest domains, envelope, and codec fingerprint | Domain separation and strict typed decoding | Explicit old-envelope rejection vector only | Semantic contract/carrier owners | Old bytes reject; exact semantic selector remains 266 |
+| Public/private Python owners | Same runtime behavior and type safety | None; no aliases | Semantic-ingestion package | Import/export scan plus Ruff/Pyright |
+| Lease, member, discriminator, plan, admission, and writer identities | Fencing, retry, lost-ack, and startup admission remain exact | Explicit old-store rejection vector only | Persistence, admission, provider owners | Recovery matrices and process tests fail on stale identity |
+| 24 integration nodes | Each existing assertion in the table above | None | `test_semantic_ingestion_pipeline.py` | Exact node collection and 266-count lock |
+| R01-R23 executable bindings | Same `behavioral_assertion` and typed `test_id` relationship | Requirement keys remain in typed metadata | Traceability registry plus acceptance suite | Every registered behavioral command resolves to its exact node |
+| Positive fixture/helper IDs | Same test scenario and failure injection | Named malformed/legacy vectors only | Owning unit/integration test | Static field-aware scan and focused suite |
+| CI step labels | Same selectors, warning mode, working directory, and count | None | `pr-gates.yml` and workflow-structure test | Structural test compares behavioral labels and argv |
+| Scenario authority | Same complete A/B structural closure | Historical rejected recipes and the non-executable frozen coordinate-migration oracle only | Hand-authored `scenario-coordinate-migration-v1.json`, independent scenario elaborators, validator, and independent inventory test | Exact legacy-set equality, zero/multi-match mutation rejection, explicit R03 mapping, and byte-identical manifest/spool |
+| Traceability authority | Same requirement coverage and release lifecycle | Typed SIA requirement/test metadata | Registry, CTV compiler, CGS compiler, release validators | Registry/authority/prototype checks and acceptance suite |
+| Public terminal wire vector | Exact request wire, JSONL bytes, member IDs/digests, and reopen stability | Old vector only as rejection input | `tests/support/generate_semantic_terminal_public_wire.py` and `tests/fixtures/semantic_ingestion/semantic_terminal_public_wire_v1.json` | `--verify` regenerates twice from fresh stores, reopens both, requires byte equality, then compares checked-in bytes |
+| Unit timing and exact collection | No test lost, duplicated, skipped, or silently default-timed | None | Shard verifier and timing inventory | 2,584 baseline unit collection and 266 semantic selector remain explicit; renamed unit nodes require measured timing updates |
+
+The public terminal wire generator is test-only and invokes the ordinary public
+composition. Its default mode writes nothing and verifies the checked-in
+vector. `--write` is an explicit maintainer action that first constructs two
+fresh stores, performs the same delivery in each, reopens both, and requires
+identical request wire, complete JSONL, generation members, and digests before
+atomically replacing the vector. The generator and runtime test use independent
+decoders/comparators; neither may import expected values from the other. Copying
+hashes from a single implementation run is not valid regeneration evidence.
+
+The field-aware naming guard rejects milestone, phase, review-round, task-ID,
+or requirement-coordinate patterns in production identifiers, Python exports,
+test filenames/symbols/helpers/positive fixture IDs, registry `group_id`,
+registry `command_id`, registry command argv/node IDs, and CI display names. It
+allows requirement/evidence IDs only through this machine-checkable context
+allowlist:
+
+| Owner | Exact allowed context |
+| --- | --- |
+| Traceability registry JSON | `requirement_bindings[*].requirement_id`; `heading_defaults[*].requirements[*]`; `structural_rules[*].selector_values[*]`; `test_evidence_groups[*].selected_tests[*].test_id` |
+| Traceability report/result JSON | Schema-declared fields named `requirement_id`, `requirement_ids`, `requirements`, `approved_requirement_ids`, `test_id`, `invariant_id`, or `anchor_id` only |
+| Python traceability constructors | A string value supplied through a keyword with one of those exact field names; positional requirement/test-ID construction is forbidden and must be converted to named fields |
+| Closed requirement-universe validators | Only `memorii.tools.semantic_ingestion_traceability_registry.expected_requirement_ids()` and the intentionally independent `memorii.tools.semantic_ingestion_traceability_checker._independent_expected_requirement_ids()` may construct the exact `SIA-R01` through `SIA-R23` tuple; the checker must not import or call the registry helper |
+| Canonical design | Requirement tables, traceability mapping columns, and the explicit old-to-new identity tables in this section |
+| Negative vectors | A string literal inside a test function whose behavioral name contains `legacy`, `unknown_requirement`, `duplicate_requirement`, or `malformed_traceability`, and whose assertion proves rejection |
+
+`test_evidence_groups[*].selected_tests[*].behavioral_assertion` is not an ID
+field and must use behavioral prose without `SIA-Rxx`/`SIA-T-*`. No whole-file
+or directory exemption is permitted. A neighboring arbitrary field, Python
+identifier, helper, fixture, CI label, command/node ID, or positive sample
+containing a requirement coordinate is rejected.
+
+The guard inspects Python identifiers and string/format-string literals. Its
+sole literal-construction exceptions are the bodies of
+`expected_requirement_ids()` and `_independent_expected_requirement_ids()`.
+The static test verifies that their implementations share no helper, constant,
+or import path and still produce equal tuples. Validation diagnostics and module/class/function
+docstrings use behavioral language and never echo requirement coordinates;
+structured error payloads may carry a rejected ID only in a schema-declared
+requirement field.
+
+This identity correction invalidates every derived digest, carrier ID,
+terminal byte sequence, JSONL release hash, fixture member digest, and expected
+wire vector whose preimage includes an old domain separator. Those artifacts
+must be regenerated through their canonical generators from the corrected
+design and code. Hand-editing expected hashes is forbidden. The traceability
+registry and CTV binding authority are regenerated only when their own source
+bytes or declared design binding require it; unchanged authority is verified
+by checksum rather than rewritten gratuitously.
+
+Acceptance requires all of the following:
+
+- a production/static scan finds no milestone-derived identity or symbol;
+- every old persisted identity is rejected without partial graph, event,
+  observation, lifecycle, or authorization effects;
+- deterministic reconstruction produces identical corrected bytes across
+  fresh stores and process reopen;
+- lost-ack, retry, authorization rotation, lease fencing, and source-binding
+  behavior remain unchanged except for the intentional digest identities;
+- public integration, frozen-wire, generation-exactness, traceability, static,
+  package, and deterministic shard gates pass at one revision; and
+- filename/symbol guards reject future milestone-derived test and production
+  names.
 
 ### 5.10 Canonical failure-pattern coverage matrix
 

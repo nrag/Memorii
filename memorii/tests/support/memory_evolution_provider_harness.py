@@ -63,7 +63,7 @@ class _EvolutionIngestionHarness:
 
 
 class MemoryEvolutionProviderHarness(ProviderMemoryService):
-    """Retain M2 verification without making it a production composition option."""
+    """Retain writer-safe preplanning verification without making it a production composition option."""
 
     def __init__(
         self,
@@ -123,7 +123,7 @@ class MemoryEvolutionProviderHarness(ProviderMemoryService):
 
 
 def enable_test_runtime_benchmark_harness(monkeypatch: MonkeyPatch) -> None:
-    """Explicitly compose the M2 benchmark for a test that exercises its CLI."""
+    """Explicitly compose the memory evolution benchmark for a test that exercises its CLI."""
     from memorii.core.benchmark.memory_evolution_runtime.runner import run_runtime_scenarios
     from memorii.tools.benchmark_suites import memory_evolution_runtime as runtime_suite
 

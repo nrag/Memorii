@@ -1,4 +1,4 @@
-"""Independent current-pin C2 elaborator B; no imports from elaborator A."""
+"""Independent current-pin scenario-first closure elaborator B; no imports from elaborator A."""
 from __future__ import annotations
 import argparse, hashlib, json
 from pathlib import Path
@@ -12,5 +12,5 @@ def main() -> None:
         raw=json.dumps(item['body_input'],sort_keys=True,separators=(',',':'),ensure_ascii=True).encode('ascii')
         if item['fixture_id']=='fixture-10-structural_manifest': raw=hashlib.sha256(x.design.read_bytes()+x.registry.read_bytes()).digest()
         result.append([item['fixture_id'], hashlib.sha256(raw).hexdigest()])
-    x.output.write_text(json.dumps({'members':result,'format':'memorii-sia-c2-spooled-manifest-v1'},sort_keys=True,separators=(',',':'),ensure_ascii=True)+'\n',encoding='ascii')
+    x.output.write_text(json.dumps({'members':result,'format':'memorii-sia-spooled-manifest-v1'},sort_keys=True,separators=(',',':'),ensure_ascii=True)+'\n',encoding='ascii')
 if __name__=='__main__': main()

@@ -19,7 +19,7 @@ from typing import Any
 ROOT = Path(__file__).parents[4]
 AUTHORITY = Path(__file__).with_name("ctv-binding-authority-v2.json")
 LEDGER = Path(__file__).with_name("structural_manifest_derivation_ledger-v1.json")
-FORMAT = "memorii-sia-scenario-c2-milestone-2"
+FORMAT = "memorii-sia-scenario-first-closure-v1"
 PROFILE_ID = "semantic_ingestion_typed_value"
 PROFILE_VERSION = 2
 FIXTURE_SCHEMA = "TraceabilityGoldenTypedInputFixtureBody.v1"
@@ -587,17 +587,17 @@ def _build_registered_closure(
     authority, registry = json.loads(authority_bytes), json.loads(registry_bytes)
     structural = rebuild_structural_manifest_bytes(design, registry_bytes)
     bootstrap_key, recovery_key = (
-        "scenario-c2-test-bootstrap-key",
-        "scenario-c2-test-recovery-key",
+        "scenario-first-closure-test-bootstrap-key",
+        "scenario-first-closure-test-recovery-key",
     )
     bootstrap = _signed(
         {
-            "anchor_id": "scenario-c2-bootstrap",
+            "anchor_id": "scenario-first-closure-bootstrap",
             "issuance_purpose": "semantic_ingestion_traceability_release_root",
             "canonical_profile_id": "memorii-sia-canonical-json-v1",
             "signature_profile_id": "deterministic-v1",
             "public_key_or_root_certificate_digest": bootstrap_key,
-            "target_authority_id": "scenario-c2-test-authority",
+            "target_authority_id": "scenario-first-closure-test-authority",
         },
         b"memorii:sia-traceability-bootstrap-anchor:v1",
         "anchor_digest",
@@ -605,12 +605,12 @@ def _build_registered_closure(
     )
     recovery = _signed(
         {
-            "recovery_root_id": "scenario-c2-recovery",
+            "recovery_root_id": "scenario-first-closure-recovery",
             "issuance_purpose": "semantic_ingestion_traceability_recovery_root",
             "canonical_profile_id": "memorii-sia-canonical-json-v1",
             "signature_profile_id": "deterministic-v1",
             "public_key_or_root_certificate_digest": recovery_key,
-            "target_authority_id": "scenario-c2-test-authority",
+            "target_authority_id": "scenario-first-closure-test-authority",
         },
         b"memorii:sia-traceability-recovery-root:v1",
         "recovery_root_digest",
@@ -637,13 +637,13 @@ def _build_registered_closure(
         "effective_at": "2026-07-30T00:00:00Z",
         "recorded_at": "2026-07-30T00:00:01Z",
         "action": "activate",
-        "target_id": "scenario-c2-bootstrap",
+        "target_id": "scenario-first-closure-bootstrap",
         "target_digest": bootstrap["anchor_digest"],
         "replacement_target_id": None,
         "replacement_target_digest": None,
         "signer_bindings": [
             {
-                "signer_id": "scenario-c2-bootstrap",
+                "signer_id": "scenario-first-closure-bootstrap",
                 "signature_profile_id": "deterministic-v1",
                 "key_digest": bootstrap_key,
             }
@@ -653,7 +653,7 @@ def _build_registered_closure(
         b"memorii:sia-traceability-lifecycle-record:v1\0" + _document(record)
     )
     lifecycle = {
-        "authority_id": "scenario-c2-test-authority",
+        "authority_id": "scenario-first-closure-test-authority",
         "records": [
             {
                 **record,
@@ -758,17 +758,17 @@ def _build_registered_closure(
         return sha(domain + b"\0" + canonical(typed(body)))
 
     history_bodies = {
-        "bootstrap_anchor_history": {"history_id": "scenario-c2-bootstrap-history", "canonical_profile_binding": _authority_binding(authority, "TraceabilityBootstrapAnchorHistoryBody.v1"), "anchors": [bootstrap]},
-        "recovery_root_history": {"history_id": "scenario-c2-recovery-history", "canonical_profile_binding": _authority_binding(authority, "TraceabilityRecoveryRootHistoryBody.v1"), "recovery_roots": [recovery]},
-        "recovery_policy_history": {"history_id": "scenario-c2-policy-history", "canonical_profile_binding": _authority_binding(authority, "TraceabilityRecoveryPolicyHistoryBody.v1"), "policies": [policy]},
+        "bootstrap_anchor_history": {"history_id": "scenario-first-closure-bootstrap-history", "canonical_profile_binding": _authority_binding(authority, "TraceabilityBootstrapAnchorHistoryBody.v1"), "anchors": [bootstrap]},
+        "recovery_root_history": {"history_id": "scenario-first-closure-recovery-history", "canonical_profile_binding": _authority_binding(authority, "TraceabilityRecoveryRootHistoryBody.v1"), "recovery_roots": [recovery]},
+        "recovery_policy_history": {"history_id": "scenario-first-closure-policy-history", "canonical_profile_binding": _authority_binding(authority, "TraceabilityRecoveryPolicyHistoryBody.v1"), "policies": [policy]},
     }
     history_domains = {"bootstrap_anchor_history": ("TraceabilityBootstrapAnchorHistoryBody.v1", b"memorii:sia-traceability-bootstrap-anchor-history:v1"), "recovery_root_history": ("TraceabilityRecoveryRootHistoryBody.v1", b"memorii:sia-traceability-recovery-root-history:v1"), "recovery_policy_history": ("TraceabilityRecoveryPolicyHistoryBody.v1", b"memorii:sia-traceability-recovery-policy-history:v1")}
     history_values = {name: {**body, "history_digest": declared(history_domains[name][1], body)} for name, body in history_bodies.items()}
-    release_id = "scenario-c2-semantic-ingestion-r03-release"
-    qualified_issuer = {"signature_purpose": "semantic_ingestion_traceability_release", "issuer_id": "scenario-c2-bootstrap", "key_or_certificate_digest": bootstrap_key, "signature_profile_id": "deterministic-v1", "trust_lifecycle_root_digest": lifecycle["lifecycle_root_digest"], "lifecycle_record_digest": record_digest, "eligible_not_before": "0001-01-01T00:00:00+00:00", "eligible_not_after": None, "eligibility_derivation": {"trust_lifecycle_root_digest": lifecycle["lifecycle_root_digest"], "terminal_record_digest": record_digest, "terminal_sequence": 1, "target_id": "scenario-c2-bootstrap", "target_digest": bootstrap["anchor_digest"], "eligible_not_before": "0001-01-01T00:00:00+00:00", "eligible_not_after": None}}
-    snapshot_body = {"snapshot_id": "scenario-c2-snapshot", "issuance_purpose": "semantic_ingestion_traceability_release_trust_snapshot", "canonical_profile_binding": _authority_binding(authority, "TraceabilityReleaseTrustSnapshotBody.v1"), "release_id": release_id, "release_epoch": 1, "release_sequence": 1, "bootstrap_anchor_digest": bootstrap["anchor_digest"], "recovery_policy_digest": policy["recovery_policy_digest"], "trust_lifecycle_root_digest": lifecycle["lifecycle_root_digest"], "lifecycle_recorded_time_cutoff": "2026-07-30T00:00:01+00:00", "qualified_issuers": [qualified_issuer], "created_at": "2026-07-30T00:00:02+00:00"}
+    release_id = "scenario-first-closure-semantic-ingestion-normative-traceability-approval-release"
+    qualified_issuer = {"signature_purpose": "semantic_ingestion_traceability_release", "issuer_id": "scenario-first-closure-bootstrap", "key_or_certificate_digest": bootstrap_key, "signature_profile_id": "deterministic-v1", "trust_lifecycle_root_digest": lifecycle["lifecycle_root_digest"], "lifecycle_record_digest": record_digest, "eligible_not_before": "0001-01-01T00:00:00+00:00", "eligible_not_after": None, "eligibility_derivation": {"trust_lifecycle_root_digest": lifecycle["lifecycle_root_digest"], "terminal_record_digest": record_digest, "terminal_sequence": 1, "target_id": "scenario-first-closure-bootstrap", "target_digest": bootstrap["anchor_digest"], "eligible_not_before": "0001-01-01T00:00:00+00:00", "eligible_not_after": None}}
+    snapshot_body = {"snapshot_id": "scenario-first-closure-snapshot", "issuance_purpose": "semantic_ingestion_traceability_release_trust_snapshot", "canonical_profile_binding": _authority_binding(authority, "TraceabilityReleaseTrustSnapshotBody.v1"), "release_id": release_id, "release_epoch": 1, "release_sequence": 1, "bootstrap_anchor_digest": bootstrap["anchor_digest"], "recovery_policy_digest": policy["recovery_policy_digest"], "trust_lifecycle_root_digest": lifecycle["lifecycle_root_digest"], "lifecycle_recorded_time_cutoff": "2026-07-30T00:00:01+00:00", "qualified_issuers": [qualified_issuer], "created_at": "2026-07-30T00:00:02+00:00"}
     snapshot_value = {**snapshot_body, "trust_snapshot_digest": declared(b"memorii:sia-traceability-release-trust-snapshot:v1", snapshot_body)}
-    golden_body = {"manifest_id": "scenario-c2-golden", "manifest_version": 1, "source_path": "docs/design/semantic_ingestion/traceability_golden_vectors/v1.json", "owner": "acceptance_independent_vector_author", "authority_use": "verification_fixture_not_runtime_authority", "canonical_profile_binding": _authority_binding(authority, "TraceabilityApprovalGoldenVectorManifestBody.v1"), "design_document_digest": sha(b"semantic-ingestion-traceability\0" + design), "registry_source_identity": sha(b"memorii:sia-traceability-source:v1\0" + registry_bytes), "fixtures": [], "vectors": []}
+    golden_body = {"manifest_id": "scenario-first-closure-golden", "manifest_version": 1, "source_path": "docs/design/semantic_ingestion/traceability_golden_vectors/v1.json", "owner": "acceptance_independent_vector_author", "authority_use": "verification_fixture_not_runtime_authority", "canonical_profile_binding": _authority_binding(authority, "TraceabilityApprovalGoldenVectorManifestBody.v1"), "design_document_digest": sha(b"semantic-ingestion-traceability\0" + design), "registry_source_identity": sha(b"memorii:sia-traceability-source:v1\0" + registry_bytes), "fixtures": [], "vectors": []}
     golden_value = {**golden_body, "golden_vector_manifest_digest": declared(b"memorii:sia-traceability-approval-golden-vectors:v1", golden_body)}
     root_digests = json.loads(structural)["registry_root_digests"]
     roots = {
@@ -819,7 +819,7 @@ def _build_registered_closure(
         bootstrap_key,
     )
     history_entry = {
-        "entry_id": "scenario-c2-entry-1",
+        "entry_id": "scenario-first-closure-entry-1",
         "sequence": 1,
         "predecessor_entry_digest": None,
         "release_id": release["release_id"],
@@ -836,7 +836,7 @@ def _build_registered_closure(
     )
     history = _signed(
         {
-            "history_id": "scenario-c2-history",
+            "history_id": "scenario-first-closure-history",
             "issuance_purpose": "semantic_ingestion_traceability_release_history",
             "canonical_profile_id": "memorii-sia-canonical-json-v1",
             "signature_profile_id": "deterministic-v1",
@@ -865,7 +865,7 @@ def _build_registered_closure(
     pointer_binding = _authority_binding(authority, "TraceabilityActiveReleasePointerBody.v1")
     signer = {
         "signature_purpose": "semantic_ingestion_traceability_approval_generation",
-        "issuer_id": "scenario-c2-bootstrap",
+        "issuer_id": "scenario-first-closure-bootstrap",
         "key_or_certificate_digest": bootstrap_key,
         "signature_profile_id": "deterministic-v1",
         "trust_lifecycle_root_digest": lifecycle["lifecycle_root_digest"],
@@ -882,7 +882,7 @@ def _build_registered_closure(
         **pointer_signer,
         "signature_purpose": "semantic_ingestion_traceability_pointer_history",
     }
-    pointer_history_body = {"history_id": "scenario-c2-pointer-history", "issuance_purpose": "semantic_ingestion_traceability_pointer_history", "canonical_profile_binding": _authority_binding(authority, "TraceabilityActiveReleasePointerHistoryBody.v1"), "pointers": [], "signer_coordinate": pointer_history_signer}
+    pointer_history_body = {"history_id": "scenario-first-closure-pointer-history", "issuance_purpose": "semantic_ingestion_traceability_pointer_history", "canonical_profile_binding": _authority_binding(authority, "TraceabilityActiveReleasePointerHistoryBody.v1"), "pointers": [], "signer_coordinate": pointer_history_signer}
     pointer_history_digest = declared(
         b"memorii:sia-traceability-pointer-history:v1", pointer_history_body
     )
@@ -1010,9 +1010,9 @@ def _build_registered_closure(
         digest = dict(envelope["entries"])["artifact_digest"]
         coordinate_by_kind[name] = f"sia-traceability/v1/{name}/{digest}"
         add(name, raw_bytes, sorted(coordinate_by_kind[item] for item in dependencies[name]))
-    intent = {"pointer_id": "scenario-c2-pointer-1", "issuance_purpose": "semantic_ingestion_traceability_active_release_pointer", "target_authority_id": "scenario-c2-test-authority", "canonical_profile_binding": pointer_binding, "release_id": release["release_id"], "release_digest": release["release_digest"], "release_epoch": 1, "release_sequence": 1, "release_history_digest": history["release_history_digest"], "predecessor_pointer_history_digest": None, "predecessor_active_pointer_digest": None, "pointer_sequence": 1, "published_at": "2026-07-30T00:00:02Z", "signer_coordinate": pointer_signer}
+    intent = {"pointer_id": "scenario-first-closure-pointer-1", "issuance_purpose": "semantic_ingestion_traceability_active_release_pointer", "target_authority_id": "scenario-first-closure-test-authority", "canonical_profile_binding": pointer_binding, "release_id": release["release_id"], "release_digest": release["release_digest"], "release_epoch": 1, "release_sequence": 1, "release_history_digest": history["release_history_digest"], "predecessor_pointer_history_digest": None, "predecessor_active_pointer_digest": None, "pointer_sequence": 1, "published_at": "2026-07-30T00:00:02Z", "signer_coordinate": pointer_signer}
     manifest_body = {
-        "generation_id": "scenario-c2-G1",
+        "generation_id": "scenario-first-closure-G1",
         "issuance_purpose": "semantic_ingestion_traceability_approval_generation",
         "canonical_profile_binding": generation_binding,
         "design_document_digest": design_digest,
@@ -1041,7 +1041,7 @@ def _build_registered_closure(
         )
     closure.append(
         {
-            "coordinate": "scenario-c2/m2/generation_manifest",
+            "coordinate": "scenario-first-closure/writer-safe-preplanning/generation_manifest",
             "kind": "approval_generation_manifest",
             "name": "G1",
             "digest": sha(generation),
@@ -1223,7 +1223,7 @@ def artifact(body: dict[str, Any], schema_binding: dict[str, Any]) -> tuple[byte
 
 def raw_member(name: str, data: bytes, ordinal: int) -> dict[str, Any]:
     return {
-        "coordinate": f"scenario-c2/m1/{ordinal:02d}/{name}",
+        "coordinate": f"scenario-first-closure/governed-source-admission/{ordinal:02d}/{name}",
         "kind": "raw_input",
         "name": name,
         "digest": sha(data),
@@ -1281,7 +1281,7 @@ def elaborate(
     ]
     members.append(
         {
-            "coordinate": f"scenario-c2/m1/{len(members) + 1:02d}/fixture_35_golden_typed_input",
+            "coordinate": f"scenario-first-closure/governed-source-admission/{len(members) + 1:02d}/fixture_35_golden_typed_input",
             "kind": "golden_typed_input_fixture",
             "name": "fixture_35",
             "schema_id": FIXTURE_SCHEMA,
@@ -1298,7 +1298,7 @@ def elaborate(
     spool.write_bytes(canonical({"generation_members": closure}) + b"\n")
     return {
         "format": FORMAT,
-        "milestone": 2,
+        "closure_version": 1,
         "profile": PROFILE_ID,
         "profile_version": PROFILE_VERSION,
         "spool_digest": sha(spool.read_bytes()),

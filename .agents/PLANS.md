@@ -159,6 +159,142 @@ Record applicable:
 
 Reference governing documents.
 
+### Identity And Coordinate Hygiene
+
+Classify every identifier introduced, retained, renamed, serialized, generated,
+or exposed by the operation. Keep these identity classes separate:
+
+| Identity class | Examples | Allowed use |
+| -------------- | -------- | ----------- |
+| planning/evidence coordinate | WorkPlan milestone or phase, requirement ID, issue or PR number, review round, experiment ID, temporary task label | WorkPlans, requirements ledgers, review reports, typed traceability fields, and explicit legacy or malformed-input vectors only |
+| behavioral identity | module, file, class, function, test, fixture, helper, job, CLI command, log or error code, artifact member, owner, runtime discriminator | Name the durable domain behavior or owned contract |
+| protocol identity | public wire/schema version, persisted format, event kind, externally consumed command | Name the durable protocol behavior and version, never the delivery sequence that created it |
+| migration identity | an already shipped source/target format or migration generation | Use only when compatibility with real persisted or external state requires it |
+
+Planning/evidence coordinates include names such as `M1`, `M3`, `phase-2`, `C2`,
+`R22`, `SIA-R22`, issue numbers, dates, review rounds, and WorkPlan IDs. The
+examples are illustrative, not a closed spelling list. A prefixed, abbreviated,
+hyphenated, or reformatted planning/evidence coordinate remains in that class.
+
+Never use a planning/evidence coordinate as, or inside, a behavioral or protocol
+identity. In particular, it must not appear in production or test filenames,
+module paths, Python or schema symbols, persisted discriminators, owner IDs,
+fixture or helper IDs, generated member IDs, test node IDs, executable command
+or evidence-group IDs, CI job or step names, runtime diagnostics, or user-facing
+labels. Requirement IDs remain values in explicit traceability metadata; they
+must not become executable names or general prose labels.
+
+A numeric or version token is permitted only when it describes a genuine
+behavioral quantity or stable protocol/migration version. For example, `BM25`
+is an algorithm name and `.v1` may be a wire version; neither permission makes
+`M2` or `R25` a valid planning-derived identity. Domain terms such as
+`DeliveryCoordinate` remain valid when they describe durable product behavior
+and pass the durability test; the word "delivery" is not itself prohibited.
+
+Apply the durability test before accepting a name:
+
+> If the WorkPlan, milestone ledger, requirement numbering, issue, and review
+> history disappeared, would a new maintainer still choose this name from the
+> behavior or protocol alone?
+
+If not, choose a behavioral name. When a governing design prescribes a
+planning-derived durable identity, record a design conflict and correct or
+reopen the design before implementation. Do not preserve an unshipped bad name
+through an alias. For a shipped public or persisted identity, use an explicit
+migration or compatibility contract while making the current owner behavioral.
+
+Every WorkPlan that creates, changes, or reviews identifiers must maintain this
+ledger; otherwise record `Not applicable` with evidence:
+
+| Surface | Proposed or existing identity | Class | Behavioral owner or protocol meaning | Retain, rename, migrate, or reject | Proof |
+| ------- | ----------------------------- | ----- | ------------------------------------ | --------------------------------- | ----- |
+
+Inventory the complete affected family, including production, tests, fixtures,
+generators, golden files, registries, persisted bytes, docs, CI, timing data,
+and generated artifacts. Search for predecessor and sibling spellings before
+editing and again at closure.
+
+Identity hygiene requires executable enforcement. Use or extend a field-aware
+static check that inspects identifiers and the relevant structured fields in
+Python, schemas, registries, fixtures, workflow files, and generated manifests.
+The canonical owner is `memorii.tools.identity_hygiene`; its machine-readable
+exception authority is `.agents/identity_hygiene_allowlist.json`. CI invokes
+it from `memorii/` as
+`python -m memorii.tools.identity_hygiene --root .. --allowlist ../.agents/identity_hygiene_allowlist.json`.
+Do not use a blanket substring ban that rejects legitimate names such as
+`BM25`. Keep exceptions exact, typed, minimal, and recorded in the ledger.
+Every exception must point to machine-checked repository proof: the named
+rejection test, canonical traceability registry, or retained compatibility
+artifact that makes the occurrence necessary. A classification label or
+rationale alone is not proof. A directory-wide or whole-file exception is
+invalid. The check must run in the appropriate required gate. Mutation coverage
+must prove that `M1`, `M2`, `M3`, `C2`, `R22`, and `SIA-R22` are rejected in
+each newly covered behavioral or protocol surface. A fixed positive corpus
+must prove that `BM25`, genuine wire or schema versions, and a real retained
+compatibility or migration identity remain accepted in their valid fields.
+
+### Change Impact And Verification Closure
+
+Treat the live repository diff as the authoritative change scope. At the start
+of work, after every material edit, before review, and before closure, compare
+the current tree with the recorded base or merge base and reconcile every
+changed path. A WorkPlan's intended scope does not override an observed change.
+
+Maintain a changed-surface ledger:
+
+| Path or pattern | Surface class | Intended scope owner | Authority chain | Required gates | Status |
+| --------------- | ------------- | -------------------- | --------------- | -------------- | ------ |
+
+Use the narrowest applicable surface class, including product code, test or
+fixture, normative design, schema or registry, generator, generated or frozen
+artifact, checksum or workflow pin, workflow or gate, dependency, and
+documentation-only. When a changed path is not owned by the active operation,
+pause and explicitly expand scope, split it into a linked WorkPlan, or restore
+it through an authorized action. Never silently classify it as unrelated.
+
+For every changed source of derived state, maintain its complete authority
+chain from canonical source through every dependent artifact and gate. A
+typical chain may include:
+
+```text
+design -> registry -> structural manifest -> compiled authority -> frozen
+vectors -> checksums -> workflow arguments -> tests -> aggregate gates
+```
+
+Record each node, its owner, regeneration or validation command, expected
+identity or cardinality, and current status. The exact chain is subsystem-
+specific; the example is not permission to omit additional links. A source
+change is incomplete until every affected downstream artifact, pin, validator,
+test, and aggregate gate is reconciled.
+
+Maintain a gate ledger derived from the current workflow files and repository
+tooling:
+
+| Job, matrix entry, shard, or aggregate | Exact local command or CI-only action | Changed surfaces covered | Required | Result and revision |
+| -------------------------------------- | ------------------------------------- | ------------------------ | -------- | ------------------- |
+
+Focused tests are diagnostic evidence only when an affected required job,
+matrix entry, shard, aggregate, generated-artifact check, or warning mode has
+not also been executed. A hand-written substitute is not command-equivalence
+evidence. CI-only behavior remains unverified locally and must be recorded as
+such.
+
+Maintain a known-failure ledger with the exact command, failure signature,
+affected authority chain, disposition, and evidence. A failure may be called
+pre-existing or unrelated only when the same command produces the same causal
+signature on a clean worktree at the recorded merge base. If the live diff
+changes any node in the failure's authority chain, presume the failure is in
+scope until discriminating evidence proves otherwise. Historical memory, a
+previously red branch, or a different failure in the same suite is not enough.
+
+Any material change invalidates the affected review and verification records.
+Recompute the changed-surface, authority-chain, and gate ledgers, then rerun the
+affected gates. Closure is prohibited while any changed surface is unowned,
+any authority-chain node is stale or unexplained, any required local command is
+unrun or failing, any known failure lacks the required disposition evidence, or
+any required current-revision CI check is non-green or unavailable without an
+explicit blocked outcome.
+
 ### Sources Of Truth
 
 List the exact specifications, code, tests, logs, incidents, measurements, or
@@ -171,6 +307,10 @@ State the precedence to apply if these sources disagree.
 Explain what is known at the time of the most recent update.
 
 Separate verified facts from interpretation.
+
+Before closure, reconcile this section with completed milestones, named
+artifacts, and recorded evidence. A historical baseline must be labeled as
+historical; it must not remain presented as current state after implementation.
 
 ### Assumptions And Open Questions
 
@@ -241,9 +381,18 @@ An agent summary is not evidence by itself.
 For every milestone or final closure, append one revision-bound record:
 
 ```yaml
+base_revision:
 reviewed_revision:
 tested_revision:
+tested_tree_digest:
 tree_state:
+changed_surface_inventory_complete:
+scope_delta_resolved:
+authority_chains_complete:
+required_local_jobs: []
+passed_local_jobs: []
+known_local_failures: []
+failure_exclusions: []
 workflow_identities: []
 ci_event:
 ci_executed_sha:
@@ -262,7 +411,11 @@ required_checks_green:
 
 Use `not_applicable` only with a reason. A closure record is invalid when code,
 tests, fixtures, generated artifacts, dependencies, or workflows change after
-the recorded review or verification.
+the recorded review or verification. It is also invalid when the live diff is
+not fully represented in the changed-surface ledger, an affected authority
+chain is incomplete, required local jobs and passed local jobs differ, a known
+failure lacks clean-merge-base exclusion evidence, or required current-
+revision checks are not green.
 
 Every milestone and final closure requires
 `remaining_validated_p1_p2: []`. Testing and debugging work may route a newly
@@ -369,8 +522,8 @@ implementation.
 
 ### Product-Impact Remediation Gate
 
-Design and implementation remediation is reserved for validated `P1` or `P2`
-product defects. Before a finding can consume a remediation round, the
+Product-semantic remediation is reserved for validated `P1` or `P2` product
+defects. Before a finding can consume a product-remediation round, the
 coordinator must record:
 
 * the supported production scenario that is broken
@@ -395,14 +548,20 @@ Use one of these remediation-eligibility values in the Review Log:
 | ----- | ------- |
 | `eligible_p1_p2` | A validated P1/P2 product defect enters bounded remediation |
 | `evidence_action` | Required proof is missing; gather the predefined evidence without changing product semantics |
+| `contract_conformance_action` | A determinate architecture, identity, governance, or repository-contract violation must be corrected, without inventing product priority |
 | `record_only` | P3, unsupported, duplicate, or nonblocking governance observation |
 | `external_blocker` | A missing authority or semantic decision prevents determinate work; stop instead of iterating |
 
 Approval disposition remains independent. A non-P1/P2 finding may require an
-explicit evidence action or may stop approval, but it must not trigger repeated
-design or implementation edits. A required evidence action must be bounded by
+explicit evidence action, a bounded contract-conformance correction, or may
+stop approval. `contract_conformance_action` is valid only when the governing
+repository contract makes the correction determinate; it must not be used to
+invent or choose product semantics. Identity leakage prohibited by the common
+identity contract is `Not applicable`, `changes_required`, finding type
+`identity-governance`, and `contract_conformance_action` unless direct product
+impact supports P1/P2. Required evidence and conformance actions are bounded by
 the existing validation matrix or completion contract; reviewers may not
-expand it round by round.
+expand them round by round.
 
 When a review produces no newly validated P1/P2 defect, do not open another
 product-remediation round. Close the milestone if its predefined completion
@@ -476,6 +635,9 @@ Use:
 
 Every externally visible, persisted, operational, or security-sensitive
 behavior must have an explicit requirement or be explicitly excluded.
+Requirement IDs are traceability values only. Derive all proposed public,
+persisted, code, test, fixture, artifact, and CI names from behavior and record
+them in the common identity ledger before design approval.
 
 #### Non-Goals
 
@@ -569,6 +731,9 @@ A design is complete only when:
 * failure, security, operational, migration, rollback, and compatibility
   concerns are addressed where applicable
 * the verification strategy covers every in-scope requirement
+* the identity ledger covers every affected durable surface, proposed names are
+  behavioral or genuine protocol/migration identities, and the verification
+  strategy includes field-aware enforcement
 * no validated `P1` or `P2` design defect remains
 * no unresolved external authority or semantic decision prevents approval
 * predefined verification evidence is complete, or unavailable evidence is
@@ -638,6 +803,10 @@ List expected changes to:
 Mark non-applicable areas explicitly when their absence could otherwise hide a
 gap.
 
+For every changed area, include filenames, symbols, serialized identifiers,
+tests, fixtures, generated artifacts, and CI labels in the common identity
+ledger. A milestone boundary may organize work but may not name its outputs.
+
 #### Migration, Rollout, And Rollback
 
 Describe applicable:
@@ -704,6 +873,13 @@ Implementation is complete only when:
   recorded without inflating it into a product defect
 * no accidental stubs, skipped tests, ignored errors, undocumented TODOs, or
   incomplete fallback paths remain
+* the live diff is fully classified, every scope delta is resolved, every
+  affected authority chain is current, and every required local job passes
+* no known failure is excluded without identical clean-merge-base reproduction
+  and no required current-revision PR check remains red, stale, or unexplained
+* no planning/evidence coordinate remains in a behavioral or protocol identity, all
+  allowed traceability/migration occurrences are field-specific and ledgered,
+  and the field-aware identity gate plus representative mutations pass
 * a final review has inspected the entire branch against the design baseline,
   not only the most recent diff
 
@@ -744,6 +920,12 @@ A PR review is complete only when:
 * local evidence is labeled accurately and is not substituted for CI enforcement
 * scope, generated artifacts, migration, compatibility, rollback, and release
   implications are reconciled
+* the actual diff matches the changed-surface ledger, every affected authority
+  chain and workflow pin is current, and every failed check is either corrected
+  or supported by identical clean-merge-base reproduction
+* the complete diff passes the identity-hygiene contract, including files,
+  symbols, persisted/generated values, tests, fixtures, commands, and workflow
+  labels, with only exact ledgered exceptions
 * the final decision and any external blocker are explicit
 
 Any change to code, tests, fixtures, generated artifacts, dependencies,
@@ -813,8 +995,9 @@ shared setup with:
 * retirement condition
 
 Names must describe durable behavior or protocol identity. Do not use internal
-milestones, WorkPlan phases, review rounds, dates, or issue numbers unless they
-are genuine persisted migration identities.
+milestones, WorkPlan phases, requirement IDs, review rounds, dates, issue
+numbers, or evidence coordinates unless they are values in exact typed
+traceability fields or genuine persisted migration identities.
 
 #### Retention And Retirement Ledger
 
@@ -857,6 +1040,9 @@ Testing work is complete only when:
 * test-only authority and fixtures are excluded from production packages
 * obsolete tests, fixtures, helpers, imports, and gate references are removed
 * files, symbols, fixtures, and jobs use stable behavioral names
+* the field-aware identity gate covers every changed test, fixture, generator,
+  registry, timing, and workflow surface and rejects representative delivery-
+  coordinate mutations without rejecting legitimate behavioral numerals
 * unit tests remain isolated and fast; expensive behavior is placed in an
   explicit slower tier
 * BVT and PR-fast gates are measured, small, representative samples rather
@@ -972,6 +1158,8 @@ The statement must identify:
 * propagation path
 * reason the existing controls or tests did not prevent detection
 * observed symptom
+* whether a planning/evidence coordinate escaped into a durable identity and which
+  missing inventory, review, or static control allowed it
 
 #### Fix Strategy
 
@@ -1019,6 +1207,8 @@ Debugging is complete only when:
 * a regression test or equivalent verification detects the defect
 * before-and-after behavior is demonstrated when feasible
 * relevant regression checks pass
+* any identity introduced or renamed by the fix is behavioral, the affected
+  identity family is inventoried, and the field-aware identity gate passes
 * operational, migration, compatibility, and rollback implications are
   addressed where applicable
 * remaining uncertainty and follow-up are documented

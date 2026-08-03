@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Callable
 from contextlib import AbstractContextManager
 from pathlib import Path
 from threading import RLock
@@ -132,6 +133,7 @@ class MemoryPlaneStore(Protocol):
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int: ...
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]: ...
@@ -190,8 +192,11 @@ class InMemoryMemoryPlaneStore:
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         with self._lock:
+            if transaction_precondition is not None:
+                transaction_precondition()
             if expected_revision is not None and expected_revision != self._revision:
                 raise MemoryPlaneRevisionConflictError(
                     f"memory-plane revision changed: expected {expected_revision}, actual {self._revision}"
@@ -312,8 +317,11 @@ class JsonlMemoryPlaneStore:
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         with self._locked(exclusive=True):
+            if transaction_precondition is not None:
+                transaction_precondition()
             batches = self._read_batches_unlocked()
             actual_revision = batches[-1].revision if batches else 0
             actual_data_revision = batches[-1].data_revision if batches else 0
@@ -456,12 +464,14 @@ def _validate_governed_write(
         )
         or record.source_kind.startswith("semantic_ingestion_preplanning")
         or record.source_kind.startswith("semantic_ingestion_generation")
+        or record.source_kind == "semantic_ingestion_authorization_authority"
         or record.source_kind.startswith("semantic_ingestion_migration")
         or record.source_kind == "semantic_ingestion_migrated_target"
         or record.memory_id == "semantic_ingestion:writer_admission:current"
         or record.memory_id.startswith("semantic_ingestion:operation:")
         or record.memory_id.startswith("semantic_ingestion:artifact:")
         or record.memory_id.startswith("semantic_ingestion:generation:")
+        or record.memory_id.startswith("semantic_ingestion:authorization:")
         or record.memory_id.startswith("semantic_ingestion:migration:")
         or record.memory_id.startswith("semantic_ingestion:migrated:")
         for record in records

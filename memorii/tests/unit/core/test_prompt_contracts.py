@@ -65,6 +65,7 @@ from memorii.core.prompts.schema_parity import (
     assert_output_schema_matches_model,
     assert_supported_json_schema,
 )
+from memorii.core.semantic_ingestion.prompt_authority import SemanticPromptProposalEnvelope
 from pydantic import BaseModel, ValidationError
 from tests.prompt_contract_manifest import PromptContractManifestEntry, prompt_contract_manifest_by_ref
 
@@ -167,6 +168,7 @@ _OUTPUT_MODELS_BY_REF[LLMMemoryExtractor.prompt_ref] = LLMMemoryExtractor.output
 _OUTPUT_MODELS_BY_REF[PromptBackedStructuredQueryAnalysisProvider.prompt_ref] = (
     PromptBackedStructuredQueryAnalysisProvider.output_model
 )
+_OUTPUT_MODELS_BY_REF["semantic_ingestion_proposal:v1"] = SemanticPromptProposalEnvelope
 
 _SEMANTIC_MODELS_BY_REF = {
     "evidence_selection:v1": EvidenceSelectionDecision,

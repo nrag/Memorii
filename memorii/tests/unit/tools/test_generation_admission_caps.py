@@ -400,7 +400,7 @@ def test_independent_structural_result_requires_allowlisted_exact_body_envelope_
     body, envelope = b"body", b"envelope"
     valid = evidence.IndependentGenerationVerificationResult(
         "memorii-sia-clean-room-b-v1",
-        "b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed",
+        "45a8403c387c407617a3b580094177d111c8879a752eca2bff6d1786e1e61df6",
         body,
         envelope,
         evidence.structural_verification_spool(body, envelope),

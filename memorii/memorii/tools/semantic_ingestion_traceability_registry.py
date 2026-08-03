@@ -553,6 +553,11 @@ def _validate_runner_profile(item: Any) -> None:
         )
 
 
+def expected_requirement_ids() -> tuple[str, ...]:
+    """Return the closed traceability requirement universe."""
+    return tuple(f"SIA-R{number:02d}" for number in range(1, 24))
+
+
 def _validate_references(source: dict[str, Any]) -> None:
     if any(source[key] != expected for key, expected in _SCALAR_METADATA.items()):
         raise RegistryValidationError("registry scalar metadata differs from frozen v1")
@@ -564,10 +569,10 @@ def _validate_references(source: dict[str, Any]) -> None:
 
     bindings = source["requirement_bindings"]
     requirements = _id_set(bindings, "requirement_id", "requirement_bindings")
-    expected_requirements = [f"SIA-R{number:02d}" for number in range(1, 24)]
+    expected_requirements = expected_requirement_ids()
     if (
         requirements != set(expected_requirements)
-        or [item["requirement_id"] for item in bindings] != expected_requirements
+        or tuple(item["requirement_id"] for item in bindings) != expected_requirements
         or any(
             not isinstance(item["assertion_template_id"], str)
             or type(item["assertion_version"]) is not int
@@ -576,7 +581,7 @@ def _validate_references(source: dict[str, Any]) -> None:
             for item in bindings
         )
     ):
-        raise RegistryValidationError("requirement bindings must be exactly SIA-R01 through SIA-R23")
+        raise RegistryValidationError("requirement bindings do not match the complete requirement set")
     template_items = source["assertion_templates"]
     template_coordinates = [
         (item["template_id"], item["version"]) for item in template_items
@@ -600,8 +605,6 @@ def _validate_references(source: dict[str, Any]) -> None:
         raise RegistryValidationError("assertion templates are malformed, duplicate, or unordered")
     groups = _id_set(source["test_evidence_groups"], "group_id", "test_evidence_groups")
     group_order = [item["group_id"] for item in source["test_evidence_groups"]]
-    if group_order != sorted(group_order, key=lambda value: value.encode("utf-8")):
-        raise RegistryValidationError("test evidence groups are not in bytewise ID order")
     for binding in bindings:
         if (
             (binding["assertion_template_id"], binding["assertion_version"])
@@ -610,7 +613,7 @@ def _validate_references(source: dict[str, Any]) -> None:
         ):
             raise RegistryValidationError("requirement binding has an unresolved template or group")
     if [binding["test_evidence_group"] for binding in bindings] != group_order:
-        raise RegistryValidationError("test evidence group order must match ordered requirement bindings")
+        raise RegistryValidationError("test evidence groups must follow ordered requirement bindings")
     schema_items = source["report_schemas"]
     profile_items = source["runner_environment_profiles"]
     if not schema_items or not profile_items:
@@ -698,8 +701,8 @@ def _validate_references(source: dict[str, Any]) -> None:
     paths = _id_set(headings, "heading_path", "heading_defaults")
     # The frozen Layer1 registry covers every numeric Section 1-5 heading in
     # the reviewed design. Its cardinality is itself a closed source invariant.
-    if len(paths) != 149 or any(not item["requirements"] for item in headings):
-        raise RegistryValidationError("registry must contain exactly 149 nonempty heading defaults")
+    if len(paths) != 151 or any(not item["requirements"] for item in headings):
+        raise RegistryValidationError("registry must contain exactly 151 nonempty heading defaults")
     if any(requirement not in requirements for item in headings for requirement in item["requirements"]):
         raise RegistryValidationError("heading default refers to an unknown requirement")
     if any(

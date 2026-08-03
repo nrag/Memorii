@@ -44,11 +44,35 @@ def _evidence() -> tuple[ExecutionEvidenceRecord, EvidenceInputs]:
     secret = b"trusted-reviewer-key"
     test_bytes, result_bytes = b"pytest SIA-T03", b"passed"
     test_digest, result_digest = artifact_digest(test_bytes), artifact_digest(result_bytes)
-    mapping = UnitRequirementMapping("unit", "key", "SIA-R03", "acceptance", "assertion", 1, "SIA-T03-EVIDENCE")
+    mapping = UnitRequirementMapping(
+        invariant_id="unit",
+        content_key="key",
+        requirement_id="SIA-R03",
+        owner="acceptance",
+        assertion_id="assertion",
+        assertion_version=1,
+        test_evidence_group="SIA-T03-EVIDENCE",
+    )
     unsigned = ExecutionEvidenceRecord(
-        ("key",), ("SIA-R03",), "assertion", 1, "SIA-T03-EVIDENCE", test_digest, "d" * 64, "revision", "t" * 64,
-        "run-1", "executed", "pass", result_digest, datetime(2026, 1, 1, tzinfo=UTC), "reviewer",
-        "semantic_ingestion_normative_evidence", "trust", None, "",
+        unit_content_keys=("key",),
+        requirement_ids=("SIA-R03",),
+        assertion_id="assertion",
+        assertion_version=1,
+        test_evidence_group="SIA-T03-EVIDENCE",
+        test_artifact_digest=test_digest,
+        design_document_digest="d" * 64,
+        implementation_revision="revision",
+        implementation_tree_digest="t" * 64,
+        execution_id="run-1",
+        execution_status="executed",
+        execution_result="pass",
+        result_artifact_digest=result_digest,
+        issued_at=datetime(2026, 1, 1, tzinfo=UTC),
+        issuer_id="reviewer",
+        issuance_purpose="semantic_ingestion_normative_evidence",
+        trust_context_digest="trust",
+        expires_at=None,
+        signature="",
     )
     record = replace(unsigned, signature=sign_record(unsigned, secret))
     inputs = EvidenceInputs(

@@ -1,4 +1,4 @@
-"""Clean-room standard-library elaborator A for the normative C2 recipe."""
+"""Clean-room standard-library elaborator A for the normative scenario-first closure recipe."""
 
 from __future__ import annotations
 

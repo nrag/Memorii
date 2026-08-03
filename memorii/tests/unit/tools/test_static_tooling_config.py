@@ -388,7 +388,36 @@ def test_dedicated_deterministic_pytest_jobs_have_timing_owners_or_exemptions() 
         assert entry["timing_exemption_reason"].strip()
 
 
-def test_test_symbols_use_behavioral_names_instead_of_requirement_or_milestone_ids() -> None:
+def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
+    config = _workflow_config("pr-gates.yml")
+    steps = config["jobs"]["semantic-ingestion-generation"]["steps"]
+    command = next(
+        step["run"]
+        for step in steps
+        if step["name"] == "Run exact semantic ingestion integration and process closure"
+    )
+    assert command.split() == [
+        "pytest",
+        "-W",
+        "error",
+        "tests/unit/core/semantic_ingestion",
+        "tests/integration/test_semantic_ingestion_pipeline.py",
+        "tests/integration/test_semantic_ingestion_process_safety.py",
+        "-p",
+        "no:cacheprovider",
+    ]
+    count_command = next(
+        step["run"]
+        for step in steps
+        if step["name"] == "Verify exact semantic ingestion collection count"
+    )
+    assert '"266 tests collected in "*' in count_command
+    assert count_command.count("tests/unit/core/semantic_ingestion") == 1
+    assert count_command.count("tests/integration/test_semantic_ingestion_pipeline.py") == 1
+    assert count_command.count("tests/integration/test_semantic_ingestion_process_safety.py") == 1
+
+
+def test_test_symbols_use_behavioral_names() -> None:
     identifier_name = re.compile(
         r"^(?:async )?def test_(?:.*_(?:r|m|t|c|p)\d+(?:_|\()|sia_[a-z]\d+(?:_|\())",
         re.IGNORECASE,
@@ -399,6 +428,22 @@ def test_test_symbols_use_behavioral_names_instead_of_requirement_or_milestone_i
             if identifier_name.match(line):
                 violations.append(f"{path.relative_to(PROJECT_ROOT)}:{line_number}:{line.strip()}")
     assert violations == []
+
+
+def test_static_analysis_owns_exact_behavioral_identity_command() -> None:
+    config = _workflow_config("pr-gates.yml")
+    steps = config["jobs"]["static-analysis"]["steps"]
+    step = next(item for item in steps if item["name"] == "Verify behavioral identity hygiene")
+    assert step["working-directory"] == "memorii"
+    assert step["run"].split() == [
+        "python",
+        "-m",
+        "memorii.tools.identity_hygiene",
+        "--root",
+        "..",
+        "--allowlist",
+        "../.agents/identity_hygiene_allowlist.json",
+    ]
 
 
 def test_provider_recapture_documentation_matches_exact_pinned_fetch_contract() -> None:

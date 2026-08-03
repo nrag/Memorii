@@ -2089,7 +2089,7 @@ def _validate_release_candidate(
                 raise ValueError("provisioned_root_duplicate")
             provisioned_roots[coordinate] = document
             # The current envelope carries a flat profile/key signer binding.
-            # Until M0A supplies a typed root coordinate on each signed object,
+            # Until canonical genesis authority supplies a typed root coordinate on each signed object,
             # a key shared by any distinct provisioned root is ambiguous.
             signer = (profile, key)
             previous_coordinate = signer_coordinates.setdefault(signer, coordinate)

@@ -1,4 +1,4 @@
-"""Store-owned Section 3.13 writer admission for the bounded M2 slice."""
+"""Store-owned Section 3.13 writer admission for the bounded writer-safe preplanning slice."""
 
 from __future__ import annotations
 
@@ -54,6 +54,7 @@ _KINDS = frozenset(
         "migration_plan",
         "migration_checkpoint",
         "migration_certificate",
+        "authorization_authority",
     }
 )
 _METHODS = frozenset(
@@ -86,8 +87,8 @@ class SemanticWriterWriteAuthorization(MemoryPlaneWriteAuthorization):
 
 
 def bounded_preplanning_ownership_manifest() -> SemanticRecordOwnershipManifest:
-    """Return the complete M2 governed-write inventory (legacy name retained)."""
-    revision = "m2-semantic-generation-v2"
+    """Return the complete writer-safe preplanning governed-write inventory (legacy name retained)."""
+    revision = "semantic-generation-v2"
     return SemanticRecordOwnershipManifest(
         manifest_revision=revision,
         governed_record_kinds=_KINDS,
@@ -449,12 +450,14 @@ class SemanticGovernedWritePolicy:
             or record.source_kind.startswith("semantic_ingestion_generation")
             or record.source_kind.startswith("semantic_ingestion_migration")
             or record.source_kind == "semantic_ingestion_migrated_target"
+            or record.source_kind == "semantic_ingestion_authorization_authority"
             or record.memory_id == writer_admission_memory_id()
             or record.memory_id.startswith("semantic_ingestion:operation:")
             or record.memory_id.startswith("semantic_ingestion:artifact:")
             or record.memory_id.startswith("semantic_ingestion:generation:")
             or record.memory_id.startswith("semantic_ingestion:migration:")
             or record.memory_id.startswith("semantic_ingestion:migrated:")
+            or record.memory_id.startswith("semantic_ingestion:authorization:")
         ]
         if not governed:
             return
@@ -508,6 +511,10 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic authorization is stale")
         if any(record.source_kind == "semantic_ingestion_writer_admission" for record in governed):
             raise SemanticWriterAdmissionError("writer admission transition lacks transition authority")
+        if all(record.source_kind == "semantic_ingestion_authorization_authority" for record in governed):
+            if len(governed) != 1:
+                raise SemanticWriterAdmissionError("authorization authority transition is not isolated")
+            return
         controls = [
             record
             for record in governed
@@ -743,7 +750,12 @@ def _record(
         content={
             "semantic_ingestion_kind": "writer_admission",
             "admission": admission.model_dump(mode="json"),
-            "manifest": manifest.model_dump(mode="json"),
+            "manifest": {
+                "manifest_revision": manifest.manifest_revision,
+                "governed_record_kinds": sorted(manifest.governed_record_kinds),
+                "semantic_store_methods": sorted(manifest.semantic_store_methods),
+                "manifest_digest": manifest.manifest_digest,
+            },
             "migration_activation_digest": migration_activation_digest,
             "draining": draining,
         },

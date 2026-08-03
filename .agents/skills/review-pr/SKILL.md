@@ -34,7 +34,15 @@ trusting the PR description or milestone ledger alone.
 
 Identify intended behavior and non-goals; public, persisted, security,
 compatibility, migration, rollback, and operational effects; generated-artifact
-authority; unrelated or unexplained changes; and overstated evidence maturity.
+authority; unrelated or unexplained changes; overstated evidence maturity; and
+the complete `.agents/PLANS.md` identity ledger for every changed durable
+surface.
+
+Reconstruct the changed-surface ledger from the actual base-to-head diff and
+compare it with every related WorkPlan. Reject unowned or unmapped paths. For
+each normative source, registry, schema, generator, or workflow change, follow
+the complete authority chain through generated artifacts, cardinalities,
+checksums, workflow pins, validators, shards, and aggregates.
 
 ## 3. Review The Complete PR
 
@@ -53,6 +61,15 @@ Reconcile every finding as confirmed, duplicate, unsupported, already
 resolved, accepted limitation, design ambiguity, or blocked by missing
 evidence. Reviewer silence is not approval evidence.
 
+Independently scan the complete diff and current affected families for planning/
+evidence coordinates in files, symbols, public or persisted IDs, tests, fixtures,
+generators, goldens, registries, diagnostics, commands, evidence groups, timing
+data, and workflow labels. Verify exact typed traceability/migration exceptions
+and require the field-aware gate plus representative mutations. Classify a
+violation as `identity-governance`, `Not applicable`, `changes_required`, and
+`contract_conformance_action` unless product impact independently supports
+P1/P2.
+
 ## 4. Verify CI And Revision Parity
 
 Read current GitHub workflows directly. Inventory every required job, matrix
@@ -69,6 +86,10 @@ For local command-equivalence evidence:
    network steps as CI-only evidence
 5. require a clean detached worktree, including untracked files; dirty-tree or
    different-runtime results are diagnostic only
+
+Compare the recorded required-local-job set with the commands actually run.
+Any missing or failing job, stale authority-chain node, or failure excluded
+without identical clean-merge-base reproduction is `changes_required`.
 
 GitHub required checks are authoritative for CI enforcement. Confirm every
 required check and aggregate passes on its actual current executed SHA/ref.
@@ -114,7 +135,8 @@ Report findings first, then exactly one decision:
 - `approve`: no confirmed P1/P2, `blocks_approval`, or `changes_required`
   finding remains; every required check and aggregate passes on its actual
   current executed ref; every applicable acceptance gate has revision-bound
-  evidence
+  evidence; the identity ledger, exact exceptions, and field-aware gate are
+  complete
 - `changes_required`: determinate corrections or evidence actions remain
 - `blocked`: approval needs an external decision, unavailable evidence, access,
   or resolution of a source-of-truth conflict
@@ -122,12 +144,21 @@ Report findings first, then exactly one decision:
 Record:
 
 ```yaml
+base_revision:
 reviewed_revision:
 tested_revision:
+tested_tree_digest:
 pr_base_sha:
 pr_head_sha:
 merge_base_sha:
 tree_state:
+changed_surface_inventory_complete:
+scope_delta_resolved:
+authority_chains_complete:
+required_local_jobs: []
+passed_local_jobs: []
+known_local_failures: []
+failure_exclusions: []
 workflow_identities: []
 ci_event:
 ci_executed_sha:

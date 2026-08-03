@@ -1,4 +1,4 @@
-"""Independent standard-library validation for the C2 golden-source package.
+"""Independent standard-library validation for the scenario-first closure golden-source package.
 
 This validates source-package authority before an implementation may consume
 the bytes.  It intentionally imports neither Memorii nor any runtime codec.
@@ -49,7 +49,7 @@ _REQUIRED_FIXTURE_KEYS = {
 
 
 class IncompletePackageError(ValueError):
-    """The preserved C2 candidate is structurally checkable but not authoritative."""
+    """The preserved scenario-first closure candidate is structurally checkable but not authoritative."""
 
 
 def _canonical(value: object) -> bytes:
@@ -199,7 +199,7 @@ def _bindings(document: bytes) -> dict[str, str]:
     inventory = _marked(document, "SIA-TRACEABILITY-SCHEMA-INVENTORY-V1")
     schemas = inventory.decode("ascii").splitlines()
     if schemas != sorted(set(schemas)) or len(schemas) != 56:
-        raise ValueError("expected 56 sorted current C2 inventory coordinates")
+        raise ValueError("expected 56 sorted current scenario-first closure inventory coordinates")
     design_digest = _digest("semantic-ingestion-traceability", document)
     grammar_digest = _digest("memorii:sia-ctv-grammar:v1", grammar)
     inventory_digest = _digest("memorii:sia-traceability-schema-inventory:v1", inventory)
@@ -454,9 +454,9 @@ def validate(source: bytes, design: bytes | None = None) -> dict[str, object]:
     if ids != sorted(set(ids)):
         raise ValueError("fixture IDs must be distinct Unicode-scalar sorted")
     if len(vectors) != 25:
-        raise ValueError("C2 requires exactly 25 vector cases")
+        raise ValueError("scenario-first closure requires exactly 25 vector cases")
     if len(fixtures) != 57:
-        raise ValueError("C2 requires exactly 57 fixture instances")
+        raise ValueError("scenario-first closure requires exactly 57 fixture instances")
     vector_ids = [vector["vector_id"] for vector in vectors]
     if vector_ids != sorted(set(vector_ids)):
         raise ValueError("vector IDs must be distinct Unicode-scalar sorted")
@@ -645,9 +645,9 @@ def validate(source: bytes, design: bytes | None = None) -> dict[str, object]:
             for dependency in dependency_ids.get(number, ())
         )
         if fixture["depends_on_coordinates"] != expected_dependencies:
-            raise ValueError(f"exact C2 DAG mismatch: {fixture['fixture_id']}")
+            raise ValueError(f"exact scenario-first closure DAG mismatch: {fixture['fixture_id']}")
         if fixture["exact_reference_coordinates"] != expected_dependencies:
-            raise ValueError(f"exact C2 reference closure mismatch: {fixture['fixture_id']}")
+            raise ValueError(f"exact scenario-first closure reference closure mismatch: {fixture['fixture_id']}")
     if hashlib.sha256(source).hexdigest() != _APPROVED_SOURCE_SHA256:
         raise IncompletePackageError(
             "C2_INCOMPLETE_PACKAGE: preserved non-convergent candidate is not "

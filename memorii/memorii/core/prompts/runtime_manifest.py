@@ -23,6 +23,7 @@ class PromptOwner(StrEnum):
     LLM_MEMORY_EXTRACTOR = "LLMMemoryExtractor"
     LLM_PROMOTION_DECISION_ADAPTER = "LLMPromotionAssessmentAdapter"
     LLM_RETRIEVAL_RELEVANCE_DECISION_ADAPTER = "LLMRetrievalRelevanceDecisionAdapter"
+    SEMANTIC_INGESTION_PROPOSER = "SemanticIngestionProposer"
     STRUCTURED_QUERY_ANALYSIS_PROVIDER = "PromptBackedStructuredQueryAnalysisProvider"
 
 
@@ -165,6 +166,11 @@ def prompt_runtime_registrations() -> dict[str, PromptRuntimeRegistration]:
             "structured_query_analysis:v1",
             PromptOwner.STRUCTURED_QUERY_ANALYSIS_PROVIDER,
             semantic_contract=PromptSemanticContract.STRUCTURED_QUERY_ANALYSIS,
+        ),
+        _registration(
+            "semantic_ingestion_proposal:v1",
+            PromptOwner.SEMANTIC_INGESTION_PROPOSER,
+            semantic_contract=PromptSemanticContract.NONE,
         ),
     ]
     return {entry.prompt_ref: entry for entry in entries}

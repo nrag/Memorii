@@ -1,4 +1,4 @@
-"""End-to-end registered R03/R13 approval coordinates."""
+"""End-to-end registered traceability approval coordinates."""
 
 from __future__ import annotations
 
@@ -784,7 +784,7 @@ def _approval_inputs(
         "independent_generation_verifier": ExplicitTestIndependentGenerationVerifier(
             IndependentGenerationVerificationResult(
                 "memorii-sia-clean-room-b-v1",
-                "b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed",
+                "45a8403c387c407617a3b580094177d111c8879a752eca2bff6d1786e1e61df6",
                 structural_bytes,
                 structural_member,
                 structural_verification_spool(
@@ -1257,7 +1257,7 @@ class _CountingWatermarkStore:
         return self._result
 
 
-@pytest.mark.parametrize("group_id", ["semantic-ingestion-r03", "semantic-ingestion-r13"])
+@pytest.mark.parametrize("group_id", ["semantic-ingestion-normative-traceability-approval", "semantic-ingestion-acceptance-release-trust"])
 def test_registered_normative_approval_accepts_signed_provisioned_generation(group_id: str) -> None:
     assert _approve(_approval_inputs(group_id))["command_id"]
 
@@ -1275,7 +1275,7 @@ def test_registered_normative_approval_accepts_signed_provisioned_generation(gro
 def test_registered_approval_rejects_unavailable_or_indeterminate_watermark_commit_outcomes(
     watermark_result: object, expected: str
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     material = inputs["verifier_material"]
     expected_roots = inputs["expected_release_roots"]
     release_bytes = inputs["release_artifact"]
@@ -1294,14 +1294,14 @@ def test_registered_approval_rejects_unavailable_or_indeterminate_watermark_comm
 
 
 def test_registered_approval_accepts_threshold_recovery_then_ordinary_rotation() -> None:
-    assert _approve(_threshold_recovery_inputs("semantic-ingestion-r03"))["command_id"]
+    assert _approve(_threshold_recovery_inputs("semantic-ingestion-normative-traceability-approval"))["command_id"]
 
 
 def test_registered_approval_rejects_unactivated_threshold_recovery_without_mutation(
     tmp_path: Path,
 ) -> None:
     inputs = _approval_inputs(
-        "semantic-ingestion-r03",
+        "semantic-ingestion-normative-traceability-approval",
         threshold_recovery=True,
         activate_recovery_roots=False,
     )
@@ -1326,7 +1326,7 @@ def test_registered_approval_rejects_unactivated_threshold_recovery_without_muta
 def test_registered_approval_rejects_invalid_additional_recovery_roots_without_mutation(
     tmp_path: Path, mutation: str, expected: str
 ) -> None:
-    inputs = _threshold_recovery_inputs("semantic-ingestion-r03")
+    inputs = _threshold_recovery_inputs("semantic-ingestion-normative-traceability-approval")
     additional = inputs["recovery_artifacts"]
     assert isinstance(additional, tuple) and len(additional) == 1
     inputs["recovery_artifacts"] = () if mutation == "missing" else (additional[0], additional[0])
@@ -1350,7 +1350,7 @@ def test_registered_approval_rejects_invalid_additional_recovery_roots_without_m
 def test_public_current_ctv_rejects_prior_root_attacks_without_durable_mutation(
     tmp_path: Path, mutation: str, expected: str
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     material = inputs["verifier_material"]
     assert isinstance(material, VerifierHeldTrustMaterial)
     prior_roots = material.prior_verified_lifecycle_root_bytes
@@ -1420,7 +1420,7 @@ def test_public_current_ctv_rejects_ineligible_release_signer_without_durable_mu
     release_issued_at: str,
 ) -> None:
     inputs = _approval_inputs(
-        "semantic-ingestion-r03",
+        "semantic-ingestion-normative-traceability-approval",
         bootstrap_expires_at=bootstrap_end,
         release_issued_at=release_issued_at,
     )
@@ -1446,7 +1446,7 @@ def test_public_current_ctv_rejects_ineligible_release_signer_without_durable_mu
 def test_registered_successor_report_failures_do_not_advance_watermark(
     tmp_path: Path, mutation: str, expected: str
 ) -> None:
-    inputs = _successor_inputs("semantic-ingestion-r03")
+    inputs = _successor_inputs("semantic-ingestion-normative-traceability-approval")
     report_bytes = inputs["report_bytes"]
     assert isinstance(report_bytes, bytes)
     report = json.loads(report_bytes)
@@ -1484,10 +1484,10 @@ def test_registered_successor_report_failures_do_not_advance_watermark(
 def test_registered_valid_successor_advances_once_and_retry_is_idempotent(
     tmp_path: Path,
 ) -> None:
-    inputs = _successor_inputs("semantic-ingestion-r03")
+    inputs = _successor_inputs("semantic-ingestion-normative-traceability-approval")
     path = tmp_path / "valid-successor-watermark.json"
     authority, record_before, seal_before = _provisioned_authority(inputs, path)
-    assert _registered_call(inputs, authority)["command_id"] == "pytest-sia-r03-v1"
+    assert _registered_call(inputs, authority)["command_id"] == "pytest-normative-traceability-approval-v1"
     record_after = path.read_bytes()
     seal = path.with_name(f"{path.name}.bootstrap-seal")
     assert record_after != record_before
@@ -1504,7 +1504,7 @@ def test_registered_valid_successor_advances_once_and_retry_is_idempotent(
     files_after = {
         item.name: item.read_bytes() for item in tmp_path.iterdir() if item.is_file()
     }
-    assert _registered_call(inputs, authority)["command_id"] == "pytest-sia-r03-v1"
+    assert _registered_call(inputs, authority)["command_id"] == "pytest-normative-traceability-approval-v1"
     assert path.read_bytes() == record_after
     assert seal.read_bytes() == seal_before
     assert {
@@ -1513,7 +1513,7 @@ def test_registered_valid_successor_advances_once_and_retry_is_idempotent(
 
 
 def test_public_acceptance_fails_closed_for_corrupt_persisted_watermark(tmp_path: Path) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     required = (
         "registry_bytes", "registry", "report_bytes", "artifacts", "implementation_revision",
         "implementation_tree_digest", "environment_observation_bytes", "bootstrap_artifact",
@@ -1533,7 +1533,7 @@ def test_public_acceptance_fails_closed_for_corrupt_persisted_watermark(tmp_path
                 allow_test_watermark_fallback=True,
             )
         ).execute(
-            registry_bytes=inputs["registry_bytes"], group_id="semantic-ingestion-r03",
+            registry_bytes=inputs["registry_bytes"], group_id="semantic-ingestion-normative-traceability-approval",
             report_bytes=inputs["report_bytes"], artifacts=inputs["artifacts"],
             implementation_revision=inputs["implementation_revision"],
             implementation_tree_digest=inputs["implementation_tree_digest"],
@@ -1551,7 +1551,7 @@ def test_public_acceptance_fails_closed_for_corrupt_persisted_watermark(tmp_path
 
 @pytest.mark.parametrize("deleted", ["unprovisioned", "after_provision"])
 def test_public_acceptance_never_creates_or_recreates_missing_watermark(tmp_path: Path, deleted: str) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     path = tmp_path / "acceptance-watermark.json"
     store = FileTraceabilityReleaseWatermarkStore(path)
     if deleted == "after_provision":
@@ -1569,7 +1569,7 @@ def test_public_acceptance_never_creates_or_recreates_missing_watermark(tmp_path
 def test_public_acceptance_fails_closed_for_missing_or_corrupt_bootstrap_seal(
     tmp_path: Path, failure: str
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     path = tmp_path / "acceptance-watermark.json"
     store = FileTraceabilityReleaseWatermarkStore(path)
     provisioning = inputs["watermark_provisioning"]
@@ -1596,7 +1596,7 @@ def test_public_acceptance_fails_closed_for_missing_or_corrupt_bootstrap_seal(
 
 
 def test_public_boundary_rejects_forged_registry_object_argument(tmp_path: Path) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     fake = SimpleNamespace(canonical_bytes=inputs["registry_bytes"], source_identity="0" * 64, root_digests={})
     with pytest.raises(TypeError, match="registry"):
         RegisteredApprovalExecutor(
@@ -1607,7 +1607,7 @@ def test_public_boundary_rejects_forged_registry_object_argument(tmp_path: Path)
                 allow_test_watermark_fallback=True,
             )
         ).execute(
-            registry_bytes=inputs["registry_bytes"], registry=fake, group_id="semantic-ingestion-r03",
+            registry_bytes=inputs["registry_bytes"], registry=fake, group_id="semantic-ingestion-normative-traceability-approval",
             report_bytes=inputs["report_bytes"], artifacts=inputs["artifacts"],
             implementation_revision=inputs["implementation_revision"], implementation_tree_digest=inputs["implementation_tree_digest"],
             environment_observation_bytes=inputs["environment_observation_bytes"], bootstrap_artifact=inputs["bootstrap_artifact"],
@@ -1636,7 +1636,7 @@ def _provisioned_authority(
 def test_public_acceptance_reconstructs_supplied_loader_valid_registry_bytes_before_root_check(
     tmp_path: Path,
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes)
     source = json.loads(raw)
@@ -1694,7 +1694,7 @@ def _parser_hostile_registry_bytes() -> tuple[tuple[str, bytes], ...]:
 def test_public_acceptance_rejects_noncanonical_registry_bytes_before_durable_state(
     tmp_path: Path, case_id: str, mutate: object
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes) and callable(mutate)
     inputs["registry_bytes"] = mutate(raw)
@@ -1710,7 +1710,7 @@ def test_public_acceptance_rejects_noncanonical_registry_bytes_before_durable_st
 def test_public_acceptance_rejects_parser_hostile_registry_before_durable_state(
     tmp_path: Path, case_id: str, registry_bytes: bytes
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     inputs["registry_bytes"] = registry_bytes
     path = tmp_path / f"{case_id}-watermark.json"
     authority, record_before, seal_before = _provisioned_authority(inputs, path)
@@ -1728,7 +1728,7 @@ def test_public_acceptance_rejects_parser_hostile_registry_before_durable_state(
 def test_public_acceptance_rejects_non_array_registry_root_before_durable_state(
     tmp_path: Path, root: str, replacement_id: str, replacement: object
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes)
     source = json.loads(raw)
@@ -1745,7 +1745,7 @@ def test_public_acceptance_rejects_non_array_registry_root_before_durable_state(
 def test_public_acceptance_rejects_lone_surrogate_before_durable_state(
     tmp_path: Path,
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes)
     source = json.loads(raw)
@@ -1766,7 +1766,7 @@ def test_public_acceptance_rejects_lone_surrogate_before_durable_state(
 def test_public_acceptance_rejects_rebound_pattern_compile_overflow_before_durable_state(
     tmp_path: Path,
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes)
     source = json.loads(raw)
@@ -1796,7 +1796,7 @@ def test_public_acceptance_rejects_rebound_pattern_compile_overflow_before_durab
 def test_public_acceptance_rejects_closed_registry_duplicate_policy_before_watermark_mutation(
     tmp_path: Path, mutation: str
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes)
     source = json.loads(raw)
@@ -1845,7 +1845,7 @@ def test_public_acceptance_rejects_closed_registry_duplicate_policy_before_water
 def test_public_acceptance_rejects_closed_v1_registry_mutations_before_durable_state(
     tmp_path: Path, mutation: str
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes)
     source = json.loads(raw)
@@ -1911,7 +1911,7 @@ def test_public_acceptance_rejects_closed_v1_registry_mutations_before_durable_s
 def test_public_acceptance_rejects_closed_heading_defaults_before_durable_state(
     tmp_path: Path, mutation: str
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes)
     source = json.loads(raw)
@@ -1941,7 +1941,7 @@ def test_public_acceptance_rejects_closed_heading_defaults_before_durable_state(
 def test_public_acceptance_rejects_kahn_back_edge_before_durable_state(
     tmp_path: Path,
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes)
     source = json.loads(raw)
@@ -2259,7 +2259,7 @@ def _mutate_public_specialized_v1_source(
 def test_public_acceptance_rejects_rebound_specialized_v1_mutations_before_durable_state(
     tmp_path: Path, mutation: str
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     raw = inputs["registry_bytes"]
     assert isinstance(raw, bytes)
     source = json.loads(raw)
@@ -2289,7 +2289,7 @@ def test_public_acceptance_rejects_rebound_specialized_v1_mutations_before_durab
 def test_public_acceptance_rejects_report_mutations_before_watermark_mutation(
     tmp_path: Path, mutation: str, expected: str
 ) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     report_bytes = inputs["report_bytes"]
     assert isinstance(report_bytes, bytes)
     report = json.loads(report_bytes)
@@ -2319,7 +2319,7 @@ def test_public_acceptance_rejects_report_mutations_before_watermark_mutation(
 
 
 def test_public_acceptance_rejects_resigned_forged_structural_root(tmp_path: Path) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     release_bytes, pointer_bytes = inputs["release_artifact"], inputs["active_pointer_artifact"]
     assert isinstance(release_bytes, bytes) and isinstance(pointer_bytes, bytes)
     release, release_binding = _typed_body(release_bytes)
@@ -2353,8 +2353,8 @@ def test_public_acceptance_rejects_resigned_forged_structural_root(tmp_path: Pat
 
 
 def test_public_acceptance_successor_reopen_rejects_valid_historical_147_release(tmp_path: Path) -> None:
-    genesis = _approval_inputs("semantic-ingestion-r03")
-    inputs = _successor_inputs("semantic-ingestion-r03")
+    genesis = _approval_inputs("semantic-ingestion-normative-traceability-approval")
+    inputs = _successor_inputs("semantic-ingestion-normative-traceability-approval")
     path = tmp_path / "watermark.json"
     authority = _provisioned_authority(inputs, path)[0]
     assert _registered_call(inputs, authority)["command_id"]
@@ -2366,7 +2366,7 @@ def test_public_acceptance_successor_reopen_rejects_valid_historical_147_release
 
 @pytest.mark.parametrize("mutation", ["root", "lifecycle", "report", "profile"])
 def test_registered_normative_approval_rejects_root_report_profile_and_lifecycle_mutations(mutation: str) -> None:
-    inputs = _approval_inputs("semantic-ingestion-r03")
+    inputs = _approval_inputs("semantic-ingestion-normative-traceability-approval")
     if mutation == "root":
         assert isinstance(inputs["release_artifact"], bytes)
         inputs["release_artifact"] += b" "
@@ -2387,10 +2387,10 @@ def test_registered_normative_approval_rejects_root_report_profile_and_lifecycle
 
 def test_registered_approval_accepts_complete_signed_generation() -> None:
     """The registry maps this behavioral proof to the signed-generation requirement."""
-    assert _approve(_approval_inputs("semantic-ingestion-r03"))["command_id"] == "pytest-sia-r03-v1"
+    assert _approve(_approval_inputs("semantic-ingestion-normative-traceability-approval"))["command_id"] == "pytest-normative-traceability-approval-v1"
 
 
 def test_registered_approval_uses_composition_owned_trust() -> None:
     """The registry maps this behavioral proof to the trust-ownership requirement."""
-    inputs = _approval_inputs("semantic-ingestion-r13")
-    assert _approve(inputs)["command_id"] == "pytest-sia-r13-v1"
+    inputs = _approval_inputs("semantic-ingestion-acceptance-release-trust")
+    assert _approve(inputs)["command_id"] == "pytest-acceptance-release-trust-v1"

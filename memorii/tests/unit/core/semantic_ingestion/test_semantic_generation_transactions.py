@@ -10,6 +10,7 @@ from memorii.core.memory_evolution.atomic_store import (
     NonCommittingGroupAtomicWriteRequest,
     PreplanningOperationControl,
     PreplanningStoreError,
+    SemanticAuthorizationAuthorityRecord,
     SemanticIngestionAtomicStore,
     SourceCheckpointAtomicWriteRequest,
     SourceFinalizationAtomicWriteRequest,
@@ -47,7 +48,7 @@ def _setup(*, verified: bool = False, planned: bool = False, backend: MemoryPlan
     admission, _ = _handoff(plane)
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW)
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     if verified:
         plan = build_migration_plan(
@@ -65,7 +66,7 @@ def _setup(*, verified: bool = False, planned: bool = False, backend: MemoryPlan
         certificate = certify_migration(plan, checkpoint, independent_verifier_fingerprint="verifier")
         activation = activate_migration(plan, certificate)
         binding = writers.commit_binding(writers.transition(
-            expected=binding, admission_id="m2:verified", runtime_mode="verified_semantic",
+            expected=binding, admission_id="writer-admission:verified", runtime_mode="verified_semantic",
             writer_implementation_fingerprint="writer:verified", graph_schema_fingerprint="schema",
             migration_activation=activation, migration_plan=plan, migration_checkpoint=checkpoint,
             migration_certificate=certificate, target_records=(),
@@ -201,12 +202,36 @@ def test_terminal_group_enforces_committing_and_noncommitting_member_sets(commit
         required_artifact_digests=(), request_digest="0" * 64,
     )
     if committed:
+        authority_scope_id = "test:terminal-group"
+        authority_body = {
+            "authority_record_id": f"semantic_ingestion:authorization:{sha256(authority_scope_id.encode()).hexdigest()}",
+            "authority_scope_id": authority_scope_id,
+            "authority_revision": 1,
+            "state": "active",
+            "policy_bundle_digest": "1" * 64,
+            "policy_revision_digest": "2" * 64,
+            "egress_policy_revision": None,
+            "egress_decision_digest": None,
+            "deployment_authorization_digest": "3" * 64,
+            "deployment_active_epoch": 1,
+            "deployment_decision_digest": "4" * 64,
+            "valid_until": datetime(2030, 1, 1, tzinfo=UTC),
+            "read_set_digest": "5" * 64,
+        }
+        authorization_precondition = store.install_authorization_authority(
+            writer_binding=binding,
+            authority=SemanticAuthorizationAuthorityRecord(
+                **authority_body,
+                coordinates_digest=sha256(encode_typed_value(authority_body)).hexdigest(),
+            ),
+        )
         request = CommittedGroupAtomicWriteRequest(
             **common,
             members=tuple(_member(kind, kind) for kind in ("event_batch", "graph_delta", "group_result", "observation_delta")),
             expected_graph_revision="genesis", expected_observation_revision="genesis",
             expected_effective_read_set_digest="0" * 64,
             graph_revision_after="g2", observation_revision_after="o2",
+            authorization_precondition=authorization_precondition,
         )
     else:
         request = NonCommittingGroupAtomicWriteRequest(
@@ -585,7 +610,7 @@ def test_jsonl_same_public_operation_id_has_two_fence_isolated_generations_after
     plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(path))
     writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW)
     binding = writers.commit_binding(writers.create_initial_evidence_only(
-        admission_id="m2", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
     ))
     store = SemanticIngestionAtomicStore(plane, writers, now_provider=lambda: NOW)
     publications = []

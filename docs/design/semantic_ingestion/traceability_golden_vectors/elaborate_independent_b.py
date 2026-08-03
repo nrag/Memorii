@@ -1,4 +1,4 @@
-"""Independent standard-library elaborator B for the frozen C2 recipe."""
+"""Independent standard-library elaborator B for the frozen scenario-first closure recipe."""
 
 from __future__ import annotations
 

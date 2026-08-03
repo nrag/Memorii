@@ -1,4 +1,4 @@
-"""Trusted, revision-bound execution-evidence verification for SIA-R03.
+"""Trusted, revision-bound execution-evidence verification for normative traceability approval.
 
 The verifier is deliberately separate from structural extraction.  Parser
 agreement is accepted only as a precondition and cannot make execution pass.
@@ -58,7 +58,7 @@ class ExecutionEvidenceError(ValueError):
 
 
 _CLEAN_ROOM_B_EXECUTOR_ID = "memorii-sia-clean-room-b-v1"
-_CLEAN_ROOM_B_IMPLEMENTATION_SHA256 = "b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed"
+_CLEAN_ROOM_B_IMPLEMENTATION_SHA256 = "45a8403c387c407617a3b580094177d111c8879a752eca2bff6d1786e1e61df6"
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ class PinnedIsolatedIndependentGenerationVerifier:
     """Execute the stdlib-only B compiler behind a pinned file/byte boundary."""
 
     implementation_path: Path
-    implementation_sha256: str = "b655f474e4918d64447251e40b9a3af53daca0efd2e2cb6baa76890243bae5ed"
+    implementation_sha256: str = "45a8403c387c407617a3b580094177d111c8879a752eca2bff6d1786e1e61df6"
 
     def verify(
         self,

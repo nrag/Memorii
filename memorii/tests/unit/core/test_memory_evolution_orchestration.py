@@ -153,6 +153,7 @@ class _OneConflictStore(InMemoryMemoryPlaneStore):
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         if self.conflict_next_batch:
             self.conflict_next_batch = False
@@ -162,6 +163,7 @@ class _OneConflictStore(InMemoryMemoryPlaneStore):
             expected_revision=expected_revision,
             preconditions=preconditions,
             authorization=authorization,
+            transaction_precondition=transaction_precondition,
         )
 
 
@@ -177,12 +179,14 @@ class _LostAcknowledgementStore(InMemoryMemoryPlaneStore):
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         revision = super().apply_batch(
             records,
             expected_revision=expected_revision,
             preconditions=preconditions,
             authorization=authorization,
+            transaction_precondition=transaction_precondition,
         )
         if self.lose_completion_acknowledgement and any(_is_committed_operation(record) for record in records):
             self.lose_completion_acknowledgement = False
@@ -203,6 +207,7 @@ class _BlockingCompletionStore(InMemoryMemoryPlaneStore):
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         if any(_is_committed_operation(record) for record in records):
             self.completion_started.wait(timeout=5)
@@ -212,6 +217,7 @@ class _BlockingCompletionStore(InMemoryMemoryPlaneStore):
             expected_revision=expected_revision,
             preconditions=preconditions,
             authorization=authorization,
+            transaction_precondition=transaction_precondition,
         )
 
 
@@ -229,6 +235,7 @@ class _OwnershipTransferStore(InMemoryMemoryPlaneStore):
         expected_revision: int | None,
         preconditions: tuple[MemoryPlanePrecondition, ...] = (),
         authorization: MemoryPlaneWriteAuthorization | None = None,
+        transaction_precondition: Callable[[], None] | None = None,
     ) -> int:
         if not self._blocked_once and any(_is_committed_operation(record) for record in records):
             self._blocked_once = True
@@ -239,6 +246,7 @@ class _OwnershipTransferStore(InMemoryMemoryPlaneStore):
             expected_revision=expected_revision,
             preconditions=preconditions,
             authorization=authorization,
+            transaction_precondition=transaction_precondition,
         )
 
 

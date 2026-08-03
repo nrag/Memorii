@@ -48,12 +48,15 @@ Use remediation eligibility from `.agents/PLANS.md`:
 
 - `eligible_p1_p2`
 - `evidence_action`
+- `contract_conformance_action`
 - `record_only`
 - `external_blocker`
 
-Only `eligible_p1_p2` findings enter design or implementation remediation.
-Approval disposition is not a shortcut around the product-impact evidence
-required for P1/P2.
+Only `eligible_p1_p2` findings enter product remediation.
+`contract_conformance_action` findings enter bounded remediation when the
+governing repository contract makes the correction determinate; identity-
+governance violations are the canonical example. Approval disposition is not a
+shortcut around the product-impact evidence required for P1/P2.
 
 ## Family-Complete Findings
 

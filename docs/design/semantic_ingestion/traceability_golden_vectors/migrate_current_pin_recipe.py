@@ -1,4 +1,4 @@
-"""Mechanically reduce the historical C2 candidate to closed primitive roots.
+"""Mechanically reduce the historical scenario-first closure candidate to closed primitive roots.
 
 The historical body authority is migration provenance only.  This tool emits a
 leaf-by-leaf ownership ledger alongside the reduced values so a later
@@ -26,7 +26,7 @@ ROOTS = (
 BODY_CLASSIFICATION_KEY = "body_leaf_classification"
 DERIVATION_PROGRAM_KEY = "derivation_program"
 
-# These are field identities from the frozen C2 schemas, not a token matcher.
+# These are field identities from the frozen scenario-first closure schemas, not a token matcher.
 # A value below one of these fields is elaborated from the other primitive
 # roots.  Every other value is retained verbatim as primitive authority.
 DERIVED_FIELDS_BY_SCHEMA = {
@@ -63,7 +63,7 @@ DERIVED_FIELDS_BY_SCHEMA = {
 
 # Nested CTV models are reused by several bodies.  Their classification is
 # still closed: these are the exact field identities observed in the frozen
-# C2 schema inventory, not a substring or suffix rule.  The exceptions below
+# scenario-first closure schema inventory, not a substring or suffix rule.  The exceptions below
 # are the primitive signer/policy facts explicitly retained by the current-pin
 # authority correction.
 DERIVED_FIELD_NAMES = frozenset({
@@ -131,7 +131,7 @@ def _is_derived(schema_id: str, field_name: str) -> bool:
     schema-owned ``canonical_profile_binding`` is derived.
     """
     if schema_id not in DERIVED_FIELDS_BY_SCHEMA:
-        raise ValueError(f"unclassified C2 schema: {schema_id}")
+        raise ValueError(f"unclassified scenario-first closure schema: {schema_id}")
     if field_name in PRIMITIVE_FIELD_NAMES:
         return False
     return field_name in DERIVED_FIELDS_BY_SCHEMA[schema_id] or field_name in DERIVED_FIELD_NAMES
@@ -153,7 +153,7 @@ def _derivation_rule(path: tuple[str, ...]) -> str:
             return "structural_or_generation_root"
     if any(field_name in DERIVED_FIELD_NAMES for field_name in fields):
         return "canonical_body_or_identity_digest"
-    raise ValueError(f"unclassified derived C2 path: {path!r}")
+    raise ValueError(f"unclassified derived scenario-first closure path: {path!r}")
 
 
 def canonical(value: Any) -> bytes:
@@ -248,7 +248,7 @@ def migrate(source: bytes) -> bytes:
     authority[BODY_CLASSIFICATION_KEY] = classifications
     authority[DERIVATION_PROGRAM_KEY] = DERIVATION_PROGRAM
     if tuple(sorted(result)) != ROOTS:
-        raise ValueError("historical source does not contain the closed C2 inputs")
+        raise ValueError("historical source does not contain the closed scenario-first closure inputs")
     return canonical(result)
 
 

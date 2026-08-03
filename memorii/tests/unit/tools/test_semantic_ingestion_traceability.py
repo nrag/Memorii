@@ -113,7 +113,13 @@ second child.
         published_units=units,
         mappings=tuple(
             UnitRequirementMapping(
-                unit.invariant_id, unit.content_key, "SIA-R03", "acceptance", "duplicate-parent", 1, "SIA-T03-STRUCT"
+                invariant_id=unit.invariant_id,
+                content_key=unit.content_key,
+                requirement_id="SIA-R03",
+                owner="acceptance",
+                assertion_id="duplicate-parent",
+                assertion_version=1,
+                test_evidence_group="SIA-T03-STRUCT",
             )
             for unit in units
         ),

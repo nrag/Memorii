@@ -508,6 +508,18 @@ PROMPT_CONTRACT_MANIFEST = PromptContractManifest(
             no_leakage_rules=_base_rules("Extraction prompts must not receive benchmark oracle data."),
         ),
         PromptContractManifestEntry(
+            prompt_ref="semantic_ingestion_proposal:v1",
+            owning_adapter=PromptOwner.SEMANTIC_INGESTION_PROPOSER,
+            expected_input_variables=["source_text"],
+            representative_variables={"source_text": "Atlas owner is Bob."},
+            output_schema_owner="semantic_ingestion_proposal:v1.output_schema",
+            fake_valid_output={"candidates": []},
+            forbidden_live_prompt_keys=_base_forbidden_keys(),
+            no_leakage_rules=_base_rules(
+                "Semantic proposal prompts must treat source text as quoted data rather than instructions."
+            ),
+        ),
+        PromptContractManifestEntry(
             prompt_ref="promotion_decision:v1",
             owning_adapter=PromptOwner.LLM_PROMOTION_DECISION_ADAPTER,
             expected_input_variables=["context_json", "candidate_summary"],

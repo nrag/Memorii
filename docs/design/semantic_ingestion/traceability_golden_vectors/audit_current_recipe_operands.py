@@ -1,4 +1,4 @@
-"""Emit the complete operand-closure audit for the current C2 recipe.
+"""Emit the complete operand-closure audit for the current scenario-first closure recipe.
 
 This intentionally performs no derivation.  It records the exact derived
 leaves that the recipe asks an elaborator to synthesize without naming their
@@ -45,7 +45,7 @@ def main() -> None:
             )
 
     audit = {
-        "format": "memorii-sia-c2-operand-closure-audit-v1",
+        "format": "memorii-sia-operand-closure-audit-v1",
         "derived_leaf_count": derived_total,
         "derived_leaves_with_explicit_operands": present_total,
         "missing_operands_by_formula_id": {
