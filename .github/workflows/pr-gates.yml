@@ -10,6 +10,29 @@ permissions:
   contents: read
 
 jobs:
+  equal-version-replay-decision:
+    name: Equal Version Replay Decision
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install validator test dependency
+        run: python3.12 -m pip install 'pytest>=8,<10'
+
+      - name: Verify frozen replay decision
+        run: >-
+          python3.12 -m pytest -W error
+          memorii/tests/unit/tools/test_equal_version_replay_decision.py
+          -p no:cacheprovider
+
   ctv-binding-authority-compiler-parity:
     name: CTV Binding Authority Compiler Parity
     runs-on: ubuntu-latest
@@ -81,9 +104,9 @@ jobs:
           --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json
           --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json
           --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py
-          --expected-design-sha256 2923340bc6417d516983714e5fe69b7bab0f2257652d28a043cfb273b53aaed3
+          --expected-design-sha256 7391e4f0ee09888ad6ea15d074b6fc349477c6a661a56c41d174e32cde4a5e80
           --expected-registry-sha256 8c5ad6e6260c793472ddbc2df8637230fbb5d5b28405b0b558ac4491c945d37e
-          --expected-authority-sha256 c4fbd524c6b7c20795f42977aed458248754c04a0b9635ef0dd3e366bd829b0e
+          --expected-authority-sha256 29dc9aa8faa36387f5a18918f6feb4b39c02cdb4abcd02d9ed35cf8d1d690254
           --expected-validator-sha256 826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e
           --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
 
@@ -94,7 +117,7 @@ jobs:
           --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
           --fixture docs/design/semantic_ingestion/traceability_golden_vectors/lifecycle-root-signer-provenance-witness-v1.json
           --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_lifecycle_root_signer_provenance_v1.py
-          --expected-checker-sha256 1d618a7e8072cf2a5c95258538bee4ad0fe2646000e0ac4127fc380c9444ab22
+          --expected-checker-sha256 357cbe6f67e78250e89c469aa7b5227b263d950613746fb70120189ab3a4a4e5
           --self-test
 
       - name: Verify structural manifest contract
@@ -106,7 +129,7 @@ jobs:
           --matrix docs/design/semantic_ingestion/traceability_golden_vectors/cgs_verification_attack_matrix-v1.json
           --prototype docs/design/semantic_ingestion/traceability_golden_vectors/cgs_structural_manifest_prototype.py
           --vector docs/design/semantic_ingestion/traceability_golden_vectors/cgs-structural-manifest-prototype-v1.json
-          --expected-checker-sha256 3f5ba86e4cc26b7c6b0d518fb8a073ebf7db68a2858afada78dd242b699c826e
+          --expected-checker-sha256 63994a750eeb4206453fe4d43c83b4afa6441cd7dd852e109b4e165be0fb4a23
           --self-test
 
   static-analysis:
@@ -227,22 +250,127 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()
-    needs: [static-analysis, package-smoke, provider-compatibility, unit-test-shards, unit-timing-inventory]
+    needs: [equal-version-replay-decision, static-analysis, package-smoke, provider-compatibility, unit-test-shards, unit-timing-inventory, semantic-terminal-persistence, semantic-terminal-persistence-timing-inventory]
 
     steps:
       - name: Require every unit-test dependency
         env:
+          REPLAY_DECISION_RESULT: ${{ needs.equal-version-replay-decision.result }}
           STATIC_RESULT: ${{ needs.static-analysis.result }}
           PACKAGE_RESULT: ${{ needs.package-smoke.result }}
           COMPATIBILITY_RESULT: ${{ needs.provider-compatibility.result }}
           SHARD_RESULT: ${{ needs.unit-test-shards.result }}
           TIMING_RESULT: ${{ needs.unit-timing-inventory.result }}
+          TERMINAL_RESULT: ${{ needs.semantic-terminal-persistence.result }}
+          TERMINAL_TIMING_RESULT: ${{ needs.semantic-terminal-persistence-timing-inventory.result }}
         run: >-
-          test "$STATIC_RESULT" = success
+          test "$REPLAY_DECISION_RESULT" = success
+          && test "$STATIC_RESULT" = success
           && test "$PACKAGE_RESULT" = success
           && test "$COMPATIBILITY_RESULT" = success
           && test "$SHARD_RESULT" = success
           && test "$TIMING_RESULT" = success
+          && test "$TERMINAL_RESULT" = success
+          && test "$TERMINAL_TIMING_RESULT" = success
+
+  semantic-terminal-persistence:
+    name: Semantic Terminal Persistence Shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6]
+    env:
+      MEMORII_SOURCE_REVISION: ${{ github.sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Verify exact terminal-persistence collection count
+        working-directory: memorii
+        run: |
+          observed="$(pytest --collect-only -q \
+            tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py \
+            -p no:cacheprovider | tail -1)"
+          [[ "$observed" == "156 tests collected in "* ]]
+
+      - name: Verify exact terminal-persistence shard plan
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.test_shards verify
+          --config tests/ci/semantic-terminal-persistence-shards.json
+
+      - name: Run exact terminal-persistence shard
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.test_shards run
+          --config tests/ci/semantic-terminal-persistence-shards.json
+          --index ${{ matrix.shard }}
+          --timing-output "${RUNNER_TEMP}/semantic-terminal-persistence-${{ matrix.shard }}-timings.json"
+
+      - name: Upload terminal-persistence timing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-terminal-persistence-${{ matrix.shard }}-timings
+          path: ${{ runner.temp }}/semantic-terminal-persistence-${{ matrix.shard }}-timings.json
+          if-no-files-found: error
+
+  semantic-terminal-persistence-timing-inventory:
+    name: Semantic Terminal Persistence Timing Inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [semantic-terminal-persistence]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Download terminal-persistence timing evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: semantic-terminal-persistence-*-timings
+          path: ${{ runner.temp }}/semantic-terminal-persistence-timings
+          merge-multiple: true
+
+      - name: Merge terminal-persistence timing inventory
+        working-directory: memorii
+        run: >-
+          python -m memorii.tools.test_shards merge
+          --config tests/ci/semantic-terminal-persistence-shards.json
+          --input-dir "${RUNNER_TEMP}/semantic-terminal-persistence-timings"
+          --output "${RUNNER_TEMP}/semantic-terminal-persistence-test-durations.json"
+
+      - name: Upload complete terminal-persistence timing inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: semantic-terminal-persistence-timing-inventory
+          path: ${{ runner.temp }}/semantic-terminal-persistence-test-durations.json
+          if-no-files-found: error
 
   unit-timing-inventory:
     name: Unit Timing Inventory
@@ -318,6 +446,7 @@ jobs:
         working-directory: memorii
         run: >-
           pytest -W error
+          tests/unit/core/semantic_ingestion/test_provider_compatibility.py
           tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py
           -p no:cacheprovider
 
@@ -352,19 +481,66 @@ jobs:
         working-directory: memorii
         run: |
           observed="$(pytest --collect-only -q \
-            tests/unit/core/semantic_ingestion \
             tests/integration/test_semantic_ingestion_pipeline.py \
             tests/integration/test_semantic_ingestion_process_safety.py \
+            tests/integration/test_conflict_attention_persistence.py \
+            tests/integration/test_semantic_ingestion_replay.py \
             -p no:cacheprovider | tail -n 1)"
-          [[ "$observed" == "266 tests collected in "* ]]
+          [[ "$observed" == "34 tests collected in "* ]]
 
       - name: Run exact semantic ingestion integration and process closure
         working-directory: memorii
         run: >-
           pytest -W error
-          tests/unit/core/semantic_ingestion
           tests/integration/test_semantic_ingestion_pipeline.py
           tests/integration/test_semantic_ingestion_process_safety.py
+          tests/integration/test_conflict_attention_persistence.py
+          tests/integration/test_semantic_ingestion_replay.py
+          -p no:cacheprovider
+
+  semantic-projection-history:
+    name: Semantic Projection History
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: memorii/pyproject.toml
+
+      - name: Install package + test deps
+        working-directory: memorii
+        run: pip install -e '.[local,dev]'
+
+      - name: Verify exact projection-history collection count
+        working-directory: memorii
+        run: |
+          observed="$(pytest --collect-only -q \
+            tests/unit/core/test_projection_history.py \
+            tests/unit/core/semantic_ingestion/test_projection_scheduler.py \
+            tests/unit/core/semantic_ingestion/test_policy_migration.py \
+            tests/unit/core/semantic_ingestion/test_identity_lineage.py \
+            tests/unit/core/semantic_ingestion/test_graph_planning.py \
+            tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py \
+            -p no:cacheprovider | tail -n 1)"
+          [[ "$observed" == "84 tests collected in "* ]]
+
+      - name: Run exact projection-history closure
+        working-directory: memorii
+        run: >-
+          pytest -W error
+          tests/unit/core/test_projection_history.py
+          tests/unit/core/semantic_ingestion/test_projection_scheduler.py
+          tests/unit/core/semantic_ingestion/test_policy_migration.py
+          tests/unit/core/semantic_ingestion/test_identity_lineage.py
+          tests/unit/core/semantic_ingestion/test_graph_planning.py
+          tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py
           -p no:cacheprovider
 
   semantic-ingestion-scenario:
@@ -420,6 +596,26 @@ jobs:
           pytest -W error
           tests/acceptance/semantic_ingestion/test_sia_requirements.py
           -p no:cacheprovider
+
+  semantic-ingestion:
+    name: Semantic Ingestion
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [semantic-ingestion-generation, semantic-ingestion-scenario, semantic-ingestion-acceptance, semantic-projection-history]
+
+    steps:
+      - name: Require every semantic-ingestion dependency
+        env:
+          GENERATION_RESULT: ${{ needs.semantic-ingestion-generation.result }}
+          SCENARIO_RESULT: ${{ needs.semantic-ingestion-scenario.result }}
+          ACCEPTANCE_RESULT: ${{ needs.semantic-ingestion-acceptance.result }}
+          PROJECTION_HISTORY_RESULT: ${{ needs.semantic-projection-history.result }}
+        run: >-
+          test "$GENERATION_RESULT" = success
+          && test "$SCENARIO_RESULT" = success
+          && test "$ACCEPTANCE_RESULT" = success
+          && test "$PROJECTION_HISTORY_RESULT" = success
 
   benchmark-contract-tests:
     name: Benchmark Contract Tests

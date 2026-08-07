@@ -31,6 +31,13 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapTrustRootProvider,
     GovernedSourceAdmissionFact,
 )
+from memorii.core.memory_evolution.conflict_attention import (
+    ActiveSemanticConflict,
+    ActiveSemanticConflictResolverAuthority,
+    SemanticConflictAuthorityCommitInput,
+    SemanticConflictReplayBinding,
+    SemanticConflictResolverAuthority,
+)
 from memorii.core.memory_evolution.delivery_coordinate_migration import (
     DeliveryCoordinateMigrationActivation,
     DeliveryCoordinateMigrationCertificate,
@@ -74,6 +81,21 @@ from memorii.core.memory_evolution.graph_constraint_resolution import (
     resolve_graph_pattern,
 )
 from memorii.core.memory_evolution.graph_persistence import MemoryGraphStore, MemoryGraphValidator
+from memorii.core.memory_evolution.identity_lineage import (
+    GrantBackedIdentityLineageAuditAuthorizer,
+    IdentityLineageAuditGrant,
+    IdentityLineageAuditReader,
+    IdentityLineageAuditScopeSnapshot,
+    IdentityLineageAuditView,
+    IdentityLineageError,
+    ProductionIdentityLineageCompiler,
+    ResolvedClaimLineage,
+    ResolvedLineageReference,
+    derive_claim_reverse_reference_closure,
+    identity_lineage_audit_view,
+    identity_lineage_genesis_digest,
+    replay_identity_lineage,
+)
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
     DeliveryIdentity,
@@ -143,6 +165,9 @@ from memorii.core.memory_evolution.mutations import (
     MemoryEvolutionMutationValidationError,
 )
 from memorii.core.memory_evolution.predicates import PredicatePolicy, PredicateRegistry
+from memorii.core.memory_evolution.projection_history import (
+    SemanticConflictResolverAuthorityRepository,
+)
 from memorii.core.memory_evolution.query_analysis import (
     EnglishLexicalQueryAnalyzer,
     EnglishLexicalQueryResolver,
@@ -192,6 +217,15 @@ from memorii.core.memory_evolution.semantic_compilation import (
     SemanticCompilationResult,
     SemanticIngestionCompiler,
 )
+from memorii.core.memory_evolution.semantic_state import (
+    AcceptedIdentityOperation,
+    CompiledIdentityLineageTransition,
+    GroundedLineageReferenceAssignment,
+    LineageEntityIdentity,
+    LineageEvidenceReference,
+    LineageReferenceDisposition,
+    LineageReverseReference,
+)
 from memorii.core.memory_evolution.service import MemoryEvolutionService
 from memorii.core.memory_evolution.temporal_compilation import (
     RelativeTemporalExpressionResolver,
@@ -219,6 +253,7 @@ from memorii.core.memory_evolution.temporal_contracts import (
 )
 from memorii.core.memory_evolution.validation import MemoryEvolutionValidator
 from memorii.core.memory_evolution.writer_admission import (
+    SemanticConflictAuthorityAdministrationGrant,
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
@@ -226,6 +261,8 @@ from memorii.core.memory_evolution.writer_admission import (
 
 __all__ = [
     "AtomicGenerationMember",
+    "ActiveSemanticConflict",
+    "ActiveSemanticConflictResolverAuthority",
     "AuthenticatedIngressContext",
     "BOOTSTRAP_COORDINATE",
     "BootstrapGrammarCorpusCase",
@@ -248,6 +285,11 @@ __all__ = [
     "OperationFenceBinding",
     "RequiredOutcomeScopeSet",
     "SemanticWriterAdmission",
+    "SemanticConflictAuthorityCommitInput",
+    "SemanticConflictAuthorityAdministrationGrant",
+    "SemanticConflictResolverAuthority",
+    "SemanticConflictResolverAuthorityRepository",
+    "SemanticConflictReplayBinding",
     "SemanticWriterCommitBinding",
     "SemanticRecordOwnershipManifest",
     "CommittedGroupAtomicWriteRequest",
@@ -322,6 +364,26 @@ __all__ = [
     "MemoryScope",
     "ProviderAttemptStatus",
     "MemoryEvolutionResult",
+    "CompiledIdentityLineageTransition",
+    "AcceptedIdentityOperation",
+    "GroundedLineageReferenceAssignment",
+    "LineageEntityIdentity",
+    "LineageEvidenceReference",
+    "LineageReferenceDisposition",
+    "LineageReverseReference",
+    "IdentityLineageAuditReader",
+    "IdentityLineageAuditGrant",
+    "IdentityLineageAuditScopeSnapshot",
+    "GrantBackedIdentityLineageAuditAuthorizer",
+    "IdentityLineageAuditView",
+    "IdentityLineageError",
+    "ProductionIdentityLineageCompiler",
+    "ResolvedClaimLineage",
+    "ResolvedLineageReference",
+    "derive_claim_reverse_reference_closure",
+    "identity_lineage_audit_view",
+    "identity_lineage_genesis_digest",
+    "replay_identity_lineage",
     "MemoryExtractionRunError",
     "MemoryExtractionProposal",
     "EvolutionMutationPlan",

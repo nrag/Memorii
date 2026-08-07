@@ -9,7 +9,8 @@ Read:
 
 - root `AGENTS.md`
 - `.agents/PLANS.md`
-- the active debugging WorkPlan, if one exists
+- the active debugging WorkPlan, plus the parent index/resume/active milestone
+  packet when the failure was discovered inside an indexed operation
 - governing documents selected through the knowledge router
 - incident reports, logs, traces, failures, code, and tests
 
@@ -17,6 +18,16 @@ Create or resume a WorkPlan whose work type is `debugging`.
 
 The main thread is the coordinator. Use one writer at a time for overlapping
 code, tests, fixtures, and documentation.
+
+Apply the delegation task packet, artifact-only context, writer completion,
+long-command ownership, and candidate freeze contracts in `.agents/PLANS.md`.
+Use Spark-class roles for bounded evidence collection and hypothesis
+discrimination; reserve Terra-class judgment for semantic root causes, the sole
+writer, and frozen closure review.
+
+Record the debugging result in its own WorkPlan and link it from the affected
+milestone packet. Do not absorb debugging hypotheses and experiments into the
+parent implementation milestone.
 
 ## Phase 1: Establish Expected And Observed Behavior
 
@@ -153,6 +164,9 @@ all scope-required GitHub and external acceptance gates even when the original
 defect was not a CI failure.
 
 ## Phase 8: Independent Closure Review
+
+Satisfy the candidate freeze gate in `.agents/PLANS.md` before launching the
+closure cohort.
 
 Run concurrently:
 

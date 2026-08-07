@@ -31,8 +31,8 @@ def seal_semantic_operation(
         or source_analysis.source_id != source_id
         or source_analysis.source_digest != source_digest
         or consensus.status != "stable"
-        or consensus.primary.predicate_span.source_id != source_id
-        or consensus.corroborating.predicate_span.source_id != source_id
+        or consensus.primary_interpretation.predicate_head_span.source_id != source_id
+        or consensus.corroborating_interpretation.predicate_head_span.source_id != source_id
         or any(item.canonical_entity_id is None for item in source_analysis.identity_evidence)
         or any(item.source_id != source_id for item in source_analysis.identity_evidence)
         or any(closure.outcome != "pass" for _, closure in role_closures)
@@ -102,7 +102,7 @@ def seal_semantic_operation(
         b"memorii.semantic-ingestion.operation-semantic-assessments.v1",
         tuple(value.semantic_assessment_digest for value in ordered),
     )
-    body = {
+    body: dict[str, object] = {
         "operation_id": operation_id,
         "candidate_id": candidate.candidate_id,
         "kind": candidate.operation_kind,
@@ -110,9 +110,20 @@ def seal_semantic_operation(
         "semantic_assessment_digest": semantic_digest,
         "temporal_bindings": ordered,
     }
-    return SealedSemanticOperation(
-        **body,
-        sealed_operation_digest=contract_digest(b"memorii.semantic-ingestion.sealed-operation.v1", body),
+    if source_analysis.claim_identity is not None:
+        body.update(
+            {
+                "claim_identity": source_analysis.claim_identity,
+                "source_authority_evidence": source_analysis.source_authority_evidence,
+            }
+        )
+    return SealedSemanticOperation.model_validate(
+        body
+        | {
+            "sealed_operation_digest": contract_digest(
+                b"memorii.semantic-ingestion.sealed-operation.v1", body
+            )
+        }
     )
 
 

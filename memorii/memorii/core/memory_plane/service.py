@@ -17,6 +17,8 @@ from memorii.core.memory_plane.models import (
     to_provider_stored_record,
 )
 from memorii.core.memory_plane.store import (
+    SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
+    CheckpointSignatureAuthority,
     GovernedWritePolicy,
     InMemoryMemoryPlaneStore,
     MemoryPlanePrecondition,
@@ -94,6 +96,41 @@ class MemoryPlaneService:
         if installer is None:
             raise RuntimeError("memory-plane backend does not support governed-write policy")
         installer(policy)
+
+    @property
+    def is_durable_store(self) -> bool:
+        durable = getattr(self._records, "durable", None)
+        if not isinstance(durable, bool):
+            raise RuntimeError("memory-plane backend does not declare durability")
+        return durable
+
+    def load_or_create_protected_secret(self, *, purpose: str, length: int = 32) -> bytes:
+        if purpose == SEMANTIC_CHECKPOINT_SECRET_PURPOSE:
+            raise PermissionError("checkpoint signing material is backend-private")
+        loader = getattr(self._records, "load_or_create_protected_secret", None)
+        if loader is None:
+            raise RuntimeError("memory-plane backend has no protected-secret owner")
+        secret = loader(purpose=purpose, length=length)
+        if not isinstance(secret, bytes) or len(secret) != length:
+            raise RuntimeError("memory-plane protected-secret owner returned invalid material")
+        return secret
+
+    def _claim_semantic_checkpoint_signature_authority(
+        self,
+        *,
+        owner: object,
+    ) -> CheckpointSignatureAuthority:
+        claimer = getattr(
+            self._records,
+            "_claim_semantic_checkpoint_signature_authority",
+            None,
+        )
+        if claimer is None:
+            raise RuntimeError("memory-plane backend has no checkpoint signature owner")
+        authority = claimer(owner=owner)
+        if not isinstance(authority, CheckpointSignatureAuthority):
+            raise RuntimeError("memory-plane backend returned invalid checkpoint authority")
+        return authority
 
     # Runtime-facing canonical methods
     def seed_runtime_memory_object(self, memory_object: MemoryObject) -> None:

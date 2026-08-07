@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import UTC, datetime
-from typing import cast
+from pathlib import Path
+from typing import Protocol, cast
 
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.decision_state.summary import DecisionStateSummary
@@ -27,18 +28,65 @@ from memorii.core.memory_evolution.admission import (
     GovernedSourceAdmissionService,
     SemanticIngestionOutcomeLookupRequest,
     SemanticIngestionOutcomeLookupResponse,
+    source_admission_source_bytes,
+    source_admission_source_digest,
 )
-from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
+from memorii.core.memory_evolution.atomic_store import (
+    PreplanningStoreError,
+    SemanticIngestionAtomicStore,
+)
 from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapProfileVerificationError,
     InstalledHostBootstrapCapabilityProvider,
     VerifiedBootstrapProfile,
     verify_bootstrap_profile,
 )
+from memorii.core.memory_evolution.conflict_attention import (
+    AuthorizedUserEventProof,
+    ClarificationSubmissionOutcome,
+    ConflictAccessContext,
+    ConflictAttentionObservabilityEvent,
+    ConflictAttentionObservabilitySink,
+    ConflictAttentionPage,
+    ConflictClarificationSemanticPipeline,
+    ConflictClarificationSubmissionResult,
+    ConflictKind,
+    ConflictListRequest,
+    ConflictListRequestError,
+    ConflictResolutionRequest,
+    ConflictResolutionRequestError,
+    ConflictStatus,
+    SourceUserEventVerifier,
+    UserConfirmationReceiptVerifier,
+    UserConfirmationVerificationContext,
+    VerifiedUserConfirmation,
+    build_agent_clarification_proposal,
+    conflict_resolution_request_digest,
+    parse_conflict_list_request,
+    parse_conflict_resolution_request,
+)
+from memorii.core.memory_evolution.conflict_attention_repository import (
+    AtomicStoreConflictClarificationProcessingRepository,
+    ConflictAttentionReadError,
+    ConflictAttentionRepository,
+    ConflictClarificationError,
+    ConflictClarificationProcessor,
+    FileConflictAttentionRepository,
+)
+from memorii.core.memory_evolution.conflict_integrity import (
+    FileConflictIntegrityRepository,
+    PrivilegedSemanticIntegrityLifecycle,
+)
+from memorii.core.memory_evolution.identity_lineage import (
+    IdentityLineageAuditScopeSnapshot,
+    IdentityLineageAuditView,
+)
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
+    AuthenticatedIngressContext,
     AuthenticatedIngressContextResolver,
     AuthenticatedIngressResolutionError,
+    DeliveryIdentity,
 )
 from memorii.core.memory_evolution.operation_store import (
     EvolutionOperationRepository,
@@ -51,6 +99,10 @@ from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.next_step import NextStepEngine
 from memorii.core.promotion.provider import PromotionAssessmentProvider
 from memorii.core.promotion.rule_provider import RuleBasedPromotionAssessmentProvider
+from memorii.core.provider.attention_models import (
+    ProviderPrefetchAttentionEnvelope,
+    ProviderToolAttentionEnvelope,
+)
 from memorii.core.provider.classifier import make_event
 from memorii.core.provider.ingestion import ProviderIngestionCoordinator
 from memorii.core.provider.models import (
@@ -72,12 +124,13 @@ from memorii.core.provider.retrieval_composition import (
     format_evolution_execution_decision,
 )
 from memorii.core.provider.tool_dispatch import ProviderToolDispatcher
-from memorii.core.provider.tool_schemas import provider_tool_schemas
+from memorii.core.provider.tool_schemas import provider_tool_schemas, provider_tool_schemas_with_attention
 from memorii.core.provider.tools import ProviderToolCallResult
 from memorii.core.provider.work_state_projection import WorkStateMemoryProjector
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
+    ConflictClarificationSemanticPipelineAdapter,
     HostSemanticIngestionRuntimeBuilder,
 )
 from memorii.core.solver.frontier import SolverFrontierPlanner
@@ -86,6 +139,26 @@ from memorii.core.work_state.selector import WorkStateSelector
 from memorii.core.work_state.service import WorkStateService
 from memorii.domain.enums import SourceModality
 from memorii.stores.base.interfaces import OverlayStore, SolverGraphStore
+
+
+class ScopedIdentityLineageAuditReader(Protocol):
+    def read_identity_lineage(
+        self,
+        *,
+        request: GraphAuditRequest,
+        scope: IdentityLineageAuditScopeSnapshot,
+        system_time: datetime | None = None,
+    ) -> IdentityLineageAuditView: ...
+
+
+class IdentityLineageAuditAuthorizer(Protocol):
+    def authorize_identity_lineage_audit(
+        self,
+        *,
+        ingress: AuthenticatedIngressContext,
+        request: GraphAuditRequest,
+        server_time: datetime,
+    ) -> IdentityLineageAuditScopeSnapshot | None: ...
 
 
 class ProviderMemoryService:
@@ -109,6 +182,19 @@ class ProviderMemoryService:
         memory_evolution_query_analyzer: QueryAnalyzer | None = None,
         memory_evolution_operation_repository: EvolutionOperationRepository | None = None,
         now_provider: Callable[[], datetime] | None = None,
+        conflict_attention_repository: ConflictAttentionRepository | None = None,
+        conflict_attention_enabled: bool = False,
+        conflict_attention_observability_sink: ConflictAttentionObservabilitySink
+        | None = None,
+        authenticated_ingress_resolver: AuthenticatedIngressContextResolver | None = None,
+        source_user_event_verifier: SourceUserEventVerifier | None = None,
+        user_confirmation_receipt_verifier: UserConfirmationReceiptVerifier | None = None,
+        conflict_clarification_pipeline: ConflictClarificationSemanticPipeline | None = None,
+        semantic_integrity_lifecycle: PrivilegedSemanticIntegrityLifecycle
+        | None = None,
+        semantic_integrity_root: Path | None = None,
+        identity_lineage_audit_reader: ScopedIdentityLineageAuditReader | None = None,
+        identity_lineage_audit_authorizer: IdentityLineageAuditAuthorizer | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
         capability_provider = InstalledHostBootstrapCapabilityProvider()
@@ -139,6 +225,28 @@ class ProviderMemoryService:
                 self._bootstrap_profile = None
                 self._bootstrap_unavailable_reason = "invalid_manifest"
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        if conflict_attention_enabled and conflict_attention_repository is None:
+            raise ValueError("conflict attention is enabled without a repository")
+        self._conflict_attention_repository = conflict_attention_repository
+        self._conflict_attention_enabled = conflict_attention_enabled
+        self._conflict_attention_observability_sink = (
+            conflict_attention_observability_sink
+        )
+        self._identity_lineage_audit_reader = identity_lineage_audit_reader
+        self._identity_lineage_audit_authorizer = identity_lineage_audit_authorizer
+        self._source_user_event_verifier = source_user_event_verifier
+        self._user_confirmation_receipt_verifier = user_confirmation_receipt_verifier
+        if semantic_integrity_lifecycle is not None and semantic_integrity_root is not None:
+            raise ValueError("semantic integrity lifecycle and root are mutually exclusive")
+        if (
+            semantic_integrity_lifecycle is not None
+            and semantic_integrity_lifecycle.repository_id != "semantic_ingestion"
+        ):
+            raise ValueError(
+                "semantic integrity lifecycle does not bind the provider event authority"
+            )
+        if authenticated_ingress_resolver is not None:
+            self._authenticated_ingress_resolver = authenticated_ingress_resolver
         semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None
         runtime_builder = cast(HostSemanticIngestionRuntimeBuilder | None, host_bootstrap_capability)
         if self._bootstrap_profile is not None and runtime_builder is not None and hasattr(
@@ -199,9 +307,90 @@ class ProviderMemoryService:
             # bypass that could silently activate graph writes.
             runtime_writer.current()
             self._semantic_writer_admission = runtime_writer
+        if semantic_integrity_lifecycle is None and semantic_integrity_root is not None:
+            integrity_repository = FileConflictIntegrityRepository(
+                semantic_integrity_root / "integrity.jsonl",
+                repository_id="semantic_ingestion",
+                snapshot_provider=lambda: self._semantic_atomic_store.semantic_integrity_snapshot(),
+                clean_replay_verifier=(
+                    lambda repaired, retained, authority: self._semantic_atomic_store.prepare_semantic_clean_recovery(
+                        repaired,
+                        retained,
+                        authority,
+                    )
+                ),
+                now_provider=self._now_provider,
+            )
+            semantic_integrity_lifecycle = PrivilegedSemanticIntegrityLifecycle(
+                integrity_repository,
+                attention_repository=(
+                    conflict_attention_repository
+                    if isinstance(
+                        conflict_attention_repository,
+                        FileConflictAttentionRepository,
+                    )
+                    else None
+                ),
+                clean_recovery_request_retainer=(
+                    lambda request: self._semantic_atomic_store.retain_semantic_clean_recovery_request(
+                        request
+                    )
+                ),
+                clean_recovery_activator=(
+                    lambda request: self._semantic_atomic_store.activate_semantic_clean_recovery(
+                        request
+                    )
+                ),
+                clean_recovery_reconciler=(
+                    lambda released: self._semantic_atomic_store.reconcile_semantic_clean_recovery(
+                        released
+                    )
+                ),
+            )
+        self._semantic_integrity_lifecycle = semantic_integrity_lifecycle
+        integrity_attention_publisher: Callable[[str, datetime], None] | None = None
+        if isinstance(conflict_attention_repository, FileConflictAttentionRepository):
+            def publish_integrity_attention(digest: str, recorded_at: datetime) -> None:
+                conflict_attention_repository.append_sanitized_storage_integrity_incident(
+                    repository_id="semantic_ingestion",
+                    incident_evidence_digest=digest,
+                    frozen_scope_ids=("global",),
+                    recorded_at=recorded_at,
+                )
+
+            integrity_attention_publisher = publish_integrity_attention
         self._semantic_atomic_store = runtime_store or SemanticIngestionAtomicStore(
-            self._memory_plane, self._semantic_writer_admission, now_provider=self._now_provider
+            self._memory_plane,
+            self._semantic_writer_admission,
+            now_provider=self._now_provider,
+            semantic_freeze_guard=(
+                semantic_integrity_lifecycle.freeze_guard
+                if semantic_integrity_lifecycle is not None
+                else None
+            ),
+            semantic_integrity_incident_reporter=(
+                semantic_integrity_lifecycle.incident_reporter
+                if semantic_integrity_lifecycle is not None
+                else None
+            ),
+            semantic_integrity_attention_publisher=integrity_attention_publisher,
+            semantic_integrity_linearization=(
+                semantic_integrity_lifecycle.linearization
+                if semantic_integrity_lifecycle is not None
+                else None
+            ),
         )
+        if (
+            runtime_store is not None
+            and semantic_integrity_lifecycle is not None
+            and runtime_store.semantic_integrity_linearization
+            is not semantic_integrity_lifecycle.linearization
+        ):
+            raise ValueError(
+                "semantic runtime store and integrity lifecycle are not linearized together"
+            )
+        if semantic_integrity_lifecycle is not None:
+            semantic_integrity_lifecycle.reconcile_pending_recovery()
         self._provider_ingestion = ProviderIngestionCoordinator(
             memory_plane=self._memory_plane,
             admission_service=self._semantic_ingestion_admission,
@@ -220,6 +409,26 @@ class ProviderMemoryService:
             semantic_runtime=semantic_runtime,
             now_provider=self._now_provider,
         )
+        self._conflict_clarification_processor: ConflictClarificationProcessor | None = None
+        if self._conflict_attention_enabled:
+            configured_clarification_pipeline = conflict_clarification_pipeline or (
+                semantic_runtime.conflict_clarification_pipeline
+                if semantic_runtime is not None
+                else None
+            )
+            configured_clarification_pipeline = (
+                configured_clarification_pipeline
+                or ConflictClarificationSemanticPipelineAdapter(
+                    self._semantic_atomic_store,
+                    context_provider=self._provider_ingestion,
+                )
+            )
+            self._conflict_clarification_processor = ConflictClarificationProcessor(
+                AtomicStoreConflictClarificationProcessingRepository(
+                    self._semantic_atomic_store
+                ),
+                configured_clarification_pipeline,
+            )
         self._work_state_memory_projector = WorkStateMemoryProjector(
             memory_plane=self._memory_plane,
             work_state_service=self._work_state_service,
@@ -357,6 +566,14 @@ class ProviderMemoryService:
             )
         return self._memory_evolution_service
 
+    @property
+    def semantic_integrity_lifecycle(self) -> PrivilegedSemanticIntegrityLifecycle:
+        """Return the host-owned privileged repair/release boundary."""
+
+        if self._semantic_integrity_lifecycle is None:
+            raise RuntimeError("semantic integrity recovery is unavailable")
+        return self._semantic_integrity_lifecycle
+
     def retrieve_evolution_decision(
         self,
         request: MemoryQueryRequest,
@@ -369,6 +586,61 @@ class ProviderMemoryService:
         """
 
         return self.memory_evolution_service.retrieve(request)
+
+    def read_identity_lineage(
+        self,
+        request: GraphAuditRequest,
+        *,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+        system_time: datetime | None = None,
+    ) -> IdentityLineageAuditView:
+        """Return typed lineage only through the explicit graph-audit surface."""
+
+        # Resolve and authorize before consulting the lineage reader. Every
+        # denial intentionally has the same non-disclosing result.
+        ingress = self._resolve_ingress(authenticated_host_ingress)
+        authorizer = self._identity_lineage_audit_authorizer
+        now = self._now_provider()
+        scope = (
+            authorizer.authorize_identity_lineage_audit(
+                ingress=ingress,
+                request=request,
+                server_time=now,
+            )
+            if request.purpose == RetrievalPurpose.GRAPH_AUDIT
+            and ingress is not None
+            and authorizer is not None
+            else None
+        )
+        if scope is None or self._identity_lineage_audit_reader is None:
+            raise ValueError("identity_lineage_audit_denied")
+        scope.require_current(now)
+        final_ingress = self._resolve_ingress(authenticated_host_ingress)
+        final_now = self._now_provider()
+        final_scope = (
+            authorizer.authorize_identity_lineage_audit(
+                ingress=final_ingress,
+                request=request,
+                server_time=final_now,
+            )
+            if final_ingress is not None and authorizer is not None
+            else None
+        )
+        if (
+            final_scope is None
+            or final_scope.tenant_partition_id != scope.tenant_partition_id
+            or final_scope.principal_binding_digest
+            != scope.principal_binding_digest
+            or final_scope.authorized_scope_ids != scope.authorized_scope_ids
+            or final_scope.scope_mode != scope.scope_mode
+        ):
+            raise ValueError("identity_lineage_audit_denied")
+        final_scope.require_current(final_now)
+        return self._identity_lineage_audit_reader.read_identity_lineage(
+            request=request,
+            scope=final_scope,
+            system_time=system_time,
+        )
 
     def apply_memory_write(
         self,
@@ -635,8 +907,306 @@ class ProviderMemoryService:
     def get_tool_schemas(self) -> list[dict[str, object]]:
         return provider_tool_schemas()
 
+    def get_tool_schemas_with_attention(self) -> list[dict[str, object]]:
+        return provider_tool_schemas_with_attention()
+
     def handle_tool_call(self, tool_name: str, arguments: dict[str, object]) -> ProviderToolCallResult:
         return self._tool_dispatcher.handle(tool_name, arguments)
+
+    def prefetch_with_attention(
+        self,
+        query: str,
+        *,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        query_language: str = "en",
+        reference_time: datetime | None = None,
+        defer_observability: bool = False,
+    ) -> ProviderPrefetchAttentionEnvelope[ProductionRetrievalDecision]:
+        legacy = self.prefetch_result(
+            query,
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+            query_language=query_language,
+            reference_time=reference_time,
+        )
+        access = self._conflict_access(authenticated_host_ingress)
+        page = self._attention_page(access, ConflictListRequest(page_size=3))
+        envelope = ProviderPrefetchAttentionEnvelope(
+            legacy_result=legacy, attention_required=page
+        )
+        if not defer_observability:
+            self.publish_conflict_attention_observability(page)
+        return envelope
+
+    def handle_tool_call_with_attention(
+        self,
+        tool_name: str,
+        arguments: dict[str, object],
+        *,
+        authenticated_host_ingress: AuthenticatedHostIngress,
+    ) -> ProviderToolAttentionEnvelope:
+        ingress = self._resolve_ingress(authenticated_host_ingress)
+        access = self._conflict_access_from_ingress(ingress)
+        if tool_name == "memorii_list_conflicts":
+            try:
+                request = parse_conflict_list_request(arguments)
+                page = self._attention_page(access, request, explicit=True)
+                legacy = ProviderToolCallResult(tool_name=tool_name, ok=True, result=page.model_dump(mode="json"))
+                self.publish_conflict_attention_observability(page)
+            except (ConflictAttentionReadError, ConflictListRequestError) as exc:
+                legacy = ProviderToolCallResult(tool_name=tool_name, ok=False, error=str(exc))
+            # The complete page is the tool result. The embedded side channel remains capped at three.
+            attention = ConflictAttentionPage(total_pending=0)
+        elif tool_name == "memorii_resolve_conflict":
+            try:
+                request = parse_conflict_resolution_request(arguments)
+                result = self._resolve_conflict(
+                    access,
+                    request,
+                    authenticated_ingress=ingress,
+                )
+                legacy = ProviderToolCallResult(tool_name=tool_name, ok=True, result=result.model_dump(mode="json"))
+            except (ConflictClarificationError, ConflictResolutionRequestError) as exc:
+                legacy = ProviderToolCallResult(tool_name=tool_name, ok=False, error=str(exc))
+            attention = ConflictAttentionPage(total_pending=0)
+        else:
+            legacy = self.handle_tool_call(tool_name, arguments)
+            attention = self._attention_page(access, ConflictListRequest(page_size=3))
+        envelope = ProviderToolAttentionEnvelope(
+            legacy_result=legacy, attention_required=attention
+        )
+        if tool_name not in {
+            "memorii_list_conflicts",
+            "memorii_resolve_conflict",
+        }:
+            self.publish_conflict_attention_observability(attention)
+        return envelope
+
+    def publish_conflict_attention_observability(
+        self, page: ConflictAttentionPage
+    ) -> None:
+        """Emit only safe dimensions after a page or render succeeds."""
+
+        sink = self._conflict_attention_observability_sink
+        if sink is None:
+            return
+        for item in page.items:
+            sink.emit_conflict_attention_event(
+                ConflictAttentionObservabilityEvent(
+                    conflict_id=item.conflict_id,
+                    kind=item.kind,
+                    status=item.status,
+                    scope_digest=item.scope_digest,
+                )
+            )
+
+    def _resolve_conflict(
+        self,
+        access: ConflictAccessContext | None,
+        request: ConflictResolutionRequest,
+        *,
+        authenticated_ingress: AuthenticatedIngressContext | None,
+    ) -> ConflictClarificationSubmissionResult:
+        if not self._conflict_attention_enabled:
+            raise ConflictClarificationError("conflict_attention_unavailable")
+        if access is None:
+            raise ConflictClarificationError("conflict_attention_authorization_required")
+        request_digest = conflict_resolution_request_digest(request)
+        try:
+            retained = self._semantic_atomic_store.canonical_clarification_operation_receipt(
+                operation_id=request.operation_id, request_digest=request_digest
+            )
+            if retained is not None:
+                self._semantic_atomic_store.authorize_canonical_conflict_scopes(
+                    conflict_id=retained.conflict_id,
+                    authorized_scope_ids=access.authorized_scope_ids,
+                )
+                return ConflictClarificationSubmissionResult(
+                    outcome=ClarificationSubmissionOutcome.IDEMPOTENT,
+                    operation_receipt=retained,
+                )
+            self._semantic_atomic_store.authorize_canonical_conflict_scopes(
+                conflict_id=request.conflict_id,
+                authorized_scope_ids=access.authorized_scope_ids,
+            )
+            target = self._semantic_atomic_store.canonical_conflict_attention(request.conflict_id)
+        except PreplanningStoreError:
+            raise ConflictClarificationError("conflict_resolution_unavailable") from None
+        if target is None:
+            raise ConflictClarificationError("conflict_resolution_unavailable")
+        if target.kind == ConflictKind.STORAGE_INTEGRITY:
+            raise ConflictClarificationError("operator_action_required")
+        if target.status != ConflictStatus.OPEN or target.conflict_revision != request.expected_conflict_revision:
+            return ConflictClarificationSubmissionResult(
+                outcome=ClarificationSubmissionOutcome.STALE_REVISION,
+                attention=target,
+            )
+        candidates = {option.candidate_id for option in target.options}
+        if not set(request.selected_candidate_ids) <= candidates:
+            raise ConflictClarificationError("invalid_conflict_resolution")
+        verifier = self._source_user_event_verifier
+        if verifier is None:
+            raise ConflictClarificationError("source_user_event_verification_unavailable")
+        if authenticated_ingress is None:
+            raise ConflictClarificationError("invalid_source_user_event")
+        source_record = self._memory_plane.get_record(
+            f"tx:{request.source_user_event_id}"
+        )
+        if source_record is None:
+            identity = DeliveryIdentity.create(
+                authenticated_ingress.delivery_principal_binding,
+                request.source_user_event_id,
+            )
+            source_record = self._memory_plane.get_record(
+                f"semantic_ingestion:source:{identity.delivery_key_digest}"
+            )
+        if source_record is None:
+            raise ConflictClarificationError("invalid_source_user_event")
+        canonical_source_bytes = source_admission_source_bytes(source_record)
+        canonical_source_digest = source_admission_source_digest(source_record)
+        try:
+            source = verifier.verify_user_event(
+                tenant_id=access.tenant_id,
+                principal_id=access.principal_id,
+                scope_digest=target.scope_digest,
+                source_user_event_id=request.source_user_event_id,
+            )
+            source = AuthorizedUserEventProof.model_validate(
+                source.model_dump(mode="python")
+            )
+        except (AttributeError, TypeError, ValueError):
+            raise ConflictClarificationError("invalid_source_user_event") from None
+        if not isinstance(source, AuthorizedUserEventProof) or (
+            source.tenant_id != access.tenant_id
+            or source.principal_id != access.principal_id
+            or source.scope_digest != target.scope_digest
+            or source.source_user_event_id != request.source_user_event_id
+            or source.source_user_event_digest != canonical_source_digest
+            or source.canonical_source_bytes != canonical_source_bytes
+        ):
+            raise ConflictClarificationError("invalid_source_user_event")
+        proposal = build_agent_clarification_proposal(
+            request,
+            source_user_event_digest=source.source_user_event_digest,
+            agent_principal_id=access.principal_id,
+            scope_digest=target.scope_digest,
+        )
+        verified = None
+        if request.user_confirmation_receipt is not None:
+            receipt_verifier = self._user_confirmation_receipt_verifier
+            if receipt_verifier is None:
+                raise ConflictClarificationError("user_confirmation_verification_unavailable")
+            expected = UserConfirmationVerificationContext(
+                principal_id=access.principal_id,
+                scope_digest=target.scope_digest,
+                conflict_id=request.conflict_id,
+                conflict_revision=request.expected_conflict_revision,
+                action=request.action,
+                request_digest=request_digest,
+                source_user_event_id=request.source_user_event_id,
+                source_user_event_digest=source.source_user_event_digest,
+            )
+            try:
+                verification_time = self._now_provider()
+                verified = receipt_verifier.verify(
+                    request.user_confirmation_receipt,
+                    expected=expected,
+                    server_time=verification_time,
+                )
+                verified = VerifiedUserConfirmation.model_validate(
+                    verified.model_dump(mode="python")
+                )
+                if (
+                    verified.principal_id != expected.principal_id
+                    or verified.scope_digest != expected.scope_digest
+                    or verified.conflict_id != expected.conflict_id
+                    or verified.conflict_revision != expected.conflict_revision
+                    or verified.action != expected.action
+                    or verified.request_digest != expected.request_digest
+                    or verified.source_user_event_id
+                    != expected.source_user_event_id
+                    or verified.source_user_event_digest
+                    != expected.source_user_event_digest
+                    or verified.issued_at > verification_time
+                    or verified.expires_at <= verification_time
+                ):
+                    raise ValueError("confirmation receipt binding mismatch")
+            except (AttributeError, TypeError, ValueError):
+                raise ConflictClarificationError("invalid_user_confirmation_receipt") from None
+        if self._conflict_clarification_processor is None:
+            raise ConflictClarificationError("conflict_resolution_processing_unavailable")
+        try:
+            retained_context = (
+                self._semantic_atomic_store.retain_conflict_clarification_context(
+                    proposal=proposal,
+                    authorized_source=source,
+                    source_record=source_record,
+                    authenticated_ingress=authenticated_ingress,
+                )
+            )
+        except (OSError, PreplanningStoreError):
+            raise ConflictClarificationError(
+                "conflict_resolution_processing_unavailable"
+            ) from None
+        if not retained_context:
+            raise ConflictClarificationError("invalid_source_user_event")
+        try:
+            submitted = self._semantic_atomic_store.submit_canonical_conflict_clarification(
+                request=request,
+                request_digest=request_digest,
+                proposal=proposal,
+                verified_confirmation=verified,
+            )
+        except PreplanningStoreError:
+            raise ConflictClarificationError("conflict_resolution_unavailable") from None
+        if submitted.outcome == ClarificationSubmissionOutcome.SUBMITTED:
+            self.process_pending_conflict_clarifications(max_items=1)
+        return submitted
+
+    def _conflict_access(self, host_ingress: AuthenticatedHostIngress) -> ConflictAccessContext | None:
+        return self._conflict_access_from_ingress(self._resolve_ingress(host_ingress))
+
+    @staticmethod
+    def _conflict_access_from_ingress(
+        ingress: AuthenticatedIngressContext | None,
+    ) -> ConflictAccessContext | None:
+        if ingress is None:
+            return None
+        binding = ingress.delivery_principal_binding
+        scopes = ingress.current_authorized_scopes
+        if not scopes.scopes:
+            return None
+        return ConflictAccessContext(
+            tenant_id=binding.tenant_partition_id,
+            principal_id=binding.principal_subject_id,
+            principal_binding_digest=binding.binding_digest,
+            authorized_scope_ids=scopes.scopes,
+            scope_digest=scopes.required_scope_set_digest,
+            authorization_snapshot_digest=scopes.required_scope_set_digest,
+        )
+
+    def _attention_page(
+        self, access: ConflictAccessContext | None, request: ConflictListRequest, *, explicit: bool = False
+    ) -> ConflictAttentionPage:
+        if not self._conflict_attention_enabled:
+            if explicit:
+                raise ConflictAttentionReadError("conflict_attention_unavailable")
+            return ConflictAttentionPage(total_pending=0)
+        if access is None:
+            if explicit:
+                raise ConflictAttentionReadError("conflict_attention_authorization_required")
+            return ConflictAttentionPage(total_pending=0)
+        if self._conflict_attention_repository is None:
+            raise RuntimeError("conflict attention repository configuration is unavailable")
+        if request.cursor is None and request.scope_ids is not None and not set(request.scope_ids) <= set(
+            access.authorized_scope_ids
+        ):
+            raise ConflictAttentionReadError("invalid_conflict_scope")
+        return self._conflict_attention_repository.list_conflicts(access, request)
 
     def seed_committed_record(self, record: ProviderStoredRecord) -> None:
         self._memory_plane.seed_provider_committed_record(record)
@@ -678,7 +1248,21 @@ class ProviderMemoryService:
     def reconcile_memory_evolution(self) -> list[ProviderEvolutionOutcome]:
         """Retry pending and retryable failed evolution operations."""
 
+        self.process_pending_conflict_clarifications(max_items=16)
         return self._provider_ingestion.reconcile()
+
+    def process_pending_conflict_clarifications(self, *, max_items: int = 1) -> int:
+        """Run a bounded scheduler tick over durable clarification work."""
+
+        if max_items < 1 or max_items > 256:
+            raise ValueError("max_items must be between 1 and 256")
+        processor = self._conflict_clarification_processor
+        if processor is None:
+            return 0
+        completed = 0
+        while completed < max_items and processor.process_next():
+            completed += 1
+        return completed
 
     @staticmethod
     def _format_work_state_section(work_states: list[WorkStateSummary]) -> str:

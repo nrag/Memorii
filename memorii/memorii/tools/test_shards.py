@@ -9,7 +9,9 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+AssignmentScope = Literal["file", "node"]
 
 
 @dataclass(frozen=True)
@@ -18,6 +20,7 @@ class ShardConfig:
     target_seconds: float
     pytest_args: tuple[str, ...]
     timing_manifest: Path
+    assignment_scope: AssignmentScope
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,7 @@ def load_config(path: Path) -> ShardConfig:
     target_seconds = payload.get("target_seconds")
     pytest_args = payload.get("pytest_args")
     timing_manifest = payload.get("timing_manifest")
+    assignment_scope = payload.get("assignment_scope", "file")
     if not isinstance(shard_count, int) or isinstance(shard_count, bool) or shard_count < 2:
         raise ValueError("shard_count must be an integer of at least 2")
     if not isinstance(target_seconds, (int, float)) or isinstance(target_seconds, bool) or target_seconds <= 0:
@@ -44,11 +48,14 @@ def load_config(path: Path) -> ShardConfig:
         raise ValueError("pytest_args must be a non-empty string array")
     if not isinstance(timing_manifest, str) or not timing_manifest:
         raise ValueError("timing_manifest must be a non-empty path")
+    if assignment_scope not in {"file", "node"}:
+        raise ValueError("assignment_scope must be file or node")
     return ShardConfig(
         shard_count=shard_count,
         target_seconds=float(target_seconds),
         pytest_args=tuple(pytest_args),
         timing_manifest=(path.parent / timing_manifest).resolve(),
+        assignment_scope=assignment_scope,
     )
 
 
@@ -75,7 +82,8 @@ def merge_timing_manifests(paths: tuple[Path, ...]) -> dict[str, float]:
     merged: dict[str, float] = {}
     for path in paths:
         payload = _load_json_object(path)
-        if payload.get("exit_status", 0) != 0:
+        exit_status = payload.get("exit_status")
+        if not isinstance(exit_status, int) or isinstance(exit_status, bool) or exit_status != 0:
             raise ValueError(f"cannot merge unsuccessful timing evidence: {path}")
         for nodeid, duration in load_durations(path).items():
             merged[nodeid] = max(duration, merged.get(nodeid, 0.0))
@@ -133,21 +141,37 @@ def collect_nodeids(pytest_args: tuple[str, ...], *, cwd: Path) -> tuple[str, ..
     return nodeids
 
 
-def build_plan(nodeids: tuple[str, ...], durations: dict[str, float], shard_count: int) -> ShardPlan:
+def build_plan(
+    nodeids: tuple[str, ...],
+    durations: dict[str, float],
+    shard_count: int,
+    *,
+    assignment_scope: AssignmentScope = "file",
+) -> ShardPlan:
     nodeid_set = set(nodeids)
     known = sorted(duration for nodeid, duration in durations.items() if nodeid in nodeid_set and duration > 0)
     default_duration = known[len(known) // 2] if known else 1.0
-    files: dict[str, list[str]] = {}
-    for nodeid in nodeids:
-        files.setdefault(nodeid.split("::", maxsplit=1)[0], []).append(nodeid)
-    weighted_files = [
-        (path, sum(durations.get(nodeid, default_duration) for nodeid in members), tuple(sorted(members)))
-        for path, members in files.items()
-    ]
-    weighted_files.sort(key=lambda item: (-item[1], item[0]))
+    if assignment_scope == "node":
+        weighted_groups = [
+            (nodeid, durations.get(nodeid, default_duration), (nodeid,))
+            for nodeid in nodeids
+        ]
+    else:
+        files: dict[str, list[str]] = {}
+        for nodeid in nodeids:
+            files.setdefault(nodeid.split("::", maxsplit=1)[0], []).append(nodeid)
+        weighted_groups = [
+            (
+                path,
+                sum(durations.get(nodeid, default_duration) for nodeid in members),
+                tuple(sorted(members)),
+            )
+            for path, members in files.items()
+        ]
+    weighted_groups.sort(key=lambda item: (-item[1], item[0]))
     assignments: list[list[str]] = [[] for _ in range(shard_count)]
     totals = [0.0] * shard_count
-    for _path, duration, members in weighted_files:
+    for _coordinate, duration, members in weighted_groups:
         index = min(range(shard_count), key=lambda candidate: (totals[candidate], candidate))
         assignments[index].extend(members)
         totals[index] += duration
@@ -185,7 +209,12 @@ def _plan(config_path: Path, *, cwd: Path) -> tuple[ShardConfig, ShardPlan, tupl
     config = load_config(config_path)
     nodeids = collect_nodeids(config.pytest_args, cwd=cwd)
     durations = load_durations(config.timing_manifest)
-    plan = build_plan(nodeids, durations, config.shard_count)
+    plan = build_plan(
+        nodeids,
+        durations,
+        config.shard_count,
+        assignment_scope=config.assignment_scope,
+    )
     validate_plan(plan, nodeids)
     return config, plan, nodeids
 
@@ -200,6 +229,46 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--input-dir", type=Path)
     parser.add_argument("--output", type=Path)
     return parser
+
+
+def shard_pytest_command(
+    plan: ShardPlan,
+    *,
+    index: int,
+    timing_output: Path | None,
+    assignment_scope: AssignmentScope = "file",
+) -> list[str]:
+    targets = (
+        plan.nodeids[index]
+        if assignment_scope == "node"
+        else tuple(
+            sorted(
+                {
+                    nodeid.split("::", maxsplit=1)[0]
+                    for nodeid in plan.nodeids[index]
+                }
+            )
+        )
+    )
+    command = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-W",
+        "error",
+        *targets,
+        "-p",
+        "no:cacheprovider",
+    ]
+    if timing_output is not None:
+        command.extend([
+            "-p",
+            "memorii.tools.pytest_timing",
+            f"--memorii-timing-output={timing_output}",
+            f"--memorii-shard-index={index}",
+            f"--memorii-plan-digest={plan_digest(plan)}",
+        ])
+    return command
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -244,25 +313,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.index is None or not 0 <= args.index < config.shard_count:
         raise SystemExit(f"--index must be between 0 and {config.shard_count - 1}")
-    shard_files = sorted({nodeid.split("::", maxsplit=1)[0] for nodeid in plan.nodeids[args.index]})
-    command = [
-        sys.executable,
-        "-m",
-        "pytest",
-        "-W",
-        "error",
-        *shard_files,
-        "-p",
-        "no:cacheprovider",
-    ]
-    if args.timing_output is not None:
-        command.extend([
-            "-p",
-            "memorii.tools.pytest_timing",
-            f"--memorii-timing-output={args.timing_output}",
-            f"--memorii-shard-index={args.index}",
-            f"--memorii-plan-digest={plan_digest(plan)}",
-        ])
+    command = shard_pytest_command(
+        plan,
+        index=args.index,
+        timing_output=args.timing_output,
+        assignment_scope=config.assignment_scope,
+    )
     return subprocess.run(command, cwd=cwd, check=False).returncode
 
 

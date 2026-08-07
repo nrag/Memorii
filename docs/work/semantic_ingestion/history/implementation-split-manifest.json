@@ -1,0 +1,197 @@
+{
+  "format": "memorii.workplan-split-manifest.v2",
+  "bundle_sha256": "2b83f1cdf7bd82e74daef6dd5bf1fc636c10468634befe8f184c94be87726860",
+  "candidate_identity": "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
+  "canonical_path": "docs/work/semantic_ingestion/implementation.plan.md",
+  "archive": {
+    "path": "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md",
+    "sha256": "eace351ffa26f42b707328e8a0a0a38206c8ba62d8f2603b90853116054a4a20",
+    "metrics": [
+      {"name": "bytes", "extractor": "byte_count", "expected": 501245},
+      {"name": "newline-terminated-lines", "extractor": "newline_count", "expected": 7052},
+      {"name": "non-whitespace-words", "extractor": "non_whitespace_word_count", "expected": 60568},
+      {"name": "level-2-headings", "extractor": "level_2_heading_count", "expected": 40},
+      {"name": "level-2-or-3-headings", "extractor": "level_2_or_3_heading_count", "expected": 220},
+      {"name": "decision-entry-bullets", "extractor": "decision_entry_count", "expected": 14},
+      {"name": "closure-markers", "extractor": "closure_marker_count", "expected": 12}
+    ]
+  },
+  "artifacts": [
+    {"path": "AGENTS.md", "sha256": "e1b8daff6d38bc681db57950a01fac5177d1336a4bfd3866c089f7bf47b663a4"},
+    {"path": ".agents/PLANS.md", "sha256": "08f4e68b45fb2584529d305e071feb955371a0bf2bb7e0cbce827404392860a0"},
+    {"path": ".agents/scripts/verify_workplan_split.py", "sha256": "b8ceeb2f5c29053774740e587be2cc4038900e28ddd813805425f108233def8f"},
+    {"path": ".agents/skills/implement-design/SKILL.md", "sha256": "cac96307cb555cc1ff6100a0da69cc4e803dc8f7b5781adb08f9be6d429993d5"},
+    {"path": ".agents/skills/debug-problem/SKILL.md", "sha256": "d3aa5daf1fc93eaa982a0e3b145b1a447d3fcbdc97bfbd26a1fe2e5e30990eb3"},
+    {"path": ".agents/skills/design-tests/SKILL.md", "sha256": "4527231afa54527f70f6e283290f3c09872a67cb49319a5f3f2e595182e1c5fb"},
+    {"path": ".agents/skills/build-design/SKILL.md", "sha256": "753ed70dfadb79ddae80d215c15a142e16ed2bce684de341bb448f53f065f39f"},
+    {"path": "docs/work/semantic_ingestion/implementation.plan.md", "sha256": "4c4303b16ae59b0d704bd059eea0a899e28f5ce6ba191c0ca3ccee039ed3f1df"},
+    {"path": "docs/work/semantic_ingestion/resume.md", "sha256": "020b04a1e0c406411965d7c6d4898c2fcbbab5df5cecd54ab7aa0056ae742e83"},
+    {"path": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md", "sha256": "5a1986ede7d5d324dda0f95bab2d397b5d18c01d059b0c534f1585e0e1c7b5ad"},
+    {"path": "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md", "sha256": "eace351ffa26f42b707328e8a0a0a38206c8ba62d8f2603b90853116054a4a20"},
+    {"path": "docs/work/semantic_ingestion/milestones/layer1-independent-authority.plan.md", "sha256": "497eef50b52ebd8511e6aff59fd7d999b7b4f664114d2f76dcffe3c68a13d571"},
+    {"path": "docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md", "sha256": "2fb5bf32c3ee3115f305c85d3e1f0a3816e32054b44f838846e07abf50b92d6b"},
+    {"path": "docs/work/semantic_ingestion/milestones/m1-source-admission.plan.md", "sha256": "cb82c597b647158357fa78a59c4c6ce28979d4148f9fbefcef02e24e334dedfe"},
+    {"path": "docs/work/semantic_ingestion/milestones/m2-writer-atomicity.plan.md", "sha256": "5fac8b0d0f609ae4a6166ae02a14481764afc883414a9884ab030486ee398d3b"},
+    {"path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md", "sha256": "9e1f9bdd94f1550d91feb1b19fa7457d8d2e9e7bac19644b180f55950870bda6"},
+    {"path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md", "sha256": "f06529f2a236fe8017c1439318bb049dbaec5e6087d94bba6aecd7080d87bca2"},
+    {"path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md", "sha256": "6882283e9e6102f0a28d8d0d10f0ef2242bec18b6dbe10b3524a663825874e21"},
+    {"path": "docs/work/semantic_ingestion/history/implementation-split-manifest.json", "sha256": "self"}
+  ],
+  "milestones": [
+    {"id": "layer1", "path": "docs/work/semantic_ingestion/milestones/layer1-independent-authority.plan.md", "status": "complete", "requirements": ["SIA-R03"]},
+    {"id": "m0", "path": "docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md", "status": "blocked", "requirements": ["SIA-R03", "SIA-R13", "SIA-R22"]},
+    {"id": "m1", "path": "docs/work/semantic_ingestion/milestones/m1-source-admission.plan.md", "status": "complete", "requirements": ["SIA-R01", "SIA-R04", "SIA-R08", "SIA-R12", "SIA-R19", "SIA-R22", "SIA-R23"]},
+    {"id": "m2", "path": "docs/work/semantic_ingestion/milestones/m2-writer-atomicity.plan.md", "status": "complete", "requirements": ["SIA-R10", "SIA-R11", "SIA-R20", "SIA-R21"]},
+    {"id": "m3", "path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md", "status": "complete", "requirements": ["SIA-R02", "SIA-R04", "SIA-R05", "SIA-R06", "SIA-R07", "SIA-R09", "SIA-R12"]},
+    {"id": "m4", "path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md", "status": "active", "requirements": ["SIA-R10", "SIA-R18"]},
+    {"id": "m5", "path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md", "status": "pending", "requirements": ["SIA-R03", "SIA-R08", "SIA-R13", "SIA-R14", "SIA-R15", "SIA-R16", "SIA-R17", "SIA-R19"]}
+  ],
+  "reference_corpus": {
+    "paths": [
+      "docs/reviews/semantic-ingestion-layer1-validator-collection-closure-2026-07-29/delta-round-01.md",
+      "docs/work/pr-gate-failures-2026-08-01/debug-001.plan.md",
+      "docs/work/semantic_ingestion/behavioral-contract-identities-2026-08-02/design.plan.md",
+      "docs/work/semantic_ingestion/behavioral-contract-identities-2026-08-02/implementation.plan.md",
+      "docs/work/semantic_ingestion/behavioral-test-taxonomy-2026-08-02/testing.plan.md",
+      "docs/work/semantic_ingestion/bootstrap-local-profile-2026-08-01/design.plan.md",
+      "docs/work/semantic_ingestion/bootstrap-local-profile-2026-08-01/testing.plan.md",
+      "docs/work/semantic_ingestion/conflict-attention-replay-design.plan.md",
+      "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md",
+      "docs/work/semantic_ingestion/conflict-listing-scope-binding.design.plan.md",
+      "docs/work/semantic_ingestion/debug-clarification-recovery-corruption.plan.md",
+      "docs/work/semantic_ingestion/debug-m4-closure-regressions.plan.md",
+      "docs/work/semantic_ingestion/debug-m4-final-gates.plan.md",
+      "docs/work/semantic_ingestion/debug-semantic-control-regressions.plan.md",
+      "docs/work/semantic_ingestion/debug-temporal-projection-interval.plan.md",
+      "docs/work/semantic_ingestion/debug-trust-decay-cutover.plan.md",
+      "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md",
+      "docs/work/semantic_ingestion/layer1-heading-default-closure-2026-07-29/design.plan.md",
+      "docs/work/semantic_ingestion/layer1-validator-collection-closure-2026-07-29/design.plan.md",
+      "docs/work/semantic_ingestion/layer1-validator-unicode-map-closure-2026-07-29/design.plan.md",
+      "docs/work/semantic_ingestion/m0-canonical-genesis-structural-contract-correction-2026-07-30/design.plan.md",
+      "docs/work/semantic_ingestion/m0-canonical-genesis-structural-contract-implementation-2026-07-31/implementation.plan.md",
+      "docs/work/semantic_ingestion/m0-current-pin-c2-recipe-closure-2026-07-30/design.plan.md",
+      "docs/work/semantic_ingestion/m0-scenario-first-c2-implementation-2026-07-30/implementation.plan.md",
+      "docs/work/semantic_ingestion/m0a-c2-canonical-package-closure-2026-07-28/design.plan.md",
+      "docs/work/semantic_ingestion/m0a-c2-layer1-ctv-bindings-2026-07-28/design.plan.md",
+      "docs/work/semantic_ingestion/m0a-trust-artifact-closure-2026-07-28/design.plan.md",
+      "docs/work/semantic_ingestion/m3-temporal-trust-resolution-2026-08-02/design.plan.md",
+      "docs/work/semantic_ingestion/pr-gate-closure-2026-08-02/debugging.plan.md",
+      "docs/work/semantic_ingestion/remaining-replay-projection-contract-closure.design.plan.md",
+      "docs/work/semantic_ingestion/resume.md",
+      "docs/work/semantic_ingestion/semantic-conflict-introduction-authority-2026-08-04/design.plan.md",
+      "docs/work/semantic_ingestion/testing.plan.md",
+      "docs/work/semantic_ingestion/traceability-design.plan.md",
+      "docs/work/semantic_ingestion/traceability-registry-closure-2026-07-27/design-review.plan.md",
+      "docs/work/semantic_ingestion/traceability-registry-closure-2026-07-27/design-revision.plan.md",
+      "docs/work/test-gate-architecture/testing.plan.md"
+    ],
+    "matcher": "docs/work/semantic_ingestion/implementation.plan.md",
+    "expected_path_count": 37,
+    "expected_count": 40
+  },
+  "required_paths": [
+    ".agents/PLANS.md",
+    ".agents/scripts/verify_workplan_split.py",
+    "docs/design/conflict_attention.md",
+    "docs/design/equal_version_replay_decision-v1.json",
+    "docs/design/event_model.md",
+    "docs/design/memorii_spec.md",
+    "docs/design/memorii_storage_details.md",
+    "docs/design/semantic_ingestion_architecture.md",
+    "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md",
+    "docs/work/semantic_ingestion/history/implementation-split-manifest.json",
+    "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
+    "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md",
+    "docs/work/semantic_ingestion/implementation.plan.md",
+    "docs/work/semantic_ingestion/milestones/layer1-independent-authority.plan.md",
+    "docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md",
+    "docs/work/semantic_ingestion/milestones/m1-source-admission.plan.md",
+    "docs/work/semantic_ingestion/milestones/m2-writer-atomicity.plan.md",
+    "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md",
+    "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
+    "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md",
+    "docs/work/semantic_ingestion/resume.md",
+    "docs/work/semantic_ingestion/semantic-conflict-introduction-authority-2026-08-04/design.plan.md",
+    "docs/work/semantic_ingestion/testing.plan.md"
+  ],
+  "section_counts": [
+    {"owner": "docs/work/semantic_ingestion/implementation.plan.md", "literal": "## Next Action", "expected_count": 1},
+    {"owner": "docs/work/semantic_ingestion/resume.md", "literal": "## Exact Next Action", "expected_count": 1},
+    {"owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md", "literal": "## Current Exact Next Action", "expected_count": 1}
+  ],
+  "obligations": [
+    {
+      "id": "active-m4-status",
+      "detail_owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
+      "summary_owners": ["docs/work/semantic_ingestion/implementation.plan.md", "docs/work/semantic_ingestion/resume.md"],
+      "required_literals": [
+        {"owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md", "literal": "- Status: active"},
+        {"owner": "docs/work/semantic_ingestion/implementation.plan.md", "literal": "- M4: active."}
+      ],
+      "archive_anchors": ["M4 - Events, replay, history, trust and identity lineage"]
+    },
+    {
+      "id": "linked-debug-detail-owner",
+      "detail_owner": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md",
+      "summary_owners": ["docs/work/semantic_ingestion/implementation.plan.md", "docs/work/semantic_ingestion/resume.md", "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md"],
+      "required_literals": [
+        {"owner": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md", "literal": "- Work type: debugging"},
+        {"owner": "docs/work/semantic_ingestion/resume.md", "literal": "sole detailed owner"},
+        {"owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md", "literal": "sole detailed owner"}
+      ],
+      "archive_anchors": ["M4 - Events, replay, history, trust and identity lineage"]
+    },
+    {
+      "id": "m4-closure-arrays",
+      "detail_owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md",
+      "summary_owners": ["docs/work/semantic_ingestion/implementation.plan.md"],
+      "required_literals": [
+        {"owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md", "literal": "remaining_validated_p1_p2: [semantic-conflict-introduction-unreachable]"},
+        {"owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md", "literal": "remaining_blocks_approval: [semantic-conflict-introduction-authority]"},
+        {"owner": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md", "literal": "remaining_changes_required: [semantic-conflict-introduction-unreachable]"}
+      ],
+      "archive_anchors": ["semantic-conflict-introduction-unreachable", "semantic-conflict-introduction-authority"]
+    },
+    {
+      "id": "current-next-action",
+      "detail_owner": "docs/work/semantic_ingestion/implementation.plan.md",
+      "summary_owners": ["docs/work/semantic_ingestion/resume.md", "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md"],
+      "required_literals": [
+        {"owner": "docs/work/semantic_ingestion/implementation.plan.md", "literal": "Complete\n`docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`"},
+        {"owner": "docs/work/semantic_ingestion/resume.md", "literal": "Add the same-plane canonical clarification lifecycle records"}
+      ],
+      "archive_anchors": ["conflict-authority-proof-failures-2026-08-04"]
+    },
+    {
+      "id": "rejected-c2-authority",
+      "detail_owner": "docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md",
+      "summary_owners": ["docs/work/semantic_ingestion/implementation.plan.md"],
+      "required_literals": [
+        {"owner": "docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md", "literal": "Rejected C2 v3"},
+        {"owner": "docs/work/semantic_ingestion/implementation.plan.md", "literal": "M0's rejected historical C2 baselines"}
+      ],
+      "archive_anchors": ["M0 Current-Pin Schema And Artifact Closure", "C2 V3 Final Non-Convergence Blocker"]
+    },
+    {
+      "id": "m3-empty-closure",
+      "detail_owner": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md",
+      "summary_owners": ["docs/work/semantic_ingestion/implementation.plan.md"],
+      "required_literals": [
+        {"owner": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md", "literal": "remaining_validated_p1_p2"},
+        {"owner": "docs/work/semantic_ingestion/implementation.plan.md", "literal": "empty final approval arrays"}
+      ],
+      "archive_anchors": ["M3 Administrative Completion", "remaining_validated_p1_p2: []"]
+    },
+    {
+      "id": "m5-external-activation-limitation",
+      "detail_owner": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md",
+      "summary_owners": ["docs/work/semantic_ingestion/implementation.plan.md"],
+      "required_literals": [
+        {"owner": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md", "literal": "exact external artifacts"},
+        {"owner": "docs/work/semantic_ingestion/implementation.plan.md", "literal": "M5 activation claims\nremain limited"}
+      ],
+      "archive_anchors": ["M5 - Authorized deployment validation, monitoring and independent acceptance", "SIA-ED-TOPOLOGY-001"]
+    }
+  ]
+}

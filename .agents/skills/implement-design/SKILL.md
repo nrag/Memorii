@@ -9,7 +9,8 @@ Read:
 
 - root `AGENTS.md`
 - `.agents/PLANS.md`
-- the active implementation WorkPlan
+- the active implementation WorkPlan index, resume packet, and active milestone
+  packet when the operation uses an indexed layout
 - the frozen approved design baseline
 - governing documents selected through the knowledge router
 - nearby production code, tests, tooling, and CI
@@ -19,6 +20,30 @@ Create or resume a WorkPlan whose work type is `implementation`.
 The main thread is the coordinator. Use exactly one writer at a time for
 overlapping code, tests, documents, prompts, schemas, configuration, migrations,
 and generated artifacts.
+
+## Cost-Aware Implementation Delegation
+
+Use Spark-class explorers, code mappers, and error detectives for read-heavy
+repository mapping, ownership tracing, test inventory, collection counts,
+timing evidence, and failure triage. Use a Terra-class worker as the sole writer
+for a coherent implementation slice. Reserve Terra-class spec, correctness,
+and test reviewers for coherent milestone boundaries, bounded remediation
+deltas, and final branch review.
+
+Keep useful read-only work parallel, but do not create redundant agents that
+answer the same question. Do not rerun broad suites or whole-scope reviews after
+micro-edits. Use focused discriminating checks during construction and run each
+required broad gate once at the candidate revision.
+
+Record the bounded task, role and model tier, writer/read-only ownership,
+rationale, output, and status in the active WorkPlan delegation and cost ledger.
+The coordinator remains responsible for validating every delegated claim.
+
+Apply the delegation task packet, artifact-only context, writer completion,
+long-command ownership, and candidate freeze contracts in `.agents/PLANS.md`.
+For a large historical WorkPlan, give delegates its current resume packet by
+default, include the active milestone packet, and load historical sections only
+for a named unresolved question.
 
 ## Phase 1: Readiness And Baseline
 
@@ -68,6 +93,13 @@ Before coding, challenge implementation readiness:
 Stop for a design decision when a material semantic choice remains unresolved.
 
 ## Phase 2: Plan Vertical Milestones
+
+For a multi-milestone operation, create one milestone packet under
+`milestones/` using the indexed WorkPlan contract in `.agents/PLANS.md`. Keep
+global scope, dependencies, requirement allocation, and exactly one next action
+in the index; keep detailed implementation and evidence in the milestone
+packet. Do not create a separate milestone file for a small operation that is
+clearer as one bounded WorkPlan.
 
 Each milestone must identify:
 
@@ -221,6 +253,10 @@ than the approved design.
 
 ## Phase 7: Independent Review And Remediation
 
+Satisfy the candidate freeze gate in `.agents/PLANS.md` before launching the
+reviewer cohort. A moving candidate receives mapping or a bounded consultation,
+not a full milestone review.
+
 After a coherent milestone, run concurrently:
 
 - `spec_auditor`
@@ -229,6 +265,11 @@ After a coherent milestone, run concurrently:
 
 Require reviewers to inspect the complete current state and classify findings
 under `AGENTS.md`.
+
+Run these full reviewers once for the coherent milestone. After a bounded
+remediation, use targeted delta review by the affected reviewer roles; do not
+repeat all three whole-scope reviews unless the correction materially changes
+the contract or execution boundary.
 
 The milestone closure record must explicitly contain
 `remaining_validated_p1_p2: []`. A confirmed P1/P2 finding prevents completion.

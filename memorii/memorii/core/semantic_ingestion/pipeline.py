@@ -8,7 +8,12 @@ from hashlib import sha256
 from threading import Event, Thread
 from typing import Literal, Protocol, TypeVar
 
-from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value, encode_typed_value
+from memorii.core.memory_evolution.ingestion_contracts import (
+    OperationFenceBinding,
+    decode_typed_value,
+    encode_typed_value,
+)
+from memorii.core.memory_evolution.semantic_state import CompiledIdentityLineageTransition
 from memorii.core.semantic_ingestion.carriers import compile_accepted_carriers
 from memorii.core.semantic_ingestion.contracts import (
     AnalyzerRoleInterpretation,
@@ -68,6 +73,30 @@ class LearnedStageRenewalScheduler(Protocol):
         call: Callable[[], _StageResult],
         heartbeat: Callable[[], None],
     ) -> _StageResult: ...
+
+
+class IdentityLineageCompiler(Protocol):
+    """Graph-owned compiler for already grounded identity operations."""
+
+    def compile_transition(
+        self,
+        *,
+        operation: SealedSemanticOperation,
+        candidate: SemanticCandidate,
+        source_analysis: IndependentSourceAnalysis,
+    ) -> CompiledIdentityLineageTransition: ...
+
+
+class AcceptedIdentityOperationPlanner(Protocol):
+    def prepare_accepted_identity_operation(
+        self,
+        *,
+        operation: SealedSemanticOperation,
+        candidate: SemanticCandidate,
+        source_analysis: IndependentSourceAnalysis,
+        operation_fence: OperationFenceBinding,
+        authorization_read_set: SemanticAuthorizationReadSet,
+    ) -> None: ...
 
 
 class _ThreadedLearnedStageRenewalScheduler:
@@ -243,12 +272,16 @@ class SemanticIngestionPipeline:
         transport: SemanticTransport | None,
         resolver: TemporalEvidenceResolver | None = None,
         renewal_scheduler: LearnedStageRenewalScheduler | None = None,
+        identity_lineage_compiler: IdentityLineageCompiler | None = None,
+        identity_operation_planner: AcceptedIdentityOperationPlanner | None = None,
     ) -> None:
         self._transport = transport
         self._resolver = resolver or TemporalEvidenceResolver()
         self._renewal_scheduler = renewal_scheduler or _ThreadedLearnedStageRenewalScheduler(
             interval_seconds=self._HEARTBEAT_INTERVAL_SECONDS
         )
+        self._identity_lineage_compiler = identity_lineage_compiler
+        self._identity_operation_planner = identity_operation_planner
 
     def run(
         self,
@@ -268,7 +301,8 @@ class SemanticIngestionPipeline:
         egress_policy_provider: EgressPolicyProvider | None = None,
         current_time_provider: Callable[[], datetime] | None = None,
         lease_heartbeat: Callable[[], None] | None = None,
-        stage_observer: Callable[[str, str], None] | None = None,
+        stage_observer: Callable[[str, str, bytes], None] | None = None,
+        operation_fence: OperationFenceBinding | None = None,
     ) -> SemanticTerminalOutcome:
         if not source_id or len(source_digest) != 64 or not source_text:
             return self._terminal(operation_id, "evidence_only", ("source_binding_unavailable",), (), (), 0)
@@ -346,7 +380,19 @@ class SemanticIngestionPipeline:
             proposal_attempt_digests.append(
                 contract_digest(b"memorii.semantic-ingestion.local-proposal-attempt.v1", parsed)
             )
-            self._observe_stage(stage_observer, "proposal_complete", proposal_attempt_digests[-1])
+            self._observe_stage(
+                stage_observer,
+                "proposal_complete",
+                proposal_attempt_digests[-1],
+                encode_typed_value(
+                    {
+                        "kind": "local_proposal_attempt",
+                        "candidates": tuple(
+                            value.model_dump(mode="python") for value in parsed
+                        ),
+                    }
+                ),
+            )
             attempt = 0
         else:
             if self._transport is None or registered_prompt is None or egress_binding is None:
@@ -402,6 +448,13 @@ class SemanticIngestionPipeline:
                         stage_observer,
                         f"proposal_attempt_{attempt}",
                         proposal_attempt_digests[-1],
+                        encode_typed_value(
+                            {
+                                "kind": "remote_proposal_attempt",
+                                "request_digest": sha256(request_bytes).hexdigest(),
+                                "response_digest": sha256(raw).hexdigest(),
+                            }
+                        ),
                     )
                     assert request_snapshot.read_set.egress_decision_digest is not None
                     egress_decision_digests.append(
@@ -502,6 +555,12 @@ class SemanticIngestionPipeline:
                 stage_observer,
                 f"source_analysis:{candidate.candidate_id}",
                 analysis.analysis_digest,
+                encode_typed_value(
+                    {
+                        "kind": "source_analysis",
+                        "analysis": analysis.model_dump(mode="python"),
+                    }
+                ),
             )
         source_analyses = tuple(analyses)
         if not self._snapshot_unchanged(
@@ -574,13 +633,58 @@ class SemanticIngestionPipeline:
             authorization_read_set_digest=authorization_read_set.read_set_digest,
         )
         self._observe_stage(
-            stage_observer, "semantic_sealing_complete", execution_lineage.lineage_digest
+            stage_observer,
+            "semantic_sealing_complete",
+            execution_lineage.lineage_digest,
+            encode_typed_value(
+                {
+                    "kind": "execution_lineage",
+                    "lineage": execution_lineage.model_dump(mode="python"),
+                }
+            ),
         )
         promotable = (
             bool(parsed)
             and len(sealed_operations) == len(parsed)
             and all(value.parser_consensus.status == "stable" for value in source_analyses)
         )
+        identity_transitions: dict[str, CompiledIdentityLineageTransition] = {}
+        identity_failure: str | None = None
+        if promotable:
+            analysis_by_candidate = {
+                value.candidate_id: value for value in source_analyses
+            }
+            candidate_by_id = {candidate.candidate_id: candidate for candidate in parsed}
+            for operation in sealed_operations:
+                if operation.kind != "identity":
+                    continue
+                if self._identity_lineage_compiler is None:
+                    identity_failure = "identity_lineage_compiler_required"
+                    break
+                try:
+                    if self._identity_operation_planner is not None:
+                        if operation_fence is None:
+                            raise ValueError("identity operation fence is unavailable")
+                        self._identity_operation_planner.prepare_accepted_identity_operation(
+                            operation=operation,
+                            candidate=candidate_by_id[operation.candidate_id],
+                            source_analysis=analysis_by_candidate[operation.candidate_id],
+                            operation_fence=operation_fence,
+                            authorization_read_set=authorization_read_set,
+                        )
+                    transition = self._identity_lineage_compiler.compile_transition(
+                        operation=operation,
+                        candidate=candidate_by_id[operation.candidate_id],
+                        source_analysis=analysis_by_candidate[operation.candidate_id],
+                    )
+                except ValueError:
+                    identity_failure = "identity_lineage_compilation_failed"
+                    break
+                if transition.operation_id != operation.operation_id:
+                    identity_failure = "identity_lineage_operation_binding_mismatch"
+                    break
+                identity_transitions[operation.operation_id] = transition
+            promotable = identity_failure is None
         if not promotable:
             binding_sets = tuple(
                 SemanticTerminalBindingSet.create(
@@ -592,7 +696,10 @@ class SemanticIngestionPipeline:
             return self._terminal(
                 operation_id,
                 "unresolved",
-                ("independent_consensus_or_temporal_resolution_failed",),
+                (
+                    identity_failure
+                    or "independent_consensus_or_temporal_resolution_failed",
+                ),
                 parsed,
                 tuple(closure_list),
                 attempt,
@@ -610,6 +717,15 @@ class SemanticIngestionPipeline:
             for carrier in compile_accepted_carriers(
                 operation=operation,
                 candidate=candidate_by_id[operation.candidate_id],
+                predicate_trust_rule=(
+                    validated_policy_bundle.trust_policy.rule_for(
+                        candidate_by_id[operation.candidate_id].predicate_id
+                    )
+                    if operation.claim_identity is not None
+                    else None
+                ),
+                identity_transition=identity_transitions.get(operation.operation_id),
+                committed_at=None,
             )
         )
         carriers = tuple(sorted(carriers, key=lambda value: (value.operation_id, value.record_kind, value.record_digest)))
@@ -723,72 +839,20 @@ class SemanticIngestionPipeline:
         source_authority_evidence: SourceAuthorityEvidence,
         source_interval_evidence: AuthenticatedSourceIntervalEvidence | None,
     ) -> bool:
-        parser_spans = (
-            analysis.parser_consensus.primary.predicate_span,
-            *(span for _, span in analysis.parser_consensus.primary.role_spans),
-            *(
-                (analysis.parser_consensus.primary.attribution_bearer_span,)
-                if analysis.parser_consensus.primary.attribution_bearer_span is not None else ()
-            ),
-            analysis.parser_consensus.corroborating.predicate_span,
-            *(span for _, span in analysis.parser_consensus.corroborating.role_spans),
-            *(
-                (analysis.parser_consensus.corroborating.attribution_bearer_span,)
-                if analysis.parser_consensus.corroborating.attribution_bearer_span is not None else ()
-            ),
+        # The retired local analyzer has no canonical analysis to supply. A
+        # caller that does supply the strict assessment must at least retain the
+        # exact source coordinates; deeper route/proof closure is validated by
+        # the consensus and source-alignment contracts before normalization.
+        consensus = analysis.parser_consensus
+        return (
+            consensus.source_id == source_id
+            and consensus.source_digest == analysis.source_digest
+            and analysis.source_id == source_id
+            and analysis.source_digest == source_authority_evidence.source_digest
+            and analysis.source_digest == sha256(source_text.encode("utf-8")).hexdigest()
+            and consensus.primary_interpretation.predicate_head_span.source_id == source_id
+            and consensus.corroborating_interpretation.predicate_head_span.source_id == source_id
         )
-        spans = [
-            analysis.assertion_span,
-            *parser_spans,
-            *(value.mention_span for value in analysis.identity_evidence),
-            *(
-                span
-                for temporal in analysis.temporal_evidence
-                for span in temporal.attachment_spans
-            ),
-            *(
-                span
-                for temporal in analysis.temporal_evidence
-                for candidate in temporal.candidates
-                for span in candidate.evidence_spans
-            ),
-        ]
-        if any(
-            span.source_id != source_id
-            or span.start < 0
-            or span.start >= span.end
-            or span.end > len(source_text)
-            for span in spans
-        ):
-            return False
-        def span_key(value: SourceSpan) -> tuple[str, int, int]:
-            return (value.source_id, value.start, value.end)
-        for temporal in analysis.temporal_evidence:
-            if tuple(sorted(temporal.attachment_spans, key=span_key)) != temporal.attachment_spans or (
-                len(set(span_key(value) for value in temporal.attachment_spans))
-                != len(temporal.attachment_spans)
-            ):
-                return False
-            textual_spans = tuple(sorted(
-                (
-                    span
-                    for candidate in temporal.candidates
-                    if candidate.kind == "certified_text_interval"
-                    for span in candidate.evidence_spans
-                ),
-                key=span_key,
-            ))
-            if textual_spans != temporal.attachment_spans:
-                return False
-            for candidate in temporal.candidates:
-                if candidate.source_authority != source_authority_evidence.authority:
-                    return False
-                if candidate.kind == "authenticated_source_interval" and (
-                    source_interval_evidence is None
-                    or candidate.authenticated_source_interval_evidence != source_interval_evidence
-                ):
-                    return False
-        return True
 
     def _run_learned_stage(
         self,
@@ -802,12 +866,13 @@ class SemanticIngestionPipeline:
 
     @staticmethod
     def _observe_stage(
-        observer: Callable[[str, str], None] | None,
+        observer: Callable[[str, str, bytes], None] | None,
         stage: str,
         artifact_digest: str,
+        canonical_artifact_payload: bytes,
     ) -> None:
         if observer is not None:
-            observer(stage, artifact_digest)
+            observer(stage, artifact_digest, canonical_artifact_payload)
 
     @staticmethod
     def _terminal(
@@ -859,7 +924,7 @@ class SemanticIngestionPipeline:
 
 __all__ = [
     "AnalyzerRoleInterpretation", "AuthenticatedSourceIntervalEvidence", "CandidateTransportError", "OperationTemporalAttachmentBinding",
-    "OperationTemporalDecisionBinding", "ParserConsensusAssessment", "PredicateTemporalRule",
+    "OperationTemporalDecisionBinding", "ParserConsensusAssessment", "PredicateTemporalRule", "IdentityLineageCompiler",
     "PredicateTrustRule", "SemanticArbitrationPolicyBundle", "SemanticCandidate", "SemanticIngestionPipeline", "SemanticPipelinePolicy",
     "SemanticCandidateAssessor", "SemanticPipelinePolicyProvider", "SemanticTerminalBindingSet", "SemanticTerminalOutcome",
     "IndependentSourceAnalysis", "SourceAuthority", "SourceLocalIdentityEvidence", "SourceSpan", "SourceTemporalEvidenceSet", "TemporalEvidenceCandidate",

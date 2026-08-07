@@ -15,9 +15,20 @@ from memorii.core.llm_config import LLMRuntimeConfig
 from memorii.core.llm_provider.fake import FakeLLMStructuredClient
 from memorii.core.llm_provider.runner import PromptLLMRunner
 from memorii.core.memory_evolution import EnglishRuleMemoryExtractor, HybridMemoryExtractor, LLMMemoryExtractor
+from memorii.core.memory_evolution.conflict_attention import ConflictAttentionPage
 from memorii.core.memory_evolution.models import SourceObservation
-from memorii.core.provider.models import ProviderEvolutionOutcome, ProviderOperation, ProviderSyncResult
+from memorii.core.provider.attention_models import ProviderPrefetchAttentionEnvelope, ProviderToolAttentionEnvelope
+from memorii.core.provider.models import (
+    ProviderEvolutionOutcome,
+    ProviderOperation,
+    ProviderPrefetchResult,
+    ProviderSyncResult,
+    RetrievalChannelAuthority,
+    RetrievalChannelResult,
+    RetrievalChannelStatus,
+)
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.provider.tools import ProviderToolCallResult
 from memorii.domain.enums import SourceModality
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 
@@ -262,6 +273,44 @@ def test_frozen_legacy_reader_accepts_public_bytes_and_rejects_order_tamper() ->
         module.read_outcome(b'{"operation_id":null}')
     with pytest.raises(ValueError):
         module.read_sync(b'[]')
+
+
+def test_frozen_prefetch_and_tool_readers_reject_attention_envelopes() -> None:
+    corpus = _json(_FIXTURE / "legacy_prefetch_tool_corpus.json")
+    manifest_path = _FIXTURE / "legacy_prefetch_tool_manifest.json"
+    authority = (_FIXTURE / "legacy_prefetch_tool_manifest.sha256").read_text(encoding="ascii")
+    match = re.fullmatch(r"([0-9a-f]{64})  legacy_prefetch_tool_manifest\.json\n", authority)
+    assert match is not None
+    assert sha256(manifest_path.read_bytes()).hexdigest() == match.group(1)
+    manifest = _json(manifest_path)
+    reader_path = _FIXTURE / "legacy_prefetch_tool_reader.py"
+    assert sha256((_FIXTURE / "legacy_prefetch_tool_corpus.json").read_bytes()).hexdigest() == manifest["corpus_sha256"]
+    assert sha256(reader_path.read_bytes()).hexdigest() == manifest["reader_sha256"]
+    spec = importlib.util.spec_from_file_location("legacy_prefetch_tool_reader", reader_path)
+    assert spec and spec.loader
+    reader = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reader)
+    channel = RetrievalChannelResult(channel="canonical", status=RetrievalChannelStatus.NO_MATCH, authority=RetrievalChannelAuthority.NONE, context="")
+    prefetch = ProviderPrefetchResult(context="", selected_channel="none", canonical=channel, evolution=channel.model_copy(update={"channel":"evolution"}))
+    tool = ProviderToolCallResult(tool_name="state", ok=True, result={"x":"y"})
+    assert prefetch.model_dump_json(exclude_none=False) == corpus["prefetch_bytes"]
+    assert tool.model_dump_json(exclude_none=False) == corpus["tool_bytes"]
+    assert list(ProviderPrefetchResult.model_fields) == corpus["prefetch_fields"]
+    assert list(ProviderToolCallResult.model_fields) == corpus["tool_fields"]
+    assert ProviderPrefetchResult.model_json_schema() == corpus["prefetch_schema"]
+    assert ProviderToolCallResult.model_json_schema() == corpus["tool_schema"]
+    assert reader.read_prefetch(prefetch.model_dump_json(exclude_none=False).encode())
+    assert reader.read_tool(tool.model_dump_json(exclude_none=False).encode())
+    page = ConflictAttentionPage(total_pending=0)
+    with pytest.raises(ValueError):
+        reader.read_prefetch(ProviderPrefetchAttentionEnvelope(legacy_result=prefetch, attention_required=page).model_dump_json().encode())
+    with pytest.raises(ValueError):
+        reader.read_tool(ProviderToolAttentionEnvelope(legacy_result=tool, attention_required=page).model_dump_json().encode())
+    mutated = dict(corpus)
+    mutated["prefetch_schema"] = {"drift": True}
+    mutated_bytes = json.dumps(mutated, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    assert sha256(mutated_bytes).hexdigest() != manifest["corpus_sha256"]
+    assert sha256(manifest_path.read_bytes() + b" ").hexdigest() != match.group(1)
 
 
 def test_frozen_reader_rejects_closed_schema_and_lifecycle_mutations() -> None:

@@ -237,10 +237,17 @@ A new agent must be able to resume the operation using only:
 
 1. applicable `AGENTS.md` instructions
 2. `.agents/PLANS.md`
-3. the active WorkPlan
-4. artifacts and evidence referenced by the WorkPlan
+3. the active WorkPlan index
+4. its current resume packet and active milestone packet, when present
+5. artifacts and evidence referenced by those files
 
 Do not depend on inaccessible chat history or unstated reasoning.
+
+For large multi-milestone operations, keep the canonical WorkPlan path as a
+compact index and place detailed requirements, evidence, review, and completion
+state in one packet per milestone. Preserve pre-split or completed history in a
+content-addressed archive. Do not make every agent reload completed milestone
+history to work on the active milestone.
 
 ## Repository Knowledge Routing
 

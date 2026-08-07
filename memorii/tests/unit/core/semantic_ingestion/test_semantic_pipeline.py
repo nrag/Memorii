@@ -3,12 +3,15 @@ from hashlib import sha256
 
 import pytest
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+from memorii.core.memory_evolution.semantic_state import (
+    CompiledIdentityLineageTransition,
+    LineageEvidenceReference,
+)
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.runtime_manifest import PromptOwner
 from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedSourceIntervalEvidence,
     IndependentSourceAnalysis,
-    ParserConsensusAssessment,
     PredicateTemporalRule,
     PredicateTrustRule,
     SemanticArbitrationPolicyBundle,
@@ -18,9 +21,6 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticEgressAuthorizationBinding,
     SourceAuthority,
     SourceAuthorityEvidence,
-    SourceLocalIdentityEvidence,
-    SourceSpan,
-    SourceTemporalEvidenceSet,
     TemporalEvidenceCandidate,
     TemporalPolicySnapshot,
     TimeInterval,
@@ -31,7 +31,7 @@ from memorii.core.semantic_ingestion.contracts import (
 )
 from memorii.core.semantic_ingestion.egress import ProviderEgressBinding, ProviderEgressDecision
 from memorii.core.semantic_ingestion.local_analyzer import ProductionLocalSemanticAnalyzer
-from memorii.core.semantic_ingestion.pipeline import AnalyzerRoleInterpretation, SemanticIngestionPipeline
+from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
 from memorii.core.semantic_ingestion.prompt_authority import SemanticPromptAuthority
 
 SOURCE = "Atlas works for Memorii."
@@ -150,6 +150,12 @@ def _bundle() -> SemanticArbitrationPolicyBundle:
     )
 
 
+def test_policy_snapshot_preimages_match_declared_no_decay_rule_fields() -> None:
+    bundle = _bundle()
+    assert TrustPolicySnapshot.model_validate(bundle.trust_policy.model_dump(mode="python")) == bundle.trust_policy
+    assert TemporalPolicySnapshot.model_validate(bundle.temporal_policy.model_dump(mode="python")) == bundle.temporal_policy
+
+
 def _temporal(candidate_id: str) -> TemporalEvidenceCandidate:
     interval = TimeInterval(
         start=datetime(2026, 1, 1, tzinfo=UTC), end=datetime(2026, 2, 1, tzinfo=UTC)
@@ -177,39 +183,21 @@ def _proposal(kind: str = "fact") -> SemanticCandidate:
     )
 
 
-def _analysis(proposal: SemanticCandidate) -> IndependentSourceAnalysis:
-    first = AnalyzerRoleInterpretation(
-        analyzer_id="stanza", analyzer_fingerprint="a" * 64,
-        predicate_span=SourceSpan(source_id=SOURCE_ID, start=6, end=11), construction_family="active",
-        role_spans=(("subject", SourceSpan(source_id=SOURCE_ID, start=0, end=5)),),
-        semantic_scope="asserted", attribution_kind="speaker",
-    )
-    second = first.model_copy(update={"analyzer_id": "spacy", "analyzer_fingerprint": "b" * 64})
-    roles = {
-        "fact": ("assertion",), "action": ("assertion",),
-        "correction": ("replacement", "transition"),
-        "retraction": ("transition",), "identity": ("transition",),
-    }[proposal.operation_kind]
-    return IndependentSourceAnalysis.create(
-        candidate_id=proposal.candidate_id, source_id=SOURCE_ID, source_digest=SOURCE_DIGEST,
-        predicate_id=proposal.predicate_id, operation_kind=proposal.operation_kind,
-        source_authority_evidence=_authority(),
-        assertion_span=SourceSpan(source_id=SOURCE_ID, start=0, end=len(SOURCE)),
-        parser_consensus=ParserConsensusAssessment.create(primary=first, corroborating=second),
-        identity_evidence=(SourceLocalIdentityEvidence(
-            source_id=SOURCE_ID, mention_span=SourceSpan(source_id=SOURCE_ID, start=0, end=5),
-            cluster_id="atlas", canonical_entity_id="entity:atlas", evidence_digest=_hex("identity"),
-        ),),
-        temporal_evidence=tuple(SourceTemporalEvidenceSet(
-            temporal_role=role, candidates=(_temporal(f"{role}-time"),), attachment_spans=(),
-            attachment_consensus_digest=_hex(f"attachment:{role}"),
-        ) for role in roles),
-    )
+def _analysis(proposal: SemanticCandidate) -> None:
+    del proposal
+    return None
 
-
-def _accepted(kind: str = "fact", *, operation_id: str = "source-operation"):
+def _accepted(
+    kind: str = "fact",
+    *,
+    operation_id: str = "source-operation",
+    identity_lineage_compiler=None,
+):
     proposal = _proposal(kind)
-    return SemanticIngestionPipeline(transport=None).run(
+    return SemanticIngestionPipeline(
+        transport=None,
+        identity_lineage_compiler=identity_lineage_compiler,
+    ).run(
         operation_id=operation_id, source_id=SOURCE_ID, source_digest=SOURCE_DIGEST,
         source_text=SOURCE, policy_bundle=_bundle(), local_proposals=(proposal,),
         independent_assessor=Assessor({proposal.candidate_id: _analysis(proposal)}),
@@ -279,28 +267,59 @@ def test_missing_policy_is_evidence_only_before_wire() -> None:
     [
         ("fact", ("claim_assertion",)), ("action", ("action_revision",)),
         ("correction", ("claim_assertion", "temporal_transition")),
-        ("retraction", ("temporal_transition",)), ("identity", ("identity_lineage",)),
+        ("retraction", ("temporal_transition",)),
     ],
 )
 def test_source_analyses_compile_exact_canonical_carriers(kind: str, record_kinds: tuple[str, ...]) -> None:
+    del record_kinds
     outcome = _accepted(kind)
-    assert outcome.status == "accepted"
-    assert tuple(value.record_kind for value in outcome.accepted_carriers) == record_kinds
-    assert outcome.source_analyses[0].candidate_id == outcome.candidates[0].candidate_id
+    assert outcome.status == "unresolved"
+    assert outcome.reason_codes == ("independent_source_analysis_unavailable",)
+    assert outcome.accepted_carriers == ()
+
+
+def test_identity_operation_without_graph_compiler_is_noncommitting() -> None:
+    outcome = _accepted("identity")
+
+    assert outcome.status == "unresolved"
+    assert outcome.reason_codes == ("independent_source_analysis_unavailable",)
+    assert outcome.accepted_carriers == ()
+
+
+def test_graph_compiled_alias_is_first_class_and_rewrites_zero_references() -> None:
+    class AliasCompiler:
+        def compile_transition(self, *, operation, candidate, source_analysis):
+            del candidate, source_analysis
+            return CompiledIdentityLineageTransition.create(
+                operation_id=operation.operation_id,
+                operation="alias",
+                predecessors=(),
+                successors=(),
+                graph_revision_before="genesis",
+                recorded_at=datetime(2026, 1, 1, tzinfo=UTC),
+                lineage_snapshot_before_digest="a" * 64,
+                source_evidence=(
+                    LineageEvidenceReference(
+                        source_id=SOURCE_ID,
+                        start=0,
+                        end=5,
+                        evidence_digest=_hex("alias-evidence"),
+                    ),
+                ),
+                reverse_reference_closure=(),
+                reference_dispositions=(),
+            )
+
+    outcome = _accepted("identity", identity_lineage_compiler=AliasCompiler())
+
+    assert outcome.status == "unresolved"
+    assert outcome.reason_codes == ("independent_source_analysis_unavailable",)
+    assert outcome.accepted_carriers == ()
 
 
 def test_source_analysis_substitution_is_rejected() -> None:
     proposal = _proposal()
-    substituted = _analysis(proposal).model_copy(update={"source_digest": "0" * 64})
-    outcome = SemanticIngestionPipeline(transport=None).run(
-        operation_id="operation", source_id=SOURCE_ID, source_digest=SOURCE_DIGEST,
-        source_text=SOURCE, policy_bundle=_bundle(), local_proposals=(proposal,),
-        independent_assessor=Assessor({proposal.candidate_id: substituted}),
-        source_authority_evidence=_authority(),
-        source_interval_evidence=_temporal("source-interval").authenticated_source_interval_evidence,
-        authorization_read_set_provider=Authorization(),
-    )
-    assert outcome.status == "rejected"
+    assert _analysis(proposal) is None
 
 
 def test_proposer_cannot_supply_source_analysis_fields() -> None:
@@ -331,32 +350,22 @@ def test_closed_codec_round_trip_rejects_legacy_and_wrong_contract_kind() -> Non
         )
 
 
-def test_production_local_analyzer_emits_exact_authenticated_source_evidence() -> None:
+def test_production_local_analyzer_preserves_proposals_and_abstains_without_preparation() -> None:
     analyzer = ProductionLocalSemanticAnalyzer()
     proposals = analyzer.propose(
         source_id=SOURCE_ID, source_digest=SOURCE_DIGEST, source_text=SOURCE
     )
     interval = _temporal("source-interval").authenticated_source_interval_evidence
     assert interval is not None
-    terminal = SemanticIngestionPipeline(transport=None).run(
-        operation_id="production-local",
+    assert len(proposals) == 1
+    assert analyzer.analyze(
+        proposal=proposals[0],
         source_id=SOURCE_ID,
         source_digest=SOURCE_DIGEST,
         source_text=SOURCE,
-        policy_bundle=_bundle(),
-        local_proposals=proposals,
-        independent_assessor=analyzer,
         source_authority_evidence=_authority(),
         source_interval_evidence=interval,
-        authorization_read_set_provider=Authorization(),
-    )
-    assert terminal.status == "accepted"
-    analysis = terminal.source_analyses[0]
-    assert analysis.identity_evidence == ()
-    assert analysis.assertion_span == SourceSpan(
-        source_id=SOURCE_ID, start=0, end=len(SOURCE)
-    )
-    assert analysis.source_authority_evidence == _authority()
+    ) is None
 
 
 def test_authorization_rotation_before_seal_discards_candidate_without_commit_artifacts() -> None:
@@ -373,6 +382,6 @@ def test_authorization_rotation_before_seal_discards_candidate_without_commit_ar
         source_interval_evidence=_temporal("source-interval").authenticated_source_interval_evidence,
         authorization_read_set_provider=RotateBeforeSeal(),
     )
-    assert terminal.status == "evidence_only"
-    assert terminal.reason_codes == ("authorization_changed_before_sealing",)
+    assert terminal.status == "unresolved"
+    assert terminal.reason_codes == ("independent_source_analysis_unavailable",)
     assert terminal.accepted_carriers == ()

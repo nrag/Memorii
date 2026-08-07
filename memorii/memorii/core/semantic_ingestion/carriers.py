@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from hashlib import sha256
 
+from memorii.core.memory_evolution.semantic_state import CompiledIdentityLineageTransition
+from memorii.core.memory_evolution.time_contracts import TimeInterval
 from memorii.core.semantic_ingestion.contracts import (
     AcceptedTemporalEvidence,
     ActionRevision,
     ClaimAssertion,
     IdentityLineageRecord,
+    PredicateTrustRule,
     SealedSemanticOperation,
     SemanticCandidate,
     SemanticDurableCarrier,
@@ -43,7 +47,12 @@ def _base(operation: SealedSemanticOperation, candidate: SemanticCandidate, role
     }
 
 
-def _claim(operation: SealedSemanticOperation, candidate: SemanticCandidate, role: str) -> ClaimAssertion:
+def _claim(
+    operation: SealedSemanticOperation,
+    candidate: SemanticCandidate,
+    role: str,
+    predicate_trust_rule: PredicateTrustRule | None,
+) -> ClaimAssertion:
     body = _base(operation, candidate, role) | {
         "record_kind": "claim_assertion",
         "claim_assertion_id": contract_digest(
@@ -51,19 +60,34 @@ def _claim(operation: SealedSemanticOperation, candidate: SemanticCandidate, rol
             {"operation_id": operation.operation_id, "candidate_id": candidate.candidate_id, "role": role},
         ),
     }
+    if operation.claim_identity is not None:
+        body.update(
+            {
+                "claim_identity": operation.claim_identity,
+                "source_authority_evidence": operation.source_authority_evidence,
+                "predicate_trust_rule": predicate_trust_rule,
+            }
+        )
     return ClaimAssertion.model_validate(
         body | {"record_digest": contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", body)}
     )
 
 
 def compile_accepted_carriers(
-    *, operation: SealedSemanticOperation, candidate: SemanticCandidate
+    *,
+    operation: SealedSemanticOperation,
+    candidate: SemanticCandidate,
+    predicate_trust_rule: PredicateTrustRule | None = None,
+    identity_transition: CompiledIdentityLineageTransition | None = None,
+    committed_at: datetime | None,
 ) -> tuple[SemanticDurableCarrier, ...]:
     """Produce only the durable record family authorized by the typed candidate."""
     if operation.candidate_id != candidate.candidate_id or operation.kind != candidate.operation_kind:
         raise ValueError("sealed operation and candidate do not match")
     if operation.kind == "fact":
-        carriers: tuple[SemanticDurableCarrier, ...] = (_claim(operation, candidate, "assertion"),)
+        carriers: tuple[SemanticDurableCarrier, ...] = (
+            _claim(operation, candidate, "assertion", predicate_trust_rule),
+        )
     elif operation.kind == "action":
         body = _base(operation, candidate, "assertion") | {
             "record_kind": "action_revision",
@@ -85,9 +109,14 @@ def compile_accepted_carriers(
                 b"memorii.semantic-ingestion.correction-transition-id.v1",
                 {"operation_id": operation.operation_id, "candidate_id": candidate.candidate_id},
             ),
+            "system_interval": (
+                TimeInterval(start=committed_at)
+                if committed_at is not None
+                else None
+            ),
         }
         carriers = (
-            _claim(operation, candidate, "replacement"),
+            _claim(operation, candidate, "replacement", predicate_trust_rule),
             TemporalTransitionRecord.model_validate(
                 transition_body
                 | {"record_digest": contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", transition_body)}
@@ -101,6 +130,11 @@ def compile_accepted_carriers(
                 b"memorii.semantic-ingestion.retraction-transition-id.v1",
                 {"operation_id": operation.operation_id, "candidate_id": candidate.candidate_id},
             ),
+            "system_interval": (
+                TimeInterval(start=committed_at)
+                if committed_at is not None
+                else None
+            ),
         }
         carriers = (
             TemporalTransitionRecord.model_validate(
@@ -108,12 +142,18 @@ def compile_accepted_carriers(
             ),
         )
     else:
+        if identity_transition is None:
+            raise ValueError("identity_lineage_compiler_required")
+        if identity_transition.operation_id != operation.operation_id:
+            raise ValueError("identity_lineage_operation_binding_mismatch")
         body = _base(operation, candidate, "transition") | {
             "record_kind": "identity_lineage",
             "identity_lineage_id": contract_digest(
                 b"memorii.semantic-ingestion.identity-lineage-id.v1",
                 {"operation_id": operation.operation_id, "candidate_id": candidate.candidate_id},
             ),
+            "statement_digest": identity_transition.transition_digest,
+            "transition": identity_transition,
         }
         carriers = (
             IdentityLineageRecord.model_validate(

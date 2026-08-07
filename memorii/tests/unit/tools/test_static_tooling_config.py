@@ -5,9 +5,11 @@ import re
 import subprocess
 import sys
 import tomllib
+from itertools import combinations
 from pathlib import Path
 
 import yaml
+from memorii.tools.test_shards import collect_nodeids, load_config
 from tools.extract_provider_compatibility_fixture import BASELINE_REVISION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -206,7 +208,14 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
 
     assert shards["timeout-minutes"] == "15"
     assert shards["strategy"]["fail-fast"] == "false"
-    assert shards["strategy"]["matrix"]["shard"] == ["0", "1", "2", "3"]
+    shard_config = json.loads(
+        (PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert shards["strategy"]["matrix"]["shard"] == [
+        str(index) for index in range(shard_config["shard_count"])
+    ]
     shard_run = next(step for step in shards["steps"] if step["name"] == "Run deterministic unit shard")
     assert "memorii.tools.test_shards run" in shard_run["run"]
     shard_timing_path = '${RUNNER_TEMP}/unit-shard-${{ matrix.shard }}-timings.json'
@@ -217,19 +226,25 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     assert umbrella["name"] == "Unit Tests"
     assert umbrella["if"] == "always()"
     assert umbrella["needs"] == [
+        "equal-version-replay-decision",
         "static-analysis",
         "package-smoke",
         "provider-compatibility",
         "unit-test-shards",
         "unit-timing-inventory",
+        "semantic-terminal-persistence",
+        "semantic-terminal-persistence-timing-inventory",
     ]
     umbrella_run = umbrella["steps"][0]
     expected_results = {
+        "REPLAY_DECISION_RESULT": "equal-version-replay-decision",
         "STATIC_RESULT": "static-analysis",
         "PACKAGE_RESULT": "package-smoke",
         "COMPATIBILITY_RESULT": "provider-compatibility",
         "SHARD_RESULT": "unit-test-shards",
         "TIMING_RESULT": "unit-timing-inventory",
+        "TERMINAL_RESULT": "semantic-terminal-persistence",
+        "TERMINAL_TIMING_RESULT": "semantic-terminal-persistence-timing-inventory",
     }
     for variable, dependency in expected_results.items():
         assert umbrella_run["env"][variable] == f"${{{{ needs.{dependency}.result }}}}"
@@ -286,8 +301,6 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     )
     assert compatibility_fetch_index < compatibility["steps"].index(compatibility_run)
     assert "tests/integration/semantic_ingestion/test_provider_compatibility_recapture.py" in compatibility_run["run"]
-    shard_config = json.loads((PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text())
-    assert not any("provider_compatibility_recapture" in argument for argument in shard_config["pytest_args"])
 
     bounded_jobs = [
         "static-analysis",
@@ -297,6 +310,8 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
         "unit-timing-inventory",
         "unit-tests",
         "semantic-ingestion-generation",
+        "semantic-projection-history",
+        "semantic-ingestion",
         "semantic-ingestion-scenario",
         "semantic-ingestion-acceptance",
         "benchmark-contract-tests",
@@ -306,6 +321,109 @@ def test_pr_unit_gate_is_complete_duration_balanced_and_timeout_bounded() -> Non
     assert all(int(jobs[name]["timeout-minutes"]) <= 15 for name in bounded_jobs)
     assert jobs["benchmark-contracts"]["name"] == "Benchmark Contracts"
     assert jobs["benchmark-contracts"]["needs"] == ["benchmark-contract-tests", "benchmark-artifacts"]
+
+
+def test_terminal_persistence_job_is_exact_node_balanced_and_disjoint() -> None:
+    config = _workflow_config("pr-gates.yml")
+    job = config["jobs"]["semantic-terminal-persistence"]
+    timing = config["jobs"]["semantic-terminal-persistence-timing-inventory"]
+    terminal_path = "tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py"
+    shard_config_path = "tests/ci/semantic-terminal-persistence-shards.json"
+    shard_config = json.loads(
+        (PROJECT_ROOT / shard_config_path).read_text(encoding="utf-8")
+    )
+
+    assert shard_config["assignment_scope"] == "node"
+    assert shard_config["pytest_args"] == [terminal_path]
+    assert shard_config["shard_count"] == 7
+    assert shard_config["target_seconds"] == 600
+    assert job["timeout-minutes"] == "15"
+    assert job["strategy"]["matrix"]["shard"] == ["0", "1", "2", "3", "4", "5", "6"]
+    count_command = next(
+        step["run"]
+        for step in job["steps"]
+        if step["name"] == "Verify exact terminal-persistence collection count"
+    )
+    assert count_command.count(terminal_path) == 1
+    assert '"156 tests collected in "*' in count_command
+    run_command = next(
+        step["run"]
+        for step in job["steps"]
+        if step["name"] == "Run exact terminal-persistence shard"
+    )
+    assert f"--config {shard_config_path}" in run_command
+    assert "--index ${{ matrix.shard }}" in run_command
+    assert timing["needs"] == ["semantic-terminal-persistence"]
+    merge_command = next(
+        step["run"]
+        for step in timing["steps"]
+        if step["name"] == "Merge terminal-persistence timing inventory"
+    )
+    assert f"--config {shard_config_path}" in merge_command
+
+    broad_config = json.loads(
+        (PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert broad_config["assignment_scope"] == "file"
+    assert f"--ignore={terminal_path}" in broad_config["pytest_args"]
+    assert (
+        "--ignore=tests/unit/core/semantic_ingestion/test_provider_compatibility.py"
+        in broad_config["pytest_args"]
+    )
+
+
+def test_unit_pytest_owners_partition_the_live_unit_corpus_exactly_once() -> None:
+    broad_config = load_config(PROJECT_ROOT / "tests" / "ci" / "unit-shards.json")
+    full = set(collect_nodeids(("tests/unit",), cwd=PROJECT_ROOT))
+    broad = set(collect_nodeids(broad_config.pytest_args, cwd=PROJECT_ROOT))
+    owner_paths = {
+        "generation-closure-exactness": (
+            "tests/unit/tools/test_generation_closure_exactness.py",
+        ),
+        "scenario-fixture-authority": (
+            "tests/unit/tools/test_scenario_fixture_authority.py",
+        ),
+        "projection-history": (
+            "tests/unit/core/test_projection_history.py",
+            "tests/unit/core/semantic_ingestion/test_projection_scheduler.py",
+            "tests/unit/core/semantic_ingestion/test_policy_migration.py",
+            "tests/unit/core/semantic_ingestion/test_identity_lineage.py",
+            "tests/unit/core/semantic_ingestion/test_graph_planning.py",
+            "tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py",
+        ),
+        "terminal-persistence": (
+            "tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py",
+        ),
+        "provider-compatibility": (
+            "tests/unit/core/semantic_ingestion/test_provider_compatibility.py",
+        ),
+    }
+    owners = {"broad": broad}
+    for owner, paths in owner_paths.items():
+        owners[owner] = {
+            nodeid
+            for nodeid in full
+            if any(nodeid.startswith(f"{path}::") for path in paths)
+        }
+
+    assert all(nodes for nodes in owners.values())
+    for (left_name, left), (right_name, right) in combinations(owners.items(), 2):
+        assert left.isdisjoint(right), f"overlap between {left_name} and {right_name}"
+    assert set().union(*owners.values()) == full
+
+    terminal = owners["terminal-persistence"]
+    terminal_manifest = json.loads(
+        (
+            PROJECT_ROOT
+            / "tests"
+            / "ci"
+            / "semantic-terminal-persistence-test-durations.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert len(terminal) == 156
+    assert set(terminal_manifest["tests"]) == terminal
 
 
 def test_repository_workflow_skills_share_fail_closed_closure_contract() -> None:
@@ -400,9 +518,10 @@ def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
         "pytest",
         "-W",
         "error",
-        "tests/unit/core/semantic_ingestion",
         "tests/integration/test_semantic_ingestion_pipeline.py",
         "tests/integration/test_semantic_ingestion_process_safety.py",
+        "tests/integration/test_conflict_attention_persistence.py",
+        "tests/integration/test_semantic_ingestion_replay.py",
         "-p",
         "no:cacheprovider",
     ]
@@ -411,10 +530,57 @@ def test_exact_semantic_ingestion_workflow_argv_is_pinned() -> None:
         for step in steps
         if step["name"] == "Verify exact semantic ingestion collection count"
     )
-    assert '"266 tests collected in "*' in count_command
-    assert count_command.count("tests/unit/core/semantic_ingestion") == 1
+    assert '"34 tests collected in "*' in count_command
     assert count_command.count("tests/integration/test_semantic_ingestion_pipeline.py") == 1
     assert count_command.count("tests/integration/test_semantic_ingestion_process_safety.py") == 1
+    assert count_command.count("tests/integration/test_conflict_attention_persistence.py") == 1
+    assert count_command.count("tests/integration/test_semantic_ingestion_replay.py") == 1
+
+
+def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -> None:
+    config = _workflow_config("pr-gates.yml")
+    steps = config["jobs"]["semantic-projection-history"]["steps"]
+    command = next(step["run"] for step in steps if step["name"] == "Run exact projection-history closure")
+    expected_files = [
+        "tests/unit/core/test_projection_history.py",
+        "tests/unit/core/semantic_ingestion/test_projection_scheduler.py",
+        "tests/unit/core/semantic_ingestion/test_policy_migration.py",
+        "tests/unit/core/semantic_ingestion/test_identity_lineage.py",
+        "tests/unit/core/semantic_ingestion/test_graph_planning.py",
+        "tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py",
+    ]
+    assert command.split() == ["pytest", "-W", "error", *expected_files, "-p", "no:cacheprovider"]
+    count_command = next(
+        step["run"] for step in steps if step["name"] == "Verify exact projection-history collection count"
+    )
+    assert '"84 tests collected in "*' in count_command
+    assert all(count_command.count(path) == 1 for path in expected_files)
+
+    shard_config = json.loads((PROJECT_ROOT / "tests" / "ci" / "unit-shards.json").read_text())
+    shard_args = set(shard_config["pytest_args"])
+    assert {f"--ignore={path}" for path in expected_files} <= shard_args
+
+    generation_command = next(
+        step["run"]
+        for step in config["jobs"]["semantic-ingestion-generation"]["steps"]
+        if step["name"] == "Run exact semantic ingestion integration and process closure"
+    )
+    assert all(path not in generation_command for path in expected_files)
+
+    semantic_umbrella = config["jobs"]["semantic-ingestion"]
+    assert semantic_umbrella["name"] == "Semantic Ingestion"
+    assert semantic_umbrella["if"] == "always()"
+    expected_dependencies = {
+        "GENERATION_RESULT": "semantic-ingestion-generation",
+        "SCENARIO_RESULT": "semantic-ingestion-scenario",
+        "ACCEPTANCE_RESULT": "semantic-ingestion-acceptance",
+        "PROJECTION_HISTORY_RESULT": "semantic-projection-history",
+    }
+    assert set(semantic_umbrella["needs"]) == set(expected_dependencies.values())
+    umbrella_step = semantic_umbrella["steps"][0]
+    for variable, dependency in expected_dependencies.items():
+        assert umbrella_step["env"][variable] == f"${{{{ needs.{dependency}.result }}}}"
+        assert f'test "${variable}" = success' in umbrella_step["run"]
 
 
 def test_test_symbols_use_behavioral_names() -> None:
@@ -453,7 +619,8 @@ def test_provider_recapture_documentation_matches_exact_pinned_fetch_contract() 
     assert "verify that the fetched object is a commit" in documentation
     assert "fetch-depth: 0" not in documentation
     assert "provider compatibility\nrecapture" in documentation
-    assert "merged unit\ntiming inventory" in documentation
+    assert "both merged timing inventories" in documentation
+    assert "seven exact-node\nterminal-persistence shards" in documentation
 
 
 def _workflow_steps(path: Path) -> list[tuple[str, str]]:

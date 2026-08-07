@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier, Event, Lock, Thread
 
 import pytest
 from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService, SourceAdmissionAccepted
@@ -22,6 +23,8 @@ from memorii.core.memory_plane.store import (
     InMemoryMemoryPlaneStore,
     JsonlMemoryPlaneStore,
     MemoryPlaneCorruptionError,
+    MemoryPlaneRevisionConflictError,
+    RecordAbsentPrecondition,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
@@ -249,6 +252,104 @@ def test_jsonl_reopen_recovers_byte_identical_preplanning_publication(tmp_path: 
         reopened_plane, reopened_writers, now_provider=lambda: datetime(2026, 1, 2, tzinfo=UTC)
     )._publish_preplanning(admission=admission, writer_binding=binding)
     assert reopened == first
+
+
+def test_independent_jsonl_instances_linearize_same_absent_record_race(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "independent-race"
+    stores = (JsonlMemoryPlaneStore(path), JsonlMemoryPlaneStore(path))
+    barrier = Barrier(2)
+    lock = Lock()
+    outcomes: list[tuple[str, str]] = []
+
+    def compete(index: int) -> None:
+        record = CanonicalMemoryRecord(
+            memory_id="race:winner",
+            domain=MemoryDomain.TRANSCRIPT,
+            text=f"writer-{index}",
+            content={"writer": index},
+            status=CommitStatus.COMMITTED,
+            source_kind="test_race",
+            timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        barrier.wait()
+        try:
+            stores[index].apply_batch(
+                (record,),
+                expected_revision=None,
+                preconditions=(
+                    RecordAbsentPrecondition(memory_id=record.memory_id),
+                ),
+            )
+            outcome = ("committed", record.text)
+        except MemoryPlaneRevisionConflictError:
+            outcome = ("conflict", record.text)
+        with lock:
+            outcomes.append(outcome)
+
+    threads = tuple(Thread(target=compete, args=(index,)) for index in range(2))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert sorted(value for value, _ in outcomes) == ["committed", "conflict"]
+    _, records = JsonlMemoryPlaneStore(path).read_snapshot()
+    winner = next(record for record in records if record.memory_id == "race:winner")
+    assert winner.text == next(text for status, text in outcomes if status == "committed")
+
+
+def test_jsonl_transaction_barrier_rechecks_freeze_after_request_construction(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "transaction-barrier"
+    writer = JsonlMemoryPlaneStore(path)
+    observer = JsonlMemoryPlaneStore(path)
+    entered = Event()
+    release = Event()
+    frozen = Event()
+    failures: list[str] = []
+    record = CanonicalMemoryRecord(
+        memory_id="barrier:terminal",
+        domain=MemoryDomain.TRANSCRIPT,
+        text="terminal",
+        content={"state": "prepared"},
+        status=CommitStatus.COMMITTED,
+        source_kind="test_barrier",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    def freeze_guard() -> None:
+        entered.set()
+        release.wait(timeout=5)
+        if frozen.is_set():
+            raise ValueError("semantic writes are frozen")
+
+    def commit() -> None:
+        try:
+            writer.apply_batch(
+                (record,),
+                expected_revision=None,
+                preconditions=(
+                    RecordAbsentPrecondition(memory_id=record.memory_id),
+                ),
+                transaction_precondition=freeze_guard,
+            )
+        except ValueError as exc:
+            failures.append(str(exc))
+
+    thread = Thread(target=commit)
+    thread.start()
+    assert entered.wait(timeout=5)
+    frozen.set()
+    release.set()
+    thread.join(timeout=5)
+
+    assert failures == ["semantic writes are frozen"]
+    assert all(
+        item.memory_id != record.memory_id for item in observer.read_snapshot()[1]
+    )
 
 
 class _LostAckStore(InMemoryMemoryPlaneStore):

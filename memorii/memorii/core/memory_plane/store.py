@@ -3,20 +3,77 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import tempfile
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from pathlib import Path
+from secrets import token_bytes
 from threading import RLock
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_plane.file_lock import locked_file
 from memorii.core.memory_plane.models import CanonicalMemoryRecord, MemoryRecordFence
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+
+SEMANTIC_CHECKPOINT_SECRET_PURPOSE = "semantic-ingestion-replay-checkpoint-signing"
+_SEMANTIC_CHECKPOINT_KEY_ID = "semantic-ingestion-checkpoint-key"
+_SEMANTIC_CHECKPOINT_SIGNATURE_DOMAIN = b"memorii.semantic-replay-checkpoint-signature.v1\0"
+
+
+@runtime_checkable
+class CheckpointSignatureAuthority(Protocol):
+    """Opaque backend-owned signer/verifier without raw-key access."""
+
+    @property
+    def key_id(self) -> str: ...
+
+    @property
+    def public_key_fingerprint(self) -> str: ...
+
+    def sign_checkpoint_digest(self, checkpoint_digest: str) -> str: ...
+
+    def verify_checkpoint_signature(
+        self,
+        checkpoint_digest: str,
+        signature: str,
+    ) -> bool: ...
+
+
+class _BackendCheckpointSignatureAuthority:
+    __slots__ = ("_secret",)
+
+    def __init__(self, secret: bytes) -> None:
+        self._secret = secret
+
+    @property
+    def key_id(self) -> str:
+        return _SEMANTIC_CHECKPOINT_KEY_ID
+
+    @property
+    def public_key_fingerprint(self) -> str:
+        return hashlib.sha256(self._secret).hexdigest()
+
+    def sign_checkpoint_digest(self, checkpoint_digest: str) -> str:
+        return hmac.new(
+            self._secret,
+            _SEMANTIC_CHECKPOINT_SIGNATURE_DOMAIN + checkpoint_digest.encode("ascii"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def verify_checkpoint_signature(
+        self,
+        checkpoint_digest: str,
+        signature: str,
+    ) -> bool:
+        return hmac.compare_digest(
+            self.sign_checkpoint_digest(checkpoint_digest),
+            signature,
+        )
 
 
 class MemoryPlaneRevisionConflictError(RuntimeError):
@@ -104,6 +161,11 @@ class _PersistedBatch(BaseModel):
 
 
 class MemoryPlaneStore(Protocol):
+    @property
+    def durable(self) -> bool: ...
+
+    def load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes: ...
+
     def write_records(
         self, records: tuple[CanonicalMemoryRecord, ...], *, authorization: MemoryPlaneWriteAuthorization | None = None
     ) -> int: ...
@@ -155,6 +217,56 @@ class InMemoryMemoryPlaneStore:
         self._revision = 0
         self._lock = RLock()
         self._governed_write_policy: GovernedWritePolicy | None = None
+        self._protected_secrets: dict[str, bytes] = {}
+        self._checkpoint_signature_owner: object | None = None
+        self._checkpoint_signature_authority: _BackendCheckpointSignatureAuthority | None = None
+
+    @property
+    def durable(self) -> bool:
+        return False
+
+    def load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes:
+        if purpose == SEMANTIC_CHECKPOINT_SECRET_PURPOSE:
+            raise PermissionError("checkpoint signing material is backend-private")
+        return self._load_or_create_protected_secret(
+            purpose=purpose,
+            length=length,
+        )
+
+    def _load_or_create_protected_secret(
+        self,
+        *,
+        purpose: str,
+        length: int,
+    ) -> bytes:
+        if not purpose or length < 32:
+            raise ValueError("protected secret purpose or length is invalid")
+        with self._lock:
+            secret = self._protected_secrets.get(purpose)
+            if secret is None:
+                secret = token_bytes(length)
+                self._protected_secrets[purpose] = secret
+            if len(secret) != length:
+                raise MemoryPlaneCorruptionError("protected secret length changed")
+            return bytes(secret)
+
+    def _claim_semantic_checkpoint_signature_authority(
+        self,
+        *,
+        owner: object,
+    ) -> CheckpointSignatureAuthority:
+        with self._lock:
+            if self._checkpoint_signature_owner is None:
+                self._checkpoint_signature_owner = owner
+            elif self._checkpoint_signature_owner is not owner:
+                raise PermissionError("checkpoint signing authority is already owned")
+            if self._checkpoint_signature_authority is None:
+                secret = self._load_or_create_protected_secret(
+                    purpose=SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
+                    length=32,
+                )
+                self._checkpoint_signature_authority = _BackendCheckpointSignatureAuthority(secret)
+            return self._checkpoint_signature_authority
 
     def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
         self._governed_write_policy = policy
@@ -259,6 +371,75 @@ class JsonlMemoryPlaneStore:
         self._lock_path = self._base_path / "memory_records.lock"
         self._base_path.mkdir(parents=True, exist_ok=True)
         self._governed_write_policy: GovernedWritePolicy | None = None
+        self._checkpoint_signature_owner: object | None = None
+        self._checkpoint_signature_authority: _BackendCheckpointSignatureAuthority | None = None
+
+    @property
+    def durable(self) -> bool:
+        return True
+
+    def load_or_create_protected_secret(self, *, purpose: str, length: int) -> bytes:
+        if purpose == SEMANTIC_CHECKPOINT_SECRET_PURPOSE:
+            raise PermissionError("checkpoint signing material is backend-private")
+        return self._load_or_create_protected_secret(
+            purpose=purpose,
+            length=length,
+        )
+
+    def _load_or_create_protected_secret(
+        self,
+        *,
+        purpose: str,
+        length: int,
+    ) -> bytes:
+        if not purpose or length < 32:
+            raise ValueError("protected secret purpose or length is invalid")
+        protected = self._base_path / ".protected"
+        secret_path = protected / f"{hashlib.sha256(purpose.encode('utf-8')).hexdigest()}.key"
+        with self._locked(exclusive=True):
+            protected.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(protected, 0o700)
+            if secret_path.exists():
+                try:
+                    mode = secret_path.stat().st_mode & 0o777
+                    secret = secret_path.read_bytes()
+                except OSError as exc:
+                    raise MemoryPlaneCorruptionError("protected secret is unreadable") from exc
+                if mode & 0o077 or len(secret) != length:
+                    raise MemoryPlaneCorruptionError("protected secret permissions or length are invalid")
+                return secret
+            secret = token_bytes(length)
+            descriptor = os.open(
+                secret_path,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                0o600,
+            )
+            try:
+                written = os.write(descriptor, secret)
+                if written != len(secret):
+                    raise OSError("partial protected-secret write")
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            _fsync_directory(protected)
+            return secret
+
+    def _claim_semantic_checkpoint_signature_authority(
+        self,
+        *,
+        owner: object,
+    ) -> CheckpointSignatureAuthority:
+        if self._checkpoint_signature_owner is None:
+            self._checkpoint_signature_owner = owner
+        elif self._checkpoint_signature_owner is not owner:
+            raise PermissionError("checkpoint signing authority is already owned")
+        if self._checkpoint_signature_authority is None:
+            secret = self._load_or_create_protected_secret(
+                purpose=SEMANTIC_CHECKPOINT_SECRET_PURPOSE,
+                length=32,
+            )
+            self._checkpoint_signature_authority = _BackendCheckpointSignatureAuthority(secret)
+        return self._checkpoint_signature_authority
 
     def install_governed_write_policy(self, policy: GovernedWritePolicy) -> None:
         self._governed_write_policy = policy
@@ -448,32 +629,15 @@ def _validate_governed_write(
     if policy is not None:
         policy.validate(records, current, authorization)
         return
+    from memorii.core.memory_plane.semantic_control import (
+        SEMANTIC_PUBLIC_NON_AUTHORITY_SOURCE_KINDS,
+        is_semantic_control_record,
+    )
+
+    writer_exists = any(existing.memory_id == "semantic_ingestion:writer_admission:current" for existing in current)
     if any(
-        record.source_kind == "semantic_ingestion_writer_admission"
-        or (
-            record.source_kind in {
-                "semantic_ingestion_source",
-                "semantic_ingestion_metadata_poor_snapshot",
-                "semantic_ingestion_admission_index",
-                "semantic_ingestion_profile_selection",
-                "semantic_ingestion_profile_verification",
-                "semantic_ingestion_profile_outcome",
-                "semantic_ingestion_legacy_delivery_record",
-            }
-            and any(existing.memory_id == "semantic_ingestion:writer_admission:current" for existing in current)
-        )
-        or record.source_kind.startswith("semantic_ingestion_preplanning")
-        or record.source_kind.startswith("semantic_ingestion_generation")
-        or record.source_kind == "semantic_ingestion_authorization_authority"
-        or record.source_kind.startswith("semantic_ingestion_migration")
-        or record.source_kind == "semantic_ingestion_migrated_target"
-        or record.memory_id == "semantic_ingestion:writer_admission:current"
-        or record.memory_id.startswith("semantic_ingestion:operation:")
-        or record.memory_id.startswith("semantic_ingestion:artifact:")
-        or record.memory_id.startswith("semantic_ingestion:generation:")
-        or record.memory_id.startswith("semantic_ingestion:authorization:")
-        or record.memory_id.startswith("semantic_ingestion:migration:")
-        or record.memory_id.startswith("semantic_ingestion:migrated:")
+        is_semantic_control_record(record)
+        and not (not writer_exists and record.source_kind in SEMANTIC_PUBLIC_NON_AUTHORITY_SOURCE_KINDS)
         for record in records
     ):
         raise MemoryPlaneGovernedWritePolicyRequiredError(

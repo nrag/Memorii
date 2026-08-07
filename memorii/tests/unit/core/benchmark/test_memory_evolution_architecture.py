@@ -568,6 +568,25 @@ def test_source_does_not_import_cross_module_private_symbols() -> None:
     assert violations == []
 
 
+def test_memory_plane_service_uses_storage_owned_checkpoint_secret_purpose() -> None:
+    service_path = PACKAGE_ROOT / "memory_plane" / "service.py"
+    tree = ast.parse(service_path.read_text(encoding="utf-8"), filename=str(service_path))
+    public_imports = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        if _resolved_import_module(service_path, node) == "memorii.core.memory_plane.store"
+        for alias in node.names
+    }
+
+    assert "SEMANTIC_CHECKPOINT_SECRET_PURPOSE" in public_imports
+    assert not any(
+        isinstance(node, ast.Constant)
+        and node.value == "semantic-ingestion-replay-checkpoint-signing"
+        for node in ast.walk(tree)
+    )
+
+
 def test_public_hardening_packages_export_real_symbols() -> None:
     for module_name in (
         "memorii.core.benchmark.artifact_rows",

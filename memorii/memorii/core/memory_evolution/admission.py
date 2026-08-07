@@ -449,7 +449,13 @@ class GovernedSourceAdmissionService:
 
 
 def source_admission_source_digest(source: CanonicalMemoryRecord) -> str:
-    return sha256(encode_typed_value(_immutable_source_identity(source))).hexdigest()
+    return sha256(source_admission_source_bytes(source)).hexdigest()
+
+
+def source_admission_source_bytes(source: CanonicalMemoryRecord) -> bytes:
+    """Canonical immutable bytes that identify one governed raw source event."""
+
+    return encode_typed_value(_immutable_source_identity(source))
 
 
 def _immutable_source_identity(source: CanonicalMemoryRecord) -> dict[str, object]:

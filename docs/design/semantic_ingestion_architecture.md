@@ -220,7 +220,7 @@ because a related CFP or ING row is marked closed.
 | SIA-R07 | Bind prompt text, schema, owner, redaction, and visibility policy through one registered prompt authority. Source: prompt contracts. | Required | Prompt registry/renderer and proposer transport | Any registration-coordinate substitution blocks transport before a provider or local model call; a valid policy removes registered non-source secrets from rendered prompt, transport metadata, and traces without rewriting source text. | YAML/schema/owner/visibility/redaction/digest mutation tests plus independent serialized-byte observation for valid nested redaction and immutable sanitized copies. |
 | SIA-R08 | Preserve a certifiable local-only active ingestion path and make the built-in bootstrap profile the ordinary production default; cloud proposal is explicit opt-in. Source: storage-details local-first requirement. | Required | `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)`, provider factory, and composition roots | Normal construction selects the Section 3.23.0 deterministic English rule profile with network denied. The complete governed-source-admission no-semantic outcome set is selected-pipeline-pending, disabled, unavailable, unsupported-input, and abstained; remote is explicit only and never a fallback. | Default-composition, no-network local, disable/failure/evidence-only, supported-English, unsupported-language/form, explicit remote-opt-in, and remote-deny zero-call tests. |
 | SIA-R09 | Authorize remote egress only under the current active source-bound policy. Sources: storage details; Memorii spec Sections 15 and 25. | Required | Source governance and provider transport | Each segment uses only its exact classification/context-bound decision; revoked, expired, superseded, stale, swapped-segment, or mismatched policy produces zero remote calls. | Mixed classification/modality/authority/egress routing, policy rotation, rollback, concurrent change, provider/model/region, swapped/missing/extra decision, and replay tests. |
-| SIA-R10 | Emit canonical idempotent full-state memory events for every committed semantic mutation, retain canonical ingestion-observation deltas for every terminal source-visible operation, and reconstruct both materialized authorities and every acknowledged replay dependency from their logs. Sources: Memorii spec Sections 18.2-18.3; event model Sections 3-5, 8-9, and 14-16. | Required | Transaction coordinator, graph event/replay authority, ingestion-observation ledger, and atomic replay-artifact store | Genesis and signed-checkpoint replay across every active read schema reproduce the exact committed graph revision, ingestion-observation ledger, progress state, and replay-authoritative artifact closure without prior materialized state, provider, analyzer, or read-time reconstruction. No visible state references an artifact absent from the same or an earlier complete generation. Envelope `event_id`, logical-retry `dedupe_key`, and record identity are distinct; only `payload.entity_id == payload.record_id == GraphRecordMutation.record_id`. One typed `create|update` mutation kind is carried unchanged from compiler delta through event identity and replay; one logical mutation has one stable dedupe key across retries. Every terminal operation has exactly one immutable introduction and terminal-outcome record; committed outcomes link exactly one graph delta and terminal non-committing outcomes forbid one. Exact duplicate envelopes remain idempotent and current-writer same-record/version collisions reject before visibility. Non-identical historical equal-version conflicts fail closed without selecting or materializing a winner until `SIA-ED-REPLAY-001` is resolved. | Every-record-kind create/update/retirement mapping, introduction/outcome replay, zero-mutation terminals, artifact/state publication failpoints, pre-planning resume, identity mutations, envelope/dedupe/record identity separation, exact-duplicate idempotency, current-writer version-collision rejection, non-identical historical equal-version fail-closed behavior from genesis and checkpoints, conflicting-dedupe, reordered, supported/retired/future schema, deterministic upcast, corrupt, partial-commit, checkpoint trust/rollback, and replay-resume tests. |
+| SIA-R10 | Emit canonical idempotent full-state memory events for every committed semantic mutation, retain canonical ingestion-observation deltas for every terminal source-visible operation, and reconstruct both materialized authorities and every acknowledged replay dependency from their logs. Sources: Memorii spec Sections 18.2-18.3; event model Sections 3-5, 8-9, and 14-16. | Required | Transaction coordinator, graph event/replay authority, ingestion-observation ledger, semantic-conflict authority, and atomic replay-artifact store | Genesis and signed-checkpoint replay across every active read schema reproduce the exact committed graph revision, ingestion-observation ledger, progress state, semantic-conflict history/current pointers, and replay-authoritative artifact closure without prior materialized state, provider, analyzer, file cache, or read-time reconstruction. No visible state references an artifact absent from the same or an earlier complete generation. Envelope `event_id`, logical-retry `dedupe_key`, and record identity are distinct; only `payload.entity_id == payload.record_id == GraphRecordMutation.record_id`. One typed `create|update` mutation kind is carried unchanged from compiler delta through event identity and replay; one logical mutation has one stable dedupe key across retries. Every terminal operation has exactly one immutable introduction and terminal-outcome record; committed outcomes link exactly one graph delta and terminal non-committing outcomes forbid one. Every committed user-decidable contested projection atomically publishes its canonical semantic-conflict revision and pointer. Exact duplicate envelopes remain idempotent and current-writer same-record/version collisions reject before visibility. Under the frozen `SIA-ED-REPLAY-001` decision, non-identical historical equal-version conflicts fail closed without selecting or materializing a winner. | Every-record-kind create/update/retirement mapping, introduction/outcome/conflict replay, zero-mutation terminals, graph/projection/conflict publication failpoints, pre-planning resume, identity mutations, envelope/dedupe/record identity separation, exact-duplicate idempotency, semantic-conflict retry/rebuild/race behavior, current-writer version-collision rejection, non-identical historical equal-version fail-closed behavior from genesis and checkpoints, conflicting-dedupe, reordered, supported/retired/future schema, deterministic upcast, corrupt, partial-commit, checkpoint trust/rollback, and replay-resume tests. |
 | SIA-R11 | Enforce one certified semantic writer across embedded, sidecar, event-consumer, legacy, and generic-store paths. Sources: Memorii spec Sections 17.3 and 19.2; implementation rules, commit gating. | Required | Store-owned writer admission, delivery-coordinate migration owner, semantic-record ownership manifest, and common storage boundary | Every governed semantic mutation carries one current writer binding. Activation stops new legacy admissions, drains or terminalizes every old-epoch operation, and atomically publishes one independently certified complete target-coordinate generation before advancing the epoch. A stale or binding-free writer changes no semantic or lifecycle revision. | Shared-store mixed-version, every atomic and generic write entry point, finite migration inventory/certificate, ambiguity/collision, crash/restart, cutover, rollback, cross-cutover retry, drain, active-lease, and paused in-flight process tests. |
 | SIA-R12 | Use closed discriminated temporal and lifecycle algebras in source, resolver, accepted, durable, expected, and observed contracts. Sources: implementation rules; C1. | Required | Decision, graph, and acceptance contracts | Impossible basis/value combinations and unknown variants fail deserialization; equal temporal values with different authenticated bases remain distinct end to end. | Exhaustive variant round trips, equal-value/different-basis mutations, missing/swapped provenance, and malformed-row tests. |
 | SIA-R13 | Bind acceptance evidence to lifecycle-checked keys and monotonic active releases without placing acceptance authority in production. Sources: Memorii spec Sections 17-18 and 25; implementation rules, commit gating. | Required | Acceptance trust policy and acceptance harness | Revoked, compromised, expired, superseded, wrong-purpose, or rollback releases cannot validate evidence; signed acceptance witnesses bind exact public production attestations, while production imports no acceptance schema, key, or policy. | Key lifecycle, active-release, cross-purpose, cross-artifact replay, production-import-boundary, attestation substitution, and witness reconstruction tests. |
@@ -228,7 +228,7 @@ because a related CFP or ING row is marked closed.
 | SIA-R15 | Make runtime monitoring decisions executable and deterministic from typed policy plus immutable evidence. Sources: Memorii spec Sections 17.5-17.6 and 25; implementation rules, commit gating. | Required | Capability monitor and registry | Identical policy/evidence yields the same state transition; breach or stale evidence atomically enters evidence-only. | Boundary, fake-clock, race, outage, recovery, and independent sequential-decision tests. |
 | SIA-R16 | Declare one unambiguous initial dependency topology and certification set. Sources: Memorii spec Sections 16.25-16.27 and 25; storage-details local-first requirement; selected architecture decisions in Sections 3.3-3.5 implementing SIA-R05, SIA-R08, and SIA-R14. | Required | Bootstrap profile owner and capability registry | The v1 bootstrap topology contains only the named deterministic repository components and no model/tokenizer/runtime asset or remote dependency; Section 3.23.0 defines its startup verification. Every later profile requires its own manifest/resource authorization. | Bootstrap component/integrity/no-network checks; unsupported-profile and future manifest/module/package/asset/profile consistency tests. |
 | SIA-R17 | Compare a pre-ingest expected ingestion graph with direct, scope-authorized structural observations, including terminal zero-mutation outcomes, never retrieval or production semantic helpers. Sources: Memorii spec Sections 16.27, 17, and 25; storage-details scoped-access requirement; implementation rules, commit gating. | Required | Acceptance-only oracle and graph observation API | One unique global operation/fence bijection is established before source/entity alignment; zero or multiple solutions fail. Production-only source-outcome integrity coordinates are independently checked against public production records before fixture equality. One-field, missing, and unexpected-record mutations fail at the first structural divergence; every expected operation aligns through one persisted introduction and terminal outcome; committed and non-committing outcomes have exact, disjoint effect shapes; cross-principal, cross-scope, mixed-seed, forged-cursor, and revoked access fail without record, digest, cohort, page, or existence disclosure. Hand-authored fixture semantics require current content-bound independent review evidence before ingest. | Static import boundary, reviewed-fixture evidence, global-bijection permutation/ambiguity tests, source-outcome consistency mutation tests, closed-world comparator, zero-mutation and mixed-outcome cohorts, fence alignment, view, revision, pagination, cross-principal/scope, cursor-integrity, and authorization-revocation tests through the production boundary. |
-| SIA-R18 | Preserve immutable historical truth, trust evolution, and entity lineage. Sources: Memorii spec Sections 7.2, 17, 18, and 25; canonical event model Sections 5-10. | Required | Graph compiler, projection scheduler, and persistence | Required current, historical, contested, and lineage views remain replayable after late arrival, policy migration, rekey, merge, and split. | Interval/trust/identity prefix matrices, migration races, and exact structural comparison. |
+| SIA-R18 | Preserve immutable historical truth, trust evolution, entity lineage, and user-visible semantic-conflict history. Sources: Memorii spec Sections 7.2, 17, 18, and 25; canonical event model Sections 5-10; conflict-attention design. | Required | Graph compiler, projection scheduler, semantic-conflict authority, and persistence | Required current, historical, contested, conflict-attention, and lineage views remain replayable after late arrival, policy migration, natural conflict change/resolution, clarification, rekey, merge, and split. Every committed user-decidable contest has same-transaction canonical conflict authority. | Interval/trust/identity/conflict prefix matrices, conflict coalescing and scope/display authority, migration and clarification races, cache rebuild, and exact genesis/checkpoint structural comparison. |
 | SIA-R19 | Activate semantic ingestion through the normal production provider composition selected by the bootstrap profile. Source: engineering-hardening closure matrix C3. | Required | Provider factory, `ProviderMemoryService`, ingestion coordinator, and bootstrap profile owner | Normal production builders route governed sources through `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` with no legacy writer or fallback authority. Every governed-source-admission no-semantic outcome retains governed evidence without semantic promotion. | Owner-stripping and default-constructor provider/Hermes/filesystem tests for bootstrap, disablement, failure, unsupported/abstained, and later approved profiles. |
 | SIA-R20 | Fence long-running work with renewable leases, bounded stale recovery, terminal exhaustion, and a separate stable allocation namespace. Source: engineering-hardening closure matrix C13. | Required | Operation repository, lease heartbeat, semantic ingestion coordinator, and identity/action planners | Only the current lease owner may persist or commit; reclaim preserves allocation namespace and byte-identical planned IDs. Fence/allocation coordinates derive only from the version-bound stable delivery identity, immutable admitted source coordinates, and operation ID; current authorization evidence is excluded. Abandoned work recovers within the fixed budget and then becomes terminal. | Fake-clock, session/scope/policy/trust/revocation rotation identity-stability, multiprocess token-fencing, crash/reclaim before and after planning, namespace substitution, slow-stage renewal, lost-acknowledgement, restart, stale-recovery, and exhaustion tests. |
 | SIA-R21 | Make semantic-ingestion admission, checkpoint progress, terminal-group persistence, and source finalization process-safe and crash-atomic; the filesystem/JSONL backend must publish each complete batch as one generation. Source: engineering-hardening closure matrix C12. | Required | Semantic-ingestion atomic-store protocol and filesystem storage adapter | Readers observe the prior state or one complete admission, progress checkpoint, group, or finalization transaction, never a subset. First visibility of every replay-authoritative artifact is atomic with the state that references it. A terminal-group transaction atomically publishes its group result and ingestion-observation delta and, only when committed, its graph delta/event batch. Every transaction validates its exact graph/control/observation/artifact revisions, artifact closure, lease, writer epoch, and stable idempotency fence; checkpoint/group/finalization equality excludes current authorization evidence and ingress context. | Backend-neutral in-memory/filesystem conformance plus pre-planning/planned checkpoints, committed, zero-mutation, and mixed-outcome group transactions; session/scope/policy/trust/revocation rotation with stable durable equality, deterministic artifact/index/state failpoints, multiprocess same/distinct delivery, failed replace, reopen, corruption, lost acknowledgement, and idempotent retry schedules. |
@@ -302,16 +302,17 @@ completion authority.
 
 #### 1.5.2 Canonical external-decision register
 
-This is the sole normative register for unresolved external decisions. Stable
+This is the sole normative register for external decisions, including decisions
+whose selected artifacts are now frozen. Stable
 `SIA-ED-*` identifiers name design dependencies, not review findings. Every
 normative reference must resolve to exactly one row; an undefined or duplicate
 identifier fails the traceability audit. Resolving one row does not resolve or
 weaken another.
 
-| Decision ID | External owner | Affected requirements | Required artifact | Fail-closed behavior while unresolved | Exact unblock condition |
+| Decision ID | External owner | Affected requirements | Required artifact | Selected or fail-closed behavior | Exact unblock condition or resolution |
 | --- | --- | --- | --- | --- | --- |
 | `SIA-ED-TOPOLOGY-001` | Resolved by the unshipped-product bootstrap decision in Section 3.23.0 | SIA-R08, SIA-R16, SIA-R19, SIA-R22 | Built-in `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` names deterministic components, network-denial requirement, startup verification, disablement, rollback, and governed-source-admission outcomes. A future profile still requires its own reviewed deployment artifact. | Normal construction automatically selects the verified bootstrap local profile. It retains governed evidence for the complete closed governed-source-admission no-semantic outcome set and never falls back to remote. | The normal constructor, filesystem root, and Hermes root pass the Section 3.23.0 acceptance matrix with local network denial and truthful outcomes. |
-| `SIA-ED-REPLAY-001` | Event-model owner | SIA-R10, SIA-R18, SIA-R21 | One governing `EqualVersionReplayDecisionArtifact` plus a consistent update to `docs/design/event_model.md` defining exact duplicates, non-identical historical equal-version events, current-writer collisions, genesis replay, and checkpoint replay. | Exact duplicates remain idempotent and current-writer collisions reject; non-identical historical equal-version replay rejects before materialization or winner selection. | The event-model update and artifact select one genesis/checkpoint-consistent algebra and every arrival-order, checkpoint, upcast, and mixed-version permutation passes independently. |
+| `SIA-ED-REPLAY-001` | Resolved by the event-model-owner decision frozen in `docs/design/equal_version_replay_decision-v1.json` | SIA-R10, SIA-R18, SIA-R21 | The governing `EqualVersionReplayDecisionArtifact` plus the consistent `docs/design/event_model.md` rule defining exact duplicates, non-identical historical equal-version events, current-writer collisions, genesis replay, and checkpoint replay. | Exact duplicates are idempotent and current-writer collisions reject; non-identical historical equal-version replay rejects before materialization or winner selection. | Resolved. The bound artifact and validator select one genesis/checkpoint-consistent fail-closed algebra; implementation must pass every arrival-order, checkpoint, upcast, and mixed-version permutation independently. |
 | `SIA-ED-POLICY-001` | Product/ML acceptance owner | SIA-R14, SIA-R15 | One signed, content-bound `InitialSemanticIngestionPolicyArtifact` containing all statistical thresholds, multiplicity allocation, cluster minima, unsupported cells, freshness deadlines, and monitoring limits. | Capability activation and local learned execution remain evidence-only; no implementation default, held-out-derived value, or runtime traffic may fill an absent value. | The complete artifact is deployment-authorized for the exact capability/dependency bundle and independent event-level recomputation validates every metric, cluster, bound, multiplicity, freshness, activation, and rollback rule. |
 | `SIA-ED-TRACEABILITY-001` | Traceability approval authority and independently provisioned trust-root owner | SIA-R03, SIA-R13 | Separately authenticated `TraceabilityBootstrapTrustAnchor` and `TraceabilityRecoveryTrustRoot` artifacts provisioned outside the release channel; one signed `TraceabilityRecoveryTrustPolicy`; the signed append-only `TraceabilityTrustLifecycleRoot`; and one signed `SemanticIngestionTraceabilityRelease` conforming to Section 3.23.4 and naming the qualified coverage reviewers, normative-evidence issuers, their public keys and trust snapshot, and the initial active release. These artifacts fix purpose/target, signer eligibility, canonical/signature profiles, key or certificate digests, effective/recorded times, predecessors, monotonic sequences, activation, rotation, revocation, compromise, recovery, and historical-verification coordinates. | No registry source package, release-contained trust snapshot, coverage approval, execution evidence, or caller-supplied signature is bootstrap or recovery authority; an absent, ambiguous, backdated, expired, revoked, compromised, wrong-purpose/profile, rollback, same-coordinate-substituted, or self-authorizing root/record makes every traceability gate fail closed. | The root owner independently provisions and authenticates the complete bootstrap and recovery roots before release retrieval; publishes the signed recovery policy and lifecycle root; the release authority publishes the complete signed all-root release and trust snapshot; and independent lifecycle, release, coverage, and execution-evidence verifiers accept the exact topologically constructed bytes and every activation, rotation, revocation, compromise, recovery, and historical check. |
 
@@ -1689,6 +1690,7 @@ class TemporalPolicyCutover(BaseModel):
     activated_writer_epoch: int
     expected_catch_up_slot_plan_digests: tuple[str, ...]
     slot_results: tuple[TemporalPolicyMigrationSlotResult, ...]
+    semantic_conflict_authority: "SemanticConflictAuthorityCommitInput"
     cutover_operation_id: str
     cutover_digest: str
 
@@ -1840,8 +1842,149 @@ class TrustPolicyCutover(BaseModel):
     activated_writer_epoch: int
     expected_catch_up_slot_plan_digests: tuple[str, ...]
     slot_results: tuple[TrustPolicyMigrationSlotResult, ...]
+    semantic_conflict_authority: "SemanticConflictAuthorityCommitInput"
     cutover_operation_id: str
     cutover_digest: str
+
+class TemporalProjectionGeneration(BaseModel):
+    generation_id: str
+    repository_id: str
+    temporal_policy_fingerprint: str
+    predecessor_generation_digest: str | None
+    migration_plan_digest: str
+    base_snapshot_token: str
+    base_graph_revision: str
+    final_catch_up_watermark: str
+    canonical_slot_result_digests: tuple[str, ...]
+    canonical_projection_digests: tuple[str, ...]
+    publication_kind: Literal["migration_cutover", "projection_commit"]
+    publication_certificate_digest: str
+    activated_writer_epoch: int
+    activated_at: datetime
+    generation_digest: str
+
+class TrustProjectionGeneration(BaseModel):
+    generation_id: str
+    repository_id: str
+    trust_policy_fingerprint: str
+    predecessor_generation_digest: str | None
+    migration_plan_digest: str
+    base_snapshot_token: str
+    base_graph_revision: str
+    final_catch_up_watermark: str
+    canonical_slot_result_digests: tuple[str, ...]
+    canonical_projection_digests: tuple[str, ...]
+    canonical_decay_command_digests: tuple[str, ...]
+    publication_kind: Literal["migration_cutover", "projection_commit"]
+    publication_certificate_digest: str
+    arbitration_as_of: datetime
+    activated_writer_epoch: int
+    activated_at: datetime
+    generation_digest: str
+
+class TemporalPolicyMigrationCertificate(BaseModel):
+    migration_kind: Literal["temporal"]
+    migration_plan_digest: str
+    active_generation_digest_before: str
+    output_generation_digest: str
+    server_derived_base_slot_plan_digests: tuple[str, ...]
+    server_derived_catch_up_entry_digests: tuple[str, ...]
+    final_catch_up_watermark: str
+    complete_read_set_digest: str
+    cutover_digest: str
+    certificate_digest: str
+
+class TrustPolicyMigrationCertificate(BaseModel):
+    migration_kind: Literal["trust"]
+    migration_plan_digest: str
+    active_generation_digest_before: str
+    output_generation_digest: str
+    server_derived_base_slot_plan_digests: tuple[str, ...]
+    server_derived_catch_up_entry_digests: tuple[str, ...]
+    final_catch_up_watermark: str
+    complete_read_set_digest: str
+    cutover_digest: str
+    certificate_digest: str
+
+class ProjectionCommitRequest(BaseModel):
+    repository_id: str
+    operation_id: str
+    graph_revision: str
+    event_batch_sequence: int = Field(ge=0)
+    event_batch_digest: str
+    complete_read_set_digest: str
+    writer_epoch: int = Field(ge=1)
+    base_snapshot_token: str
+    temporal_policy_fingerprint: str
+    trust_policy_fingerprint: str
+    arbitration_as_of: datetime
+    temporal_projections: tuple[TemporalProjectionRecord, ...]
+    trust_projections: tuple[TrustProjectionRecord, ...]
+    trust_decay_command_digests: tuple[str, ...]
+    semantic_conflict_authority: "SemanticConflictAuthorityCommitInput"
+
+class TemporalProjectionCommitCertificate(BaseModel):
+    publication_kind: Literal["projection_commit"]
+    repository_id: str
+    operation_id: str
+    temporal_policy_fingerprint: str
+    predecessor_generation_digest: str
+    output_generation_digest: str
+    graph_revision: str
+    event_batch_sequence: int = Field(ge=0)
+    event_batch_digest: str
+    complete_read_set_digest: str
+    added_projection_digests: tuple[str, ...]
+    removed_projection_digests: tuple[str, ...]
+    semantic_conflict_authority_input_digest: str
+    writer_epoch: int
+    certificate_digest: str
+
+class TrustProjectionCommitCertificate(BaseModel):
+    publication_kind: Literal["projection_commit"]
+    repository_id: str
+    operation_id: str
+    trust_policy_fingerprint: str
+    predecessor_generation_digest: str
+    output_generation_digest: str
+    graph_revision: str
+    event_batch_sequence: int = Field(ge=0)
+    event_batch_digest: str
+    complete_read_set_digest: str
+    added_projection_digests: tuple[str, ...]
+    removed_projection_digests: tuple[str, ...]
+    added_decay_command_digests: tuple[str, ...]
+    removed_decay_command_digests: tuple[str, ...]
+    semantic_conflict_authority_input_digest: str
+    arbitration_as_of: datetime
+    writer_epoch: int
+    certificate_digest: str
+
+class ActiveTemporalProjectionPointer(BaseModel):
+    repository_id: str
+    policy_fingerprint: str
+    generation_digest: str
+    publication_kind: Literal["migration_cutover", "projection_commit"]
+    publication_certificate_digest: str
+    writer_epoch: int
+    pointer_revision: int = Field(ge=1)
+    published_at: datetime
+    publication_sequence: int = Field(ge=1)
+    predecessor_pointer_digest: str | None
+    pointer_digest: str
+
+class ActiveTrustProjectionPointer(BaseModel):
+    repository_id: str
+    policy_fingerprint: str
+    generation_digest: str
+    publication_kind: Literal["migration_cutover", "projection_commit"]
+    publication_certificate_digest: str
+    writer_epoch: int
+    pointer_revision: int = Field(ge=1)
+    published_at: datetime
+    publication_sequence: int = Field(ge=1)
+    predecessor_pointer_digest: str | None
+    pointer_digest: str
 ```
 
 `ProviderEgressDecision` is resolved separately for each semantic segment
@@ -1908,6 +2051,181 @@ canonical ordered `expected_catch_up_slot_plan_digests`, and requires exactly
 one committed result for every base and catch-up plan. Borrowing a base plan
 digest for catch-up work, omitting a newly created slot, or producing a result
 without a loadable slot plan fails cutover.
+
+The server-derived membership and read set have one durable closure. A
+`TemporalPolicyMigrationCertificate` or `TrustPolicyMigrationCertificate`
+enumerates the complete canonical base-plan and catch-up-entry digest sets,
+their final watermark, and the complete effective read-set digest. The output
+projection generation contains exactly the committed result membership and no
+other projection. Cutover publishes the certificate, immutable generation, and
+the corresponding active pointer in one CAS transaction. A pointer cannot name
+detached generation bytes or a certificate from another kind, plan, policy,
+repository, writer epoch, watermark, or predecessor generation.
+
+Projection generations are immutable policy-relative system-time history. A
+store-owned append-only pointer history retains every publication. Within one
+repository and projection kind, `publication_sequence` starts at one,
+increments by exactly one, and orders publications totally; `published_at` is
+server owned, UTC, and nondecreasing. A historical query selects the retained
+pointer with the greatest `(published_at, publication_sequence)` whose
+`published_at <= system_as_of`; when timestamps are equal, the greatest
+sequence wins. A request before the first retained publication returns typed
+`projection_history_unavailable`. A missing predecessor, sequence gap,
+truncation, duplicate sequence, time regression, or digest substitution is
+integrity failure, not an alternate historical view. The selected generation
+evaluates only records whose system interval was visible in that generation;
+later publication never rewrites or relabels it.
+
+Migration cutover is not the only pointer-advance path. After cutover, every
+normal graph/event transaction that changes temporal projections atomically
+publishes a `TemporalProjectionCommitCertificate`, a complete immutable
+successor generation, its pointer-history entry, and the new active pointer.
+The trust writer does the same with a `TrustProjectionCommitCertificate` for
+assertion, arbitration, or scheduled-decay changes. The certificate is derived
+from the complete post-write membership and exact read set; the successor
+generation retains unchanged membership and applies exactly the named
+additions/removals. Late arrivals after a migration final watermark follow
+this normal-write protocol under the active policy. The graph/event commit and
+pointer publication share one CAS transaction, so neither can become visible
+alone.
+
+Every transaction that can publish a temporal or trust projection also owns
+semantic-conflict authority for every affected slot whose complete successor
+projection is `contested`. This includes ordinary committed ingestion,
+temporal-policy cutover, trust-policy cutover, scheduled trust reprojection,
+and clarification-driven semantic publication. Each writer carries one
+`SemanticConflictAuthorityCommitInput` inside its own typed request and writes
+conflict records and pointers in its existing projection CAS; none delegates a
+post-commit append to the ordinary-ingestion path.
+The shared choke point is `ProjectionCommitRequest`: it always carries one
+`SemanticConflictAuthorityCommitInput`, including the canonical empty input
+when the derived affected contest set is empty. `ProjectionHistoryRepository`
+may not prepare projection records, certificates, generations, or pointers
+until it has derived the complete post-write contest set and validated the
+input bijection and every conflict/resolver precondition. Its direct `publish`
+entry point applies the same validation and writes the prepared conflict
+records in the same CAS; possession of the projection writer capability alone
+is insufficient. Ordinary terminal and clarification paths copy the one
+externally owned authority input from their typed semantic request into this
+internal request and require byte equality. Cutover and decay construct the
+same closure from their typed inputs. Both projection commit certificates bind
+the authority-input digest, so replay rejects a projection publication whose
+conflict closure is absent or substituted.
+Before compare-and-swap, the store derives the complete applicable contest set
+from the prepared post-write projection generations and validates it against
+the host-supplied `semantic_conflict_authority.resolutions` tuple. Each resolution is a
+frozen strict record containing the resolver authority record ID, revision and
+digest; renderer schema and policy fingerprint; contender source/admission
+bindings; one tenant; the canonical required-scope union; bounded question and
+option bytes; and a resolution digest. It is not model output and cannot be
+constructed from caller tool arguments.
+
+The store canonicalizes each basis candidate set by sorting unique
+`(candidate_id, candidate_digest)` pairs and derives one
+`SemanticConflictContestKey` for every complete affected post-write contest
+that remains open. The request tuple is sorted by contest-key digest
+and must be an exact bijection with that derived set: zero, one, and many
+contests are all explicit. Missing, duplicate, extra, swapped-slot,
+swapped-basis, changed-candidate, or changed-projection resolutions fail before
+any write. An active contest whose complete authority binding equals the
+predecessor appends nothing; changed authority participates in the successor
+revision. Naturally resolved contests require no new host display resolution
+and instead retain their predecessor display for audit. The store derives all
+introduction, transition, and pointer IDs and digests itself and requires them
+to reproduce the request digest; producer-supplied canonical record bytes are
+never trusted.
+
+For every contested candidate, the store loads the candidate's governed source
+and admission index through the frozen projection evidence, validates source,
+event, authority, fence, tenant and admission digests, and derives the
+canonical union of all contender required scopes. The supplied resolution must
+match that tenant, union and every contender binding exactly. It must also
+produce one safe option for each exact candidate ID and record digest from an
+active host display authority. That authority is an immutable memory-plane
+record behind an active host-owned pointer. Both exact record and pointer
+digests, plus every affected conflict pointer, are named in
+`SemanticConflictAuthorityCommitInput` and are CAS preconditions. The store
+requires the authority to be active and unexpired at its server-owned commit
+time. Missing, stale, revoked, cross-tenant,
+incomplete, unsafe or non-reproducible authority fails before the semantic
+conditional write. The store never substitutes the new source's scopes,
+provider text, an internal ID, or a read-time formatter.
+
+Temporal and trust contests coalesce only for one identical claim-slot and
+valid-time partition with equal canonical sorted candidate-set identity,
+regardless of valid projection tuple order.
+Otherwise each contested basis is separate. The semantic conflict ID is stable
+over repository, tenant, claim slot, valid-time partition and basis tuple; its
+revision binds predecessor, complete candidate/admission/scope/projection/
+display authority, graph revision and event-batch coordinates. A changed
+contest appends an open successor. A prior affected contest absent from the
+successor projection appends a resolved successor. Combined and split forms
+close and introduce their respective IDs explicitly. The complete state
+machine, schemas and option limits are governed by
+`docs/design/conflict_attention.md`.
+
+`SemanticIngestionAtomicStore` prepares the immutable semantic-conflict
+introductions or projection transitions plus `ActiveSemanticConflict` pointer
+updates alongside projection-history records. Every prior conflict pointer,
+resolver authority record, contender admission index and projection authority
+is a precondition of the same conditional write. The canonical semantic-
+conflict records are a separate typed projection authority, not a new
+`AtomicGenerationMember` and not a dictionary embedded in a generation
+manifest. Exact retry returns existing bytes; divergent reuse, stale pointer,
+changed resolver authority or changed contender provenance loses CAS and
+replans from the complete current state.
+
+`TemporalPolicyCutover` and `TrustPolicyCutover` bind the authority input into
+their cutover digests. Cutover derives the exact affected post-migration
+contest bijection from the complete output generation and rejects missing,
+extra, stale, or revoked authority before the policy, generation, certificate,
+projection pointer, or conflict pointer changes. A
+`TrustReprojectionPublicationRequest` does the same for one scheduled decay
+command at its fixed `arbitration_as_of`; the command, projection successor,
+conflict successor, replay binding, and both active pointers share one CAS.
+An unchanged contest appends nothing, resolution appends its resolved
+successor, and a newly contested decay or cutover cannot commit without its
+authorized introduction. These publishers race clarification through the same
+conflict-pointer precondition and replan on loss.
+
+The v2 semantic replay aggregate and signed v2 checkpoint each contain exactly
+one `SemanticConflictReplayBinding` governed by
+`docs/design/conflict_attention.md`. It binds the ordered immutable-record
+prefix, pointer-history prefix, record and pointer counts, last record
+coordinate, current conflict-pointer set, and active resolver-authority-pointer
+set. Genesis and checkpoint-tail replay validate that binding before they reconstruct the canonical
+conflict history and current pointers byte-for-byte without consulting a file
+cache or current renderer. A listing/worker file is only a rebuildable
+projection over that authority. Clarification proposals, receipts, work and
+status transitions use the same memory-plane conflict repository so a
+projection update racing a user answer has one pointer-CAS winner. A post-
+commit conflict-file append is forbidden.
+
+An active semantic writer that can produce a contested projection must include
+the exact conflict repository capability and host resolver authority in its
+verified runtime profile. Attention read enablement is separate: disabling
+attention hides records from attention-aware pulls but does not permit a
+hidden contest to commit without canonical authority or delete existing
+history. A v2 reader maps a pre-activation v1 checkpoint/aggregate to the
+unique empty conflict binding only when the store contains no conflict-authority
+record. Once a v1 conflict record exists, only the v2 reader is supported; an
+old binary is not a rollback target. Feature rollback uses the v2-capable
+reader with conflict reads and conflict-producing writes disabled and retains
+all bytes. Existing stores do not infer conflicts from historical projections;
+backfill requires a separately designed migration with frozen scope/display
+evidence and an atomic output certificate.
+
+`operation_id` makes this publication idempotent. An exact retry returns the
+same certificate, generation, and pointer; divergent bytes reject. Restart and
+genesis replay reconstruct and validate the entire pointer chain from the
+event log. A trusted checkpoint binds the pointer-history prefix digest,
+active-pointer digest, and generation digest before tail replay. A current
+query uses the one active pointer and rejects a missing, mixed-fingerprint,
+stale, or partially published generation. Rollback is a new forward migration
+whose pending policy bytes equal an earlier policy, whose output is a new
+generation, and whose pointer revision, publication sequence, and writer epoch
+advance. Restoring an older pointer revision or mutating a prior generation is
+corruption.
 
 An `ActionPolicySnapshot` is activated only after deterministic validation:
 state IDs and transition-rule IDs are unique; every transition rule has a
@@ -2350,8 +2668,8 @@ for a future non-bootstrap `SIA-ED-TOPOLOGY-001` profile or the governing equal-
 Any earlier reference to a selected local model, asset, or host profile is
 superseded as a normative choice for future profiles; bootstrap selection is
 resolved in Section 3.23.0. Non-identical historical equal-version conflicts
-remain fail-closed pending `SIA-ED-REPLAY-001`. Neither
-external decision has an implementation default.
+fail closed under the frozen `SIA-ED-REPLAY-001` artifact. No timestamp,
+arrival-order, or event-ID implementation default is permitted.
 
 **Canonical ingestion primitives.**
 `memory_evolution/ingestion_contracts.py` owns the following public persisted
@@ -3715,9 +4033,10 @@ records, performs the same CAS, and cannot start semantic work until a current
 
 **Revision closure and verification.** The following determinate corrections
 are normative and are verified against the assessment baseline named in this
-document. They do not alter the substance of the external decisions:
-`SIA-ED-REPLAY-001`, `SIA-ED-POLICY-001`, and `SIA-ED-TRACEABILITY-001`
-remain unresolved and fail closed; topology is resolved for bootstrap only.
+document. They do not alter the substance of the external decisions. The replay
+decision is frozen and fail closed under `SIA-ED-REPLAY-001`;
+`SIA-ED-POLICY-001` and `SIA-ED-TRACEABILITY-001` remain unresolved and fail
+closed; topology is resolved for bootstrap only.
 
 | Review finding | Determinate closure | Required verification |
 | --- | --- | --- |
@@ -3762,6 +4081,28 @@ NLI may add counterevidence but cannot turn unsupported scope into `pass`.
 Each language-owned scope policy is declarative and fingerprinted:
 
 ```python
+class ConstructionFamily(BaseModel):
+    family_id: str
+    family_digest: str
+
+class UdPathStep(BaseModel):
+    direction: Literal["up", "down"]
+    dependency_label: str
+    ordinal: int | None
+
+class UdPathPattern(BaseModel):
+    anchor: Literal["predicate_head", "role_head", "clause_head"]
+    steps: tuple[UdPathStep, ...]
+    pattern_digest: str
+
+class QuotationBoundaryPolicy(BaseModel):
+    mode: Literal[
+        "outside_quoted_content",
+        "inside_quoted_content",
+        "allow_nested_quotation",
+    ]
+    policy_digest: str
+
 class SemanticScopePolicy(BaseModel):
     language: str
     construction_family: ConstructionFamily
@@ -3782,6 +4123,35 @@ sentences or benchmark names. A lexical entry is never sufficient by itself: it
 must occupy the declared structural role and all required ancestors must be
 available. Policy conformance tests include counterexamples in which the same
 lemma appears outside the governing scope.
+`ConstructionFamily`, `UdPathStep`, `UdPathPattern`, and
+`QuotationBoundaryPolicy` are strict, frozen, `extra="forbid"`, closed-wire v1
+records. `ConstructionFamily`, `UdPathPattern`, and
+`QuotationBoundaryPolicy` are content-addressed: their digests are lowercase
+64-hex SHA-256 spellings over the canonical CTV preimages in
+`memorii.semantic-ingestion.construction-family.v1`,
+`memorii.semantic-ingestion.ud-path-pattern.v1`, and
+`memorii.semantic-ingestion.quotation-boundary-policy.v1` respectively,
+excluding only the trailing digest field in declaration order. `UdPathStep` is
+not independently content-addressed; it is the closed leaf embedded in
+`UdPathPattern.steps` and contributes only through the enclosing
+`pattern_digest`. `UdPathPattern` never encodes a parser object, callback, or
+implementation-local cursor; it is only the explicit anchored dependency
+traversal consumed by the certified scope and parser policies.
+
+`SemanticScopePolicy` is likewise strict, frozen, `extra="forbid"`, and a
+closed-wire v1 record. `policy_fingerprint` is the lowercase 64-hex SHA-256
+content address of the canonical CTV preimage in
+`memorii.semantic-ingestion.semantic-scope-policy.v1` over every declared field
+except `policy_fingerprint`, in declaration order. The
+`embedding_head_lemmas` map is canonical by CTV map key, so insertion-order
+permutations produce identical bytes. Its frozenset fields canonicalize by
+sorted typed-value order. `allowed_predicate_ancestor_paths`,
+`negation_bearer_patterns`, and `temporal_attachment_patterns` are
+duplicate-free tuples ordered by `pattern_digest`; `UdPathPattern.steps`
+preserves declared traversal order and contributes byte-for-byte through the
+nested `pattern_digest`. A missing field, inferred default, duplicate or
+noncanonical pattern tuple, invalid nested digest, map-order-dependent
+fingerprint, legacy preimage, or unknown field rejects before policy reuse.
 
 ### 3.17 Use an explicit type-evidence ledger
 
@@ -4733,7 +5103,8 @@ This section is authoritative for the similarly named contracts in Sections
 durable delivery identity, source-wide reconstruction of message governance,
 manually maintained execution-DAG renderings, and broad-row-only traceability.
 It resolves `SIA-ED-TOPOLOGY-001` only for the bootstrap profile; it does not
-select or weaken `SIA-ED-REPLAY-001` or `SIA-ED-POLICY-001`.
+weaken the frozen `SIA-ED-REPLAY-001` rule or select
+`SIA-ED-POLICY-001`.
 
 #### 3.23.1 Stable delivery identity and session authorization
 
@@ -11574,15 +11945,49 @@ would hide exactly the semantic context that validation must inspect.
 #### 4.2.2 Input contract
 
 ```python
+class TextPreparationPolicy(BaseModel):
+    max_segment_characters: int = Field(gt=0)
+    supported_languages: tuple[str, ...]
+    segmentation_algorithm: Literal[
+        "memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1"
+    ]
+    context_window_algorithm: Literal[
+        "memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1"
+    ]
+    policy_fingerprint: str
+
 class TextPreparationRequest(BaseModel):
     observation: SourceObservation
-    max_segment_characters: int
-    supported_languages: frozenset[str]
-    preparation_policy_fingerprint: str
+    policy: TextPreparationPolicy
 ```
 
-The source ID and digest must match the retained observation. Language
-metadata is a hint and is not silently rewritten.
+`TextPreparationPolicy` is strict, frozen, `extra="forbid"`, closed-wire v1
+with no defaults, aliases, upcast, or live registry. Its `policy_fingerprint`
+is the lowercase 64-hex SHA-256 of canonical CTV in
+`memorii.semantic-ingestion.text-preparation-policy.v1` over every other
+declared field in declaration order. `TextPreparationRequest` validation
+recomputes that fingerprint before preparation begins; no output exists until
+it matches. `supported_languages` is a nonempty,
+unique tuple of canonical BCP-47 tags ordered by normalized tag; no set
+normalization is implicit. The source ID and digest must match the retained
+observation. Language metadata is a hint and is not silently rewritten.
+
+`safe-sentence-first-paragraph-bounded.v1` first takes the maximal safe
+sentence boundaries within each parent projection segment without crossing a
+parent, quotation, parenthetical, attribution, or negation boundary. It packs
+adjacent complete sentences greedily in source order up to
+`max_segment_characters`; if one sentence alone exceeds the bound, it chooses
+the smallest enclosing complete paragraph only when that paragraph satisfies
+the bound, otherwise it returns an explicit unsupported/failed preparation
+rather than split that sentence. Ties choose the earliest source boundary. It
+never combines parents.
+`owned-partition-whole-boundary-context.v1` makes owned spans the ordered,
+disjoint complete partition produced above, then gives each child the smallest
+whole-sentence context window containing its owned span and any complete
+paragraph/sentence boundary required by the selected safe segmentation; ties
+choose the shorter window then earliest start. Context may overlap but cannot
+cross the parent projection segment. Both algorithms preserve every parent
+boundary and have no hidden locale, registry, or implementation choice.
 
 #### 4.2.3 Output contract
 
@@ -11619,6 +12024,7 @@ class SegmentLanguageRoute(BaseModel):
     source_id: str
     source_digest: str
     segment_id: str
+    parent_projection_segment_id: str
     segment_text_artifact_id: str
     segment_text_artifact_digest: str
     segment_text_content_digest: str
@@ -11660,6 +12066,7 @@ class PreparedSource(BaseModel):
     sentence_spans: tuple[SourceSpanReference, ...]
     segments: tuple[PreparedSegment, ...]
     token_spans: tuple[SourceSpanReference, ...]
+    preparation_policy: TextPreparationPolicy
     preparation_fingerprint: str
     status: Literal["complete", "unsupported", "failed"]
     diagnostics: tuple[str, ...]
@@ -11674,20 +12081,47 @@ annotations, not replacement source text. The semantic context and projection
 must compare exactly with the retained observation; preparation cannot rebuild
 the projection or normalize governance fields. Each `PreparedSegment` copies
 the full governance binding and optional message-admission identity from its
-one projection segment. Prepared-source carrier sets are ordered bijections
-with those fields and byte-equal to the projection and loadable admission
-artifact. Its projection/local span pairs slice to identical scalar sequences
+one projection segment. Prepared-source carrier sets are immutable
+parent-projection keyed carriers, not child-keyed copies: under the total
+child-to-parent mapping each child selects exactly one existing parent carrier,
+multiple children may select it, and every top-level parent carrier has one or
+more child members. They are byte-equal to the projection and loadable
+admission artifact. Its projection/local span pairs slice to identical scalar sequences
 while retaining distinct artifact kinds, IDs, and digests. Preparation may
 split text only by producing child segments that
 retain the same parent governance and message identity; it cannot combine
-different bindings. Every child-to-parent relation enters
-`preparation_fingerprint`. Missing artifact bytes, generation mismatch, or any
+different bindings. `preparation_policy` equals `TextPreparationRequest.policy`
+byte-for-byte, including `policy_fingerprint`; no opaque policy fingerprint
+field exists beside that canonical owner. `preparation_fingerprint` is its required lowercase
+64-hex SHA-256 content address in
+`memorii.semantic-ingestion.prepared-source.v1` over canonical CTV of every
+other declared `PreparedSource` field in declaration order, including the
+complete policy record, ordered segments/routes and child-parent relations,
+carriers/artifact, source references, status, and diagnostics. Missing,
+defaulted, legacy, or upcast fields reject. Missing, duplicate, orphaned,
+reordered, or parent-substituted relations reject. Missing artifact bytes, generation mismatch, or any
 unequal copy fails preparation.
 
+Preparation recomputes the complete policy fingerprint before producing any
+segment, route, or prepared-source bytes. Replay and reopen load persisted
+policy bytes, recompute the policy and prepared-source fingerprints, and never
+consult a live policy registry. Changing only `max_segment_characters`, one
+supported language, either fixed algorithm literal, or a stale copied policy
+fingerprint/byte must reject or produce changed policy and prepared-source
+fingerprints even when the emitted segment tuple happens to be identical.
+
+Every affected request, attempt, proposal, run, Step-4, consensus, NLI, and
+normalization codec includes `preparation_fingerprint` in its existing
+declaration-order CTV preimage and rejects old bytes that omit it. Strict-v1
+has no compatibility decoder or defaulting path; replay recomputes the prepared
+source address before accepting any downstream carrier.
+
 `SegmentLanguageRouteSet.routes` is an exact source-ordered bijection with
-`PreparedSource.segments`; route and segment IDs, source coordinates, segment
-artifact ID/digest/content digest, declared-language evidence, code-switch
-spans, and route copy are byte-equal. A `selected` route has exactly one
+`PreparedSource.segments`, where source order is the order of prepared child
+segments in the source, not lexicographic ordering of child IDs. Route and
+segment execution-child IDs, parent projection-segment IDs, source coordinates,
+segment artifact ID/digest/content digest, declared-language evidence,
+code-switch spans, and route copy are byte-equal. A `selected` route has exactly one
 non-null resource binding whose language and proposal/Stanza/spaCy/event/
 temporal resources are certified for that exact route. Every other decision
 requires `selected_language=None` and `resource_binding=None`. Within-segment
@@ -11696,6 +12130,13 @@ missing certified resource makes only that segment evidence-only: it creates no
 proposal, Stanza, spaCy, event-detector, temporal-resolver, NLI, or graph call.
 Source status is the deterministic ordered aggregation of segment outcomes and
 cannot authorize or repair a segment. [SIA-I316]
+
+`SegmentLanguageRoute.route_digest` is the lowercase 64-hex SHA-256 of
+canonical CTV in `memorii.semantic-ingestion.segment-language-route.v1` over
+every declared route field except trailing `route_digest`, in declaration
+order; it therefore covers `parent_projection_segment_id`. The route-set digest
+similarly covers its source fields and the source-ordered route tuple, never a
+lexicographically re-sorted child-ID projection.
 
 #### 4.2.4 Success and failure
 
@@ -11775,6 +12216,13 @@ unresolved rather than being reconstructed from partial proposals.
   respectively, one canonical operation or an explicit non-committing failure;
 - use an independent interval-coverage assertion in tests rather than the
   production segment builder;
+- build strict codec vectors for `TextPreparationPolicy`, request, and prepared
+  source; reject omitted/extra/alias/defaulted/legacy/upcast/live-lookup forms
+  and prove unshipped rollback removes their codecs and vectors. Independently
+  mutate only max characters, supported-language membership/order, or either
+  algorithm literal while a fixture emits identical segments; both policy and
+  prepared-source fingerprints must change. Stale copied fingerprint or policy
+  bytes reject through downstream reopen/replay;
 - fuzz Unicode and boundary positions while requiring exact source recovery.
 - run native English and Spanish routing corpora plus multi-message mixed
   English/Spanish sources, short, within-segment code-switched, mislabeled,
@@ -11820,6 +12268,22 @@ class ActionProposalCatalog(BaseModel):
     catalog_schema_fingerprint: str
     catalog_fingerprint: str
 
+class PredicatePromptContract(BaseModel):
+    predicate_id: str
+    description: str
+    subject_value_kind: Literal["entity"]
+    object_value_kind: Literal["entity", "literal"]
+    object_literal_type: ClaimValueType | None
+    supported_commitments: tuple[Commitment, ...]
+    contract_digest: str
+
+class PredicateProposalCatalog(BaseModel):
+    vocabulary_namespace: str
+    proposal_capability_fingerprint: str
+    predicates: tuple[PredicatePromptContract, ...]
+    catalog_schema_fingerprint: str
+    catalog_fingerprint: str
+
 class RegisteredSemanticPromptBinding(BaseModel):
     prompt_ref: str
     prompt_registration_digest: str
@@ -11842,6 +12306,7 @@ class SemanticProposalRequest(BaseModel):
     source_id: str
     source_digest: str
     semantic_context_fingerprint: str
+    preparation_fingerprint: str
     segment_id: str
     segment_governance: SegmentGovernanceBinding
     message_admission_identity: MessageAdmissionIdentity | None
@@ -11852,11 +12317,60 @@ class SemanticProposalRequest(BaseModel):
     language_route: SegmentLanguageRoute
     provider_egress_decision_digest: str | None
     proposal_capability_fingerprint: str
-    predicate_catalog: tuple[PredicatePromptContract, ...]
+    predicate_catalog: PredicateProposalCatalog
     action_proposal_catalog: ActionProposalCatalog
     registered_prompt: RegisteredSemanticPromptBinding
     proposer_manifest: SemanticProposerManifest
+    semantic_request_fingerprint: str
 ```
+
+`PredicatePromptContract` and `PredicateProposalCatalog` are strict, frozen,
+`extra="forbid"`, closed-wire v1 contracts with no persisted defaults, aliases,
+legacy reader, or upcast. `contract_digest` is lowercase 64-hex SHA-256 over
+canonical CTV in domain
+`memorii.semantic-ingestion.predicate-prompt-contract.v1`; `catalog_fingerprint`
+uses `memorii.semantic-ingestion.predicate-proposal-catalog.v1`. Each preimage
+contains every declared field except its trailing digest in declaration order.
+`subject_value_kind` is always `entity`; `object_value_kind="entity"` requires
+`object_literal_type=None`, while `object_value_kind="literal"` requires a
+non-null `ClaimValueType`. `supported_commitments` is a nonempty canonical
+tuple, ordered by the canonical order of the existing `Commitment` literals and
+without duplicates. `predicates` is a canonical, duplicate-free tuple ordered
+by `predicate_id`; predicate IDs are unique. The catalog binds one vocabulary
+namespace, one proposal-capability fingerprint, and one schema fingerprint.
+
+Both catalog `catalog_schema_fingerprint` fields are the lowercase 64-hex
+SHA-256 address in `memorii.semantic-ingestion.prompt-catalog-schema.v1` of
+canonical CTV over the exact canonical JSON bytes of the catalog entry, its
+ordered embedded-record entries, and its own ordered record entry in
+`docs/design/semantic_ingestion/prompt-catalog-schema-manifest-v1.json`.
+`closed_wire_type` accepts only the artifact's closed token vocabulary: no
+free-form type string, alternate spelling, Pydantic, JSON-Schema, reflection,
+or runtime class metadata is an authority. The artifact is ASCII canonical JSON
+(sorted keys, compact separators, one trailing newline); its content address is
+`b135f05197acf3270c2200f2c7aca82a7790b26ff4ee6e356248c8494655a79b`
+under `memorii.semantic-ingestion.prompt-catalog-schema-manifest.v1`, and its
+raw SHA-256 is
+`57d3a0d7cf71198f838cbf71b694024f13cb558e1aff19623fe677d1a32567fa`.
+The checked-in validator reproduces action catalog schema fingerprint
+`0fb700ec5d56481e582f70d89a66627708cd95ad2393e9df78559e0f1f0b16fe` and
+predicate catalog schema fingerprint
+`7c2fef7072d3996b93949eab7db1701d5458379a6b65d96f5851415d748fb0e0`.
+Release validation loads the named artifact, recomputes its content address and
+both schema fingerprints, then requires the selected catalog/capability fields
+to equal those results exactly. The production release validator also compares
+each strict model field grammar and literal domain to the exact manifest record
+entry; any runtime semantic change without the corresponding manifest and
+fingerprint change rejects activation.
+
+`SemanticProposalRequest.semantic_request_fingerprint` is its required trailing
+lowercase 64-hex SHA-256 content address in
+`memorii.semantic-ingestion.semantic-proposal-request.v1`, over canonical CTV
+of every other declared request field in declaration order. The preimage
+therefore includes complete predicate/action catalogs, their schema
+fingerprints, registered prompt, proposer manifest, selected route, source
+spans, governance carriers, and egress decision; it is not a renderer-local
+or transport-local identifier.
 
 The request is built only by `PromptRegistry` and `PromptRenderer` from one
 `RegisteredPromptContract`. Its registration digest binds checked-in prompt
@@ -11878,12 +12392,37 @@ remote proposer request requires a non-null decision bound to the current active
 policy and exact remote manifest. Any other combination fails schema validation;
 runtime unavailability never changes `proposer_kind` for the attempt.
 
+At release construction, `PredicateProposalCatalog` is the prompt-safe
+projection of exact `PredicatePolicy` vocabulary (`predicate_id`, description,
+and value types) plus the certified `PredicateSemanticPolicy`
+`supported_commitments` for that release. It is constructed before any request,
+recomputes both digests, and performs no live registry lookup at rendering,
+transport, recovery, or replay. `SourceModality` remains governance-only and
+is not projected into this catalog. The catalog excludes downstream conflict,
+trust, temporal, scope, lifecycle, and graph policy.
+
 `proposal_capability_fingerprint` names the active
 `CertifiedProposalCapability` selected before transport. Its registered prompt,
 proposer manifest, catalogs, language, status revision, and dependency bundle
 must equal the request fields and are sealed into every attempt and the final
-`SemanticProposalRun`. Step 3 neither selects nor predicts a downstream
-predicate/construction semantic capability.
+`SemanticProposalRun`. In particular,
+`CertifiedProposalCapability.supported_predicate_catalog_fingerprint` equals
+`request.predicate_catalog.catalog_fingerprint`; the catalog's
+`proposal_capability_fingerprint`, registered prompt, proposer manifest, route
+resource binding, and request capability fingerprint all bind one capability
+release. `CertifiedProposalCapability.supported_action_catalog_fingerprint`
+equals `request.action_proposal_catalog.catalog_fingerprint`, and each
+capability release pins both catalog-schema fingerprints. Any unequal, missing,
+stale, substituted, or live-looked-up member
+rejects before request serialization. Step 3 neither selects nor predicts a
+downstream predicate/construction semantic capability.
+
+`SemanticProposalRequest.preparation_fingerprint` equals the originating
+`PreparedSource` exactly. The request artifact decoder, attempt identity,
+normalized proposal, run, Step-4 input, source-normalization request, analysis
+bundle, event inventory, temporal resolution, consensus, NLI request, and all
+replay/reopen joins preserve and compare that one value; no downstream carrier
+may derive a preparation identity from partial segment fields.
 
 The source segment is placed in a dedicated structured data field with explicit
 instruction/data separation. Text inside the segment is never interpreted as a
@@ -11932,12 +12471,76 @@ selected proposal capability and request fingerprint. Catalog order, prose
 description, endpoint kind, membership, schema, or capability substitution is
 therefore observable and cannot be normalized away.
 
+The prompt renderer serializes the complete closed predicate catalog, not a
+bare predicate tuple or an implementation-local lookup key. Request, attempt,
+proposal, run, and replay codecs register both predicate contract types and
+revalidate their digests and the one-release equality chain on encoding and
+decoding. Strict-v1 is an unshipped cutover: prior route, request, attempt,
+proposal, run, and Step-4 bytes reject; vectors regenerate under the new
+schemas; no upcast, compatibility decoder, or defaulted parent/catalog field
+exists. Rollback before shipment removes the new codecs, registrations,
+writers, and vectors rather than reading prior bytes.
+
 #### 4.3.3 Output contract
 
 The provider-facing contract uses source quotes instead of asking the model to
 count offsets:
 
 ```python
+Polarity = Literal["positive", "negative"]
+
+Commitment = Literal[
+    "asserted",
+    "believed",
+    "reported",
+    "quoted",
+    "questioned",
+    "instructed",
+    "hypothetical",
+]
+
+class TypedLiteral(BaseModel):
+    literal_type: str
+    canonical_value: str
+    unit: str | None
+    literal_digest: str
+
+class ProviderEntityObject(BaseModel):
+    kind: Literal["entity"]
+    entity_ref: str
+
+class ProviderLiteralObject(BaseModel):
+    kind: Literal["literal"]
+    literal_type: str
+    canonical_value: str
+    unit: str | None
+
+ProviderObject = Annotated[
+    ProviderEntityObject | ProviderLiteralObject,
+    Field(discriminator="kind"),
+]
+
+class ProviderClaimRecordSelector(BaseModel):
+    kind: Literal["claim"]
+    fact_local_id: str
+
+class ProviderActionRecordSelector(BaseModel):
+    kind: Literal["action"]
+    logical_action_local_id: str
+    action_anchor_quote: str
+
+class ProviderAliasRecordSelector(BaseModel):
+    kind: Literal["alias"]
+    alias_namespace: str
+    alias_anchor_quote: str
+
+ProviderRecordSelector = Annotated[
+    ProviderClaimRecordSelector
+    | ProviderActionRecordSelector
+    | ProviderAliasRecordSelector,
+    Field(discriminator="kind"),
+]
+
 class ProviderMention(BaseModel):
     local_id: str
     mention_quote: str
@@ -11949,7 +12552,7 @@ class ProviderFact(BaseModel):
     local_id: str
     predicate_id: str
     subject_entity_ref: str
-    object: ProviderEntityObject | ProviderLiteralObject
+    object: ProviderObject
     assertion_quote: str
     predicate_anchor_quote: str
     polarity: Polarity
@@ -11992,7 +12595,6 @@ class ProviderActionState(BaseModel):
     temporal_qualifier_quotes: tuple[str, ...]
 
 class ProviderReferenceAssignment(BaseModel):
-    record_kind: Literal["claim", "action", "alias"]
     record_selector: ProviderRecordSelector
     successor_entity_refs: tuple[str, ...]
     disposition: Literal[
@@ -12020,6 +12622,123 @@ class ProviderSemanticProposal(BaseModel):
     action_states: tuple[ProviderActionState, ...]
     identity_operations: tuple[ProviderIdentityOperation, ...]
     abstained: bool
+
+class ProposedMention(BaseModel):
+    mention_span: SourceSpanReference
+    proposed_type: str | None
+    mention_digest: str
+
+class ProposedEntityObject(BaseModel):
+    kind: Literal["entity"]
+    mention_digest: str
+    object_digest: str
+
+class ProposedLiteralObject(BaseModel):
+    kind: Literal["literal"]
+    value: TypedLiteral
+    object_digest: str
+
+ProposedObject = Annotated[
+    ProposedEntityObject | ProposedLiteralObject,
+    Field(discriminator="kind"),
+]
+
+class ProposedFact(BaseModel):
+    kind: Literal["fact"]
+    predicate_id: str
+    subject_mention_digest: str
+    object: ProposedObject
+    assertion_span: SourceSpanReference
+    predicate_anchor_span: SourceSpanReference
+    polarity: Polarity
+    commitment: Commitment
+    attributed_to_mention_digest: str | None
+    temporal_qualifier_spans: tuple[SourceSpanReference, ...]
+    fact_digest: str
+
+class ProposedCorrection(BaseModel):
+    kind: Literal["correction"]
+    corrected_fact: ProposedFact
+    replacement_fact: ProposedFact
+    assertion_span: SourceSpanReference
+    correction_anchor_span: SourceSpanReference
+    correction_digest: str
+
+class ProposedRetraction(BaseModel):
+    kind: Literal["retraction"]
+    retracted_fact: ProposedFact
+    assertion_span: SourceSpanReference
+    retraction_anchor_span: SourceSpanReference
+    retraction_digest: str
+
+class ProposedActionRoleParticipant(BaseModel):
+    mention_digest: str
+    grounding_spans: tuple[SourceSpanReference, ...]
+    participant_digest: str
+
+class ProposedActionRoleBinding(BaseModel):
+    role_id: str
+    endpoint_kind: Literal["actor", "object"]
+    participants: tuple[ProposedActionRoleParticipant, ...]
+    binding_digest: str
+
+class ProposedActionState(BaseModel):
+    kind: Literal["action_state"]
+    action_anchor_span: SourceSpanReference
+    logical_action_digest: str
+    role_bindings: tuple[ProposedActionRoleBinding, ...]
+    state_id: str
+    state_anchor_span: SourceSpanReference
+    execution_branch_span: SourceSpanReference | None
+    execution_branch_digest: str | None
+    assertion_span: SourceSpanReference
+    temporal_qualifier_spans: tuple[SourceSpanReference, ...]
+    action_state_digest: str
+
+class ProposedClaimRecordSelector(BaseModel):
+    kind: Literal["claim"]
+    fact_digest: str
+    selector_digest: str
+
+class ProposedActionRecordSelector(BaseModel):
+    kind: Literal["action"]
+    logical_action_digest: str
+    action_anchor_span: SourceSpanReference
+    selector_digest: str
+
+class ProposedAliasRecordSelector(BaseModel):
+    kind: Literal["alias"]
+    alias_namespace: str
+    alias_anchor_span: SourceSpanReference
+    selector_digest: str
+
+ProposedRecordSelector = Annotated[
+    ProposedClaimRecordSelector
+    | ProposedActionRecordSelector
+    | ProposedAliasRecordSelector,
+    Field(discriminator="kind"),
+]
+
+class ProposedReferenceAssignment(BaseModel):
+    record_selector: ProposedRecordSelector
+    successor_mention_digests: tuple[str, ...]
+    disposition: Literal[
+        "migrate_current",
+        "share_by_explicit_evidence",
+        "preserve_historical",
+    ]
+    assertion_span: SourceSpanReference
+    assignment_digest: str
+
+class ProposedIdentityOperation(BaseModel):
+    kind: Literal["identity"]
+    operation: Literal["alias", "rekey", "merge", "split"]
+    predecessor_mention_digests: tuple[str, ...]
+    successor_mention_digests: tuple[str, ...]
+    reference_assignments: tuple[ProposedReferenceAssignment, ...]
+    assertion_span: SourceSpanReference
+    identity_anchor_span: SourceSpanReference
+    identity_operation_digest: str
 ```
 
 The proposal adapter validates local references and resolves every assertion and
@@ -12035,11 +12754,13 @@ A correction is not represented as two unrelated facts. It names the corrected
 and replacement fact together, and both must be source-visible within the same
 safe segment. An identity operation names all predecessor and successor
 mentions explicitly. A split also proposes source-grounded reference assignments
-for every claim, action, or alias the source explicitly reallocates. Those
-selectors and assignments remain untrusted: the compiler resolves them against
-the revision-bound graph and supplies operation-defined dispositions for
-historical provenance. Provider-local operation types never identify canonical
-record IDs or decide a disposition without source evidence and compiler checks.
+for every claim, action, or alias the source explicitly reallocates. Alias,
+rekey, and merge operations must carry an empty `reference_assignments` tuple.
+Those selectors and assignments remain untrusted: the compiler resolves them
+against the revision-bound graph and supplies operation-defined dispositions
+for historical provenance. Provider-local operation types never identify
+canonical record IDs or decide a disposition without source evidence and
+compiler checks.
 A retraction names the complete source-visible proposition being withdrawn and
 the exact retraction anchor; it is not encoded as a negative replacement fact.
 An action-state proposal names a source-local logical action anchor, every
@@ -12053,12 +12774,142 @@ Provider-local action and branch IDs cannot
 become persisted IDs and cannot select an existing action without exact
 source/graph-bound reconciliation.
 
-Provider execution first produces an attempt record:
+The provider-facing helper types above are strict, frozen, `extra="forbid"`,
+closed-wire v1 records. `ProviderObject` and `ProviderRecordSelector` are
+closed discriminated unions. `ProviderSemanticProposal` retains provider-local
+`local_id` and `logical_action_local_id` values only as transient adapter
+lookup keys; none of them may appear in a normalized `Proposed*` wire, a
+proposal digest preimage, an operation subject, a selector, or any canonical
+graph/action/branch identity.
+
+Normalization deterministically converts `ProviderSemanticProposal` into the
+closed internal proposal contract before sealing any `SemanticProposal`. Every
+helper and `Proposed*` type below is likewise strict, frozen,
+`extra="forbid"`, and closed-wire v1. `TypedLiteral.literal_digest` is SHA-256
+over the canonical CTV preimage in
+`memorii.semantic-ingestion.typed-literal.v1` over every declared field except
+`literal_digest`, in declaration order. `ProposedMention`, `ProposedEntityObject`,
+`ProposedLiteralObject`, `ProposedFact`, `ProposedCorrection`,
+`ProposedRetraction`, `ProposedActionRoleParticipant`,
+`ProposedActionRoleBinding`, `ProposedActionState`,
+`ProposedClaimRecordSelector`, `ProposedActionRecordSelector`,
+`ProposedAliasRecordSelector`, `ProposedReferenceAssignment`, and
+`ProposedIdentityOperation` are content-addressed the same way under their
+respective domains
+`memorii.semantic-ingestion.proposed-mention.v1`,
+`memorii.semantic-ingestion.proposed-entity-object.v1`,
+`memorii.semantic-ingestion.proposed-literal-object.v1`,
+`memorii.semantic-ingestion.proposed-fact.v1`,
+`memorii.semantic-ingestion.proposed-correction.v1`,
+`memorii.semantic-ingestion.proposed-retraction.v1`,
+`memorii.semantic-ingestion.proposed-action-role-participant.v1`,
+`memorii.semantic-ingestion.proposed-action-role-binding.v1`,
+`memorii.semantic-ingestion.proposed-action-state.v1`,
+`memorii.semantic-ingestion.proposed-claim-record-selector.v1`,
+`memorii.semantic-ingestion.proposed-action-record-selector.v1`,
+`memorii.semantic-ingestion.proposed-alias-record-selector.v1`,
+`memorii.semantic-ingestion.proposed-reference-assignment.v1`, and
+`memorii.semantic-ingestion.proposed-identity-operation.v1`.
+
+Normalization is exact and replay-authoritative:
+
+- each `ProviderMention` resolves to one `ProposedMention` by resolving
+  `mention_context_quote` to one unique context occurrence inside the segment
+  context span, then resolving exactly one nested occurrence of
+  `mention_quote`; the resulting `SourceSpanReference` becomes `mention_span`
+  and the mention is thereafter identified only by `mention_digest`;
+- every provider entity reference must resolve to one normalized
+  `ProposedMention.mention_digest` in the same proposal; every literal object
+  becomes one `TypedLiteral`;
+- `ProposedFact.temporal_qualifier_spans` are ordered lexicographically by
+  `SourceSpanReference.reference_digest`; duplicate `reference_digest` values
+  reject;
+- every provider quote field becomes one exact `SourceSpanReference` in the
+  same segment and source projection; anchor spans must lie inside the segment
+  owned span whenever the corresponding operation kind requires an owned
+  predicate or action anchor;
+- once every provider-local reference has been resolved, the persisted
+  normalized tuples are canonicalized by source-derived coordinates rather than
+  provider emission order. `mentions` are ordered by
+  `(mention_span.reference_digest, mention_digest)`. `facts`,
+  `corrections`, `retractions`, `action_states`, and
+  `identity_operations` are ordered respectively by their anchor
+  `reference_digest`, then assertion/evidence `reference_digest`, then their
+  own content digest. `proposal_member_index` is the zero-based index in these
+  canonical persisted tuples. Provider-order changes that produce identical
+  normalized members therefore do not change `proposal_digest` or
+  `operation_id`;
+- duplicate top-level normalized member digests are forbidden before sealing.
+  `mentions`, `facts`, `corrections`, `retractions`, `action_states`, and
+  `identity_operations` each reject duplicate member digests inside their own
+  tuple even when source spans, provider order, or nested content would
+  otherwise compare equal;
+- every nested semantic tuple is canonical and duplicate-free before sealing.
+  Every `ProposedActionRoleParticipant.grounding_spans` tuple is ordered
+  lexicographically by `SourceSpanReference.reference_digest`; duplicate
+  `reference_digest` values reject. `ProposedActionRoleBinding.participants`
+  are ordered by `(mention_digest, participant_digest)`; duplicate
+  `participant_digest` values reject. `ProposedActionState.role_bindings` are
+  ordered by `(role_id, endpoint_kind, binding_digest)`; duplicate
+  `binding_digest` values reject. `ProposedIdentityOperation`
+  `predecessor_mention_digests`, `successor_mention_digests`, and
+  `ProposedReferenceAssignment.successor_mention_digests` are ordered
+  lexicographically by mention digest and reject duplicates.
+  `ProposedIdentityOperation.reference_assignments` are ordered by
+  `(record_selector.selector_digest, assignment_digest)` and reject duplicate
+  `assignment_digest` or duplicate selector-digest reuse inside one identity
+  operation. Noncanonical order or duplicate members reject before any digest
+  is sealed;
+- provider references to missing, duplicate, or cross-kind local IDs reject
+  before sealing; once normalized, only source-derived digests and spans remain;
+- `ProviderReferenceAssignment.record_selector` local IDs resolve only against
+  the enclosing `ProviderSemanticProposal`. Claim selectors normalize their
+  `fact_local_id` to exactly one same-proposal `ProposedFact.fact_digest`;
+  action selectors normalize their `logical_action_local_id` plus
+  `action_anchor_quote` to exactly one same-proposal
+  `ProposedActionState.logical_action_digest`; and alias selectors normalize
+  their namespace plus anchor quote to exactly one same-proposal
+  `ProposedAliasRecordSelector.selector_digest`. Missing, duplicate,
+  cross-proposal, or cross-kind selector normalization rejects before sealing;
+- nested correction and retraction facts normalize with the same `ProposedFact`
+  contract as top-level facts and must remain source-visible within the same
+  segment as the enclosing correction or retraction;
+- `ProposedActionRoleBinding.participants` are exact grouped role participants,
+  not parallel loose tuples; every participant names one `mention_digest` and
+  one nonempty canonical tuple of grounding spans. `logical_action_digest` is
+  the SHA-256 spelling of the canonical CTV preimage in
+  `memorii.semantic-ingestion.proposed-logical-action.v1` over
+  `action_anchor_span` and canonical `role_bindings`, excluding only the digest
+  field itself; provider-local action IDs are discarded after this digest is
+  derived;
+- `execution_branch_span` and `execution_branch_digest` are both null or both
+  non-null; a branch anchor must resolve uniquely inside the enclosing
+  assertion span, and `execution_branch_digest` is the content address of that
+  exact span under `memorii.semantic-ingestion.proposed-execution-branch.v1`;
+- `ProposedIdentityOperation` retains explicit predecessor/successor mention
+  digests and closed `ProposedReferenceAssignment` records only; every
+  successor set must be nonempty, every reference selector kind must match its
+  closed selector schema, alias/rekey/merge require
+  `reference_assignments=()`, and split-only reassignment remains
+  source-grounded rather than graph-derived.
+
+Provider execution first persists a call-known attempt identity:
 
 ```python
-class SemanticProposalAttempt(BaseModel):
+class SemanticProposalRequestArtifact(BaseModel):
+    request_bytes: bytes
+    request_digest: str
+    artifact_digest: str
+
+class SemanticProposalResponseArtifact(BaseModel):
+    raw_output_bytes: bytes
+    raw_output_digest: str
+    artifact_digest: str
+
+class SemanticProposalAttemptIdentity(BaseModel):
     source_id: str
     segment_id: str
+    preparation_fingerprint: str
     segment_governance: SegmentGovernanceBinding
     message_admission_identity: MessageAdmissionIdentity | None
     governance_carrier_artifact: GovernanceCarrierArtifact
@@ -12071,18 +12922,97 @@ class SemanticProposalAttempt(BaseModel):
     semantic_request_fingerprint: str
     attempt_payload_fingerprint: str
     attempt_number: int
+    request_digest: str
+    request_artifact_digest: str
+    attempt_identity_digest: str
+
+class SemanticProposalAttempt(BaseModel):
+    identity: SemanticProposalAttemptIdentity
     raw_output_digest: str | None
+    response_artifact_digest: str | None
     status: Literal["complete", "partial", "abstained", "evidence_only", "failed"]
     diagnostics: tuple[str, ...]
+    attempt_digest: str
 ```
 
-Only a transport-complete attempt may produce the reconciliation input:
+These four records are strict, frozen, `extra="forbid"`, closed-wire v1
+contracts with no persisted defaults or legacy/upcast decoder.
+
+`SemanticProposalRequestArtifact.request_digest` is SHA-256 of the exact
+serialized request bytes in `request_bytes`; its decoder parses only the
+closed `SemanticProposalRequest`, recomputes canonical CTV and
+`semantic_request_fingerprint`, requires byte-for-byte re-canonicalization to
+the stored request bytes, and then recomputes `request_digest`. `artifact_digest` is the lowercase
+64-hex content address in domain
+`memorii.semantic-ingestion.semantic-proposal-request-artifact.v1` over
+`request_bytes` and `request_digest`. `SemanticProposalResponseArtifact` uses
+the corresponding rules and domain
+`memorii.semantic-ingestion.semantic-proposal-response-artifact.v1` over
+`raw_output_bytes` and `raw_output_digest`. These artifacts are immutable
+checkpoint members, not logs that may omit or redact bytes after
+acknowledgement.
+
+`SemanticProposalAttemptIdentity` is the immutable pre-call authority. Its
+`attempt_identity_digest` is the lowercase 64-hex SHA-256 content address in
+the domain
+`memorii.semantic-ingestion.semantic-proposal-attempt-identity.v1` over the
+canonical CTV preimage containing every other declared identity field in
+declaration order. Every field is known before local inference or remote
+transport. `request_digest` equals the matching request artifact's digest of
+bytes, and `request_artifact_digest` equals that artifact's content address.
+`semantic_request_fingerprint` equals the decoded request's fingerprint exactly.
+`preparation_fingerprint` equals the decoded request and originating
+`PreparedSource` exactly.
+The request artifact, identity bytes, and identity digest are durably published
+in one atomic generation before the call;
+the digest is also the provider idempotency key when that transport supports
+one. `request_digest` is the SHA-256 spelling of the exact serialized request
+bytes passed to the local or remote proposer. An acknowledged identity with no
+acknowledged final attempt is stranded evidence, never success: recovery makes
+no provider result from it, and a bounded retry uses the next monotonic
+`attempt_number` and a new identity. A repair additionally uses a new
+`attempt_payload_fingerprint`; neither retry nor repair mutates the predecessor
+identity.
+
+`SemanticProposalAttempt` is the append-only final response record. Its
+`attempt_digest` is the lowercase 64-hex SHA-256 content address in the domain
+`memorii.semantic-ingestion.semantic-proposal-attempt.v1` over the canonical
+CTV preimage containing `identity`, `raw_output_digest`,
+`response_artifact_digest`, `status`, and `diagnostics` in declaration order.
+`raw_output_digest` and `response_artifact_digest` are both null or both
+non-null. When non-null they equal one loadable
+`SemanticProposalResponseArtifact` and its exact byte digest. `complete`,
+`partial`, and `abstained` require that artifact; `evidence_only` forbids it;
+`failed` permits it only when response bytes were received and otherwise has
+both fields null. The response artifact and final record are durably published
+in one atomic generation before downstream
+semantic processing. Omitted, defaulted, legacy, alternate-domain, identity-
+substituted, or digest-only substituted attempts reject. At most one final
+attempt record may exist for one `attempt_identity_digest`; an exact duplicate
+is idempotent and non-identical final bytes for the same identity fail closed.
+Request, identity, response, and final-attempt bytes are ordinary pre-planning
+checkpoint artifacts; the progress record that first references any artifact
+is published in the same atomic generation as that artifact. Recovery reloads
+the exact request bytes and, when transport idempotency is supported, may
+resend only those bytes with the persisted `attempt_identity_digest`; it never
+re-renders a request. Recovery recomputes request canonical bytes, the
+semantic-request fingerprint, both byte digests, and both artifact addresses
+before use. Identity-only records remain checkpoint-history
+authority and cannot enter `SemanticProposalRun` or satisfy an outcome. Every
+non-null `SegmentProposalOutcome.attempt_digest` must equal byte-for-byte the
+exact validated terminal attempt digest for that segment and route.
+
+Only a final `complete` or `abstained` attempt may produce the reconciliation
+input. The adapter loads that attempt's exact persisted response artifact,
+deterministically decodes and normalizes those bytes, and writes the final
+attempt's `attempt_digest` into `SemanticProposal.originating_attempt_digest`:
 
 ```python
 class SemanticProposal(BaseModel):
     proposal_id: str
     source_id: str
     source_digest: str
+    preparation_fingerprint: str
     segment_id: str
     segment_governance: SegmentGovernanceBinding
     message_admission_identity: MessageAdmissionIdentity | None
@@ -12096,6 +13026,7 @@ class SemanticProposal(BaseModel):
     semantic_request_fingerprint: str
     action_proposal_catalog_fingerprint: str
     attempt_payload_fingerprint: str
+    originating_attempt_digest: str
     mentions: tuple[ProposedMention, ...]
     facts: tuple[ProposedFact, ...]
     corrections: tuple[ProposedCorrection, ...]
@@ -12104,13 +13035,14 @@ class SemanticProposal(BaseModel):
     identity_operations: tuple[ProposedIdentityOperation, ...]
     status: Literal["complete", "abstained"]
     diagnostics: tuple[str, ...]
+    proposal_digest: str
 
 class SegmentProposalOutcome(BaseModel):
     segment_id: str
     segment_language_route_digest: str
     status: Literal["complete", "abstained", "evidence_only", "failed"]
     proposal_digest: str | None
-    attempt_digest: str
+    attempt_digest: str | None
     reason_codes: tuple[str, ...]
     outcome_digest: str
 
@@ -12137,34 +13069,95 @@ class SemanticProposalRun(BaseModel):
     diagnostics: tuple[str, ...]
 ```
 
-Each internal fact carries exact assertion, predicate-anchor, and argument spans
+Each normalized proposal member is therefore already a fully typed,
+content-addressed, source-grounded contract before alignment. Each internal
+fact carries exact assertion, predicate-anchor, and temporal qualifier spans
 plus typed polarity, commitment, attribution, and object kind. Corrections and
 retractions retain their target coupling and exact temporal source spans;
 action-state operations retain action/role/state/branch coupling; identity
 operations retain predecessor/successor/reference coupling through
-reconciliation and compilation.
+reconciliation and compilation. `ProposedMention`, `ProposedFact`,
+`ProposedCorrection`, `ProposedRetraction`, `ProposedActionState`, and
+`ProposedIdentityOperation` are the six canonical closed owners of normalized
+proposal content; `SemanticProposal.proposal_digest` is therefore derivable
+from complete typed nested contracts rather than implementation-local blobs.
+Abstention is closed and fail-closed. `ProviderSemanticProposal.abstained=True`
+requires the five operation arrays `facts`, `corrections`, `retractions`,
+`action_states`, and `identity_operations` to be empty before and after
+normalization; any nonempty operation array with `abstained=True` rejects.
+`SemanticProposal.status` is `abstained` if and only if those five normalized
+operation arrays are empty, and `complete` otherwise. `mentions` may still be
+retained as diagnostic grounding evidence in an abstained proposal, but no
+`PreAlignmentSemanticOperationSubject`, source dependency group,
+`OperationAlignment` row, capability selection, or graph effect may be derived
+from an abstained proposal.
 
 Each `segment_id` is the digest of source digest, canonical owned/context
 start/end offsets, and preparation-policy fingerprint. `expected_segment_ids`
 is the stable, source-ordered tuple derived from every
 `PreparedSource.segments` entry.
-For each segment, `SemanticProposalRequest`, every attempt, and its validated
+For each route-selected segment, `SemanticProposalRequest`, every attempt, and its validated
 proposal carry byte-equal `segment_governance`, message-admission identity, and
 governance artifact plus the complete selected `language_route` copied from
 that `PreparedSegment`; none may be reconstructed
-from source-wide context. `SemanticProposalRun.segment_governance_carriers` and
-`message_admission_carriers` are ordered bijections with its expected segments
-and equal the prepared source carrier sets; `segment_language_routes` is the
-same exact bijection as the prepared source. All nested artifacts have one
+from source-wide context. `segment_language_routes`, attempts, validated
+proposals, and outcomes are child-keyed ordered bijections with
+`expected_segment_ids`. `SemanticProposalRun.segment_governance_carriers` and
+`message_admission_carriers` instead uniquely equal the prepared source's
+parent-projection carrier sets. The route inverse is a total child-to-parent
+function that is surjective onto that parent set: each expected child has one
+route parent, multiple children may share it, and no parent carrier is orphaned.
+All nested artifacts have one
 artifact ID, digest, canonical payload, and atomic generation. A denied binding
-permits a retained blocked attempt but no request serialization or provider
-call. Missing, extra, duplicate, reordered, digest-only, or unequal carriers
+permits only a blocked segment outcome with no request serialization, attempt
+identity, final attempt, or provider call. Missing, extra, duplicate,
+reordered, digest-only, or unequal carriers
 make run sealing fail.
 `proposal_id` is the digest of source digest, segment ID, semantic-request
 fingerprint, proposer-manifest digest, prompt-registration digest, and
 attempt-payload fingerprint. It is stable for byte-identical replay and changes
 when any behavior-affecting request authority changes.
-`segment_outcomes` is an exact ordered bijection with expected segments.
+`proposal_digest` is the lowercase 64-hex SHA-256 spelling of the canonical
+CTV preimage in the domain
+`memorii.semantic-ingestion.semantic-proposal.v1` over every declared
+`SemanticProposal` field except `proposal_digest`, in declaration order. It is
+the content address of the exact validated normalized proposal bytes, not a
+request identity, model run identifier, or outcome-local alias. Every non-null
+`SegmentProposalOutcome.proposal_digest` must equal the exact
+`proposal_digest` of the one matching validated `SemanticProposal` for that
+segment and exact `segment_language_route_digest`. That proposal's
+`originating_attempt_digest` equals the outcome-selected last final attempt,
+the attempt status equals proposal and outcome status (`complete` or
+`abstained`), and deterministic normalization of its persisted response bytes
+reproduces the exact proposal bytes and digest. A last `partial` or
+`evidence_only` attempt yields an `evidence_only` outcome with no proposal; a
+last `failed` attempt yields a `failed` outcome with no proposal. Missing,
+cross-proposal, alternate-domain, alternate-encoding, or digest-only substitution rejects
+before subject construction or run sealing.
+`segment_outcomes` is an exact ordered bijection with expected child segments. A
+route-selected outcome requires a non-null final `attempt_digest`; a blocked
+route has `attempt_digest=None`, `proposal_digest=None`, and status
+`evidence_only`, because no request bytes, attempt identity, or proposer call
+exists for that route.
+`segment_attempts` is the complete append-only final-attempt history, ordered
+by expected child-segment order and then strictly increasing `attempt_number` and
+`attempt_digest`. Each expected route-selected segment has one or more final
+attempts; blocked segments have none. Within one segment, every later final
+attempt has the exact preceding final attempt as its retry predecessor, uses
+the next contiguous attempt number and a new identity, and a repair following
+an artifact-bearing partial or failed response also changes
+`attempt_payload_fingerprint`. Each `SegmentProposalOutcome.attempt_digest`
+selects the last final attempt for its segment. Earlier attempts are retained
+predecessor evidence and cannot satisfy the outcome. Missing history,
+duplicate numbers, gaps, cross-segment or cross-route identity substitution,
+selection of a nonterminal predecessor, or an unselected trailing attempt
+rejects run sealing. `SemanticProposalRun.preparation_fingerprint` equals the
+originating `PreparedSource`, every request/attempt identity, and every
+validated proposal exactly. `SourceNormalizationRequest` requires that same
+prepared-source fingerprint on its proposal run, all Step-4 aggregates and
+their nested consensus/event/temporal members; a missing,
+recomputed-from-subset, or substituted value rejects before normalization or
+replay.
 `complete` requires every segment to have one terminal outcome and every
 route-selected segment to have one validated result under its exact source,
 preparation, route, proposer, prompt, and schema;
@@ -12172,8 +13165,11 @@ non-selected segments have one `evidence_only` outcome with no proposal digest
 or learned call. `complete` may therefore aggregate valid selected-segment
 proposals while permanently excluding evidence-only segments from alignment,
 capability selection, planning, and graph effect. `evidence_only` means no
-segment is promotable; `abstained` means every route-selected segment completed
-and collectively proposed no operation. Missing, duplicate, partial, or
+segment is promotable; `abstained` means every route-selected segment completed,
+every route-selected validated proposal is exactly `abstained`, and no
+route-selected validated proposal is `complete`. Every route-selected
+`SegmentProposalOutcome.status` must equal the matching validated
+`SemanticProposal.status` exactly. Missing, duplicate, partial, or
 fingerprint-inconsistent segment outcomes make the run `incomplete` or
 `failed`. Source status is only this deterministic ordered aggregation and
 cannot alter a segment outcome.
@@ -12185,11 +13181,12 @@ owner-eligible operations with the same source spans but incompatible typed
 semantics make the run failed; neither may reach reconciliation.
 
 Only a `complete` or fully `abstained` source-level run may reach
-reconciliation. The initial architecture does not selectively commit unaffected
-segments from an incomplete run. This conservative rule prevents an omitted
-segment from hiding a correction, conflict, identity operation, or competing
-predicate event. Cross-segment corrections and identity operations remain
-unresolved until a separately certified discourse capability exists.
+reconciliation. A fully `abstained` run contributes zero operation subjects and
+zero semantic effects. The initial architecture does not selectively commit
+unaffected segments from an incomplete run. This conservative rule prevents an
+omitted segment from hiding a correction, conflict, identity operation, or
+competing predicate event. Cross-segment corrections and identity operations
+remain unresolved until a separately certified discourse capability exists.
 
 #### 4.3.4 Success and failure
 
@@ -12261,12 +13258,53 @@ remains non-committing.
 - source-run tests remove, duplicate, reorder, fingerprint-mutate, fail, and
   partially repair individual segments; only the exact complete segment set may
   seal, and every non-complete run has zero graph effect;
+- attempt-history tests persist and reopen exact request bytes plus identity
+  before a fake proposer call, crash before and after the call, and persist the
+  response bytes plus final attempt before normalization. They recompute all
+  four byte/content digests, resend only persisted request bytes with the
+  persisted idempotency key, require the next contiguous attempt number after
+  stranded or final failed/partial evidence, retain every final predecessor,
+  select only the last final attempt in the outcome, and reject byte
+  substitution, history omission, same-identity divergence, same-number retry,
+  identity-only promotion, a proposal without the exact originating final
+  attempt, or proposal bytes not reproduced by deterministic normalization of
+  that attempt's persisted response;
+- a valid two-predicate catalog has distinguishable entity and literal entries;
+  real rendered/prepared transport bytes contain every ID, description, value
+  shape, literal type, and supported commitment in canonical catalog order.
+  It then passes exact request/attempt/proposal/run persistence reopen and
+  replay with all live predicate/action registries poisoned. Substituting either
+  member, or mutating schema-manifest bytes/fingerprint, request fingerprint,
+  prompt, proposer, capability, route, or a request byte after decoding rejects
+  pre-transport with zero calls;
+- an independently constructed two-parent/three-child topology
+  `P0->{C0,C1}`, `P1->{C2}` proves a clean-room independently authored
+  preparation-fingerprint CTV preimage/digest oracle over the ordered
+  child-to-parent relation. Mutating only each child-parent coordinate changes
+  that fingerprint. Child route/attempt/proposal/outcome bijections and unique
+  parent carrier equality then hold through full Step 3/4 persistence
+  reopen/replay with provider, registry, and analyzer sentinels. Missing,
+  duplicate, orphaned, reordered, source-order, parent, or sibling-child swaps
+  reject;
+- abstention tests prove `ProviderSemanticProposal.abstained=True` accepts only
+  empty five-operation arrays; `SemanticProposal.status` and the matching
+  `SegmentProposalOutcome.status` are exact; and a run is `abstained` if and
+  only if every route-selected validated proposal abstains. Any nonempty
+  abstained operation array, mismatched outcome status, or attempted
+  abstention-derived subject or graph effect rejects;
 - route tests swap segment IDs, segment text artifacts/digests, route digests,
   selected language, proposal resource binding, retry route, or batch member;
   the affected segment makes no proposer call and cannot seal a proposal;
 - overlap tests emit the same assertion from every context window, vary which
   owned span contains the predicate anchor, and require exactly one canonical
   operation; incompatible duplicate semantics fail the entire run;
+- provider-order equivalence tests build byte-different but valid provider
+  permutations whose local-ID graph, quotes, and semantic content normalize to
+  the same canonical top-level tuple order. They must produce byte-identical
+  sealed `SemanticProposal` bytes, identical `proposal_digest`, identical
+  `PreAlignmentSemanticOperationSubject` bytes, and identical `operation_id`
+  values. A malformed already-normalized tuple order remains a rejection case
+  and is never repaired by the normalizer;
 - correction tests remove or alter the corrected fact, replacement fact, or
   shared assertion; identity tests remove predecessor/successor mentions or
   change operation cardinality;
@@ -12332,6 +13370,8 @@ class SegmentAnalysisInput(BaseModel):
     source_id: str
     source_digest: str
     segment_id: str
+    preparation_fingerprint: str
+    parent_projection_segment_id: str
     segment_governance: SegmentGovernanceBinding
     message_admission_identity: MessageAdmissionIdentity | None
     governance_carrier_artifact: GovernanceCarrierArtifact
@@ -12367,6 +13407,24 @@ source-field identity, authority basis, provenance, and digest. An unknown,
 duplicate, swapped-field, or value-equal-but-basis-different reference fails
 before temporal analysis.
 
+Every retained request, request artifact, attempt identity/final attempt,
+normalized proposal/member span, run/outcome, `SegmentAnalysisInput`, analysis
+input/output, event candidate, temporal candidate, and Step-4 span validator
+enforces one parent/child closure: route `segment_id` equals the execution-child
+segment ID; route `parent_projection_segment_id` equals the prepared segment's
+parent projection segment, its `SegmentGovernanceBinding` segment, every
+`SourceSpanReference.projection_segment_id`, and every referenced
+`SegmentLocalTextArtifact.projection_segment_id`. Child IDs never replace the
+parent projection coordinate in governance, artifact, or span fields. The
+carrier sets and `GovernanceCarrierArtifact` remain immutable and keyed by
+parent projection segment; prepared-source/run carrier coverage is exact
+UNIQUE-PARENT membership under the total child-to-parent function: every child
+has one parent, multiple children may share that parent, and every top-level
+parent is referenced by at least one child. The unsplit case has equal parent
+and child IDs. Cross-parent routing, sibling-window/artifact substitution,
+missing parent coverage, duplicate parent carrier, or any child/parent
+incoherence rejects before a call, analysis, run seal, replay, or graph effect.
+
 Each `AnalyzerManifest` includes an analyzer ID, library version, resource
 manifest, model file hashes, processor configuration, adapter version, and
 supported language capability. A capability names exactly one Stanza manifest
@@ -12389,13 +13447,87 @@ digested result per segment and cannot merge spans, status, or evidence.
 #### 4.4.3 Output contract
 
 ```python
+class LinguisticFeature(BaseModel):
+    name: str
+    value: str
+    feature_digest: str
+
+class LinguisticToken(BaseModel):
+    source_span: SourceSpanReference
+    surface_text: str
+    lemma: str
+    upos: str
+    xpos: str | None
+    morphological_features: tuple[LinguisticFeature, ...]
+    sentence_index: int
+    word_index: int
+    syntactic_word_index: int | None
+    multi_word_token_span: SourceSpanReference | None
+    token_id: str
+
+class DependencyArc(BaseModel):
+    dependent_token_id: str
+    governor_token_id: str | None
+    relation: str
+    enhanced: bool
+    arc_id: str
+
+class SourceMention(BaseModel):
+    kind: Literal[
+        "named_entity",
+        "noun_phrase",
+        "pronoun",
+        "predicate_argument",
+        "coordinated_argument",
+    ]
+    source_span: SourceSpanReference
+    token_ids: tuple[str, ...]
+    head_token_id: str
+    entity_label: str | None
+    coordination_group_id: str | None
+    mention_digest: str
+
+class ClauseArgument(BaseModel):
+    grammatical_role: str
+    head_token_id: str
+    source_span: SourceSpanReference
+    mention_digest: str | None
+    argument_digest: str
+
+class ClauseQuotationEvidence(BaseModel):
+    opening_token_id: str | None
+    closing_token_id: str | None
+    reporting_head_token_id: str | None
+    complement_clause_id: str | None
+    attribution_argument_digest: str | None
+    evidence_digest: str
+
+class ClauseAnalysis(BaseModel):
+    source_span: SourceSpanReference
+    parent_clause_id: str | None
+    predicate_head_token_id: str
+    predicate_span: SourceSpanReference
+    arguments: tuple[ClauseArgument, ...]
+    voice: Literal["active", "passive", "unknown"]
+    negation_token_ids: tuple[str, ...]
+    dependency_arc_ids: tuple[str, ...]
+    morphological_polarity_features: tuple[LinguisticFeature, ...]
+    mood_features: tuple[LinguisticFeature, ...]
+    modality_features: tuple[LinguisticFeature, ...]
+    quotation_evidence: ClauseQuotationEvidence | None
+    coordination_group_ids: tuple[str, ...]
+    limitations: tuple[str, ...]
+    clause_id: str
+
 class SegmentLanguageLaneOutcome(BaseModel):
     lane: Literal[
         "stanza", "spacy", "predicate_event_detection", "temporal_resolution"
     ]
+    preparation_fingerprint: str
     segment_id: str
     segment_language_route_digest: str
     resource_binding_digest: str | None
+    selected_manifest_digest: str | None
     status: Literal["complete", "partial", "evidence_only", "unsupported", "failed"]
     artifact_digest: str | None
     reason_codes: tuple[str, ...]
@@ -12404,8 +13536,10 @@ class SegmentLanguageLaneOutcome(BaseModel):
 class LinguisticAnalysis(BaseModel):
     source_id: str
     source_digest: str
+    preparation_fingerprint: str
     segment_id: str
     segment_language_route_digest: str
+    analyzer_manifest_digest: str
     analyzer_fingerprint: str
     language: str | None
     tokens: tuple[LinguisticToken, ...]
@@ -12414,10 +13548,12 @@ class LinguisticAnalysis(BaseModel):
     dependencies: tuple[DependencyArc, ...]
     status: Literal["complete", "partial", "unsupported", "failed"]
     diagnostics: tuple[str, ...]
+    analysis_digest: str
 
 class SegmentLinguisticAnalysisBundle(BaseModel):
     source_id: str
     source_digest: str
+    preparation_fingerprint: str
     segment_id: str
     segment_language_route_digest: str
     primary: LinguisticAnalysis | None
@@ -12430,6 +13566,7 @@ class SegmentLinguisticAnalysisBundle(BaseModel):
 class LinguisticAnalysisBundle(BaseModel):
     source_id: str
     source_digest: str
+    preparation_fingerprint: str
     segment_language_routes: SegmentLanguageRouteSet
     segment_bundles: tuple[SegmentLinguisticAnalysisBundle, ...]
     segment_outcomes: tuple[SegmentLanguageLaneOutcome, ...]
@@ -12439,11 +13576,12 @@ class LinguisticAnalysisBundle(BaseModel):
 
 class PredicateEventCandidate(BaseModel):
     event_id: str
+    preparation_fingerprint: str
     segment_id: str
     segment_language_route_digest: str
     predicate_family: str
-    lexical_anchor_span: ProjectionTextSpan
-    morphology_evidence_spans: tuple[ProjectionTextSpan, ...]
+    lexical_anchor_span: SourceSpanReference
+    morphology_evidence_spans: tuple[SourceSpanReference, ...]
     detection_rule_id: str
     detection_manifest_fingerprint: str
     candidate_digest: str
@@ -12451,17 +13589,19 @@ class PredicateEventCandidate(BaseModel):
 class PredicateEventInventory(BaseModel):
     source_id: str
     source_digest: str
+    preparation_fingerprint: str
     segment_language_routes: SegmentLanguageRouteSet
     segment_outcomes: tuple[SegmentLanguageLaneOutcome, ...]
     candidates: tuple[PredicateEventCandidate, ...]
-    status: Literal["complete", "evidence_only", "unsupported", "failed"]
+    status: Literal["complete", "partial", "evidence_only", "unsupported", "failed"]
     inventory_fingerprint: str
 
 class ResolvedTemporalCandidate(BaseModel):
     candidate_id: str
+    preparation_fingerprint: str
     segment_id: str
     segment_language_route_digest: str
-    source_span: ProjectionTextSpan
+    source_span: SourceSpanReference
     exact_text: str
     value_kind: Literal["instant", "interval", "duration"]
     normalized_interval: TimeInterval | None
@@ -12476,14 +13616,184 @@ class ResolvedTemporalCandidate(BaseModel):
 class TemporalResolution(BaseModel):
     source_id: str
     source_digest: str
+    preparation_fingerprint: str
     segment_language_routes: SegmentLanguageRouteSet
     segment_outcomes: tuple[SegmentLanguageLaneOutcome, ...]
     candidates: tuple[ResolvedTemporalCandidate, ...]
-    ambiguous_spans: tuple[ProjectionTextSpan, ...]
-    status: Literal["complete", "evidence_only", "unsupported", "failed"]
+    ambiguous_spans: tuple[SourceSpanReference, ...]
+    status: Literal["complete", "partial", "evidence_only", "unsupported", "failed"]
     resolver_fingerprint: str
     diagnostics: tuple[str, ...]
 ```
+
+All contracts in this Step-4 output block are strict, frozen,
+`extra="forbid"`, closed-wire v1 records with no defaulted persisted fields.
+Their lowercase 64-hex content addresses use canonical CTV over every declared
+field except the trailing address field, in declaration order, under these
+domains:
+
+| Contract | Address field | Domain |
+| --- | --- | --- |
+| `LinguisticFeature` | `feature_digest` | `memorii.semantic-ingestion.linguistic-feature.v1` |
+| `LinguisticToken` | `token_id` | `memorii.semantic-ingestion.linguistic-token.v1` |
+| `DependencyArc` | `arc_id` | `memorii.semantic-ingestion.dependency-arc.v1` |
+| `SourceMention` | `mention_digest` | `memorii.semantic-ingestion.source-mention.v1` |
+| `ClauseArgument` | `argument_digest` | `memorii.semantic-ingestion.clause-argument.v1` |
+| `ClauseQuotationEvidence` | `evidence_digest` | `memorii.semantic-ingestion.clause-quotation-evidence.v1` |
+| `ClauseAnalysis` | `clause_id` | `memorii.semantic-ingestion.clause-analysis.v1` |
+| `SegmentLanguageLaneOutcome` | `outcome_digest` | `memorii.semantic-ingestion.segment-language-lane-outcome.v1` |
+| `LinguisticAnalysis` | `analysis_digest` | `memorii.semantic-ingestion.linguistic-analysis.v1` |
+| `SegmentLinguisticAnalysisBundle` | `bundle_fingerprint` | `memorii.semantic-ingestion.segment-linguistic-analysis-bundle.v1` |
+| `LinguisticAnalysisBundle` | `bundle_fingerprint` | `memorii.semantic-ingestion.linguistic-analysis-bundle.v1` |
+| `PredicateEventCandidate` | `candidate_digest` | `memorii.semantic-ingestion.predicate-event-candidate.v1` |
+| `PredicateEventInventory` | `inventory_fingerprint` | `memorii.semantic-ingestion.predicate-event-inventory.v1` |
+| `ResolvedTemporalCandidate` | `candidate_digest` | `memorii.semantic-ingestion.resolved-temporal-candidate.v1` |
+| `TemporalResolution` | `resolver_fingerprint` | `memorii.semantic-ingestion.temporal-resolution.v1` |
+
+`analyzer_manifest_digest` is the exact content address of the complete
+persisted `AnalyzerManifest`; `analyzer_fingerprint` is the manifest-defined
+behavior/configuration identity and must rederive from that exact manifest.
+`analysis_digest` is the distinct content address of one normalized analysis
+result. Every selected lane outcome's `selected_manifest_digest` retains the
+exact persisted lane manifest used, including when a detector or resolver
+candidate tuple is empty.
+`TemporalResolution.resolver_fingerprint` remains the content address of the
+complete persisted resolution artifact. The later phrase
+"temporal-resolution fingerprint" means this exact result address, never a
+live resolver lookup.
+
+`PredicateEventCandidate.event_id` is independently derived in domain
+`memorii.semantic-ingestion.predicate-event-identity.v1` over `segment_id`,
+`segment_language_route_digest`, `predicate_family`, `lexical_anchor_span`,
+`detection_rule_id`, and `detection_manifest_fingerprint`. Its
+`candidate_digest` then covers the complete candidate including that event ID.
+`ResolvedTemporalCandidate.candidate_id` is independently derived in domain
+`memorii.semantic-ingestion.resolved-temporal-candidate-identity.v1` over
+`segment_id`, `segment_language_route_digest`, `source_span`, `value_kind`,
+`normalized_interval`, `normalized_duration`, `grain`, `locale`, `timezone`,
+complete nullable `reference_evidence`, and `resolver_rule_id`; its candidate
+digest covers the complete normalized value including that ID. Identity and
+content digests are never aliases or accepted without recomputation.
+
+Every Step-4 event/temporal candidate and every copied parser, scope, coverage,
+and temporal-attachment span is a `SourceSpanReference`, never a bare
+`ProjectionTextSpan`. Its source ID, projection parent, segment-local artifact,
+mapping proof, and exact scalar text must equal the enclosing child route's
+source and parent projection segment. `ResolvedTemporalCandidate.exact_text`
+equals its `source_span` slice; every event anchor/evidence and ambiguous or
+attachment span has the same equality. These references participate in the
+declared event, candidate, consensus, and aggregate CTV preimages. A sibling
+parent, segment-local artifact, mapping proof, route, or text substitution
+rejects before candidate identity, consensus, codec acceptance, or replay.
+
+After Step 2, every parent-sensitive semantic, NLI, consensus, coverage,
+temporal, or evidence-copied span is a `SourceSpanReference`; bare
+`ProjectionTextSpan` remains permitted only inside structural projection,
+preparation, and text-artifact mapping primitives. The sole post-Step-2
+structural exceptions are `PreparedSegment.owned_projection_span` and
+`context_projection_span`, which define child construction before a
+source-reference exists. `NliRequest.assertion_span`, `CheckResult` evidence,
+operation temporal attachment candidates, and certified-text effective-time
+evidence therefore carry the same parent/artifact/proof/text closure and
+decode/reopen/replay validation. P0/P1 sibling-parent substitutions of any one
+of these fields reject before consensus, assessment, NLI, or temporal reuse.
+
+Every `SourceSpanReference` in one analysis resolves to that analysis's exact
+source, segment-local artifact, projection artifact, and route segment. Token
+surface text equals its source slice. Tokens are source ordered by
+`(sentence_index, word_index, syntactic_word_index, span, token_id)`, with
+unique IDs and coordinates. `syntactic_word_index=None` is permitted only for
+a multi-word-token surface row; component syntactic words name the same
+non-null `multi_word_token_span`. Morphological feature tuples are ordered by
+`(name, value, feature_digest)` and have unique names.
+
+Dependency endpoints resolve to token IDs in the same analysis. Exactly one
+non-enhanced incoming arc exists for every syntactic token; exactly one such
+arc has `governor_token_id=None` and `relation="root"`. Enhanced arcs are
+retained only as explicit `enhanced=True` evidence and never replace the basic
+tree. Arc tuples are ordered by dependent token position, basic before
+enhanced, relation, governor token position, and `arc_id`; duplicate arc IDs or
+endpoint/relation coordinates reject.
+
+Mention token IDs are nonempty, unique, source ordered, and contained by the
+mention span; the head token is one member. `entity_label` is non-null only for
+`named_entity`; `coordination_group_id` is non-null only for
+`coordinated_argument`. Mentions are ordered by source span, kind, and digest.
+Clause spans and predicate spans are source-local, the predicate head lies in
+the predicate span, and every argument, token, arc, mention, quotation, parent,
+and coordination reference resolves inside the same analysis. The parent
+clause relation is acyclic and strictly containing. Argument, cue, and
+limitation tuples are canonical and duplicate-free. `ClauseQuotationEvidence`
+requires at least one non-null field and records only syntactic cues; none of
+these leaves asserts semantic scope, commitment, attribution truth, or graph
+identity.
+
+One lane outcome is keyed by `(lane, segment_id,
+segment_language_route_digest)`. `reason_codes` are lexicographically ordered
+and unique. For a selected route, `resource_binding_digest` equals the exact
+route `SegmentLanguageResourceBinding.resource_binding_digest`. In addition,
+`selected_manifest_digest` equals the lane-specific selected manifest:
+`stanza_analyzer_manifest_digest`, `spacy_analyzer_manifest_digest`,
+`predicate_event_manifest_digest`, or `temporal_resolver_manifest_digest`.
+Every artifact-bearing linguistic analysis has `language` equal to the route's
+`selected_language`; its analyzer manifest supports that language and matches
+the corresponding Stanza or spaCy field. Every predicate candidate's
+`detection_manifest_fingerprint` equals its lane outcome's selected manifest
+digest. Temporal candidates are governed by the matching temporal outcome's
+selected resolver manifest. These equalities also apply to empty
+detector/resolver results because every selected lane outcome retains its
+manifest digest. `complete` or `partial` requires a non-null
+`artifact_digest`; `failed` or `unsupported` has no artifact digest. A blocked
+route has only `evidence_only` with resource, selected manifest, and artifact
+digests null.
+The lane artifact digest equals the exact `analysis_digest`, inventory
+fingerprint, or resolution fingerprint produced for that lane.
+
+A segment linguistic bundle carries exactly `stanza` then `spacy` outcomes.
+`complete` requires two non-null complete analyses with distinct analyzer
+fingerprints and matching outcome artifact digests. `partial` retains every
+available normalized analysis and exact partial/failed outcomes. An
+evidence-only segment has null analyses and only evidence-only outcomes. The
+source bundle orders segment bundles by the route set and its flat
+`segment_outcomes` is their exact ordered outcome concatenation; source and
+route coordinates are byte-equal throughout. The segment bundle is
+`evidence_only` when both lanes are evidence-only; `complete` when both are
+complete; `failed` when no artifact-bearing lane exists and at least one lane
+failed; `unsupported` when no artifact-bearing lane exists, neither lane
+failed, and at least one is unsupported; and `partial` for every remaining
+combination. The source linguistic bundle is `evidence_only` when all segment
+bundles are evidence-only; `failed` when any segment is failed; `complete`
+when every segment is complete or evidence-only and at least one is complete;
+`unsupported` when every segment is unsupported or evidence-only and at least
+one is unsupported; and `partial` otherwise. These ordered rules are total and
+aggregate status is never independent authority.
+
+Predicate candidates are ordered by route order, lexical anchor span,
+predicate family, and candidate digest. Morphology evidence spans are
+source-ordered, unique, and local to the same segment. The inventory carries
+exactly one `predicate_event_detection` outcome per route and its candidates
+reference only complete/partial artifact-bearing outcomes. Temporal candidates
+are ordered by route order, source span, and candidate digest. Predicate-event
+and temporal aggregate status uses the same exact total function over its
+ordered lane outcomes: `evidence_only` when all are evidence-only; `failed`
+when any is failed; `complete` when every outcome is complete or evidence-only
+and at least one is complete; `unsupported` when every outcome is unsupported
+or evidence-only and at least one is unsupported; and `partial` otherwise.
+`instant`
+requires `normalized_interval.end=None`; `interval` requires a non-null end;
+both require `normalized_duration=None`. `duration` requires only a non-null
+normalized duration. `exact_text` equals the source-span slice. A relative
+candidate requires exact `reference_evidence`; absolute candidates may omit it.
+The resolution carries exactly one `temporal_resolution` outcome per route.
+The canonical temporal value-and-basis key is the CTV tuple of `value_kind`,
+`normalized_interval`, `normalized_duration`, `grain`, `locale`, `timezone`,
+and complete nullable `reference_evidence`. For one source span, candidate
+digests and value-and-basis keys are each unique. Exact duplicates and
+same-value/same-basis candidates that differ only by resolver rule reject;
+equal values with distinct authenticated reference bases remain distinct.
+`ambiguous_spans` is the canonical unique set of spans having multiple
+distinct value-and-basis keys; such candidates remain retained and
+cannot promote until later attachment consensus resolves them.
 
 Each aggregate's segment outcomes are an exact ordered bijection with the
 prepared route set. A selected route requires the exact lane resource digest
@@ -12524,7 +13834,8 @@ Success means:
 - every dependency endpoint and clause span is valid;
 - the required processors completed;
 - output is normalized into the language-neutral contract;
-- the analyzer fingerprint matches a known manifest.
+- every result-side manifest digest and language equals the exact lane-specific
+  manifest and selected language carried by that segment's route.
 
 Failure or non-success means:
 
@@ -12606,6 +13917,38 @@ Design choices:
 - arbitrary names and domain noun phrases replace benchmark entities;
 - malformed offsets, missing models, checksum mismatch, unsupported language,
   timeout, and partial processor output fail explicitly;
+- table-driven strict-codec vectors cover every Step-4 output contract and
+  domain with fixed canonical bytes/digests, omitted/extra/alias/unknown-shape
+  rejection, foreign-domain rejection, map-order equivalence, semantic-tuple
+  order rejection, codec-registry admission, real-store reopen, and removal
+  rollback with no compatibility reader;
+- predicate-prompt/catalog vectors independently recompute both CTV preimages,
+  mutate each field, digest domain, declaration order, duplicate or unsorted
+  predicate ID, empty/duplicate/noncanonical commitment tuple, entity/literal
+  nullability, capability/prompt/proposer/route substitution, and live-registry
+  lookup sentinel; each invalid form rejects before serialization or transport;
+- parent/child vectors cover one unsplit segment and multiple children sharing
+  one parent, then mutate route parent, execution child, governance segment,
+  span projection parent, segment-artifact projection parent, source order,
+  parent membership, and sibling context/artifact. Request, attempt, proposal,
+  run, and every Step-4 lane must reject cross-parent or sibling substitution;
+  persistence-byte replay reopens only the exact closure under fail-fast
+  provider, registry, and analyzer sentinels;
+- event/temporal vectors mutate the parent, segment artifact, mapping proof,
+  local/projection span, and exact text for every lexical anchor, morphology
+  evidence span, temporal candidate span, ambiguous span, copied role/scope/
+  coverage span, and temporal-attachment span. Each sibling-parent mutation
+  rejects before identity/digest reuse, consensus, codec acceptance, or replay;
+- exhaustive status-table tests cover every valid ordered lane combination for
+  all four aggregates and reject any independently supplied aggregate status;
+- route-manifest tests swap Stanza, spaCy, predicate-event, and temporal
+  manifest digests and selected language, including empty candidate results;
+  every mismatch fails before downstream consensus. Blocked, revoked, and
+  swapped route bindings use fail-fast sentinels for all four adapters and
+  prove zero calls, evidence-only null-artifact outcomes, and zero graph effect;
+- a two-selected-language fixture uses distinct per-route detector and resolver
+  manifests with empty candidate results and must remain byte-identical after
+  store reopen; substituting either lane's selected manifest rejects;
 - mixed-segment batch tests permit batching only for byte-equal route and
   lane-resource bindings, retain one result per segment, and reject any
   cross-segment route, span, result, retry, or replay substitution before an
@@ -12629,7 +13972,12 @@ Design choices:
   with and without authenticated reference time, locale ambiguity, timezone and
   daylight-saving boundaries, repeated expressions, invalid spans, and
   conflicting candidates. Expected intervals are authored independently from
-  Duckling output.
+  Duckling output. A required positive vector retains equal interval/text/span
+  values with distinct authenticated event-time and document-time bases as
+  distinct candidate bytes/digests across store reopen and downstream
+  provenance binding, including distinct basis-sensitive candidate IDs used by
+  attachment and operation bindings; exact duplicates and same-value/same-basis candidates
+  differing only by resolver rule reject.
 
 ### 4.5 Step 5: Evidence Normalization and Optional Corroboration
 
@@ -12644,18 +13992,159 @@ and creates no graph fact.
 #### 4.5.2 Alignment and scope input contract
 
 ```python
+class PreAlignmentSemanticOperationSubject(BaseModel):
+    kind: Literal["fact", "correction", "retraction", "action_state", "identity"]
+    source_id: str
+    source_digest: str
+    proposal_id: str
+    proposal_digest: str
+    segment_id: str
+    segment_language_route_digest: str
+    proposal_member_index: int
+    operation_id: str
+
+class ParserConsensusPolicy(BaseModel):
+    kind: Literal["parser"]
+    algorithm: Literal[
+        "memorii.semantic-ingestion.parser-consensus.exact-two-analyzer.v1"
+    ]
+    required_independent_analyzers: Literal[2]
+    policy_fingerprint: str
+
+class ScopeConsensusPolicy(BaseModel):
+    kind: Literal["scope"]
+    algorithm: Literal[
+        "memorii.semantic-ingestion.scope-consensus.exact-two-analyzer.v1"
+    ]
+    required_independent_analyzers: Literal[2]
+    policy_fingerprint: str
+
+class TemporalAttachmentConsensusPolicy(BaseModel):
+    kind: Literal["temporal_attachment"]
+    algorithm: Literal[
+        "memorii.semantic-ingestion.temporal-attachment-consensus.exact-two-analyzer.v1"
+    ]
+    required_independent_analyzers: Literal[2]
+    policy_fingerprint: str
+
+class ConsensusPolicySelection(BaseModel):
+    kind: Literal["parser", "scope", "temporal_attachment"]
+    operation_id: str
+    proposal_id: str
+    segment_id: str
+    segment_language_route_digest: str
+    request_dependency_kind: Literal["analyses", "temporal_resolution"]
+    request_dependency_fingerprint: str
+    selected_policy_fingerprint: str
+    selected_policy: Annotated[
+        ParserConsensusPolicy
+        | ScopeConsensusPolicy
+        | TemporalAttachmentConsensusPolicy,
+        Field(discriminator="kind"),
+    ]
+    selection_digest: str
+
+class ConsensusPolicySelectionBundle(BaseModel):
+    selections: tuple[ConsensusPolicySelection, ...]
+    bundle_digest: str
+
+class FactOperationSemanticPolicyKey(BaseModel):
+    kind: Literal["fact"]
+    predicate_id: str
+
+class CorrectionOperationSemanticPolicyKey(BaseModel):
+    kind: Literal["correction"]
+    corrected_predicate_id: str
+    replacement_predicate_id: str
+
+class RetractionOperationSemanticPolicyKey(BaseModel):
+    kind: Literal["retraction"]
+    retracted_predicate_id: str
+
+class ActionStateOperationSemanticPolicyKey(BaseModel):
+    kind: Literal["action_state"]
+    logical_action_digest: str
+    action_state_digest: str
+    state_id: str
+    role_ids: tuple[str, ...]
+
+class IdentityOperationSemanticPolicyKey(BaseModel):
+    kind: Literal["identity"]
+    identity_operation_digest: str
+    operation: Literal["alias", "rekey", "merge", "split"]
+    predecessor_mention_digests: tuple[str, ...]
+    successor_mention_digests: tuple[str, ...]
+    reference_assignment_digests: tuple[str, ...]
+
+OperationSemanticPolicyKey = Annotated[
+    FactOperationSemanticPolicyKey
+    | CorrectionOperationSemanticPolicyKey
+    | RetractionOperationSemanticPolicyKey
+    | ActionStateOperationSemanticPolicyKey
+    | IdentityOperationSemanticPolicyKey,
+    Field(discriminator="kind"),
+]
+
+class PredicateSemanticPolicyBinding(BaseModel):
+    role: Literal["fact", "corrected", "replacement", "retracted"]
+    predicate_id: str
+    policy: "PredicateSemanticPolicy"
+    binding_digest: str
+
+class ParserOperationPolicyAuthority(BaseModel):
+    kind: Literal["parser_operation"]
+    operation_id: str
+    proposal_id: str
+    segment_id: str
+    segment_language_route_digest: str
+    parser_consensus_policy_fingerprint: str
+    semantic_policy_key: OperationSemanticPolicyKey
+    predicate_policy_bindings: tuple[PredicateSemanticPolicyBinding, ...]
+    construction_families: tuple[ConstructionFamily, ...]
+    role_schemas: tuple[UdRoleSchema, ...]
+    authority_digest: str
+
+class ScopeOperationPolicyAuthority(BaseModel):
+    kind: Literal["scope_operation"]
+    operation_id: str
+    proposal_id: str
+    segment_id: str
+    segment_language_route_digest: str
+    scope_consensus_policy_fingerprint: str
+    temporal_attachment_consensus_policy_fingerprint: str
+    semantic_policy_key: OperationSemanticPolicyKey
+    scope_policy: SemanticScopePolicy
+    authority_digest: str
+
+LanguageConstructionPolicyAuthority = Annotated[
+    ParserOperationPolicyAuthority | ScopeOperationPolicyAuthority,
+    Field(discriminator="kind"),
+]
+
+class LanguageConstructionPolicyAuthorityBundle(BaseModel):
+    policies: tuple[LanguageConstructionPolicyAuthority, ...]
+    bundle_digest: str
+
+class SourceNormalizationPublicationCoordinate(BaseModel):
+    operation_fence_binding: OperationFenceBinding
+    expected_current_artifact_generation: int
+    next_publication_generation: int
+    coordinate_digest: str
+
 class SourceNormalizationRequest(BaseModel):
     source: PreparedSource
     proposal_run: SemanticProposalRun
     analyses: LinguisticAnalysisBundle
     predicate_events: PredicateEventInventory
     temporal_resolution: TemporalResolution
-    predicate_registry: PredicateRegistry
-    scope_policy_registry: ScopePolicyRegistry
+    consensus_policy_selections: ConsensusPolicySelectionBundle
+    language_construction_policies: LanguageConstructionPolicyAuthorityBundle
+    publication_coordinate: SourceNormalizationPublicationCoordinate
     temporal_policy: TemporalPolicySnapshot
     trust_policy: TrustPolicySnapshot
     arbitration_as_of: datetime
     capability_registry: CapabilityRegistrySnapshot
+    request_digest: str
 
 class GraphEvidenceNormalizationRequest(BaseModel):
     source_normalization: "SourceNormalizationResult"
@@ -12667,6 +14156,188 @@ class GraphEvidenceNormalizationRequest(BaseModel):
     operation_lease_binding: OperationLeaseBinding
     identity_policy_registry: IdentityPolicyRegistry
 ```
+
+`ParserConsensusPolicy`, `ScopeConsensusPolicy`, and
+`TemporalAttachmentConsensusPolicy` are strict, frozen, closed-wire v1 rule
+records. They are minimal persisted witnesses, not copied language-policy
+payloads. Each record contains exactly its discriminator `kind`, one exact v1
+algorithm literal, the required analyzer cardinality `2`, and the exact policy
+fingerprint used to configure that consensus pass. `policy_fingerprint` is the
+content address of the complete inner consensus-rule record itself: it is the
+lowercase 64-hex SHA-256 spelling over the canonical CTV preimage in the
+domains
+`memorii.semantic-ingestion.parser-consensus-rule.v1`,
+`memorii.semantic-ingestion.scope-consensus-rule.v1`, and
+`memorii.semantic-ingestion.temporal-attachment-consensus-rule.v1`
+respectively, over every declared field except `policy_fingerprint`, in
+declaration order. The bundle never recopies language-policy field content,
+replays it through a registry key, or derives it from language, predicate, or
+construction subsets.
+
+`ConsensusPolicySelection` stores one exact typed rule witness rather than a
+registry key, copied policy content, or live lookup result.
+`selected_policy.kind` must equal the enclosing selection's `kind`, and
+`selected_policy.policy_fingerprint` must equal
+`selected_policy_fingerprint`. Replay and recovery compare only the persisted
+equality dimensions: selection coordinate
+`(kind, operation_id, proposal_id, segment_id,
+segment_language_route_digest)`, request dependency kind/fingerprint,
+selected-policy `kind`, exact algorithm literal, exact required analyzer
+count, and exact `policy_fingerprint`. Any missing selection, unknown rule
+shape, mismatched algorithm literal, wrong analyzer count, dependency mismatch,
+or wrong policy fingerprint rejects before reuse. Predicate identity, selected
+language, construction membership, semantic-scope details, and other
+language-policy semantics are not carried by the minimal consensus witness.
+Step 5 applies them from the sealed
+`LanguageConstructionPolicyAuthorityBundle`, and replay reuses those stored
+policy bytes without a registry lookup.
+
+`LanguageConstructionPolicyAuthorityBundle` is the separate request-owned,
+content-addressed authority for the actual parser and scope policy content used
+by Step 5. It is strict, frozen, `extra="forbid"`, closed-wire v1, and
+replay-authoritative. It uses a closed `OperationSemanticPolicyKey` algebra,
+computed solely from the selected normalized subject: a fact carries its fact
+predicate; a correction carries both corrected and replacement predicates
+(which may be equal or different); a retraction carries the retracted fact
+predicate; an action-state carries the source-derived logical-action digest,
+action-state digest, state ID, and canonical role IDs; and an identity operation
+carries its identity-operation digest, operation, and canonical predecessor
+mention, successor mention, and reference-assignment digests. The action and
+identity variants intentionally invent no predicate. Role IDs are the exact
+duplicate-free `ProposedActionState.role_bindings` IDs in retained binding
+order; predecessor/successor/assignment digests are the exact duplicate-free
+normalized identity-member tuples in their published canonical orders. Any
+mismatch rejects.
+
+`ParserOperationPolicyAuthority` binds one parser selection to that exact key.
+For a fact it has exactly one `fact` predicate binding; for a correction it has
+exactly `corrected` and `replacement` bindings, even when their predicate IDs
+are equal; for a retraction it has exactly one `retracted` binding. Each
+binding's predicate ID must equal the corresponding key field and each embedded
+policy's predicate ID, language, and `policy_fingerprint` must validate from
+its own bytes. Action-state and identity have zero predicate bindings and carry
+the complete applicable `construction_families` and `role_schemas` instead.
+For action-state, `role_schemas` is an exact bijection with `role_ids`: one
+schema whose `role_id` equals each key role ID, in key order, and no extra
+schema. For identity, `role_schemas` is empty unless the operation's declared
+identity construction requires a role; when required, it is the one exact
+declared identity role schema keyed by the operation and no other schema.
+`construction_families` is ordered by `(family_id, family_digest)` and equals
+the complete construction set named by that action or identity policy key.
+Fact-like
+rows may also carry the construction/role content their bound predicate policy
+requires, under those same keys. `ScopeOperationPolicyAuthority` carries the
+same exact key and one complete `SemanticScopePolicy`; its language and
+construction family must match the selected route and parser authority content.
+Thus each supported action and identity subject has complete parser and scope
+policy content with no live lookup and is evaluated normally rather than being
+terminalized merely because it has no predicate.
+
+Each authority coordinate is `(kind, operation_id, proposal_id, segment_id,
+segment_language_route_digest)`, where `kind` is `parser_operation` or
+`scope_operation`; duplicate coordinates reject. A parser authority must bind
+the selected parser fingerprint, and a scope authority must bind both selected
+scope and temporal fingerprints. Its key must equal the independently
+recomputed key for the operation subject. The bundle order is that coordinate
+order. Authority digests and bundle digest are lowercase 64-hex SHA-256 CTV
+addresses in `memorii.semantic-ingestion.parser-operation-policy-authority.v1`,
+`memorii.semantic-ingestion.scope-operation-policy-authority.v1`, and
+`memorii.semantic-ingestion.language-construction-policy-authority-bundle.v1`,
+over all declared fields except the trailing digest. Missing, duplicate,
+cross-coordinate, cross-route, wrong-key, wrong-cardinality, wrong-language,
+wrong-policy, or digest-only substituted content rejects before alignment.
+
+Consensus status is fail-closed. For parser, scope, and temporal attachment,
+`stable` is valid only when the primary and corroborating analyzer fingerprints
+are distinct and the selected policy's `required_independent_analyzers` equals
+`2`. `disagreement`, `ambiguous`, and `unsupported` are terminal evidence
+states: they may be retained for coverage and replay, but they cannot satisfy
+an `OperationAlignment` row, cannot be upgraded by majority, fallback, or
+registry lookup, and cannot be reused across another coordinate. Unknown status
+literals, repeated analyzer fingerprints, or rule/dependency/coordinate
+substitutions reject before source alignment reuse.
+Before parser, scope, and temporal consensus are computed, the coordinator
+constructs one `PreAlignmentSemanticOperationSubject` for every normalized
+`ProposedFact`, `ProposedCorrection`, `ProposedRetraction`,
+`ProposedActionState`, and `ProposedIdentityOperation` member retained in one
+`SemanticProposal`. This mapping is one-to-one: those five operation arrays are
+the complete admissible subject universe and no subject may be synthesized from
+mentions, predicate events, analyzer output, graph state, or provider-local
+IDs. `PreAlignmentSemanticOperationSubject` is strict, frozen, `extra="forbid"`,
+closed-wire v1. `source_digest`, `proposal_digest`, and `operation_id` are
+lowercase 64-hex SHA-256 spellings. Each subject copies the exact enclosing
+`source_id`, `source_digest`, `proposal_id`, `segment_id`, and
+`segment_language_route_digest` from that validated proposal context and the
+exact validated `proposal_digest` from that `SemanticProposal`; the matching
+`SegmentProposalOutcome.proposal_digest` must equal it byte-for-byte. It then
+selects exactly one member from the
+corresponding proposal array by zero-based `proposal_member_index`. The
+canonical subject set is therefore the exact ordered expansion of
+`facts`, `corrections`, `retractions`, `action_states`, and
+`identity_operations` from the retained validated proposal bytes; a subject may
+not hash or carry an implementation-defined normalized member blob. `operation_id`
+is the SHA-256 spelling of the canonical CTV preimage in the domain
+`memorii.semantic-ingestion.pre-alignment-semantic-operation-subject.v1`
+containing every declared subject field except `operation_id`, in declaration
+order. Two subjects with different `kind`, `source_id`, `source_digest`,
+`proposal_id`, `proposal_digest`, `segment_id`,
+`segment_language_route_digest`, or `proposal_member_index` must produce
+different `operation_id` values; a collision or a second subject with the same
+`operation_id` rejects before consensus. The validator recomputes the complete
+canonical subject set from the exact five retained proposal operation arrays
+and their canonical persisted order, using the retained `proposal_digest`, and
+rejects any
+missing, extra, out-of-range, cross-context, non-bijective, alias, inferred,
+legacy, predecoder, migration-reader, or digest-format-violating subject
+binding. This graph-free subject owner is the sole authoritative source of
+semantic `operation_id` before alignment and acceptance. Every
+parser/scope/temporal consensus artifact, request-owned policy selection,
+`OperationAlignment`, capability selection, and later replay/reconciliation
+binding must carry the exact subject `operation_id` and must not derive or
+reinterpret it independently. Multi-operation segment
+proposals therefore produce multiple parser/scope/temporal consensus subjects
+even when they share one `proposal_id`, `segment_id`, and route.
+
+`ConsensusPolicySelection` and `ConsensusPolicySelectionBundle` are strict,
+frozen, `extra="forbid"`, closed-wire v1 records. Their digests are lowercase
+64-hex SHA-256 spellings. A selection digest is the canonical CTV preimage in
+the domain `memorii.semantic-ingestion.consensus-policy-selection.v1` over all
+declared selection fields except `selection_digest`, in declaration order; a
+bundle digest uses
+`memorii.semantic-ingestion.consensus-policy-selection-bundle.v1` over its
+ordered `selections` and excludes `bundle_digest`. The bundle canonical order
+is the lexicographic coordinate `(kind, operation_id, proposal_id, segment_id,
+segment_language_route_digest)`; duplicate coordinates and non-increasing
+order reject. CTV map-member order canonicalizes, but reordering either the
+semantic selection tuple or any policy-owned semantic tuple rejects.
+This is an unshipped strict-v1-only request boundary: a missing bundle or
+selection, a legacy shape, alias, inferred policy, inferred dependency, legacy
+preimage, predecoder bridge, migration reader, or live registry fallback
+rejects. Before first release, rollback removes the unshipped bundle writer,
+reader, and bytes rather than adding a compatibility path.
+
+Every new authority/key/bundle in this section is likewise strict, frozen,
+`extra="forbid"`, closed-wire v1: all five `OperationSemanticPolicyKey`
+variants, `PredicateSemanticPolicyBinding`, both operation-policy authorities,
+their bundle, `SourceNormalizationPublicationCoordinate`,
+`SourceNormalizationRequest`, `SourceNormalizationEvidenceEntry`,
+`SourceNormalizationEvidenceManifest`, `SourceNormalizationResult`, and
+`SourceNormalizationAtomicWriteRequest`.
+The semantic-ingestion codec registry registers one exact strict encoder and
+decoder for each concrete variant and rejects unknown discriminators, omitted
+or extra fields, aliases, inferred/defaulted fields, legacy preimages, and
+predecoder bridges before persistence or reuse. The atomic store registers the
+write request only through its ordinary `AtomicGenerationRequest` and
+`SourceCheckpointAtomicWriteRequest` path; it has no side writer. Before first
+release rollback removes all of these codecs, registrations, writers, and
+unpublished bytes as one feature; it never installs a compatibility reader or
+permits a mixed old/new generation.
+
+The same exact registry list includes `PredicatePromptContract` and
+`PredicateProposalCatalog`, the revised `SegmentLanguageRoute`, and every
+request/attempt/proposal/run/Step-4 concrete wire that embeds or joins them.
+No container codec may decode a nested legacy form or synthesize a parent
+projection segment or catalog during recovery.
 
 The source, proposal run, analysis segment bundles, predicate-event inventory,
 and temporal resolution must agree on source identity/digest and the exact
@@ -12680,8 +14351,50 @@ coverage dispositions and cannot contribute an operation. The proposal and
 analysis dependency fingerprints must prove that neither was derived from the
 other. `SourceNormalizationRequest` is graph-free: its schema cannot contain a
 graph snapshot, graph revision, canonical entity ID, allocation namespace,
-operation lease, graph repository, or graph-derived policy. It produces the
-immutable source alignment once.
+operation lease, graph repository, or graph-derived policy. It contains the
+minimal consensus witnesses plus the exact request-owned
+`LanguageConstructionPolicyAuthorityBundle` and the exact
+`SourceNormalizationPublicationCoordinate`, and it produces the immutable
+source alignment once. The coordinate's fence must equal the admitted source
+operation fence and its expected current generation must equal the atomic
+store's current artifact generation before normalization starts; otherwise no
+alignment or retained evidence is emitted. `SourceNormalizationRequest` is a
+strict, frozen, `extra="forbid"` closed-wire v1 record whose
+`request_digest` is the lowercase 64-hex SHA-256 CTV address in
+`memorii.semantic-ingestion.source-normalization-request.v1` over every other
+declared field in declaration order. The exact request bytes and this digest
+are retained at first publication; no replay path is allowed to reconstruct a
+request from configuration, caches, provider objects, or current policy.
+
+The request-owned policy-selection bundle is complete and replay-authoritative.
+It contains exactly one selection for every retained parser, scope, and
+temporal-attachment consensus coordinate, including every aligned coordinate
+and every terminal unaligned artifact retained as source-normalization
+evidence. A coordinate is exactly `(kind, operation_id, proposal_id,
+segment_id, segment_language_route_digest)`. Parser and scope selections require
+`request_dependency_kind="analyses"` and a fingerprint equal to the exact
+`analyses` bundle fingerprint; temporal-attachment selections require
+`request_dependency_kind="temporal_resolution"` and a fingerprint equal to
+the exact `temporal_resolution` fingerprint.
+`selected_policy.policy_fingerprint`, `selected_policy_fingerprint`, and the
+corresponding artifact's `consensus_policy_fingerprint` must all be identical.
+Each retained consensus artifact has exactly one selection at its full
+coordinate and each selection has exactly one retained artifact of its kind at
+that coordinate: this is an exact artifact-to-selection bijection, not a
+best-effort registry match. Missing, extra, duplicate, cross-kind,
+cross-proposal, cross-segment, cross-route, dependency-kind,
+dependency-fingerprint, selected-policy kind, algorithm, analyzer-count,
+policy-fingerprint, or digest substitution rejects before source alignment
+acceptance.
+
+The request-owned language/construction policy bundle is likewise complete and
+replay-authoritative. Every retained parser selection has exactly one matching
+`ParserOperationPolicyAuthority`; every retained scope and temporal selection
+pair has exactly one matching `ScopeOperationPolicyAuthority`; and both must
+carry the same independently recomputed operation semantic-policy key. The
+request therefore seals both the minimal consensus algorithm witnesses and the
+full typed policy content required to replay Step 5 deterministically with no
+registry, configuration, or live-policy lookup.
 
 The normalization coordinator loads the temporal and trust snapshots once at
 the server-owned `arbitration_as_of` coordinate before source normalization and
@@ -12743,6 +14456,16 @@ performs no hidden policy lookup.
 #### 4.5.3 Alignment and scope output contract
 
 ```python
+class OperationAlignment(BaseModel):
+    operation_id: str
+    proposal_id: str
+    segment_id: str
+    segment_language_route_digest: str
+    parser_consensus_digest: str
+    scope_consensus_digest: str
+    temporal_attachment_consensus_digest: str
+    alignment_digest: str
+
 class SourceProposalAlignment(BaseModel):
     source_id: str
     segment_language_routes: SegmentLanguageRouteSet
@@ -12761,13 +14484,13 @@ class SourceProposalAlignment(BaseModel):
 
 class CanonicalRoleAssignment(BaseModel):
     role_id: str
-    argument_span: ProjectionTextSpan
+    argument_span: SourceSpanReference
     endpoint_kind: Literal["subject", "object", "actor", "other"]
     assignment_digest: str
 
 class AnalyzerRoleInterpretation(BaseModel):
     analyzer_fingerprint: str
-    predicate_head_span: ProjectionTextSpan
+    predicate_head_span: SourceSpanReference
     construction_family: ConstructionFamily
     assignments: tuple[CanonicalRoleAssignment, ...]
     interpretation_digest: str
@@ -12775,8 +14498,10 @@ class AnalyzerRoleInterpretation(BaseModel):
 class ParserConsensusAssessment(BaseModel):
     source_id: str
     source_digest: str
+    preparation_fingerprint: str
     segment_id: str
     proposal_id: str
+    operation_id: str
     segment_language_route_digest: str
     analysis_bundle_fingerprint: str
     primary_interpretation: AnalyzerRoleInterpretation
@@ -12789,27 +14514,29 @@ class ParserConsensusAssessment(BaseModel):
 class AnalyzerScopeInterpretation(BaseModel):
     analyzer_fingerprint: str
     proposal_id: str
-    predicate_head_span: ProjectionTextSpan
-    governing_clause_spans: tuple[ProjectionTextSpan, ...]
+    predicate_head_span: SourceSpanReference
+    governing_clause_spans: tuple[SourceSpanReference, ...]
     polarity: CheckResult
     commitment: CheckResult
     attribution: CheckResult
-    attribution_bearer_span: ProjectionTextSpan | None
+    attribution_bearer_span: SourceSpanReference | None
     interpretation_digest: str
 
 class StableSemanticScope(BaseModel):
     polarity: Literal["positive", "negative"]
     commitment: Commitment
     attribution: Literal["speaker", "quoted_or_reported_source"]
-    attribution_bearer_span: ProjectionTextSpan | None
-    governing_clause_spans: tuple[ProjectionTextSpan, ...]
+    attribution_bearer_span: SourceSpanReference | None
+    governing_clause_spans: tuple[SourceSpanReference, ...]
     scope_digest: str
 
 class SemanticScopeConsensus(BaseModel):
     source_id: str
     source_digest: str
+    preparation_fingerprint: str
     segment_id: str
     proposal_id: str
+    operation_id: str
     segment_language_route_digest: str
     analysis_bundle_fingerprint: str
     primary_interpretation: AnalyzerScopeInterpretation
@@ -12822,17 +14549,19 @@ class SemanticScopeConsensus(BaseModel):
 class AnalyzerTemporalAttachment(BaseModel):
     analyzer_fingerprint: str
     proposal_id: str
-    predicate_head_span: ProjectionTextSpan
+    predicate_head_span: SourceSpanReference
     candidate_ids: tuple[str, ...]
-    attachment_spans: tuple[ProjectionTextSpan, ...]
+    attachment_spans: tuple[SourceSpanReference, ...]
     attachment_digest: str
 
 class TemporalAttachmentConsensus(BaseModel):
     source_id: str
     source_digest: str
+    preparation_fingerprint: str
     segment_id: str
     segment_language_route_digest: str
     proposal_id: str
+    operation_id: str
     temporal_resolution_fingerprint: str
     primary_attachment: AnalyzerTemporalAttachment
     corroborating_attachment: AnalyzerTemporalAttachment
@@ -12862,7 +14591,7 @@ class UnresolvedPredicateEvent(BaseModel):
         "unsupported_construction",
     ]
     related_proposal_ids: tuple[str, ...]
-    evidence_spans: tuple[ProjectionTextSpan, ...]
+    evidence_spans: tuple[SourceSpanReference, ...]
     disposition_digest: str
 
 PredicateEventDisposition = Annotated[
@@ -12904,8 +14633,32 @@ class OperationCapabilitySelection(BaseModel):
     selection_policy_fingerprint: str
     selection_digest: str
 
+class SourceNormalizationEvidenceEntry(BaseModel):
+    kind: Literal["parser", "scope", "temporal_attachment"]
+    operation_id: str
+    proposal_id: str
+    segment_id: str
+    segment_language_route_digest: str
+    artifact_digest: str
+    selection_digest: str
+    retention: Literal["aligned", "terminal_unaligned"]
+    entry_digest: str
+
+class SourceNormalizationEvidenceManifest(BaseModel):
+    source_id: str
+    source_digest: str
+    source_normalization_request_digest: str
+    consensus_policy_selection_bundle_digest: str
+    language_construction_policy_bundle_digest: str
+    publication_coordinate: SourceNormalizationPublicationCoordinate
+    retained_entries: tuple[SourceNormalizationEvidenceEntry, ...]
+    completeness: Literal["complete"]
+    bijection_verified: Literal[True]
+    manifest_digest: str
+
 class SourceNormalizationResult(BaseModel):
     source_alignment: SourceProposalAlignment
+    evidence_manifest: SourceNormalizationEvidenceManifest
     capability_selections: tuple[OperationCapabilitySelection, ...]
     trust_policy_snapshot_digest: str
     arbitration_as_of: datetime
@@ -12931,11 +14684,115 @@ class OperationCapabilityExecutionBinding(BaseModel):
     trust_policy_snapshot_digest: str
     arbitration_as_of: datetime
     binding_digest: str
+```
+
+`SourceNormalizationEvidenceManifest` is the graph-free, replay-authoritative
+inventory of every retained parser, scope, and temporal consensus artifact for
+one `SourceNormalizationResult`, including both aligned and terminal-unaligned
+evidence. It names the exact originating
+`source_normalization_request_digest`, which must equal both the specialized
+atomic write request's typed request digest and the retained request-member
+payload digest. `retained_entries` is duplicate-free and canonically ordered by
+`(kind, operation_id, proposal_id, segment_id,
+segment_language_route_digest, artifact_digest)`. Every entry names exactly one
+retained artifact digest, exactly one matching `ConsensusPolicySelection`
+digest, and exactly one retention disposition. `completeness="complete"` and
+`bijection_verified=True` mean the manifest enumerates the full retained
+artifact set, proves each retained coordinate has exactly one artifact and one
+selection, and proves no artifact or selection is orphaned. The manifest is
+content-addressed under
+`memorii.semantic-ingestion.source-normalization-evidence-manifest.v1`; each
+entry is content-addressed under
+`memorii.semantic-ingestion.source-normalization-evidence-entry.v1`. Entry and
+manifest digest spellings are lowercase 64-hex SHA-256 values.
+`entry_digest` and `manifest_digest` are computed over every declared field
+except the trailing digest field in declaration order.
+
+`SourceNormalizationPublicationCoordinate` is strict, frozen,
+`extra="forbid"`, closed-wire v1. It binds the exact admitted
+`operation_fence_binding`, `expected_current_artifact_generation`, and
+`next_publication_generation`; the latter must equal the former plus one.
+`coordinate_digest` is the lowercase 64-hex SHA-256 CTV address in
+`memorii.semantic-ingestion.source-normalization-publication-coordinate.v1`
+over the first three fields in declaration order. The request contains it and
+the evidence manifest copies it byte-for-byte. It deliberately contains no
+enclosing request digest or generation digest, so it is non-circular.
+
+`SourceNormalizationAtomicWriteRequest` is the strict-v1 specialization of the
+existing `AtomicGenerationRequest`, not a parallel persistence protocol. It
+retains the base request's `operation_lease_binding`,
+`operation_fence_binding`, `writer_commit_binding`, expected operation and
+artifact generations, `members`, `required_artifact_digests`, and
+`request_digest`; its only added fields are the publication generation and the
+typed/digest-bound request, result, manifest, and two bundles. Its `members`
+are exact `AtomicGenerationMember` values with one and only one ordinary
+`progress` member matching the pre-planning progress variant, one
+`source_normalization_request`
+member matching the typed request and its digest, one result member, one
+manifest member, one selection-bundle member, one language-policy-bundle
+member, and one parser/scope/temporal member for every retained manifest entry.
+Those are the complete allowed member kinds for this subtype; missing,
+duplicate, wrong progress, or any ordinary-checkpoint or foreign extra kind
+rejects. This subtype is valid only for pre-planning publication: its
+`progress_state` is the literal `"preplanning"`, its progress member must decode
+as the exact admitted source/fence/lease-bound pre-planning progress variant,
+and a `planned` state or planned progress member rejects before publication.
+Only the later ordinary planned checkpoint may publish the plan, planning
+artifacts, independence certificate, and planning authorization needed for the
+`pre_planning -> planned` transition. Ordinary checkpoint allowlists and
+behavior are unchanged. For this
+subtype, member kind, `payload_digest`, `canonical_payload`, and
+`required_artifact_digests` form one complete duplicate-free same-generation
+closure over exactly the source-normalization request, result, manifest, two
+bundles, and retained artifacts. Ordinary prior `replay_artifact` closure is
+permitted only where the inherited checkpoint semantics already require it and
+does not satisfy, replace, or extend this subtype's allowed set. The checkpoint
+request carries this exact subclass normally: `SourceNormalizationAtomicWriteRequest` is a
+`SourceCheckpointAtomicWriteRequest`, which is an `AtomicGenerationRequest`.
+`checkpoint_source_progress` therefore publishes it through the same ordinary
+atomic generation and has no nested write or side writer. Its request digest is
+the lowercase 64-hex CTV address in
+`memorii.semantic-ingestion.source-normalization-atomic-write-request.v1` over
+every declared field except `request_digest`; no member includes this enclosing
+digest. Validation requires: request fence equals coordinate fence; expected
+artifact generation equals coordinate expected generation; publication
+generation equals expected plus one and coordinate next generation; result and
+manifest digests equal their typed bytes; originating request digest equals the
+typed request bytes, manifest field, request field, and request member; bundle
+digests equal their typed bytes; retained artifacts equal the complete manifest
+entry closure; and the same atomic generation contains the request, result,
+manifest, every retained artifact, and both bundles. The normal atomic-generation request names this write intent
+through the checkpoint field and validates its ordinary generation
+preconditions; the first checkpoint or terminal state that references the
+result is in that same generation. No member contains the enclosing
+atomic-generation request or generation digest. A lost-
+acknowledgement retry reissues byte-identical
+`SourceNormalizationAtomicWriteRequest` bytes and `request_digest`; a different
+digest is a new write attempt and must fail its stale generation precondition.
+The store records the accepted last request digest for this checkpoint
+generation: a lost acknowledgement with that exact digest returns the existing
+generation, while a different digest or stale coordinate loses CAS. Replay and
+recovery load and revalidate the request member before the result, manifest,
+every named artifact, selection, and authority bundle from that one attested
+store generation or fail closed; they must not reconstruct the retained set
+from live objects, a normalizer, or configuration owners.
+
+`SourceProposalAlignment.parser_consensus`, `scope_consensus`, and
+`temporal_attachment_consensus` are verified aligned subsets of the manifest,
+not the primary retained-artifact inventory. For each kind, the tuple must be
+the exact row-ordered projection of manifest entries with
+`retention="aligned"` and the matching kind, loaded from the exact attested
+store generation for that manifest coordinate. Terminal-unaligned retained
+artifacts appear only in the manifest and its generation closure, never in the
+three aligned tuples. Missing, extra, duplicate, cross-generation,
+foreign-generation substitution, lost-acknowledgement, partial-write,
+substitution-before-output, substitution-before-write, or digest-only
+substituted manifest members reject before replay reuse.
 
 class CanonicalAttributionBearerBinding(BaseModel):
     proposal_id: str
     scope_consensus_digest: str
-    attribution_bearer_span: ProjectionTextSpan
+    attribution_bearer_span: SourceSpanReference
     grounded_mention_ref: GroundedMentionRef
     source_local_cluster_id: str
     canonical_entity: "CanonicalEntityReference"
@@ -12992,7 +14849,7 @@ class TemporalEvidenceCandidate(BaseModel):
     source_authority: SourceAuthority
     authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
     certified_text_candidate_id: str | None
-    evidence_spans: tuple[ProjectionTextSpan, ...]
+    evidence_spans: tuple[SourceSpanReference, ...]
     candidate_digest: str
 
 class TemporalEvidenceDecisionClosure(BaseModel):
@@ -13022,8 +14879,97 @@ class TemporalEvidenceAssessment(BaseModel):
     authenticated_source_interval_evidence: AuthenticatedSourceIntervalEvidence | None
     certified_text_candidates: tuple[ResolvedTemporalCandidate, ...]
     decision_closure: TemporalEvidenceDecisionClosure
-    evidence_spans: tuple[ProjectionTextSpan, ...]
+    evidence_spans: tuple[SourceSpanReference, ...]
 ```
+
+`CanonicalAttributionBearerBinding.attribution_bearer_span` equals the exact
+non-null bearer reference in its upstream stable scope and scope-consensus
+artifact. A `certified_text_interval` `TemporalEvidenceCandidate` has one
+`certified_text_candidate_id`, no authenticated interval evidence, and
+`evidence_spans` exactly equal to the named `ResolvedTemporalCandidate` source
+span; an `authenticated_source_interval` candidate has the inverse nullable
+identity and retains the existing empty source-span rule. `TemporalEvidenceAssessment`
+retains the existing nullable authenticated temporal/reference rules and its
+`evidence_spans` is the canonical duplicate-free union of exactly the selected
+certified-text candidate references plus any existing authenticated-source
+evidence spans. No null field acquires a source reference, and no empty
+authenticated evidence set is synthesized. All three contracts are strict v1
+CTV/codec/replay inputs; their converted references participate in their
+existing digests and must retain exact parent projection segment, local artifact,
+mapping proof, route parent, and scalar text equality. Decode, reopen,
+consensus/assessment, and replay re-run these equality joins; any P0/P1 sibling
+parent substitution recomputes a different digest and rejects before use.
+
+`OperationAlignment` is a strict, frozen, `extra="forbid"`, closed-wire record:
+unknown, omitted, aliased, or extra fields reject. Every `*_digest` field, including
+`alignment_digest`, is a lowercase 64-hex SHA-256 spelling. Its
+`alignment_digest` is SHA-256 of the canonical CTV preimage in the domain
+`memorii.semantic-ingestion.operation-alignment.v1`, containing every declared
+body field in declaration order except `alignment_digest`. No graph identity,
+graph revision, graph record, graph plan, transaction plan, lease, attempt,
+allocation, provider-local ID, or provider-local field is accepted in the
+record or its preimage.
+
+This is an unshipped strict-v1-only contract. Its decoder accepts no alias,
+inferred field, legacy preimage, predecoder bridge, or compatibility form; it
+does not default, derive, or repair a missing body field. No migration reader
+exists for an `OperationAlignment` wire. Before first release, rollback removes
+the unshipped writer, reader, and persisted bytes rather than installing a
+legacy or dual-format reader.
+
+`SourceProposalAlignment.operation_alignments` is canonically ordered by
+`operation_id` and contains one unique row for each operation ID. For every
+row, `SourceProposalAlignment.source_id` equals the exact source ID of the
+enclosing `SegmentLanguageRouteSet` and of the parent source-digest authority;
+the parent source digest is the sole source-digest authority for the alignment.
+The enclosing `segment_language_routes` has exactly one member whose segment ID
+and route digest equal the row. The parser, scope, and temporal-consensus tuples
+are each the exact row-ordered projection for that artifact kind, ordered
+lexicographically by `(operation_id, proposal_id, segment_id,
+segment_language_route_digest)`. Every row contributes exactly one loadable
+artifact of each kind. That artifact's source ID and source digest must equal
+the enclosing source and its parent source-digest authority; its operation ID,
+proposal ID, segment ID, and route digest must equal the referencing row; and
+its artifact digest must equal the corresponding row digest. No retained
+consensus artifact may satisfy more than one distinct row, even if two rows
+would otherwise share the same digest.
+
+Parser and scope artifacts additionally bind their
+`analysis_bundle_fingerprint` to the exact `SourceNormalizationRequest.analyses`
+bundle and their `consensus_policy_fingerprint` to their exact equality-joined
+request-owned parser or scope selection. Temporal artifacts bind their
+`temporal_resolution_fingerprint` to the exact
+`SourceNormalizationRequest.temporal_resolution` and their
+`consensus_policy_fingerprint` to their exact equality-joined request-owned
+temporal-attachment selection. Recovery and replay reload the complete bundle,
+all exact request dependencies, and their typed policies; recompute every
+policy, selection, and bundle digest; and repeat every source, coordinate,
+dependency, policy, artifact, and digest equality check before accepting the
+source alignment. They perform no live policy lookup. A saved consensus artifact
+never substitutes for its request dependency or selection, and graph,
+capability, plan, lease, provider-local, or graph-derived authority is forbidden
+from the selection, bundle, and their digest preimages.
+
+Terminal parser, scope, or temporal consensus artifacts that cannot participate
+in an `OperationAlignment` row remain retained, replay-authoritative source
+normalization evidence indexed by their own artifact digest; they are not
+members of these three projected tuples. Missing projected references,
+unreferenced tuple members, duplicate row coordinates, duplicate projected
+digests, non-lexicographic tuple order, cross-source, cross-proposal,
+cross-segment, cross-route, cross-request-input, policy, selection, or
+digest-only substituted artifacts reject before source alignment is accepted.
+These are outer equality joins; CTV map-member permutations remain canonically
+equivalent, while semantic tuple order is strict and is never repaired.
+
+Every `CoveredPredicateEvent.alignment_digests` member must name exactly one
+row whose operation and proposal are named by that disposition, and every
+covered row for those operation/proposal pairs must be named exactly once; the
+tuple is canonical, unique, and ordered by its alignment digest. Every
+operation ID in a `SourceDependencyGroup` must have exactly one matching
+operation-alignment row, and every operation-alignment row must be covered by
+exactly one source dependency group. No source dependency group, coverage
+disposition, or downstream consumer may infer a row from matching fields or
+substitute a digest without the loadable, equality-joined artifact.
 
 `TemporalEvidenceCandidate` is closed: an
 `authenticated_source_interval` has its exact authenticated evidence, no
@@ -13196,6 +15142,137 @@ proposal roles or polarity produce a deterministic failure for that proposal.
   namespace, operation lease, or graph-repository dependency. Reuse one sealed
   `SourceNormalizationResult` across unrelated graph writes and require
   byte-identical source alignment, capability selections, and NLI;
+- use an independently hand-authored fixed CTV byte and SHA-256 oracle for one
+  `OperationAlignment`; the oracle may use only the published CTV rules and
+  fixed literals, never a production encoder, digest helper, model constructor,
+  or production fixture. Mutate each of the seven body fields, the digest
+  spelling/format, domain, and declared-wire shape; each mutation rejects or
+  yields a different independently computed digest as applicable. A permutation
+  of CTV map members canonicalizes to the same bytes and digest, including for
+  `PreAlignmentSemanticOperationSubject`, while every semantically ordered
+  collection, including the three projected consensus tuples, rejects a
+  permutation;
+- construct rows that intentionally share no operation coordinate and prove the
+  corresponding projected tuples contain exactly one artifact per
+  `(operation_id, proposal_id, segment_id, segment_language_route_digest)` row;
+  then mutate the parent source authority, route-set source ID, each row
+  coordinate, each selection coordinate/kind/operation subject/selected-policy
+  algorithm/analyzer-count/policy fingerprint, each request dependency
+  kind/fingerprint, bundle membership, duplicate coordinate, duplicate digest,
+  and artifact-tuple order. Prove the exact artifact-to-selection bijection for
+  every aligned and terminal unaligned retained coordinate; terminal unaligned
+  evidence is absent from the projected tuple but still has one exact
+  selection. Use one segment proposal containing multiple distinct operation
+  subjects and require independent parser/scope/temporal selections for each.
+  Replay must serialize the exact request, exact
+  `LanguageConstructionPolicyAuthorityBundle`, exact
+  `ConsensusPolicySelectionBundle`, exact
+  `SourceNormalizationEvidenceManifest`, exact retained artifacts, and exact
+  `SourceNormalizationResult`, `SourceNormalizationPublicationCoordinate`, and
+  `SourceNormalizationAtomicWriteRequest` through the real codec/persistence bytes; drop
+  the in-memory objects, normalizer, and live policy owners; reopen only from
+  persisted bytes under fail-fast sentinel lookup providers; and require
+  identical replay to succeed for both aligned and terminal-unaligned retained
+  evidence. The persisted store generation must attest the manifest's exact
+  publication coordinate's exact `OperationFenceBinding`, expected current
+  artifact generation, and next publication generation; any circular
+  attempt to derive the member from an enclosing generation/request digest is a
+  design failure and must be rejected in the proof. Missing, extra, partial,
+  lost-acknowledgement, cross-generation, foreign-generation substitution,
+  substitution-before-output, substitution-before-write, substituted analysis,
+  substituted consensus-policy selection, substituted selected-policy,
+  substituted policy-authority bundle, substituted manifest,
+  substituted temporal-resolution, substituted source, substituted route, or
+  substituted consensus dependency fails before reuse and performs no live
+  lookup. A `ConsensusPolicySelection` wire has exactly ten declared fields,
+  and its digest preimage covers the nine declared fields other than
+  `selection_digest`;
+- prove the inner selected-policy owners are exact minimal rule records and
+  non-aliased: parser, scope, and temporal selections accept only their strict
+  typed algorithm/analyzer-count/policy-fingerprint records; a registry key,
+  copied language-policy content, inferred subset, wrong algorithm literal,
+  wrong analyzer count, or mismatched `selected_policy_fingerprint` rejects. At
+  one exact operation subject, mutate only the persisted rule fingerprint while
+  holding the artifact fingerprint fixed, and mutate only the artifact
+  fingerprint while holding the persisted rule fixed; each pair must reject as
+  incoherent policy evidence;
+- exercise the real `checkpoint_source_progress` store path for
+  `SourceNormalizationAtomicWriteRequest`: a valid subtype checkpoint publishes
+  exactly one matching progress member and the complete request/result/manifest/
+  bundle/artifact closure. Independently prove rejection for missing, wrong, or
+  duplicate progress; `progress_state="planned"` or any planned progress
+  variant before publication; each new normalization member kind outside this subtype;
+  any forbidden or extra subtype member; missing, substituted, or digest-wrong
+  request member; incomplete required-digest closure; stale coordinate or
+  generation; and divergent lost-ack retry. Reopen the successful and
+  idempotent lost-ack cases from real store bytes under fail-fast provider,
+  normalizer, and policy lookup sentinels and require byte-identical recovery;
+- run the policy-key/cardinality matrix through actual codecs, the same store,
+  reopen, and fail-fast live-lookup sentinels for fact; correction with distinct
+  predicates; correction with equal predicates but two role-distinct bindings;
+  retraction; multi-role action-state; and identity. For each, prove the exact
+  key and authority cardinalities, reject swapped/missing/duplicate bindings,
+  and persist two valid recomputed policy-content bundles differing only in a
+  governing rule that deterministically yield the specified stable versus
+  terminal-unaligned result and byte-identical recovery;
+- build two individually valid, recomputed language-policy bundles for the
+  same supported subject that differ only in one governing role, construction,
+  or scope rule. Under fixed source/proposal/analysis evidence, prove the
+  governing bundle deterministically yields `stable` while the altered bundle
+  yields the specified terminal-unaligned status (or vice versa), never a
+  fallback interpretation. Persist each complete request/result/manifest/write
+  closure separately, discard all in-memory policy owners, reopen under
+  fail-fast live-lookup sentinels, and reproduce each closure byte-for-byte;
+- build fixed vectors for one `PreAlignmentSemanticOperationSubject` of each
+  admitted member kind and prove the exact one-to-one mapping from the five
+  retained `SemanticProposal` operation arrays into subjects. Mutate member
+  kind, proposal digest, proposal member index, array membership/order, source
+  identity, source digest, omitted field, extra field, alias, inferred field,
+  legacy/predecoder form, digest domain, digest spelling,
+  forged duplicate `operation_id`, and `operation_id`; each mutation rejects or
+  yields a different independently computed `operation_id` as applicable;
+- build fixed vectors for `SemanticProposal.proposal_digest` and
+  `SegmentProposalOutcome.proposal_digest`. Mutate proposal bytes, omitted or
+  extra proposal fields, digest domain, encoding form, or swap an outcome
+  digest from another validated proposal while preserving source, segment, and
+  proposal IDs; each mutation rejects or yields a different independently
+  computed proposal digest as applicable;
+- build fixed vectors for every normalized proposal helper and member type:
+  `TypedLiteral`, `ProposedMention`, `ProposedEntityObject`,
+  `ProposedLiteralObject`, `ProposedFact`, `ProposedCorrection`,
+  `ProposedRetraction`, `ProposedActionRoleParticipant`,
+  `ProposedActionRoleBinding`, `ProposedActionState`,
+  `ProposedClaimRecordSelector`, `ProposedActionRecordSelector`,
+  `ProposedAliasRecordSelector`, `ProposedReferenceAssignment`, and
+  `ProposedIdentityOperation`. Mutate one nested field at a time, reorder one
+  semantic tuple, substitute one provider-local ID, break one quote/span
+  resolution, swap one mention/object/reference target, or violate one
+  same-segment/branch-pairing/identity-cardinality rule; each mutation rejects
+  or changes only the enclosing affected digest as applicable. Independently
+  mutate `logical_action_digest` inputs and `execution_branch_digest` inputs
+  and require only the affected action-state lineage to change. Exercise the
+  actual provider-to-normalized boundary by replaying the same
+  `ProviderSemanticProposal` bytes through normalization, proving byte-identical
+  `SemanticProposal` output, then replaying byte-different valid provider
+  permutations that must still yield byte-identical normalized proposal bytes,
+  identical `proposal_digest`, identical subjects, and identical
+  `operation_id` values. Mutating one provider-local lookup, quote-resolution,
+  object-discriminator, abstention flag, top-level duplicate digest, temporal
+  qualifier ordering, normalized-order input, or selector normalization must
+  require deterministic rejection or the exact affected normalized digest delta
+  only;
+- build fixed vectors for the closed policy leaves `ConstructionFamily`,
+  `UdPathPattern`, `QuotationBoundaryPolicy`, `UdRoleSchema`,
+  `PredicateSemanticPolicy`, and `SemanticScopePolicy`. Mutate one path step,
+  one family ID, one quotation mode, one required function-word set member, one
+  polarity/commitment evidence requirement, or one construction membership and
+  require the exact affected policy fingerprint to change while unrelated
+  consensus-rule or sibling policy fingerprints remain stable;
+- decode legacy vectors, alias forms, inferred-field forms, legacy-preimage
+  forms, missing-bundle forms, and predecoder-bridge inputs only as rejection
+  cases. Assert that no migration or compatibility reader is registered and
+  that unshipped rollback removes the strict-v1 implementation rather than
+  accepting prior bytes;
 - mutate a related graph record after source normalization and require only a
   new `GraphEvidenceNormalizationRequest`, `GraphProposalAlignment`, and
   downstream graph-bound attempt. Source analysis, proposal, alignment,
@@ -13263,8 +15340,9 @@ abstention, while positive entailment alone cannot approve durable truth.
 class NliRequest(BaseModel):
     source_id: str
     segment_id: str
+    preparation_fingerprint: str
     segment_language_route: SegmentLanguageRoute
-    assertion_span: ProjectionTextSpan
+    assertion_span: SourceSpanReference
     assertion_text: str
     proposal_id: str
     predicate_id: str
@@ -13291,9 +15369,12 @@ state, benchmark expectations, or any other graph-dependent read. This keeps
 learned corroboration reusable across a graph-conflict retry without allowing
 canonical graph decisions to leak into it.
 
-The request's segment ID and route digest equal its proposal,
-`OperationCapabilityExecutionBinding`, assertion span's projection segment, and
-selected verifier resource. A non-selected route, unresolved code switch,
+The request's preparation fingerprint equals its proposal, source-normalization
+result, and selected route's prepared source. Its segment ID and route digest
+equal its proposal, `OperationCapabilityExecutionBinding`, and selected verifier
+resource; `assertion_span` equals the named upstream proposal assertion span
+and slices to `assertion_text`. Its source-reference parent, local artifact,
+mapping proof, and route parent must all match. A non-selected route, unresolved code switch,
 missing resource, or any route/content/resource substitution produces no NLI
 call. NLI batching requires byte-equal route and verifier resource bindings and
 retains separately digested per-segment assessments.
@@ -13467,6 +15548,23 @@ input and must fail closed rather than refresh either snapshot.
 Each promotable predicate has a language-specific policy:
 
 ```python
+class UdRoleSchema(BaseModel):
+    role_id: str
+    anchor_form: Literal["verbal", "nominal"]
+    allowed_dependency_paths: tuple[UdPathPattern, ...]
+    required_function_word_lemmas: frozenset[str]
+    forbidden_clause_crossings: frozenset[str]
+    coordination_support: Literal["allowed", "forbidden"]
+    voice_normalization: Literal["active_only", "active_passive_equivalent"]
+    canonical_graph_role: str
+    required_polarity_evidence: Literal[
+        "not_required",
+        "must_support_positive",
+        "must_support_negative",
+    ]
+    required_commitment_evidence: frozenset[Commitment]
+    schema_digest: str
+
 class PredicateSemanticPolicy(BaseModel):
     predicate_id: str
     language: str
@@ -13476,12 +15574,25 @@ class PredicateSemanticPolicy(BaseModel):
     verbalizer_id: str | None
     supported_commitments: frozenset[Commitment]
     supported_constructions: frozenset[ConstructionFamily]
+    policy_fingerprint: str
 ```
 
 An `UdRoleSchema` declares anchored predicate form, allowed dependency paths,
 required function-word lemmas, forbidden clause crossings, coordination
 support, voice normalization, canonical graph-role mapping, and required
 polarity/commitment evidence.
+`UdRoleSchema` and `PredicateSemanticPolicy` are strict, frozen,
+`extra="forbid"`, closed-wire v1 records. `schema_digest` is the lowercase
+64-hex SHA-256 spelling over the canonical CTV preimage in
+`memorii.semantic-ingestion.ud-role-schema.v1` excluding only
+`schema_digest`. `PredicateSemanticPolicy.policy_fingerprint` is its trailing
+content address: lowercase 64-hex SHA-256 of the canonical CTV preimage in
+`memorii.semantic-ingestion.predicate-semantic-policy.v1`, over every declared
+field except `policy_fingerprint`, in declaration order. It is not a wrapper
+fingerprint. `supported_commitments`,
+`supported_constructions`, `required_function_word_lemmas`, and
+`forbidden_clause_crossings` are canonical sorted sets; `role_schemas` is a
+duplicate-free tuple ordered by `(role_id, schema_digest)`.
 
 #### 4.6.3 Output contract
 
@@ -13489,7 +15600,7 @@ polarity/commitment evidence.
 class CheckResult(BaseModel):
     status: Literal["pass", "fail", "unknown"]
     reason_code: str
-    evidence_spans: tuple[ProjectionTextSpan, ...]
+    evidence_spans: tuple[SourceSpanReference, ...]
     diagnostics: tuple[str, ...]
 
 class SemanticAssessment(BaseModel):
@@ -13528,7 +15639,7 @@ class OperationTemporalAttachmentBinding(BaseModel):
     temporal_role: Literal["assertion", "replacement", "transition"]
     stable_attachment_consensus_digest: str
     candidate_ids: tuple[str, ...]
-    candidate_spans: tuple[ProjectionTextSpan, ...]
+    candidate_spans: tuple[SourceSpanReference, ...]
     binding_digest: str
 
 class OperationTemporalDecisionBinding(BaseModel):
@@ -13540,6 +15651,16 @@ class OperationTemporalDecisionBinding(BaseModel):
     decision_closure: TemporalEvidenceDecisionClosure
     binding_digest: str
 ```
+
+Each `CheckResult.evidence_spans` is a canonical duplicate-free tuple of exact
+upstream proposal, consensus, event, temporal, or NLI source references named
+by the checked condition; it cannot introduce a projection-only span.
+`OperationTemporalAttachmentBinding.candidate_spans` equals the exact ordered
+source spans of its named stable temporal candidates. `CertifiedTextEffectiveTime`
+evidence equals the selected `TemporalEvidenceCandidate` source references.
+All three use their existing CTV/codec/replay preimages with those references,
+and any mismatched parent route, artifact, proof, text, candidate ID, or
+upstream reference rejects before assessment or effective-time construction.
 
 `OperationTemporalDecisionBinding` closes temporal identity at the operation
 boundary. Construction is strictly ordered to avoid a digest cycle: (1) scope
@@ -13758,7 +15879,7 @@ counterparts.
 class CertifiedTextEffectiveTime(BaseModel):
     kind: Literal["certified_text_time"]
     effective_at: datetime
-    evidence_spans: tuple[ProjectionTextSpan, ...]
+    evidence_spans: tuple[SourceSpanReference, ...]
     temporal_policy_fingerprint: str
     temporal_policy_snapshot_digest: str
 
@@ -16079,6 +18200,42 @@ class ReplayArtifactBundle(BaseModel):
     total_canonical_bytes: int = Field(ge=0)
     bundle_digest: str
 
+class SemanticConflictContestKey(BaseModel):
+    tenant_partition_id: str
+    claim_slot_key: SemanticClaimSlotKey
+    valid_time_partition_digest: str
+    bases: tuple[Literal["temporal", "trust"], ...]
+    candidate_set: tuple[tuple[str, str], ...]
+    contest_key_digest: str
+
+class SemanticConflictAuthorityResolution(BaseModel):
+    contest_key: SemanticConflictContestKey
+    scope: SemanticConflictScopeBinding
+    display: SemanticConflictDisplayBinding
+    resolver_authority_record: SemanticConflictResolverAuthority
+    resolver_authority_pointer: ActiveSemanticConflictResolverAuthority
+    resolution_digest: str
+
+class SemanticConflictPointerPrecondition(BaseModel):
+    conflict_id: str
+    expected_pointer_digest: str | None
+    expected_pointer_revision: int
+    precondition_digest: str
+
+class SemanticConflictAuthorityCommitInput(BaseModel):
+    resolutions: tuple[SemanticConflictAuthorityResolution, ...]
+    pointer_preconditions: tuple[SemanticConflictPointerPrecondition, ...]
+    resolver_authority_pointer_digests: tuple[str, ...]
+    input_digest: str
+
+class TrustReprojectionPublicationRequest(BaseModel):
+    command: TrustReprojectionCommand
+    arbitration_as_of: datetime
+    expected_projection_pointer_digest: str
+    expected_projection_generation_digest: str
+    semantic_conflict_authority: SemanticConflictAuthorityCommitInput
+    request_digest: str
+
 class CommittedTransactionGroupPersistenceRequest(BaseModel):
     kind: Literal["committed"]
     source_id: str
@@ -16101,6 +18258,7 @@ class CommittedTransactionGroupPersistenceRequest(BaseModel):
     applied_graph_delta_digest: str
     memory_events: tuple["SemanticMemoryEvent", ...]
     expected_event_batch_digest: str
+    semantic_conflict_authority: SemanticConflictAuthorityCommitInput
     ingestion_observation_delta: IngestionObservationDelta
     replay_artifacts: ReplayArtifactBundle
     required_replay_artifact_digests: tuple[str, ...]
@@ -16241,9 +18399,25 @@ class ReplayCheckpointTrustPolicy(BaseModel):
     keys: tuple[ReplayCheckpointSigningKey, ...]
     policy_digest: str
 
+class SemanticConflictReplayBinding(BaseModel):
+    binding_schema_version: Literal[
+        "memorii.semantic-conflict-replay-binding.v1"
+    ]
+    repository_id: str
+    immutable_record_count: int = Field(ge=0)
+    immutable_record_prefix_digest: str
+    last_record_coordinate: int = Field(ge=0)
+    last_record_id: str | None
+    last_record_digest: str | None
+    pointer_history_count: int = Field(ge=0)
+    pointer_history_prefix_digest: str
+    current_pointer_set_digest: str
+    authority_pointer_set_digest: str
+    binding_digest: str
+
 class SemanticReplayCheckpoint(BaseModel):
     checkpoint_id: str
-    checkpoint_schema_version: str
+    checkpoint_schema_version: Literal["memorii.semantic-replay-checkpoint.v2"]
     repository_id: str
     graph_revision: str
     writer_epoch: int = Field(ge=1)
@@ -16253,6 +18427,9 @@ class SemanticReplayCheckpoint(BaseModel):
     last_event_batch_digest: str
     last_graph_delta_digest: str
     materialized_memory_snapshot_digest: str
+    reconstructed_replay_authority_digest: str
+    projection_history_bindings: tuple[ProjectionHistoryReplayBinding, ...]
+    semantic_conflict_replay_binding: SemanticConflictReplayBinding
     event_schema_registry_revision: int = Field(ge=1)
     event_schema_registry_digest: str
     created_at: datetime
@@ -16261,6 +18438,22 @@ class SemanticReplayCheckpoint(BaseModel):
     trust_policy_digest: str
     checkpoint_digest: str
     signature: str
+
+class SemanticReplayAuthorityAggregate(BaseModel):
+    aggregate_schema_version: Literal[
+        "memorii.semantic-replay-authority-aggregate.v2"
+    ]
+    repository_id: str
+    graph_state: SemanticReplayState
+    observation_bindings: tuple[SemanticReplayAuthorityMemberBinding, ...]
+    progress_bindings: tuple[SemanticReplayAuthorityMemberBinding, ...]
+    artifact_bindings: tuple[SemanticReplayAuthorityMemberBinding, ...]
+    reconstructed_authority_digest: str
+    projection_history_bindings: tuple[ProjectionHistoryReplayBinding, ...]
+    semantic_conflict_replay_binding: SemanticConflictReplayBinding
+    latest_checkpoint: SemanticReplayCheckpointBundle | None
+    aggregate_revision: int = Field(ge=0)
+    aggregate_digest: str
 ```
 
 Every segment-stage instance and outcome has non-null `segment_id` and
@@ -16385,8 +18578,8 @@ The current semantic writer rejects two changes for the same
 or differ. Duplicate `event_id` or `dedupe_key` with conflicting content is
 always corruption. The rule for non-identical retained historical or
 mixed-schema events with equal version is the explicit `SIA-ED-REPLAY-001`
-event-model decision. Until that owner selects one genesis/checkpoint-consistent
-rule, replay of such a conflict is rejected and cannot materialize a winner.
+event-model decision. The frozen decision rejects such a conflict and cannot
+materialize a winner.
 Identical duplicate envelopes are skipped. This does not authorize a
 conflicting same-version write by the current semantic-ingestion path.
 
@@ -16577,18 +18770,71 @@ class SourceFinalizationAtomicWriteRequest(BaseModel):
     required_replay_artifact_digests: tuple[str, ...]
     request_digest: str
 
-class SourceCheckpointAtomicWriteRequest(BaseModel):
+class AtomicGenerationMember(BaseModel):
+    member_id: str
+    kind: Literal[
+        "progress",
+        "retry_outcome",
+        "group_result",
+        "observation_delta",
+        "graph_delta",
+        "event_batch",
+        "terminal_operation",
+        "source_summary",
+        "source_result",
+        "lifecycle",
+        "replay_artifact",
+        "artifact_index",
+        "artifact_closure",
+        "plan",
+        "planning_artifact",
+        "independence_certificate",
+        "planning_authorization",
+        "authorization_read_set",
+        "terminal_artifact",
+        "execution_plan",
+        "recovery_authority_binding",
+        "stage_artifact",
+        "source_normalization_request",
+        "source_normalization_result",
+        "source_normalization_evidence_manifest",
+        "consensus_policy_selection_bundle",
+        "language_construction_policy_authority_bundle",
+        "parser_consensus_assessment",
+        "semantic_scope_consensus",
+        "temporal_attachment_consensus",
+    ]
+    canonical_payload: bytes
+    payload_digest: str
+
+class AtomicGenerationRequest(BaseModel):
     operation_lease_binding: OperationLeaseBinding
     operation_fence_binding: OperationFenceBinding
     writer_commit_binding: SemanticWriterCommitBinding
-    expected_operation_state_revision: int
+    expected_operation_generation: int
     expected_artifact_generation: int
-    progress: "SourceIngestionProgress"
-    replay_artifacts: ReplayArtifactBundle
-    retryable_attempt_outcomes: tuple[
-        "NonCommittingTransactionGroupExecutionResult", ...
-    ]
+    members: tuple[AtomicGenerationMember, ...]
+    required_artifact_digests: tuple[str, ...]
     request_digest: str
+
+class SourceCheckpointAtomicWriteRequest(AtomicGenerationRequest):
+    kind: Literal["checkpoint"]
+    progress_state: Literal["preplanning", "planned"]
+
+class SourceNormalizationAtomicWriteRequest(SourceCheckpointAtomicWriteRequest):
+    kind: Literal["source_normalization_checkpoint"]
+    progress_state: Literal["preplanning"]
+    publication_generation: int
+    source_normalization_request: "SourceNormalizationRequest"
+    source_normalization_request_digest: str
+    source_normalization_result: "SourceNormalizationResult"
+    source_normalization_result_digest: str
+    evidence_manifest: "SourceNormalizationEvidenceManifest"
+    evidence_manifest_digest: str
+    consensus_policy_selection_bundle: "ConsensusPolicySelectionBundle"
+    consensus_policy_selection_bundle_digest: str
+    language_construction_policy_bundle: "LanguageConstructionPolicyAuthorityBundle"
+    language_construction_policy_bundle_digest: str
 
 class SemanticIngestionAtomicStore(Protocol):
     def admit_source(
@@ -17617,7 +19863,7 @@ service, or pass a test-only configuration field.
   kind and require pre-commit failure;
 - present non-identical historical same-record/version events in every input
   order and at genesis/checkpoint-tail boundaries; require one replay-integrity
-  failure before any partial state or winner is exposed pending
+  failure before any partial state or winner is exposed under
   `SIA-ED-REPLAY-001`.
   Separately require byte-identical duplicate envelopes to skip idempotently,
   and require the current writer to reject any same-record/version collision
@@ -20745,7 +22991,7 @@ justifies veto-only authority.
   duplicate/conflicting-dedupe/out-of-order/version/corruption handling,
   envelope/dedupe/record identity separation for every record kind,
   exact-duplicate idempotency, current-writer same-version rejection,
-  fail-closed non-identical historical equal-version conflicts pending
+  fail-closed non-identical historical equal-version conflicts under
   `SIA-ED-REPLAY-001`, supported and mixed event-schema decoding/upcast, genesis replay,
   and typed signed-checkpoint trust, rollback, mutation, and mid-stream resume
   tests;
@@ -20786,7 +23032,7 @@ identity-lineage state remain independently observable.
 - bind production and certification to the exact `verified_semantic` path;
 - certify append-only graph retention, source plan lineage, the three event
   identity domains, exact-duplicate replay and fail-closed non-identical
-  equal-version conflict handling pending `SIA-ED-REPLAY-001`, graph-observation
+  equal-version conflict handling under `SIA-ED-REPLAY-001`, graph-observation
   authorization, and provider lifecycle/result composition as part of that
   exact path;
 - bind certification to the complete installable source tree, all selected
@@ -20978,17 +23224,17 @@ The retention and regeneration matrix is closed:
 
 | Family | Retained assertion | Allowed old-ID exception | Generator or owner | Failure signal and gate impact |
 | --- | --- | --- | --- | --- |
-| 66 digest domains, envelope, and codec fingerprint | Domain separation and strict typed decoding | Explicit old-envelope rejection vector only | Semantic contract/carrier owners | Old bytes reject; exact semantic selector remains 266 |
+| 66 digest domains, envelope, and codec fingerprint | Domain separation and strict typed decoding | Explicit old-envelope rejection vector only | Semantic contract/carrier owners | Old bytes reject; current selectors follow the deterministic job-owner manifest rather than the retired 266-test monolith |
 | Public/private Python owners | Same runtime behavior and type safety | None; no aliases | Semantic-ingestion package | Import/export scan plus Ruff/Pyright |
 | Lease, member, discriminator, plan, admission, and writer identities | Fencing, retry, lost-ack, and startup admission remain exact | Explicit old-store rejection vector only | Persistence, admission, provider owners | Recovery matrices and process tests fail on stale identity |
-| 24 integration nodes | Each existing assertion in the table above | None | `test_semantic_ingestion_pipeline.py` | Exact node collection and 266-count lock |
+| Behavioral integration nodes | Each existing assertion in the table above | None | Current semantic-ingestion generation selector | Exact 34-test baseline plus approved, measured selector deltas |
 | R01-R23 executable bindings | Same `behavioral_assertion` and typed `test_id` relationship | Requirement keys remain in typed metadata | Traceability registry plus acceptance suite | Every registered behavioral command resolves to its exact node |
 | Positive fixture/helper IDs | Same test scenario and failure injection | Named malformed/legacy vectors only | Owning unit/integration test | Static field-aware scan and focused suite |
 | CI step labels | Same selectors, warning mode, working directory, and count | None | `pr-gates.yml` and workflow-structure test | Structural test compares behavioral labels and argv |
 | Scenario authority | Same complete A/B structural closure | Historical rejected recipes and the non-executable frozen coordinate-migration oracle only | Hand-authored `scenario-coordinate-migration-v1.json`, independent scenario elaborators, validator, and independent inventory test | Exact legacy-set equality, zero/multi-match mutation rejection, explicit R03 mapping, and byte-identical manifest/spool |
 | Traceability authority | Same requirement coverage and release lifecycle | Typed SIA requirement/test metadata | Registry, CTV compiler, CGS compiler, release validators | Registry/authority/prototype checks and acceptance suite |
 | Public terminal wire vector | Exact request wire, JSONL bytes, member IDs/digests, and reopen stability | Old vector only as rejection input | `tests/support/generate_semantic_terminal_public_wire.py` and `tests/fixtures/semantic_ingestion/semantic_terminal_public_wire_v1.json` | `--verify` regenerates twice from fresh stores, reopens both, requires byte equality, then compares checked-in bytes |
-| Unit timing and exact collection | No test lost, duplicated, skipped, or silently default-timed | None | Shard verifier and timing inventory | 2,584 baseline unit collection and 266 semantic selector remain explicit; renamed unit nodes require measured timing updates |
+| Unit timing and exact collection | No test lost, duplicated, skipped, or silently default-timed | None | Shard verifier and timing inventory | Current 3,035-test duration-balanced baseline and dedicated selector baselines remain explicit; added or renamed nodes require measured timing updates |
 
 The public terminal wire generator is test-only and invokes the ordinary public
 composition. Its default mode writes nothing and verifies the checked-in
@@ -21252,7 +23498,7 @@ issue namespace:
 | A retryable source failure occurs before any transaction plan exists | Discriminated pre-planning progress records exact next DAG stage and reusable artifact closure, then transitions atomically and only once to planned progress | Crashes before a provider response is acknowledged can still consume one bounded retry |
 | A retry result is attributed to the wrong plan or authorization | Append-only per-group plan lineage, immutable committed-group membership, one final lineage entry per terminal group, and result-to-entry equality checks | Late dependencies discovered after a partial commit can force remaining groups to terminate unresolved rather than regroup |
 | Event, retry, and record identities are conflated | Separate envelope `event_id`, logical `dedupe_key`, and payload record identity; bind only payload entity/record IDs to the compiler change | More identity coordinates increase audit and test surface |
-| Historical same-version events replay inconsistently | Reject current-writer collisions and reject non-identical historical equal-version conflicts pending `SIA-ED-REPLAY-001` | Replay remains blocked for that conflict class until the registered artifact selects a genesis/checkpoint-consistent outcome |
+| Historical same-version events replay inconsistently | Reject current-writer collisions and reject non-identical historical equal-version conflicts under frozen `SIA-ED-REPLAY-001` | The affected replay scope remains blocked for diagnosis and append-only repair; no winner is selected |
 | Graph-observation authorization leaks scope or existence | Bind principal-derived authorization evidence into cohorts/pages/cursors and reauthorize every page with a non-disclosing denial | Authorization-policy outages block acceptance observation |
 | Coarse provider lifecycle and typed semantic outcome diverge | Atomic terminal composition, a total status/result mapping, an unchanged old-reader envelope, a separate typed accessor, and digest-joined reload | Historical pre-cutover operations intentionally have no synthesized target semantic result |
 | Execution traces misstate concurrent failure | Fingerprinted stage DAG, complete manifest, dependency validation, and causal blocker tuples | Clock timestamps remain diagnostic rather than causal ordering evidence |
@@ -21943,7 +24189,7 @@ The architecture is implementation-ready when:
   identity, require
   `entity_id == record_id == GraphRecordMutation.record_id`, reject current-writer
   same-version collisions, and reject non-identical historical equal-version
-  conflicts pending `SIA-ED-REPLAY-001`; create, update, and logical
+  conflicts under `SIA-ED-REPLAY-001`; create, update, and logical
   retirement consume one identical mutation kind through delta, event identity,
   dedupe, payload, and replay;
 - ingestion-observation tests prove one immutable operation introduction and

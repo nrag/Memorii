@@ -18,7 +18,6 @@ from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedSourceIntervalEvidence,
     IndependentSourceAnalysis,
     OperationKind,
-    ParserConsensusAssessment,
     PredicateTemporalRule,
     PredicateTrustRule,
     SemanticArbitrationPolicyBundle,
@@ -27,9 +26,7 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticContractCodecError,
     SourceAuthority,
     SourceAuthorityEvidence,
-    SourceLocalIdentityEvidence,
     SourceSpan,
-    SourceTemporalEvidenceSet,
     TemporalEvidenceCandidate,
     TemporalEvidenceDecisionClosure,
     TemporalPolicySnapshot,
@@ -39,9 +36,11 @@ from memorii.core.semantic_ingestion.contracts import (
     encode_semantic_contract,
 )
 from memorii.core.semantic_ingestion.pipeline import (
-    AnalyzerRoleInterpretation,
     SemanticIngestionPipeline,
     TemporalEvidenceResolver,
+)
+from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
+    build_prepared_independent_source_analysis,
 )
 
 SOURCE = "Atlas works for Memorii."
@@ -169,60 +168,20 @@ def _proposal(kind: OperationKind = "fact") -> SemanticCandidate:
 
 def _analysis(
     proposal: SemanticCandidate,
-    *, candidates: tuple[TemporalEvidenceCandidate, ...] | None = None,
+    *,
+    candidates: tuple[TemporalEvidenceCandidate, ...] | None = None,
     stable: bool = True,
 ) -> IndependentSourceAnalysis:
-    primary = AnalyzerRoleInterpretation(
-        analyzer_id="stanza",
-        analyzer_fingerprint="a" * 64,
-        predicate_span=SourceSpan(source_id=SOURCE_ID, start=6, end=15),
-        construction_family="active",
-        role_spans=(("subject", SourceSpan(source_id=SOURCE_ID, start=0, end=5)),),
-        semantic_scope="asserted",
-        attribution_kind="speaker",
-    )
-    corroborating = primary.model_copy(update={
-        "analyzer_id": "spacy",
-        "analyzer_fingerprint": "b" * 64,
-        "construction_family": "active" if stable else "passive",
-    })
-    roles = {
-        "fact": ("assertion",),
-        "action": ("assertion",),
-        "correction": ("replacement", "transition"),
-        "retraction": ("transition",),
-        "identity": ("transition",),
-    }[proposal.operation_kind]
-    temporal_candidates = candidates or (_candidate("time:official"),)
-    source_authority = _authority(temporal_candidates[0].source_authority.authority_class)
-    return IndependentSourceAnalysis.create(
-        candidate_id=proposal.candidate_id,
+    return build_prepared_independent_source_analysis(
+        proposal=proposal,
+        operation_id="operation:integration",
         source_id=SOURCE_ID,
         source_digest=SOURCE_DIGEST,
-        predicate_id=proposal.predicate_id,
-        operation_kind=proposal.operation_kind,
-        source_authority_evidence=source_authority,
-        assertion_span=SourceSpan(source_id=SOURCE_ID, start=0, end=len(SOURCE)),
-        parser_consensus=ParserConsensusAssessment.create(
-            primary=primary, corroborating=corroborating
-        ),
-        identity_evidence=(SourceLocalIdentityEvidence(
-            source_id=SOURCE_ID,
-            mention_span=SourceSpan(source_id=SOURCE_ID, start=0, end=5),
-            cluster_id="atlas",
-            canonical_entity_id="entity:atlas",
-            evidence_digest=_digest("identity:atlas"),
-        ),),
-        temporal_evidence=tuple(SourceTemporalEvidenceSet(
-            temporal_role=role,
-            candidates=temporal_candidates,
-            attachment_spans=tuple(
-                span for candidate in temporal_candidates for span in candidate.evidence_spans
-            ),
-            attachment_consensus_digest=_digest(f"attachment:{role}"),
-        ) for role in roles),
+        source_text=SOURCE,
+        source_authority_evidence=_authority(),
+        temporal_candidates=candidates or (_candidate("time:official"),),
+        stable=stable,
     )
-
 
 class _Assessor:
     def __init__(self, analysis: IndependentSourceAnalysis) -> None:

@@ -1,6 +1,12 @@
 {
   "version": 1,
   "dedicated_pytest_jobs": {
+    "equal-version-replay-decision": {
+      "runtime_budget_seconds": 60,
+      "timeout_headroom_seconds": 240,
+      "timeout_minutes": 5,
+      "timing_exemption_reason": "Hermetic decision-artifact mutation gate runs outside the package unit environment."
+    },
     "benchmark-contract-tests": {
       "runtime_budget_seconds": 600,
       "timeout_headroom_seconds": 300,
@@ -35,7 +41,19 @@
       "runtime_budget_seconds": 600,
       "timeout_headroom_seconds": 300,
       "timeout_minutes": 15,
-      "timing_exemption_reason": "Generation-closure acceptance has a dedicated deterministic gate and timeout."
+      "timing_exemption_reason": "Generation closure and cross-component process, persistence, and replay integration run outside unit shards."
+    },
+    "semantic-projection-history": {
+      "runtime_budget_seconds": 600,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 15,
+      "timing_exemption_reason": "Projection history, scheduling, policy migration, identity lineage, planning, and bootstrap authority form one exhaustive temporal closure outside unit shards."
+    },
+    "semantic-terminal-persistence": {
+      "runtime_budget_seconds": 600,
+      "timeout_headroom_seconds": 300,
+      "timeout_minutes": 15,
+      "timing_exemption_reason": "The measured terminal-persistence module exceeds the generic file-granular shard budget and therefore uses its own exact node-balanced matrix and timing inventory."
     },
     "semantic-ingestion-scenario": {
       "runtime_budget_seconds": 600,

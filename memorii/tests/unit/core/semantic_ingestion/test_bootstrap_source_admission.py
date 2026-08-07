@@ -545,7 +545,7 @@ def test_trusted_provider_path_admits_evidence_before_profile_gate() -> None:
         ),
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(memory_plane.list_records()) == 32
+    assert len(memory_plane.list_records()) == 35
 
 
 def test_provider_sync_event_uses_host_required_scopes_not_public_event_metadata() -> None:
@@ -646,7 +646,7 @@ def test_hermes_trusted_ingress_uses_internal_composite_coordinates() -> None:
         ),
     )
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(memory_plane.list_records()) == 63
+    assert len(memory_plane.list_records()) == 66
 
 
 def test_authenticated_metadata_poor_snapshot_is_governed_evidence_only() -> None:
@@ -839,7 +839,7 @@ def test_every_bootstrap_corpus_case_has_exact_protected_source_admission_outcom
         )
         assert outcome.input_normalized_digest == sha256(case.normalized_segment_bytes).hexdigest()
     assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(plane.list_records()) == (32 if case.disposition == "supported_form" else 10)
+    assert len(plane.list_records()) == (35 if case.disposition == "supported_form" else 10)
     assert result.candidate_ids == []
 
 
@@ -1074,7 +1074,7 @@ def test_jsonl_reopen_and_lost_ack_retry_preserve_one_bootstrap_generation(tmp_p
         task_id="task:one",
         authenticated_host_ingress=host_ingress,
     )
-    assert len(reopened_plane.list_records()) == 32
+    assert len(reopened_plane.list_records()) == 35
     assert len((store_path / "memory_records.jsonl").read_text(encoding="utf-8").splitlines()) == 6
 
 
@@ -1126,7 +1126,7 @@ def test_concurrent_exact_delivery_is_idempotent(
         results = tuple(executor.map(lambda _: deliver(), range(2)))
     assert all(result.blocked_reasons["semantic_ingestion"] == "source_only" for result in results)
     assert len({tuple(result.transcript_ids) for result in results}) == 1
-    assert len(plane.list_records()) == 32
+    assert len(plane.list_records()) == 35
 
 
 def test_installed_capability_loader_works_through_hermes_and_filesystem_roots(tmp_path: Path) -> None:
@@ -1292,7 +1292,11 @@ def test_jsonl_replace_failure_is_atomic_and_lost_ack_recovers(
         authenticated_host_ingress=host_ingress,
     )
     assert {record.source_kind for record in reopened_plane.list_records()} == expected_kinds | {
-        "semantic_ingestion_generation_member", "semantic_ingestion_generation_manifest",
+        "semantic_ingestion_generation_member",
+        "semantic_ingestion_generation_manifest",
+        "semantic_ingestion_checkpoint_lifecycle",
+        "semantic_ingestion_event_schema_registry_history",
+        "semantic_ingestion_replay_authority",
     }
 
 

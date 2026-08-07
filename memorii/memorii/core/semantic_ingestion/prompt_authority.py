@@ -16,6 +16,7 @@ from memorii.core.prompts.registry import PromptRegistry, RegisteredPromptContra
 from memorii.core.prompts.render import PromptRenderer, redact_variables
 from memorii.core.prompts.runtime_manifest import PromptOwner
 from memorii.core.prompts.schema_parity import assert_supported_json_schema
+from memorii.core.semantic_ingestion.contracts import RegisteredSemanticPromptBinding
 
 
 class SemanticPromptAlignmentReference(BaseModel):
@@ -47,20 +48,6 @@ class SemanticPromptProposalEnvelope(BaseModel):
 
 def _json_digest(value: object) -> str:
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")).hexdigest()
-
-
-class RegisteredSemanticPromptBinding(BaseModel):
-    """All prompt coordinates checked before any bytes reach a transport."""
-
-    prompt_ref: str = Field(min_length=1)
-    prompt_registration_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    prompt_content_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    output_schema_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    owner_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    visibility_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    redaction_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class SemanticPromptAuthority(BaseModel):

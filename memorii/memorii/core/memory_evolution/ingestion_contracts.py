@@ -29,6 +29,128 @@ _OUTER_ENVELOPE_BINDING_DIGEST = "39222b18e67ffe8f679943676a46a464c804bb2ef9d0e3
 _DELIVERY_ID_MAX_UTF8_BYTES = 1024
 
 
+class _HashableCtvMap(tuple[tuple[str, Any], ...]):
+    """Immutable map-shaped CTV value used only inside decoded set members."""
+
+    __slots__ = ()
+
+    def __new__(cls, values: dict[str, Any]) -> _HashableCtvMap:
+        return super().__new__(cls, values.items())
+
+    def __getitem__(self, key: int | slice | str) -> Any:
+        if not isinstance(key, str):
+            return super().__getitem__(key)
+        for candidate, value in self:
+            if candidate == key:
+                return value
+        raise KeyError(key)
+
+    def items(self) -> tuple[tuple[str, Any], ...]:
+        return tuple(self)
+
+    def __hash__(self) -> int:
+        return hash(encode_typed_value(self))
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is _HashableCtvMap and encode_typed_value(self) == encode_typed_value(other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    def __setitem__(self, *_: object) -> None:
+        raise TypeError("decoded CTV set member is immutable")
+
+
+class _ImmutableCtvList(tuple[Any, ...]):
+    __slots__ = ()
+
+    def __new__(cls, values: list[Any]) -> _ImmutableCtvList:
+        return super().__new__(cls, values)
+
+    def __hash__(self) -> int:
+        return hash(encode_typed_value(self))
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is _ImmutableCtvList and encode_typed_value(self) == encode_typed_value(other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    def append(self, _: object) -> None:
+        raise TypeError("decoded CTV set member is immutable")
+
+
+class _ImmutableCtvSet(frozenset[Any]):
+    __slots__ = ()
+
+    def __new__(cls, values: set[Any]) -> _ImmutableCtvSet:
+        return super().__new__(cls, values)
+
+    def __hash__(self) -> int:
+        return hash(encode_typed_value(self))
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is _ImmutableCtvSet and encode_typed_value(self) == encode_typed_value(other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+    def add(self, _: object) -> None:
+        raise TypeError("decoded CTV set member is immutable")
+
+
+class _ImmutableCtvTuple(tuple[Any, ...]):
+    __slots__ = ()
+
+    def __new__(cls, values: tuple[Any, ...]) -> _ImmutableCtvTuple:
+        return super().__new__(cls, values)
+
+    def __hash__(self) -> int:
+        return hash(encode_typed_value(self))
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is _ImmutableCtvTuple and encode_typed_value(self) == encode_typed_value(other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+
+class _TagAwareCtvSet(tuple[Any, ...]):
+    __slots__ = ()
+
+    def __new__(cls, values: tuple[Any, ...]) -> _TagAwareCtvSet:
+        return super().__new__(cls, values)
+
+    def __hash__(self) -> int:
+        return hash(encode_typed_value(self))
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is type(self) and encode_typed_value(self) == encode_typed_value(other)
+
+    def __ne__(self, other: object) -> bool:
+        return not self == other
+
+
+class _TagAwareCtvFrozenSet(_TagAwareCtvSet):
+    __slots__ = ()
+
+
+def _hashable_ctv_value(value: Any) -> Any:
+    if isinstance(value, (_HashableCtvMap, _ImmutableCtvList, _ImmutableCtvTuple, _ImmutableCtvSet, _TagAwareCtvSet)):
+        return value
+    if isinstance(value, dict):
+        return _HashableCtvMap({key: _hashable_ctv_value(item) for key, item in value.items()})
+    if isinstance(value, tuple):
+        return _ImmutableCtvTuple(tuple(_hashable_ctv_value(item) for item in value))
+    if isinstance(value, list):
+        return _ImmutableCtvList([_hashable_ctv_value(item) for item in value])
+    if isinstance(value, set):
+        return _ImmutableCtvSet({_hashable_ctv_value(item) for item in value})
+    if isinstance(value, frozenset):
+        return frozenset(_hashable_ctv_value(item) for item in value)
+    return value
+
+
 def _digest(domain: bytes, *parts: bytes) -> str:
     """Hash explicit length-delimited fields so identity inputs cannot alias."""
 
@@ -599,6 +721,24 @@ def _normalized_typed_json(value: Any, *, check: Callable[[], None] | None = Non
         if not -(2**63) <= microseconds < 2**63:
             raise CanonicalTypedValueError("canonical_duration_overflow")
         return {"$type": "duration_microseconds", "value": str(microseconds)}
+    if isinstance(value, _HashableCtvMap):
+        return _normalized_typed_json(dict(value), check=check)
+    if isinstance(value, _ImmutableCtvList):
+        return {"$type": "list", "items": [_normalized_typed_json(item, check=check) for item in value]}
+    if isinstance(value, _ImmutableCtvTuple):
+        return {"$type": "tuple", "items": [_normalized_typed_json(item, check=check) for item in value]}
+    if isinstance(value, _ImmutableCtvSet):
+        normalized_items = [_normalized_typed_json(item, check=check) for item in value]
+        items = sorted((_json(item), item) for item in normalized_items)
+        return {"$type": "set", "items": [item for _, item in items]}
+    if isinstance(value, _TagAwareCtvFrozenSet):
+        normalized_items = [_normalized_typed_json(item, check=check) for item in value]
+        items = sorted((_json(item), item) for item in normalized_items)
+        return {"$type": "frozenset", "items": [item for _, item in items]}
+    if isinstance(value, _TagAwareCtvSet):
+        normalized_items = [_normalized_typed_json(item, check=check) for item in value]
+        items = sorted((_json(item), item) for item in normalized_items)
+        return {"$type": "set", "items": [item for _, item in items]}
     if isinstance(value, tuple):
         return {"$type": "tuple", "items": [_normalized_typed_json(item, check=check) for item in value]}
     if isinstance(value, list):
@@ -669,7 +809,15 @@ def decode_typed_value(raw: bytes) -> Any:
             encoded = [encode_typed_value(item) for item in items]
             if encoded != sorted(encoded) or len(set(encoded)) != len(encoded):
                 raise CanonicalTypedValueError("canonical_set_order_invalid")
-            result = frozenset(items) if tag == "frozenset" else set(items)
+            members = tuple(_hashable_ctv_value(item) for item in items)
+            try:
+                native = frozenset(members)
+            except TypeError:
+                native = None
+            if native is None or len(native) != len(members):
+                result = _TagAwareCtvFrozenSet(members) if tag == "frozenset" else _TagAwareCtvSet(members)
+            else:
+                result = native if tag == "frozenset" else set(native)
         else:
             result = tuple(items) if tag == "tuple" else items
     elif tag == "map" and set(value) == {"$type", "entries"} and isinstance(value["entries"], list):

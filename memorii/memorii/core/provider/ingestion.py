@@ -13,6 +13,7 @@ from memorii.core.memory_evolution.atomic_store import (
     SemanticIngestionAtomicStore,
 )
 from memorii.core.memory_evolution.bootstrap_profile import VerifiedBootstrapProfile, classify_bootstrap_input
+from memorii.core.memory_evolution.conflict_attention import AgentClarificationProposal
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
     DeliveryIdentity,
@@ -31,7 +32,10 @@ from memorii.core.semantic_ingestion.authorization import (
     SemanticAuthorizationAuthorityError,
     SemanticAuthorizationAuthorityRepository,
 )
-from memorii.core.semantic_ingestion.capability import AuthorizedSemanticIngestionRuntime
+from memorii.core.semantic_ingestion.capability import (
+    AuthorizedSemanticIngestionRuntime,
+    ConflictClarificationSemanticContext,
+)
 from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedSourceIntervalEvidence,
     AuthorizationStageSnapshot,
@@ -264,6 +268,86 @@ class ProviderIngestionCoordinator:
             authorization_repository=self._authorization_repository,
         )
 
+    def resolve_context(
+        self, proposal: AgentClarificationProposal
+    ) -> ConflictClarificationSemanticContext | None:
+        """Rebuild ordinary local semantic inputs from the retained user event."""
+
+        from memorii.core.memory_evolution.conflict_attention import (
+            RetainedConflictClarificationContext,
+        )
+
+        try:
+            validated = AgentClarificationProposal.model_validate(
+                proposal.model_dump(mode="python")
+            )
+        except (AttributeError, TypeError, ValueError):
+            return None
+        retained_value = self._atomic_store.resolve_conflict_clarification_context(
+            validated
+        )
+        if retained_value is None:
+            return None
+        try:
+            retained = RetainedConflictClarificationContext.model_validate(
+                retained_value.model_dump(mode="python")
+            )
+        except (AttributeError, TypeError, ValueError):
+            return None
+        ingress = retained.authenticated_ingress
+        if (
+            ingress.delivery_principal_binding.principal_subject_id
+            != validated.agent_principal_id
+            or self._semantic_policy_provider is None
+            or self._semantic_runtime is None
+            or self._bootstrap_profile is None
+            or self._semantic_candidate_assessor is None
+            or self._semantic_local_proposal_producer is None
+        ):
+            return None
+        policy = self._semantic_policy_provider.current_policy(
+            source_id=retained.source_user_event_id,
+            source_digest=retained.source_user_event_digest,
+        )
+        if policy is None:
+            return None
+        evidence = self._authenticated_source_evidence(
+            source_id=retained.source_user_event_id,
+            source_digest=retained.source_user_event_digest,
+            authenticated_ingress=ingress,
+        )
+        if evidence is None:
+            return None
+        authority, interval = evidence
+        local_proposals = self._semantic_local_proposal_producer.propose(
+            source_id=retained.source_user_event_id,
+            source_digest=retained.source_user_event_digest,
+            source_text=retained.source_text,
+        )
+        authorization_guard = _ProviderAuthorizationReadSet(
+            runtime=self._semantic_runtime,
+            profile=self._bootstrap_profile,
+            policy_provider=self._semantic_policy_provider,
+            egress_policy_provider=self._semantic_egress_policy_provider,
+            egress_binding=None,
+            source_id=retained.source_user_event_id,
+            source_digest=retained.source_user_event_digest,
+            now_provider=self._now_provider,
+            authority_repository=self._authorization_repository,
+        )
+        return ConflictClarificationSemanticContext(
+            source_id=retained.source_user_event_id,
+            source_digest=retained.source_user_event_digest,
+            source_text=retained.source_text,
+            policy_bundle=policy.arbitration_bundle,
+            source_authority_evidence=authority,
+            source_interval_evidence=interval,
+            authorization_read_set_provider=authorization_guard,
+            independent_assessor=self._semantic_candidate_assessor,
+            local_proposals=local_proposals,
+            current_time_provider=self._now_provider,
+        )
+
     def ingest(
         self,
         event: ProviderEvent,
@@ -439,6 +523,7 @@ class ProviderIngestionCoordinator:
                         source_text=execution_plan.source_utf8_bytes.decode("utf-8"),
                         authenticated_ingress=execution_plan.authenticated_ingress,
                         lease_session=lease_session,
+                        operation_fence=fence,
                     )
                     if self._semantic_pipeline is not None and execution_plan is not None
                     else (
@@ -580,6 +665,7 @@ class ProviderIngestionCoordinator:
                         source_text=plan.source_utf8_bytes.decode("utf-8"),
                         authenticated_ingress=plan.authenticated_ingress,
                         lease_session=lease_session,
+                        operation_fence=control.operation_fence,
                     )
                 except _SemanticPolicyReadOutage:
                     lease_session.checkpoint_retryable(
@@ -788,6 +874,7 @@ class ProviderIngestionCoordinator:
         self, *, operation_id: str, source_id: str, source_digest: str, source_text: str,
         authenticated_ingress: AuthenticatedIngressContext,
         lease_session: SemanticIngestionLeaseSession,
+        operation_fence: OperationFenceBinding,
     ) -> tuple[SemanticTerminalOutcome, _ProviderAuthorizationReadSet | None]:
         """Invoke semantic ingestion only with a current server-owned policy snapshot.
 
@@ -891,6 +978,7 @@ class ProviderIngestionCoordinator:
             current_time_provider=self._now_provider,
             lease_heartbeat=lease_session.heartbeat,
             stage_observer=lease_session.checkpoint,
+            operation_fence=operation_fence,
         ), authorization_guard
 
     def _prepare_recovery_authority(

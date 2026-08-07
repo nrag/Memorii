@@ -104,6 +104,12 @@ def test_build_provider_memory_service_wires_services_together(tmp_path) -> None
     assert provider._llm_decision_trace_store is None
     assert provider._memory_evolution_service is None
     assert not hasattr(provider, "_evolution_coordinator")
+    assert provider.semantic_integrity_lifecycle.repository_id == "semantic_ingestion"
+    assert (
+        provider._semantic_atomic_store.semantic_integrity_linearization
+        is provider.semantic_integrity_lifecycle.linearization
+    )
+    assert (bundle.storage_root / "semantic_integrity" / "integrity.jsonl").exists()
 
 
 def test_provider_record_progress_writes_work_state_event_and_memory_candidate(tmp_path) -> None:
