@@ -1,4 +1,4 @@
-"""semantic ingestion fail-closed candidate-to-terminal semantic pipeline."""
+﻿"""semantic ingestion fail-closed candidate-to-terminal semantic pipeline."""
 
 from __future__ import annotations
 
@@ -643,6 +643,21 @@ class SemanticIngestionPipeline:
                 }
             ),
         )
+
+        plan_lineage = SourceTransactionPlanLineageReference(
+            lineage_id=operation_id,
+            lineage_digest=contract_digest(
+                b"memorii.semantic-ingestion.plan-lineage.v1",
+                {
+                    "source_id": source_id,
+                    "source_digest": source_digest,
+                    "operation_id": operation_id,
+                    "repository_id": repository_id,
+                },
+            ),
+            repository_id=repository_id,
+        )
+
         promotable = (
             bool(parsed)
             and len(sealed_operations) == len(parsed)
@@ -709,6 +724,7 @@ class SemanticIngestionPipeline:
                 execution_lineage=execution_lineage,
                 sealed_operations=sealed_operations,
                 terminal_binding_sets=binding_sets,
+                plan_lineage=plan_lineage,
             )
         candidate_by_id = {candidate.candidate_id: candidate for candidate in parsed}
         carriers = tuple(
@@ -759,6 +775,7 @@ class SemanticIngestionPipeline:
             sealed_operations=sealed_operations,
             accepted_carriers=carriers,
             terminal_binding_sets=binding_sets,
+            plan_lineage=plan_lineage,
             attempt_count=attempt,
         )
 

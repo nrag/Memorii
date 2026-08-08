@@ -1,4 +1,4 @@
-"""Closed, content-addressed language construction policies."""
+﻿"""Closed, content-addressed language construction policies."""
 
 from __future__ import annotations
 
@@ -27,12 +27,14 @@ def _digest(domain: bytes, body: object) -> str:
 def _canonical(value: object) -> object:
     if isinstance(value, BaseModel):
         return _CanonicalMap({name: _canonical(getattr(value, name)) for name in type(value).model_fields})
+    if isinstance(value, dict):
+        return _CanonicalMap({key: _canonical(item) for key, item in sorted(value.items(), key=lambda x: x[0])})
+    if isinstance(value, (frozenset, set)):
+        encoded = [(encode_typed_value(item), item) for item in value]
+        encoded.sort(key=lambda x: x[0])
+        return frozenset(_canonical(item) for _, item in encoded)
     if isinstance(value, tuple):
         return tuple(_canonical(item) for item in value)
-    if isinstance(value, frozenset):
-        return frozenset(_canonical(item) for item in value)
-    if isinstance(value, dict):
-        return _CanonicalMap({key: _canonical(item) for key, item in value.items()})
     return value
 
 

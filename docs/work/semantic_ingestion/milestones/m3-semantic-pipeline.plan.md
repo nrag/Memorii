@@ -597,3 +597,38 @@ Implementation is no longer design-blocked.
   canonical source-group/codec/local-abstention selection passes 13 tests.
   A scoped `rg` over the four former builders finds zero old role fields,
   old parser constructor coordinates, or synthetic all-zero preparation values.
+
+## Resolved Design Ambiguity: SemanticScopePolicy.policy_fingerprint (2026-08-07)
+
+The explicit design gap regarding SemanticScopePolicy.policy_fingerprint is closed by the governing architecture definition (docs/design/semantic_ingestion_architecture.md, lines 4140–4165). Implementation must bind to these exact rules:
+
+* **Digest Domain**: The entire model payload serialized as a canonical CTV (Closed-Typed-Value) preimage over every declared field in declaration order.
+* **Excluded Field**: policy_fingerprint is the only excluded field; it is written last and does not participate in its own hash preimage.
+* **Collection Canonicalization**:
+    * Maps (embedding_head_lemmas): Canonical by sorted CTV map key insertion order. Permutations of insertion produce identical bytes.
+    * Frozenset fields: Canonicalize by strictly sorted typed-value order.
+    * Tuples (llowed_predicate_ancestor_paths, 
+egation_bearer_patterns, 	emporal_attachment_patterns): Must be duplicate-free and ordered by the nested pattern_digest.
+    * Nested UdPathPattern.steps: Preserves declared traversal order and contributes byte-for-byte through the nested pattern_digest.
+* **Validation Constraints**: A missing field, inferred default, duplicate or noncanonical pattern tuple, invalid nested digest, map-order-dependent fingerprint, legacy preimage, or unknown field must reject before policy reuse.
+
+## Strict Codec & Validator Requirements (Derived)
+
+1. The serializer must enforce declaration-order traversal without relying on __dict__.items() unless explicitly bound to the model's __annotations__ order.
+2. Map keys must be sorted lexicographically during CTV encoding; values are recursively encoded using the same rules.
+3. Frozensets must be converted to a list, strictly sorted by their canonical hashable form, then encoded as a fixed-sequence before hashing.
+4. The fingerprint is computed exactly once per policy instance and stored immutably; regeneration must yield byte-identical output without re-evaluating the domain.
+
+## Consensus-Policy Authority Slice Unblocking (2026-08-07)
+
+With this ambiguity resolved, the consensus-policy authority slice may proceed to:
+1. Implement SemanticScopePolicy codecs using the sorted-map/frozenset/tuple rules above.
+2. Regenerate strict-v1 vectors and fixtures that validate the map-order independence and frozenset ordering.
+3. Freeze the consensus-policy authority slice for independent review.
+
+## Remaining M3 Work Order (Post-Unblocking)
+
+1. **Implementation of Resolved Slice**: Encode SemanticScopePolicy per the rules above; pass 51+ tests (Slice A/B + source/group-plan).
+2. **Frozen Review**: Specification, correctness, and test closure review of the refrozen candidate hashes.
+3. **Lineage Foundation**: Wire sealed source alignment into graph-bound transaction-plan expansion and append-only lineage owners (M4 prerequisite).
+4. **Final M3 Reconciliation**: Replace remaining legacy parser/scope/temporal consensus schemas and migrate analyzer/pipeline callers without invented span or preparation authority.
