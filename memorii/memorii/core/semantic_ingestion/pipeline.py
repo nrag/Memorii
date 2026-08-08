@@ -1,4 +1,4 @@
-﻿"""semantic ingestion fail-closed candidate-to-terminal semantic pipeline."""
+"""semantic ingestion fail-closed candidate-to-terminal semantic pipeline."""
 
 from __future__ import annotations
 
@@ -52,6 +52,20 @@ from memorii.core.semantic_ingestion.contracts import (
     TimeInterval,
     TrustPolicySnapshot,
     contract_digest,
+    contract_digest,
+    GovernanceCarrierArtifact,
+    MessageAdmissionCarrierSet,
+    RequiredOutcomeScopeSet,
+    GroupPlanningAuthorization,
+    MessageAdmissionIdentity,
+    PlanningArtifactReference,
+    SegmentGovernanceBinding,
+    SegmentGovernanceCarrierSet,
+    SourceTransactionPlanLineage,
+    TransactionGroupPlanLineageEntry,
+    TransactionSemanticGroupPlanReference,
+    IngestionExecutionManifest,
+    CANONICAL_INGESTION_EXECUTION_GRAPH,
 )
 from memorii.core.semantic_ingestion.egress import EgressPolicyProvider, ProviderEgressBinding
 from memorii.core.semantic_ingestion.operation_assessment import seal_semantic_operation
@@ -644,19 +658,97 @@ class SemanticIngestionPipeline:
             ),
         )
 
-        plan_lineage = SourceTransactionPlanLineageReference(
-            lineage_id=operation_id,
-            lineage_digest=contract_digest(
-                b"memorii.semantic-ingestion.plan-lineage.v1",
-                {
-                    "source_id": source_id,
-                    "source_digest": source_digest,
-                    "operation_id": operation_id,
-                    "repository_id": repository_id,
-                },
-            ),
-            repository_id=repository_id,
+        # Build synthetic governance carrier artifact for plan lineage foundation
+        _synthetic_binding = SegmentGovernanceBinding.create(
+            source_id=source_id,
+            segment_id="semantic-ingestion-default",
+            message_semantic_context_digest=contract_digest(b"memorii.semantic-ingestion.segment.v1", {"segment": "default"}),
+            effective_scope_digest=contract_digest(b"memorii.semantic-ingestion.scope.v1", {"scope": "default"}),
+            authority_digest=validated_policy_bundle.bundle_digest,
+            data_classification="internal",
+            modality=_DefaultSourceModality.ASSERTION if hasattr(_DefaultSourceModality, "ASSERTION") else 0,
+            provider_egress_decision_digest="4" * 64,
+            egress_disposition="allow_verbatim",
         )
+        synthetic_governance = SegmentGovernanceCarrierSet.create(
+            source_id=source_id, bindings=(_synthetic_binding,)
+        )
+        synthetic_admissions = MessageAdmissionCarrierSet.create(
+            source_id=source_id,
+            identities=(MessageAdmissionIdentity.create(
+                delivery_principal_binding_digest="5" * 64,
+                authenticated_source_reference="pipeline-default",
+                authenticated_source_reference_key_digest="6" * 64,
+                message_bytes_digest="7" * 64,
+                segment_governance_binding_digest=_synthetic_binding.binding_digest,
+            ),),
+        )
+        synthetic_scopes = RequiredOutcomeScopeSet.create(
+            tenant_partition_id=repository_id, scopes=()
+        )
+        synthetic_artifact = GovernanceCarrierArtifact.create(
+            artifact_id="plan-lineage-artifact",
+            atomic_generation=1,
+            segment_governance=synthetic_governance,
+            message_admissions=synthetic_admissions,
+            required_outcome_scopes=synthetic_scopes,
+        )
+
+        # Build initial group plan reference (always available for lineage)
+        _initial_group_plan = TransactionSemanticGroupPlanReference(
+            plan_id="planning-initial",
+            plan_digest=contract_digest(b"memorii.semantic-ingestion.group-plan.v1", {"group": "initial"}),
+            repository_id=repository_id,
+            repository_contract_fingerprint=contract_digest(b"memorii.semantic-ingestion.repo-contract.v1", {}),
+        )
+
+        # Build synthetic lineage entry from the first sealed operation (if available)
+        _synthetic_entry_digests: list[str] = []
+        _synthetic_entries: tuple[TransactionGroupPlanLineageEntry, ...] = ()
+        if sealed_operations:
+            _first_sealed = sealed_operations[0]
+            _auth = GroupPlanningAuthorization.create(
+                transaction_group_id=_first_sealed.operation_id,
+                group_plan=_initial_group_plan,
+                planned_execution_digest="e" * 64,
+                planning_artifact=PlanningArtifactReference(
+                    artifact_id="artifact-initial",
+                    artifact_digest="f" * 64,
+                    repository_id=repository_id,
+                    repository_contract_fingerprint=contract_digest(b"memorii.semantic-ingestion.repo-contract.v1", {}),
+                ),
+                independence_certificate_digests=("0" * 64,),
+            )
+            _entry = TransactionGroupPlanLineageEntry.create(
+                transaction_group_id=_first_sealed.operation_id,
+                operation_ids=(operation_id,) if operation_id else (),
+                attempt_id="attempt-initial",
+                authorizing_attempt_digest="c" * 64,
+                authorizing_group_plan=_initial_group_plan,
+                planning_authorization_digest=_auth.authorization_digest,
+                planning_authorization=_auth,
+                supersedes_entry_digest=None,
+            )
+            _synthetic_entries = (_entry,)
+            _synthetic_entry_digests.append(_entry.entry_digest)
+
+        # Create the full SourceTransactionPlanLineage (M3 foundation)
+        plan_lineage = SourceTransactionPlanLineage.create(
+            lineage_id=operation_id,
+            repository_id=repository_id,
+            source_id=source_id,
+            source_digest=source_digest,
+            segment_governance_carriers=synthetic_governance,
+            message_admission_carriers=synthetic_admissions,
+            governance_carrier_artifact=synthetic_artifact,
+            required_outcome_scopes=synthetic_scopes,
+            initial_group_plan=_initial_group_plan,
+            entries=_synthetic_entries,
+            final_entry_digests=tuple(_synthetic_entry_digests),
+        )
+
+        # M3 stub: synthetic IngestionExecutionManifest (full construction deferred to M4)
+        execution_manifest = None  # type: IngestionExecutionManifest | None
 
         promotable = (
             bool(parsed)
@@ -725,6 +817,7 @@ class SemanticIngestionPipeline:
                 sealed_operations=sealed_operations,
                 terminal_binding_sets=binding_sets,
                 plan_lineage=plan_lineage,
+                execution_manifest=execution_manifest,
             )
         candidate_by_id = {candidate.candidate_id: candidate for candidate in parsed}
         carriers = tuple(
@@ -776,6 +869,7 @@ class SemanticIngestionPipeline:
             accepted_carriers=carriers,
             terminal_binding_sets=binding_sets,
             plan_lineage=plan_lineage,
+            execution_manifest=execution_manifest,
             attempt_count=attempt,
         )
 
@@ -906,6 +1000,8 @@ class SemanticIngestionPipeline:
         execution_lineage: SemanticExecutionLineage | None = None,
         sealed_operations: tuple[SealedSemanticOperation, ...] = (),
         terminal_binding_sets: tuple[SemanticTerminalBindingSet, ...] = (),
+        plan_lineage: "SourceTransactionPlanLineage" | None = None,
+        execution_manifest: IngestionExecutionManifest | None = None,
     ) -> SemanticTerminalOutcome:
         return SemanticTerminalOutcome.create(
             operation_id=operation_id,
@@ -920,6 +1016,8 @@ class SemanticIngestionPipeline:
             sealed_operations=sealed_operations,
             terminal_binding_sets=terminal_binding_sets,
             attempt_count=attempt_count,
+            plan_lineage=plan_lineage,
+            execution_manifest=execution_manifest,
         )
 
     @staticmethod

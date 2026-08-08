@@ -1,4 +1,4 @@
-"""Closed, content-addressed contracts shared by the semantic ingestion ingestion pipeline.
+﻿"""Closed, content-addressed contracts shared by the semantic ingestion ingestion pipeline.
 
 This module is deliberately a dependency leaf.  Candidate validation,
 operation sealing, durable carrier compilation, provider orchestration, and
@@ -1399,7 +1399,8 @@ class SemanticTerminalOutcome(BaseModel):
     arbitration_policy_bundle: SemanticArbitrationPolicyBundle | None = None
     authorization_read_set: SemanticAuthorizationReadSet | None = None
     execution_lineage: SemanticExecutionLineage | None = None
-    plan_lineage: SourceTransactionPlanLineageReference | None = None
+    plan_lineage: SourceTransactionPlanLineage | None = None
+    execution_manifest: IngestionExecutionManifest | None = None,
     temporal_closures: tuple[TemporalEvidenceDecisionClosure, ...]
     carrier_artifact_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     sealed_operations: tuple[SealedSemanticOperation, ...] = ()
@@ -1551,7 +1552,8 @@ class SemanticTerminalOutcome(BaseModel):
         arbitration_policy_bundle: SemanticArbitrationPolicyBundle | None = None,
         authorization_read_set: SemanticAuthorizationReadSet | None = None,
         execution_lineage: SemanticExecutionLineage | None = None,
-        plan_lineage: SourceTransactionPlanLineageReference | None = None,
+        execution_manifest: IngestionExecutionManifest | None = None,
+        plan_lineage: SourceTransactionPlanLineage | None = None
         temporal_closures: tuple[TemporalEvidenceDecisionClosure, ...],
         carrier_artifact_digest: str | None = None,
         sealed_operations: tuple[SealedSemanticOperation, ...] = (),
@@ -1569,6 +1571,7 @@ class SemanticTerminalOutcome(BaseModel):
             "authorization_read_set": authorization_read_set,
             "execution_lineage": execution_lineage,
             "plan_lineage": plan_lineage,
+            "execution_manifest": execution_manifest,
             "temporal_closures": temporal_closures,
             "carrier_artifact_digest": carrier_artifact_digest,
             "sealed_operations": sealed_operations,
@@ -7350,3 +7353,5 @@ __all__ = [
     "decode_semantic_contract",
     "encode_semantic_contract",
 ]
+
+

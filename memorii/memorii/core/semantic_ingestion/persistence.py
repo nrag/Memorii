@@ -1,4 +1,4 @@
-"""Fenced semantic ingestion terminal publication through the canonical writer-safe preplanning atomic store."""
+﻿"""Fenced semantic ingestion terminal publication through the canonical writer-safe preplanning atomic store."""
 
 from __future__ import annotations
 
@@ -681,6 +681,22 @@ class SemanticTerminalPersistenceService:
                     }
                 ),
             ),
+            (
+                "plan_lineage",
+                (
+                    encode_semantic_contract(terminal.plan_lineage)
+                    if terminal.plan_lineage is not None
+                    else encode_typed_value(None)
+                ),
+            ),
+            (
+                "execution_manifest",
+                (
+                    encode_semantic_contract(terminal.execution_manifest)
+                    if terminal.execution_manifest is not None
+                    else encode_typed_value(None)
+                ),
+            ),
             ("progress", encode_typed_value({"state": "planned", "terminal_digest": terminal.terminal_digest})),
             ("terminal_artifact", encode_semantic_contract(terminal)),
         ]
@@ -706,7 +722,23 @@ class SemanticTerminalPersistenceService:
             ("event_batch", encode_semantic_memory_event_batch(event_batch)),
             ("graph_delta", encode_semantic_contract(graph_delta)),
             ("group_result", encode_semantic_contract(result)),
+            (
+                "plan_lineage",
+                (
+                    encode_semantic_contract(terminal.plan_lineage)
+                    if terminal.plan_lineage is not None
+                    else encode_typed_value(None)
+                ),
+            ),
             ("observation_delta", encode_semantic_contract(observation)),
+            (
+                "execution_manifest",
+                (
+                    encode_semantic_contract(terminal.execution_manifest)
+                    if terminal.execution_manifest is not None
+                    else encode_typed_value(None)
+                ),
+            ),
         )
 
     @staticmethod
@@ -723,6 +755,22 @@ class SemanticTerminalPersistenceService:
                 encode_typed_value({"terminal": terminal.terminal_digest, "closure": closure.closure_digest}),
             ),
             ("group_result", encode_semantic_contract(result)),
+            (
+                "plan_lineage",
+                (
+                    encode_semantic_contract(terminal.plan_lineage)
+                    if terminal.plan_lineage is not None
+                    else encode_typed_value(None)
+                ),
+            ),
+            (
+                "execution_manifest",
+                (
+                    encode_semantic_contract(terminal.execution_manifest)
+                    if terminal.execution_manifest is not None
+                    else encode_typed_value(None)
+                ),
+            ),
             ("observation_delta", encode_semantic_contract(observation)),
         )
 
@@ -785,6 +833,14 @@ class SemanticTerminalPersistenceService:
         return SemanticTerminalPersistenceService._members(
             ("artifact_closure", encode_semantic_contract(closure)),
             ("lifecycle", encode_semantic_contract(terminal_transition)),
+            (
+                "plan_lineage",
+                (
+                    encode_semantic_contract(terminal.plan_lineage)
+                    if terminal.plan_lineage is not None
+                    else encode_typed_value(None)
+                ),
+            ),
             ("observation_delta", encode_semantic_contract(observation)),
             ("source_result", encode_semantic_contract(terminal)),
             (
