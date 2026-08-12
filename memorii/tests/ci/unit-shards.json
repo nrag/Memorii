@@ -11,6 +11,7 @@
     "--ignore=tests/unit/core/semantic_ingestion/test_identity_lineage_prerequisites.py",
     "--ignore=tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py",
     "--ignore=tests/unit/core/semantic_ingestion/test_provider_compatibility.py"
+    ,"--ignore=tests/unit/core/semantic_ingestion/test_bootstrap_graph_production_roots.py"
   ],
   "assignment_scope": "file",
   "schema_version": 1,

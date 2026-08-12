@@ -1,0 +1,36 @@
+{
+  "artifact_kind": "implementation_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_m31_active_state_and_closure_candidate",
+  "semantic_predecessor": "design-candidate-identity-v76.json",
+  "implementation_predecessor": "implementation-candidate-identity-v78.json",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "710e24d2bdc5ebad3e092c313c77421a1de87bbd941f3b5c2f75f644ca14aa0e",
+  "delta_scope": [
+    "supersede the historical August 9 M3 pause in the active resume packet",
+    "identify the graph transaction implementation WorkPlan and frozen candidate as the active M3.1 operation",
+    "align the parent implementation index current state and exact next action with the verified v78 implementation",
+    "preserve all v78 runtime persistence composition and test bytes unchanged"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "83a9fe92adde7cb45072c8d2b8aa43c0eaa68df456df0c4aab35f9002af14364",
+    "docs/work/semantic_ingestion/implementation.plan.md": "557bcf6088cf352841d7278deebb56c161925e050dd12d88072d6384b28067eb",
+    "docs/work/semantic_ingestion/resume.md": "9fe90c79830203198d4fd3075f0acbd056a855cd6b6df933d2cb3e9288244a33",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md": "ea2864e926479b60a097d33e436ab880df396c4d504a8c537609c7a9d878bded",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "838d36c8e8865ea9610e8a9bf5b60e855c342005062f1e475f9cf62b7a8baf98",
+    "docs/work/semantic_ingestion/bootstrap-graph-authority-unavailable-2026-08-11/debug.plan.md": "b9e435febd05c620e94a498553a5ac16d7c90abd23244bbcd9fb679afce6e15b",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation-candidate-identity-v78.json": "4f1cf288183c63b7b9e7c9297d9040c45caaf5a45e435ddf16220c9a107889bb"
+  },
+  "evidence": [
+    "v78 test review: remaining_validated_p1_p2 remaining_blocks_approval and remaining_changes_required all empty",
+    "v78 specification DREV-001 isolated solely to stale active resume and parent-index state",
+    "v79 changes only the active resume packet parent index and candidate identity",
+    "two stable artifact and status-list identity passes",
+    "JSON parsing and git diff check passed"
+  ],
+  "evidence_maturity": "governance_delta_frozen_for_targeted_review",
+  "remaining_validated_p1_p2": [],
+  "remaining_blocks_approval": [],
+  "remaining_changes_required": []
+}

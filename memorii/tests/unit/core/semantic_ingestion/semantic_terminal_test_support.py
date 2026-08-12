@@ -2,16 +2,19 @@
 
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from functools import cache
 from hashlib import sha256
 from typing import Literal
 
-from pydantic import BaseModel
-
+from clean_room_request_test_support import (
+    build_prepared_source_authority,
+)
 from memorii.core.memory_evolution.admission import (
     GovernedSourceAdmissionService,
     SourceAdmissionAccepted,
     source_admission_source_digest,
 )
+from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
 from memorii.core.memory_evolution.bootstrap_profile import (
     BOOTSTRAP_COORDINATE,
     BootstrapGrammarCorpusCase,
@@ -22,7 +25,9 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     serialize_bootstrap_profile_artifacts,
     verify_bootstrap_profile,
 )
-from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    build_test_host_verified_bootstrap_release_evidence,
+)
 from memorii.core.memory_evolution.conflict_attention import (
     ActiveSemanticConflictResolverAuthority,
     ConflictResolutionOption,
@@ -32,9 +37,6 @@ from memorii.core.memory_evolution.conflict_attention import (
     SemanticConflictResolverAuthority,
     semantic_conflict_rendered_item_utf8_bytes,
 )
-from memorii.core.memory_evolution.projection_history import (
-    SemanticConflictResolverAuthorityRepository,
-)
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
     DeliveryIdentity,
@@ -42,6 +44,10 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     OperationFenceBinding,
     RequiredOutcomeScopeSet,
     encode_typed_value,
+)
+from memorii.core.memory_evolution.models import SourceObservation, SourceType
+from memorii.core.memory_evolution.projection_history import (
+    SemanticConflictResolverAuthorityRepository,
 )
 from memorii.core.memory_evolution.semantic_state import (
     AcceptedClaimIdentity,
@@ -56,6 +62,10 @@ from memorii.core.memory_evolution.writer_admission import (
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
+from memorii.core.semantic_ingestion.capability import (
+    AuthorizedSemanticIngestionRuntime,
+    SemanticIngestionRuntimeAuthorization,
+)
 from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedEventTimeReference,
     AuthenticatedSourceIntervalEvidence,
@@ -67,22 +77,75 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceAuthority,
     SourceAuthorityEvidence,
     TemporalPolicySnapshot,
+    TextPreparationPolicy,
+    TextPreparationRequest,
     TimeInterval,
     TrustDecayStep,
     TrustPolicySnapshot,
 )
 from memorii.core.semantic_ingestion.local_analyzer import ProductionLocalSemanticAnalyzer
 from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
-from memorii.core.semantic_ingestion.capability import (
-    AuthorizedSemanticIngestionRuntime,
-    SemanticIngestionRuntimeAuthorization,
+from memorii.core.semantic_ingestion.source_preparation import (
+    InMemoryPreparedSourceRepository,
+    TextPreparationService,
 )
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
+from pydantic import BaseModel
 
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
 SOURCE = "Atlas works for Memorii."
 SOURCE_ID = "source"
 SOURCE_DIGEST = sha256(SOURCE.encode()).hexdigest()
+
+
+@cache
+def _prepared_source_authority(
+    source_id: str, source_digest: str, source_text: str
+):
+    """Build one immutable Step-2 authority for identical fixture inputs."""
+    policy = TextPreparationPolicy.create(
+        max_segment_characters=max(1, len(source_text)),
+        supported_languages=("en",),
+        segmentation_algorithm=(
+            "memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1"
+        ),
+        context_window_algorithm=(
+            "memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1"
+        ),
+    )
+    return build_prepared_source_authority(
+        source_id=source_id,
+        source_digest=source_digest,
+        source_text=source_text,
+        preparation_policy=policy,
+    )
+
+
+def _prepared_source_repository(
+    *, source_id: str, source_digest: str, source_text: str
+) -> InMemoryPreparedSourceRepository:
+    # Each terminal receives a fresh repository.  The cached value is frozen
+    # and the repository validates/clones on publication and load, so tests
+    # cannot share mutable state while avoiding repeated fixture construction.
+    repository = InMemoryPreparedSourceRepository()
+    observation = SourceObservation(
+        source_id=source_id,
+        text=source_text,
+        source_type=SourceType.USER,
+        source_digest=source_digest,
+        delivery_key_digest=sha256(f"terminal:{source_id}".encode()).hexdigest(),
+    )
+    prepared = _prepared_source_authority(source_id, source_digest, source_text)
+    TextPreparationService(
+        producer=lambda _request: prepared,
+        repository=repository,
+    ).prepare_and_publish(
+        TextPreparationRequest(
+            observation=observation,
+            policy=prepared.preparation_policy,
+        )
+    )
+    return repository
 
 
 def _conflict_digest(domain: bytes, value: object) -> str:
@@ -146,9 +209,20 @@ def _bootstrap_profile_for_test_runtime():
             release_metadata=BootstrapProfileReleaseMetadata(
                 coordinate=BOOTSTRAP_COORDINATE,
                 bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
+                signed_release_digest="1" * 64,
             ),
             trust_anchor=anchor,
             artifact_payloads=serialize_bootstrap_profile_artifacts(artifacts),
+            release_evidence=build_test_host_verified_bootstrap_release_evidence(
+                metadata=BootstrapProfileReleaseMetadata(
+                    coordinate=BOOTSTRAP_COORDINATE,
+                    bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
+                    signed_release_digest="1" * 64,
+                ),
+                external_root_digest="2" * 64,
+                active_lifecycle_snapshot_digest="3" * 64,
+                verified_at=NOW,
+            ),
             authenticated_ingress_resolver=object(),
             profile_enabled=True,
         )
@@ -556,6 +630,9 @@ def accepted_terminal(
             )
 
         def analyze(self, **values):
+            # The pipeline supplies the current prepared source after its exact
+            # repository lookup.  Delegate with that authority rather than
+            # reconstructing an independent analysis fixture per terminal.
             analysis_values = dict(values)
             if operation_kind != "fact":
                 analysis_values["proposal"] = values["proposal"].model_copy(
@@ -605,6 +682,9 @@ def accepted_terminal(
         source_id=source_id,
         source_digest=source_digest,
         source_text=source_text,
+        prepared_source_repository=_prepared_source_repository(
+            source_id=source_id, source_digest=source_digest, source_text=source_text
+        ),
         policy_bundle=policy,
         local_proposals=analyzer.propose(
             source_id=source_id,

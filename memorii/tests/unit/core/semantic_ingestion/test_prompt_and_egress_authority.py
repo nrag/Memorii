@@ -4,6 +4,7 @@ from multiprocessing import get_context
 from pathlib import Path
 
 import pytest
+from memorii.core.memory_evolution.models import SourceObservation, SourceType
 from memorii.core.prompts.registry import PromptRegistry
 from memorii.core.prompts.runtime_manifest import PromptOwner
 from memorii.core.semantic_ingestion.contracts import (
@@ -15,6 +16,8 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceAuthority,
     SourceAuthorityEvidence,
     TemporalPolicySnapshot,
+    TextPreparationPolicy,
+    TextPreparationRequest,
     TimeInterval,
     TrustPolicySnapshot,
 )
@@ -29,6 +32,13 @@ from memorii.core.semantic_ingestion.egress import (
 )
 from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
 from memorii.core.semantic_ingestion.prompt_authority import SemanticPromptAuthority
+from memorii.core.semantic_ingestion.source_preparation import (
+    InMemoryPreparedSourceRepository,
+    TextPreparationService,
+)
+from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
+    build_prepared_source_authority,
+)
 
 
 class _Verifier:
@@ -114,6 +124,39 @@ def _source_authority(binding: ProviderEgressBinding) -> SourceAuthorityEvidence
     )
 
 
+def _prepared_source_repository(
+    binding: ProviderEgressBinding, source_text: str
+) -> InMemoryPreparedSourceRepository:
+    repository = InMemoryPreparedSourceRepository()
+    policy = TextPreparationPolicy.create(
+        max_segment_characters=4096,
+        supported_languages=("en",),
+        segmentation_algorithm=(
+            "memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1"
+        ),
+        context_window_algorithm=(
+            "memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1"
+        ),
+    )
+    observation = SourceObservation(
+        source_id=binding.source_id,
+        text=source_text,
+        source_type=SourceType.USER,
+        source_digest=binding.source_digest,
+        delivery_key_digest=sha256(b"prompt-egress-test-delivery").hexdigest(),
+    )
+    TextPreparationService(
+        producer=lambda request: build_prepared_source_authority(
+            source_id=request.observation.source_id,
+            source_digest=request.observation.source_digest or "",
+            source_text=request.observation.text,
+            preparation_policy=request.policy,
+        ),
+        repository=repository,
+    ).prepare_and_publish(TextPreparationRequest(observation=observation, policy=policy))
+    return repository
+
+
 class _Authorization:
     def __init__(self, binding: ProviderEgressBinding) -> None:
         self.binding = binding
@@ -193,6 +236,7 @@ def test_signed_egress_lifecycle_cas_and_zero_wire_on_revocation():
     outcome = SemanticIngestionPipeline(transport=transport).run(
         operation_id="operation-a", source_id=binding.source_id, source_digest=binding.source_digest,
         source_text=source, policy_bundle=_bundle(at), registered_prompt=_prompt(source),
+        prepared_source_repository=_prepared_source_repository(binding, source),
         egress_binding=binding, egress_policy_provider=repository,
     )
     assert outcome.status == "evidence_only"
@@ -307,6 +351,7 @@ def test_exact_authenticated_binding_substitution_has_zero_wire(field: str, valu
     outcome = SemanticIngestionPipeline(transport=transport).run(
         operation_id="operation-a", source_id=binding.source_id, source_digest=binding.source_digest,
         source_text=source, policy_bundle=_bundle(at), registered_prompt=_prompt(source),
+        prepared_source_repository=_prepared_source_repository(binding, source),
         egress_binding=binding.model_copy(update={field: value}), egress_policy_provider=repository,
     )
     assert outcome.status == "evidence_only"
@@ -335,6 +380,7 @@ def test_policy_rotation_between_repair_attempts_blocks_second_wire_call():
     outcome = SemanticIngestionPipeline(transport=transport).run(
         operation_id="operation-a", source_id=binding.source_id, source_digest=binding.source_digest,
         source_text=source, policy_bundle=_bundle(at), registered_prompt=_prompt(source),
+        prepared_source_repository=_prepared_source_repository(binding, source),
         egress_binding=binding, egress_policy_provider=provider,
         current_time_provider=lambda: at,
         source_authority_evidence=_source_authority(binding),
@@ -368,6 +414,7 @@ def test_server_time_expiry_before_request_has_zero_wire() -> None:
         source_id=binding.source_id,
         source_digest=binding.source_digest,
         source_text="source",
+        prepared_source_repository=_prepared_source_repository(binding, "source"),
         policy_bundle=_bundle(arbitration_at),
         registered_prompt=_prompt("source"),
         egress_binding=binding,
@@ -405,6 +452,7 @@ def test_server_time_expiry_after_response_stops_before_repair() -> None:
         source_id=binding.source_id,
         source_digest=binding.source_digest,
         source_text="source",
+        prepared_source_repository=_prepared_source_repository(binding, "source"),
         policy_bundle=_bundle(arbitration_at),
         registered_prompt=_prompt("source"),
         egress_binding=binding,

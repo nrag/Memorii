@@ -218,7 +218,7 @@ because a related CFP or ING row is marked closed.
 | SIA-R05 | Require certified independent role, scope, attribution-bearer, and attachment evidence before promotion. Sources: Memorii spec Sections 16.25-16.27 and 25.1-25.3; implementation rules, commit gating. | Required | Linguistic consensus, scope interpreter, source-local identity, and canonical identity resolver | Analyzer disagreement, incomplete ancestor closure, unsupported attachment, or missing/ambiguous/noncanonical reported-source bearer yields unresolved and zero graph effect. | Active/passive, negation, quotation, direct/reported/nested attribution, bearer/identity substitution, coordination, and analyzer-mutation tests. |
 | SIA-R06 | Detect and attach textual valid time independently of proposer completeness, and combine it with authenticated non-text temporal evidence only through the closed matrix in Section 3.5. Sources: Memorii spec Sections 7.2, 17, and 25; implementation rules, commit gating. | Required | Temporal resolver and attachment consensus | Source-present temporal text omitted by the proposer, ambiguous or misattached text, and unsupported text/non-text combinations cannot be promoted. Genuinely absent text follows the predicate mode and authenticated-evidence matrix rather than being treated as proposer omission. | Absolute/relative/interval, omission versus absence, event/document reference provenance, authenticated interval, atemporal, misattachment, timezone, DST, and replay tests covering every matrix cell. |
 | SIA-R07 | Bind prompt text, schema, owner, redaction, and visibility policy through one registered prompt authority. Source: prompt contracts. | Required | Prompt registry/renderer and proposer transport | Any registration-coordinate substitution blocks transport before a provider or local model call; a valid policy removes registered non-source secrets from rendered prompt, transport metadata, and traces without rewriting source text. | YAML/schema/owner/visibility/redaction/digest mutation tests plus independent serialized-byte observation for valid nested redaction and immutable sanitized copies. |
-| SIA-R08 | Preserve a certifiable local-only active ingestion path and make the built-in bootstrap profile the ordinary production default; cloud proposal is explicit opt-in. Source: storage-details local-first requirement. | Required | `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)`, provider factory, and composition roots | Normal construction selects the Section 3.23.0 deterministic English rule profile with network denied. The complete governed-source-admission no-semantic outcome set is selected-pipeline-pending, disabled, unavailable, unsupported-input, and abstained; remote is explicit only and never a fallback. | Default-composition, no-network local, disable/failure/evidence-only, supported-English, unsupported-language/form, explicit remote-opt-in, and remote-deny zero-call tests. |
+| SIA-R08 | Preserve a certifiable local-only active ingestion path and make the built-in bootstrap profile the ordinary production default; cloud proposal is explicit opt-in. Source: storage-details local-first requirement. | Required | `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)`, provider factory, and composition roots | Normal construction selects the Section 3.23.0 deterministic English rule profile with network denied. The complete governed-source-admission no-semantic outcome set is selected-pipeline-pending, disabled, unavailable, authority-unavailable, unsupported-input, and abstained; remote is explicit only and never a fallback. | Default-composition, no-network local, disable/failure/evidence-only, supported-English, unsupported-language/form, explicit remote-opt-in, and remote-deny zero-call tests. |
 | SIA-R09 | Authorize remote egress only under the current active source-bound policy. Sources: storage details; Memorii spec Sections 15 and 25. | Required | Source governance and provider transport | Each segment uses only its exact classification/context-bound decision; revoked, expired, superseded, stale, swapped-segment, or mismatched policy produces zero remote calls. | Mixed classification/modality/authority/egress routing, policy rotation, rollback, concurrent change, provider/model/region, swapped/missing/extra decision, and replay tests. |
 | SIA-R10 | Emit canonical idempotent full-state memory events for every committed semantic mutation, retain canonical ingestion-observation deltas for every terminal source-visible operation, and reconstruct both materialized authorities and every acknowledged replay dependency from their logs. Sources: Memorii spec Sections 18.2-18.3; event model Sections 3-5, 8-9, and 14-16. | Required | Transaction coordinator, graph event/replay authority, ingestion-observation ledger, semantic-conflict authority, and atomic replay-artifact store | Genesis and signed-checkpoint replay across every active read schema reproduce the exact committed graph revision, ingestion-observation ledger, progress state, semantic-conflict history/current pointers, and replay-authoritative artifact closure without prior materialized state, provider, analyzer, file cache, or read-time reconstruction. No visible state references an artifact absent from the same or an earlier complete generation. Envelope `event_id`, logical-retry `dedupe_key`, and record identity are distinct; only `payload.entity_id == payload.record_id == GraphRecordMutation.record_id`. One typed `create|update` mutation kind is carried unchanged from compiler delta through event identity and replay; one logical mutation has one stable dedupe key across retries. Every terminal operation has exactly one immutable introduction and terminal-outcome record; committed outcomes link exactly one graph delta and terminal non-committing outcomes forbid one. Every committed user-decidable contested projection atomically publishes its canonical semantic-conflict revision and pointer. Exact duplicate envelopes remain idempotent and current-writer same-record/version collisions reject before visibility. Under the frozen `SIA-ED-REPLAY-001` decision, non-identical historical equal-version conflicts fail closed without selecting or materializing a winner. | Every-record-kind create/update/retirement mapping, introduction/outcome/conflict replay, zero-mutation terminals, graph/projection/conflict publication failpoints, pre-planning resume, identity mutations, envelope/dedupe/record identity separation, exact-duplicate idempotency, semantic-conflict retry/rebuild/race behavior, current-writer version-collision rejection, non-identical historical equal-version fail-closed behavior from genesis and checkpoints, conflicting-dedupe, reordered, supported/retired/future schema, deterministic upcast, corrupt, partial-commit, checkpoint trust/rollback, and replay-resume tests. |
 | SIA-R11 | Enforce one certified semantic writer across embedded, sidecar, event-consumer, legacy, and generic-store paths. Sources: Memorii spec Sections 17.3 and 19.2; implementation rules, commit gating. | Required | Store-owned writer admission, delivery-coordinate migration owner, semantic-record ownership manifest, and common storage boundary | Every governed semantic mutation carries one current writer binding. Activation stops new legacy admissions, drains or terminalizes every old-epoch operation, and atomically publishes one independently certified complete target-coordinate generation before advancing the epoch. A stale or binding-free writer changes no semantic or lifecycle revision. | Shared-store mixed-version, every atomic and generic write entry point, finite migration inventory/certificate, ambiguity/collision, crash/restart, cutover, rollback, cross-cutover retry, drain, active-lease, and paused in-flight process tests. |
@@ -231,7 +231,7 @@ because a related CFP or ING row is marked closed.
 | SIA-R18 | Preserve immutable historical truth, trust evolution, entity lineage, and user-visible semantic-conflict history. Sources: Memorii spec Sections 7.2, 17, 18, and 25; canonical event model Sections 5-10; conflict-attention design. | Required | Graph compiler, projection scheduler, semantic-conflict authority, and persistence | Required current, historical, contested, conflict-attention, and lineage views remain replayable after late arrival, policy migration, natural conflict change/resolution, clarification, rekey, merge, and split. Every committed user-decidable contest has same-transaction canonical conflict authority. | Interval/trust/identity/conflict prefix matrices, conflict coalescing and scope/display authority, migration and clarification races, cache rebuild, and exact genesis/checkpoint structural comparison. |
 | SIA-R19 | Activate semantic ingestion through the normal production provider composition selected by the bootstrap profile. Source: engineering-hardening closure matrix C3. | Required | Provider factory, `ProviderMemoryService`, ingestion coordinator, and bootstrap profile owner | Normal production builders route governed sources through `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)` with no legacy writer or fallback authority. Every governed-source-admission no-semantic outcome retains governed evidence without semantic promotion. | Owner-stripping and default-constructor provider/Hermes/filesystem tests for bootstrap, disablement, failure, unsupported/abstained, and later approved profiles. |
 | SIA-R20 | Fence long-running work with renewable leases, bounded stale recovery, terminal exhaustion, and a separate stable allocation namespace. Source: engineering-hardening closure matrix C13. | Required | Operation repository, lease heartbeat, semantic ingestion coordinator, and identity/action planners | Only the current lease owner may persist or commit; reclaim preserves allocation namespace and byte-identical planned IDs. Fence/allocation coordinates derive only from the version-bound stable delivery identity, immutable admitted source coordinates, and operation ID; current authorization evidence is excluded. Abandoned work recovers within the fixed budget and then becomes terminal. | Fake-clock, session/scope/policy/trust/revocation rotation identity-stability, multiprocess token-fencing, crash/reclaim before and after planning, namespace substitution, slow-stage renewal, lost-acknowledgement, restart, stale-recovery, and exhaustion tests. |
-| SIA-R21 | Make semantic-ingestion admission, checkpoint progress, terminal-group persistence, and source finalization process-safe and crash-atomic; the filesystem/JSONL backend must publish each complete batch as one generation. Source: engineering-hardening closure matrix C12. | Required | Semantic-ingestion atomic-store protocol and filesystem storage adapter | Readers observe the prior state or one complete admission, progress checkpoint, group, or finalization transaction, never a subset. First visibility of every replay-authoritative artifact is atomic with the state that references it. A terminal-group transaction atomically publishes its group result and ingestion-observation delta and, only when committed, its graph delta/event batch. Every transaction validates its exact graph/control/observation/artifact revisions, artifact closure, lease, writer epoch, and stable idempotency fence; checkpoint/group/finalization equality excludes current authorization evidence and ingress context. | Backend-neutral in-memory/filesystem conformance plus pre-planning/planned checkpoints, committed, zero-mutation, and mixed-outcome group transactions; session/scope/policy/trust/revocation rotation with stable durable equality, deterministic artifact/index/state failpoints, multiprocess same/distinct delivery, failed replace, reopen, corruption, lost acknowledgement, and idempotent retry schedules. |
+| SIA-R21 | Make semantic-ingestion admission, checkpoint progress, terminal-group persistence, and source finalization process-safe and crash-atomic; the filesystem/JSONL backend must publish each complete batch as one generation. Source: engineering-hardening closure matrix C12. | Required | Semantic-ingestion atomic-store protocol and filesystem storage adapter | Readers observe the prior state or one complete admission, progress checkpoint, group, or finalization transaction, never a subset. First visibility of every replay-authoritative artifact is atomic with the state that references it. A terminal-group transaction atomically publishes its group result and ingestion-observation delta and, only when committed, its graph delta/event batch. Every transaction validates its exact graph/control/observation/artifact revisions, artifact closure, lease, writer epoch, and stable idempotency fence; checkpoint/group/finalization equality excludes current authorization evidence and ingress context. | Backend-neutral in-memory/filesystem conformance plus source-normalization, plan-published, attempt-published, and lineage-published states, committed, zero-mutation, and mixed-outcome group transactions; session/scope/policy/trust/revocation rotation with stable durable equality, deterministic artifact/index/state failpoints, multiprocess same/distinct delivery, failed replace, reopen, corruption, lost acknowledgement, and idempotent retry schedules. |
 | SIA-R22 | Preserve the immutable provider envelope contract while exposing truthful semantic-ingestion state only through the protected accessor. Sources: current provider operation contract; implementation rules; normal production composition requirement C3. | Required | Provider service, result-access authorizer, protected admission authorization index, operation repository, and semantic-result repository | Compatibility freezes declaration order, field names/types, enums, defaults, nullability, validators, serialization shape, and independent legacy-reader decoding. Dynamic outcome fixtures are profile-versioned behavior, not envelope authority: the old fixture remains historical reader input but is retired as bootstrap behavior authority. Semantic-aware callers use only `SemanticIngestionOutcomeLookupRequest`; it authorizes before result/artifact lookup and is non-disclosing when unavailable. | Static schema/declaration/validator/reader audit; historical-reader input decoding; profile-versioned truthful outcome matrix; protected-accessor authorization matrix; and a transition audit rejecting use of retired outcome bytes as bootstrap expected behavior. |
 | SIA-R23 | Preserve public provider delivery identity through one owned versioned internal normalization contract, governed structured source envelopes, metadata-poor evidence retention, and composite-hook replay. Source: engineering-hardening closure matrix C11 and the current provider boundary. | Required | Ingestion contracts, delivery-coordinate migration owner, provider adapters, source-admission normalizer, and operation repository | Every public mutation validates one strict Unicode-scalar delivery ID, preserves its accepted scalar sequence and UTF-8 bytes exactly, and rejects empty/all-whitespace, invalid encoding/scalars, over-limit values, and non-public composite-coordinate injection. The normalization-contract version is part of `DeliveryIdentity`. Before activation, every current stripped public ID and raw child ID is mapped from preserved evidence into one complete content-addressed target generation; ambiguity/collision blocks activation absent an evidence-backed owner disposition. After activation only typed target coordinates are readable or writable. Governed snapshots/delegations produce one canonical internal envelope; current metadata-poor snapshot hooks retain exact evidence with no semantic projection or synthetic identity. Accepted admission returns the complete immutable authenticated operation/namespace/writer handoff. Composite hooks derive typed domain-separated child coordinates; restart, partial replay, and cross-cutover retry execute only missing children and never duplicate effects. | Cross-adapter independently authored golden vectors for normalization version, canonical-equivalent Unicode pairs, case, leading/trailing whitespace, non-ASCII, byte limit, invalid scalars/encoding, empty/all-whitespace, public/composite coordinate collision attempts; frozen migration fixtures for whitespace, NFC/NFD, delimiter-like IDs, partial fan-out, collision, crash/restart, rollback, cross-cutover retry, parent/child fan-out, admission-to-lease/lost-ack/replay, conflicting replay, and exactly-one-effect recovery permutations. |
 
@@ -1160,7 +1160,7 @@ responsibilities are acceptance requirements.
 | `memory_evolution/reference_integrity.py` | mandatory physical/logical reference annotations, generated `ReferenceSchemaManifest`, typed-target atomic edge ledger, legacy bootstrap/catch-up activation, per-target audit certificate, closure proof, and index verification | Typed storage schemas, graph repositories, transaction layer | NLP libraries, provider SDK, benchmark fixtures |
 | `memory_evolution/semantic_compilation.py` | pure accepted-operation compiler over complete typed record snapshots, explicit action/retraction/bitemporal/trust/identity transitions, reference dispositions, typed after-records, and graph-revision delta | Existing graph/domain/lifecycle/governance contracts | Storage reads/retries, natural-language libraries, language strings, benchmark code |
 | `memory_evolution/transaction_coordinator.py` | `SemanticIngestionTransactionCoordinator`, base MVCC bundle, exact segment-binding/fence/issuer-bound read-set extensions, sealed transaction context, planned identity/action reservations, atomic-store-backed immutable planning-artifact read views, fixed-point prefix planning, semantic-effect independence certificates, graph-validation attempts, bounded revalidation, and CAS commit | Deterministic normalization/reconciliation/compiler protocols, graph repositories, operation fence | Provider recall during retry, language interpretation, benchmark code |
-| `memory_evolution/atomic_store.py` | `SemanticIngestionAtomicStore`, admission/checkpoint/terminal-group/finalization requests, atomic replay-artifact bytes/index/reference publication, discriminated pre-planning/planned progress, mixed graph/control/observation/artifact CAS semantics, and backend conformance protocol | Source, graph, operation, observation-ledger, event, result, lease, writer-admission, and storage contracts | NLP libraries, provider recall, benchmark orchestration or test hooks |
+| `memory_evolution/atomic_store.py` | `SemanticIngestionAtomicStore`, admission/checkpoint/terminal-group/finalization requests, atomic replay-artifact bytes/index/reference publication, discriminated source-normalization/plan-published/attempt-published/planned progress, mixed graph/control/observation/artifact CAS semantics, and backend conformance protocol | Source, graph, operation, observation-ledger, event, result, lease, writer-admission, and storage contracts | NLP libraries, provider recall, benchmark orchestration or test hooks |
 | `memory_evolution/operation_lease.py` | store-owned work claims, renewable owner/token/epoch leases, bounded stale recovery, terminal exhaustion, and lease-bound durable-write authorization | Operation repository, server clock, process-safe CAS | Semantic interpretation, graph mutation, benchmark fixtures |
 | `memory_evolution/writer_admission.py` | store-owned global semantic-writer namespace, implementation admission, monotonic writer epochs, cutover/rollback CAS, governed-record manifest, and commit-binding validation | State store, graph schema contracts | Predicate/language capability selection, provider calls, NLP libraries, benchmark code |
 | `memory_evolution/events.py` | canonical full-state semantic-ingestion memory-event payloads, exact record/event identity binding, logical-mutation dedupe keys, event-schema registry and deterministic upcasters, graph-delta references, typed replay checkpoints, and replay reducer | Canonical event contracts, graph contracts, state store, checkpoint trust policy | Provider calls, NLP libraries, benchmark code |
@@ -3120,8 +3120,16 @@ class SessionAuthorizationEvidence(BaseModel):
 
 class AuthenticatedIngressContext(BaseModel):
     delivery_principal_binding: DeliveryPrincipalBinding
-    current_authorized_scopes: CurrentAuthorizedScopeSet
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    current_authorized_scopes: RequiredOutcomeScopeSet
     session_authorization: SessionAuthorizationEvidence
+    language_declaration: str | None = Field(default=None)
+    language_evidence_kind: Literal["authenticated_host_declaration", "missing", "untrusted", "mismatched"] = Field(default="missing")
+    language_evidence_trust: Literal["trusted", "missing", "untrusted", "mismatched"] = Field(default="missing")
+    language_governance_agreement: Literal["agrees", "missing", "disagrees"] = Field(default="missing")
+    semantic_egress_governance: AuthenticatedSemanticEgressGovernance | None = Field(default=None)
+    semantic_source_authority: AuthenticatedSemanticSourceAuthority | None = Field(default=None)
+    semantic_source_interval: AuthenticatedSemanticSourceInterval | None = Field(default=None)
 
 class AuthenticatedHostIngress(BaseModel):
     authenticated_principal: object
@@ -4800,6 +4808,21 @@ class BootstrapGrammarCapabilityManifest(BaseModel):
     grammar_corpus_digest: str
     manifest_digest: str
 
+class BootstrapAuthenticatedLanguageEvidence(BaseModel):
+    source_id: str
+    source_digest: str
+    original_text_digest: str
+    delivery_principal_binding_digest: str
+    segment_governance_set_digest: str
+    governance_carrier_artifact_digest: str
+    segment_governance_carriers_digest: str
+    message_admission_carriers_digest: str
+    language_declaration: str | None
+    language_evidence_kind: Literal["authenticated_host_declaration", "missing", "untrusted", "mismatched"]
+    language_evidence_trust: Literal["trusted", "missing", "untrusted", "mismatched"]
+    language_governance_agreement: Literal["agrees", "missing", "disagrees"]
+    evidence_digest: str
+
 class BootstrapLocalProfileManifest(BaseModel):
     schema_id: Literal["memorii.semantic_ingestion.bootstrap_local_profile_manifest"]
     schema_version: Literal[1]
@@ -4808,6 +4831,12 @@ class BootstrapLocalProfileManifest(BaseModel):
     compiler_symbol: Literal["memorii.core.memory_evolution.semantic_compilation.SemanticIngestionCompiler"]
     validator_symbol: Literal["memorii.core.memory_evolution.validation.MemoryEvolutionValidator"]
     service_symbol: Literal["memorii.core.memory_evolution.service.MemoryEvolutionService"]
+    source_normalizer_symbol: Literal["memorii.core.memory_evolution.source_admission.ProviderEventNormalizer"]
+    scope_authorizer_symbol: Literal["memorii.core.memory_evolution.source_governance.require_complete_scope_authorization"]
+    preparation_service_symbol: Literal["memorii.core.semantic_ingestion.source_preparation.TextPreparationService"]
+    local_analyzer_symbol: Literal["memorii.core.semantic_ingestion.local_analyzer.ProductionLocalSemanticAnalyzer"]
+    preparation_policy: TextPreparationPolicy
+    declared_language: Literal["en"]
     grammar_capability_manifest_digest: str
     grammar_corpus_digest: str
     component_root_digest: str
@@ -4820,6 +4849,49 @@ class BootstrapProfileSelection(BaseModel):
     enabled: bool
     remote_selector: Literal[None]
 
+class HostVerifiedBootstrapReleaseEvidence(BaseModel):
+    coordinate: BootstrapProfileCoordinate
+    signed_release_digest: str
+    bootstrap_anchor_digest: str
+    external_root_digest: str
+    active_lifecycle_snapshot_digest: str
+    lifecycle_state: Literal["active"]
+    verified_at: datetime
+    evidence_digest: str
+
+class CurrentBootstrapReleaseAssertion(BaseModel):
+    coordinate: BootstrapProfileCoordinate
+    signed_release_digest: str
+    bootstrap_anchor_digest: str
+    active_lifecycle_snapshot_digest: str
+    assertion_phase: Literal["prepared_publication", "pre_handoff_retry", "writer_handoff"]
+    assertion_nonce: str
+    assertion_digest: str
+
+class CurrentBootstrapReleaseVerifier(Protocol):
+    def assert_current(
+        self,
+        authorization: DeliveryAuthorizationRequest,
+        release_evidence: HostVerifiedBootstrapReleaseEvidence,
+        assertion_phase: Literal["prepared_publication", "pre_handoff_retry", "writer_handoff"],
+    ) -> CurrentBootstrapReleaseAssertion: ...
+
+class HostVerifiedBootstrapMaterial:
+    release_metadata: BootstrapProfileReleaseMetadata
+    trust_anchor: BootstrapProfileTrustAnchor
+    artifact_payloads: BootstrapProfileArtifactPayloads
+    release_evidence: HostVerifiedBootstrapReleaseEvidence
+    authenticated_ingress_resolver: AuthenticatedIngressContextResolver
+    profile_enabled: bool
+
+class VerifiedBootstrapProfile(BaseModel):
+    coordinate: BootstrapProfileCoordinate
+    enabled: bool
+    artifacts: BootstrapProfileArtifacts
+    release_evidence: HostVerifiedBootstrapReleaseEvidence
+    selection_digest: str
+    verification_digest: str
+
 ```
 
 All bootstrap models are frozen and reject unknown fields. Component distribution
@@ -4827,28 +4899,54 @@ name/version are paired, and a component without a distribution identity require
 a repository blob identity. Grammar corpus disposition, language evidence, and
 reason combinations are validated against the closed matrix defined below.
 
+`BootstrapAuthenticatedLanguageEvidence` is derived only after governance has
+sealed the retained source and its carrier sets. Its digest is SHA-256 over
+declaration-order CTV with domain
+`memorii.semantic_ingestion.bootstrap_authenticated_language_evidence.v1`,
+every shown field except `evidence_digest`, and no defaulting or aliases. Thus
+it binds the stable principal, retained source/text digest, exact governance
+carrier artifact, exact segment-governance and message-admission carrier-set
+digests, and the authenticated ingress language tuple. Admission persists the
+record unchanged in both request and observation; a missing carrier digest,
+source/principal substitution, or unequal ingress tuple rejects the route.
+
+**Step-1/Step-2 route authority.** The unreleased V1
+`BootstrapLocalProfileManifest` is regenerated atomically with the existing V1
+grammar-capability manifest, corpus, trust anchor, release metadata, and signed
+release bytes before any publication. Its embedded frozen `TextPreparationPolicy`
+and literal `en` bind the exact deterministic path: `ProviderEventNormalizer`,
+`require_complete_scope_authorization`, `TextPreparationService`,
+`ProductionLocalSemanticAnalyzer`, and the existing extractor/compiler/validator/
+service symbols. Its ordered component fingerprints and root cover exactly those
+eight actual owners. Trusted
+language comes only from the existing `AuthenticatedIngressContext` tuple; no
+detector, registry, remote provider, model asset, or caller language input is
+authorized. `profile_digest` remains the V1 CTV preimage over every field except
+itself, so regenerated pre-release bytes have one exact V1 authority chain.
+
 The canonical coordinate is the typed tuple
 `BootstrapProfileCoordinate("memorii.bootstrap_local_english_rule", 1)`.
 The spelling `.v1` is only a non-normative display label and is forbidden in
 CTV, registry, fixture, or persisted profile coordinates. The artifact graph
-has exactly three content artifacts: one grammar-capability manifest, one
-separate grammar corpus, and one profile manifest. The profile manifest binds
-both artifact digests and the component root; it has no second or ambiguous
-grammar-manifest digest. `profile_digest` is the CTV encoding of every profile
+has exactly three content artifacts for each profile version: one grammar-capability
+manifest, one separate grammar corpus, and one profile manifest. The regenerated
+V1 profile manifest binds both grammar artifact digests and the one expanded
+component root. No manifest has a second or
+ambiguous grammar-manifest digest. `profile_digest` is the CTV encoding of every profile
 manifest field except itself under the schema ID/version above and the owned
 `semantic_ingestion_typed_value` binding. `component_root_digest` is the
 compiled/package-owned expected root over ordered module/qualified-symbol/module-content
 fingerprints.
 
-`BootstrapProfileTrustAnchor` is an immutable artifact outside all supplied CTV
-artifacts. It binds the exact coordinate,
-profile-manifest digest, grammar-capability-manifest digest, grammar-corpus
-digest, and component-root digest. It is not self-authority: an active signed
+`BootstrapProfileTrustAnchor` is the immutable V1 artifact outside all supplied
+CTV artifacts. It binds the exact coordinate, profile-manifest digest,
+grammar-capability-manifest digest, grammar-corpus digest, and expanded
+component-root digest. It is not self-authority: an active signed
 `SemanticIngestionTraceabilityRelease`, verified against the independently
 provisioned `TraceabilityBootstrapTrustAnchor` and its signed lifecycle root,
-authorizes host-verified `BootstrapProfileReleaseMetadata` with this exact
-bootstrap-anchor digest and coordinate without changing the frozen v1 release
-body schema. The out-of-box installer/host distribution process
+authorizes host-verified `BootstrapProfileReleaseMetadata` for the Step-1/Step-2
+route with the exact bootstrap-anchor digest and coordinate. The
+out-of-box installer/host distribution process
 automatically provisions the `TraceabilityBootstrapTrustAnchor` through an
 authenticated channel separate from the Memorii package/release into the host
 or OS trust store (or host-executable trust boundary); no manual user
@@ -4860,8 +4958,159 @@ replacement, mismatch, or missing external root fails closed before any
 release/anchor/artifact use. This preserves the `SIA-ED-TRACEABILITY-001`
 external trust boundary and does not claim a process-wide package-integrity
 sandbox.
-Startup then decodes and verifies the three CTV artifacts against the anchored
-digest set; it recomputes every component fingerprint, root, corpus, manifest,
+`BootstrapProfileSelection` remains the exact V1 persisted/decoded selection
+shape. This correction regenerates those unreleased V1 bytes atomically; it
+does not introduce a second coordinate, decoder, registry, release member, or
+conversion path.
+
+**Scenario-first V1 certified corpus closure.** The four normative
+scenario-first cases are a required deterministic conformance slice of this
+same unreleased V1 profile; they are not a second fixture-only semantic path.
+The regenerated corpus therefore contains the following exact trusted-English
+members in addition to its required negative, unsupported, and abstain
+inventory:
+
+| Corpus case ID | Exact normalized segment bytes | Required local result |
+| --- | --- | --- |
+| `scenario_owner_alice` | `Atlas owner is Alice.` | one `owner` fact with person-valued object `Alice` |
+| `scenario_owner_bob` | `Atlas owner is Bob.` | one `owner` fact with person-valued object `Bob` |
+| `scenario_status_running` | `Orion status is running.` | one literal-valued `status` fact with value `running` |
+| `scenario_insufficient` | `No source-grounded assertion is available.` | `abstain_form` with `extractor_abstained`; no candidate and an abstained terminal |
+
+The `ambiguous-owner` scenario is not a corpus value of its own. It is the
+ordered two-segment source `scenario_owner_alice`, ASCII space separator,
+`scenario_owner_bob`; both segment proofs must be present and exactly cover
+their own source spans. The separator is retained and span-mapped but is not a
+grammar segment or a candidate. This is the only V1 multi-segment form. A
+missing, duplicate, reordered, altered, or separately sourced member is not
+an ambiguity proof and remains non-promoting.
+
+`ProductionLocalSemanticAnalyzer` is the sole local semantic owner for this
+closure. It must accept only the four literal corpus forms above after the
+existing preparation route has proved each segment, emit the public semantic
+predicate vocabulary `owner` and `status` (not a private alias), and reject
+all other text. It must produce one analysis per proven segment, bind each
+analysis and candidate to that segment's route/proof/span, and aggregate only
+the two declared owner segments for the one scenario ambiguity result. Exact
+one-segment `owner`, `status`, and insufficient inputs retain their existing
+accepted or abstained terminal shapes. An unsupported corpus form, a malformed
+separator, any route/proof mismatch, or an owner pair with equal values must
+not be reclassified as ambiguous. No learned model, tokenizer, external
+registry, remote service, or caller-provided grammar participates.
+
+The scenario ingress runner must construct a real
+`BuiltInLocalHostSemanticIngestionCapability` from scenario-test-only
+host-verified V1 material and inject it into the ordinary
+`ProviderMemoryService`. It must invoke the public event ingress once per
+renderer observation, supply the matching authenticated host ingress, and
+derive its run record only from the persisted terminal/protected result and
+source artifacts. For rendered observation ordinal `n`, the renderer derives
+the opaque event ID from SHA-256 over the domain
+`memorii.scenario-first.public-ingress-id.v1`, the ordinal, the rendered source
+bytes digest, and the public scope tuple; it exposes only that opaque ID and
+the normal public event fields. The renderer/comparator-private map from that
+opaque ID to scenario turn ID is never passed to the host capability, ingress,
+analyzer, store, trace, or persisted payload. Scenario ID, classification,
+expected verdict, hidden entity IDs, and comparator state are excluded from
+both the derivation and all public inputs. The runner may not call `EnglishRuleMemoryExtractor`,
+`ProductionLocalSemanticAnalyzer`, preparation, or persistence directly, and
+may not use a test root in a default or production host. It records separate
+per-observation outcomes and one aggregate scenario comparator result; no
+scenario ID, expected result, hidden entity identifier, or comparator value is
+made available to the host capability, provider event, analyzer, or persisted
+payload.
+
+**Non-forgeable scenario trust-domain capability.** Bootstrap trust-domain
+selection is host-owned, opaque to core, and is not a public flag, environment
+variable, constructor value, CTV field, or persisted field. The installed
+production/default composition root obtains a host capability that can verify
+only the `production` trust domain before it exposes V1 material to
+`BuiltInLocalHostSemanticIngestionCapability`. The separately bounded scenario
+runner obtains a test-process capability that can verify only the
+`scenario_test` trust domain and is not discoverable through the installed
+production capability provider. Both capability variants verify the complete
+externally provisioned root/release/lifecycle chain and bind the accepted
+domain to the same host-verified material; core receives no constructible
+domain assertion and cannot convert, relabel, or substitute one domain for the
+other. A missing, mixed, unknown, or mismatched domain is `profile_unavailable`
+before artifact decoding or runtime construction.
+
+The deterministic three-root proof uses distinct `production`,
+`scenario_test`, and `unrelated` roots. Production/default construction accepts
+only material verified under `production` and rejects `scenario_test` and
+`unrelated`; the scenario runner accepts only `scenario_test` and rejects
+`production` and `unrelated`. The proof mutates root bytes, capability/domain
+selection, release-chain domain binding, and runner/default entry-point routing
+independently. Passing scenario-test material through any production/default
+entry point, or production material through the scenario runner, must produce
+no semantic runtime, source preparation, authority artifact, or semantic
+write.
+
+The implementation acceptance matrix is closed: the four positive scenario
+cases above; corpus and analyzer mutation for every literal/route/proof/span,
+separator, predicate, object-kind, and duplicate-value sibling; absent or
+invalid host material/current-release verifier; provider, Hermes, and
+filesystem construction through the built-in capability; restart/retry
+equality; opaque-ID/private-map leakage mutation; and the three-root
+production/default/scenario-runner domain matrix. The
+corpus, grammar-capability manifest, profile manifest, trust anchor, signed
+V1 release binding, scenario run, elaborated manifests/spools, CTV authority,
+and all design/registry/workflow pins regenerate together only after this
+matrix passes. Until then the scenario artifacts remain historical and no
+activation or signed-release claim is made from the new corpus.
+
+**V1 release and codec closure.** The existing V1
+`SemanticIngestionTraceabilityRelease` remains the sole signed release envelope.
+Its existing V1 schema, signature preimage, lifecycle history, signer,
+expiry, predecessor, and external-root verification apply unchanged. Before
+enablement, its V1 release metadata binds the regenerated V1 trust-anchor
+digest and coordinate, and the anchor binds the regenerated V1 profile,
+capability, corpus, and component-root digests. The existing V1 CTV binding and
+decoder for each of the three content artifacts reject unknown fields, aliases,
+default insertion, alternate envelope profiles, and mismatched schema or
+profile digests. There is no bootstrap decoder registry or release-member
+artifact. Missing, inactive, revoked, expired, stale, wrong-coordinate, or
+mismatched release/anchor/artifact material is `profile_unavailable` before
+artifact decoding or construction.
+
+`HostVerifiedBootstrapMaterial.release_evidence` is the non-forgeable
+host-to-core result of external-root release and lifecycle verification. The
+host capability verifies it before exposing any artifact payload: its coordinate,
+signed-release digest, anchor digest, external-root digest, active lifecycle
+snapshot, and evidence digest must equal the signed V1 release's
+`bootstrap_profile_coordinate` and `bootstrap_profile_trust_anchor_digest`,
+the verified profile anchor, and the active lifecycle entry.
+Startup first validates that evidence, then decodes artifacts and creates
+`VerifiedBootstrapProfile`, which retains the byte-identical evidence. Core has
+no constructor for this evidence and cannot substitute a package root, release,
+or lifecycle result. The admission pin and prepared-publication CAS retain and
+revalidate this original evidence. `ProfileUnavailable`/`profile_unavailable`
+is reserved for startup or activation before artifact decoding/construction;
+any missing, changed, revoked, or no-longer-active evidence discovered by the
+prepared-publication CAS atomically persists retained-pending
+`ProfileAuthorityUnavailable` wrapping
+`BootstrapRetainedPendingAuthorityUnavailable`, rather than selecting newer
+authority.
+
+`CurrentBootstrapReleaseVerifier` is host-owned and opaque to persistence. It
+revalidates the externally rooted active lifecycle at the transaction
+linearization point. The atomic admission owner separately revalidates the
+current delivery session and complete scopes from `DeliveryAuthorizationRequest`.
+Its `CurrentBootstrapReleaseAssertion` is use-time authority only: it is never
+persisted or included in a pin, persisted request identity, marker, digest
+preimage, replay equality, or durable identity.
+The verifier proof uses three distinct nonce/digest assertion pairs in strict
+call order: A has phase `prepared_publication` and is accepted only by prepared
+publication, B has phase `pre_handoff_retry` and is accepted only by the
+pre-handoff retry/check, and C has phase `writer_handoff` and is accepted only
+by writer handoff after a fresh-process reopen. Reusing a phase, nonce, or
+digest at another stage is stale and rejects before lookup or mutation. A, B,
+and C are all absent from persisted bytes and durable equality despite their
+independent use-time revalidation.
+
+Startup then decodes and verifies the three CTV artifacts for the selected
+profile version against the anchored digest set; it recomputes every component
+fingerprint, root, corpus, and manifest,
 and anchor digest before it constructs any ambient config, provider, extractor,
 promoter, query analyzer, or client. Missing, invalid, revoked, superseded, or
 wrong-coordinate release/lifecycle material, or any anchor/artifact
@@ -4875,7 +5124,8 @@ The required repository artifacts are
 `docs/design/semantic_ingestion/bootstrap_profile/trust-anchor-v1.ctv`,
 `docs/design/semantic_ingestion/bootstrap_profile/manifest-v1.ctv`,
 `docs/design/semantic_ingestion/bootstrap_profile/grammar-capability-v1.ctv`,
-and `docs/design/semantic_ingestion/bootstrap_profile/corpus-v1.ctv`; the
+`docs/design/semantic_ingestion/bootstrap_profile/corpus-v1.ctv`; all are
+regenerated together as unreleased V1 bytes. The
 bootstrap-anchor bytes are not supplied at bootstrap input and are accepted
 only after external-root/release-chain verification.
 `ComponentSymbolFingerprint` sort key is `(module_path, qualified_symbol)`;
@@ -4905,13 +5155,15 @@ malformed, and unsupported forms. Its CTV preimage excludes only
 uses declaration order, and is bound to its schema ID/version and typed-value
 binding. The trust-anchor preimage similarly excludes only `trust_anchor_digest`.
 Add, remove, reorder, duplicate, field, digest, coordinate-suffix, disposition,
-language tuple, or reason mutation must fail the gate.
+language tuple, reason, owner symbol, embedded policy, or component
+mutation must fail the gate.
 
 **Closed outcome algebra.** Governed-source admission uses a source-admission
-fact, not the writer-safe-preplanning `LocalAdmissionOutcome`. The fact records
-only source/governance admission
-and deliberately has no operation fence, resource profile digest, reservation,
-lease, writer, or allocation. The protected accessor serializes exactly one
+fact, not the writer-safe-preplanning `LocalAdmissionOutcome`. The atomic
+admission retains the existing immutable `OperationFenceBinding` as its retry
+identity, but that identity is not writer authority or writer effect. It creates
+no resource-profile digest, reservation, lease, writer binding, or allocation.
+The protected accessor serializes exactly one
 `BootstrapProfileOutcome`; each variant references that fact and every model is
 frozen with `ConfigDict(extra="forbid")`:
 
@@ -4928,11 +5180,14 @@ class GovernedSourceAdmissionFact(BaseModel):
     delivery_key_digest: str
     required_scope_set_digest: str
     admission_index_digest: str
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
 
 class ProfileSelectedPipelinePending(BaseModel):
     kind: Literal["selected_pipeline_pending"]
     coordinate: BootstrapProfileCoordinate
     source_admission: GovernedSourceAdmissionFact
+    authority_pin: BootstrapAdmissionPin
     selection_digest: str
     verification_digest: str
 
@@ -4947,6 +5202,12 @@ class ProfileUnavailable(BaseModel):
     coordinate: BootstrapProfileCoordinate
     source_admission: GovernedSourceAdmissionFact
     reason: BootstrapUnavailableReason
+
+class ProfileAuthorityUnavailable(BaseModel):
+    kind: Literal["authority_unavailable"]
+    coordinate: BootstrapProfileCoordinate
+    source_admission: GovernedSourceAdmissionFact
+    terminal: "BootstrapAuthorityUnavailable"
 
 class ProfileUnsupportedInput(BaseModel):
     kind: Literal["unsupported_input", "abstained"]
@@ -4972,7 +5233,8 @@ class ProfileCommittedTerminal(BaseModel):
 
 BootstrapProfileOutcome = (
     ProfileSelectedPipelinePending | ProfileDisabled | ProfileUnavailable |
-    ProfileUnsupportedInput | ProfileAcceptedCandidate | ProfileCommittedTerminal
+    ProfileAuthorityUnavailable | ProfileUnsupportedInput | ProfileAcceptedCandidate |
+    ProfileCommittedTerminal
 )
 ```
 
@@ -4981,25 +5243,41 @@ BootstrapProfileOutcome = (
 Unknown kinds, absent required fields, extra fields, and cross-variant fields
 reject before persistence or disclosure. The unchanged `ProviderSyncResult`
 has a total coarse projection: every outcome preserves its existing schema;
-`selected_pipeline_pending`, disabled, unavailable, and unsupported/abstained
+`selected_pipeline_pending`, disabled, unavailable, authority-unavailable, and unsupported/abstained
 project no invented evolution outcome; candidate and terminal variants project
 only the existing truthful lifecycle fields when their stage is implemented.
 The protected accessor returns the full union or its existing non-disclosing
 unavailable shape.
+For `ProfileAuthorityUnavailable`, it returns the persisted discriminated
+terminal unchanged and never reauthorizes, promotes, or replaces either variant;
+terminal reopen first validates current `DeliveryAuthorizationRequest` and the
+host-only current release assertion before any terminal lookup. Denial returns
+the coordinate-free non-disclosing access result without mutation; after that
+current validation succeeds, it returns the original terminal byte-identically,
+validates its original pin, release/language evidence, delivery identity, and
+fence, and never reactivates either variant.
 
 | From | To | Legal stage |
 | --- | --- | --- |
-| selected_pipeline_pending | disabled, unavailable, unsupported_input, abstained | governed-source admission |
-| selected_pipeline_pending | accepted_candidate | candidate-to-terminal resolution, after writer-safe preplanning |
+| bootstrap profile activation | unavailable | verified V1 startup/activation failure only; it cannot be produced by prepared-publication CAS |
+| selected_pipeline_pending | disabled, unsupported_input, abstained | governed-source admission |
+| selected_pipeline_pending | `ProfileAuthorityUnavailable` wrapping retained-pending `BootstrapRetainedPendingAuthorityUnavailable` | in-CAS authority revalidation after access validation, before prepared publication |
+| selected_pipeline_pending | `BootstrapPreparedSourceAccepted` | source-owned prepared-publication CAS; pre-writer result only |
+| `BootstrapPreparedSourceAccepted` | accepted_candidate | `bootstrap_writer_handoff` then existing writer-safe preplanning |
+| `BootstrapPreparedSourceAccepted` | prepared-published authority-unavailable terminal | atomic handoff current authorization/release denial; terminal for that prepared tuple |
 | accepted_candidate | committed_terminal, unsupported_input, abstained | candidate-to-terminal resolution |
-| disabled, unavailable, unsupported_input, abstained, committed_terminal | any other variant | forbidden; a new delivery starts anew |
+| disabled, unavailable, authority_unavailable, unsupported_input, abstained, committed_terminal | any other variant | forbidden; a new delivery starts anew |
 
-Governed-source admission persists exactly raw governed source, protected admission index, and profile
-selection, verification, and outcome evidence. It persists zero semantic
-candidate, commit, graph, event, reservation, fence, lease, writer, allocation,
-or remote artifact. Its complete and authoritative outcome set is
-selected-pipeline-pending, disabled, unavailable, unsupported-input, and
-abstained; accepted-candidate and committed-terminal are illegal before
+Governed-source admission persists exactly raw governed source, protected admission index, the immutable
+delivery/fence identity, and profile selection, verification, and outcome evidence.
+It persists zero semantic candidate, commit, graph, event, reservation, lease,
+writer binding, allocation, or remote artifact. Its complete and authoritative durable outcome set is
+selected-pipeline-pending, disabled, unavailable, authority-unavailable,
+unsupported-input, and abstained. `unavailable` is profile activation failure;
+`authority-unavailable` is only either discriminated retained-pending or
+prepared-published in-CAS terminal. `BootstrapHandoffAccessDenied` is an
+ephemeral pre-lookup response and never enters this durable set;
+accepted-candidate and committed-terminal are illegal before
 writer-safe-preplanning and candidate-to-terminal prerequisites.
 
 **Host ownership and staged execution.** `ProviderMemoryService`, Hermes, and
@@ -5008,8 +5286,10 @@ normal construction, provide authenticated ingress, and retain the canonical
 writeback authorization. The core receives that authority; it cannot invent or
 elevate it. Governed-source admission performs selection, prerequisite verification, governed source
 admission, and deterministic unsupported/abstention classification only. Its
-complete outcome set is selected-pipeline-pending, disabled, unavailable,
-unsupported-input, and abstained; it has zero semantic candidate, committed,
+complete durable outcome set is selected-pipeline-pending, disabled,
+unavailable, authority-unavailable, unsupported-input, and abstained;
+`unavailable` is activation failure while `authority-unavailable` is restricted
+to the two in-CAS terminal variants. It has zero semantic candidate, committed,
 or graph effect and starts no writer-safe-preplanning lease/writer/generation
 behavior. Writer-safe preplanning supplies writer safety; candidate-to-terminal
 resolution supplies the semantic pipeline and only then may
@@ -5041,11 +5321,186 @@ and candidate-to-terminal-resolution
 prerequisites; it is not itself a candidate. `unsupported_form` maps exactly to
 `unsupported_input`, and `abstain_form` maps exactly to `abstained`, at every
 stage; both retain evidence only and never later become candidates for that
-delivery. Before candidate-to-terminal resolution, selected-pipeline-pending, disabled, unavailable,
-unsupported-input, and abstained are the complete typed bootstrap outcomes.
+delivery. Before candidate-to-terminal resolution, selected-pipeline-pending, disabled,
+unavailable, authority-unavailable, unsupported-input, and abstained are the
+complete typed durable bootstrap outcomes. `unavailable` is activation failure;
+`authority-unavailable` means only a retained-pending or prepared-published
+in-CAS terminal. Ephemeral `BootstrapHandoffAccessDenied` is never a durable
+bootstrap outcome.
 The coarse public provider envelope remains schema-compatible; exact profile
 outcome, source result, and reason are available only through the protected
 semantic accessor.
+
+For the Step-1/Step-2 bootstrap route, `ProviderEventNormalizer` may construct
+the `SourceAdmissionRequest` only when the existing authenticated
+`AuthenticatedIngressContext` language tuple is exactly `en`, is bound to the
+existing delivery principal, and agrees by digest with the complete
+segment-governance set. Step 1 derives and retains closed
+`BootstrapAuthenticatedLanguageEvidence` in the source observation; it is not
+a source-wide semantic conclusion. `TextPreparationService` then
+receives only the admitted `SourceObservation` and the exact embedded
+`TextPreparationPolicy` from the verified V1 profile manifest. Each persisted
+`BootstrapDeclaredSegmentLanguageRoute` has the closed trusted-`en` evidence
+tuple and exact V1 profile-manifest, component-root, and policy digests. It contains
+no classifier candidates, scores, or generic resource binding. This is a closed
+declaration route, not a general language router.
+Missing, untrusted, mismatched, mixed, non-English, or otherwise unsupported
+declaration produces the existing evidence-only `abstained` or
+`unsupported_input` outcome before a Step-2 publication, learned call, remote
+call, candidate, fence, or graph effect. A content form not exhaustively
+consumed by the frozen grammar follows the same nonpromoting outcome.
+
+The V1 profile does not inject an arbitrary `TextPreparationService` producer.
+The verified-profile factory is the sole production constructor: it resolves
+only the V1 manifest's fingerprinted `TextPreparationService`, constructs the
+closed deterministic producer from the embedded policy and verified grammar
+corpus, and passes it only the admitted observation. The producer identity is
+the `TextPreparationService` fingerprint in the eight-symbol component root;
+test-only or caller-supplied producers cannot enter this factory. After
+deterministic segmentation and before publication, the producer persists one
+`BootstrapSegmentGrammarProof` per prepared segment:
+
+```python
+class BootstrapSegmentGrammarProof(BaseModel):
+    source_id: str
+    segment_id: str
+    language_evidence_tuple: tuple[Literal["en"], Literal["authenticated_host_declaration"], Literal["trusted"], Literal["agrees"]]
+    bootstrap_language_evidence_digest: str
+    normalized_segment_digest: str
+    corpus_case_id: str
+    proof_digest: str
+```
+
+The corpus match key is the complete language-evidence tuple plus normalized
+segment bytes; corpus entries are unique by that key. A per-route proof identity
+is instead `(source_id, segment_id)` plus that evidence/text/case binding; equal
+valid segment bytes in one source therefore produce distinct proofs and succeed.
+Each proof's CTV preimage excludes only `proof_digest`. Missing proof, a case
+not matching the normalized bytes, a duplicate route identity, or a proof whose
+case is not `supported_form` rejects publication. `BootstrapDeclaredSegmentLanguageRoute`
+adds `corpus_case_id` and `normalized_segment_digest`, and binds its proof
+digest. The prepared source stores the source-ordered proof tuple as an exact
+bijection with its bootstrap-declared routes in `PreparedSource` fingerprint;
+replay reloads and revalidates it, never resegments or rematches current grammar.
+
+Bootstrap admission has a source-only, delivery-idempotent retention
+transaction for every terminal negative outcome. Missing/untrusted/mismatched/
+non-English/mixed/unsupported input atomically persists the retained observation,
+closed language evidence, profile verification reference, normalized digest when
+available, immutable delivery/fence identity, and typed nonpromoting outcome.
+It persists no writer binding, lease, reservation, allocation, preplanning, reconciliation,
+candidate, or graph effect. A positive route orders operations strictly as:
+retained observation -> verified V1 prepared-source/proof publication -> the
+existing fenced semantic handoff. Before each arrow, crash means no next-stage
+bytes; after durable publication but before acknowledgement, retry/recovery
+returns the byte-identical persisted outcome/publication; conflicting delivery
+bytes reject; and a negative terminal never transitions to positive on retry.
+
+The atomic admission persists `selected_pipeline_pending` with a
+`BootstrapAdmissionPin` containing the V1 coordinate, original host-verified
+release evidence and signed release digest, bootstrap-anchor digest, verification digest,
+profile-manifest digest, preparation-policy fingerprint, grammar-capability
+manifest digest, grammar-corpus digest, and component-root digest. The source
+admission owner exposes `publish_bootstrap_prepared_source_if_absent(pin,
+prepared_source, grammar_proofs)`: a source-owned CAS which revalidates every
+pinned authority, original release evidence, exact delivery identity, and
+operation-fence binding. It receives a current `DeliveryAuthorizationRequest`
+and host-only `CurrentBootstrapReleaseAssertion`, revalidates current session,
+complete scopes, and active release inside the linearized transaction, accepts
+only byte-identical retry, and has no
+`SemanticWriterCommitBinding`, writer epoch, or lease input.
+Retry loads this pin and never selects a newer release. Revoked, unavailable,
+or pin-mismatched authority atomically persists `ProfileAuthorityUnavailable`
+with `terminal=BootstrapRetainedPendingAuthorityUnavailable` (and the exact
+retained admission coordinate, source, pin, release/language evidence,
+delivery identity, and fence), without prepared publication. This is the
+retained-pending in-CAS terminal, not `ProfileUnavailable`, which remains
+profile activation failure, and not pre-lookup `BootstrapHandoffAccessDenied`.
+Only a successful prepared CAS may enter
+the existing semantic writer/fence handoff. Crash states are closed: no
+admission write; admitted/pinned without prepared bytes; prepared/pinned without
+writer handoff; writer handoff without acknowledgement; and terminal negative.
+Recovery returns the exact durable state for each, never fabricates a later one.
+
+```python
+class BootstrapAdmissionPin(BaseModel):
+    coordinate: BootstrapProfileCoordinate
+    verified_profile_digest: str
+    signed_release_digest: str
+    bootstrap_anchor_digest: str
+    release_evidence: HostVerifiedBootstrapReleaseEvidence
+    verification_digest: str
+    profile_manifest_digest: str
+    preparation_policy_fingerprint: str
+    grammar_capability_manifest_digest: str
+    grammar_corpus_digest: str
+    component_root_digest: str
+    bootstrap_language_evidence_digest: str
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    pin_digest: str
+
+class BootstrapPreparedPublicationRequest(BaseModel):
+    source_id: str
+    source_digest: str
+    expected_generation: int
+    authority_pin: BootstrapAdmissionPin
+    current_delivery_authorization: DeliveryAuthorizationRequest
+    current_release_assertion: CurrentBootstrapReleaseAssertion
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    prepared_source: PreparedSource
+    grammar_proofs: tuple[BootstrapSegmentGrammarProof, ...]
+    request_digest: str
+
+class BootstrapPreparedPublicationResult(BaseModel):
+    kind: Literal["published", "already_published", "authority_unavailable", "conflict"]
+    source_id: str
+    source_digest: str
+    generation: int
+    authority_pin_digest: str
+    operation_fence_binding_digest: str
+    prepared_source_digest: str | None
+    authority_unavailable: "BootstrapAuthorityUnavailable | None"
+    result_digest: str
+```
+
+The selected-pipeline-pending outcome and the three publication contracts are
+frozen, forbid unknown fields, and use declaration-order CTV preimages
+excluding only their trailing digest and the ephemeral current authorization/
+release-assertion inputs. They contain no writer binding, lease,
+preplanning, reservation, allocation, or semantic result field; the retained
+`OperationFenceBinding` is only immutable delivery/retry identity.
+The state machine is `retained_pending(generation=n)` ->
+`prepared_published(generation=n+1)` -> `writer_handoff_started`; either
+`retained_pending` or `prepared_published` may instead transition durably to
+`authority_unavailable` when the current release assertion or delivery
+authorization fails. The handoff form is the terminal
+`BootstrapPreparedPublishedAuthorityUnavailable` record: recovery retains the exact
+already-published generation, never selects newer authority, and never retries
+that prepared tuple after the terminal record. Only the last transition enters
+existing writer authority.
+`already_published` returns
+byte-identical request/result bytes, `conflict` rejects different bytes for the
+same source/generation, and `authority_unavailable` atomically persists and
+returns the exact retained-pending terminal record; the durable source outcome
+is `ProfileAuthorityUnavailable` wrapping that
+`BootstrapRetainedPendingAuthorityUnavailable` terminal. Current authorization
+and release assertions are intentionally excluded from the prepared-publication
+request digest, pin, persisted result, and replay equality; terminal reopen
+first reobtains and revalidates them before terminal lookup. Once that current
+validation succeeds, it validates the original V1 pin, release evidence,
+language evidence, delivery identity, and fence, returns the original terminal
+bytes, and never reactivates the source.
+The existing V1 outcome/admission decoders own these pre-release contracts. The
+V1 activation decoder requires every regenerated authority to match the exact
+verified V1 profile digest; a mismatch is `profile_unavailable` before profile
+activation, not a prepared-publication-CAS outcome.
+For `BootstrapPreparedPublicationResult`, `authority_unavailable` requires the
+non-null `BootstrapRetainedPendingAuthorityUnavailable` variant and no prepared
+source digest; `published` and `already_published` require no terminal variant.
+Only `bootstrap_writer_handoff` may create the prepared-published terminal
+variant after a prepared generation exists.
 
 **Protected semantic result-access transition matrix.**
 
@@ -5053,7 +5508,7 @@ semantic accessor.
 | --- | --- | --- |
 | Frozen schema/declaration/default/validator and legacy-reader bytes | Immutable compatibility authority | Must remain byte/schema/reader compatible |
 | Old dynamic outcome fixture | Historical reader input only | Retain and decode; reject it as bootstrap expected behavior |
-| Bootstrap coordinate governed-source-admission outcome | Versioned truthful behavior | selected-pipeline-pending, disabled, unavailable, unsupported-input, or abstained only |
+| Bootstrap coordinate governed-source-admission outcome | Versioned truthful behavior | selected-pipeline-pending, disabled, unavailable (activation failure), `ProfileAuthorityUnavailable` (retained-pending/prepared-published in-CAS terminal), unsupported-input, abstained, or `BootstrapPreparedSourceAccepted` before writer handoff; ephemeral `BootstrapHandoffAccessDenied` is excluded |
 | Bootstrap coordinate after candidate-to-terminal resolution | Versioned truthful behavior | Supported success or abstention only |
 | Future profile outcome | Its own versioned contract | Cannot change bootstrap coordinate or public schema silently |
 
@@ -5070,10 +5525,10 @@ not a separate owner. Explicit disable, invalid manifest,
 missing/corrupt component, ambient-LLM substitution, remote selector, invalid
 language declaration, unsupported grammar, socket/DNS/HTTP trap, old-reader,
 and protected-accessor roots all have a deterministic acceptance test. The
-required implementation artifact/gate `check_bootstrap_profile_consistency.py`
+required implementation artifact/gate `check_bootstrap_local_english_route_profile.py`
 consumes this design, the externally rooted trust anchor and active release
-chain, the three bootstrap CTV
-artifacts, the provider public-schema capture, and the root-inventory
+chain, the three bootstrap CTV artifacts for each profile version, the provider
+public-schema capture, and the root-inventory
 declaration; it is not present evidence. It fails on an absent or
 duplicate root, profile literal/version/digest mismatch, non-null bootstrap
 remote selector, ambient-provider construction, missing network-trap case, or
@@ -5087,9 +5542,25 @@ substitution, release revocation/supersession/wrong-coordinate mutation, and
 installed-package release-root omission. Each rejects before construction or
 semantic promotion as applicable.
 
-**Rollout and traceability gate.** Rollout selects v1 automatically; rollback
-is explicit disablement to evidence-only behavior and never restores a legacy
-writer. This revision changes normative topology, R08/R19/R22, and outcome
+The Step-1/Step-2 route matrix additionally requires: (1) a positive trusted
+host-`en` declaration that agrees with all persisted segment governance and an
+entire grammar match, proving byte-identical V1 profile-manifest/policy/fingerprint
+binding from admission through prepared-source publication; (2) missing,
+untrusted, mismatched, non-English, mixed-residue, partial-match, malformed,
+and unsupported-form inputs, each proving source retention with no prepared
+publication, learned/remote transport, candidate, fence, lease, or graph
+effect; (3) one-field mutations of each anchor/release schema version, all three
+artifact digests, owner symbols, component bytes/fingerprints/root ordering,
+embedded preparation-policy field/fingerprint, declaration, and route digest;
+(4) atomic V1 regeneration, restart, revocation, and disablement; and (5) socket, DNS, HTTP, ambient-LLM, remote
+selector, classifier, live-registry, and downloader construction traps. The
+positive case proves only this frozen deterministic English route; it does not
+certify language detection or non-English support.
+
+**Rollout and traceability gate.** Historical governed-source-admission keeps
+its v1 coordinate; enabling the new Step-1/Step-2 route selects the regenerated
+V1 anchor/release authority automatically. Rollback is explicit disablement to
+evidence-only behavior and never restores a legacy writer. This revision changes normative topology, R08/R19/R22, and outcome
 authority. Before governed-source admission resumes, the design checksum,
 registry mappings, CTV/profile
 binding, traceability authority, and execution evidence must be regenerated and
@@ -5605,6 +6076,18 @@ over the exact
 purpose-scoped signer coordinate. Thus the signature binds
 all registry, structural, coverage, execution, trust, schema, environment, and
 lifecycle roots without digest self-reference.
+
+For this unreleased V1 correction, the same signed release body additionally
+binds exactly one `bootstrap_profile_coordinate` and one
+`bootstrap_profile_trust_anchor_digest`. The canonical V1 release-body encoding
+and existing signature preimage include those fields in declaration order; the
+existing release verifier rejects absent, duplicate, substituted, or coordinate/
+anchor-mismatched values before bootstrap artifact decoding. There is no second
+release schema, envelope, coordinate, or verifier path. Consequently
+`HostVerifiedBootstrapReleaseEvidence` is derived only from these signed fields,
+the externally provisioned root, and the verified active lifecycle entry: its
+coordinate, signed-release digest, profile-anchor digest, root digest, and
+lifecycle snapshot must be exact copies of the verified release chain.
 
 #### 3.23.4.2 Release-bound trust snapshot, signed lifecycle root, and active pointer
 
@@ -7473,6 +7956,8 @@ class SemanticIngestionTraceabilityReleaseBody(BaseModel):
     execution_root_digest: str
     bootstrap_anchor_id: str
     bootstrap_anchor_digest: str
+    bootstrap_profile_coordinate: BootstrapProfileCoordinate
+    bootstrap_profile_trust_anchor_digest: str
     bootstrap_anchor_history_digest: str
     bootstrap_rotation_sequence: int = Field(ge=1)
     recovery_trust_policy_digest: str
@@ -11425,6 +11910,7 @@ class SourceAdmissionRequest(BaseModel):
     original_text: str
     event_time: datetime | None
     declared_language: str | None
+    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None
     provenance: SourceProvenance
 ```
 
@@ -11442,6 +11928,13 @@ Required invariants:
 - provenance and declared language are inputs to server-owned policy and
   routing, not trusted semantic conclusions; no scalar source-wide scope or
   modality is accepted;
+- the bootstrap route consumes only the existing authenticated
+  `AuthenticatedIngressContext` language tuple into one closed
+  `BootstrapAuthenticatedLanguageEvidence`, bound to the existing
+  `DeliveryPrincipalBinding`, retained source, and complete segment-governance
+  set. It creates no additional host/caller declaration, issuer field, or
+  language authority;
+  ordinary `declared_language` remains untrusted evidence;
 - server governance derives every segment's scope, authority, classification,
   modality, and egress decision, seals their complete carrier set and
   `RequiredOutcomeScopeSet`, and performs complete-set authorization before
@@ -11615,6 +12108,7 @@ class SourceObservation(BaseModel):
     required_outcome_scopes: RequiredOutcomeScopeSet
     source_kind: SourceKind
     declared_language: str | None
+    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None
     provenance: SourceProvenance
     semantic_context: SourceSemanticContext
     semantic_text_projection: SourceSemanticTextProjection | None
@@ -11648,6 +12142,19 @@ class SourceAdmissionAccepted(BaseModel):
     pending_operation_digest: str
     admission_digest: str
 
+class BootstrapPreparedSourceAccepted(BaseModel):
+    kind: Literal["bootstrap_prepared_source_accepted"]
+    observation: SourceObservation
+    session_authorization: SessionAuthorizationEvidence
+    source_admission: GovernedSourceAdmissionFact
+    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    authority_pin: BootstrapAdmissionPin
+    prepared_generation: int = Field(ge=1)
+    prepared_source_digest: str
+    result_digest: str
+
 class SourceAdmissionRejected(BaseModel):
     kind: Literal["rejected"]
     request_correlation_token: str
@@ -11663,11 +12170,29 @@ class SourceAdmissionRetryRequired(BaseModel):
 
 SourceAdmissionResult = Annotated[
     SourceAdmissionAccepted
+    | BootstrapPreparedSourceAccepted
     | SourceAdmissionRejected
     | SourceAdmissionRetryRequired,
     Field(discriminator="kind"),
 ]
 ```
+
+`BootstrapPreparedSourceAccepted` is the only pre-writer success result for the
+bootstrap route. It is reachable only from `selected_pipeline_pending` after a
+successful source-owned prepared-publication CAS, and it carries no writer
+binding, lease, writer epoch, reservation, or pending-operation control. Its
+`OperationFenceBinding` is the immutable delivery/retry identity, not a
+writer-fenced effect. The protected accessor returns this exact union member
+before handoff and may disclose no semantic candidate or result. The existing
+`SourceAdmissionAccepted` remains the writer-admitted result for non-bootstrap
+admission paths; neither member may be structurally substituted for the other.
+The only transition from `BootstrapPreparedSourceAccepted` is the typed
+`BootstrapWriterHandoffRequest` defined by the atomic-store boundary: it must
+carry byte-equal prepared generation, pin/release/language evidence, delivery
+identity, and fence, and produces the one durable handoff marker before any
+writer-bound pending operation becomes visible. Lost acknowledgement, restart,
+and competing-handoff attempts are resolved by that marker/CAS, never by
+re-running admission or selecting new bootstrap authority.
 
 `source_digest` is computed over a canonical encoding of immutable source
 fields. It excludes admission authorization evidence/proof, current authorized
@@ -12002,7 +12527,7 @@ class PreparedSegment(BaseModel):
     text_mapping_proof: TextArtifactMappingProof
     segment_governance: SegmentGovernanceBinding
     message_admission_identity: MessageAdmissionIdentity | None
-    language_route: "SegmentLanguageRoute"
+    language_route: "SegmentLanguageRoute | BootstrapDeclaredSegmentLanguageRoute"
     code_switch_spans: tuple[SegmentLocalTextSpan, ...]
     boundary_flags: frozenset[str]
 
@@ -12019,6 +12544,30 @@ class SegmentLanguageResourceBinding(BaseModel):
     predicate_event_manifest_digest: str
     temporal_resolver_manifest_digest: str
     resource_binding_digest: str
+
+class BootstrapDeclaredSegmentLanguageRoute(BaseModel):
+    schema_id: Literal["memorii.semantic_ingestion.bootstrap_declared_segment_language_route"]
+    schema_version: Literal[1]
+    source_id: str
+    source_digest: str
+    segment_id: str
+    parent_projection_segment_id: str
+    segment_text_artifact_id: str
+    segment_text_artifact_digest: str
+    segment_text_content_digest: str
+    declared_language: Literal["en"]
+    language_evidence_kind: Literal["authenticated_host_declaration"]
+    language_evidence_trust: Literal["trusted"]
+    governance_agreement: Literal["agrees"]
+    bootstrap_language_evidence_digest: str
+    bootstrap_profile_manifest_digest: str
+    preparation_policy_fingerprint: str
+    component_root_digest: str
+    corpus_case_id: str
+    normalized_segment_digest: str
+    grammar_proof_digest: str
+    decision: Literal["selected"]
+    route_digest: str
 
 class SegmentLanguageRoute(BaseModel):
     source_id: str
@@ -12050,7 +12599,7 @@ class SegmentLanguageRoute(BaseModel):
 class SegmentLanguageRouteSet(BaseModel):
     source_id: str
     source_digest: str
-    routes: tuple[SegmentLanguageRoute, ...]
+    routes: tuple[SegmentLanguageRoute | BootstrapDeclaredSegmentLanguageRoute, ...]
     route_set_digest: str
 
 class PreparedSource(BaseModel):
@@ -12066,6 +12615,7 @@ class PreparedSource(BaseModel):
     sentence_spans: tuple[SourceSpanReference, ...]
     segments: tuple[PreparedSegment, ...]
     token_spans: tuple[SourceSpanReference, ...]
+    grammar_proofs: tuple[BootstrapSegmentGrammarProof, ...]
     preparation_policy: TextPreparationPolicy
     preparation_fingerprint: str
     status: Literal["complete", "unsupported", "failed"]
@@ -12096,11 +12646,20 @@ field exists beside that canonical owner. `preparation_fingerprint` is its requi
 64-hex SHA-256 content address in
 `memorii.semantic-ingestion.prepared-source.v1` over canonical CTV of every
 other declared `PreparedSource` field in declaration order, including the
-complete policy record, ordered segments/routes and child-parent relations,
+complete policy record, ordered segments/routes/grammar proofs and child-parent relations,
 carriers/artifact, source references, status, and diagnostics. Missing,
 defaulted, legacy, or upcast fields reject. Missing, duplicate, orphaned,
 reordered, or parent-substituted relations reject. Missing artifact bytes, generation mismatch, or any
 unequal copy fails preparation.
+
+For the bootstrap V1 route, normalized segment bytes are exactly the UTF-8 encoding of
+the segment-local artifact content with no Unicode normalization, trimming,
+case-folding, locale, or hidden tokenizer; `normalized_segment_digest` is its
+SHA-256. `grammar_proofs` is source ordered and an exact three-way bijection
+with prepared segments and bootstrap-declared routes by `(source_id,segment_id)`.
+Non-bootstrap sources carry an empty tuple; bootstrap-route sources carry one proof for every
+route. Missing, extra, reordered, or artifact/text-digest-mismatched proof
+rejects the `PreparedSource` fingerprint and publication.
 
 Preparation recomputes the complete policy fingerprint before producing any
 segment, route, or prepared-source bytes. Replay and reopen load persisted
@@ -12131,6 +12690,26 @@ proposal, Stanza, spaCy, event-detector, temporal-resolver, NLI, or graph call.
 Source status is the deterministic ordered aggregation of segment outcomes and
 cannot authorize or repair a segment. [SIA-I316]
 
+`BootstrapDeclaredSegmentLanguageRoute` is the sole exception to the
+classifier-route shape. It has no candidates, score, router manifest, generic
+resource binding, or fallback. It is valid only when its declared-language,
+evidence-kind, trust, and governance fields are the literal closed values in
+its schema; its three route authority digests equal the verified
+`BootstrapLocalProfileManifest` and embedded policy. Its CTV preimage is
+`memorii.semantic_ingestion.bootstrap_declared_segment_language_route.v1` over
+all fields except `route_digest` in declaration order. Generic
+`SegmentLanguageRoute` cannot imitate or upcast this variant, and bootstrap
+inputs cannot use the generic classifier route. A `BootstrapDeclaredSegmentLanguageRoute`
+whose component, source, segment, artifact, policy, declaration, or authority
+binding differs from the admitted observation rejects before publication.
+This disjoint bootstrap variant does not relax `SegmentLanguageRoute`: every
+generic selected route still requires its existing exact certified
+`SegmentLanguageResourceBinding`, candidate/threshold proof, and resource
+digests. Only the V1 bootstrap coordinate may deserialize the declared variant,
+and it must validate exact V1 profile-manifest, expanded component-root, and
+embedded preparation-policy digests before the generic or bootstrap route set
+is published.
+
 `SegmentLanguageRoute.route_digest` is the lowercase 64-hex SHA-256 of
 canonical CTV in `memorii.semantic-ingestion.segment-language-route.v1` over
 every declared route field except trailing `route_digest`, in declaration
@@ -12160,8 +12739,9 @@ Success means:
   segment-local and projection coordinate bindings;
 - preparation is deterministic for one source and policy fingerprint.
 - each `selected` segment route names exactly one enabled language whose probability and
-  lead over the runner-up meet the fingerprinted thresholds; a material
-  declaration/model conflict cannot be `selected`.
+  lead over the runner-up meet the fingerprinted thresholds, unless it is the
+  closed bootstrap-declared variant; a material declaration/model conflict
+  cannot be `selected`.
 
 Failure means:
 
@@ -14127,6 +14707,7 @@ class LanguageConstructionPolicyAuthorityBundle(BaseModel):
 
 class SourceNormalizationPublicationCoordinate(BaseModel):
     operation_fence_binding: OperationFenceBinding
+    preparation_fingerprint: str
     expected_current_artifact_generation: int
     next_publication_generation: int
     coordinate_digest: str
@@ -14135,6 +14716,7 @@ class SourceNormalizationRequest(BaseModel):
     source: PreparedSource
     proposal_run: SemanticProposalRun
     analyses: LinguisticAnalysisBundle
+    interpretation_bundle: "GraphFreeInterpretationBundle"
     predicate_events: PredicateEventInventory
     temporal_resolution: TemporalResolution
     consensus_policy_selections: ConsensusPolicySelectionBundle
@@ -14356,7 +14938,8 @@ minimal consensus witnesses plus the exact request-owned
 `LanguageConstructionPolicyAuthorityBundle` and the exact
 `SourceNormalizationPublicationCoordinate`, and it produces the immutable
 source alignment once. The coordinate's fence must equal the admitted source
-operation fence and its expected current generation must equal the atomic
+operation fence, its preparation fingerprint must equal the prepared source,
+and its expected current generation must equal the atomic
 store's current artifact generation before normalization starts; otherwise no
 alignment or retained evidence is emitted. `SourceNormalizationRequest` is a
 strict, frozen, `extra="forbid"` closed-wire v1 record whose
@@ -14650,6 +15233,8 @@ class SourceNormalizationEvidenceManifest(BaseModel):
     source_normalization_request_digest: str
     consensus_policy_selection_bundle_digest: str
     language_construction_policy_bundle_digest: str
+    interpretation_bundle_digest: str
+    identity_partition_evidence_digest: str
     publication_coordinate: SourceNormalizationPublicationCoordinate
     retained_entries: tuple[SourceNormalizationEvidenceEntry, ...]
     completeness: Literal["complete"]
@@ -14659,6 +15244,8 @@ class SourceNormalizationEvidenceManifest(BaseModel):
 class SourceNormalizationResult(BaseModel):
     source_alignment: SourceProposalAlignment
     evidence_manifest: SourceNormalizationEvidenceManifest
+    interpretation_bundle_digest: str
+    identity_partition_evidence_digest: str
     capability_selections: tuple[OperationCapabilitySelection, ...]
     trust_policy_snapshot_digest: str
     arbitration_as_of: datetime
@@ -14710,11 +15297,12 @@ except the trailing digest field in declaration order.
 
 `SourceNormalizationPublicationCoordinate` is strict, frozen,
 `extra="forbid"`, closed-wire v1. It binds the exact admitted
-`operation_fence_binding`, `expected_current_artifact_generation`, and
-`next_publication_generation`; the latter must equal the former plus one.
+`operation_fence_binding`, prepared-source `preparation_fingerprint`,
+`expected_current_artifact_generation`, and `next_publication_generation`; the
+latter must equal the former plus one.
 `coordinate_digest` is the lowercase 64-hex SHA-256 CTV address in
 `memorii.semantic-ingestion.source-normalization-publication-coordinate.v1`
-over the first three fields in declaration order. The request contains it and
+over the first four fields in declaration order. The request contains it and
 the evidence manifest copies it byte-for-byte. It deliberately contains no
 enclosing request digest or generation digest, so it is non-circular.
 
@@ -14724,27 +15312,35 @@ retains the base request's `operation_lease_binding`,
 `operation_fence_binding`, `writer_commit_binding`, expected operation and
 artifact generations, `members`, `required_artifact_digests`, and
 `request_digest`; its only added fields are the publication generation and the
-typed/digest-bound request, result, manifest, and two bundles. Its `members`
+typed/digest-bound request, result, manifest, interpretation bundle,
+identity-partition evidence, graph-dependent execution policy, and two policy
+bundles. Its `members`
 are exact `AtomicGenerationMember` values with one and only one ordinary
 `progress` member matching the pre-planning progress variant, one
 `source_normalization_request`
-member matching the typed request and its digest, one result member, one
-manifest member, one selection-bundle member, one language-policy-bundle
-member, and one parser/scope/temporal member for every retained manifest entry.
+member matching the typed request and its digest, one interpretation-bundle
+member, one identity-partition-evidence member, one result member, one manifest
+member, one graph-dependent-execution-policy member, one selection-bundle
+member, one language-policy-bundle member, one identity-resolution member, one
+alignment member, one groups member, and one parser/scope/temporal member for
+every retained manifest entry.
 Those are the complete allowed member kinds for this subtype; missing,
 duplicate, wrong progress, or any ordinary-checkpoint or foreign extra kind
 rejects. This subtype is valid only for pre-planning publication: its
 `progress_state` is the literal `"preplanning"`, its progress member must decode
 as the exact admitted source/fence/lease-bound pre-planning progress variant,
 and a `planned` state or planned progress member rejects before publication.
-Only the later ordinary planned checkpoint may publish the plan, planning
-artifacts, independence certificate, and planning authorization needed for the
-`pre_planning -> planned` transition. Ordinary checkpoint allowlists and
-behavior are unchanged. For this
+Only later ordinary checkpoints may publish the plan, then the complete attempt,
+then lineage for the ordered
+`pre_planning -> plan_published -> attempt_published -> planned` transition.
+Each has its own closed member allowlist; no checkpoint skips an intermediate
+state or grants same-generation authorization. For this
 subtype, member kind, `payload_digest`, `canonical_payload`, and
 `required_artifact_digests` form one complete duplicate-free same-generation
-closure over exactly the source-normalization request, result, manifest, two
-bundles, and retained artifacts. Ordinary prior `replay_artifact` closure is
+closure over exactly the source-normalization request, interpretation bundle,
+identity-partition evidence, result, manifest, policy, two bundles, identity
+resolution, alignment, groups, and retained artifacts. Ordinary prior
+`replay_artifact` closure is
 permitted only where the inherited checkpoint semantics already require it and
 does not satisfy, replace, or extend this subtype's allowed set. The checkpoint
 request carries this exact subclass normally: `SourceNormalizationAtomicWriteRequest` is a
@@ -14761,7 +15357,10 @@ manifest digests equal their typed bytes; originating request digest equals the
 typed request bytes, manifest field, request field, and request member; bundle
 digests equal their typed bytes; retained artifacts equal the complete manifest
 entry closure; and the same atomic generation contains the request, result,
-manifest, every retained artifact, and both bundles. The normal atomic-generation request names this write intent
+manifest, interpretation bundle, identity-partition evidence, identity
+resolution, alignment, groups, the policy whose digest equals its typed bytes,
+every retained artifact, and both bundles. The normal atomic-generation request
+names this write intent
 through the checkpoint field and validates its ordinary generation
 preconditions; the first checkpoint or terminal state that references the
 result is in that same generation. No member contains the enclosing
@@ -14776,6 +15375,3166 @@ recovery load and revalidate the request member before the result, manifest,
 every named artifact, selection, and authority bundle from that one attested
 store generation or fail closed; they must not reconstruct the retained set
 from live objects, a normalizer, or configuration owners.
+
+#### 3.4.2 Graph-free interpretation producer
+
+`IndependentSourceAnalysis` remains the candidate-scoped parser/source-evidence
+carrier. It is not extended with scope or attachment interpretations: one
+validated `SemanticProposal` can expand to more than one
+`PreAlignmentSemanticOperationSubject`, while an `IndependentSourceAnalysis`
+has exactly one `candidate_id` and no complete subject-set owner. Extending it
+would either duplicate candidate evidence per subject or silently select one
+operation. The source-normalization producer instead accepts one strict,
+frozen, closed-wire `GraphFreeInterpretationBundle` with `extra="forbid"`:
+
+```python
+class GraphFreeInterpretationBundle(BaseModel):
+    source_id: str
+    source_digest: str
+    proposal_run_fingerprint: str
+    analysis_bundle_fingerprint: str
+    temporal_resolution_fingerprint: str
+    operation_subjects: PreAlignmentSemanticOperationSubjectSet
+    primary_scope_interpretations: tuple[AnalyzerScopeInterpretation, ...]
+    corroborating_scope_interpretations: tuple[AnalyzerScopeInterpretation, ...]
+    primary_temporal_attachments: tuple[AnalyzerTemporalAttachment, ...]
+    corroborating_temporal_attachments: tuple[AnalyzerTemporalAttachment, ...]
+    identity_partition_evidence: SourceLocalIdentityPartitionEvidence
+    bundle_digest: str
+```
+
+Its digest is the lowercase SHA-256 CTV address in
+`memorii.semantic-ingestion.graph-free-interpretation-bundle.v1` over every
+field other than `bundle_digest`, in declaration order. Every tuple is sorted
+by `(operation_id, proposal_id, predicate_head_span, artifact digest)` using
+the concrete contract digest for the final component, is duplicate-free, and
+has exactly one item for every subject. Each item copies the exact subject
+`operation_id`, `proposal_id`, segment, route digest, source ID/digest, and the
+selected primary or corroborating analyzer fingerprint from the corresponding
+`LinguisticAnalysisBundle` coordinate. The two analyzer sets must be distinct
+and complete. A primary item may never satisfy a corroborating slot, and vice
+versa. Proposal bytes choose the subject universe but cannot supply an
+interpretation, attachment, identity proof, result, or digest.
+
+The existing `SourceLocalIdentityEvidence` is not sufficient producer
+authority: it contains a caller-provided cluster label and optional canonical
+entity field but has neither the complete grounded-mention universe nor a
+source-proof kind/support closure. `SourceLocalIdentityPartitionEvidence` is
+therefore a new strict, frozen, closed-wire source-only input:
+
+```python
+class SourceLocalIdentityPartitionEvidence(BaseModel):
+    source_id: str
+    source_digest: str
+    language_policy_fingerprint: str
+    grounded_mentions: tuple[GroundedMentionRef, ...]
+    assertions: tuple[SourceLocalIdentityAssertion, ...]
+    evidence_digest: str
+
+class SourceLocalIdentityAssertion(BaseModel):
+    mention_refs: tuple[GroundedMentionRef, ...]
+    proof_kind: Literal["explicit_alias", "explicit_apposition", "authenticated_external_id", "certified_unambiguous_repetition", "insufficient_evidence", "conflicting_evidence"]
+    source_evidence: tuple[SourceSpan, ...]
+    assertion_digest: str
+```
+
+All mentions/spans bind the exact source and selected route-language policy;
+`canonical_entity_id` is prohibited at this boundary. Mention and assertion
+tuples are canonical and duplicate-free; affirmative proof kinds require
+nonempty supporting spans, while the two unresolved proof kinds may not claim
+an affirmative equality. The new assertion and evidence digest domains are
+`memorii.semantic-ingestion.source-local-identity-assertion.v1` and
+`memorii.semantic-ingestion.source-local-identity-partition-evidence.v1`.
+
+The local analyzer is the primary producer and a separately configured
+corroborating local analyzer is the secondary producer. Both receive only the
+validated prepared source, selected segment route, exact subject set, parser
+analysis coordinate, and selected language/construction policy authority. The
+identity evidence producer additionally receives only those source bytes and
+policy authority. The provider proposer, graph repositories, canonical identity
+service, terminal outcome, capability selector, and current-time/live-policy
+lookup are forbidden inputs. The current production local analyzer emits parser
+consensus and raw temporal/identity evidence only, so it must add these explicit
+bundle outputs before source normalization is callable; an empty raw identity
+tuple is not a substitute for an empty proved mention universe.
+
+For each subject, scope consensus calls the existing strict equality validator
+on the primary/corroborating pair. `stable` requires equality of every
+validator-owned field and exactly two distinct required analyzers; otherwise
+the retained result is respectively `disagreement`, `ambiguous`, or
+`unsupported` and is terminal-unaligned. There is no confidence score,
+majority, analyzer order, fallback, or model judge. Temporal attachment uses
+the same pair rule. Its candidate IDs/spans must equal the source-only
+`TemporalResolution` candidates for the subject's required temporal role; each
+candidate must be independently resolved by that resolution and its selected
+temporal policy. Missing, duplicate, zero-for-required, multiple, ungrounded,
+cross-role, or conflicting candidates are retained terminal-unaligned, never
+promoted. The exact temporal-role state machine is fact/action -> assertion;
+correction -> replacement then transition; retraction/identity -> transition.
+
+Identity resolution is deterministic: start with the canonical complete
+`grounded_mentions` tuple; reject an assertion that refers outside it. Form
+components only from affirmative assertions, union their mention sets in
+lexicographic assertion-digest order, and emit each component in mention order.
+If a component has an unresolved assertion or two affirmative assertions with
+incompatible proof/support for the same mention pair, emit one `unresolved`
+cluster with `conflicting_evidence`; otherwise emit `same_source_entity` for a
+multi-mention affirmative component, or `singleton_distinct` for an uncovered
+singleton. An uncovered mention with an `insufficient_evidence` assertion is
+an `unresolved` singleton. Cluster IDs are the existing resolution's stable
+digest-derived IDs; every cluster lists only its source spans and one of the
+six existing proof kinds. This produces exactly one total
+`SourceLocalIdentityResolution`; it neither reads nor writes a graph identity.
+
+The normalization coordinator first verifies the request-wide source, route,
+proposal-run, analysis, temporal-resolution, policy-selection, and bundle
+fingerprint joins. It computes and retains all parser/scope/temporal results,
+then constructs an `OperationAlignment` only for the exact inner join of one
+stable parser result, one stable scope result, one stable temporal result, and
+one subject at the same `(operation_id, proposal_id, segment_id, route)`. The
+row uses the existing eight fields and no new field. Every other subject is
+represented by a terminal-unaligned manifest entry and matching
+`UnresolvedPredicateEvent`; it cannot be omitted, joined to a neighboring
+proposal/route, or upgraded later.
+
+Grouping is deliberately conservative until a separate source-dependency
+authority is designed. The producer emits exactly one complete singleton
+`SourceDependencyGroup` per aligned operation, ordered by `group_id`; its
+single operation/segment is the row's operation/segment, `atomic=True`, and
+its kind is `independent_fact`, `correction`, `retraction`, `identity`, or
+`action_state` from the subject kind. `source_dependency_kinds` is exactly
+`("assertion",)`, `("replacement", "transition")`, `("transition",)`,
+`("transition",)`, or `("assertion",)` respectively. No shared subject,
+same segment, same mention cluster, textual order, or provider relationship
+creates an inter-operation edge. The exact group/row operation set is a
+bijection; a future coupled-group feature requires its own typed source-only
+edge authority and design delta.
+
+The pipeline introduces `GraphFreeSourceNormalizationStage.normalize(request,
+ingress_context, fence, lease, writer_binding)`, where `request` carries the
+exact interpretation bundle. It is
+called after proposal parsing, prepared-source validation, and the two analyzer
+outputs, but before `SemanticTerminalOutcome`, graph evidence normalization, or
+graph-dependent coordination. It either returns the reloaded
+`SourceNormalizationResult`/alignment/groups or a typed non-committing
+source-normalization outcome. It has no terminal reconstruction path.
+
+The existing `SourceNormalizationAtomicWriteRequest` remains the only writer.
+Its exact member kinds/order are: `progress`; `source_normalization_request`;
+`graph_free_interpretation_bundle`;
+`source_local_identity_partition_evidence`; `parser_consensus` rows in manifest
+order; `semantic_scope_consensus` rows in manifest order;
+`temporal_attachment_consensus` rows in manifest order;
+`source_local_identity_resolution`; `source_proposal_alignment`;
+`source_dependency_groups`; `source_normalization_result`;
+`source_normalization_evidence_manifest`; `graph_dependent_execution_policy`;
+`consensus_policy_selection_bundle`; and
+`language_construction_policy_bundle`. These literal member kinds are added to
+the closed `AtomicGenerationMember.kind` algebra only for this subtype; no
+other member is accepted. The
+request/result/manifest and outer write digests include the new bundle and
+identity-evidence member digests in this same declaration order. The manifest
+adds `interpretation_bundle_digest` and `identity_partition_evidence_digest`;
+the result adds the same two fields. They must equal the typed members and their
+request references. A missing, extra, reordered, substituted, foreign, or
+partial member rejects. A lost acknowledgement repeats byte-identical write
+bytes and returns the already-attested generation; recovery reloads this exact
+generation and validates every member before disclosing the result. It never
+reruns either analyzer or recomputes identity/consensus from current objects.
+
+`ProviderIngestionCoordinator.ingest` is the mandatory production caller,
+reached from `ProviderMemoryService.sync_event` and composed by the existing
+factory, filesystem bundle, and Hermes adapter. It supplies admitted prepared
+source, validated proposal run, analyzer bundle, server-owned policy snapshots,
+ingress/fence/lease/writer authority, and the expected atomic generation. A
+missing producer, bundle, policy selection, or atomic dependency returns the
+typed non-committing outcome before any graph read, terminal persistence, or
+tenant-sensitive lookup. No optional legacy fallback is permitted. Before first
+release rollback removes the new codecs, stage composition, and unpublished
+generation members as one feature; retained generations remain readable only by
+the exact strict decoder and are never converted.
+
+##### 3.4.2a Coordinate and ambiguity remediation
+
+This subsection supersedes the abbreviated bundle, scope, temporal, and
+pre-partition shapes immediately above. It is an unreleased strict-v1 contract
+correction: no compatibility reader or mixed generation is permitted.
+
+`GraphFreeInterpretationBundle` is source-wide, not single-subject scoped:
+
+```python
+class AnalyzerScopeObservation(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; segment_language_route_digest: str
+    proposal_id: str; operation_id: str
+    analyzer_role: Literal["primary", "corroborating"]
+    interpretation: AnalyzerScopeInterpretation
+    observation_digest: str
+
+class AnalyzerTemporalAttachmentObservation(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; segment_language_route_digest: str
+    proposal_id: str; operation_id: str; temporal_role: TemporalRole
+    analyzer_role: Literal["primary", "corroborating"]
+    attachment: AnalyzerTemporalAttachment
+    observation_digest: str
+
+class GraphFreeInterpretationBundle(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    proposal_run_fingerprint: str; analysis_bundle_fingerprint: str
+    temporal_resolution_fingerprint: str
+    subject_sets: tuple[PreAlignmentSemanticOperationSubjectSet, ...]
+    scope_observations: tuple[AnalyzerScopeObservation, ...]
+    temporal_attachment_observations: tuple[AnalyzerTemporalAttachmentObservation, ...]
+    identity_partition_evidence: SourceLocalIdentityPartitionEvidence
+    bundle_digest: str
+```
+
+Each observation digest uses its own `memorii.semantic-ingestion.analyzer-*
+observation.v1` CTV domain; the bundle digest retains
+`memorii.semantic-ingestion.graph-free-interpretation-bundle.v1` over this
+complete corrected field set. `subject_sets` are canonical by their source and
+proposal coordinate and are the exact collection of every proposal subject set
+from the validated source-wide proposal run. Their flattened subjects are the
+complete unique universe. Scope observations have the exact cardinality two at
+each subject coordinate, one per analyzer role; temporal observations have that
+same cardinality at each `(subject, required temporal role)` coordinate. All
+coordinates, inner analyzer fingerprint, source span, preparation, proposal,
+segment, and route joins must agree. No single candidate, segment, or subject
+can stand in for the source-wide collection.
+
+`AnalyzerScopeInterpretation` carries both evidence and explicit semantic
+values. Its corrected fields are `polarity_evidence`, `commitment_evidence`,
+and `attribution_evidence` (`CheckResult`); `polarity: Literal["positive",
+"negative"]`; `commitment: Commitment`; `attribution: Literal["speaker",
+"quoted_or_reported_source"]`; `attribution_bearer_span`; and canonical
+`governing_clause_spans`. The three evidence objects must each be `pass` to
+promote; a speaker has no bearer and a reported source has exactly one bearer.
+The stable value is the exact projection of those four typed semantic fields and
+the canonical clause tuple, not a value inferred from diagnostics or a
+confidence score. The closed pair-to-status table is: equal complete values and
+all required evidence pass -> `stable`; equal typed values with an
+ambiguous/unknown evidence result -> `ambiguous`; unequal typed values or
+bearers/clauses -> `disagreement`; unsupported construction/policy ->
+`unsupported`. Any other pair, missing role, duplicate observation, or invalid
+typed/evidence combination rejects rather than selecting a status.
+
+`AnalyzerTemporalAttachment` and `TemporalAttachmentConsensus` are keyed by
+the complete subject coordinate plus `temporal_role`. The latter adds
+`temporal_role`, and a new strict `OperationTemporalAttachmentConsensusSet`
+contains the canonical role-to-consensus digest tuple for one subject. Required
+roles are fact/action -> `(assertion)`; correction -> `(replacement,
+transition)`; retraction/identity -> `(transition)`. `OperationAlignment`
+replaces its singular temporal digest with this set digest; the set's role tuple
+must be exact, canonical, and complete before an aligned row exists. The
+manifest retains one temporal entry per role and uses the same role in its
+coordinate; a correction therefore retains and joins two temporal entries.
+This is a required unreleased change to the prior eight-field receipt, not an
+alias or a reader fallback.
+
+Pre-partition mentions are source-only and have no cluster label:
+
+```python
+class SourcePrePartitionMention(BaseModel):
+    source_id: str; source_digest: str
+    segment_id: str; segment_language_route_digest: str
+    language_policy_fingerprint: str
+    mention_span: SourceSpanReference
+    mention_digest: str
+```
+
+`SourceLocalIdentityPartitionEvidence.grounded_mentions` is exactly this
+canonical tuple; each assertion references these mention digests, never a
+`GroundedMentionRef` or preassigned cluster ID. An affirmative assertion has
+two or more distinct mentions and one of the four affirmative proof kinds; an
+`insufficient_evidence` or `conflicting_evidence` assertion has one or more
+mentions and is not affirmative. Every assertion has nonempty canonical
+source spans from the same source/route/policy and a CTV digest over all fields.
+
+Partition ambiguity is deliberately conservative and deterministic. Construct
+the undirected hypergraph whose vertices are the mentioned source spans and
+whose hyperedges are every affirmative *and* unresolved assertion. Compute
+connected components over all hyperedges in canonical assertion-digest order.
+Any component touched by an insufficient/conflicting assertion is emitted as
+one `unresolved` cluster, with `conflicting_evidence` when any such assertion is
+conflicting and otherwise `insufficient_evidence`; it is never split into a
+resolved subset. A component with only affirmative hyperedges is
+`same_source_entity`; a mention with no incident assertion is its own
+`singleton_distinct` cluster. Thus transitive overlaps propagate ambiguity,
+but physically distinct mentions do not merge merely because they share a
+source, route, policy, segment, text, or ordering: an assertion edge is
+required. The emitted cluster's evidence spans are the duplicate-free canonical
+union of its incident assertion spans. Its proof kind is the unique affirmative
+kind when all incident kinds agree, otherwise `conflicting_evidence`; unresolved
+wins over affirmative. Its ID is the CTV digest in
+`memorii.semantic-ingestion.source-local-identity-cluster.v1` over source ID,
+source digest, language-policy fingerprint, decision, proof kind, ordered
+pre-partition mention digests, and ordered evidence-span digests. The existing
+resolution digest then binds this total ordered cluster partition.
+
+Required identity matrices cover: disjoint affirmative pairs; overlapping
+affirmative hyperedges (one resolved transitive component); unresolved singleton;
+affirmative-plus-insufficient overlap; affirmative-plus-conflicting overlap;
+two otherwise separate affirmative components joined only through unresolved
+evidence; duplicate/out-of-universe mention; missing span; cross-route/policy;
+and no-assertion standalone mentions. These prove both total coverage and that
+no absent edge creates a merge.
+
+##### 3.4.2b Strict replacement schemas
+
+The following declarations replace every earlier producer shape in 3.4.2 and
+3.4.2a. Their displayed declaration order is the CTV preimage order, excluding
+only the trailing digest field. Every shape is strict, frozen, closed-wire V1,
+and `extra="forbid"`; prior shapes are deleted rather than accepted as aliases.
+
+```python
+class AnalyzerScopeInterpretation(BaseModel):
+    analyzer_fingerprint: str
+    predicate_head_span: SourceSpanReference
+    governing_clause_spans: tuple[SourceSpanReference, ...]
+    polarity: Literal["positive", "negative"]
+    commitment: Commitment
+    attribution: Literal["speaker", "quoted_or_reported_source"]
+    attribution_bearer_span: SourceSpanReference | None
+    polarity_evidence: CheckResult
+    commitment_evidence: CheckResult
+    attribution_evidence: CheckResult
+    interpretation_digest: str
+
+class AnalyzerScopeObservation(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; segment_language_route_digest: str
+    proposal_id: str; operation_id: str
+    analyzer_role: Literal["primary", "corroborating"]
+    interpretation: AnalyzerScopeInterpretation
+    observation_digest: str
+
+class TemporalAttachmentConsensus(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; segment_language_route_digest: str
+    proposal_id: str; operation_id: str; temporal_role: TemporalRole
+    temporal_resolution_fingerprint: str
+    primary_attachment: AnalyzerTemporalAttachment
+    corroborating_attachment: AnalyzerTemporalAttachment
+    stable_candidate_ids: tuple[str, ...] | None
+    status: Literal["stable", "disagreement", "ambiguous", "unsupported"]
+    consensus_policy_fingerprint: str
+    consensus_digest: str
+
+class OperationTemporalAttachmentConsensusSet(BaseModel):
+    operation_id: str; proposal_id: str; segment_id: str
+    segment_language_route_digest: str
+    role_consensus_digests: tuple[tuple[TemporalRole, str], ...]
+    consensus_set_digest: str
+
+class OperationAlignment(BaseModel):
+    operation_id: str; proposal_id: str; segment_id: str
+    segment_language_route_digest: str
+    parser_consensus_digest: str; scope_consensus_digest: str
+    temporal_attachment_consensus_set_digest: str
+    alignment_digest: str
+
+class SourceNormalizationEvidenceEntry(BaseModel):
+    kind: Literal["parser", "scope", "temporal_attachment"]
+    operation_id: str; proposal_id: str; segment_id: str
+    segment_language_route_digest: str
+    temporal_role: TemporalRole | None
+    artifact_digest: str; selection_digest: str
+    retention: Literal["aligned", "terminal_unaligned"]
+    entry_digest: str
+
+class ConsensusPolicySelection(BaseModel):
+    kind: Literal["parser", "scope", "temporal_attachment"]
+    operation_id: str; proposal_id: str; segment_id: str
+    segment_language_route_digest: str
+    temporal_role: TemporalRole | None
+    request_dependency_kind: Literal["analyses", "temporal_resolution"]
+    request_dependency_fingerprint: str
+    selected_policy_fingerprint: str; selected_policy: ConsensusPolicy
+    selection_digest: str
+```
+
+Digest domains are, respectively,
+`memorii.semantic-ingestion.analyzer-scope-interpretation.v2`,
+`memorii.semantic-ingestion.analyzer-scope-observation.v1`,
+`memorii.semantic-ingestion.temporal-attachment-consensus.v2`,
+`memorii.semantic-ingestion.operation-temporal-attachment-consensus-set.v1`,
+`memorii.semantic-ingestion.operation-alignment.v2`,
+`memorii.semantic-ingestion.source-normalization-evidence-entry.v2`, and
+`memorii.semantic-ingestion.consensus-policy-selection.v2`. Each hashes the
+exact declaration-order CTV preimage shown above; `GraphFreeInterpretationBundle`
+uses its corrected v2 fields under
+`memorii.semantic-ingestion.graph-free-interpretation-bundle.v2`.
+
+For parser/scope selection and manifest entries, `temporal_role` is null; for
+temporal selection and manifest entries it is non-null and is one exact required
+role of the subject. `OperationTemporalAttachmentConsensusSet` is ordered by
+`temporal_role` in the literal order assertion, replacement, transition, has no
+duplicate role, and its exact tuple is required by operation kind. It is the
+only temporal value accepted by the amended alignment row. The aligned
+temporal projection is ordered first by row operation ID then that role order;
+the manifest projection uses `(kind, operation_id, proposal_id, segment_id,
+route, temporal_role, artifact_digest)`. Every temporal consensus/entry/
+selection is a three-way exact coordinate bijection. A correction has exactly
+two such tuples, never a selected one and ignored one.
+
+Scope validation is a complete pair table over each of polarity, commitment,
+and attribution check statuses. A pair is `stable` only when the typed value
+tuples (including bearer and clauses) are identical and both checks are pass.
+If either check is fail, the retained result is `disagreement` regardless of
+typed equality. Otherwise, if typed tuples differ it is `disagreement`; if they
+match and either check is unknown it is `ambiguous`. `unsupported` is permitted
+only when both observations carry the exact selected policy's unsupported
+reason and neither claims a usable semantic value. Thus every pass/fail/unknown
+pair has one outcome: pass/pass follows equality; fail/pass, pass/fail, and
+fail/fail are disagreement; unknown/unknown and unknown/pass/pass/unknown are
+ambiguous when equal, disagreement when unequal; unsupported is not inferred
+from a check. Stable scope is the exact field projection, and no check,
+diagnostic, analyzer order, or confidence can choose a different value.
+
+```python
+class SourcePrePartitionMention(BaseModel):
+    source_id: str; source_digest: str
+    segment_id: str; segment_language_route_digest: str
+    language_policy_fingerprint: str
+    mention_span: SourceSpanReference
+    mention_digest: str
+
+class SourceLocalIdentityAssertion(BaseModel):
+    segment_id: str
+    segment_language_route_digest: str
+    language_policy_fingerprint: str
+    mention_digests: tuple[str, ...]
+    proof_kind: IdentityProofKind
+    source_evidence: tuple[SourceSpanReference, ...]
+    assertion_digest: str
+
+class SourceLocalIdentityPartitionEvidence(BaseModel):
+    source_id: str; source_digest: str
+    mentions: tuple[SourcePrePartitionMention, ...]
+    assertions: tuple[SourceLocalIdentityAssertion, ...]
+    evidence_digest: str
+
+class SourceLocalEntityClusterDecision(BaseModel):
+    cluster_id: str; decision: IdentityClusterDecision
+    proof_kind: IdentityProofKind
+    mention_digests: tuple[str, ...]
+    source_evidence: tuple[SourceSpanReference, ...]
+    segment_route_policy_closure: tuple[tuple[str, str, str], ...]
+    decision_digest: str
+
+class SourceLocalIdentityResolution(BaseModel):
+    source_id: str
+    clusters: tuple[SourceLocalEntityClusterDecision, ...]
+    grounded_mention_refs: tuple[GroundedMentionRef, ...]
+    unresolved_mention_refs: tuple[GroundedMentionRef, ...]
+    resolution_digest: str
+```
+
+`IdentityProofKind` is exactly the six existing literals and
+`IdentityClusterDecision` is exactly `same_source_entity`,
+`singleton_distinct`, or `unresolved`. The authoritative partition input is
+only `SourcePrePartitionMention` plus assertion digest references: the old
+cluster-labelled evidence, affirmative-only union, and pre-partition
+`GroundedMentionRef` shapes are deleted. Mention, assertion, partition,
+cluster-decision, and resolution domains are respectively
+`memorii.semantic-ingestion.source-pre-partition-mention.v1`,
+`memorii.semantic-ingestion.source-local-identity-assertion.v2`,
+`memorii.semantic-ingestion.source-local-identity-partition-evidence.v2`,
+`memorii.semantic-ingestion.source-local-entity-cluster-decision.v2`, and
+`memorii.semantic-ingestion.source-local-identity-resolution.v2`.
+An assertion's `(segment_id, segment_language_route_digest,
+language_policy_fingerprint)` is an assertion-level route/policy closure and
+is included before `mention_digests` in its declaration-order CTV preimage.
+Every affirmative assertion must reference only mentions whose exact closure
+equals that one tuple, and every assertion evidence span must bind that same
+segment and route/policy closure. A mixed closure, a missing closure, or a
+cross-route/policy evidence span rejects before partition; it is not retained
+as insufficient evidence. The exact negative vector contains two otherwise
+valid affirmative mentions with equal source ID/digest but different segment or
+route/policy triple and one affirmative assertion naming both; validation
+returns the typed source-normalization noncommit
+`source_alignment_authority_unavailable`, publishes no generation, and makes no
+graph or terminal call.
+The `GroundedMentionRef` tuples are derived only after the cluster IDs exist:
+one ref maps each ordered mention digest to its source span and final cluster
+ID; their exact ordered projection and unresolved projection are in the
+resolution digest. Every cluster's route/policy closure is the canonical unique
+set of its mention `(segment_id, route_digest, language_policy_fingerprint)`
+tuples. The assertion-level rule above is the sole mixed-route disposition.
+
+##### 3.4.2c Authoritative V2 replacement family
+
+This is the sole normative producer schema family. Every earlier declaration,
+domain, projection, member list, or algorithm in 3.4.2, 3.4.2a, 3.4.2b, and
+4.5.3 that names a singular temporal digest, a single subject set, a
+cluster-labelled pre-partition mention, `SourceLocalIdentityEvidence`, an
+affirmative-only partition, `operation-alignment.v1`,
+`source-normalization-evidence-entry.v1`, or any prior source-normalization
+request/result/manifest/write shape is illustrative historical context only and
+must be rejected by codecs, validators, persistence, recovery, and tests. It
+is neither an alias nor a migration source. The V2 family below is strict,
+frozen, `extra="forbid"`, closed-wire, declaration-order CTV, and has exactly
+one decoder registration per concrete type.
+
+```python
+class ScopeSupportedValues(BaseModel):
+    kind: Literal["supported"]
+    polarity: Literal["positive", "negative"]
+    commitment: Commitment
+    attribution: Literal["speaker", "quoted_or_reported_source"]
+    attribution_bearer_span: SourceSpanReference | None
+    governing_clause_spans: tuple[SourceSpanReference, ...]
+
+class ScopeUnsupportedValues(BaseModel):
+    kind: Literal["unsupported"]
+    reason_code: Literal["unsupported_construction", "unsupported_policy"]
+    policy_fingerprint: str
+
+ScopeSemanticValues = Annotated[ScopeSupportedValues | ScopeUnsupportedValues,
+                                Field(discriminator="kind")]
+
+class AnalyzerScopeInterpretationV2(BaseModel):
+    analyzer_fingerprint: str; predicate_head_span: SourceSpanReference
+    values: ScopeSemanticValues
+    polarity_evidence: CheckResult; commitment_evidence: CheckResult
+    attribution_evidence: CheckResult; interpretation_digest: str
+
+class AnalyzerScopeObservationV2(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; segment_language_route_digest: str
+    proposal_id: str; operation_id: str
+    analyzer_role: Literal["primary", "corroborating"]
+    interpretation: AnalyzerScopeInterpretationV2; observation_digest: str
+
+class AnalyzerTemporalAttachmentV2(BaseModel):
+    analyzer_fingerprint: str; predicate_head_span: SourceSpanReference
+    candidate_ids: tuple[str, ...]; attachment_spans: tuple[SourceSpanReference, ...]
+    attachment_digest: str
+
+class AnalyzerTemporalAttachmentObservationV2(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; segment_language_route_digest: str
+    proposal_id: str; operation_id: str; temporal_role: TemporalRole
+    analyzer_role: Literal["primary", "corroborating"]
+    attachment: AnalyzerTemporalAttachmentV2; observation_digest: str
+
+class TemporalAttachmentConsensusV2(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; segment_language_route_digest: str
+    proposal_id: str; operation_id: str; temporal_role: TemporalRole
+    temporal_resolution_fingerprint: str
+    primary_attachment: AnalyzerTemporalAttachmentV2
+    corroborating_attachment: AnalyzerTemporalAttachmentV2
+    stable_candidate_ids: tuple[str, ...] | None
+    status: Literal["stable", "disagreement", "ambiguous", "unsupported"]
+    consensus_policy_fingerprint: str; consensus_digest: str
+
+class OperationTemporalAttachmentConsensusSetV2(BaseModel):
+    operation_id: str; proposal_id: str; segment_id: str
+    segment_language_route_digest: str
+    role_consensus_digests: tuple[tuple[TemporalRole, str], ...]
+    consensus_set_digest: str
+
+class OperationAlignmentV2(BaseModel):
+    operation_id: str; proposal_id: str; segment_id: str
+    segment_language_route_digest: str
+    parser_consensus_digest: str; scope_consensus_digest: str
+    temporal_attachment_consensus_set_digest: str; alignment_digest: str
+
+class SourceNormalizationEvidenceEntryV2(BaseModel):
+    kind: Literal["parser", "scope", "temporal_attachment"]
+    operation_id: str; proposal_id: str; segment_id: str
+    segment_language_route_digest: str; temporal_role: TemporalRole | None
+    artifact_digest: str; selection_digest: str
+    retention: Literal["aligned", "terminal_unaligned"]; entry_digest: str
+
+class ConsensusPolicySelectionV2(BaseModel):
+    kind: Literal["parser", "scope", "temporal_attachment"]
+    operation_id: str; proposal_id: str; segment_id: str
+    segment_language_route_digest: str; temporal_role: TemporalRole | None
+    request_dependency_kind: Literal["analyses", "temporal_resolution"]
+    request_dependency_fingerprint: str; selected_policy: ConsensusPolicy
+    selected_policy_fingerprint: str; selection_digest: str
+
+class SourceNormalizationEvidenceManifestV2(BaseModel):
+    source_id: str; source_digest: str; source_normalization_request_digest: str
+    consensus_policy_selection_bundle_digest: str
+    language_construction_policy_bundle_digest: str
+    interpretation_bundle_digest: str; identity_partition_evidence_digest: str
+    publication_coordinate: SourceNormalizationPublicationCoordinate
+    retained_entries: tuple[SourceNormalizationEvidenceEntryV2, ...]
+    completeness: Literal["complete"]; bijection_verified: Literal[True]
+    manifest_digest: str
+
+class SourceProposalAlignmentV2(BaseModel):
+    source_id: str; segment_language_routes: SegmentLanguageRouteSet
+    operation_alignments: tuple[OperationAlignmentV2, ...]
+    parser_consensus: tuple[ParserConsensusAssessment, ...]
+    scope_consensus: tuple[SemanticScopeConsensus, ...]
+    temporal_attachment_consensus: tuple[TemporalAttachmentConsensusV2, ...]
+    source_local_identity: SourceLocalIdentityResolutionV2
+    source_dependency_groups: tuple[SourceDependencyGroup, ...]
+    proposal_coverage: ProposalCoverageAudit
+    predicate_event_inventory_fingerprint: str; temporal_resolution_fingerprint: str
+    status: Literal["complete", "unsupported", "failed"]
+    reason_codes: tuple[str, ...]; source_alignment_fingerprint: str
+
+class GraphFreeInterpretationBundleV2(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    proposal_run_fingerprint: str; analysis_bundle_fingerprint: str
+    temporal_resolution_fingerprint: str
+    subject_sets: tuple[PreAlignmentSemanticOperationSubjectSet, ...]
+    scope_observations: tuple[AnalyzerScopeObservationV2, ...]
+    temporal_attachment_observations: tuple[AnalyzerTemporalAttachmentObservationV2, ...]
+    identity_partition_evidence: SourceLocalIdentityPartitionEvidenceV2
+    bundle_digest: str
+
+class SourceNormalizationRequestV2(BaseModel):
+    source: PreparedSource; proposal_run: SemanticProposalRun
+    analyses: LinguisticAnalysisBundle; interpretation_bundle: GraphFreeInterpretationBundleV2
+    predicate_events: PredicateEventInventory; temporal_resolution: TemporalResolution
+    consensus_policy_selections: ConsensusPolicySelectionBundleV2
+    language_construction_policies: LanguageConstructionPolicyAuthorityBundle
+    publication_coordinate: SourceNormalizationPublicationCoordinate
+    temporal_policy: TemporalPolicySnapshot; trust_policy: TrustPolicySnapshot
+    arbitration_as_of: datetime; capability_registry: CapabilityRegistrySnapshot
+    request_digest: str
+
+class SourceNormalizationResultV2(BaseModel):
+    source_alignment: SourceProposalAlignmentV2
+    evidence_manifest: SourceNormalizationEvidenceManifestV2
+    interpretation_bundle_digest: str; identity_partition_evidence_digest: str
+    capability_selections: tuple[OperationCapabilitySelection, ...]
+    trust_policy_snapshot_digest: str; arbitration_as_of: datetime; result_digest: str
+
+class SourceNormalizationAtomicWriteRequestV2(SourceCheckpointAtomicWriteRequest):
+    kind: Literal["source_normalization_checkpoint_v2"]
+    progress_state: Literal["preplanning"]; publication_generation: int
+    source_normalization_request: SourceNormalizationRequestV2
+    source_normalization_request_digest: str
+    source_normalization_result: SourceNormalizationResultV2
+    source_normalization_result_digest: str
+    evidence_manifest: SourceNormalizationEvidenceManifestV2
+    evidence_manifest_digest: str
+    graph_dependent_execution_policy: GraphDependentExecutionPolicy
+    graph_dependent_execution_policy_digest: str
+    consensus_policy_selection_bundle: ConsensusPolicySelectionBundleV2
+    consensus_policy_selection_bundle_digest: str
+    language_construction_policy_bundle: LanguageConstructionPolicyAuthorityBundle
+    language_construction_policy_bundle_digest: str; request_digest: str
+
+class SourcePrePartitionMentionV2(BaseModel):
+    source_id: str; source_digest: str; segment_id: str
+    segment_language_route_digest: str; language_policy_fingerprint: str
+    mention_span: SourceSpanReference; mention_digest: str
+
+class SourceLocalIdentityAssertionV2(BaseModel):
+    segment_id: str; segment_language_route_digest: str
+    language_policy_fingerprint: str; mention_digests: tuple[str, ...]
+    proof_kind: IdentityProofKind; source_evidence: tuple[SourceSpanReference, ...]
+    assertion_digest: str
+
+class SourceLocalIdentityPartitionEvidenceV2(BaseModel):
+    source_id: str; source_digest: str
+    mentions: tuple[SourcePrePartitionMentionV2, ...]
+    assertions: tuple[SourceLocalIdentityAssertionV2, ...]; evidence_digest: str
+
+class SourceLocalEntityClusterDecisionV2(BaseModel):
+    cluster_id: str; decision: IdentityClusterDecision; proof_kind: IdentityProofKind
+    mention_digests: tuple[str, ...]; source_evidence: tuple[SourceSpanReference, ...]
+    segment_route_policy_closure: tuple[tuple[str, str, str], ...]
+    decision_digest: str
+
+class SourceLocalIdentityResolutionV2(BaseModel):
+    source_id: str; clusters: tuple[SourceLocalEntityClusterDecisionV2, ...]
+    grounded_mention_refs: tuple[GroundedMentionRef, ...]
+    unresolved_mention_refs: tuple[GroundedMentionRef, ...]; resolution_digest: str
+```
+
+All names ending V2 use the lower-case SHA-256 domain
+`memorii.semantic-ingestion.<kebab-behavior-name>.v2`, with the exact displayed
+fields excluding only their trailing digest. `ScopeSupportedValues` and
+`ScopeUnsupportedValues` use `.v2` domains; an unsupported arm carries no
+polarity, commitment, attribution, bearer, or clauses and requires the exact
+selected policy fingerprint/reason. Pair disposition is total: supported/pass
+equal -> stable; any fail -> disagreement; supported unknown equal ->
+ambiguous; supported unequal without fail -> disagreement; two equal
+policy/reason unsupported arms -> unsupported; unsupported versus supported or
+unequal policy/reason unsupported arms -> disagreement. All remaining malformed
+or mixed union/check permutations reject.
+
+The V2 identity contracts are `SourcePrePartitionMentionV2`,
+`SourceLocalIdentityAssertionV2`, `SourceLocalIdentityPartitionEvidenceV2`,
+`SourceLocalEntityClusterDecisionV2`, and `SourceLocalIdentityResolutionV2`.
+Their declaration/digest rules are those in 3.4.2b with the assertion-level
+route/policy closure. `cluster_id` is computed, never supplied: hash the
+complete cluster-decision body in declaration order excluding `cluster_id` and
+`decision_digest` under
+`memorii.semantic-ingestion.source-local-entity-cluster-id.v2`; then hash the
+same body including that ID but excluding `decision_digest` under the decision
+domain. Mutating any decision, proof, mention, evidence, route, or policy must
+change/reject the ID/decision pair before graph-facing mention refs are derived.
+
+Canonical collection order is subjects by subject operation ID; scope rows by
+their complete coordinate plus analyzer role; temporal rows by complete
+coordinate plus temporal role then analyzer role; operation rows by operation
+ID; temporal set roles assertion/replacement/transition; manifest entries by
+kind/coordinate/role/artifact; selections by kind/coordinate/role; members by
+the exact V2 member list below. Alignment validates exact same-source joins,
+one stable parser/scope row, and the full required temporal set for each row;
+all remaining retained rows project only to the manifest.
+
+The V2 atomic member closure, in member-ID order, is `progress`,
+`source_normalization_request_v2`, `graph_free_interpretation_bundle_v2`,
+`source_local_identity_partition_evidence_v2`, parser rows, scope rows,
+temporal rows, `source_local_identity_resolution_v2`,
+`source_proposal_alignment_v2`, `source_dependency_groups`,
+`source_normalization_result_v2`, `source_normalization_evidence_manifest_v2`,
+`graph_dependent_execution_policy`, `consensus_policy_selection_bundle_v2`,
+and `language_construction_policy_bundle`. The request/result/manifest, every
+member payload digest, and `required_artifact_digests` are one exact
+duplicate-free closure. Missing, extra, V1, mixed-format, reordered, or
+singular-temporal member rejects before publication/reopen.
+
+Every V2 type has one fixed CTV vector, strict decoder vector, and reopen vector
+that mutates each field and rejects V1/singular payloads. The correction vector
+contains both replacement and transition temporal entries, selections, and
+consensus-set roles; omitting, duplicating, swapping, or replacing either role
+rejects before alignment or atomic write.
+
+##### 3.4.2d Stable-name V2 type-graph closure
+
+The temporary `*V2` names in 3.4.2c are non-normative drafting labels and are
+rejected as public, persisted, codec, member, or import identities. The
+following stable behavioral names replace them once at explicit
+`schema_version: Literal[2]`; no V1/V2 alias, bridge, reader, import facade,
+or mixed generation exists. Every active consumer and persistence boundary
+below accepts these names only.
+
+```python
+class SemanticScopeConsensus(BaseModel):
+    schema_version: Literal[2]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; segment_language_route_digest: str
+    proposal_id: str; operation_id: str
+    primary_observation: AnalyzerScopeObservation
+    corroborating_observation: AnalyzerScopeObservation
+    stable_scope: StableSemanticScope | None
+    status: Literal["stable", "disagreement", "ambiguous", "unsupported"]
+    consensus_policy_fingerprint: str; consensus_digest: str
+
+class ConsensusPolicySelectionBundle(BaseModel):
+    schema_version: Literal[2]
+    selections: tuple[ConsensusPolicySelection, ...]
+    bundle_digest: str
+
+class GraphFreeInterpretationBundle(BaseModel):
+    schema_version: Literal[2]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    proposal_run_fingerprint: str; analysis_bundle_fingerprint: str
+    temporal_resolution_fingerprint: str
+    subject_sets: tuple[PreAlignmentSemanticOperationSubjectSet, ...]
+    scope_observations: tuple[AnalyzerScopeObservation, ...]
+    temporal_attachment_observations: tuple[AnalyzerTemporalAttachmentObservation, ...]
+    identity_partition_evidence: SourceLocalIdentityPartitionEvidence
+    bundle_digest: str
+
+class SourceNormalizationRequest(BaseModel):
+    schema_version: Literal[2]
+    source: PreparedSource; proposal_run: SemanticProposalRun
+    analyses: LinguisticAnalysisBundle; interpretation_bundle: GraphFreeInterpretationBundle
+    predicate_events: PredicateEventInventory; temporal_resolution: TemporalResolution
+    consensus_policy_selections: ConsensusPolicySelectionBundle
+    language_construction_policies: LanguageConstructionPolicyAuthorityBundle
+    publication_coordinate: SourceNormalizationPublicationCoordinate
+    temporal_policy: TemporalPolicySnapshot; trust_policy: TrustPolicySnapshot
+    arbitration_as_of: datetime; capability_registry: CapabilityRegistrySnapshot
+    request_digest: str
+
+class SourceNormalizationResult(BaseModel):
+    schema_version: Literal[2]
+    source_alignment: SourceProposalAlignment
+    evidence_manifest: SourceNormalizationEvidenceManifest
+    interpretation_bundle_digest: str; identity_partition_evidence_digest: str
+    capability_selections: tuple[OperationCapabilitySelection, ...]
+    trust_policy_snapshot_digest: str; arbitration_as_of: datetime; result_digest: str
+
+# SourceNormalizationAtomicWriteRequest is declared once, in 3.4.2g. This
+# earlier illustrative expansion is intentionally not a second declaration.
+```
+
+`SemanticScopeConsensus` uses
+`memorii.semantic-ingestion.semantic-scope-consensus.v2`; its declaration order
+is the displayed order and its two observations must have exact equal outer
+coordinates, distinct required roles/fingerprints, and the selected scope
+policy. A stable value is the exact supported-value projection; an unsupported
+result has `stable_scope=None` and exactly equal unsupported policy/reason arms.
+All pass/fail/unknown and supported/unsupported pair permutations follow the
+total table in 3.4.2c. `ConsensusPolicySelectionBundle` uses
+`memorii.semantic-ingestion.consensus-policy-selection-bundle.v2` over
+`schema_version,selections`; selections are exactly the canonical complete
+parser/scope/role-bearing-temporal coordinate collection, every selection joins
+one retained artifact and selected policy, and no duplicate/missing/foreign
+policy coordinate is permitted. The stable named request/result/write use
+`source-normalization-request.v2`, `source-normalization-result.v2`, and
+`source-normalization-atomic-write-request.v2` respectively; all other stable
+names use their behavior-name `.v2` domains and the displayed declaration order.
+
+The complete active type graph is:
+
+```text
+GraphFreeInterpretationBundle -> SemanticScopeConsensus,
+  TemporalAttachmentConsensus, SourceLocalIdentityPartitionEvidence
+-> SourceNormalizationRequest -> SourceNormalizationAtomicWriteRequest
+-> SourceNormalizationResult -> SourceProposalAlignment
+-> GraphProposalAlignment -> GraphDependentCoordinatorRequest
+-> NliRequest -> SourceTrace -> IngestionExecutionRegistry -> reopen
+```
+
+`GraphProposalAlignment.source_alignment`,
+`GraphDependentCoordinatorRequest.alignment`, `NliRequest.source_normalization`,
+all source-trace references, the execution registry's source-normalization
+member, and every atomic-store protocol request/recovery return are the stable
+schema-version-2 contracts above. Their CTV preimages include the exact nested
+digest/schema-version pair. A decoder must reject every old member discriminator,
+old symbol/import registration, V1 digest, temporary `*V2` symbol, singular
+temporal digest, or mixed nested schema before graph coordinator/NLI use or
+result disclosure. The execution registry has one `source_normalization`
+member discriminator whose payload is `SourceNormalizationResult` at
+`schema_version=2`; no other
+source-normalization member is admitted.
+
+The required closure proof adds
+`memorii/tests/unit/core/semantic_ingestion/test_source_alignment_type_graph.py::test_source_alignment_type_graph_import_and_compile_closure`, which imports
+only the stable names, compiles every direct consumer edge above, and proves
+retired names cannot resolve. Its persisted handoff vector is
+`memorii/tests/integration/test_source_alignment_graph_handoff.py::test_reopened_v2_generation_reaches_graph_coordinator_and_nli_without_retired_shape`:
+publish/reload one V2 generation, hand it to graph coordination and NLI, reopen
+it, and mutate each nested schema/member/digest to prove rejection. The vector
+includes the correction two-role closure and every replaced type.
+
+`SourceProposalAlignment.parser_consensus`, `scope_consensus`, and
+##### 3.4.2e Exhaustive stable V2 schema declaration
+
+This table is the exhaustive replacement declaration for every active nested
+producer schema. Each row is a stable behavioral Python type name, carries the
+first field `schema_version: Literal[2]`, is strict/frozen/closed-wire, and has
+one CTV preimage in the displayed comma-separated declaration order, excluding
+only the final digest. A semicolon separates nested field groups but does not
+alter order. No temporary `*V2` type, old singular-temporal type, or earlier
+3.4.2/3.4.2a/3.4.2b/3.4.2c schema remains in the active namespace.
+
+| Stable type | Exact fields after `schema_version` / preimage | Domain |
+| --- | --- | --- |
+| `ScopeSupportedValues` | `kind="supported",polarity,commitment,attribution,attribution_bearer_span,governing_clause_spans,values_digest` | `memorii.semantic-ingestion.scope-supported-values.v2` |
+| `ScopeUnsupportedValues` | `kind="unsupported",reason_code,policy_fingerprint,values_digest` | `memorii.semantic-ingestion.scope-unsupported-values.v2` |
+| `AnalyzerScopeInterpretation` | `analyzer_fingerprint,predicate_head_span,values,polarity_evidence,commitment_evidence,attribution_evidence,interpretation_digest` | `memorii.semantic-ingestion.analyzer-scope-interpretation.v2` |
+| `AnalyzerScopeObservation` | `source_id,source_digest,preparation_fingerprint,segment_id,segment_language_route_digest,proposal_id,operation_id,analyzer_role,interpretation,observation_digest` | `memorii.semantic-ingestion.analyzer-scope-observation.v2` |
+| `AnalyzerTemporalAttachment` | `analyzer_fingerprint,predicate_head_span,candidate_ids,attachment_spans,attachment_digest` | `memorii.semantic-ingestion.analyzer-temporal-attachment.v2` |
+| `AnalyzerTemporalAttachmentObservation` | `source_id,source_digest,preparation_fingerprint,segment_id,segment_language_route_digest,proposal_id,operation_id,temporal_role,analyzer_role,attachment,observation_digest` | `memorii.semantic-ingestion.analyzer-temporal-attachment-observation.v2` |
+| `SemanticScopeConsensus` | `source_id,source_digest,preparation_fingerprint,segment_id,segment_language_route_digest,proposal_id,operation_id,primary_observation,corroborating_observation,stable_scope,status,consensus_policy_fingerprint,consensus_digest` | `memorii.semantic-ingestion.semantic-scope-consensus.v2` |
+| `TemporalAttachmentConsensus` | `source_id,source_digest,preparation_fingerprint,segment_id,segment_language_route_digest,proposal_id,operation_id,temporal_role,temporal_resolution_fingerprint,primary_attachment,corroborating_attachment,stable_candidate_ids,status,consensus_policy_fingerprint,consensus_digest` | `memorii.semantic-ingestion.temporal-attachment-consensus.v2` |
+| `OperationTemporalAttachmentConsensusSet` | `operation_id,proposal_id,segment_id,segment_language_route_digest,role_consensus_digests,consensus_set_digest` | `memorii.semantic-ingestion.operation-temporal-attachment-consensus-set.v2` |
+| `ConsensusPolicySelection` | `kind,operation_id,proposal_id,segment_id,segment_language_route_digest,temporal_role,request_dependency_kind,request_dependency_fingerprint,selected_policy,selected_policy_fingerprint,selection_digest` | `memorii.semantic-ingestion.consensus-policy-selection.v2` |
+| `ConsensusPolicySelectionBundle` | `selections,bundle_digest` | `memorii.semantic-ingestion.consensus-policy-selection-bundle.v2` |
+| `SourcePrePartitionMention` | `source_id,source_digest,segment_id,segment_language_route_digest,language_policy_fingerprint,mention_span,mention_digest` | `memorii.semantic-ingestion.source-pre-partition-mention.v2` |
+| `SourceLocalIdentityAssertion` | `segment_id,segment_language_route_digest,language_policy_fingerprint,mention_digests,proof_kind,source_evidence,assertion_digest` | `memorii.semantic-ingestion.source-local-identity-assertion.v2` |
+| `SourceLocalIdentityClusterDecision` | `cluster_id,decision,proof_kind,mention_digests,source_evidence,segment_route_policy_closure,decision_digest` | `memorii.semantic-ingestion.source-local-identity-cluster-decision.v2` |
+| `SourceLocalIdentityResolution` | `source_id,clusters,grounded_mention_refs,unresolved_mention_refs,resolution_digest` | `memorii.semantic-ingestion.source-local-identity-resolution.v2` |
+| `OperationAlignment` | `operation_id,proposal_id,segment_id,segment_language_route_digest,parser_consensus_digest,scope_consensus_digest,temporal_attachment_consensus_set_digest,alignment_digest` | `memorii.semantic-ingestion.operation-alignment.v2` |
+| `SourceNormalizationEvidenceEntry` | `kind,operation_id,proposal_id,segment_id,segment_language_route_digest,temporal_role,artifact_digest,selection_digest,retention,entry_digest` | `memorii.semantic-ingestion.source-normalization-evidence-entry.v2` |
+| `SourceNormalizationEvidenceManifest` | `source_id,source_digest,source_normalization_request_digest,consensus_policy_selection_bundle_digest,language_construction_policy_bundle_digest,interpretation_bundle_digest,identity_partition_evidence_digest,publication_coordinate,retained_entries,completeness,bijection_verified,manifest_digest` | `memorii.semantic-ingestion.source-normalization-evidence-manifest.v2` |
+| `SourceProposalAlignment` | `source_id,segment_language_routes,operation_alignments,parser_consensus,scope_consensus,temporal_attachment_consensus,source_local_identity,source_dependency_groups,proposal_coverage,predicate_event_inventory_fingerprint,temporal_resolution_fingerprint,status,reason_codes,source_alignment_fingerprint` | `memorii.semantic-ingestion.source-proposal-alignment.v2` |
+| `GraphFreeInterpretationBundle` | `source_id,source_digest,preparation_fingerprint,proposal_run_fingerprint,analysis_bundle_fingerprint,temporal_resolution_fingerprint,subject_sets,scope_observations,temporal_attachment_observations,identity_partition_evidence,bundle_digest` | `memorii.semantic-ingestion.graph-free-interpretation-bundle.v2` |
+| `SourceNormalizationRequest` | `source,proposal_run,analyses,interpretation_bundle,predicate_events,temporal_resolution,consensus_policy_selections,language_construction_policies,publication_coordinate,temporal_policy,trust_policy,arbitration_as_of,capability_registry,request_digest` | `memorii.semantic-ingestion.source-normalization-request.v2` |
+| `SourceNormalizationResult` | `source_alignment,evidence_manifest,interpretation_bundle_digest,identity_partition_evidence_digest,capability_selections,trust_policy_snapshot_digest,arbitration_as_of,result_digest` | `memorii.semantic-ingestion.source-normalization-result.v2` |
+| `SourceNormalizationAtomicWriteRequest` | inherited checkpoint fields in inherited declaration order; `schema_version,kind,progress_state,publication_generation,source_normalization_request,source_normalization_request_digest,source_normalization_result,source_normalization_result_digest,evidence_manifest,evidence_manifest_digest,graph_dependent_execution_policy,graph_dependent_execution_policy_digest,consensus_policy_selection_bundle,consensus_policy_selection_bundle_digest,language_construction_policy_bundle,language_construction_policy_bundle_digest,request_digest` | `memorii.semantic-ingestion.source-normalization-atomic-write-request.v2` |
+
+`SourceLocalIdentityPartitionEvidence` is the required nested input between
+mention/assertion and resolution: its exact post-version order is
+`source_id,source_digest,mentions,assertions,evidence_digest` and domain is
+`memorii.semantic-ingestion.source-local-identity-partition-evidence.v2`.
+`StableSemanticScope` has exact post-version order
+`polarity,commitment,attribution,attribution_bearer_span,governing_clause_spans,scope_digest`
+and domain `memorii.semantic-ingestion.stable-semantic-scope.v2`; it is null
+only outside the supported stable consensus arm. All tuples use the canonical
+orders frozen in 3.4.2c; each digest field is lower-case 64-hex SHA-256.
+
+The only source-normalization atomic member discriminators, in canonical member
+order, are `progress`, `source_normalization_request`,
+`graph_free_interpretation_bundle`,
+`source_local_identity_partition_evidence`, `parser_consensus`,
+`semantic_scope_consensus`, `temporal_attachment_consensus`,
+`source_local_identity_resolution`, `source_proposal_alignment`,
+`source_dependency_groups`, `source_normalization_result`,
+`source_normalization_evidence_manifest`, `graph_dependent_execution_policy`,
+`consensus_policy_selection_bundle`, and
+`language_construction_policy_bundle`. All carry nested schema-version 2
+payloads; any old discriminator, singular-temporal field, legacy `*V2` symbol,
+or mismatched nested version rejects at decoder, store, trace, graph, and NLI
+boundaries before visibility.
+
+The active outer contracts are exact consumers of this table:
+`GraphProposalAlignment(source_alignment: SourceProposalAlignment)`,
+`GraphDependentCoordinatorRequest(alignment: SourceProposalAlignment)`,
+`NliRequest(source_normalization: SourceNormalizationResult)`,
+`SourceTrace(source_normalization_result: SourceNormalizationResult)`, and
+the store/registry source-normalization member. Their validators decode the
+named stable type directly, verify every nested schema-version/digest pair, and
+admit no structural substitute. The type-graph and handoff vectors named in
+3.4.2d must instantiate and strict-decode every table row, mutate every field,
+and reject every old/singular/temporary form before reopen, graph coordination,
+or NLI.
+
+##### 3.4.2f Host-supplied source-normalization authority bundle
+
+The graph-free producer cannot derive its authority from installed packages,
+ambient process configuration, the prepared source, or a terminal-shaped
+result. The normal provider composition supplies one explicit, ephemeral,
+trusted-host packet, `SourceNormalizationAuthorityBundle`. It is an
+integration contract, not a new persisted authority or an extension of
+`PreparedSource`. Its sole owner is composition-root-owned
+`SourceNormalizationAuthorityProvider`; the core stage receives the completed
+packet and performs no registry, environment, clock, model, or policy lookup.
+
+```python
+class SourceNormalizationDerivationAuthority(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    proposal_run_authority: ProposalRunProductionAuthority
+    analyzer_resource_bindings: tuple[SegmentLanguageResourceBinding, ...]
+    bootstrap_v3_payload_limit_authority: BootstrapV3PayloadLimitAuthority
+    bootstrap_analysis_routes: BootstrapAnalysisRouteBindingSet
+    consensus_policy_authority: ConsensusPolicyAuthority
+    language_construction_policies: LanguageConstructionPolicyAuthorityBundle
+    temporal_policy: TemporalPolicySnapshot; trust_policy: TrustPolicySnapshot
+    arbitration_as_of: datetime; capability_registry: CapabilityRegistrySnapshot
+    graph_dependent_execution_policy: GraphDependentExecutionPolicy
+    authority_digest: str
+
+class SourceNormalizationPublicationAuthority(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str; operation_id: str
+    publication_coordinate: SourceNormalizationPublicationCoordinate
+    progress: PrePlanningSourceIngestionProgress
+    operation_fence_binding: OperationFenceBinding
+    operation_lease_binding: OperationLeaseBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    expected_operation_generation: int; expected_artifact_generation: int
+    recovery_control_snapshot_digest: str
+
+class SourceNormalizationAuthorityBundle(BaseModel):
+    derivation: SourceNormalizationDerivationAuthority
+    publication: SourceNormalizationPublicationAuthority
+```
+
+`BootstrapAnalysisRouteBindingSet` is the only bridge from a persisted
+`BootstrapDeclaredSegmentLanguageRoute` to the ordinary proposal and local
+analysis lanes.  It is a strict, frozen, closed-wire *derivation-authority*
+value; it is not a `PreparedSource` member, a `SegmentLanguageRoute`, or a
+durable prepared-route variant.
+
+```python
+class BootstrapAnalysisRouteBinding(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; parent_projection_segment_id: str
+    bootstrap_route_digest: str
+    segment_text_artifact_id: str
+    segment_text_artifact_digest: str; segment_text_content_digest: str
+    selected_language: str
+    resource_binding: SegmentLanguageResourceBinding
+    proposal_capability_fingerprint: str
+    stanza_analyzer_manifest_digest: str; spacy_analyzer_manifest_digest: str
+    predicate_event_manifest_digest: str; temporal_resolver_manifest_digest: str
+    binding_digest: str
+
+class BootstrapAnalysisRouteBindingSet(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    bindings: tuple[BootstrapAnalysisRouteBinding, ...]
+    binding_set_digest: str
+```
+
+The set is source-order exact and is a one-to-one join with the bootstrap
+members of `PreparedSource.segment_language_routes`: its key is
+`(source_id, segment_id)` and every bootstrap-declared route has exactly one
+binding; generic routes have none.  Each binding must match its route's source,
+segment, parent-projection segment, exact text artifact ID/digest/content
+digest, and `bootstrap_route_digest`.  `selected_language` is literally equal
+to the trusted route's `declared_language`, never inferred, normalized, or
+overridable.  The binding's `resource_binding.selected_language` and duplicated
+proposal capability and four lane-manifest digests must equal their respective
+fields in the one `SegmentLanguageResourceBinding`; each selected manifest must
+support that exact language.  Thus a bootstrap declaration supplies selection
+only, while this host-issued binding supplies the separate certified resource
+and proposal capability authority that a generic classifier route would have
+carried.  Missing, extra, duplicate, reordered, foreign, stale, mismatched,
+or digest-only substituted bindings reject the whole derivation authority
+before proposal or a lane call.
+
+`BootstrapAnalysisRouteBinding.binding_digest` is lower-case SHA-256 over
+canonical CTV under
+`memorii.semantic-ingestion.bootstrap-analysis-route-binding.v1`, covering
+every declared field except `binding_digest` in declaration order.
+`BootstrapAnalysisRouteBindingSet.binding_set_digest` uses
+`memorii.semantic-ingestion.bootstrap-analysis-route-binding-set.v1` over its
+source triple and source-ordered bindings, excluding its digest.  The enclosing
+derivation-authority digest covers the complete binding set. These are
+derivation-only domains: a binding/set is never serialized as a generic
+`SegmentLanguageRoute`, added to `PreparedSource`, or accepted by a
+prepared-source decoder. `PreparedSource.preparation_fingerprint` remains
+unchanged by analysis authority.
+
+Bootstrap analysis nevertheless has explicit versioned persisted provenance,
+not an implicit generic-route upcast. `BootstrapAnalysisProvenanceV1` is strict,
+frozen, closed-wire, and contains exactly
+`source_id,source_digest,preparation_fingerprint,segment_id,
+bootstrap_route_digest,binding_digest,resource_binding_digest,
+proposal_capability_fingerprint,stanza_analyzer_manifest_digest,
+spacy_analyzer_manifest_digest,predicate_event_manifest_digest,
+temporal_resolver_manifest_digest,provenance_digest`. Its digest domain is
+`memorii.semantic-ingestion.bootstrap-analysis-provenance.v1` over every
+preceding field in declaration order. It is carried as a distinct required
+scalar-provenance member on bootstrap proposal request/response/attempt/run,
+`SegmentAnalysisInput`, each four-lane request/outcome, analysis bundle,
+source-normalization request/result/evidence manifest, and atomic write/reload
+closure. Generic-route records retain their existing generic route field and
+forbid this member; bootstrap records require this member and forbid generic
+route serialization. Every affected persisted container advances to its named
+unreleased V3 schema version and CTV domain with the provenance field in
+declaration order. V1/V2 decoders reject bootstrap analysis provenance, V3
+decoders reject omitted/unknown/cross-variant fields, and no mixed-generation
+or defaulting bridge is accepted. The V3 migration is pre-release atomic: all
+affected member codecs, schema registry entries, manifests, vectors, and
+atomic-store readers publish together or bootstrap ingestion stays evidence-only.
+
+##### 3.4.2f.1 Exhaustive flattened bootstrap V3 closure
+
+For bootstrap analysis, this table supersedes every V2 source-normalization
+reference in 3.4.2e and all V2 references to the same nested values elsewhere.
+Each row is strict/frozen/closed-wire with `schema_version: Literal[3]` and
+one required `bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1`
+immediately before its final digest. Its V3 CTV domain is the displayed V2
+domain with `.v2` replaced by `.v3`, over the complete V2 preimage plus that
+field. Generic variants are V3 but forbid provenance.
+
+| V3 persisted surface | Required flattened bootstrap members |
+| --- | --- |
+| proposal request, response, attempt, outcome, run | source/preparation/segment/route, capability, provenance |
+| analysis input, Stanza/spaCy requests/results/bundles | source/preparation/segment, selected analyzer manifest, provenance |
+| predicate-event request/inventory/candidate; temporal request/resolution | source/preparation/segment, selected predicate/temporal manifest, provenance |
+| interpretation, scope/temporal observations/consensus, identity partition | canonical ordered provenance for each bootstrap segment |
+| operation alignment, source alignment, coverage, dependency groups | complete ordered provenance projection |
+| evidence entry/manifest; normalization request/result | complete projection and matching provenance digest set |
+| atomic write/replay index/execution manifest/source trace/registry | same manifest digest set and V3 nested pairs |
+
+The V3 atomic member registry adds exactly one
+`bootstrap_analysis_provenance` member after `source_normalization_request` and
+before analysis/interpretation members. No V2 decoder/discriminator/registry
+entry/nested pair or mixed V2/V3 aggregate may read, write, reopen, trace,
+graph-coordinate, or NLI-consume a bootstrap generation. Pre-release migration
+writes and validates one complete V3 registry/codec/vector generation before
+normal-root activation. Rollback stops V3 normal writes and allows
+evidence-only reads of retained source evidence only; it never reinterprets V3
+bootstrap bytes through V2 codecs or removes a published V3 generation.
+
+##### 3.4.2f.3 Self-contained V3 payload carriers
+
+Option A is the sole V3 payload rule: persisted bootstrap records carry the
+closed typed proposal and four lane payloads, not digests requiring external
+read-back. `BootstrapProposalRunPayloadV3` is strict/frozen/closed-wire with
+`source_id,source_digest,preparation_fingerprint,bootstrap_analysis_provenances,
+transport_requests,proposal_attempts,normalized_proposals,
+payload_limit_policy_digest,payload_limit_authority_digest,attempt_closure_digest,
+payload_digest`; its domain is
+`memorii.semantic-ingestion.bootstrap-proposal-run-payload.v3`. Attempts and
+normalized proposals are V3-native strict typed contracts, source/segment
+bijective, bounded by the registered request/retry and operation-member limits,
+and each proposal's provenance must equal the V3 provenance member. They never
+embed, wrap, decode, or reconstruct `SemanticProposal`.
+
+`BootstrapAnalysisLaneResultV3` is strict/frozen/closed-wire with
+`source_id,source_digest,preparation_fingerprint,segment_id,lane,
+bootstrap_analysis_provenance,lane_payload,payload_digest,lane_result_digest`.
+`lane` is exactly `stanza|spacy|predicate_event_detection|temporal_resolution`; `lane_payload` is a
+closed discriminated union of `BootstrapStanzaLanePayloadV3`,
+`BootstrapSpacyLanePayloadV3`, `BootstrapPredicateLanePayloadV3`, and
+`BootstrapTemporalLanePayloadV3`. In particular it never contains
+`PredicateEventInventory`, `PredicateEventCandidate`, `TemporalResolution`,
+`ResolvedTemporalCandidate`, `SegmentLanguageRoute`, or a generic V2 wrapper.
+The union has no `Any`, object, mapping, reference, callback, or optional arm. Its two
+digests use `memorii.semantic-ingestion.bootstrap-analysis-lane-payload.v3`
+and `memorii.semantic-ingestion.bootstrap-analysis-lane-result.v3` over all
+preceding displayed fields. Each payload is capped by the registered lane
+payload byte/count limits; oversized, duplicate, wrong-variant, cross-lane,
+cross-segment, provenance, resource-manifest, language, or route substitution
+rejects before persistence.
+
+The canonical lane discriminators are exactly
+`stanza|spacy|predicate_event_detection|temporal_resolution`; all prior shorter
+spellings are rejected. `BootstrapV3PayloadLimitPolicy` is strict/frozen with
+exact nonnegative integer byte/count quotas
+`max_proposal_attempts,max_normalized_proposals,max_stanza_bytes,
+max_spacy_bytes,max_predicate_event_detection_bytes,
+max_temporal_resolution_bytes,max_lane_items,max_aggregate_bytes,
+max_mentions_per_proposal,max_fact_members_per_proposal,
+max_correction_members_per_proposal,max_retraction_members_per_proposal,
+max_action_state_members_per_proposal,max_identity_members_per_proposal,
+max_action_role_bindings_per_member,max_action_participants_per_binding,
+max_temporal_qualifiers_per_member,max_identity_predecessors_per_member,
+max_identity_successors_per_member,max_reference_assignments_per_identity,
+max_evidence_items_per_proposal,policy_digest`; its CTV domain is
+`memorii.semantic-ingestion.bootstrap-v3-payload-limit-policy.v3` over every
+preceding field. `BootstrapV3PayloadLimitAuthority` is strict/frozen with
+`policy,source_id,source_digest,preparation_fingerprint,authority_digest`,
+domain `memorii.semantic-ingestion.bootstrap-v3-payload-limit-authority.v3`.
+Both policy and authority digests are required in every carrier, request,
+manifest, result, atomic member, recovery index, execution manifest, and trace.
+
+The derivation authority's required
+`bootstrap_v3_payload_limit_authority` leaf is in its declaration-order CTV
+preimage and must equal every proposal/lane/request/manifest/result/atomic/
+recovery occurrence. Missing, foreign, stale, or digest-only substituted policy
+or authority fails before reservation, proposal, lane, or publication effects.
+
+The predicate and temporal arms are complete bootstrap-native contracts, rather
+than aliases for their generic equivalents. All types in this block are
+strict, frozen, `extra="forbid"`, schema version 3 records. Every trailing
+digest is lower-case SHA-256 of canonical CTV over every preceding displayed
+field in declaration order, under the stated domain. A `provenance_digest`
+below is the exact `BootstrapAnalysisProvenanceV1.provenance_digest`, not a
+route digest; every source/segment/provenance triple must equal the enclosing
+lane result and the one declared bootstrap segment. Spans and `exact_text`
+must be exact bounded slices of that provenance's prepared segment artifact.
+
+```python
+class BootstrapAnalysisSourceEvidenceV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str; segment_id: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    span: SourceSpanReference; exact_text: str; evidence_digest: str
+
+class BootstrapPredicateEventCandidateV3(BaseModel):
+    event_id: str
+    source_id: str; source_digest: str; preparation_fingerprint: str; segment_id: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    predicate_family: str; lexical_anchor: BootstrapAnalysisSourceEvidenceV3
+    morphology_evidence: tuple[BootstrapAnalysisSourceEvidenceV3, ...]
+    detection_rule_id: str; detector_manifest_digest: str
+    candidate_digest: str
+
+class BootstrapPredicateLanePayloadV3(BaseModel):
+    kind: Literal["predicate_event_detection"]
+    source_id: str; source_digest: str; preparation_fingerprint: str; segment_id: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    detector_manifest_digest: str; detector_fingerprint: str
+    candidates: tuple[BootstrapPredicateEventCandidateV3, ...]
+    status: Literal["complete", "partial", "unsupported", "failed"]
+    reason_codes: tuple[str, ...]; inventory_digest: str
+
+class BootstrapTemporalReferenceV3(BaseModel):
+    kind: Literal["authenticated_event_time", "authenticated_document_time"]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    source_field: Literal["event_time", "authenticated_document_time"]
+    reference_instant: datetime
+    authority_basis: Literal[
+        "server_event_metadata", "authenticated_document_metadata",
+        "authenticated_external_time",
+    ]
+    authority_provenance_digest: str; source_semantic_context_digest: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    reference_digest: str
+
+class BootstrapResolvedTemporalCandidateV3(BaseModel):
+    candidate_id: str
+    source_id: str; source_digest: str; preparation_fingerprint: str; segment_id: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    source_evidence: BootstrapAnalysisSourceEvidenceV3
+    value_kind: Literal["instant", "interval", "duration"]
+    normalized_start: datetime | None; normalized_end: datetime | None
+    normalized_duration_seconds: int | None
+    grain: str; locale: str; timezone: str
+    reference: BootstrapTemporalReferenceV3 | None
+    resolver_rule_id: str; resolver_fingerprint: str
+    candidate_digest: str
+
+class BootstrapTemporalAmbiguityMemberV3(BaseModel):
+    candidate: BootstrapResolvedTemporalCandidateV3
+    value_basis_key: str; member_digest: str
+
+class BootstrapTemporalAmbiguitySetV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str; segment_id: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    source_evidence: BootstrapAnalysisSourceEvidenceV3
+    alternatives: tuple[BootstrapTemporalAmbiguityMemberV3, ...]
+    ambiguity_digest: str
+
+class BootstrapTemporalLanePayloadV3(BaseModel):
+    kind: Literal["temporal_resolution"]
+    source_id: str; source_digest: str; preparation_fingerprint: str; segment_id: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    resolver_manifest_digest: str; resolver_fingerprint: str
+    candidates: tuple[BootstrapResolvedTemporalCandidateV3, ...]
+    ambiguities: tuple[BootstrapTemporalAmbiguitySetV3, ...]
+    status: Literal["complete", "partial", "unsupported", "failed"]
+    reason_codes: tuple[str, ...]; resolution_digest: str
+
+BootstrapAnalysisLanePayloadV3 = Annotated[
+    BootstrapStanzaLanePayloadV3 | BootstrapSpacyLanePayloadV3 |
+    BootstrapPredicateLanePayloadV3 | BootstrapTemporalLanePayloadV3,
+    Field(discriminator="kind"),
+]
+```
+
+The exact domains are respectively
+`memorii.semantic-ingestion.bootstrap-analysis-source-evidence.v3`,
+`memorii.semantic-ingestion.bootstrap-predicate-event-candidate.v3`,
+`memorii.semantic-ingestion.bootstrap-predicate-lane-payload.v3`,
+`memorii.semantic-ingestion.bootstrap-temporal-reference.v3`,
+`memorii.semantic-ingestion.bootstrap-resolved-temporal-candidate.v3`, and
+`memorii.semantic-ingestion.bootstrap-temporal-ambiguity-member.v3`,
+`memorii.semantic-ingestion.bootstrap-temporal-ambiguity-set.v3`, and
+`memorii.semantic-ingestion.bootstrap-temporal-lane-payload.v3`. The two
+linguistic arms are likewise native `kind="stanza"` and `kind="spacy"`
+payloads with the retained typed token/mention/clause/dependency values copied
+under the same source/segment/provenance and exact selected analyzer manifest
+and analyzer fingerprint; they do not embed `LinguisticAnalysis` or a generic
+route.
+
+Candidate tuples are canonical and duplicate-free: predicate candidates sort by
+`(lexical_anchor.evidence_digest,event_id,candidate_digest)`, morphology evidence
+by `evidence_digest`, temporal candidates by
+`(source_evidence.evidence_digest,candidate_id,candidate_digest)`, ambiguity members
+and sets by their rules below. `event_id` is
+`H("memorii.semantic-ingestion.bootstrap-predicate-event-identity.v3" ||
+provenance_digest || predicate_family || lexical_anchor || detection_rule_id ||
+detector_fingerprint)`; no generic route identity participates. A predicate
+candidate's manifest digest equals the enclosing predicate payload and its
+lexical/morphology evidence is nonempty, same-segment, and duplicate-free.
+`inventory_digest` covers the exact status and complete candidate tuple; an
+empty tuple is permitted only for `complete`, `unsupported`, or `failed` under
+the registered detector behavior, and non-complete statuses require canonical
+nonempty reason codes.
+
+`BootstrapTemporalReferenceV3.reference_digest` covers every preceding field,
+including the native `source_field`, `authority_basis`, authority provenance,
+source-context identity, and exact bootstrap provenance. Its closed matrix is:
+`authenticated_event_time` requires `source_field="event_time"` and authority
+basis `server_event_metadata|authenticated_external_time`;
+`authenticated_document_time` requires
+`source_field="authenticated_document_time"` and authority basis
+`authenticated_document_metadata|authenticated_external_time`. The authority
+provenance and source-context digests must resolve to the admitted source's
+retained `SourceSemanticContext`; equal `reference_instant` values with a
+different kind, field, basis, authority provenance, context, source, preparation,
+or bootstrap provenance are distinct and never substitute.
+
+For temporal candidates, exactly one of these value shapes is permitted:
+`instant` has equal non-null start/end and null duration; `interval` has
+non-null start/end with start no later than end and null duration; `duration`
+has null start/end and positive non-null duration. The candidate locale and
+timezone equal the certified resolver invocation values. A non-null complete
+`reference` is required for every relative or deictic result; an absent
+reference is legal only for an absolute result marked by the resolver rule.
+`candidate_id` is recomputed as
+`H("memorii.semantic-ingestion.bootstrap-resolved-temporal-candidate-identity.v3"
+|| source_id || source_digest || preparation_fingerprint || segment_id ||
+bootstrap_analysis_provenance || source_evidence || value_kind ||
+normalized_start || normalized_end || normalized_duration_seconds || grain ||
+locale || timezone || complete_nullable_reference || resolver_rule_id ||
+resolver_fingerprint)`. `candidate_digest` then covers the complete candidate,
+including that ID. IDs and digests are independently unique; no supplied value
+is accepted without both recomputations.
+
+The canonical temporal value-and-basis key is the CTV digest of
+`value_kind,normalized_start,normalized_end,normalized_duration_seconds,grain,
+locale,timezone,complete_nullable_reference,resolver_rule_id,
+resolver_fingerprint` under
+`memorii.semantic-ingestion.bootstrap-temporal-value-basis-key.v3`. Each
+`BootstrapTemporalAmbiguitySetV3` retains one exact source-evidence item plus at
+least two `BootstrapTemporalAmbiguityMemberV3` alternatives, ordered by
+`(value_basis_key,candidate.candidate_id,member_digest)`. Each alternative's
+complete candidate occurs exactly once in the enclosing payload's candidate
+tuple, has exactly the set's source evidence and provenance/source/segment,
+and its recomputed value-and-basis key equals the retained key. Keys and
+candidate IDs are distinct. Ambiguity sets order by
+`(source_evidence.evidence_digest,ambiguity_digest)` and their evidence items are
+unique. A recognized evidence item has either exactly one unambiguous candidate
+and no ambiguity set, or exactly one ambiguity set whose alternatives equal all
+of its candidates; the two partitions are total and disjoint.
+
+Ambiguity is retained but is never promotable: analyzer attachments may name
+only candidate IDs from the unambiguous partition, each ID must resolve to
+exactly one complete native candidate in the same provenance/segment and exact
+temporal lane result, and stable temporal consensus must preserve that exact
+candidate/value/reference identity. Naming an ambiguity alternative, an
+unknown/duplicate ID, or an equal value with another reference basis yields the
+closed ambiguous/unsupported noncommit. `resolution_digest` covers the complete
+candidate and ambiguity closures. Reference kind/field/time/basis/provenance/
+context, resolver manifest/fingerprint, segment, span, value, status,
+ambiguity member/key/order, or rule substitution fails before interpretation.
+
+Each predicate or temporal payload has exactly one matching lane result. Its
+manifest digest must equal respectively the provenance's predicate-event or
+temporal-resolver manifest, its fingerprint must rederive from that manifest,
+and its byte/count totals must satisfy the lane and aggregate limits. Candidate,
+evidence, reason-code, temporal-reference, ambiguity-set, and ambiguity-member
+counts are each subject to `max_lane_items`; a candidate retained both in the
+payload and an ambiguity member counts in both encoded-byte locations for the
+lane and aggregate byte quotas. No hidden generic object receives an additional
+quota.
+All V3 request, manifest, result, atomic, registry, replay, and recovery
+schemas carry these native bytes and their lane-result digests only. V1/V2 and
+generic predicate/temporal codec entries are rejected for bootstrap generations;
+pre-release migration publishes the native codec/registry/reload vectors
+atomically, and rollback is evidence-only without conversion.
+
+The complete carrier schemas replace all split prose:
+
+```python
+class BootstrapProposalRunPayloadV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    bootstrap_analysis_provenances: tuple[BootstrapAnalysisProvenanceV1, ...]
+    transport_requests: tuple[BootstrapProposalTransportRequestV3, ...]
+    proposal_attempts: tuple[BootstrapProposalAttemptV3, ...]
+    normalized_proposals: tuple[BootstrapNormalizedProposalV3, ...]
+    payload_limit_policy_digest: str; payload_limit_authority_digest: str
+    attempt_closure_digest: str; payload_digest: str
+
+class BootstrapAnalysisLaneResultV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str; segment_id: str
+    lane: Literal["stanza","spacy","predicate_event_detection","temporal_resolution"]
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    lane_payload: BootstrapAnalysisLanePayloadV3
+    payload_limit_policy_digest: str; payload_limit_authority_digest: str
+    payload_digest: str; lane_result_digest: str
+```
+
+All are strict/frozen/extra-forbid; each final digest covers every preceding
+field in shown declaration order under its existing V3 domain. One proposal
+carrier is source-wide unique per request; its provenance tuple is source order,
+duplicate-free, and exact. For every provenance/segment there are exactly four
+lane carriers in canonical lane order, no more or fewer. Unknown/omitted/
+duplicate fields, duplicate digests, wrong carrier kind, policy/authority
+substitution, or multi-segment cardinality mismatch rejects before persistence.
+
+`BootstrapProposalAttemptV3` and `BootstrapNormalizedProposalV3` are not
+wrappers around `SemanticProposal` or any V2 attempt. The closed proposal
+subtree is: `BootstrapProposalTransportRequestV3(source_id,source_digest,
+preparation_fingerprint,provenance_keys,prompt_registration_digest,
+request_bytes_digest,request_digest)`;
+`BootstrapProposalAttemptV3(attempt_ordinal,transport_request_digest,
+provider_response_digest,transport_status,attempt_digest)`;
+`BootstrapProposalSubjectV3(kind,subject_span,subject_quote,subject_digest)`;
+`BootstrapProposalEvidenceItemV3(span,quote,item_digest)` and
+`BootstrapProposalEvidenceV3(items,evidence_digest)` where `items` is canonical,
+duplicate-free order by item digest;
+and `BootstrapNormalizedProposalV3(source_id,source_digest,
+preparation_fingerprint,segment_id,bootstrap_analysis_provenance,subject,
+predicate_span,predicate_quote,object_span,object_quote,evidence,
+originating_attempt_digest,proposal_digest)`. Every type is strict/frozen/closed-wire and its final digest
+uses `memorii.semantic-ingestion.bootstrap-proposal-<type>.v3` over all prior
+fields in shown order. Spans are the existing typed source references; quotes
+are exact bounded scalar slices and must equal their named span/artifact bytes.
+Every retained transport request is source-ordered and duplicate-free; each
+attempt `transport_request_digest` resolves to exactly one retained request.
+The retained `transport_requests` tuple equals the ordered duplicate-free set of
+request digests referenced by attempts: no orphan, unreferenced, missing, or
+extra request is legal. Multiple retries may intentionally share one retained
+request digest; their distinct ordinals/responses remain separate attempts.
+Each normalized proposal's `originating_attempt_digest` resolves to exactly one
+complete retained attempt whose request/provenance/source/preparation/segment
+join equals the proposal. Request tuple, attempt links, originating-attempt
+links, and paired evidence items participate in payload and attempt-closure
+digests and the request/manifest/result/atomic/replay/trace closure.
+
+`attempt_closure_digest` has exactly one preimage:
+`H("memorii.semantic-ingestion.bootstrap-proposal-attempt-closure.v3" ||
+ordered retained transport request digests || ordered attempt digests || ordered
+normalized proposal digests)`. Atomic closure nests transport requests inside
+the one source-wide proposal-payload member; it has no separate request member.
+
+The transport normalizer deterministically maps provider bytes only after
+validating the V3 request/provenance projection, quote/span authorities, and
+source/segment/artifact joins; provider bytes never become durable truth without
+this normalizer. Source-wide attempts order by ordinal, proposals order by
+provenance source/segment then proposal digest, and every provenance has the
+exact permitted proposal cardinality under the payload-limit authority. Generic
+`SegmentLanguageRoute`, V2 proposal/attempt codecs, aliases, or nested wrapper
+objects are forbidden. The V3 registry has distinct member identities for
+transport request, attempt, normalized proposal, and proposal-run payload;
+migration publishes their codecs/vectors atomically and decoder/replay rejects
+all V2 or mixed subtrees.
+
+`BootstrapProposalRunPayloadV3` additionally contains source-ordered
+`bootstrap_analysis_provenances: tuple[BootstrapAnalysisProvenanceV1,...]` and
+strict V3 proposal/attempt carriers whose source/preparation/segment/resource/
+manifest joins equal the matching provenance. Attempt ordinals are contiguous
+from zero; duplicate or reordered attempts/proposals reject. The sole
+`attempt_closure_digest` preimage is the definitive preimage above. No generic
+`SegmentLanguageRoute` is representable inside any bootstrap carrier.
+
+###### 3.4.2f.3.1 Bootstrap proposal operation algebra
+
+The former `subject,predicate_span,predicate_quote,object_span,object_quote,
+evidence` shorthand is not a V3 semantic-operation carrier and is superseded.
+The exact declaration order of `BootstrapNormalizedProposalV3` is now
+`source_id,source_digest,preparation_fingerprint,segment_id,
+bootstrap_analysis_provenance,mentions,operation_members,status,
+originating_attempt_digest,payload_limit_policy_digest,
+payload_limit_authority_digest,proposal_digest`. `mentions` is the canonical
+source-order, duplicate-free tuple of `BootstrapProposalMentionV3`; an
+`operation_members` tuple is canonical, nonempty when `status="complete"`,
+and empty when `status="abstained"`. The proposal digest domain is
+`memorii.semantic-ingestion.bootstrap-proposal-normalized.v3` over every
+preceding field in that shown order. `originating_attempt_digest` resolves to
+one retained complete attempt; that attempt's retained transport request joins
+the same source triple, segment, exact V3 provenance, prompt registration, and
+payload-limit policy/authority. Thus an attempt cannot originate a proposal
+for another request, segment, provenance, or limit authority.
+
+All following types are strict, frozen, `extra="forbid"`, closed-wire V3
+records. Every listed trailing digest is lower-case SHA-256 of canonical CTV in
+the shown declaration order excluding only itself, with domain
+`memorii.semantic-ingestion.bootstrap-proposal-<type>.v3`; scalar strings,
+spans, quotes, literals, and enum values use their existing closed V3 scalar
+codecs. A named quote is the exact bounded UTF-8 slice of its paired
+`SourceSpanReference` in the source/projection/segment artifact named by the
+proposal's provenance; a pair with either a foreign span, unequal bytes, or an
+unpaired quote/span rejects before interpretation.
+
+```python
+class BootstrapProposalMentionV3(BaseModel):
+    mention_span: SourceSpanReference; mention_quote: str
+    mention_context_span: SourceSpanReference; mention_context_quote: str
+    proposed_type: str | None; mention_digest: str
+
+class BootstrapProposalTypedLiteralV3(BaseModel):
+    literal_type: ClaimValueType; canonical_value: str; unit: str | None
+    literal_digest: str
+
+class BootstrapProposalEntityObjectV3(BaseModel):
+    kind: Literal["entity"]; mention_digest: str; object_digest: str
+
+class BootstrapProposalLiteralObjectV3(BaseModel):
+    kind: Literal["literal"]; value: BootstrapProposalTypedLiteralV3
+    object_digest: str
+
+BootstrapProposalObjectV3 = Annotated[
+    BootstrapProposalEntityObjectV3 | BootstrapProposalLiteralObjectV3,
+    Field(discriminator="kind"),
+]
+
+class BootstrapProposalFactV3(BaseModel):
+    kind: Literal["fact"]; predicate_id: str; subject_mention_digest: str
+    object: BootstrapProposalObjectV3
+    assertion: BootstrapProposalEvidenceItemV3
+    predicate_anchor: BootstrapProposalEvidenceItemV3
+    polarity: Literal["positive", "negative"]; commitment: Commitment
+    attributed_to_mention_digest: str | None
+    temporal_qualifiers: tuple[BootstrapProposalEvidenceItemV3, ...]
+    fact_digest: str
+
+class BootstrapProposalCorrectionV3(BaseModel):
+    kind: Literal["correction"]; corrected_fact: BootstrapProposalFactV3
+    replacement_fact: BootstrapProposalFactV3
+    assertion: BootstrapProposalEvidenceItemV3
+    correction_anchor: BootstrapProposalEvidenceItemV3; correction_digest: str
+
+class BootstrapProposalRetractionV3(BaseModel):
+    kind: Literal["retraction"]; retracted_fact: BootstrapProposalFactV3
+    assertion: BootstrapProposalEvidenceItemV3
+    retraction_anchor: BootstrapProposalEvidenceItemV3; retraction_digest: str
+
+class BootstrapProposalActionRoleParticipantV3(BaseModel):
+    mention_digest: str
+    grounding: tuple[BootstrapProposalEvidenceItemV3, ...]
+    participant_digest: str
+
+class BootstrapProposalActionRoleBindingV3(BaseModel):
+    role_id: str; endpoint_kind: Literal["actor", "object"]
+    participants: tuple[BootstrapProposalActionRoleParticipantV3, ...]
+    binding_digest: str
+
+class BootstrapProposalActionStateV3(BaseModel):
+    kind: Literal["action_state"]
+    action_anchor: BootstrapProposalEvidenceItemV3; logical_action_digest: str
+    role_bindings: tuple[BootstrapProposalActionRoleBindingV3, ...]
+    state_id: str; state_anchor: BootstrapProposalEvidenceItemV3
+    execution_branch: BootstrapProposalEvidenceItemV3 | None
+    execution_branch_digest: str | None
+    assertion: BootstrapProposalEvidenceItemV3
+    temporal_qualifiers: tuple[BootstrapProposalEvidenceItemV3, ...]
+    action_state_digest: str
+
+class BootstrapProposalClaimRecordSelectorV3(BaseModel):
+    kind: Literal["claim"]; fact_digest: str; selector_digest: str
+
+class BootstrapProposalActionRecordSelectorV3(BaseModel):
+    kind: Literal["action"]; logical_action_digest: str
+    action_anchor: BootstrapProposalEvidenceItemV3; selector_digest: str
+
+class BootstrapProposalAliasRecordSelectorV3(BaseModel):
+    kind: Literal["alias"]; alias_namespace: str
+    alias_anchor: BootstrapProposalEvidenceItemV3; selector_digest: str
+
+BootstrapProposalRecordSelectorV3 = Annotated[
+    BootstrapProposalClaimRecordSelectorV3 |
+    BootstrapProposalActionRecordSelectorV3 |
+    BootstrapProposalAliasRecordSelectorV3,
+    Field(discriminator="kind"),
+]
+
+class BootstrapProposalReferenceAssignmentV3(BaseModel):
+    record_selector: BootstrapProposalRecordSelectorV3
+    successor_mention_digests: tuple[str, ...]
+    disposition: Literal["migrate_current", "share_by_explicit_evidence",
+                         "preserve_historical"]
+    assertion: BootstrapProposalEvidenceItemV3; assignment_digest: str
+
+class BootstrapProposalIdentityOperationV3(BaseModel):
+    kind: Literal["identity"]; operation: Literal["alias", "rekey", "merge", "split"]
+    predecessor_mention_digests: tuple[str, ...]
+    successor_mention_digests: tuple[str, ...]
+    reference_assignments: tuple[BootstrapProposalReferenceAssignmentV3, ...]
+    assertion: BootstrapProposalEvidenceItemV3
+    identity_anchor: BootstrapProposalEvidenceItemV3
+    identity_operation_digest: str
+
+BootstrapProposalOperationMemberV3 = Annotated[
+    BootstrapProposalFactV3 | BootstrapProposalCorrectionV3 |
+    BootstrapProposalRetractionV3 | BootstrapProposalActionStateV3 |
+    BootstrapProposalIdentityOperationV3,
+    Field(discriminator="kind"),
+]
+```
+
+The `<type>` domain suffixes are exactly `mention`, `typed-literal`,
+`entity-object`, `literal-object`, `fact`, `correction`, `retraction`,
+`action-role-participant`, `action-role-binding`, `action-state`,
+`claim-record-selector`, `action-record-selector`, `alias-record-selector`,
+`reference-assignment`, and `identity-operation`. `logical_action_digest` is
+additionally required to equal
+`H("memorii.semantic-ingestion.bootstrap-proposal-logical-action.v3" ||
+action_anchor || ordered role_bindings)`; `execution_branch` and
+`execution_branch_digest` are both null or both non-null, and the latter equals
+`H("memorii.semantic-ingestion.bootstrap-proposal-execution-branch.v3" ||
+execution_branch)`. These two derived digests are authenticated fields in the
+enclosing action-state preimage, not substitutions for their typed values.
+
+`mentions` sort by `(mention_span.reference_digest,mention_digest)` and reject
+duplicate digests. `temporal_qualifiers`, participant `grounding`, and all
+paired evidence tuples sort by `item_digest`; role participants sort by
+`(mention_digest,participant_digest)`; role bindings by
+`(role_id,endpoint_kind,binding_digest)`; identity predecessor/successor and
+assignment successor tuples sort by digest; assignments sort by
+`(record_selector.selector_digest,assignment_digest)`. Each order is
+duplicate-free and each nested mention/selector/digest resolves inside the same
+proposal. A fact's predicate ID must occur in the retained request's exact
+predicate catalog; entity objects and every subject/attribution/action/identity
+reference must resolve to one retained mention. Literal object type must equal
+that predicate's object-literal type. Action role/state IDs and role endpoint
+kinds must equal the request's exact action catalog; an action state has every
+required role exactly once and no unallowed role. Correction and retraction
+nested facts use the same constraints. Identity alias/rekey/merge have no
+reference assignments; split assignments target exactly one same-proposal
+fact/action/alias selector and no selector repeats. Unknown kind, foreign
+selector, empty required tuple, cross-kind substitution, omitted field, or
+unrecognized discriminator fails closed.
+
+The global `operation_members` tuple has canonical order by fixed kind rank
+`fact,correction,retraction,action_state,identity`, then the member's named
+anchor `item_digest`, then its trailing member digest. It has no duplicate
+member digest. Every nested count is at or below the corresponding
+`BootstrapV3PayloadLimitPolicy` quota; `max_evidence_items_per_proposal`
+counts distinct paired evidence items reachable from the proposal, and repeated
+item digests are rejected rather than double-counted. The aggregate byte quota
+counts canonical encoded proposal bytes including every nested operation
+member. Exact zero/limit/limit-plus-one validation happens before the proposal
+carrier is sealed or any downstream effect.
+
+`BootstrapV3GraphFreeInterpreter` is the only bootstrap consumer of this
+algebra. It accepts one `BootstrapProposalRunPayloadV3`, the exact four retained
+`BootstrapAnalysisLaneResultV3` carriers per provenance, and the matching V3
+policy/authority; it produces `BootstrapPreAlignmentOperationSubjectSetV3`,
+`BootstrapGraphFreeInterpretationBundleV3`, and
+`BootstrapSourceProposalAlignmentV3`. A subject is exactly
+`kind,source_id,source_digest,preparation_fingerprint,segment_id,
+bootstrap_analysis_provenance,proposal_digest,member_digest,member_ordinal,
+operation_id`, where `kind` is the five-member closed discriminator and
+`operation_id` is the V3 CTV digest in
+`memorii.semantic-ingestion.bootstrap-pre-alignment-operation-subject.v3` over
+the preceding fields. Expansion is total and one-to-one over every canonical
+operation member; abstained proposals yield no subjects. The interpreter reads
+predicate candidates only through `BootstrapPredicateLanePayloadV3.candidates`
+and temporal candidates only through `BootstrapTemporalLanePayloadV3.candidates`.
+It binds coverage to the predicate payload's `inventory_digest`, temporal
+consensus to the temporal payload's `resolution_digest`, and each selected
+candidate to its enclosing lane-result digest, provenance, segment, manifest,
+and reference closure. `PredicateEventInventory`, `TemporalResolution`, their
+candidates, generic route values, and generic lane outcomes are unrepresentable
+at this boundary. The V3 interpretation
+bundle and alignment are also exact V3 records:
+
+```python
+class BootstrapPreAlignmentOperationSubjectSetV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    proposal_digest: str
+    subjects: tuple[BootstrapPreAlignmentOperationSubjectV3, ...]
+    payload_limit_policy_digest: str; payload_limit_authority_digest: str
+    subject_set_digest: str
+
+class BootstrapGraphFreeInterpretationBundleV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    proposal_payload_digest: str
+    lane_result_digests: tuple[str, ...]
+    subject_sets: tuple[BootstrapPreAlignmentOperationSubjectSetV3, ...]
+    scope_observations: tuple[BootstrapAnalyzerScopeObservationV3, ...]
+    temporal_attachment_observations: tuple[BootstrapAnalyzerTemporalAttachmentObservationV3, ...]
+    identity_partition_evidence: BootstrapSourceLocalIdentityPartitionEvidenceV3
+    payload_limit_policy_digest: str; payload_limit_authority_digest: str
+    bundle_digest: str
+
+class BootstrapSourceProposalAlignmentV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    bootstrap_analysis_provenances: tuple[BootstrapAnalysisProvenanceV1, ...]
+    operation_alignments: tuple[BootstrapOperationAlignmentV3, ...]
+    parser_consensus: tuple[BootstrapParserConsensusAssessmentV3, ...]
+    scope_consensus: tuple[BootstrapSemanticScopeConsensusV3, ...]
+    temporal_attachment_consensus: tuple[BootstrapTemporalAttachmentConsensusV3, ...]
+    source_local_identity: BootstrapSourceLocalIdentityResolutionV3
+    proposal_coverage: BootstrapProposalCoverageAuditV3
+    source_dependency_groups: tuple[BootstrapSourceDependencyGroupV3, ...]
+    interpretation_bundle_digest: str
+    predicate_lane_payload_digest: str; temporal_lane_payload_digest: str
+    status: Literal["complete", "unsupported", "failed"]
+    reason_codes: tuple[str, ...]
+    payload_limit_policy_digest: str; payload_limit_authority_digest: str
+    alignment_digest: str
+```
+
+The names in that envelope are complete V3 schemas, not aliases for V2 values:
+
+```python
+class BootstrapPreAlignmentOperationSubjectV3(BaseModel):
+    kind: Literal["fact", "correction", "retraction", "action_state", "identity"]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    proposal_digest: str; member_digest: str; member_ordinal: int
+    operation_id: str
+
+class BootstrapCanonicalRoleAssignmentV3(BaseModel):
+    role_id: str; argument: BootstrapProposalEvidenceItemV3
+    assignment_digest: str
+
+class BootstrapAnalyzerRoleInterpretationV3(BaseModel):
+    analyzer_fingerprint: str; predicate_anchor: BootstrapProposalEvidenceItemV3
+    assignments: tuple[BootstrapCanonicalRoleAssignmentV3, ...]
+    interpretation_digest: str
+
+class BootstrapAnalyzerScopeInterpretationV3(BaseModel):
+    analyzer_fingerprint: str; predicate_anchor: BootstrapProposalEvidenceItemV3
+    governing_clauses: tuple[BootstrapProposalEvidenceItemV3, ...]
+    polarity: Literal["positive", "negative"]
+    commitment: Commitment
+    attribution: Literal["speaker", "quoted_or_reported_source"]
+    attribution_bearer: BootstrapProposalEvidenceItemV3 | None
+    interpretation_digest: str
+
+class BootstrapStableSemanticScopeV3(BaseModel):
+    polarity: Literal["positive", "negative"]; commitment: Commitment
+    attribution: Literal["speaker", "quoted_or_reported_source"]
+    attribution_bearer: BootstrapProposalEvidenceItemV3 | None
+    governing_clauses: tuple[BootstrapProposalEvidenceItemV3, ...]
+    scope_digest: str
+
+class BootstrapAnalyzerTemporalAttachmentV3(BaseModel):
+    analyzer_fingerprint: str; predicate_anchor: BootstrapProposalEvidenceItemV3
+    candidate_ids: tuple[str, ...]
+    attachment_spans: tuple[BootstrapProposalEvidenceItemV3, ...]
+    attachment_digest: str
+
+class BootstrapAnalyzerScopeObservationV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    proposal_digest: str; member_digest: str; operation_id: str
+    analyzer_role: Literal["primary", "corroborating"]
+    interpretation: BootstrapAnalyzerScopeInterpretationV3; observation_digest: str
+
+class BootstrapAnalyzerTemporalAttachmentObservationV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    proposal_digest: str; member_digest: str; operation_id: str
+    temporal_role: Literal["assertion", "corrected", "replacement", "retracted", "action_state", "identity"]
+    analyzer_role: Literal["primary", "corroborating"]
+    attachment: BootstrapAnalyzerTemporalAttachmentV3; observation_digest: str
+
+class BootstrapParserConsensusAssessmentV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    proposal_digest: str; member_digest: str; operation_id: str
+    analysis_bundle_digest: str
+    primary_analyzer_role: Literal["stanza"]
+    primary_lane_result_digest: str
+    primary_interpretation: BootstrapAnalyzerRoleInterpretationV3
+    corroborating_analyzer_role: Literal["spacy"]
+    corroborating_lane_result_digest: str
+    corroborating_interpretation: BootstrapAnalyzerRoleInterpretationV3
+    stable_assignment: tuple[BootstrapCanonicalRoleAssignmentV3, ...] | None
+    status: Literal["stable", "disagreement", "ambiguous", "unsupported"]
+    consensus_policy_digest: str; assessment_digest: str
+
+class BootstrapSemanticScopeConsensusV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    proposal_digest: str; member_digest: str; operation_id: str
+    analysis_bundle_digest: str
+    primary_observation: BootstrapAnalyzerScopeObservationV3
+    corroborating_observation: BootstrapAnalyzerScopeObservationV3
+    stable_scope: BootstrapStableSemanticScopeV3 | None
+    status: Literal["stable", "disagreement", "ambiguous", "unsupported"]
+    consensus_policy_digest: str; consensus_digest: str
+
+class BootstrapTemporalAttachmentConsensusV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    segment_id: str; bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    proposal_digest: str; member_digest: str; operation_id: str
+    temporal_role: Literal["assertion", "corrected", "replacement", "retracted", "action_state", "identity"]
+    temporal_lane_payload_digest: str
+    primary_attachment: BootstrapAnalyzerTemporalAttachmentObservationV3
+    corroborating_attachment: BootstrapAnalyzerTemporalAttachmentObservationV3
+    stable_candidate_ids: tuple[str, ...] | None
+    status: Literal["stable", "disagreement", "ambiguous", "unsupported"]
+    consensus_policy_digest: str; consensus_digest: str
+
+class BootstrapOperationTemporalAttachmentConsensusSetV3(BaseModel):
+    operation_id: str; proposal_digest: str; member_digest: str; segment_id: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    role_consensus_digests: tuple[tuple[Literal["assertion", "corrected", "replacement", "retracted", "action_state", "identity"], str], ...]
+    consensus_set_digest: str
+
+class BootstrapOperationAlignmentV3(BaseModel):
+    operation_id: str; proposal_digest: str; member_digest: str; segment_id: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    parser_consensus_digest: str; scope_consensus_digest: str
+    temporal_attachment_consensus_set_digest: str; alignment_digest: str
+
+class BootstrapSourcePrePartitionMentionV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    proposal_digest: str; mention_digest: str
+    mention: BootstrapProposalMentionV3; partition_mention_digest: str
+
+class BootstrapSourceLocalIdentityAssertionV3(BaseModel):
+    proof_kind: Literal["explicit_alias", "explicit_apposition", "authenticated_external_id", "certified_unambiguous_repetition", "insufficient_evidence", "conflicting_evidence"]
+    mention_digests: tuple[str, ...]
+    source_evidence: tuple[BootstrapProposalEvidenceItemV3, ...]
+    assertion_digest: str
+
+class BootstrapSourceLocalIdentityPartitionEvidenceV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    bootstrap_analysis_provenances: tuple[BootstrapAnalysisProvenanceV1, ...]
+    mentions: tuple[BootstrapSourcePrePartitionMentionV3, ...]
+    assertions: tuple[BootstrapSourceLocalIdentityAssertionV3, ...]
+    evidence_digest: str
+
+class BootstrapSourceLocalIdentityClusterDecisionV3(BaseModel):
+    decision: Literal["same_source_entity", "singleton_distinct", "unresolved"]
+    proof_kind: Literal["explicit_alias", "explicit_apposition", "authenticated_external_id", "certified_unambiguous_repetition", "insufficient_evidence", "conflicting_evidence"]
+    mention_digests: tuple[str, ...]
+    source_evidence: tuple[BootstrapProposalEvidenceItemV3, ...]
+    provenance_closure: tuple[tuple[str, str, str], ...]
+    cluster_id: str; decision_digest: str
+
+class BootstrapSourceLocalIdentityResolutionV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    grounded_mention_digests: tuple[str, ...]
+    clusters: tuple[BootstrapSourceLocalIdentityClusterDecisionV3, ...]
+    unresolved_mention_digests: tuple[str, ...]; resolution_digest: str
+
+class BootstrapCoveredPredicateEventV3(BaseModel):
+    kind: Literal["covered"]; event_id: str; proposal_digests: tuple[str, ...]
+    operation_ids: tuple[str, ...]; alignment_digests: tuple[str, ...]
+    disposition_digest: str
+
+class BootstrapUnresolvedPredicateEventV3(BaseModel):
+    kind: Literal["unresolved"]; event_id: str
+    reason: Literal["proposal_omitted", "proposal_abstained", "alignment_failed", "parser_disagreement", "scope_disagreement", "temporal_attachment_disagreement", "unsupported_construction"]
+    related_proposal_digests: tuple[str, ...]
+    evidence: tuple[BootstrapProposalEvidenceItemV3, ...]
+    disposition_digest: str
+
+BootstrapPredicateEventDispositionV3 = Annotated[
+    BootstrapCoveredPredicateEventV3 | BootstrapUnresolvedPredicateEventV3,
+    Field(discriminator="kind"),
+]
+
+class BootstrapProposalCoverageAuditV3(BaseModel):
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    bootstrap_analysis_provenances: tuple[BootstrapAnalysisProvenanceV1, ...]
+    proposal_payload_digest: str; predicate_lane_payload_digest: str
+    predicate_event_ids: tuple[str, ...]
+    dispositions: tuple[BootstrapPredicateEventDispositionV3, ...]
+    covered_event_ids: tuple[str, ...]; unresolved_event_ids: tuple[str, ...]
+    status: Literal["complete", "unresolved", "failed"]
+    coverage_policy_digest: str; audit_digest: str
+
+class BootstrapSourceDependencyGroupV3(BaseModel):
+    operation_ids: tuple[str, ...]; proposal_digests: tuple[str, ...]
+    member_digests: tuple[str, ...]; segment_ids: tuple[str, ...]
+    kind: Literal["independent_fact", "correction", "retraction", "identity", "action_state"]
+    source_dependency_kinds: tuple[str, ...]; atomic: Literal[True]
+    status: Literal["complete", "unresolved", "failed"]
+    reason_codes: tuple[str, ...]; group_id: str
+```
+
+Every type in that block is strict/frozen/extra-forbid and has no defaulted
+member. Its trailing digest uses the exact `memorii.semantic-ingestion.` domain
+shown here and canonical CTV over every prior field in shown declaration order:
+`bootstrap-canonical-role-assignment.v3`/`assignment_digest`,
+`bootstrap-analyzer-role-interpretation.v3`/`interpretation_digest`,
+`bootstrap-analyzer-scope-interpretation.v3`/`interpretation_digest`,
+`bootstrap-stable-semantic-scope.v3`/`scope_digest`,
+`bootstrap-analyzer-temporal-attachment.v3`/`attachment_digest`,
+`bootstrap-analyzer-scope-observation.v3`/`observation_digest`,
+`bootstrap-analyzer-temporal-attachment-observation.v3`/`observation_digest`,
+`bootstrap-parser-consensus-assessment.v3`/`assessment_digest`,
+`bootstrap-semantic-scope-consensus.v3`/`consensus_digest`,
+`bootstrap-temporal-attachment-consensus.v3`/`consensus_digest`,
+`bootstrap-operation-temporal-attachment-consensus-set.v3`/`consensus_set_digest`,
+`bootstrap-operation-alignment.v3`/`alignment_digest`,
+`bootstrap-source-pre-partition-mention.v3`/`partition_mention_digest`,
+`bootstrap-source-local-identity-assertion.v3`/`assertion_digest`,
+`bootstrap-source-local-identity-partition-evidence.v3`/`evidence_digest`,
+`bootstrap-source-local-identity-cluster-decision.v3`/`decision_digest`,
+`bootstrap-source-local-identity-resolution.v3`/`resolution_digest`,
+`bootstrap-covered-predicate-event.v3`/`disposition_digest`,
+`bootstrap-unresolved-predicate-event.v3`/`disposition_digest`,
+`bootstrap-proposal-coverage-audit.v3`/`audit_digest`, and
+`bootstrap-source-dependency-group.v3`/`group_id`. The V3 fields listed in
+`BootstrapGraphFreeInterpretationBundleV3` and
+`BootstrapSourceProposalAlignmentV3` use respectively
+`memorii.semantic-ingestion.bootstrap-graph-free-interpretation-bundle.v3`/
+`bundle_digest` and
+`memorii.semantic-ingestion.bootstrap-source-proposal-alignment.v3`/
+`alignment_digest`; their CTV preimages are every preceding shown field in
+declaration order. `BootstrapPreAlignmentOperationSubjectSetV3` uses
+`memorii.semantic-ingestion.bootstrap-pre-alignment-operation-subject-set.v3`/
+`subject_set_digest` over every preceding shown field in declaration order.
+`cluster_id` is derived first from the canonical
+cluster decision preimage without `cluster_id` or `decision_digest`; then
+`decision_digest` covers all prior shown cluster fields including `cluster_id`.
+
+The following replacements are exhaustive and mechanical; no V2 field is
+silently retained under a V3 name:
+
+| Replaced V2/generic field | Bootstrap V3 replacement |
+| --- | --- |
+| `SemanticProposal.proposal_id` and every `proposal_id` join | `proposal_digest` of the retained `BootstrapNormalizedProposalV3` |
+| `proposal_member_index` | `member_ordinal`, contiguous in the proposal's canonical `operation_members` tuple, plus immutable `member_digest` |
+| `segment_language_route_digest` and `SegmentLanguageRoute`/route set | full `bootstrap_analysis_provenance`, with joins on its `provenance_digest`; source-wide order is its ordered provenance tuple |
+| `AnalyzerScopeObservation`/`AnalyzerTemporalAttachmentObservation` route/proposal fields | source/preparation/segment plus provenance, proposal digest, member digest, operation ID, and explicit analyzer role |
+| V2 parser/scope/temporal consensus policy fingerprint | exact selected policy digest from the derivation authority, carried in the named V3 consensus record |
+| V2 identity `segment_route_policy_closure` | `provenance_closure`, one canonical `(segment_id, provenance_digest, policy_digest)` tuple per represented segment |
+| V2 coverage route set/run fingerprint/predicate inventory fingerprint | ordered provenance tuple, proposal payload digest, and retained native predicate lane payload digest |
+| V2 `CoveredPredicateEvent.proposal_ids` / unresolved related IDs | exact ordered `proposal_digests`; operation and alignment links remain V3 digests |
+| V2 temporal-resolution fingerprint | retained native temporal lane payload digest, exposed as `temporal_lane_payload_digest` |
+
+For every non-abstained proposal, the subject-set contains exactly one subject
+for every operation member, in the tuple's canonical order; `member_ordinal`
+and `member_digest` are unique within a proposal, and the tuple of all
+`(proposal_digest,member_digest,operation_id)` values is globally unique for
+the source. Each subject has exactly one parser assessment and one scope
+consensus. A parser assessment's `primary_analyzer_role` is literally `stanza`
+and its `primary_lane_result_digest` equals the retained `stanza` lane carrier
+for the assessment's exact provenance/segment; its primary interpretation's
+`analyzer_fingerprint` equals that carrier's typed Stanza payload fingerprint.
+Its `corroborating_analyzer_role` is literally `spacy` and its
+`corroborating_lane_result_digest` equals the exact retained `spacy` lane
+carrier and payload fingerprint. The two lane-result digests and analyzer
+fingerprints must differ. These four fields are part of the parser assessment's
+CTV preimage and are rechecked before either stable assignment or alignment is
+accepted. It has exactly two scope observations, one `primary` and one
+`corroborating`, over distinct Stanza/spaCy analyzer fingerprints. The temporal
+role set is exactly `{assertion}` for fact, `{corrected,replacement}` for
+correction, `{retracted}` for retraction, `{action_state}` for action state,
+and `{identity}` for identity. For every such role it has exactly one temporal
+consensus set entry and exactly two temporal observations with the same
+primary/corroborating rule. Stable parser assignment, stable scope, and stable
+temporal candidates are present if and only if their two values are exactly
+equal and pass their closed policy; every disagreement/ambiguous/unsupported
+arm retains no stable value. Operation alignments are a total one-to-one
+mapping over subjects and must reference exactly those parser, scope, and
+role-complete temporal consensus digests. An alignment cannot be present for
+an abstained proposal or omitted for a complete proposal.
+
+Identity partition evidence covers exactly the duplicate-free union of all V3
+proposal mentions, keyed by `(provenance_digest,proposal_digest,mention_digest)`;
+assertions only refer to this set. Resolution clusters form one total disjoint
+partition of `grounded_mention_digests`; unresolved mentions are exactly the
+members of unresolved clusters. `provenance_closure` is canonical by segment
+ID and has no generic route field. Coverage has exactly one disposition for
+every predicate-event ID retained in the native predicate lane payload, ordered by
+event ID; covered dispositions reference at least one V3 proposal, operation,
+and alignment, while unresolved dispositions name only retained V3 proposal
+digests and evidence. `covered_event_ids`, `unresolved_event_ids`, and status
+are derived exactly from the ordered dispositions. Dependency groups are sorted
+by `group_id`, have nonempty canonical operation/proposal/member/segment sets,
+form a disjoint total partition of the aligned operation IDs, and have kind
+equal to their member kind except multi-member correction groups, whose
+`correction` kind is required. Complete groups have no reasons; all other
+groups have nonempty canonical reason codes.
+
+The atomic V3 closure retains, in canonical member order,
+`bootstrap_proposal_run_payload`, four lane-result members per provenance,
+`bootstrap_pre_alignment_operation_subject_set`,
+`bootstrap_analyzer_scope_observation`,
+`bootstrap_analyzer_temporal_attachment_observation`,
+`bootstrap_parser_consensus_assessment`,
+`bootstrap_semantic_scope_consensus`,
+`bootstrap_temporal_attachment_consensus`,
+`bootstrap_operation_temporal_attachment_consensus_set`,
+`bootstrap_source_local_identity_partition_evidence`,
+`bootstrap_source_local_identity_resolution`,
+`bootstrap_proposal_coverage_audit`,
+`bootstrap_operation_alignment`, `bootstrap_source_dependency_group`,
+`bootstrap_graph_free_interpretation_bundle`, and
+`bootstrap_source_proposal_alignment`. Their registry entries are V3-only,
+declare the named strict codec and digest domain, and validate the complete
+parent/child digest graph before atomic publication. The V3 request, evidence
+manifest, result, replay index, execution manifest, source trace, and found
+recovery result carry the ordered member-digest closure and the final V3
+interpretation/alignment digests. Reload strict-decodes every member, recomputes
+every preimage, repeats all cardinality/bijection checks, and reaches the
+alignment only through those retained bytes. In particular it resolves each
+parser assessment's literal `stanza`/`spacy` roles to exactly one retained lane
+member of the same provenance/segment and rechecks both lane digests and their
+distinct typed analyzer fingerprints before stable assignment. It cannot call a V2 decoder,
+construct `SemanticProposal`, construct `SegmentLanguageRoute`, query a route
+registry, or read an external proposal/analyzer artifact.
+
+Serialization/reopen vectors cover every type named in the two schema blocks,
+each of its fields, all digest domains/preimages, every union discriminator,
+all canonical ordering/cardinality rules, every V2 `proposal_id`,
+`proposal_member_index`, `segment_language_route_digest`, route-set, generic
+route, V2 policy fingerprint, and V2 nested codec field. Mutations include
+unknown/omitted/extra/duplicate/reordered fields; cross-provenance/proposal/
+member/operation/role substitution; one-to-many or missing subject/alignment;
+same-analyzer two-role spoofing; duplicate/swapped/foreign parser lane digest,
+wrong `stanza`/`spacy` role, lane-fingerprint substitution; consensus stable-value leakage; temporal-role
+omission/substitution; non-partition identity clusters; coverage/dependency
+under- or over-coverage; registry member omission/reorder; and request/
+manifest/result/atomic/replay/trace digest substitution. Memory and independent
+JSONL crash/reopen runs assert byte-identical closure and zero construction of
+`SemanticProposal`/`SegmentLanguageRoute`, zero V2 decode, zero external
+read-back, and zero ambient route/policy lookup.
+
+Native-lane attack vectors additionally strict-decode, mutate, publish, and
+memory/independent-JSONL reopen every predicate/temporal field above: every
+`kind`, candidate/event identity, manifest/fingerprint, provenance/source/
+segment join, lexical/morphology/source evidence span and quote, reference
+kind/source-field/time/authority-basis/authority-provenance/source-context/
+bootstrap-provenance, temporal value shape/grain/rule/resolver fingerprint,
+candidate identity preimage, ambiguity alternative/value-basis key/partition,
+status/reason closure, canonical ordering, duplicate and cardinality
+case, byte/count quota at zero/limit/limit-plus-one, and each payload/lane/result
+digest. They inject every generic `PredicateEventInventory`,
+`PredicateEventCandidate`, `TemporalResolution`, `ResolvedTemporalCandidate`,
+`SegmentLanguageRoute`, and V2 wrapper form into every lane/request/manifest/
+result/atomic/replay/recovery codec and require rejection before an interpreter,
+publication, or recovery effect. The registry test proves that bootstrap V3
+registers only the native predicate/temporal candidate and payload codecs, while
+generic codecs remain available only to their pre-existing generic generations.
+Temporal vectors include equal reference instants under every unequal field/
+basis/provenance/context combination, same-value different-basis candidates,
+duplicate or reordered ambiguity alternatives and sets, missing/non-member
+complete candidates, recomputed-key mismatches, ambiguity-alternative attachment
+attempts, and candidate-ID/digest substitution. Both memory and independent-
+process JSONL reopen must preserve byte-identical complete reference and
+ambiguity bytes and repeat all identity/partition checks without resolver or
+authority read-back.
+
+The envelope digest/preimage rules stated above govern the subject set,
+interpretation bundle, and source alignment. The embedded V3 observations,
+consensus, identity, coverage, and dependency records are the existing
+graph-free semantic algebra with every route-bearing join replaced by the exact
+`BootstrapAnalysisProvenanceV1`, `proposal_digest`, `member_digest`, and
+`operation_id` tuple; their codecs use `bootstrap-` V3 domains and forbid V2
+members. Canonical tuples sort by their trailing digest, except subject sets
+sort by `(segment_id,proposal_digest,subject_set_digest)` and lane digests use
+the canonical four-lane order per provenance. The V3 interpretation bundle and
+alignment therefore retain the existing graph-free parser/scope/temporal,
+coverage, identity-partition, and dependency-group semantics, but their joins
+are V3 provenance/member/operation keys rather than a generic route digest or
+a `SemanticProposal` object. The consumer revalidates all proposal/attempt/
+provenance/lane/policy joins and uses only retained V3 bytes: it performs no
+external read-back, V2 decoder call, ambient reconstruction, or construction
+of `SemanticProposal` or `SegmentLanguageRoute`. Any absent or non-bijective
+subject, lane, analyzer observation, parser consensus, or alignment row is a
+noncommit before graph coordination.
+
+V3 registry entries are distinct for every named operation-member type,
+operation union, V3 subject set, V3 interpretation bundle, and V3 alignment.
+Pre-release migration publishes all codecs, member identities, vectors, and
+atomic validators together with the payload-carrier registry; a decoder accepts
+only V3 operation members and rejects V1/V2 proposal bytes, generic-route
+fields, unknown kinds, aliases, omitted/extra fields, and mixed nested versions.
+Rollback stops V3 normal writes and selects evidence-only; it preserves already
+published V3 source evidence but never translates it to `SemanticProposal` or a
+generic-route record.
+
+The V3 attack matrix includes every operation discriminator and sibling form:
+fact predicate/subject/entity-versus-literal/attribution/commitment/temporal
+qualifier mutations; correction corrected/replacement exchange and anchor
+substitution; retraction target substitution; action role/state/participant/
+branch/logical-action substitutions; and identity alias/rekey/merge/split,
+predecessor/successor, selector, assignment, and disposition mutations. For
+each member, tests omit, duplicate, reorder, add an unknown field, replace its
+trailing or nested digest, swap a quote/span/artifact/provenance/attempt, and
+attempt a cross-kind or cross-segment join. Boundary vectors exercise every
+operation/evidence/count quota at zero, limit, and limit-plus-one, plus
+multi-segment member ordering and duplicate member digests. Memory and
+independent-process JSONL publish/reopen vectors compare byte-identical V3
+proposal/member/subject/alignment closures and prove zero V2 decode,
+`SemanticProposal` construction, generic-route construction, external
+read-back, or ambient lookup on reopen.
+
+The exact persisted V3 shape is: request has
+`payload_limit_authority,proposal_payload,analysis_lane_results`; manifest has
+the same authority digest, one proposal carrier digest, ordered lane-result
+digests and provenance digests; result has the same manifest/proposal/lane/
+policy closure; atomic members in canonical order are
+`bootstrap_analysis_provenance`, `bootstrap_v3_payload_limit_authority`,
+`bootstrap_proposal_run_payload`, then exactly four
+`bootstrap_analysis_lane_result` members in canonical lane order per
+provenance, followed by the complete V3 graph-free member sequence defined
+above (subject sets; scope/temporal observations; parser/scope/temporal
+consensus; identity evidence/resolution; coverage; operation alignments;
+dependency groups; interpretation bundle; source alignment). There is one
+proposal carrier and four lane carriers per provenance/segment, no omission,
+extra, duplicate, reorder, or cross-member digest link; every derived member
+has the exact total/bijective cardinality declared above. Replay index, execution
+manifest, and trace each carry the request/result/manifest/policy/proposal/lane/
+graph-free member digest tuple. V3 registry and reload/replay decoders accept
+only this shape.
+
+V3 `SourceNormalizationRequest`, evidence manifest, result, atomic write,
+replay index, execution manifest, and source trace flatten the ordered
+`BootstrapProposalRunPayloadV3` and exactly four source/segment/lane-bijective
+`BootstrapAnalysisLaneResultV3` members, retaining their full typed bytes and
+digest closure. Codec registry entries are V3-only and decode/recompute every
+nested payload before use. Recovery/reopen reads that closure from the atomic
+generation only; external artifact read-back, ambient reconstruction, V2
+bridge/defaulting, or payload re-fetch is forbidden. Migration publishes every
+carrier codec/registry/member/vector/limit atomically before normal roots; a
+partial or failed migration selects evidence-only. Rollback stops new V3 writes
+and preserves readable retained evidence without converting V3 carriers to V2.
+
+The sole canonical future test topology is
+`memorii/tests/ci/bootstrap-v3-authority-boundary.json`, strict schema version
+1. Every row has exactly `requirement_id,root,backend,outcome,signal,node_id,
+pytest_selector`; all scalar fields are nonempty, `root` is one of
+`direct|factory|filesystem|hermes`, `backend` is `memory|jsonl`, outcome is
+`found|claimed|unavailable|aborted`, and `pytest_selector` is one exact node.
+Duplicates, missing required combinations, unsupported combinations, wildcard
+selectors, unknown fields, stale selector paths, or a selector whose collected
+node differs reject the manifest. Its canonical rows are the exact derived 20
+node IDs in the single SNAB WorkPlan/binding inventory; the manifest is
+generated only after those nodes exist and its computed count must equal 20.
+The deterministic schedule table is likewise future-only and has exact rows:
+same-key contention; expiry/reclaim; lost acknowledgement; each pre-CAS
+nonce/fence/generation/dual-clock/provenance/four-lane mutation abort; and
+mixed-version/rollback. Each row names actors, barriers, clocks, durable
+claim/index state, forbidden calls, and memory or independent-JSONL backend.
+
+`ProposalRunProductionAuthority` is strict, frozen, and closed-wire with exact
+fields `source_id,source_digest,preparation_fingerprint,route_set_digest,
+proposer_fingerprint,proposer_manifest_digest,prompt_registration_digest,
+semantic_request_fingerprint,action_proposal_catalog_fingerprint,
+retry_policy_fingerprint,authority_digest`; its CTV domain is
+`memorii.semantic-ingestion.proposal-run-production-authority.v1` over every
+field except its digest. `ConsensusPolicyAuthority` is likewise strict, frozen,
+and closed-wire with exact fields `parser_policy,scope_policy,
+temporal_attachment_policy,authority_digest`; its CTV domain is
+`memorii.semantic-ingestion.consensus-policy-authority.v1`. The three policy
+fields are the existing content-addressed `ParserConsensusPolicy`,
+`ScopeConsensusPolicy`, and `TemporalAttachmentConsensusPolicy`; they are not
+names, registry keys, aliases, or live lookup handles. The packet contains no
+other accepted declaration form.
+
+`SourceNormalizationPublicationCoordinate` is corrected to carry exact
+`operation_fence_binding,preparation_fingerprint,
+expected_current_artifact_generation,next_publication_generation,coordinate_digest`
+under its existing V2 CTV domain. The preparation fingerprint must equal the
+prepared source, both packet branches, the progress execution manifest, and
+the request source. A coordinate from another preparation, even for identical
+source bytes and operation ID, loses CAS before publication or reload. This is
+an unreleased V2 correction: no omitted-field decoder, compatibility bridge, or
+mixed coordinate generation is accepted.
+
+All packet types are strict, frozen, and closed-wire. The derivation digest is
+the lower-case SHA-256 CTV address under
+`memorii.semantic-ingestion.source-normalization-derivation-authority.v1`
+over every declared field except `authority_digest`, in declaration order. The
+publication and enclosing bundle are deliberately not content-addressed or
+persisted: they carry current fence, lease, writer, progress, and generation
+authority which must be freshly checked at publication and which are excluded
+from durable equality. Both nested source triples must be exact; proposal-run
+authority, route bindings, and the progress route set must biject with the
+`PreparedSource`; the fence/lease/progress/coordinate/generation chain must
+close exactly to `recovery_claim.control_snapshot`, including its snapshot
+digest and current operation/artifact generations. Any duplicate, missing, foreign, reordered, stale, or
+digest-only replacement rejects before analysis, publication, graph read,
+terminal work, or tenant-sensitive lookup.
+
+`ProposalRunProductionAuthority` is a closed host-owned value containing only
+the registered proposal transport selection, proposer manifest fingerprint,
+prompt registration digest, request-schema fingerprint, action-catalog
+fingerprint, and bounded retry policy. It contains no request text, provider
+response, installed-model path, credential, arbitrary transport handle, graph,
+or terminal authority. The host injects the sealed producer separately; it
+builds V3 transport request/response artifacts, attempts, and one complete
+`BootstrapProposalRunPayloadV3` for the exact selected bootstrap provenances and revalidates
+authorization at pre-request, post-response, and pre-seal. An unavailable
+producer, authorization, or complete route-bijective run is the existing typed
+non-committing source-normalization outcome, never an invented partial run.
+
+The sealed producer protocols are mandatory and exact:
+
+```python
+class SealedSemanticProposalRunProducer(Protocol):
+    def produce(
+        self, *, invocation: GraphFreeSourceNormalizationInvocation,
+        handoff: BootstrapWriterHandoffResult,
+        authority: ProposalRunProductionAuthority,
+    ) -> BootstrapProposalRunPayloadV3 | SourceNormalizationNonCommit: ...
+
+class SealedSourceNormalizationEvidenceProducer(Protocol):
+    def produce(
+        self, *, invocation: GraphFreeSourceNormalizationInvocation,
+        proposal_run: BootstrapProposalRunPayloadV3,
+        authority: SourceNormalizationAuthorityBundle,
+        resources: ConsumedSourceNormalizationResourceReservation,
+        recovery_claim: BootstrapRecoveryClaimV3,
+        claim_renewal_port: BootstrapRecoveryClaimRenewalPort,
+    ) -> BootstrapV3EvidenceProductionSucceeded | BootstrapRecoveryAbortedV3 | SourceNormalizationNonCommit: ...
+
+class BootstrapV3EvidenceProductionSucceeded(BaseModel):
+    evidence: BootstrapV3AnalysisEvidenceBundle
+    latest_claim: BootstrapRecoveryClaimV3
+    result_digest: str
+```
+
+`BootstrapV3EvidenceProductionSucceeded.result_digest` covers its complete
+evidence and latest claim. The evidence producer threads that claim in order,
+renews through the supplied port immediately before each Stanza, spaCy,
+predicate-event, and temporal lane, and returns the final renewed claim. An
+abort is returned unchanged and prevents that lane and every later effect.
+
+The proposal producer owns V3 transport-request/response/attempt/proposal-run
+sealing and no linguistic or publication object. The evidence producer owns
+Stanza/spaCy/Duckling calls, predicate events, temporal resolution, and the
+complete four-lane V3 evidence bundle. `BootstrapV3GraphFreeInterpreter` then
+owns interpretation/identity evidence, V3 subject expansion, and alignment;
+it receives the sealed proposal payload and evidence bundle, copies publication
+fields only from the enclosing runtime, and cannot choose or refresh them.
+All three are explicit trusted-root dependencies. None may be optional,
+selected from a live registry, reconstructed from a terminal result, or invoked
+after authorization or reservation expiry.
+
+The sole ordinary promotion route is:
+
+```text
+BootstrapPreparedSourceAccepted
+ -> bootstrap_writer_handoff obtains current writer-safe control state
+ -> recovery probe atomically returns found, unavailable, or advances-and-claims
+    post_handoff_normalization_ready with its live control snapshot
+ -> SourceNormalizationAuthorityProvider.build(prepared source, handoff state, claim)
+ -> sealed proposal-run producer
+ -> Stanza/spaCy exact-resource analysis and local Duckling temporal resolution
+ -> graph-free interpretation, event, policy-selection, and identity producers
+ -> GraphFreeSourceNormalizationStage.normalize(completed inputs)
+ -> atomic source-normalization reload -> graph-dependent coordinator
+```
+
+`bootstrap_writer_handoff` is still the sole bootstrap bridge; it never mutates
+global configuration, selects a new release, or manufactures a policy. The
+packet maps one-for-one to `GraphFreeSourceNormalizationInputs`: proposal,
+analysis, temporal, interpretation, events, consensus, evidence, and capability
+outputs come from their sealed producers; derivation leaves supply policies,
+registry, time, and execution policy; publication leaves supply coordinate,
+progress, fence, lease, writer, and expected generations. The stage verifies
+every equality. Optional input providers, default construction, fixture-only
+providers, environment fallbacks, automatic model download, and terminal-result
+reconstruction are forbidden.
+
+For each bootstrap route, the evidence producer first performs the exact
+`BootstrapDeclaredSegmentLanguageRoute` -> `BootstrapAnalysisRouteBinding` join
+against the source's derivation binding set. It then deterministically projects
+the joined pair and matching prepared segment into the existing
+`SegmentAnalysisInput`, proposal request authority, and four lane requests.
+This is not serialization or upcast: the request-local
+`BootstrapAnalysisRouteProjection` carries the original bootstrap route digest,
+binding digest, and resource binding, and is accepted only at the proposal and
+evidence request boundary. Its source, child and parent segment IDs, governance
+carrier, message-admission identity, context and segment-local spans, text
+artifact coordinates, preparation fingerprint, and selected language must
+equal the prepared segment and bootstrap route exactly. Its request digest
+covers both original digests and the resource binding. `SegmentAnalysisInput`
+and each `LinguisticAnalysisRequest`, `PredicateEventDetectionRequest`, and
+`TemporalResolutionRequest` therefore accept exactly one of: an existing
+generic selected route with its embedded resource binding, or this request-local
+bootstrap projection. No persisted route set, `PreparedSource`,
+V2 `SemanticProposalRun`, retained request artifact, or analysis result may encode
+the projection as `SegmentLanguageRoute`; retained artifacts instead carry the
+bootstrap route digest, binding digest, and selected resource/proposal digests
+as explicit scalar provenance.
+
+The projection is total only for the exact declared bootstrap route set. It
+fails closed before proposal, Stanza, spaCy, predicate-event, temporal, NLI,
+graph, terminal, or publication work if either side is absent or duplicated;
+the route/binding source, preparation, child/parent, artifact, language,
+resource-binding, capability, or lane-manifest digest differs; a lane manifest
+does not support the declared language; the prepared segment/carrier join
+fails; or a generic route is supplied to the bootstrap path. Conversely, a
+bootstrap route cannot enter the generic classifier-route path. The four lane
+requests use exactly the Stanza, spaCy, predicate-event, and temporal manifests
+selected by the binding, and the proposal request uses exactly its proposal
+capability fingerprint. Result validators compare retained scalar provenance
+back to the bootstrap route and binding digests; they may not infer authority
+from a model result.
+
+The trusted authority provider regenerates the binding set only after the
+coordinator's retained-scalar recovery probe returns `claimed`, and only then
+from the admitted prepared source plus host-owned certified resource/capability
+records. It is never cached in, reconstructed from, or recovered through a
+prepared-source record. A `found` recovery or lost acknowledgement reloads
+retained artifact provenance and the atomic generation only: it makes zero
+authority-provider, bootstrap-binding, reservation, proposal, evidence, or
+lane calls. On a reclaimed pre-publication retry, a fresh set must join the same
+immutable bootstrap routes and preparation fingerprint; changed resource,
+manifest, capability, or authority data yields a new derivation authority and
+cannot reuse a prior candidate or publication. Recovery cannot turn a missing
+binding into a generic route or a successful result.
+
+The provider interface is exact:
+
+```python
+class SourceNormalizationAuthorityProvider(Protocol):
+    def build(
+        self,
+        *,
+        invocation: GraphFreeSourceNormalizationInvocation,
+        handoff: BootstrapWriterHandoffResult,
+        recovery_claim: BootstrapRecoveryClaimV3,
+    ) -> SourceNormalizationAuthorityBundle | None: ...
+```
+
+`invocation.source` is the only source argument and must equal the bundle's
+derivation and publication source/preparation coordinates. `handoff` supplies
+immutable key/predecessor identity only; `recovery_claim.control_snapshot` is
+the sole preplanning-control input for publication fields and must yield the
+exact live lease, writer, progress, current generation, and expected successor;
+the provider separately obtains each derivation leaf from its named
+host-owned, source-bound authority owner. A `None` result means the existing
+authority-unavailable typed noncommit, not an empty bundle or deferred success.
+The coordinator invokes it exactly once only after an exact recovery-probe
+`claimed` response, makes no retry decision itself, and only calls the stage
+after all sealed producers succeed.
+
+The mandatory coordinator/runtime boundary is equally exact:
+
+```python
+class GraphFreeSourceNormalizationRuntime(Protocol):
+    def normalize_after_recovery_claim(
+        self,
+        *,
+        invocation: GraphFreeSourceNormalizationInvocation,
+        handoff: BootstrapWriterHandoffResult,
+        recovery_claim: BootstrapRecoveryClaimV3,
+        authority: SourceNormalizationAuthorityBundle,
+    ) -> SourceNormalizationResult | SourceNormalizationNonCommit: ...
+```
+
+`ProviderIngestionCoordinator._run_semantic_ingestion` first probes recovery
+after a successful `bootstrap_writer_handoff`. On `found`, it validates and
+continues only with the reloaded result; on `publication_unavailable`, it emits
+the closed noncommit; only on exact `claimed` does it call
+`SourceNormalizationAuthorityProvider.build(invocation,handoff,recovery_claim)` and then this
+method once, passing the same invocation, handoff, and unexpired claim with no
+default or optional authority argument. `SourceNormalizationNonCommit.reason` is a closed typed
+reason: `authority_unavailable`, `proposal_run_unavailable`,
+`resource_unavailable`, `analysis_unavailable`, `publication_conflict`, or
+`publication_unavailable`. Each arm carries only the source operation/fence
+coordinate and bounded reason-code digest, never source text, tenant data,
+provider bytes, or a graph identifier. The direct factory, filesystem bundle,
+and Hermes constructors must require both the authority provider and runtime;
+absence uses `authority_unavailable` with zero graph, terminal, analyzer, and
+store-generation effects. No legacy pipeline or terminal fallback is callable
+from any noncommit arm.
+
+Normal semantic-ingestion composition is mandatory: direct, factory,
+filesystem, and Hermes normal constructors accept one non-null
+`SourceNormalizationHostBundleBuilder`, which supplies the claim repository,
+mandatory trusted claim-renewal port, authority provider, reservation provider,
+and runtime as one complete trusted
+host bundle. The prior optional legacy constructor argument is removed in the
+same unreleased public API revision; a missing, partial, substituted, or
+legacy-only bundle rejects normal construction rather than creating a delayed
+fallback. `EvidenceOnlyMemoryService` is the sole distinct limited mode: it has
+no semantic-ingestion coordinator, host bundle, proposal, analyzer, claim,
+graph, or terminal-persistence dependency and retains only admitted governed
+evidence with an explicit `evidence_only` outcome. It is selected by an explicit
+mode discriminator at each root, never as the normal-path fallback. The
+unreleased migration changes every normal root atomically; rollback disables
+normal semantic ingestion to explicit evidence-only mode and never revives the
+optional legacy path.
+
+The coordinator owns the ordering boundary and receives a mandatory
+`SourceNormalizationRecoveryProbeRepository` beside the authority provider and
+runtime. Its only legal normal-path sequence is:
+
+```text
+successful bootstrap_writer_handoff
+ -> construct BootstrapRecoveryProbeV3 from immutable key + handoff predecessor marker
+ -> recovery_probe_repository.probe(probe) atomically performs found-first lookup
+    or predecessor-to-normalization-ready advance + claim
+ -> found: validate/reload result, continue pipeline, return
+ -> publication_unavailable: translate closed noncommit, return
+ -> claimed: validate store-issued live control snapshot
+ -> claim: authority_provider.build(invocation,handoff,recovery_claim)
+ -> claim + authority: runtime.normalize_after_recovery_claim(
+        invocation,handoff,recovery_claim,authority)
+```
+
+The probe constructor may read only the invocation source/preparation/operation/
+fence scalars and a successful handoff's validated immutable key/predecessor
+binding. It accepts no caller current generation,
+authority bundle, policy, route, resource, capability, provider result, or
+prepared-source lookup. `found` validates the exact reloaded result against the
+probe and continues with it without invoking the authority provider. `claimed`
+is single-use for its key/snapshot/nonce and the runtime revalidates its equality
+before reservation; a stale or substituted claim/snapshot becomes
+`publication_unavailable` before a proposal or lane. This leaves authority
+construction only on the claimed branch and prevents a found/reload path from
+observing new host resource or policy selection.
+
+The retired scalar-binding/absence recovery grammar is deleted from the active
+namespace. Recovery uses only the immutable V3 key, predecessor-authenticating
+V3 marker, atomic V3 probe, store-issued current control snapshot, live V3
+claim, and `Found|Claimed|Unavailable` union defined below. No V1/V2 probe,
+absence arm, current-generation field copied from the marker, or generic
+`SourceNormalizationResult` is accepted by the V3 codec or repository.
+
+The immutable recovery key is
+`BootstrapRecoveryKeyV3(source_id,source_digest,preparation_fingerprint,
+operation_id,operation_fence_digest,bootstrap_profile_manifest_digest,
+handoff_request_digest,recovery_key_digest)`, with CTV domain
+`memorii.semantic-ingestion.bootstrap-recovery-key.v3`. It is created with the
+successful handoff marker before any authority construction and is retained in
+the bootstrap marker and source-normalization recovery index; it does not
+contain a mutable current generation, authority, policy, route binding,
+resource, or result. A found index entry keyed by the immutable key always wins:
+it reloads its recorded publication generation and validates V3 provenance
+closure before any current-control comparison. When no found entry exists, the
+marker contributes only the predecessor control identity that handoff observed;
+the recovery repository atomically reads and claims the current trusted control
+successor. The marker never pretends that its predecessor generation is still
+the publication generation. Thus a post-handoff control advance and a
+post-publication retry are both representable without changing the key.
+
+`BootstrapRecoveryClaimV3` is the sole work authority. It embeds the exact
+store-issued `BootstrapRecoveryControlSnapshotV3` captured by the probe CAS,
+rather than copying the marker's predecessor generations. The claim nonce is
+single-use and both trusted-clock expiries are strictly after issue. A live
+foreign claim returns unavailable; an expired claim can be atomically reclaimed
+only after re-reading and revalidating current control and issuing a new nonce
+and snapshot. There is no absent response or caller-supplied generation
+override.
+
+The normal runtime accepts `recovery_claim` in place of `recovery_absence`.
+Publication CAS atomically checks the exact unexpired claim digest/nonce, fence,
+claimed control snapshot and generations, authority-derived V3 provenance closure, and absence of
+an existing found entry; it consumes the claim and writes the found index entry
+with the same recovery key in the generation that first exposes the result.
+Any claim replay, expiry, foreign nonce, stale fence/generation, duplicate
+publication, or result/provenance substitution fails before visibility. Lost
+acknowledgement reloads the found entry. Concurrent claimants serialize at the
+probe/CAS owner: at most one obtains a live nonce, and every loser either finds
+the committed result, observes the live foreign claim as unavailable, or
+reclaims only an expired claim. No provider/binding/reservation/producer call
+can occur for found/unavailable; an expired claim is not authority to continue
+until an atomically issued replacement claim is returned.
+
+The recovery key preimage uses the immutable pre-marker
+`handoff_request_digest`, not `handoff_marker_digest`: it is
+`source_id,source_digest,preparation_fingerprint,operation_id,
+operation_fence_digest,bootstrap_profile_manifest_digest,handoff_request_digest`.
+Its domain is `memorii.semantic-ingestion.bootstrap-recovery-key.v3` and its
+result is then copied into the versioned marker. The marker has strict fields
+`schema_version=3,source_id,source_digest,handoff_request_digest,
+prepared_generation,prepared_source_digest,authority_pin_digest,
+release_evidence_digest,bootstrap_language_evidence_digest,delivery_identity,
+operation_fence_binding,writer_commit_binding,pending_operation_id,
+pending_operation_digest,recovery_key_digest,
+expected_predecessor_operation_generation,
+expected_predecessor_artifact_generation,expected_predecessor_control_digest,
+marker_digest`; its preimage excludes
+only `marker_digest` under `memorii.semantic-ingestion.bootstrap-handoff-marker.v3`.
+Thus the marker authenticates the key without a digest cycle.
+
+`BootstrapRecoveryKeyV3` is minted and persisted by
+`bootstrap_writer_handoff`, never by publication. Its exact fields are
+`source_id,source_digest,preparation_fingerprint,operation_id,
+operation_fence_digest,bootstrap_profile_manifest_digest,
+handoff_request_digest,recovery_key_digest`; the handoff marker stores the key
+digest and the exact predecessor generation/control identity observed by the
+handoff transaction. The atomic
+claim/index record is the sole recovery state and has closed arms:
+`unclaimed(key,marker_predecessor_identity)`,
+`claimed(key,current_control_snapshot,claim_nonce,dual_clock_expiry)`,
+and `found(key,consumed_claim,current_control_snapshot,
+publication_operation_generation,publication_artifact_generation,result_digest,
+provenance_manifest_digest)`.
+`BootstrapRecoveryProbeV3` contains the minted key and exact marker/predecessor
+identity; its closed result union is `Found`, `Claimed`, or
+`Unavailable`--there is no `Absent` arm. Trusted server time is sampled and
+validated before emitting `Claimed`, before any authority/provider/reservation
+work, and again in the publication CAS. The only legal transition is
+`unclaimed -> claimed -> found`; expiry permits compare-and-swap replacement
+of `claimed` after a fresh current-control read, and `found` is terminal. The
+publish CAS consumes the exact live claim nonce and writes `found` in the same
+generation as V3 result/provenance.
+This is causal: handoff creates identity, probe claims work, publication records
+the outcome. A missing/mismatched key, stale fence/generation, time regression,
+expired/replayed claim, or wrong state returns `Unavailable` before work.
+
+##### 3.4.2f.2 Active V3 recovery namespace and live-claim protocol
+
+The active recovery namespace deletes and forbids
+the retired absence arm, retired request,
+`SourceNormalizationRecoveryValidationContext`,
+`SourceNormalizationRecoveryAuthorityBinding`,
+`SourceNormalizationRecoveryRepository.recover`, every `request_identity`,
+`request_digest`, `index_absence_digest`, V2 recovery domain, decoder,
+registry entry, test selector, and call-order reference. Earlier text naming
+them is historical only and has no active contract effect. The one exact V3
+protocol is:
+
+```python
+class BootstrapNormalizationReadyControlRecordV3(BaseModel):
+    schema_version: Literal[3]
+    recovery_key_digest: str; handoff_marker_digest: str
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    operation_id: str; operation_fence_digest: str
+    predecessor_operation_generation: int; predecessor_artifact_generation: int
+    predecessor_control_digest: str
+    operation_generation: int; artifact_generation: int
+    transition: Literal["post_handoff_normalization_ready"]
+    operation_lease_binding: OperationLeaseBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    progress_digest: str; control_record_digest: str
+
+class BootstrapRecoveryControlSnapshotV3(BaseModel):
+    control_record: BootstrapNormalizationReadyControlRecordV3
+    snapshot_digest: str
+
+class BootstrapRecoveryProbeV3(BaseModel):
+    recovery_key: BootstrapRecoveryKeyV3
+    handoff_marker_digest: str
+    expected_predecessor_operation_generation: int
+    expected_predecessor_artifact_generation: int
+    expected_predecessor_control_digest: str
+    probe_digest: str
+
+class BootstrapRecoveryClaimV3(BaseModel):
+    recovery_key_digest: str; handoff_marker_digest: str; operation_fence_digest: str
+    control_snapshot: BootstrapRecoveryControlSnapshotV3
+    claim_nonce: str; issued_server_time: datetime; expires_server_time: datetime
+    issued_monotonic_tick: int; expires_monotonic_tick: int
+    renewal_count: int; max_claim_renewals: int; max_claim_total_duration_ticks: int
+    claim_digest: str
+
+class BootstrapRecoveryFoundV3(BaseModel):
+    kind: Literal["found"]; recovery_key_digest: str
+    consumed_claim_digest: str; recovery_control_snapshot_digest: str
+    predecessor_operation_generation: int; predecessor_artifact_generation: int
+    publication_operation_generation: int; publication_artifact_generation: int
+    result_digest: str; provenance_manifest_digest: str; response_digest: str
+class BootstrapRecoveryClaimedV3(BaseModel):
+    kind: Literal["claimed"]; claim: BootstrapRecoveryClaimV3; response_digest: str
+class BootstrapRecoveryUnavailableV3(BaseModel):
+    kind: Literal["unavailable"]; recovery_key_digest: str
+    reason: Literal[
+        "invalid_probe", "stale_predecessor", "invalid_control_transition",
+        "stale_control_snapshot", "lease_unavailable", "writer_unavailable",
+        "foreign_live_claim", "storage_unavailable", "index_corrupt",
+    ]
+    reason_digest: str; response_digest: str
+class BootstrapRecoveryRenewedV3(BaseModel):
+    kind: Literal["renewed"]; claim: BootstrapRecoveryClaimV3; response_digest: str
+class BootstrapRecoveryAbortedV3(BaseModel):
+    kind: Literal["aborted"]; recovery_key_digest: str
+    reason: Literal[
+        "expired", "foreign", "consumed", "snapshot_substituted",
+        "control_advanced", "lease_expired", "writer_superseded",
+        "clock_regressed", "renewal_bound",
+    ]
+    reason_digest: str; response_digest: str
+BootstrapRecoveryProbeResultV3 = Annotated[
+    BootstrapRecoveryFoundV3 | BootstrapRecoveryClaimedV3 |
+    BootstrapRecoveryUnavailableV3, Field(discriminator="kind")]
+```
+
+All are strict/frozen/closed-wire and use only V3 domains:
+`bootstrap-normalization-ready-control-record.v3`,
+`bootstrap-recovery-control-snapshot.v3`, `bootstrap-recovery-probe.v3`, `bootstrap-recovery-found.v3`,
+`bootstrap-recovery-claimed.v3`, and `bootstrap-recovery-unavailable.v3`.
+`BootstrapNormalizationReadyControlRecordV3.control_record_digest` is SHA-256
+over CTV of every displayed field before that digest, in displayed order, under
+`memorii.semantic-ingestion.bootstrap-normalization-ready-control-record.v3`.
+Its closed decoder forbids snapshot, claim, found, result, proposal, and lane
+fields. `BootstrapRecoveryControlSnapshotV3.snapshot_digest` is computed over
+the complete decoded record under
+`memorii.semantic-ingestion.bootstrap-recovery-control-snapshot.v3`; the
+snapshot has no independent scalar copy. The record's source triple,
+operation/fence, lease and writer bindings join the immutable key and admitted
+invocation. Its predecessor fields
+equal the marker's three predecessor fields. Its current generations are
+strictly the direct successor generation authorized by
+`transition="post_handoff_normalization_ready"`, and its digest identifies the
+exact store record at that successor. The lease
+is current at the probe's trusted server-time sample, its operation/fence and
+generation equal the snapshot, the writer binding is current, and
+`progress_digest` is the exact normalization-ready progress record. No caller,
+marker, provider, or authority bundle may supply or override this snapshot.
+
+`probe` is one atomic store transaction. It validates the key, marker digest and
+predecessor fields before reading; reads the immutable-key recovery record and
+found index; and then applies exactly one branch:
+
+1. `found`: reload and validate the indexed V3 publication without reading or
+   advancing current control;
+2. `claimed`: when the same live claim exists, return unavailable to a foreign
+   caller; when it is expired but its embedded lease remains the exact current
+   live lease, compare-and-swap a new nonce and clocks over the unchanged record
+   and snapshot; an expired embedded lease requires a new writer handoff;
+3. `unclaimed`: require current control to equal the marker's exact predecessor,
+   then atomically write the direct successor operation/artifact generations,
+   normalization-ready progress and complete control record, compute its
+   digest, derive the snapshot from that record, derive the claim from that
+   snapshot, and persist record plus claim atomically; or
+4. any missing, partial, non-direct, wrong-transition, stale-control, lease,
+   writer, fence, clock, or index state: unavailable with no advance.
+
+There is no separately callable coordinator generation advance, no window in
+which normalization-ready control exists without its claim, and no probe field
+that asks the caller to predict the successor generation. The successor
+operation and artifact generations are each predecessor plus one. A retry of
+the successful handoff either finds the same claim/ready snapshot, reclaims it
+after expiry, or finds the terminal publication; it never creates another
+generation-2 successor. This transaction is the sole linearization that moves
+handoff predecessor control into normalization-ready control.
+
+The publication authority is derived only after `claimed` and copies its lease,
+writer, progress, expected operation/artifact generations, and
+`recovery_control_snapshot_digest` from the claim snapshot. Its publication
+coordinate expects that artifact generation and names exactly the next
+generation. Before every external effect, renewal atomically rechecks the same
+control-record digest/generations and exact lease/writer snapshot and refreshes
+only claim clocks under a new claim digest; it cannot change the snapshot,
+generation, transition, or authority. Every claim expiry, including renewal,
+is no later than the embedded operation lease expiry. A claim that needs a new
+lease is aborted and can only be reclaimed through a fresh atomic snapshot and
+subsequent fresh authority build. Publish CAS requires the latest claim and snapshot, current control
+still equal to that snapshot, publication generation exactly current plus one,
+and the complete V3 closure. It consumes the nonce, writes the result and found
+index, and advances control atomically. No handoff field overrides a claim field.
+
+The generation-causality vectors are exact. A canonical row persists handoff
+predecessor operation/artifact generation 1, probes once, receives a claim whose
+normalization-ready snapshot is generation 2 with the current live lease, builds
+publication authority from generation 2, and publishes/founds generation 3.
+Sibling rows substitute the generation-1 lease, caller-supplied generation 2,
+wrong predecessor/control digest, missing or double successor, wrong transition,
+foreign fence/writer/progress, expired lease, claim snapshot/digest, publication
+expected/next generations, and every adjacent call reorder. Two simultaneous
+probes can expose only one generation-2 successor and one nonce. Crash before
+the probe CAS leaves predecessor/unclaimed; crash after it reopens the same
+record/snapshot/claim; no crash exposes a record without its snapshot and claim
+or a claim without its record; crash after publish returns found generation 3
+before reading current control. Expired reclaim preserves the byte-identical
+record/snapshot and is allowed only while its embedded lease remains live.
+Memory and independent-process JSONL execute every schedule and compare the
+same key/marker/snapshot/claim/found bytes.
+
+This is an unreleased atomic V3 migration. Marker codecs reject
+`current_operation_generation|current_artifact_generation`; probe codecs reject
+`expected_operation_generation|expected_artifact_generation`; claim codecs
+reject scalar expected generations without the complete control snapshot. The
+marker, recovery-state, control-snapshot, claim, publication-authority,
+publication-coordinate, atomic-request, found-index, replay, and trace codecs
+and registry entries activate together. Mixed old/new readers or writers select
+evidence-only and perform zero migration-by-inference. Rollback preserves V3
+evidence and found generations but never reconstructs a current generation or
+lease from the marker.
+
+The persistence repository has only `probe(probe)` and
+`renew_or_abort(claim, server_time, monotonic_tick)`; any old method or payload
+is decode rejection before an index read. `renew_or_abort` atomically validates
+claim nonce, immutable key, fence, the complete current control snapshot,
+unconsumed state, server
+and monotonic expiry, then either returns the same claim with a strictly later
+expiry and renewal counter or atomically aborts it. `renewal_count` is bounded
+by `max_claim_renewals`; `expires_server_time - issued_server_time` across all
+renewals is bounded by `max_claim_total_duration`. Foreign, expired, consumed,
+generation/control/lease/writer/fence-substituted, clock-regressed, or renewal-bound claims abort and
+permit zero later effects. Probe, reload, renewal, and publish strictly decode
+and recompute the ready-record digest before snapshot and claim digests; none
+accepts a digest-only record, reordered preimage, or mutable lease copy.
+
+The host-facing live-claim boundary is mandatory and typed:
+
+```python
+class BootstrapRecoveryClaimRepositoryV3(Protocol):
+    def probe(self, *, probe: BootstrapRecoveryProbeV3) -> BootstrapRecoveryProbeResultV3: ...
+    def renew_or_abort(
+        self, *, claim: BootstrapRecoveryClaimV3,
+        server_time: datetime, monotonic_tick: int,
+    ) -> BootstrapRecoveryRenewedV3 | BootstrapRecoveryAbortedV3: ...
+
+class BootstrapRecoveryClaimRenewalPort(Protocol):
+    def renew_or_abort(
+        self, *, claim: BootstrapRecoveryClaimV3,
+    ) -> BootstrapRecoveryRenewedV3 | BootstrapRecoveryAbortedV3: ...
+```
+
+The concrete trusted port owns `SourceNormalizationTrustedTime` and the
+repository, samples server time then monotonic time once per call, and forwards
+them unchanged. It returns the complete latest claim or closed abort; it never
+returns a boolean or mutates a caller claim.
+
+Every model is strict/frozen/closed-wire. Control-snapshot digest domain is
+`memorii.semantic-ingestion.bootstrap-recovery-control-snapshot.v3`; claim digest domain is
+`memorii.semantic-ingestion.bootstrap-recovery-claim.v3` over every displayed
+claim field except its digest; Probe/Found/Claimed/Unavailable/Renewed/Aborted
+use `bootstrap-recovery-probe|found|claimed|unavailable|renewed|aborted.v3`
+over every displayed field except their final digest. `renewal_count` starts at
+zero, increments once, cannot exceed `max_claim_renewals`, and both server and
+monotonic expiry advance while total duration remains within
+`max_claim_total_duration_ticks`.
+
+The execution owner must live-validate or renew immediately before proposal
+transport, before each Stanza, spaCy, predicate-event, and temporal external
+effect, and before publish CAS. Each boundary consumes the latest returned
+claim digest. A failed renewal/non-live claim returns the closed noncommit and
+prevents that boundary and every subsequent effect; publish CAS additionally
+validates the latest claim nonce/digest and consumes it atomically with `found`.
+
+Each V3 result arm is semantically self-validating. `found` binds the immutable
+key, consumed claim and control snapshot to the exact predecessor and
+publication operation/artifact generations, atomic request, complete V3 result
+and provenance digests; both publication generations equal their predecessor
+plus one. It is checked before current-control state and therefore is
+the lost-ack outcome. `claimed` binds the probe/marker predecessor to the exact
+store-issued successor control snapshot and live claim. `unavailable` binds the
+immutable key and closed reason and forbids claim/found fields. Every response
+digest is under its displayed V3 domain and covers all prior fields. Malformed
+probe/marker data, a non-direct or wrong-kind successor, stale/foreign fence,
+lease, writer or control, unavailable storage, ambiguous index, incomplete
+generation, or corrupt generation maps to the closed unavailable arm. No arm
+returns, logs, or hashes a raw exception, backend message, path, query, provider
+byte, source text, tenant datum, or other storage diagnostic.
+
+The recovery wire inventory is closed:
+
+| Type | Nested values | Forbidden/open-field audit | Semantic validator |
+| --- | --- | --- | --- |
+| recovery key | scalar immutable identity | no generation, lease, authority, provider, route, or result field | recompute key and handoff-request joins |
+| V3 handoff marker | predecessor generation/control identity | no current lease or publication generation | recompute marker and exact key/predecessor joins |
+| probe | key plus marker/predecessor identity | no caller current generation, authority, provider, route, or result-construction field | validate key/marker before reads, found first, then direct normalization-ready successor |
+| normalization-ready control record | strict V3 key/marker/source/predecessor/direct-successor/lease/writer/progress closure | no snapshot, claim, found, result, proposal, or lane field | recompute record before snapshot and require exact durable current-control equality |
+| control snapshot | current lease/writer/progress and direct-successor control | no provider/policy/route/result field | recompute snapshot and all source/fence/predecessor/current-generation/live-control joins |
+| claim | control snapshot plus nonce/dual clocks | no caller override or publication result | bind snapshot, liveness, renewal bounds, and repository claim state |
+| found | strict V3 result closure | no live claim/unavailable field | bind immutable key, consumed claim/snapshot, predecessor/publication operation and artifact generations, atomic request, result, provenance, and response digests |
+| unavailable | closed reason only | no raw reason/diagnostic or success field | bind key, bounded reason digest, and response digest |
+
+This inventory is an implementation conformance contract, not an illustrative
+list. A recursive schema audit must fail if any listed type gains an optional,
+unvalidated digest, open model, `Any`, `object`, provider/callable, unknown
+discriminator, or sibling-arm field.
+
+The complete active recovery namespace is exactly
+`BootstrapRecoveryKeyV3`, `BootstrapWriterHandoffMarkerV3`,
+`BootstrapRecoveryProbeV3`, `BootstrapNormalizationReadyControlRecordV3`,
+`BootstrapRecoveryControlSnapshotV3`, `BootstrapRecoveryClaimV3`,
+`BootstrapRecoveryFoundV3`, `BootstrapRecoveryUnavailableV3`,
+`BootstrapRecoveryRenewedV3`, `BootstrapRecoveryAbortedV3`,
+`BootstrapRecoveryClaimRepositoryV3`, and
+`BootstrapRecoveryClaimRenewalPort`. `BootstrapRecoveryClaimedV3` is only the
+closed probe response envelope around `BootstrapRecoveryClaimV3`, not a durable
+repository state type. Registry/schema inventory rejects every unlisted or
+retired recovery symbol, V1/V2 codec/domain, and `Absent` arm.
+
+The owner translates unavailable exactly to
+`SourceNormalizationNonCommit(phase="recovery_probe",
+reason="publication_unavailable", source_id=probe.recovery_key.source_id,
+source_digest=probe.recovery_key.source_digest,
+preparation_fingerprint=probe.recovery_key.preparation_fingerprint,
+operation_id=probe.recovery_key.operation_id,
+operation_fence_digest=probe.recovery_key.operation_fence_digest,
+reason_code_digest=result.reason_digest)`. It never exposes `result.reason`
+through the public noncommit. Found or unavailable makes zero trusted-time,
+reservation, proposal, evidence, publication, graph, or terminal calls.
+
+`SourceNormalizationExecutionOwner` is the sole composition-owned concrete
+implementation of this runtime. Its constructor and execution boundary are
+closed:
+
+```python
+class SourceNormalizationExecutionOwner:
+    def __init__(
+        self, *,
+        proposal_producer: SealedSemanticProposalRunProducer,
+        evidence_producer: SealedSourceNormalizationEvidenceProducer,
+        trusted_time: SourceNormalizationTrustedTime,
+        claim_renewal_port: BootstrapRecoveryClaimRenewalPort,
+        reservation_provider: SourceNormalizationResourceReservationProvider,
+        publisher: SourceNormalizationStage,
+    ) -> None: ...
+
+    def normalize_after_recovery_claim(
+        self, *,
+        invocation: GraphFreeSourceNormalizationInvocation,
+        handoff: BootstrapWriterHandoffResult,
+        recovery_claim: BootstrapRecoveryClaimV3,
+        authority: SourceNormalizationAuthorityBundle,
+    ) -> SourceNormalizationResult | SourceNormalizationNonCommit: ...
+```
+
+The owner constructs exactly one `GraphFreeSourceNormalizationStage` from the
+supplied publisher and exposes no alternate stage, producer, time, reservation,
+or persistence setter. Direct, factory, filesystem, and Hermes roots must
+construct this owner with all six non-null dependencies and pass it as the
+mandatory runtime. A dependency missing, duplicated, substituted after
+construction, or supplied by a legacy terminal pipeline prevents root
+construction; it is not deferred to an execution fallback.
+
+`SourceNormalizationResourceReservation` is a typed ephemeral capability,
+created only by host-owned `SourceNormalizationResourceReservationProvider`
+after it validates the exact selected Stanza, spaCy, and Duckling manifest
+digests against the prepared source routes and derivation bindings. Its exact
+fields are `source_id,source_digest,preparation_fingerprint,operation_id,
+operation_fence_digest,required_lane_manifest_digests,resource_envelope_digest,
+reservation_nonce,issued_server_time,expires_server_time,
+issued_monotonic_tick,expires_monotonic_tick`. It is strict/frozen but has no
+CTV address, codec, atomic member, request field, log payload, or replay use.
+`required_lane_manifest_digests` is the canonical duplicate-free tuple of the
+four selected Stanza, spaCy, predicate-event, and temporal-resolver manifests;
+the provider reserves the complete certified
+envelope before constructing any lane, retains the capability only for this
+runtime call, and releases it in `finally` after success, noncommit, or error.
+The runtime rejects expiration, source/preparation/operation/fence substitution,
+missing/extra/wrong-lane manifest, nonce reuse, or use after release before a
+lane, proposal, or publication call. Recovery never reserves from historical
+state: it reloads the already published generation or reruns the current
+handoff path under a newly validated packet/reservation.
+
+`required_lane_manifest_digests` is represented only by
+`FourLaneManifestEnvelopeV1(stanza_analyzer_manifest_digest,
+spacy_analyzer_manifest_digest,predicate_event_manifest_digest,
+temporal_resolver_manifest_digest,envelope_digest)` in that exact order, under
+`memorii.semantic-ingestion.four-lane-manifest-envelope.v1`. Reservation
+issuance, consumption, evidence production, and publish CAS compare every named
+field with `BootstrapAnalysisProvenanceV1`; omission, reorder, duplicate, or
+predicate-event substitution fails before proposal or any lane.
+
+The resource owner and trusted time boundary are closed protocols:
+
+```python
+class SourceNormalizationTrustedTime(Protocol):
+    def server_time(self) -> datetime: ...
+    def monotonic_tick(self) -> int: ...
+
+class SourceNormalizationResourceReservationProvider(Protocol):
+    def reserve(
+        self, *, invocation: GraphFreeSourceNormalizationInvocation,
+        handoff: BootstrapWriterHandoffResult,
+        authority: SourceNormalizationDerivationAuthority,
+        server_time: datetime, monotonic_tick: int,
+    ) -> SourceNormalizationResourceReservation | None: ...
+
+    def validate_or_consume(
+        self, *, reservation: SourceNormalizationResourceReservation,
+        invocation: GraphFreeSourceNormalizationInvocation,
+        handoff: BootstrapWriterHandoffResult,
+        authority: SourceNormalizationDerivationAuthority,
+        server_time: datetime, monotonic_tick: int,
+    ) -> ConsumedSourceNormalizationResourceReservation | None: ...
+
+    def release(
+        self, *, reservation: SourceNormalizationResourceReservation,
+        consumed: ConsumedSourceNormalizationResourceReservation | None,
+    ) -> None: ...
+```
+
+`ConsumedSourceNormalizationResourceReservation` copies every reservation
+field and adds `consumed_server_time,consumed_monotonic_tick,
+consumption_digest`. `SourceNormalizationTrustedTime` is a required host
+dependency created beside the provider; system wall clock, event/document time,
+and module-level monotonic functions are forbidden substitutes. `reserve`
+records one nonce. `validate_or_consume` is the sole atomic single-use
+transition and rejects an unknown, consumed, released, expired-by-either-clock,
+mismatched, or incomplete-lane nonce. `release` is idempotent and terminal for
+that nonce. It runs in `finally` after success, noncommit, or exception; no
+capability or nonce is persisted, logged, replayed, or returned.
+
+The execution owner is one closed typed state machine. Before it starts, the
+coordinator has already obtained invocation, handoff, the store-issued claim/
+control snapshot, and authority built from that claim; only that caller may
+return `authority_unavailable`. The coordinator owns the preceding atomic probe
+phase; the owner's phases are:
+
+| Phase | Required input authority | Ordered call and output | Allowed noncommit | Cleanup/replay edge |
+| --- | --- | --- | --- | --- |
+| `reservation_reserved` | store-issued live `BootstrapRecoveryClaimV3`; first `server_time()` then `monotonic_tick()` | `reservation_provider.reserve(...)` for the complete four-lane envelope -> reserved capability | `resource_unavailable` | reservation is the first owner call and performs no analyzer/provider transport effect |
+| `proposal_sealed` | reserved capability, exact proposal authority | `claim_renewal_port.renew_or_abort(latest_claim)` then `proposal_producer.produce(...)` -> complete run | `proposal_run_unavailable` | abort prevents proposal and all later effects; release reserved capability |
+| `reservation_consumed` | complete run; second `server_time()` then `monotonic_tick()` | `reservation_provider.validate_or_consume(...)` -> consumed capability | `resource_unavailable` | consumption is single-use; release reserved and consumed forms |
+| `evidence_sealed` | consumed capability, run, derivation/publication authority, latest claim and mandatory renewal port | producer renews immediately before each Stanza, spaCy, predicate-event, and temporal lane and returns evidence plus latest claim | `analysis_unavailable` | any abort prevents that lane and all later effects; no publisher call |
+| `publication_linearized` | interpreted complete inputs, producer-returned latest claim/control snapshot | renew latest claim, then `GraphFreeSourceNormalizationStage.normalize(...)` -> published/reloaded result | `publication_conflict`, `publication_unavailable` | abort prevents publish; CAS consumes renewed claim, writes found and advances both generations |
+| `returned` | reloaded result | return exact result | none | `release(...)` has completed in `finally` |
+
+No phase accepts a reason arm from another phase, and unknown phase/reason
+combinations reject. `SourceNormalizationNonCommit` therefore carries exact
+`phase,reason,source_id,source_digest,preparation_fingerprint,operation_id,
+operation_fence_digest,reason_code_digest`; its validator implements this
+table. All noncommit paths have zero graph/terminal effect, and every
+pre-publication arm has zero generation effect. `release` is a total,
+non-throwing, idempotent operation; provider cleanup failures are quarantined
+and emitted only as bounded operational diagnostics, never substituted for a
+committed result or another phase arm.
+
+The owner has one lexical `try/finally` spanning reservation through return.
+Before consumption it passes `consumed=None` to `release`; afterward it passes
+the exact consumed value. Lost acknowledgement and reopen enter
+`recovery_probe`, return the persisted result, and make zero calls to trusted
+time, reserve, proposal, consume, or evidence. Thus retry cannot reseal a
+proposal or create a second nonce after publication. A `claimed` V3 result is
+the only transition into reservation.
+
+The executable verification matrix is owned by the implementation WorkPlan and
+must retain these exact public triggers and outcomes: (a)
+`ProviderMemoryService.sync_event` through direct construction, provider
+factory, filesystem bundle, and Hermes must yield a reloaded normalization
+generation for a complete packet; (b) missing provider/runtime, malformed
+authority, unavailable proposal producer, invalid reservation, lane failure,
+and stale/revoked handoff must yield their named `SourceNormalizationNonCommit`
+reason and zero analyzer/graph/terminal/generation effects as applicable;
+(c) publication conflict produces only `publication_conflict` and no graph or
+terminal effect; (d) lost acknowledgement, restart/reopen, and retry return
+the byte-identical persisted generation without a packet/reservation rebuild;
+(e) same-request concurrent calls converge to one generation while conflicting
+current-generation calls fail closed; (f) rollback before first publication
+removes the runtime binding and rollback after publication preserves strict
+readability without new promotion; and (g) all compatibility inputs missing the
+new preparation coordinate reject. Unit contract, memory/JSONL integration,
+root-composition, and concurrency suites each own their corresponding rows.
+The implementation CI gate owns the selector manifest, timing inventory,
+producer receipts, aggregate receipt, and current-revision required-check
+record; local focused tests never substitute for those CI artifacts.
+
+Deterministic concurrency proof uses test-harness-only
+`SourceNormalizationPublicationInterleavingHooks`; production construction has
+no hook argument. Exact hook names are `after_authority_validation`,
+`after_reservation_consume`, `before_atomic_publication_cas`, and
+`after_atomic_commit_before_acknowledgement`. Barriers assert: authority
+validation linearizes no durable state; consumption linearizes one nonce and no
+generation; publication CAS linearizes exactly one complete generation; and a
+post-commit interruption returns that generation on retry without resealing a
+proposal or reserving resources. Same-request racers return one byte-identical
+generation; different requests yield one winner and one
+`publication_conflict`; lease/fence/preparation rotation before CAS yields no
+generation; reopen after commit exposes only the complete winner. A fake dual
+clock advances server and monotonic time independently at N-1/N/N+1 expiry
+boundaries and expiration occurs when either boundary is reached.
+
+The sole planned PR topology is the V3 gate
+`memorii/tests/ci/bootstrap-v3-authority-boundary.json` and job
+`bootstrap-v3-authority-boundary`. Its finite inventory is the WorkPlan's
+single canonical 20-entry future V3 inventory, and its generated
+`inventory_count` must equal 20; it includes ready-record construction/digest,
+record-before-snapshot-before-claim persistence, reserve-before-renew ordering,
+each internal lane renewal, publish renewal, V3 request/member/found/replay/
+trace closure, four-root composition, and memory/independent-JSONL crash and
+lost-ack schedules. The gate derives collection and timing from that inventory
+and requires revision-bound receipts. Every earlier selector, test-node, shard,
+timing, receipt, aggregate, V1/V2 recovery, `Absent` arm, and generic-bootstrap
+topology is deleted from the active contract and must be rejected if restored.
+Deleting, adding, duplicating, reordering, or maintaining a second inventory
+must fail the gate's inventory mutation test.
+
+The bundle is never retained. Its content-addressed derivation leaves are
+already closed by routes, proposal run, request, manifest, policies, result,
+and atomic members; publication leaves are validated by atomic CAS and existing
+control fields. Replay reloads those members and never accepts or rebuilds a
+new packet. Thus session/lease/current-policy rotation cannot alter durable
+equality while stale or revoked publication still rejects. Before the first
+persisted generation, rollback removes the binding and returns the existing
+authority-unavailable noncommit. After generic-route publication, generic
+checkpoint readers use strict V2 members only. Bootstrap publication, reload,
+replay, trace, and rollback use strict V3 readers only and reject every V2
+member/request/discriminator; there is no cross-family fallback or conversion.
+Composition reserves the certified analyzer resource envelope before a lane;
+insufficient capacity is unavailable, never a single-lane or smaller-model
+fallback.
+
+Implementation must prove: missing/extra packet leaf; source/preparation/route/
+operation/fence/lease/writer/generation substitution; stale/revoked controls;
+missing, partial, reordered, and wrong-route proposal runs; lane manifest/path/
+hash/resource failure; policy/time/registry/selection mutation; no global
+bootstrap mutation; lost-ack/restart without new packet; and direct, factory,
+filesystem, and Hermes root removal. Every negative case is non-disclosing,
+has zero graph/terminal effect, and no ambient fallback; a positive case proves
+one reloaded generation consumed every child authority exactly once.
+
+##### 3.4.2g Nested artifact and atomic-storage closure
+
+Every nested artifact reachable from `SourceProposalAlignment` or
+`SourceNormalizationResult` also has `schema_version: Literal[2]`, one strict
+decoder, and a declaration-order CTV preimage. The following complete closure
+extends the table in 3.4.2e; fields listed are after `schema_version` and before
+the trailing digest, and no referenced historical decoder is permitted.
+
+| Nested stable type | Exact fields / domain |
+| --- | --- |
+| `AnalyzerRoleInterpretation` | `analyzer_fingerprint,predicate_head_span,construction_family,assignments,interpretation_digest` / `memorii.semantic-ingestion.analyzer-role-interpretation.v2` |
+| `ParserConsensusAssessment` | `source_id,source_digest,preparation_fingerprint,segment_id,proposal_id,operation_id,segment_language_route_digest,analysis_bundle_fingerprint,primary_interpretation,corroborating_interpretation,stable_assignment,status,consensus_policy_fingerprint,assessment_digest` / `memorii.semantic-ingestion.parser-consensus-assessment.v2` |
+| `SegmentLanguageRoute` and `SegmentLanguageRouteSet` | route: `source_id,source_digest,segment_id,parent_projection_segment_id,segment_text_artifact_id,segment_text_artifact_digest,segment_text_content_digest,declared_language,candidates,code_switch_spans,selected_language,decision,minimum_probability_ppm,minimum_margin_ppm,routing_policy_fingerprint,router_manifest_fingerprint,resource_binding,route_digest`; set: `source_id,source_digest,routes,route_set_digest` / `memorii.semantic-ingestion.segment-language-route.v2`, `memorii.semantic-ingestion.segment-language-route-set.v2` |
+| `CoveredPredicateEvent` | `kind,event_id,proposal_ids,operation_ids,alignment_digests,disposition_digest` / `memorii.semantic-ingestion.covered-predicate-event.v2` |
+| `UnresolvedPredicateEvent` | `kind,event_id,reason,related_proposal_ids,evidence_spans,disposition_digest` / `memorii.semantic-ingestion.unresolved-predicate-event.v2` |
+| `ProposalCoverageAudit` | `source_id,source_digest,segment_language_routes,proposal_run_fingerprint,predicate_event_inventory_fingerprint,predicate_event_ids,dispositions,covered_event_ids,unresolved_event_ids,status,coverage_policy_fingerprint,audit_digest` / `memorii.semantic-ingestion.proposal-coverage-audit.v2` |
+| `SourceDependencyGroup` | `operation_ids,segment_ids,kind,source_dependency_kinds,atomic,status,reason_codes,group_id` / `memorii.semantic-ingestion.source-dependency-group.v2` |
+| `OperationCapabilitySelection` | `operation_id,source_dependency_group_id,segment_id,segment_language_route_digest,proposal_capability_fingerprint,capability_fingerprint,capability_registry_snapshot_digest,capability_status_revision,capability_status_record_digest,monitoring_policy_digest,evidence_freshness_digest,nli_mode,verifier_manifest_digest,selection_digest` / `memorii.semantic-ingestion.operation-capability-selection.v2` |
+| `CapabilityRegistrySnapshot` and `GraphDependentExecutionPolicy` references | snapshot: `registry_revision,capabilities,snapshot_digest`; policy: `policy_revision,limits,policy_digest` / `memorii.semantic-ingestion.capability-registry-snapshot.v2`, `memorii.semantic-ingestion.graph-dependent-execution-policy.v2` |
+| `SourceNormalizationPublicationCoordinate` | `operation_fence_binding,preparation_fingerprint,expected_current_artifact_generation,next_publication_generation,coordinate_digest` / `memorii.semantic-ingestion.source-normalization-publication-coordinate.v2` |
+| policy/snapshot leaves | `LanguageConstructionPolicyAuthorityBundle`, `TemporalPolicySnapshot`, and `TrustPolicySnapshot` retain their complete declared policy content plus `schema_version` and their behavior-name `.v2` digest domains; a reference/digest-only substitute or live lookup rejects. |
+
+The proposal coverage union discriminator is exactly `kind` with `covered` and
+`unresolved`; the source-dependency-group ID is computed from its displayed body
+excluding `group_id`; parser/capability/route nested members must share the
+alignment source, proposal, segment, route, and policy coordinates. This makes
+parser consensus, dependency groups, coverage dispositions, route set, and
+capability reference concrete strict nested contracts rather than unversioned
+objects reachable through an alignment/result.
+
+The following V2 atomic algebra is retained for generic-route checkpoints only.
+It is historical with respect to bootstrap and is not an active bootstrap
+writer, recovery, replay, or trace contract:
+
+```python
+class AtomicGenerationMember(BaseModel):
+    schema_version: Literal[2]
+    member_id: str
+    kind: Literal[
+        "progress", "source_normalization_request",
+        "graph_free_interpretation_bundle",
+        "source_local_identity_partition_evidence", "parser_consensus",
+        "semantic_scope_consensus", "temporal_attachment_consensus",
+        "source_local_identity_resolution", "source_proposal_alignment",
+        "source_dependency_groups", "source_normalization_result",
+        "source_normalization_evidence_manifest",
+        "graph_dependent_execution_policy",
+        "consensus_policy_selection_bundle",
+        "language_construction_policy_bundle",
+    ]
+    canonical_payload: bytes
+    payload_digest: str
+
+class AtomicGenerationRequest(BaseModel):
+    schema_version: Literal[2]
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    expected_operation_generation: int
+    expected_artifact_generation: int
+    members: tuple[AtomicGenerationMember, ...]
+    required_artifact_digests: tuple[str, ...]
+    request_digest: str
+
+class SourceCheckpointAtomicWriteRequest(AtomicGenerationRequest):
+    kind: Literal["checkpoint"]
+    progress_state: Literal["preplanning", "plan_published", "attempt_published", "planned"]
+
+class SourceNormalizationAtomicWriteRequest(SourceCheckpointAtomicWriteRequest):
+    schema_version: Literal[2]
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    expected_operation_generation: int
+    expected_artifact_generation: int
+    members: tuple[AtomicGenerationMember, ...]
+    required_artifact_digests: tuple[str, ...]
+    kind: Literal["source_normalization_checkpoint"]
+    progress_state: Literal["preplanning"]
+    publication_generation: int
+    source_normalization_request: SourceNormalizationRequest
+    source_normalization_request_digest: str
+    source_normalization_result: SourceNormalizationResult
+    source_normalization_result_digest: str
+    evidence_manifest: SourceNormalizationEvidenceManifest
+    evidence_manifest_digest: str
+    graph_dependent_execution_policy: GraphDependentExecutionPolicy
+    graph_dependent_execution_policy_digest: str
+    consensus_policy_selection_bundle: ConsensusPolicySelectionBundle
+    consensus_policy_selection_bundle_digest: str
+    language_construction_policy_bundle: LanguageConstructionPolicyAuthorityBundle
+    language_construction_policy_bundle_digest: str
+    request_digest: str
+```
+
+The final V2 class is the one concrete generic-route storage subtype. Its serialized declaration
+order is exactly as displayed, not Python MRO order: `schema_version` occurs
+once first; inherited checkpoint/base fields are flattened once; and
+`request_digest` occurs once as the final computed field. Its sole preimage is
+every displayed field from `schema_version` through
+`language_construction_policy_bundle_digest`, excluding `request_digest`, under
+`memorii.semantic-ingestion.source-normalization-atomic-write-request.v2`.
+`AtomicGenerationMember` and `AtomicGenerationRequest` use their own
+behavior-name `.v2` domains over the same rule. No inherited secondary digest
+or duplicate request-digest preimage exists. Every V2 decoder rejects a
+bootstrap provenance, V3 payload, ready-control record, recovery key, marker,
+claim, found member, or V3 discriminator. It cannot be selected by a bootstrap
+source, and no V3 decoder accepts a V2 member nested inside a V3 envelope.
+
+The following pre-v54 grammar is retained as historical, non-active migration
+context only. Its `Historical*Grammar` names are not codecs or runtime types;
+the sole active family is defined by 4.8.2.10.
+
+```python
+class HistoricalBootstrapAtomicGenerationMemberV3Grammar(BaseModel):
+    schema_version: Literal[3]
+    member_id: str
+    kind: Literal[
+        "bootstrap_source_normalization_request",
+        "bootstrap_analysis_provenance", "bootstrap_payload_limit_authority",
+        "bootstrap_proposal_run_payload", "bootstrap_analysis_lane_result",
+        "bootstrap_analysis_evidence_bundle", "bootstrap_interpretation_bundle",
+        "bootstrap_source_local_identity_partition_evidence",
+        "bootstrap_parser_consensus", "bootstrap_semantic_scope_consensus",
+        "bootstrap_temporal_attachment_consensus",
+        "bootstrap_source_local_identity_resolution",
+        "bootstrap_source_proposal_alignment", "bootstrap_dependency_groups",
+        "bootstrap_source_normalization_result",
+        "bootstrap_source_normalization_evidence_manifest",
+        "bootstrap_graph_dependent_execution_policy",
+        "bootstrap_consensus_policy_selection_bundle",
+        "bootstrap_language_construction_policy_bundle",
+    ]
+    canonical_payload: bytes
+    payload_digest: str
+    member_digest: str
+
+class BootstrapSourceNormalizationRequestV3(BaseModel):
+    schema_version: Literal[3]
+    kind: Literal["bootstrap_source_normalization_request"]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    operation_id: str; operation_fence_digest: str
+    recovery_key_digest: str; handoff_marker_digest: str
+    recovery_control_snapshot_digest: str
+    bootstrap_analysis_provenance_digest: str
+    payload_limit_authority_digest: str
+    proposal_run_payload_digest: str
+    analysis_lane_result_digests: tuple[str, str, str, str]
+    analysis_evidence_bundle_digest: str
+    request_digest: str
+
+class HistoricalBootstrapSourceNormalizationAtomicWriteRequestV3Grammar(BaseModel):
+    schema_version: Literal[3]
+    kind: Literal["bootstrap_source_normalization_checkpoint"]
+    progress_state: Literal["preplanning"]
+    recovery_key_digest: str; handoff_marker_digest: str
+    consumed_claim_digest: str; recovery_control_snapshot_digest: str
+    normalization_ready_control_record_digest: str
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    expected_operation_generation: int; expected_artifact_generation: int
+    publication_operation_generation: int; publication_artifact_generation: int
+    members: tuple[HistoricalBootstrapAtomicGenerationMemberV3Grammar, ...]
+    required_artifact_digests: tuple[str, ...]
+    result_digest: str; provenance_manifest_digest: str; request_digest: str
+
+class HistoricalBootstrapRecoveryReplayRecordV3Grammar(BaseModel):
+    request: BootstrapSourceNormalizationAtomicWriteRequestV3
+    found: BootstrapRecoveryFoundV3
+    replay_digest: str
+
+class BootstrapSourceNormalizationTraceV3(BaseModel):
+    recovery_key_digest: str; control_record_digest: str
+    request_digest: str; found_response_digest: str; replay_digest: str
+    trace_digest: str
+```
+
+The normalization-ready control record is separate durable control-CAS state,
+not an atomic generation member; the V3 write request references its record and
+snapshot digests. The exact generation-member category order is
+`bootstrap_source_normalization_request`, `bootstrap_analysis_provenance`,
+`bootstrap_payload_limit_authority`, `bootstrap_proposal_run_payload`, four
+`bootstrap_analysis_lane_result` envelopes in provenance order
+`stanza,spacy,predicate_event,temporal`, `bootstrap_analysis_evidence_bundle`,
+`bootstrap_interpretation_bundle`,
+`bootstrap_source_local_identity_partition_evidence`, then manifest-ordered
+runs of `bootstrap_parser_consensus`, `bootstrap_semantic_scope_consensus`, and
+`bootstrap_temporal_attachment_consensus`, followed by
+`bootstrap_source_local_identity_resolution`,
+`bootstrap_source_proposal_alignment`, `bootstrap_dependency_groups`,
+`bootstrap_source_normalization_evidence_manifest`,
+`bootstrap_source_normalization_result`,
+`bootstrap_graph_dependent_execution_policy`,
+`bootstrap_consensus_policy_selection_bundle`, and
+`bootstrap_language_construction_policy_bundle`. Each lane member payload is
+the closed `BootstrapAnalysisLaneResultV3` envelope; its discriminator must
+match its fixed provenance position, with native predicate/temporal payloads
+nested only in their matching envelopes.
+
+Each digest covers every preceding field under its corresponding
+`memorii.semantic-ingestion.bootstrap-*.v3` domain. Member IDs are unique;
+members follow the exact category/run order above rather than lexical order;
+every singleton occurs once and each variable run bijects with the V3 evidence
+manifest. Required artifact
+digests are the canonical duplicate-free projection of member payload digests.
+The request joins the complete ready record, snapshot, consumed latest claim,
+generation-3 publication, result, and provenance. Found, replay, and trace
+recompute that same request and generation closure. Unknown, missing, extra,
+duplicate, reordered, V2, generic-route, cross-generation, digest-only,
+payload-type, lane-discriminator, or provenance-position substitution rejects
+before storage or reload. Memory and independent-process
+JSONL reload only these typed V3 bytes; migration by wrapping a V2 request is
+forbidden.
+
+The fixed atomic CTV vector contains exactly fifteen ordered *member
+categories*, not fifteen total member instances. Twelve singleton categories
+occur once; `parser_consensus`, `semantic_scope_consensus`, and
+`temporal_attachment_consensus` are variable canonical runs whose instance
+counts equal their retained manifest-entry counts (the temporal run also equals
+the complete required role-set count). A one-operation fact fixture therefore
+has 15 instances: twelve singletons plus one parser, one scope, and one
+assertion-temporal row. An N-operation all-fact fixture has `12 + 3N` instances.
+A correction contributes one parser, one scope, and two temporal role rows, so
+one correction fixture has 16 instances and an N-subject fixture adds one extra
+instance per correction. The vector asserts these counts and canonical run
+orders before payload bytes/digests and required artifact digests. Required test
+vectors are `test_source_normalization_atomic_request_ctv_vector` and
+`test_source_normalization_atomic_request_rejects_member_closure_mutations`:
+remove each member in turn; substitute an old payload; add an extra member;
+duplicate every member kind/ID; and mutate/duplicate/reorder `request_digest`.
+All reject before storage, recovery, trace, graph, or NLI handoff.
+
+The static/type-graph assertion is
+`test_source_normalization_atomic_write_has_one_active_declaration`: it parses
+the normative architecture and codec registry, requires exactly one active
+`SourceNormalizationAtomicWriteRequest` declaration (3.4.2g), and proves the
+4.8 protocol is a reference only. It also presents an old direct-field shape
+containing `interpretation_bundle` or `identity_partition_evidence`; strict
+decode rejects it before publication and recovery.
 
 `SourceProposalAlignment.parser_consensus`, `scope_consensus`, and
 `temporal_attachment_consensus` are verified aligned subsets of the manifest,
@@ -17137,6 +20896,2278 @@ group persistence name the exact eligible attempt digest. A retry never
 overwrites the original alignment/decision trace, and a source-level summary
 cannot collapse several snapshot contexts into one apparent semantic run.
 
+##### 4.7.2.1 Graph-dependent coordinator implementation profile
+
+This profile selects the already-owned implementation boundary; it does not add
+an alternate ingestion path. `memory_evolution/transaction_coordinator.py`'s
+`SemanticIngestionTransactionCoordinator` is the sole owner of Steps 5--8
+graph-dependent work. `provider/ingestion.py`'s `ProviderIngestionCoordinator`
+must invoke it after graph-free source normalization and before any terminal
+group or source persistence. `provider/service.py` is an orchestration facade,
+not a second derivation owner. `provider/factory.py`,
+`filesystem_storage/bundle.py`, and `integrations/hermes_provider.py` compose
+the same mandatory dependencies; no root may supply a default, optional, or
+legacy committing terminal path.
+
+The coordinator constructor receives only typed authority: the admitted
+`SourceProposalAlignment`, complete `SourceDependencyGroup` tuple,
+`AuthenticatedIngressContext`, `OperationFenceBinding`, current
+`OperationLeaseBinding`, graph snapshot/read-set repository, reservation and
+reference-closure repositories, planning-artifact repository, pure compilation
+protocol, `TransactionSemanticGroupPlanRepository`, attempt/lineage repository,
+atomic terminal persistence repository, and one immutable execution policy.
+The ingress context supplies the principal, tenant partition, and authorized
+scope set; the coordinator derives the exact required-scope set from the sealed
+alignment and rejects before graph read if it is omitted, forged, cross-tenant,
+or insufficient. Every repository method takes that context and the operation
+fence explicitly, validates them before its first read or reservation, and
+returns the same tenant/principal/scope binding in its typed result. A result,
+snapshot token, reservation, plan, attempt, lineage entry, CAS request, or
+replay bundle whose binding differs is invalid before visibility or effect.
+
+The following are the complete shapes for the newly named coordinator
+contracts. `GraphDependentExecutionPolicy` is persisted through every progress
+image, attempt, lineage, replay closure, execution manifest, and graph-bound
+result. The request and result are frozen internal
+dataclasses: they are never independently persisted, decoded, or exposed as a
+provider public contract. Their digest is nevertheless required for a durable
+attempt, group result, or trace to name their exact in-memory construction.
+
+```python
+class GraphDependentExecutionPolicy(BaseModel):
+    policy_version: Literal[1]
+    maximum_operations_per_source: int = Field(ge=1)
+    maximum_groups_per_source: int = Field(ge=1)
+    maximum_fixed_point_rounds: int = Field(ge=1)
+    maximum_records_per_snapshot: int = Field(ge=1)
+    maximum_partitions_per_snapshot: int = Field(ge=1)
+    maximum_related_conflicts_per_group: Literal[1]
+    maximum_attempts_per_group: int = Field(ge=1)
+    maximum_read_set_extensions: int = Field(ge=1)
+    maximum_reservations: int = Field(ge=1)
+    maximum_lineage_entries: int = Field(ge=1)
+    maximum_replay_artifacts: int = Field(ge=1)
+    maximum_replay_bundle_bytes: int = Field(ge=1)
+    replay_artifact_schema_registry_fingerprint: str
+    maximum_decode_depth: int = Field(ge=1)
+    policy_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+class GraphDependentExecutionPolicyReference(BaseModel):
+    policy_version: Literal[1]
+    policy_digest: str
+    artifact_digest: str
+    repository_id: Literal["semantic_ingestion.graph_dependent_execution_policy"]
+    repository_contract_fingerprint: str
+    reference_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+class GraphDependentObservedCounters(BaseModel):
+    policy: GraphDependentExecutionPolicyReference
+    observed_operations: int = Field(ge=0)
+    observed_groups: int = Field(ge=0)
+    observed_fixed_point_rounds: int = Field(ge=0)
+    observed_snapshot_records: int = Field(ge=0)
+    observed_snapshot_partitions: int = Field(ge=0)
+    observed_related_conflicts: int = Field(ge=0)
+    observed_attempts: int = Field(ge=0)
+    observed_read_set_extensions: int = Field(ge=0)
+    observed_reservations: int = Field(ge=0)
+    observed_lineage_entries: int = Field(ge=0)
+    observed_replay_artifacts: int = Field(ge=0)
+    observed_replay_bundle_bytes: int = Field(ge=0)
+    observed_decode_depth: int = Field(ge=0)
+    counters_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+@dataclass(frozen=True)
+class GraphDependentCoordinatorRequest:
+    alignment: SourceProposalAlignment
+    groups: tuple[SourceDependencyGroup, ...]
+    ingress: AuthenticatedIngressContext
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    operation_fence: OperationFenceBinding
+    operation_lease: OperationLeaseBinding
+    execution_policy: GraphDependentExecutionPolicy
+    observed_counters: GraphDependentObservedCounters
+    request_digest: str
+
+@dataclass(frozen=True)
+class GraphDependentCoordinatorResult:
+    source_result: CanonicalSourceTerminalOutcomeRecord
+    execution_manifest: IngestionExecutionManifest
+    lineage_reference: SourceTransactionPlanLineageReference
+    request_digest: str
+    result_digest: str
+```
+
+`GraphDependentExecutionPolicy.policy_digest` uses domain
+`memorii.semantic-ingestion.graph-dependent-execution-policy.v1` and the
+canonical typed encoding of exactly these fifteen fields, excluding
+`policy_digest`: `policy_version`, `maximum_operations_per_source`,
+`maximum_groups_per_source`, `maximum_fixed_point_rounds`,
+`maximum_records_per_snapshot`, `maximum_partitions_per_snapshot`,
+`maximum_related_conflicts_per_group`, `maximum_attempts_per_group`,
+`maximum_read_set_extensions`, `maximum_reservations`,
+`maximum_lineage_entries`, `maximum_replay_artifacts`,
+`maximum_replay_bundle_bytes`, `replay_artifact_schema_registry_fingerprint`,
+and `maximum_decode_depth`. `GraphDependentCoordinatorRequest.request_digest`
+uses domain `memorii.semantic-ingestion.graph-dependent-coordinator-request.v1`
+over `alignment.source_alignment_fingerprint`, ordered group digests,
+`ingress.delivery_principal_binding.binding_digest`, required-scope-set digest,
+fence binding digest, lease binding digest, and policy digest.
+`GraphDependentCoordinatorResult.result_digest` uses domain
+`memorii.semantic-ingestion.graph-dependent-coordinator-result.v1` over the
+request digest, source-result `record_digest`, manifest digest, and lineage-reference
+digest. The coordinator rejects a result whose request digest differs before
+returning or persisting it.
+
+##### 4.8.1 Bootstrap V3 graph-dependent transaction boundary
+
+The V1 request/result above and every `SourceProposalAlignment` or
+`SourceDependencyGroup` consumer are generic-route-only. The ordinary bootstrap
+path has no permission to decode, reconstruct, project, or wrap those values.
+It consumes the store-reloaded `BootstrapSourceNormalizationResultV3`, its exact
+same-generation `BootstrapSourceNormalizationRequestV3`, nested
+`BootstrapSourceProposalAlignmentV3`, and canonical
+`BootstrapSourceDependencyGroupV3` tuple through this closed V3 family:
+
+```python
+class BootstrapGraphSnapshotAuthorityV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    normalization_replay_digest: str
+    normalization_result_digest: str; source_alignment_digest: str
+    snapshot: GraphSemanticSnapshotBundle
+    base_read_set_digest: str; required_scope_set_digest: str
+    delivery_principal_binding_digest: str
+    execution_policy: GraphDependentExecutionPolicyReference
+    capability_registry_snapshot: CapabilityRegistrySnapshot
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    authority_digest: str
+
+class BootstrapGraphControlEpochV3(BaseModel):
+    schema_version: Literal[3]
+    request_core_digest: str; normalization_replay_digest: str
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    authority_checkpoint_receipt: "BootstrapGraphAuthorityPublicationReceiptV3"
+    authority_generation_digest: str
+    epoch: int
+    predecessor_epoch_digest: str | None
+    transition: Literal["initial", "lease_renewed", "lease_reclaimed"]
+    delivery_principal_binding_digest: str; required_scope_set_digest: str
+    operation_fence_binding: OperationFenceBinding
+    operation_lease_binding: OperationLeaseBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    issued_server_time: datetime; issued_monotonic_tick: int
+    epoch_digest: str
+
+class BootstrapGraphControlEpochTransitionRequestV3(BaseModel):
+    schema_version: Literal[3]
+    request_core_digest: str; expected_epoch_digest: str | None
+    transition: Literal["initial", "lease_renewed", "lease_reclaimed"]
+    normalization_replay: BootstrapRecoveryReplayRecordV3
+    graph_authority: BootstrapGraphSnapshotAuthorityV3
+    authority_checkpoint_receipt: "BootstrapGraphAuthorityPublicationReceiptV3"
+    authority_generation_digest: str
+    authenticated_ingress: AuthenticatedIngressContext
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    operation_fence: OperationFenceBinding
+    operation_lease: OperationLeaseBinding
+    writer_commit: SemanticWriterCommitBinding
+    transition_digest: str
+
+class BootstrapGraphControlEpochFoundV3(BaseModel):
+    kind: Literal["found"]; epoch: BootstrapGraphControlEpochV3
+    response_digest: str
+class BootstrapGraphControlEpochAdvancedV3(BaseModel):
+    kind: Literal["advanced"]; epoch: BootstrapGraphControlEpochV3
+    response_digest: str
+class BootstrapGraphControlEpochUnavailableV3(BaseModel):
+    kind: Literal["unavailable"]; request_core_digest: str
+    reason: Literal[
+        "invalid_transition", "stale_epoch", "ingress_unavailable",
+        "scope_unavailable", "fence_superseded", "lease_unavailable",
+        "writer_changed", "writer_unavailable", "storage_unavailable",
+    ]
+    reason_digest: str; response_digest: str
+BootstrapGraphControlEpochTransitionResultV3 = Annotated[
+    BootstrapGraphControlEpochFoundV3 | BootstrapGraphControlEpochAdvancedV3 |
+    BootstrapGraphControlEpochUnavailableV3, Field(discriminator="kind")]
+
+class BootstrapGraphDependentCoordinatorRequestV3(BaseModel):
+    schema_version: Literal[3]
+    normalization_replay: BootstrapRecoveryReplayRecordV3
+    source_alignment: BootstrapSourceProposalAlignmentV3
+    source_dependency_groups: tuple[BootstrapSourceDependencyGroupV3, ...]
+    authenticated_ingress: AuthenticatedIngressContext
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    graph_authority: BootstrapGraphSnapshotAuthorityV3
+    request_core_digest: str
+    initial_control_epoch: BootstrapGraphControlEpochV3
+    request_digest: str
+
+class BootstrapGraphDependentAttemptV3(BaseModel):
+    schema_version: Literal[3]
+    attempt_id: str; attempt_index: int
+    trigger: Literal["initial_plan", "prior_group_commit", "related_version_conflict"]
+    attempt_context_digest: str
+    request_digest: str; normalization_replay_digest: str
+    normalization_result_digest: str
+    source_alignment_digest: str
+    source_dependency_group_digests: tuple[str, ...]
+    graph_snapshot_digest: str; sealed_read_set_digest: str
+    read_set_extension_digests: tuple[str, ...]
+    reconciliation_digest: str; reference_closure_digest: str
+    capability_binding_digests: tuple[str, ...]
+    reservation_use_authorization_digests: tuple[str, ...]
+    transaction_group_plan_digest: str
+    attempt_authority: "BootstrapGraphAttemptAuthorityV3"
+    execution_policy_reference_digest: str
+    operation_lease_binding_digest: str; operation_fence_binding_digest: str
+    writer_commit_binding_digest: str
+    control_epoch_digest: str
+    observed_counters: GraphDependentObservedCounters
+    status: Literal["eligible", "superseded", "rejected", "unresolved", "failed"]
+    attempt_digest: str
+
+class BootstrapGroupPlanningAuthorizationV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str; source_dependency_group_digest: str
+    attempt_context_digest: str; transaction_group_plan_digest: str
+    group_plan_member_digest: str; compilation_artifact_digest: str
+    independence_certificate_digest: str
+    graph_snapshot_digest: str; sealed_read_set_digest: str
+    reservation_use_authorization_digests: tuple[str, ...]
+    execution_policy_reference_digest: str
+    operation_lease_binding_digest: str; operation_fence_binding_digest: str
+    writer_commit_binding_digest: str; control_epoch_digest: str
+    authorization_digest: str
+
+class BootstrapSourcePlanLineageEntryReferenceV3(BaseModel):
+    repository_id: Literal["semantic_ingestion.bootstrap_source_plan_lineage.v3"]
+    entry_digest: str; artifact_digest: str
+    repository_contract_fingerprint: str; reference_digest: str
+
+class BootstrapFinalGroupResultReferenceV3(BaseModel):
+    repository_id: Literal["semantic_ingestion.bootstrap_group_result.v3"]
+    transaction_group_id: str; result_digest: str; artifact_digest: str
+    repository_contract_fingerprint: str; reference_digest: str
+
+class BootstrapGraphReplanPartitionV3(BaseModel):
+    predecessor_attempt_digest: str
+    predecessor_lineage_digest: str
+    final_group_ids: tuple[str, ...]
+    unfinished_group_ids: tuple[str, ...]
+    replanned_group_ids: tuple[str, ...]
+    partition_digest: str
+
+class BootstrapReusedCommittedGroupAuthorityV3(BaseModel):
+    kind: Literal["reused_committed"]
+    transaction_group_id: str
+    predecessor_lineage_entry: BootstrapSourcePlanLineageEntryReferenceV3
+    predecessor_final_result: BootstrapFinalGroupResultReferenceV3
+    predecessor_group_plan_member: "BootstrapTransactionGroupPlanMemberV3"
+    predecessor_planning_authorization: BootstrapGroupPlanningAuthorizationV3
+    authority_digest: str
+
+class BootstrapReusedFinalGroupAuthorityV3(BaseModel):
+    kind: Literal["reused_final"]
+    transaction_group_id: str
+    predecessor_lineage_entry: BootstrapSourcePlanLineageEntryReferenceV3
+    predecessor_final_result: BootstrapFinalGroupResultReferenceV3
+    predecessor_group_plan_member: "BootstrapTransactionGroupPlanMemberV3"
+    terminal_disposition: Literal["noncommitting", "failed"]
+    planning_authorization: BootstrapGroupPlanningAuthorizationV3 | None
+    authority_digest: str
+
+class BootstrapReusedUnfinishedGroupAuthorityV3(BaseModel):
+    kind: Literal["reused_unfinished"]
+    transaction_group_id: str
+    predecessor_lineage_entry: BootstrapSourcePlanLineageEntryReferenceV3
+    predecessor_group_plan_member: "BootstrapTransactionGroupPlanMemberV3"
+    predecessor_planning_authorization: BootstrapGroupPlanningAuthorizationV3
+    authority_digest: str
+
+class BootstrapReplacementGroupAuthorityV3(BaseModel):
+    kind: Literal["replacement"]
+    transaction_group_id: str
+    predecessor_lineage_entry: BootstrapSourcePlanLineageEntryReferenceV3
+    replacement_group_plan_member: "BootstrapTransactionGroupPlanMemberV3"
+    replacement_planning_authorization: BootstrapGroupPlanningAuthorizationV3
+    authority_digest: str
+
+BootstrapSuccessorGroupAuthorityV3 = Annotated[
+    BootstrapReusedCommittedGroupAuthorityV3 |
+    BootstrapReusedFinalGroupAuthorityV3 |
+    BootstrapReusedUnfinishedGroupAuthorityV3 |
+    BootstrapReplacementGroupAuthorityV3,
+    Field(discriminator="kind"),
+]
+
+class BootstrapInitialAttemptAuthorityV3(BaseModel):
+    kind: Literal["initial"]
+    planning_authorizations: tuple[BootstrapGroupPlanningAuthorizationV3, ...]
+    authority_digest: str
+
+class BootstrapSuccessorAttemptAuthorityV3(BaseModel):
+    kind: Literal["successor"]
+    predecessor_attempt_digest: str
+    predecessor_lineage_digest: str
+    replan_partition: BootstrapGraphReplanPartitionV3
+    group_member_authorities: tuple[BootstrapSuccessorGroupAuthorityV3, ...]
+    authority_digest: str
+
+BootstrapGraphAttemptAuthorityV3 = Annotated[
+    BootstrapInitialAttemptAuthorityV3 | BootstrapSuccessorAttemptAuthorityV3,
+    Field(discriminator="kind"),
+]
+
+class BootstrapTransactionGroupPlanMemberV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str; source_dependency_group_digest: str
+    operation_ids: tuple[str, ...]; proposal_digests: tuple[str, ...]
+    member_digests: tuple[str, ...]; segment_ids: tuple[str, ...]
+    dependency_group_ids: tuple[str, ...]
+    claim_slot_digests: tuple[str, ...]
+    compilation_artifact_digest: str; independence_certificate_digest: str
+    proposed_delta_digest: str; event_batch_digest: str
+    member_digest: str
+
+class BootstrapTransactionGroupPlanV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    source_alignment_digest: str
+    graph_snapshot_digest: str; sealed_read_set_digest: str
+    fixed_point_rounds: int
+    group_members: tuple[BootstrapTransactionGroupPlanMemberV3, ...]
+    canonical_group_order: tuple[str, ...]
+    execution_policy_reference_digest: str
+    operation_lease_binding_digest: str; operation_fence_binding_digest: str
+    writer_commit_binding_digest: str; control_epoch_digest: str
+    plan_digest: str
+
+class BootstrapSourcePlanLineageEntryV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    lineage_ordinal: int; attempt_digest: str
+    predecessor_entry_digest: str | None
+    transaction_group_id: str; source_dependency_group_digest: str
+    group_plan_member_digest: str; planning_authorization_digest: str
+    predecessor_group_result_digest: str | None
+    disposition: Literal["planned", "committed", "noncommitting", "superseded"]
+    operation_lease_binding_digest: str; operation_fence_binding_digest: str
+    writer_commit_binding_digest: str; control_epoch_digest: str
+    entry_digest: str
+
+class BootstrapSourcePlanLineageV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    normalization_result_digest: str
+    control_epoch_digest: str
+    entries: tuple[BootstrapSourcePlanLineageEntryV3, ...]
+    latest_entry_by_group: tuple[tuple[str, str], ...]
+    lineage_digest: str
+
+class BootstrapGraphTerminalHandoffCoreV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    normalization_result_digest: str
+    attempt_digest: str; transaction_group_plan_digest: str
+    source_plan_lineage_digest: str; execution_manifest_digest: str
+    ordered_group_result_digests: tuple[str, ...]
+    final_source_result_digest: str
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    control_epoch_digest: str
+    core_digest: str
+
+class BootstrapGraphTerminalPersistenceHandoffV3(BaseModel):
+    schema_version: Literal[3]
+    core: BootstrapGraphTerminalHandoffCoreV3
+    publication_intent: "BootstrapGraphTerminalPublicationIntentV3"
+    handoff_digest: str
+
+class BootstrapGraphTerminalMemberIntentV3(BaseModel):
+    kind: Literal[
+        "bootstrap_graph_coordinator_request", "bootstrap_graph_control_epoch",
+        "bootstrap_graph_dependent_attempt", "bootstrap_transaction_group_plan",
+        "bootstrap_source_plan_lineage_entry", "ingestion_execution_manifest",
+        "transaction_group_result", "bootstrap_graph_terminal_handoff",
+        "bootstrap_graph_canonical_source_result",
+    ]
+    member_id: str
+    construction_input_digest: str
+    intent_member_digest: str
+
+class BootstrapGraphTerminalPublicationIntentV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    operation_id: str
+    request_digest: str; normalization_replay_digest: str
+    transaction_group_plan_digest: str; source_plan_lineage_digest: str
+    control_epoch_digest: str
+    delivery_principal_binding_digest: str; required_scope_set_digest: str
+    operation_fence_binding_digest: str; operation_lease_binding_digest: str
+    writer_commit_binding_digest: str
+    expected_operation_generation: int; expected_artifact_generation: int
+    canonical_source_result_input_digest: str
+    member_intents: tuple[BootstrapGraphTerminalMemberIntentV3, ...]
+    intent_digest: str; locator_digest: str
+
+class BootstrapGraphPlanAtomicWriteIdentityV3(BaseModel):
+    schema_version: Literal[3]
+    checkpoint_kind: Literal["bootstrap_graph_terminal_checkpoint"]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    operation_id: str
+    publication_intent_digest: str; locator_digest: str
+    request_digest: str; normalization_replay_digest: str
+    atomic_write_digest: str
+    expected_operation_generation: int; expected_artifact_generation: int
+    publication_operation_generation: int; publication_artifact_generation: int
+    member_manifest_id: str; member_manifest_digest: str
+    required_member_digests: tuple[str, ...]
+    operation_fence_binding_digest: str; control_epoch_digest: str
+    terminal_control_digest: str; completed_lease_binding_digest: str
+    identity_digest: str
+
+class BootstrapGraphTerminalControlV3(BaseModel):
+    schema_version: Literal[3]
+    state: Literal["terminal_published"]
+    operation_id: str; request_digest: str; locator_digest: str
+    atomic_write_digest: str; member_manifest_digest: str
+    publication_operation_generation: int; publication_artifact_generation: int
+    delivery_principal_binding_digest: str; required_scope_set_digest: str
+    operation_fence_binding_digest: str; control_epoch_digest: str
+    completed_lease_binding_digest: str; writer_commit_binding_digest: str
+    terminal_control_digest: str
+
+class BootstrapGraphGroupResultV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str; attempt_digest: str
+    source_plan_lineage_entry_digest: str; group_plan_member_digest: str
+    planning_authorization_digest: str
+    disposition: Literal["committed", "noncommitting", "failed"]
+    result_digest: str
+
+class BootstrapGraphGroupEffectReceiptV3(BaseModel):
+    schema_version: Literal[3]
+    effect_kind: Literal["observation_delta", "graph_delta", "event_batch"]
+    effect_id: str; effect_carrier_digest: str
+    commit_coordinate_digest: str
+    status: Literal["applied", "not_applicable"]
+    receipt_digest: str
+
+class BootstrapGraphObservationDeltaEffectV3(BaseModel):
+    kind: Literal["observation_delta"]
+    transaction_group_id: str; commit_coordinate_digest: str
+    payload: "IngestionObservationDelta"
+    payload_digest: str; carrier_digest: str
+
+class BootstrapGraphDeltaEffectV3(BaseModel):
+    kind: Literal["graph_delta"]
+    transaction_group_id: str; commit_coordinate_digest: str
+    payload: "GraphRevisionDelta"
+    payload_digest: str; carrier_digest: str
+
+class BootstrapGraphEventBatchEffectV3(BaseModel):
+    kind: Literal["event_batch"]
+    transaction_group_id: str; commit_coordinate_digest: str
+    payload: "SemanticMemoryEventBatch"
+    payload_digest: str; carrier_digest: str
+
+class BootstrapGraphEffectNotApplicableV3(BaseModel):
+    kind: Literal["not_applicable"]
+    effect_kind: Literal["graph_delta", "event_batch"]
+    transaction_group_id: str; commit_coordinate_digest: str
+    reason: Literal["noncommitting", "failed"]
+    carrier_digest: str
+
+BootstrapGraphGroupEffectCarrierV3 = Annotated[
+    BootstrapGraphObservationDeltaEffectV3 | BootstrapGraphDeltaEffectV3 |
+    BootstrapGraphEventBatchEffectV3 | BootstrapGraphEffectNotApplicableV3,
+    Field(discriminator="kind"),
+]
+
+class BootstrapGraphGroupCasOutcomeV3(BaseModel):
+    schema_version: Literal[3]
+    cas_request: "BootstrapGraphGroupCasRequestV3"
+    disposition: Literal["committed", "noncommitting", "failed"]
+    terminal_observation_status: Literal[
+        "committed", "evidence_only", "rejected", "unresolved", "failed",
+    ]
+    observed_graph_revision: str; observed_event_revision: str
+    observed_observation_revision: str
+    publication_graph_revision: str | None; publication_event_revision: str | None
+    publication_observation_revision: str
+    effect_carriers: tuple[BootstrapGraphGroupEffectCarrierV3, ...]
+    outcome_digest: str
+
+class BootstrapGraphGroupResultConstructionV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    transaction_group_id: str; attempt_digest: str
+    source_plan_lineage_entry: BootstrapSourcePlanLineageEntryV3
+    group_plan_member: BootstrapTransactionGroupPlanMemberV3
+    planning_authorization: BootstrapGroupPlanningAuthorizationV3
+    disposition: Literal["committed", "noncommitting", "failed"]
+    terminal_observation_status: Literal[
+        "committed", "evidence_only", "rejected", "unresolved", "failed",
+    ]
+    execution_result: "BootstrapGraphGroupExecutionResultV3"
+    operation_fence_binding_digest: str; control_epoch_digest: str
+    construction_digest: str
+
+class BootstrapGraphCanonicalSourceResultV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    source_plan_lineage_digest: str; ordered_group_result_digests: tuple[str, ...]
+    canonical_source_result: CanonicalSourceTerminalOutcomeRecord
+    control_epoch_digest: str; result_digest: str
+
+class BootstrapGraphCanonicalSourceOutcomeCoreV3(BaseModel):
+    schema_version: Literal[3]
+    ingestion_record_kind: Literal["source_terminal_outcome"]
+    source_id: str; source_digest: str
+    delivery_principal_binding_digest: str; delivery_key_digest: str
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    operation_fence_id: str; operation_ids: tuple[str, ...]
+    final_status: Literal[
+        "fully_committed", "partially_committed", "evidence_only",
+        "rejected", "unresolved", "failed",
+    ]
+    group_result_digests: tuple[str, ...]
+    core_digest: str
+
+class BootstrapGraphCanonicalSourceResultInputV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    source_plan_lineage_digest: str
+    ordered_group_result_constructions: tuple[BootstrapGraphGroupResultConstructionV3, ...]
+    source_status: Literal[
+        "fully_committed", "partially_committed", "evidence_only",
+        "rejected", "unresolved", "failed",
+    ]
+    outcome_core: BootstrapGraphCanonicalSourceOutcomeCoreV3
+    canonical_source_terminal_outcome: CanonicalSourceTerminalOutcomeRecord
+    control_epoch_digest: str
+    input_digest: str
+
+class BootstrapGraphTerminalPublicationRequestV3(BaseModel):
+    schema_version: Literal[3]
+    coordinator_request: BootstrapGraphDependentCoordinatorRequestV3
+    control_epoch: BootstrapGraphControlEpochV3
+    final_attempt: BootstrapGraphDependentAttemptV3
+    final_plan: BootstrapTransactionGroupPlanV3
+    complete_lineage: BootstrapSourcePlanLineageV3
+    execution_manifest: IngestionExecutionManifest
+    ordered_group_result_constructions: tuple[BootstrapGraphGroupResultConstructionV3, ...]
+    canonical_source_result_input: BootstrapGraphCanonicalSourceResultInputV3
+    handoff_core: BootstrapGraphTerminalHandoffCoreV3
+    publication_intent: BootstrapGraphTerminalPublicationIntentV3
+    handoff: BootstrapGraphTerminalPersistenceHandoffV3
+    predecessor_generation: "BootstrapGraphCurrentGenerationV3"
+    authenticated_ingress: AuthenticatedIngressContext
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    publication_request_digest: str
+
+class BootstrapGraphTerminalHostAuthorityV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    delivery_principal_binding_digest: str; delivery_key_digest: str
+    execution_graph_fingerprint: str
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    capability_bindings: tuple[OperationCapabilityExecutionBinding, ...]
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    operation_fence_binding: OperationFenceBinding
+    authority_digest: str
+
+class BootstrapGraphFinalStageEvidenceV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    attempt_digest: str; transaction_group_plan_digest: str
+    source_plan_lineage_digest: str
+    ordered_transaction_group_ids: tuple[str, ...]
+    ordered_group_execution_result_digests: tuple[str, ...]
+    source_outcomes: tuple[IngestionStageOutcome, ...]
+    graph_validation_attempts: tuple[GraphDependentValidationAttempt, ...]
+    causal_blockers: tuple[IngestionStageInstanceRef, ...]
+    terminal_before_planning_proof_digests: tuple[str, ...]
+    control_epoch_digest: str
+    evidence_digest: str
+
+class BootstrapGraphTerminalPreparationV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; control_epoch_digest: str
+    host_authority_digest: str
+    predecessor_generation_digest: str
+    publication_request: BootstrapGraphTerminalPublicationRequestV3
+    preparation_digest: str
+
+class BootstrapGraphTerminalReloadV3(BaseModel):
+    handoff_digest: str
+    atomic_write_locator_digest: str
+    final_write_identity: BootstrapGraphPlanAtomicWriteIdentityV3
+    terminal_control: BootstrapGraphTerminalControlV3
+    canonical_source_result: BootstrapGraphCanonicalSourceResultV3
+    delivery_principal_binding_digest: str; required_scope_set_digest: str
+    operation_fence_binding_digest: str; operation_lease_binding_digest: str
+    control_epoch_digest: str
+    checkpoint_receipt: "BootstrapGraphCheckpointReceiptV3"
+    reload_digest: str
+
+class BootstrapGraphPlanAtomicMemberV3(BaseModel):
+    schema_version: Literal[3]
+    member_id: str
+    kind: Literal[
+        "bootstrap_graph_coordinator_request", "bootstrap_graph_snapshot_authority",
+        "bootstrap_graph_control_epoch",
+        "graph_base_read_set", "graph_read_set_extension", "graph_reconciliation",
+        "reference_closure", "group_compilation_request",
+        "group_compilation_artifact", "group_independence_certificate",
+        "bootstrap_graph_pre_execution_group_evidence",
+        "bootstrap_transaction_group_plan", "bootstrap_group_planning_authorization",
+        "bootstrap_graph_dependent_attempt", "bootstrap_source_plan_lineage_entry",
+        "bootstrap_graph_retry_progress", "bootstrap_graph_final_stage_evidence",
+        "ingestion_execution_manifest", "transaction_group_result",
+        "bootstrap_graph_terminal_handoff", "bootstrap_graph_canonical_source_result",
+    ]
+    canonical_payload: bytes; payload_digest: str; member_digest: str
+
+class BootstrapGraphCurrentGenerationV3(BaseModel):
+    schema_version: Literal[3]
+    store_identity_digest: str; operation_id: str; request_digest: str
+    operation_generation: int; artifact_generation: int
+    latest_atomic_write_digest: str | None
+    control_epoch_digest: str
+    snapshot_digest: str
+
+class BootstrapGraphCheckpointReceiptV3(BaseModel):
+    schema_version: Literal[3]
+    checkpoint_kind: Literal[
+        "bootstrap_graph_plan_checkpoint", "bootstrap_graph_attempt_checkpoint",
+        "bootstrap_graph_lineage_checkpoint", "bootstrap_graph_group_result_checkpoint",
+        "bootstrap_graph_retry_checkpoint", "bootstrap_graph_final_stage_evidence_checkpoint",
+        "bootstrap_graph_terminal_checkpoint",
+    ]
+    predecessor_generation: BootstrapGraphCurrentGenerationV3
+    write_request_digest: str; atomic_write_digest: str
+    reload_core_digest: str
+    publication_operation_generation: int; publication_artifact_generation: int
+    successor_generation: BootstrapGraphCurrentGenerationV3
+    receipt_digest: str
+
+class BootstrapGraphPlanAtomicWriteRequestV3(BaseModel):
+    schema_version: Literal[3]
+    kind: Literal[
+        "bootstrap_graph_plan_checkpoint", "bootstrap_graph_attempt_checkpoint",
+        "bootstrap_graph_lineage_checkpoint", "bootstrap_graph_group_result_checkpoint",
+        "bootstrap_graph_retry_checkpoint", "bootstrap_graph_final_stage_evidence_checkpoint",
+        "bootstrap_graph_terminal_checkpoint",
+    ]
+    request_digest: str; normalization_replay_digest: str
+    normalization_result_digest: str
+    predecessor_generation: BootstrapGraphCurrentGenerationV3
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    control_epoch_digest: str
+    members: tuple[BootstrapGraphPlanAtomicMemberV3, ...]
+    required_member_digests: tuple[str, ...]
+    write_digest: str
+
+class BootstrapGraphPlanAtomicReloadCoreV3(BaseModel):
+    schema_version: Literal[3]
+    write_request_digest: str
+    publication_operation_generation: int; publication_artifact_generation: int
+    members: tuple[BootstrapGraphPlanAtomicMemberV3, ...]
+    required_member_digests: tuple[str, ...]
+    delivery_principal_binding_digest: str; required_scope_set_digest: str
+    operation_fence_binding_digest: str; operation_lease_binding_digest: str
+    control_epoch_digest: str
+    core_digest: str
+
+class BootstrapGraphPlanAtomicReloadV3(BaseModel):
+    schema_version: Literal[3]
+    core: BootstrapGraphPlanAtomicReloadCoreV3
+    checkpoint_receipt: BootstrapGraphCheckpointReceiptV3
+    reload_digest: str
+
+class BootstrapGraphGroupCasRequestV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    attempt_digest: str; transaction_group_id: str
+    group_plan_member_digest: str; planning_authorization_digest: str
+    source_plan_lineage_entry_digest: str
+    pre_execution_manifest_identity_digest: str
+    sealed_read_set_digest: str; proposed_delta_digest: str; event_batch_digest: str
+    control_epoch_digest: str; cas_digest: str
+
+class BootstrapGraphExecutionManifestGroupInputV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    group_plan_member: BootstrapTransactionGroupPlanMemberV3
+    compilation_request_digest: str; compilation_artifact_digest: str
+    independence_certificate_digest: str
+    ordered_operation_ids: tuple[str, ...]
+    proposed_delta_digest: str; event_batch_digest: str
+    input_digest: str
+
+class BootstrapGraphPreExecutionGroupEvidenceV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    transaction_group_id: str; group_plan_member_digest: str
+    graph_snapshot_digest: str; sealed_read_set_digest: str
+    reconciliation_digest: str; reference_closure_digest: str
+    graph_validation_attempts: tuple[GraphDependentValidationAttempt, ...]
+    causal_blockers: tuple[IngestionStageInstanceRef, ...]
+    terminal_before_planning_proof_digests: tuple[str, ...]
+    control_epoch_digest: str
+    evidence_digest: str
+
+class BootstrapGraphPreExecutionManifestCoreV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    transaction_group_id: str
+    producing_attempt_digest: str; producing_transaction_group_plan_digest: str
+    producing_lineage_entry_digest: str; control_epoch_digest: str
+    execution_graph_fingerprint: str
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    capability_bindings: tuple[OperationCapabilityExecutionBinding, ...]
+    graph_validation_attempts: tuple[GraphDependentValidationAttempt, ...]
+    causal_blockers: tuple[IngestionStageInstanceRef, ...]
+    terminal_before_planning_proof_digests: tuple[str, ...]
+    manifest_group_inputs: tuple[BootstrapGraphExecutionManifestGroupInputV3, ...]
+    core_digest: str
+
+class BootstrapGraphPreExecutionManifestIdentityV3(BaseModel):
+    schema_version: Literal[3]
+    core: BootstrapGraphPreExecutionManifestCoreV3
+    manifest_identity_id: str
+    identity_digest: str
+
+class BootstrapGraphPreExecutionManifestIdentityClosureV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    source_id: str; source_digest: str; preparation_fingerprint: str
+    identities: tuple[BootstrapGraphPreExecutionManifestIdentityV3, ...]
+    identity_by_group: tuple[tuple[str, str], ...]
+    operation_fence_binding_digest: str; writer_commit_binding_digest: str
+    closure_digest: str
+
+class BootstrapGraphExecutionManifestConstructionV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    attempt_digest: str; transaction_group_plan_digest: str
+    source_plan_lineage_digest: str; control_epoch_digest: str
+    pre_execution_manifests: BootstrapGraphPreExecutionManifestIdentityClosureV3
+    pre_execution_manifest_identity_closure_digest: str
+    execution_graph_fingerprint: str
+    segment_language_routes: SegmentLanguageRouteSet
+    segment_governance_carriers: SegmentGovernanceCarrierSet
+    message_admission_carriers: MessageAdmissionCarrierSet
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    capability_bindings: tuple[OperationCapabilityExecutionBinding, ...]
+    source_outcomes: tuple[IngestionStageOutcome, ...]
+    graph_validation_attempts: tuple[GraphDependentValidationAttempt, ...]
+    transaction_group_outcomes: tuple[
+        tuple[str, tuple[IngestionStageOutcome, ...]], ...
+    ]
+    causal_blockers: tuple[IngestionStageInstanceRef, ...]
+    terminal_before_planning_proof_digests: tuple[str, ...]
+    manifest_group_inputs: tuple[BootstrapGraphExecutionManifestGroupInputV3, ...]
+    ordered_group_execution_result_digests: tuple[str, ...]
+    construction_digest: str
+
+class BootstrapGraphAttemptConstructionInputsV3(BaseModel):
+    schema_version: Literal[3]
+    attempt_id: str; attempt_index: int
+    trigger: Literal["initial_plan", "prior_group_commit", "related_version_conflict"]
+    request_digest: str; normalization_replay_digest: str
+    normalization_result_digest: str; source_alignment_digest: str
+    source_dependency_group_digests: tuple[str, ...]
+    graph_snapshot_digest: str; sealed_read_set_digest: str
+    read_set_extension_digests: tuple[str, ...]
+    reconciliation_digest: str; reference_closure_digest: str
+    capability_binding_digests: tuple[str, ...]
+    reservation_use_authorization_digests: tuple[str, ...]
+    transaction_group_plan_digest: str
+    pre_execution_evidence_digests: tuple[str, ...]
+    execution_policy_reference_digest: str
+    operation_lease_binding_digest: str; operation_fence_binding_digest: str
+    writer_commit_binding_digest: str; control_epoch_digest: str
+    observed_counters: GraphDependentObservedCounters
+    status: Literal["eligible", "superseded", "rejected", "unresolved", "failed"]
+    attempt_context_digest: str
+    inputs_digest: str
+
+class BootstrapGraphPlanCompilationV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; normalization_replay_digest: str
+    control_epoch_digest: str
+    plan: BootstrapTransactionGroupPlanV3
+    attempt_inputs: BootstrapGraphAttemptConstructionInputsV3
+    manifest_group_inputs: tuple[BootstrapGraphExecutionManifestGroupInputV3, ...]
+    pre_execution_evidence: tuple[BootstrapGraphPreExecutionGroupEvidenceV3, ...]
+    compilation_digest: str
+
+class BootstrapGraphPlanAuthorizationSetV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str; plan_digest: str; control_epoch_digest: str
+    authorizations: tuple[BootstrapGroupPlanningAuthorizationV3, ...]
+    authorization_set_digest: str
+
+class BootstrapGraphV3ProducerUnavailable(BaseModel):
+    schema_version: Literal[3]
+    phase: Literal["compile", "authorize", "group_execute", "terminal_prepare"]
+    reason: Literal[
+        "authority_unavailable", "scope_revoked", "lease_unavailable",
+        "writer_unavailable", "stale_epoch", "invalid_input",
+        "read_conflict", "storage_unavailable",
+    ]
+    request_digest: str; control_epoch_digest: str
+    unavailable_digest: str
+
+class BootstrapGraphGroupExecutionResultV3(BaseModel):
+    schema_version: Literal[3]
+    cas_request: BootstrapGraphGroupCasRequestV3
+    cas_request_digest: str; control_epoch_digest: str
+    transaction_group_id: str; attempt_digest: str
+    cas_outcome: BootstrapGraphGroupCasOutcomeV3
+    effect_carriers: tuple[BootstrapGraphGroupEffectCarrierV3, ...]
+    effect_receipts: tuple[BootstrapGraphGroupEffectReceiptV3, ...]
+    result_digest: str
+
+class BootstrapGraphDependentCoordinatorSucceededV3(BaseModel):
+    kind: Literal["succeeded"]
+    terminal_reload: BootstrapGraphTerminalReloadV3
+    control_epoch_digest: str
+    response_digest: str
+class BootstrapGraphDependentPreGraphNonCommitV3(BaseModel):
+    kind: Literal["pre_graph_noncommit"]
+    request_digest: str
+    reason: Literal[
+        "authority_unavailable", "normalization_incompatible",
+        "snapshot_unavailable", "planning_unavailable", "authorization_unavailable",
+    ]
+    reason_digest: str; response_digest: str
+
+class BootstrapGraphDurableRetryProgressV3(BaseModel):
+    kind: Literal["durable_retry"]
+    request_digest: str; normalization_replay_digest: str
+    attempt_digest: str; source_plan_lineage_digest: str
+    completed_group_result_digests: tuple[str, ...]
+    retry_group_ids: tuple[str, ...]
+    reason: Literal[
+        "related_conflict", "lease_renewal_required", "lease_reclaim_required",
+        "publication_retry", "storage_retry",
+    ]
+    operation_fence_binding_digest: str; writer_commit_binding_digest: str
+    control_epoch_digest: str
+    progress_digest: str; response_digest: str
+
+class BootstrapGraphFinalizedFailureV3(BaseModel):
+    kind: Literal["finalized_failure"]
+    terminal_reload: BootstrapGraphTerminalReloadV3
+    control_epoch_digest: str
+    reason: Literal[
+        "related_conflict_exhausted", "lease_expired", "fence_superseded",
+        "writer_superseded", "publication_conflict", "storage_unavailable",
+    ]
+    response_digest: str
+BootstrapGraphDependentCoordinatorResultV3 = Annotated[
+    BootstrapGraphDependentCoordinatorSucceededV3 |
+    BootstrapGraphDependentPreGraphNonCommitV3 |
+    BootstrapGraphDurableRetryProgressV3 |
+    BootstrapGraphFinalizedFailureV3,
+    Field(discriminator="kind"),
+]
+```
+
+Every model is strict/frozen/extra-forbid. Each trailing digest is SHA-256 over
+CTV of every preceding displayed field in declaration order under the matching
+`memorii.semantic-ingestion.bootstrap-graph-*.v3` behavior domain. IDs are
+derived from their complete preimages, never random or caller-selected.
+`attempt_context_digest` is computed first under
+`memorii.semantic-ingestion.bootstrap-graph-attempt-context.v3` over the attempt
+identity/trigger plus request/result/alignment/group,
+snapshot/read-set/reconciliation/reference/capability/reservation/policy/control
+fields, excluding `attempt_authority`, status, counters, and final attempt
+digest. Each planning authorization binds that context. `attempt_digest` is then
+computed over the complete displayed attempt including the authorization
+bijection. An authorization never names `attempt_digest`, so no digest cycle or
+post-publication mutation exists.
+`request_core_digest` is computed before the initial epoch over the complete
+request fields through `graph_authority`, excluding core/epoch/final digests,
+under `memorii.semantic-ingestion.bootstrap-graph-request-core.v3`. The initial
+epoch binds that core, normalization replay, graph-authority source/control
+identity, current ingress/scope/fence/lease/writer, `epoch=0`, null predecessor,
+and `transition="initial"`. Final `request_digest` then covers the core and
+complete initial epoch without a cycle. Every epoch digest uses
+`memorii.semantic-ingestion.bootstrap-graph-control-epoch.v3` over all prior
+displayed fields. A successor has `epoch=predecessor.epoch+1`, non-null exact
+predecessor digest, immutable request-core/replay/source/fence/principal/scope,
+and changes only the lease/token/owner fields for `lease_renewed` or
+`lease_reclaimed`; `writer_commit_binding` is byte-identical across the entire
+chain. Epoch zero is the only initial transition.
+
+Epoch-zero construction is explicitly two-stage. First compute
+`request_core_digest`; then call `transition_or_find` with that core, null
+expected epoch, the complete typed normalization replay, graph authority,
+current ingress/scopes/fence/lease/writer, and `transition="initial"`. The
+repository validates all typed joins and atomically persists/finds epoch zero.
+Only after receiving that epoch does the caller construct the final coordinator
+request and compute `request_digest`. Neither the transition request nor epoch
+zero contains that final digest. Successor transition lookup is keyed by the
+immutable request core plus exact current-head digest, never final request
+identity alone, so the chain is acyclic.
+
+`BootstrapGraphControlEpochTransitionRequestV3.transition_digest` uses
+`memorii.semantic-ingestion.bootstrap-graph-control-epoch-transition.v3` over,
+in declaration order, `schema_version,request_core_digest,
+expected_epoch_digest,transition,normalization_replay,graph_authority,
+authenticated_ingress,required_outcome_scopes,operation_fence,operation_lease,
+writer_commit`, excluding only `transition_digest`. Its validator recomputes
+the typed replay and graph-authority closures and all core/source/principal/
+scope/fence/lease/writer joins before repository access. A final coordinator
+request digest is not an accepted epoch-protocol field and strict decoding
+rejects it as extra input. Found/advanced/unavailable response digests likewise
+cover every displayed field except the response digest under their distinct V3
+domains.
+Canonical tuples are duplicate-free: source groups use the exact order in
+`source_alignment.source_dependency_groups`; group members use that group's
+ordered operation/proposal/member/segment tuples; extensions, capabilities,
+reservations, authorizations, and lineage entries sort by their trailing
+digest; lineage ordinals are contiguous from zero. Nullable lineage-entry
+predecessor fields are null only for initial entries.
+
+`attempt_authority` is a strict discriminator. `kind="initial"` is legal only
+for `trigger="initial_plan"` and `attempt_index=0`; it has no predecessor
+attempt, predecessor lineage, final-result reference, successor partition, or
+successor authority field. Its nonempty planning-authorization tuple bijects
+with the initial plan's canonical group members. `kind="successor"` is legal
+only for a non-initial trigger and positive index; it requires exact predecessor
+attempt and lineage digests, the complete successor partition, and one successor
+member authority per canonical group; both predecessor digests equal the same
+fields in its partition. Cross-arm, null-predecessor, empty-initial,
+initial-with-successor, and successor-with-initial-authorization forms reject.
+
+The V3 request validator requires the complete decoded
+`BootstrapRecoveryReplayRecordV3`, not caller scalars. It recomputes replay,
+atomic-request, Found response, consumed claim/snapshot, result, and provenance
+digests before extracting byte-identical nested request/result/alignment values
+from that same V3 normalization generation. Result manifest and request
+digests, source/preparation/provenance/payload-limit closures, alignment
+digest, and complete group tuple must join exactly. Complete groups partition
+all and only complete operation alignments once; unresolved/failed alignment or
+group status returns `normalization_incompatible` before graph access. The
+normalization found response must index that exact generation. The graph
+authority source, alignment, result, ingress principal/scope, snapshot, base
+read set, policy, capability registry, lease, fence, and writer all join the
+request. The verified replay digest is copied through graph authority, every
+attempt, plan, lineage, retry progress, terminal handoff, final result, replay,
+and trace. No digest text or separately supplied request/result/Found value
+substitutes for the typed replay closure.
+
+`BootstrapTransactionGroupPlanV3` is the fixed-point output. It contains one
+member per V3 source dependency group in canonical group order and preserves
+the exact operation/proposal/member/segment vectors rather than reconstructing
+generic proposals or routes. Static dependencies come only from the retained
+V3 group closure; graph-relative dependencies are added only from the one
+sealed snapshot/read-set. Every operation occurs once, every dependency names
+an earlier or explicitly cyclic-atomic group resolved within the bounded fixed
+point, and each claim slot, artifact, certificate, delta, and event batch is
+complete. Empty, partial, reordered, cross-snapshot, cross-attempt, generic V2,
+or opaque plan values reject.
+
+`BootstrapGroupPlanningAuthorizationV3` is constructed only after the complete
+plan/artifact generation is reloaded. There is exactly one authorization per
+plan member and an exact digest bijection in the attempt. The attempt is then
+atomically published and reloaded before lineage. Lineage is append-only: an
+initial entry is written for each group; retries append a successor naming the
+prior entry; committed entries and their authorizations are immutable; related
+conflict may replace only unfinished affected suffix groups. The sealed
+`BootstrapGraphTerminalPublicationRequestV3` contains the handoff, final
+lineage projection, exact ordered group-result bijection, and every other typed
+terminal carrier, and is the only graph-bound input accepted by
+`SemanticTerminalPersistenceService`; handoff-only and legacy optional-plan
+calls are unreachable for a bootstrap V3 success.
+
+Every successor attempt carries one canonical `BootstrapGraphReplanPartitionV3`.
+Its final and unfinished sets are disjoint and partition all predecessor groups;
+`replanned_group_ids` is exactly the affected suffix subset of unfinished IDs.
+The successor authority tuple bijects with canonical group order. A
+`reused_committed` arm retains complete predecessor lineage entry, final result,
+plan member, and authorization byte-for-byte. A `reused_final` arm does the
+same for a terminal noncommitting/failed group and preserves whether its prior
+arm had a planning authorization. A `reused_unfinished` arm is required for
+every unfinished group outside `replanned_group_ids` and retains its predecessor
+lineage entry, plan member, and authorization byte-for-byte while forbidding
+compilation and reauthorization. Only `replacement` may contain a newly
+compiled plan member and new planning authorization, and it names the exact
+predecessor entry. Reused bytes are never rehashed under a successor identity
+or reauthorized; replacement compilation is forbidden for final groups and
+required for every replanned group.
+The arm partition is bijective: committed final IDs use only
+`reused_committed`; other final IDs use only `reused_final`; unfinished minus
+replanned uses only `reused_unfinished`; replanned uses only `replacement`.
+No group may be absent, duplicated, or represented by another arm.
+
+The host authority and execution protocols are exact:
+
+```python
+class BootstrapGraphPlanCompilerPortV3(Protocol):
+    def compile(
+        self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
+        control_epoch: BootstrapGraphControlEpochV3,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+    ) -> BootstrapGraphPlanCompilationV3 | BootstrapGraphV3ProducerUnavailable: ...
+
+class BootstrapGraphPlanningAuthorizerPortV3(Protocol):
+    def authorize(
+        self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
+        reloaded_plan: BootstrapGraphPlanAtomicReloadV3,
+        control_epoch: BootstrapGraphControlEpochV3,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+    ) -> BootstrapGraphPlanAuthorizationSetV3 | BootstrapGraphV3ProducerUnavailable: ...
+
+class BootstrapGraphGroupExecutorPortV3(Protocol):
+    def execute_cas(
+        self, *, request: BootstrapGraphGroupCasRequestV3,
+        control_epoch: BootstrapGraphControlEpochV3,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+    ) -> BootstrapGraphGroupExecutionResultV3 | BootstrapGraphV3ProducerUnavailable: ...
+
+class BootstrapGraphTerminalPreparationPortV3(Protocol):
+    def prepare(
+        self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
+        control_epoch: BootstrapGraphControlEpochV3,
+        current_generation: BootstrapGraphCurrentGenerationV3,
+        final_attempt: BootstrapGraphDependentAttemptV3,
+        final_plan: BootstrapTransactionGroupPlanV3,
+        final_plan_compilation: BootstrapGraphPlanCompilationV3,
+        pre_execution_manifests: BootstrapGraphPreExecutionManifestIdentityClosureV3,
+        complete_lineage: BootstrapSourcePlanLineageV3,
+        group_constructions: tuple[BootstrapGraphGroupResultConstructionV3, ...],
+        final_stage_evidence: BootstrapGraphFinalStageEvidenceV3,
+        host_authority: BootstrapGraphTerminalHostAuthorityV3,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+    ) -> BootstrapGraphTerminalPreparationV3 | BootstrapGraphV3ProducerUnavailable: ...
+
+class BootstrapGraphDependentAuthorityProviderV3(Protocol):
+    def acquire(
+        self, *, normalization_replay: BootstrapRecoveryReplayRecordV3,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        operation_lease: OperationLeaseBinding,
+        operation_fence: OperationFenceBinding,
+        writer_commit: SemanticWriterCommitBinding,
+    ) -> BootstrapGraphSnapshotAuthorityV3 | None: ...
+
+class BootstrapGraphDependentCoordinatorV3(Protocol):
+    def coordinate(
+        self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
+    ) -> BootstrapGraphDependentCoordinatorResultV3: ...
+
+class BootstrapGraphPlanRepositoryV3(Protocol):
+    def load_current_generation(
+        self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
+        control_epoch: BootstrapGraphControlEpochV3,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+    ) -> BootstrapGraphCurrentGenerationV3: ...
+    def publish_and_reload(
+        self, *, request: BootstrapGraphPlanAtomicWriteRequestV3,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        control_epoch: BootstrapGraphControlEpochV3,
+    ) -> BootstrapGraphPlanAtomicReloadV3: ...
+
+class BootstrapGraphTerminalPersistencePortV3(Protocol):
+    def persist_and_reload(
+        self, *, request: BootstrapGraphTerminalPublicationRequestV3,
+    ) -> BootstrapGraphTerminalReloadV3: ...
+
+class BootstrapGraphControlEpochRepositoryV3(Protocol):
+    def transition_or_find(
+        self, *, request: BootstrapGraphControlEpochTransitionRequestV3,
+    ) -> BootstrapGraphControlEpochTransitionResultV3: ...
+```
+
+The split is mandatory because planning is pure, authorization must consume the
+atomically reloaded plan, and group execution owns the effect boundary.
+`BootstrapGraphPlanCompilerPortV3` accepts only the complete native request and
+latest epoch/current caller authority. It deterministically performs the
+bounded fixed point in canonical dependency-group order and returns one
+complete plan plus exactly one typed manifest-group input per plan member in
+that same order, exactly one complete pre-execution group-evidence member per
+plan member in that order, and one `BootstrapGraphAttemptConstructionInputsV3`. Each
+manifest input retains the plan member and the exact compilation/
+certificate/effect coordinates used later to construct the execution manifest.
+Compilation and manifest-input digests cover every displayed field; request,
+replay, epoch, group, operation, delta, event, and plan-member joins are exact.
+Attempt inputs retain every immutable graph-derived field required by
+`BootstrapGraphDependentAttemptV3`, including snapshot/read-set extensions,
+reconciliation/reference closure, capabilities, reservations, policy, current
+lease/fence/writer/epoch, observed counters, trigger/index/status, and final plan
+digest, but contain no attempt authority or planning authorization.
+Their ordered `pre_execution_evidence_digests` tuple is the exact projection of
+the compilation's complete evidence tuple and therefore seals the evidence into
+the plan/attempt checkpoint before authorization, attempt assembly, or CAS.
+`attempt_context_digest` is recomputed from the displayed attempt-input fields
+through control epoch, excluding counters/status and both trailing digests,
+under the existing attempt-context domain. `inputs_digest` covers every
+preceding displayed input field including counters/status/context under
+`memorii.semantic-ingestion.bootstrap-graph-attempt-construction-inputs.v3`.
+All request/replay/result/alignment/group/snapshot/read-set/extension/
+reconciliation/reference/capability/reservation/plan/policy/authority joins and
+canonical tuple orders are exact.
+`compile` returns only `BootstrapGraphPlanCompilationV3`; it never returns an
+atomic write request, reload, receipt, or implied checkpoint. The coordinator
+constructs the plan checkpoint from the compilation plus its current typed
+generation snapshot and advances only through the repository receipt.
+
+Only after the plan generation is published and reloaded may
+`BootstrapGraphPlanningAuthorizerPortV3` run. It validates current tenant,
+scopes/revocation, epoch head, lease, fence, writer, and the complete reloaded
+plan generation, then returns exactly one authorization per canonical plan
+member in plan order. The authorization set is a digest-covered bijection; it
+cannot accept the compiler's prepublication plan object as authority.
+The plan checkpoint atomically contains the attempt inputs immediately before
+the plan member. After reload and authorization, the coordinator reloads those
+exact inputs, constructs strict initial or successor `attempt_authority` from
+the authorization set and predecessor closure, copies every other attempt field
+from the inputs, and derives `attempt_digest`. It may not recompute graph inputs,
+accept caller overrides, or authorize an attempt before plan reload. The attempt
+checkpoint contains request, current epoch, graph authority, reloaded attempt
+inputs, reloaded plan, complete authorization run, then attempt in that exact
+order and advances one operation/artifact generation atomically.
+
+`BootstrapGraphGroupExecutorPortV3` accepts the exact native CAS request and
+latest typed epoch/current ingress/scopes. Immediately before the actual CAS,
+inside the same effect owner, it rechecks tenant/principal, required scopes and
+revocation, epoch head, live lease, fence, writer, sealed read set, plan member,
+authorization, and latest lineage entry. It returns the complete typed CAS
+outcome/effect-carrier/receipt closure; result, outcome, carrier, and receipt
+digests and the arm-specific equality algebra above are recomputed. It may not
+return success-shaped detached digests or perform an effect after a failed
+recheck.
+
+Every producer failure is the closed `BootstrapGraphV3ProducerUnavailable`
+with exact phase/reason/request/epoch digest and no invented plan,
+authorization, CAS outcome, carrier, receipt, graph mutation, or event. Compile
+or authorize failure before attempt/lineage follows the pre-graph noncommit
+cut; group-execute failure after attempt/lineage publishes durable retry or
+terminal failure as already specified. Unknown reasons and cross-phase values
+reject. None of these ports accepts or constructs `GraphDependentCoordinatorRequest`,
+`TransactionSemanticGroupPlan`, generic graph-planning artifacts, V1/V2
+alignment/groups, or adapters that reconstruct them.
+
+Generation threading never accepts caller integers. After epoch-zero recovery,
+the repository authenticates the caller and loads one
+`BootstrapGraphCurrentGenerationV3` from the atomic store. Its snapshot digest
+covers store/request/operation/current generation/latest write/epoch under
+`memorii.semantic-ingestion.bootstrap-graph-current-generation.v3`. Every plan,
+attempt, lineage, group-result, retry, and terminal write request carries that
+typed snapshot as its predecessor. The repository derives publication
+generations as exactly predecessor+1, commits, reloads, and returns a
+two-pass `BootstrapGraphPlanAtomicReloadV3`. First it constructs
+`BootstrapGraphPlanAtomicReloadCoreV3` from the immutable write request,
+publication generations, members, required-member vector, current authority,
+and epoch; `core_digest` covers all preceding core fields under
+`memorii.semantic-ingestion.bootstrap-graph-plan-atomic-reload-core.v3` and
+contains neither receipt nor final reload digest. It then constructs the
+successor generation and `BootstrapGraphCheckpointReceiptV3`; receipt digest
+covers checkpoint kind, complete predecessor, write request/write digest,
+reload-core digest, publication generations, and complete successor under
+`memorii.semantic-ingestion.bootstrap-graph-checkpoint-receipt.v3`. Finally,
+the reload wrapper digest covers `(schema_version, core, receipt)` under
+`memorii.semantic-ingestion.bootstrap-graph-plan-atomic-reload.v3`. The successor
+must equal the store's post-write state and becomes the sole predecessor for the
+next checkpoint. Terminal reload embeds that same terminal checkpoint receipt
+before its own final reload digest. A retry presents the same snapshot and is
+resolved found-first by write identity; it reconstructs the identical reload
+core, receipt, and wrapper bytes in the same two-pass order. No coordinator
+scalar, cached counter, skipped receipt, independent operation/artifact
+increment, receipt-to-final-reload dependency, or wrapper-to-receipt dependency
+is accepted.
+
+Terminal assembly uses the injected `BootstrapGraphTerminalPreparationPortV3`.
+`BootstrapGraphTerminalHostAuthorityV3` is built from the exact V3 replay,
+registered execution-graph template, and current ingress authority. Its digest
+covers every displayed field. Delivery, execution-graph fingerprint, complete
+segment route/governance/message carriers, governance artifact, complete typed
+capability bindings, scopes, and fence are host-owned immutable inputs and join
+request/replay/attempt capability-binding digests byte-for-byte. The coordinator
+does not construct `BootstrapGraphExecutionManifestConstructionV3`; it supplies
+the store-reloaded current generation, final attempt and plan, the byte-equal
+final `BootstrapGraphPlanCompilationV3`, complete pre-execution identity closure,
+complete lineage, and one group construction per final-plan group.
+
+Manifest identity is explicitly two-stage and has no fixed point. After each
+producing attempt and its lineage entries reload, but before that attempt's
+first CAS for a group, the coordinator seals one
+`BootstrapGraphPreExecutionManifestCoreV3` per group it may execute from only
+then-immutable request/replay/group/producing-attempt/producing-plan/producing-
+lineage-entry/epoch, execution-graph, route/governance/message/capability,
+validation-attempt, blocker/proof, and matching compiler manifest-group input.
+The sole pre-CAS source of those validation-attempt/blocker/proof tuples is the
+matching complete `BootstrapGraphPreExecutionGroupEvidenceV3` in the exact
+store-reloaded producing `BootstrapGraphPlanCompilationV3`. The compiler seals
+one evidence member per plan group in canonical plan order from its authenticated
+graph snapshot/read set/reconciliation/reference closure. `evidence_digest`
+covers every preceding field under
+`memorii.semantic-ingestion.bootstrap-graph-pre-execution-group-evidence.v3`.
+The attempt-construction input carries the exact ordered evidence-digest
+projection; compilation requires a group bijection among plan members, manifest
+group inputs, and complete evidence. Request/replay/group/plan-member/snapshot/
+read-set/reconciliation/reference/epoch joins are byte equal. The coordinator
+copies the complete typed tuples from that matched evidence into the pre-
+execution core; it never uses post-CAS `BootstrapGraphFinalStageEvidenceV3`,
+empty/default tuples, a digest-only substitute, or an ambient lookup.
+`core_digest` covers all preceding core fields under
+`memorii.semantic-ingestion.bootstrap-graph-pre-execution-manifest-core.v3`.
+`manifest_identity_id` is the CTV digest of `(request_digest,
+transaction_group_id, producing_attempt_digest,
+producing_transaction_group_plan_digest, producing_lineage_entry_digest,
+core_digest)` under
+`memorii.semantic-ingestion.bootstrap-graph-pre-execution-manifest-id.v3`;
+`identity_digest` covers `(schema_version, core, manifest_identity_id)` under
+`memorii.semantic-ingestion.bootstrap-graph-pre-execution-manifest-identity.v3`.
+None includes a group CAS result, effect, terminal observation, final lineage,
+or final manifest. An attempt-local identity tuple follows that attempt's
+canonical executable-group order.
+
+Every group CAS request carries its exact group/producing-attempt/lineage
+pre-execution identity digest. The
+`execution_manifest_digest` field of each
+`CanonicalOperationTerminalOutcomeRecord` is normatively the pre-execution
+identity digest, not the later `IngestionExecutionManifest.manifest_digest`.
+Observation/effect records, CAS outcome, execution result, and group-result
+construction join it through the CAS request. This is the only legal V3 meaning
+of that existing record field; V1/V2 interpretation or final-manifest
+substitution rejects. Reused committed or final results preserve the complete
+predecessor identity bytes. Reused unfinished groups preserve predecessor
+identity only while they remain uneffected; a replacement group receives a new
+successor identity keyed by successor attempt/lineage. No identity is rehashed
+under the final attempt merely to make the final closure uniform.
+By contrast, `BootstrapGraphTerminalHandoffCoreV3.execution_manifest_digest`
+names the post-group final manifest digest. The two fields have different
+versioned owners and are never compared as equal.
+
+The coordinator constructs `BootstrapGraphFinalStageEvidenceV3` after the last
+required group-result/lineage reload and persists it in a dedicated
+`bootstrap_graph_final_stage_evidence_checkpoint`; terminal-before-planning
+finalization constructs it after the terminal-proof lineage reload with an
+empty group-result projection. Its digest covers every preceding declared field
+under `memorii.semantic-ingestion.bootstrap-graph-final-stage-evidence.v3`.
+Request/replay/attempt/plan/lineage/epoch equal the reloaded typed state. Group
+IDs and result digests biject the final plan in canonical order for normal and
+partial-replan paths; terminal-before-planning uses the exact blocked-group and
+proof projection. Source outcomes, validation attempts, blockers, and proofs
+are copied from their typed attempt/lineage/group records, never searched or
+inferred. The repository reloads the complete evidence member; only its receipt
+successor and byte-identical reloaded evidence enter terminal preparation.
+
+The terminal preparation port constructs the manifest construction after all
+group results exist, from its exact typed arguments only. Host authority provides
+the execution-graph fingerprint, complete route/governance/message carriers,
+governance artifact, and complete capability bindings. Final plan compilation
+provides canonical manifest-group inputs and must contain the byte-identical
+final plan. The sealed, store-reloaded final-stage evidence provides source
+outcomes, graph-validation attempts, causal blockers, and terminal-before-
+planning proofs; the port recomputes its digest and joins every request/attempt/
+lineage/group/epoch coordinate. Ordered complete group
+constructions deterministically project transaction-group outcomes and ordered
+execution-result digests. The supplied pre-execution identity closure provides
+the exact retained/replacement identity selection. The port then seals
+`BootstrapGraphExecutionManifestConstructionV3`; its construction digest covers
+every preceding displayed field under
+`memorii.semantic-ingestion.bootstrap-graph-execution-manifest-construction.v3`.
+
+The construction field-source partition is closed: request/replay, final
+attempt/plan/lineage, and control epoch come from the corresponding typed port
+arguments; `pre_execution_manifests` comes from the supplied complete closure
+and the adjacent digest is recomputed from it; execution-graph fingerprint,
+segment routes, segment governance, message admission, governance artifact,
+and capability bindings come only from complete host authority; source outcomes,
+graph-validation attempts, causal blockers, and terminal-before-planning proofs
+come only from byte-identical reloaded final-stage evidence; transaction-
+group outcomes and ordered execution-result digests are canonical projections
+of group constructions; manifest-group inputs come only from the byte-equal
+final plan compilation. Every construction field appears in exactly one source
+class. Missing, multiply sourced, independently supplied duplicate, ambient,
+defaulted, or digest-only values reject before construction.
+The construction embeds
+`BootstrapGraphPreExecutionManifestIdentityClosureV3`. Its identities and
+`identity_by_group` biject final group results in final-plan canonical group
+order. Each selected identity is recovered from the exact producing execution
+result and operation records: predecessor bytes for reused results, successor
+bytes for replacements. Closure digest covers request/replay/source/
+preparation, ordered complete identities/projection, fence, and writer under
+`memorii.semantic-ingestion.bootstrap-graph-pre-execution-manifest-closure.v3`.
+Source/replay/delivery/governance/message/scope/fence/writer invariants are
+byte-equal across every identity, but producing attempt, plan, lineage, epoch,
+and group are intentionally per-entry and must not be forced equal. Final
+lineage, source/group outcomes, and ordered execution results are strictly
+post-group additions.
+Request/replay/attempt/plan/lineage/epoch digests join their complete inputs;
+manifest groups and execution-result digests biject final-plan groups in order;
+all operation, capability, route, governance, message, stage-instance, blocker,
+attempt, and outcome references resolve exactly once inside those closures.
+No ambient host lookup, new authority, digest-only stage outcome, or inferred
+default is permitted.
+
+Terminal preparation validates that complete construction and deterministically
+derives `IngestionExecutionManifest` by copying its manifest fields in declared
+order, including the complete `pre_execution_manifests` closure first and its
+`pre_execution_manifest_identity_closure_digest` second, and computing
+`manifest_digest` under the existing manifest domain. The nested closure is
+byte-identical to the construction closure, its digest field equals the nested
+closure's recomputed `closure_digest`, and both are in the manifest preimage.
+A digest-only closure reference is forbidden. It
+recomputes the construction digest and requires byte equality between every
+construction field projected into the manifest. The preparation port then
+builds the canonical outcome core/completed record/result
+input, handoff core, closed nine member intents, publication intent/locator,
+handoff, and sealed publication request. Its digest covers request/epoch/host-
+authority/current-generation and the complete publication request under
+`memorii.semantic-ingestion.bootstrap-graph-terminal-preparation.v3`.
+Every nested carrier, preimage, order, cardinality, and join specified above is
+recomputed. The port returns no opaque bytes or digest-only substitutes and
+performs no repository search. The returned publication request's predecessor
+generation is byte-identical to the supplied current snapshot.
+
+Direct, factory, filesystem, and Hermes normal roots must construct one
+non-null provider, V3 coordinator, plan/attempt/lineage/commit repositories,
+terminal port, V3 plan compiler, V3 planning authorizer, V3 group executor, and
+V3 terminal preparation port
+against the same atomic store and graph transaction owner. The coordinator
+constructor requires all four producer ports as non-null typed dependencies.
+`EvidenceOnlyMemoryService` has none of them. Missing, partial, cross-store, or
+legacy-only composition returns `authority_unavailable` before snapshot or
+terminal work; it never falls through to the V1 request or legacy persistence.
+Both repository ports validate the supplied current ingress tenant/principal,
+required scopes including revocation state, and fence before their first index
+lookup or write. The plan repository always also requires a live lease. The
+terminal port requires a live lease/writer/head for an absent publication, but
+a found terminal publication instead requires its immutable completed-lease
+and terminal-control proof as specified below. They compare those values with request authority
+and bind their digests into every reload/terminal result. Foreign, stale,
+narrowed, revoked, or substituted authority is non-disclosing and performs
+zero target-tenant read/write. Ambient context retained only from the earlier
+coordinator request is insufficient at either boundary. Both `succeeded` and
+`finalized_failure` contain the returned `BootstrapGraphTerminalReloadV3`, never
+the pre-write handoff alone. The reload validator recomputes the handoff digest,
+canonical result digest, current principal/scope/fence and either live or
+completed-lease bindings according to the found/absent branch, and
+reload digest. Each response digest covers its discriminator, the complete
+terminal reload including `reload_digest`, and, for failure, the closed reason.
+A handoff-only, result-only, stale-current-authority, or response omitting the
+reload digest is invalid before return.
+
+The prepublication locator is the acyclic
+`BootstrapGraphTerminalPublicationIntentV3`. Each member-intent digest covers
+only its kind, stable member ID, and construction-input digest under
+`memorii.semantic-ingestion.bootstrap-graph-terminal-member-intent.v3`.
+`intent_digest` covers every displayed intent field through the ordered
+member-intent tuple, excluding `intent_digest` and `locator_digest`, under
+`...bootstrap-graph-terminal-publication-intent.v3`;
+`locator_digest` covers only that intent digest under
+`...bootstrap-graph-terminal-publication-locator.v3`. The intent is derived
+solely from already durable request/replay/plan/lineage/control epoch, current
+principal/scope/fence/lease/writer authority, expected generations, and the
+canonical source-result construction input. It contains no handoff digest,
+final canonical member bytes/digests, member-manifest ID/digest, atomic write
+digest, publication generation, or final write identity. The handoff binds the
+complete intent and locator, so neither depends on the write that will contain
+the handoff.
+`canonical_source_result_input_digest` uses
+`memorii.semantic-ingestion.bootstrap-graph-canonical-source-result-input.v3`
+over the request/replay, final lineage, canonical ordered group-result inputs,
+complete typed `CanonicalSourceTerminalOutcomeRecord`, and control epoch before
+encoding the final source-result member. The record is never reconstructed from
+ambient stores or digest references.
+The member-intent tuple has exactly the terminal-checkpoint kinds and
+cardinalities from the table below in that order. Stable member IDs derive from
+the already durable source, group, and lineage coordinates; each
+`construction_input_digest` covers only the durable inputs from which that
+member will be encoded. `BootstrapGraphTerminalHandoffCoreV3.core_digest`
+covers every preceding core field under
+`memorii.semantic-ingestion.bootstrap-graph-terminal-handoff-core.v3` before
+the publication intent exists. The handoff descriptor binds only that core
+digest. After the complete intent is sealed, the actual handoff embeds the
+byte-identical core plus intent/locator and derives `handoff_digest`. Thus the
+descriptor does not depend on the intent that contains it. The canonical-result
+descriptor likewise excludes final payload, member, and result digests. No
+descriptor may contain or commit to a later descriptor's encoded bytes.
+
+The terminal intent registry is closed; these are its only nine rows:
+
+| Kind | Unique CTV construction domain | Ordered construction inputs | Cardinality and stable member ID | Actual-member realization check |
+| --- | --- | --- | --- | --- |
+| `bootstrap_graph_coordinator_request` | `memorii.semantic-ingestion.bootstrap-graph-terminal-intent.coordinator-request.v3` | request core, epoch-zero digest, final request fields excluding request digest | exactly 1; `request_digest` | reconstruct request bytes and require exact ID, payload, payload digest, and member digest |
+| `bootstrap_graph_control_epoch` | `memorii.semantic-ingestion.bootstrap-graph-terminal-intent.control-epoch.v3` | request core, replay, graph authority, predecessor/transition, principal/scopes/fence/lease/writer | exactly 1 current terminal epoch; `control_epoch_digest` | reconstruct the linked epoch and require exact member bytes/digests |
+| `bootstrap_graph_dependent_attempt` | `memorii.semantic-ingestion.bootstrap-graph-terminal-intent.attempt.v3` | request/replay, index/trigger, snapshot/read set, plan, strict attempt authority, epoch | exactly 1 final attempt; `attempt_digest` | reconstruct discriminator and authority closure and require exact member bytes/digests |
+| `bootstrap_transaction_group_plan` | `memorii.semantic-ingestion.bootstrap-graph-terminal-intent.group-plan.v3` | request/replay, snapshot/read set, reconciliation/reference closure, canonical groups, policy/capability, epoch | exactly 1 final plan; `transaction_group_plan_digest` | reconstruct the complete canonical plan and require exact member bytes/digests |
+| `bootstrap_source_plan_lineage_entry` | `memorii.semantic-ingestion.bootstrap-graph-terminal-intent.lineage-entry.v3` | request/replay/result, attempt/group/plan/authorization/predecessor result, disposition, lease/fence/writer/epoch | exactly 1 latest entry per dependency group in canonical group order; `entry_digest` | reconstruct all latest entries, prove group bijection, and require each exact member |
+| `ingestion_execution_manifest` | `memorii.semantic-ingestion.bootstrap-graph-terminal-intent.execution-manifest.v3` | complete canonical pre-execution identity closure plus equal closure digest, request/replay, final attempt/plan/lineage, ordered group-result inputs, execution policy, epoch | exactly 1; canonical ID from `operation_id` | independently reconstruct the post-group payload including the complete nested closure, recompute closure and manifest digests, prove every identity resolves to its exact result/operation record and source-wide shared authority equality without forcing producer attempt/plan equality, and require exact atomic member |
+| `transaction_group_result` | `memorii.semantic-ingestion.bootstrap-graph-terminal-intent.group-result.v3` | complete typed `BootstrapGraphGroupResultConstructionV3`: request/replay, group, authorization, latest lineage, outcome, CAS result, effect payloads/receipts, fence, epoch | exactly 1 per dependency group in canonical group order; `group_id` | validate construction and receipts, derive `BootstrapGraphGroupResultV3`, prove group bijection, and require each exact member |
+| `bootstrap_graph_terminal_handoff` | `memorii.semantic-ingestion.bootstrap-graph-terminal-intent.handoff.v3` | `BootstrapGraphTerminalHandoffCoreV3.core_digest` only | exactly 1; `operation_id` plus core digest | require byte-identical core, embedded completed intent/locator, recomputed handoff digest, and exact member; no self/final-write dependency |
+| `bootstrap_graph_canonical_source_result` | `memorii.semantic-ingestion.bootstrap-graph-terminal-intent.canonical-source-result.v3` | request/replay, final lineage, ordered typed group-result constructions/effects, canonical outcome core, completed typed canonical source terminal outcome, epoch | exactly 1; `source_id` plus `canonical_source_result_input_digest` | recompute core, outcome ID, source-result digest, then record digest in that order; derive result and require exact member; no ambient lookup or intent/locator/handoff/manifest/final-write digest is input |
+
+For every row, `construction_input_digest` is the named-domain CTV digest of
+the ordered inputs shown, and `intent_member_digest` is recomputed from kind,
+stable ID, and that digest. The realized generation contains exactly these
+cardinalities in this order. Its payload is independently reconstructed and all
+four manifest coordinates `(kind,member_id,payload_digest,member_digest)` must
+match; detached digest equality is insufficient.
+
+Each group-result construction digest covers every preceding field in
+declaration order under
+`memorii.semantic-ingestion.bootstrap-graph-group-result-construction.v3`;
+each receipt digest does the same under
+`memorii.semantic-ingestion.bootstrap-graph-group-effect-receipt.v3`.
+Each effect carrier has its own exact domain ending respectively in
+`bootstrap-graph-observation-delta-effect.v3`,
+`bootstrap-graph-delta-effect.v3`, `bootstrap-graph-event-batch-effect.v3`, or
+`bootstrap-graph-effect-not-applicable.v3`; its digest covers every preceding
+field including the complete canonical typed payload when applicable. The
+typed CAS outcome digest covers its full request, disposition, observed and
+publication revisions, and ordered complete effect-carrier tuple under
+`memorii.semantic-ingestion.bootstrap-graph-group-cas-outcome.v3`; its
+disposition must equal the construction disposition. Receipts are exactly
+`observation_delta`, `graph_delta`, `event_batch` in that order.
+The carrier tuple has those same semantic positions. Observation is always the
+typed observation-delta arm with an `applied` receipt. `committed` requires
+typed graph-delta and event-batch arms plus matching `applied` receipts;
+`noncommitting` or `failed` requires explicit graph/event `not_applicable` arms
+whose reasons equal disposition plus matching `not_applicable` receipts. Every
+payload's own digest is recomputed from its canonical typed fields; retaining an
+old digest while changing any payload field rejects. Carrier and receipt group,
+effect kind, commit coordinate, status, tuple order, and carrier digest join
+one-to-one. The CAS outcome's carrier tuple and execution-result carrier tuple
+are byte-identical, and the construction embeds that exact result;
+independently supplied outcome/carrier/receipt copies are forbidden. The typed CAS
+outcome/request, plan member, authorization, latest lineage entry,
+fence, and epoch join the same group and attempt. Only after these checks is
+`BootstrapGraphGroupResultV3` derived. The canonical-source input consumes the
+same complete construction tuple and therefore every typed effect carrier,
+never caller-supplied effect or result digests.
+
+`BootstrapGraphGroupExecutionResultV3` is closed. Its `cas_request_digest`
+equals the nested `cas_request.cas_digest`; group, attempt, and control epoch
+equal both nested CAS request and outcome. The outcome's nested CAS request is
+byte-identical to the result request, and its ordered carrier tuple is
+byte-identical to the result carrier tuple. The result receipt tuple bijects
+those carriers under the equality table below. `result_digest` covers every
+preceding result field in declaration order under
+`memorii.semantic-ingestion.bootstrap-graph-group-execution-result.v3`.
+`BootstrapGraphGroupResultConstructionV3` carries that one complete execution
+result only: construction disposition/status equal the nested outcome, and its
+group/attempt/plan member/authorization/latest lineage/fence/epoch equal the
+nested request and result. Neither terminal publication nor canonical-source
+aggregation accepts separately supplied outcome, carrier, receipt, CAS-request,
+or digest projections.
+
+CAS effect equality is a closed arm-specific algebra:
+
+| Disposition/effect | Required equality chain |
+| --- | --- |
+| `committed` observation | Plan member/group/operations -> CAS request group/attempt/authorization/lineage -> observation carrier group/fence/payload operation set are exact. Observation `terminal_status="committed"`, `graph_revision_delta_digest` equals the graph carrier payload `delta_digest`, revision-before equals CAS outcome observed observation revision, and revision-after equals publication observation revision. Receipt is `applied` at the same commit coordinate. |
+| `committed` graph | Plan `proposed_delta_digest` equals CAS request `proposed_delta_digest`. The typed graph delta realizes that exact planned artifact: group/source/operation/read-set/write-set/change tuple is byte-equal to the compilation output, with only the authorized server revision transition added. Graph before/after equal CAS outcome observed/publication graph revisions; graph carrier and receipt use the CAS effect commit coordinate. |
+| `committed` event | Plan and CAS-request `event_batch_digest` equal the typed event payload digest; event group/fence/operation-derived events equal the plan. `event.graph_delta_digest` equals the graph carrier payload `delta_digest`. Log revision/position is the CAS outcome observed -> publication event transition, and carrier/receipt use the same effect commit coordinate. |
+| `noncommitting` observation | Observation typed arm is still required and applied. Construction/outcome status is exactly one of `evidence_only`, `rejected`, or `unresolved` and equals payload `terminal_status`; payload graph reference is null. Observation before/after equals the authorized observation publication transition. |
+| `noncommitting` graph/event | Both positions are explicit `not_applicable(reason="noncommitting")`; receipts are `not_applicable`; graph/event publication revisions and any applied-effect commit coordinate are absent. CAS request planned digests remain authenticated historical inputs but cannot be promoted into effect carriers. |
+| `failed` observation | Observation typed arm is required and applied with `terminal_status="failed"`, null graph reference, and exact observation revision transition. |
+| `failed` graph/event | Both positions are explicit `not_applicable(reason="failed")`; receipts are `not_applicable`; graph/event publication revisions and any applied-effect commit coordinate are absent. |
+
+Construction disposition/status equals CAS outcome disposition/status. All
+three carriers and receipts share the construction group; applied arms share
+one non-null effect commit coordinate, while not-applicable arms carry the
+canonical no-effect coordinate derived from CAS request and disposition. No
+same-group carrier that satisfies its own schema may substitute unless its
+complete plan, CAS, revision, graph-link, observation-status, coordinate, and
+receipt equality chain also matches.
+
+`BootstrapGraphTerminalPublicationRequestV3` is the sole terminal writer
+input. Its digest uses
+`memorii.semantic-ingestion.bootstrap-graph-terminal-publication-request.v3`
+over every preceding displayed field in declaration order, excluding only
+`publication_request_digest`. The request is acyclic: none of its handoff core,
+intent descriptors, canonical-result input, or carrier digests includes the
+publication-request digest, final atomic write, final member manifest,
+publication generations, terminal control, or final identity. Strict decoding
+requires the nine carrier projections to equal the closed intent table:
+coordinator request, current epoch, final attempt, final plan, latest lineage
+projection derived from the complete typed lineage, execution manifest,
+complete ordered group-result construction tuple, handoff, and canonical source
+result derived from that same typed input. The complete lineage digest covers
+all initial, successor, and retry entries; predecessor links and ordinals are
+uninterrupted, and its stored latest projection equals exactly one derived
+latest entry per final-plan group in canonical group order. No superseded or
+retry-history entry may be omitted. Derived latest lineage and result tuples
+biject the final plan's canonical dependency-group order; every nested
+request/replay/plan/attempt/lineage/epoch/authority digest joins exactly.
+Expected generations and current ingress/scopes/lease/fence/writer equal both
+the intent and the typed carriers. The core, intent, locator, handoff, and
+canonical-result input digests are all independently recomputed. Omission,
+opaque canonical bytes, detached member digests, repository references, or a
+materializer callback are not accepted substitutes.
+
+The canonical-source input validator retains and validates the complete typed
+terminal outcome. Its `source_id` and `source_digest` equal the replayed V3
+source and coordinator request; the enclosing input digest also binds the same
+preparation fingerprint through that request/replay closure. Delivery principal
+and delivery key equal the authenticated ingress and normalization request.
+Segment-governance carriers, message-admission carriers, and governance artifact
+are byte-identical to the validated replay/result closure. Required scopes equal
+the request's complete scope set, and `operation_fence_id` equals its fence.
+`operation_ids` is the duplicate-free canonical flattening of every final-plan
+group; `group_result_digests` is derived in that same group order from the typed
+constructions. `final_status` and the input's `source_status` are equal and are
+derived from the complete group disposition/observation-status tuple under the
+closed terminal aggregation policy.
+
+Canonical outcome construction order is strict and acyclic:
+
+1. `BootstrapGraphCanonicalSourceOutcomeCoreV3.core_digest` covers every
+   preceding core field in declaration order, excluding only `core_digest`,
+   under `memorii.semantic-ingestion.bootstrap-graph-source-outcome-core.v3`.
+2. `outcome_id` is the CTV digest under
+   `memorii.semantic-ingestion.bootstrap-graph-source-outcome-id.v3` of
+   `(source_id, source_digest, preparation_fingerprint, operation_ids,
+   operation_fence_id, core_digest)` in that order.
+3. `source_result_digest` covers the completed canonical record fields in their
+   declared order, including the derived `outcome_id`, and excludes only
+   `source_result_digest` and `record_digest`, under
+   `memorii.semantic-ingestion.bootstrap-graph-source-result.v3`.
+4. `record_digest` covers the completed record including `outcome_id` and
+   `source_result_digest`, excluding only `record_digest`, under
+   `memorii.semantic-ingestion.canonical-source-terminal-outcome-record.v1`.
+
+The completed record's every core field is byte-identical to `outcome_core`;
+the three derived values are exact, and the input digest covers both core and
+completed record. No core field can depend on the outcome ID or either later
+digest. Every field and digest is recomputed before
+either found lookup validation or absent publication; no store, trace, request
+digest alone, or synthesized default may supply a missing carrier.
+
+After CAS construction, `BootstrapGraphPlanAtomicWriteIdentityV3.identity_digest`
+uses `memorii.semantic-ingestion.bootstrap-graph-plan-atomic-write-identity.v3`
+over every preceding displayed field. It binds the intent/locator to the actual
+sealed write/request/replay, expected and realized publication generations,
+canonical required-member vector, and final member manifest. Publication
+generations equal expected+1; manifest digest covers ordered
+`(kind,member_id,payload_digest,member_digest)` rows. Source/preparation/
+operation/fence/epoch equal the intent and write. The same CAS writes
+`BootstrapGraphTerminalControlV3`, whose digest covers every preceding field
+under `memorii.semantic-ingestion.bootstrap-graph-terminal-control.v3`. It
+marks the lease binding completed and binds locator, realized write/manifest/
+generations, principal/scopes/fence, epoch, and writer. The final identity names
+that control digest and the same completed-lease digest. The terminal reload contains
+this complete postpublication identity and independently copies the locator.
+
+The terminal port algorithm is deterministic. It accepts only the sealed
+publication request, never a handoff or digest bundle alone. Before any index lookup it
+authenticates current tenant/principal and required scopes including revocation,
+joins the request's supplied fence to the intent, and recomputes the publication
+request, all typed carriers, core, intent, handoff,
+and locator without a store search. Failure is non-disclosing and performs zero
+index read or write. It then queries the found index by exact locator digest. If found,
+it reloads only the indexed terminal generation, validates the sealed write,
+manifest, members, source/operation/fence/epoch chain, handoff, and canonical
+result. Found recovery does not require the historical lease to remain live:
+terminal control must prove `state="terminal_published"`, and its completed-
+lease digest, locator, indexed final identity, sealed write, manifest,
+principal/scopes/fence, epoch, and writer must join exactly. The port returns
+the byte-identical reload without comparing the historical lease or locator's
+generation to mutable current state; this covers lost acknowledgement after
+lease expiry or release.
+If not found, it requires the request's control epoch to be the latest linked
+head, requires a currently live lease and writer, revalidates current tenant/
+scope/revocation/fence/lease/writer, compares
+the exact expected generations, constructs all nine canonical members directly
+from the request's typed carriers,
+manifest, sealed write, terminal control, and final write identity in that
+order, and atomically publishes them plus `locator_digest -> final write identity`
+index before reloading it. Found reload proves the indexed actual write realizes
+every supplied typed carrier, member intent, and canonical source-result input
+exactly. It does not search a carrier repository or invoke a materializer on
+either branch. Missing/ambiguous index,
+partial manifest, wrong member order, unknown/extra member, locator/write/
+generation/source/operation/fence/epoch substitution, stale or historical
+authority on an absent publication, terminal-control/completed-lease mismatch,
+or post-CAS byte mismatch fails closed with no ambient scan or fallback.
+
+Current authority is resolved only through the append-only control-epoch chain.
+`transition_or_find` first looks up a previously committed transition by its
+transition digest and returns the byte-identical epoch before comparing current
+head state; this is the lost-ack path. Otherwise it validates current ingress
+tenant/principal and required scopes/revocation, immutable fence and request
+core, exact expected head, live lease, and current writer, then atomically
+appends one successor and advances the head. Renewal/reclaim never edits an old
+epoch. Concurrent transitions from one predecessor have one winner; the loser
+reloads the winner only when transition digest is identical, otherwise returns
+unavailable. Missing/partial chain, skipped/reordered epoch, wrong transition,
+stale predecessor, old lease/writer, foreign ingress/scope/fence, and corrupt
+head reject before graph, plan, CAS, or terminal effect.
+
+An active transaction cannot change writers. `lease_reclaimed` permits a new
+lease ID/token/owner for the same byte-identical writer binding after the prior
+lease is unavailable; it is not writer takeover. Any different writer binding
+returns `writer_changed` while an attempt, lineage, retry, or unfinished group
+exists. A different writer may begin only after the global cutover owner proves
+the old operation terminalized or fully drained, closes its epoch chain, and
+starts a new operation/request core and epoch-zero chain. It never resumes or
+reuses the active attempt as current authority.
+`writer_changed` is distinct from `writer_unavailable`: changed means a
+different otherwise well-formed writer binding was presented for this active
+chain; unavailable means the identical bound writer cannot currently satisfy
+writer authority. Both are closed, non-disclosing unavailable outcomes with
+zero epoch append, plan/repository read, graph/event/CAS, terminal, or other
+effect.
+
+Every plan/attempt/authorization/lineage/retry/group-CAS/terminal artifact names
+the exact epoch used to create or authorize it. Before each repository access,
+group CAS, retry publication, and terminal publication, the caller supplies the
+latest typed epoch; the owner validates it is the linked current head and joins
+its request core, replay, principal/scope, fence, lease, and writer. Raw equality
+with the immutable request's initial lease/writer is forbidden after an epoch
+advance. Reused predecessor bytes retain their historical epoch digest, while
+the successor attempt authority and any new effect name the latest epoch; this
+is history preservation, not stale authorization.
+
+Coordinator order is fixed: validate reloaded V3 closure; acquire one authority
+and graph snapshot; construct/find epoch zero; load the typed current atomic
+generation snapshot; seal base read set; derive tracked extensions/reconciliation/
+reference closure; bounded fixed-point expansion; pure compile each group;
+invoke the V3 plan compiler and validate its complete attempt-construction,
+plan, and manifest inputs;
+atomically publish and reload the complete plan generation; invoke the V3
+planning authorizer on that reload and validate its complete authorization
+bijection; combine the reloaded attempt inputs with strict initial/successor
+authority, seal the attempt, and atomically publish/reload its generation;
+after every plan/attempt/lineage/group-result/retry checkpoint use only the
+returned successor-generation receipt as the next predecessor;
+append/reload initial lineage; seal the pre-execution manifest identity from
+the reloaded producing attempt/plan and each executable group's lineage/compiler/
+host inputs; on successor attempts preserve reused predecessor identities and
+seal new identities only for replacements; immediately renew/revalidate lease, fence, writer,
+control epoch, read-set and authorization, then invoke the V3 group executor
+whose internal check occurs immediately before each actual group CAS; append a
+lease-renewal or same-writer lease-reclaim epoch atomically whenever current authority
+changes, then rebuild only not-yet-published/effected carriers against it; read durable result before
+retrying a lost acknowledgement; append committed/noncommitting lineage;
+invoke terminal preparation with the latest generation, coordinator closure,
+and host authority; validate its complete publication request; persist/reload
+terminal outcome and accept its terminal receipt. An unrelated graph revision proceeds only when no sealed read key or
+partition version changes. One related conflict consumes the policy allowance,
+acquires a new authorized snapshot, and appends one successor attempt for the
+unfinished affected suffix; a second conflict publishes and reloads a finalized
+failure because an attempt/lineage already exists. No proposal, analyzer,
+normalization, or already committed group is rerun.
+Initial planning constructs only `BootstrapInitialAttemptAuthorityV3` from the
+reloaded initial plan's complete authorization bijection. Related-conflict
+replanning first reloads predecessor attempt, lineage, and final results,
+computes the canonical partition, copies all reuse-arm byte closures,
+compiles and authorizes only replacement arms, then seals
+`BootstrapSuccessorAttemptAuthorityV3`. Recovery resolves the latest found
+control epoch and repeats those same arm checks before accepting an attempt or
+performing another CAS.
+
+The failure cut is exact. Before an attempt or lineage generation exists and
+before any graph/event effect, the coordinator may return only
+`BootstrapGraphDependentPreGraphNonCommitV3`, with zero graph/event/terminal
+effect. Once an attempt or lineage exists, or any group CAS may have committed,
+that arm is forbidden. Every later failure atomically publishes and reloads
+either `BootstrapGraphDurableRetryProgressV3` naming all completed results and
+retry groups, or a complete `BootstrapGraphTerminalPersistenceHandoffV3` plus
+`CanonicalSourceTerminalOutcomeRecord` returned as
+`BootstrapGraphFinalizedFailureV3`. Recovery checks durable group results and
+retry/finalization records before any new CAS. Thus a crash, exhausted conflict,
+lease/fence/writer loss, publication conflict, or storage recovery cannot leave
+an orphaned committed group invisible to source replay.
+
+The plan repository atomic family is V3-only. Its member order derives only
+from the complete literal `BootstrapGraphPlanAtomicMemberV3.kind` registry:
+`bootstrap_graph_coordinator_request`, `bootstrap_graph_snapshot_authority`,
+`bootstrap_graph_control_epoch`, `graph_base_read_set`,
+`graph_read_set_extension`, `graph_reconciliation`, `reference_closure`,
+`group_compilation_request`, `group_compilation_artifact`,
+`group_independence_certificate`,
+`bootstrap_graph_pre_execution_group_evidence`,
+`bootstrap_transaction_group_plan`, `bootstrap_group_planning_authorization`,
+`bootstrap_graph_dependent_attempt`, `bootstrap_source_plan_lineage_entry`,
+`bootstrap_graph_retry_progress`, `bootstrap_graph_final_stage_evidence`,
+`ingestion_execution_manifest`, `transaction_group_result`,
+`bootstrap_graph_terminal_handoff`, and
+`bootstrap_graph_canonical_source_result`. `BootstrapSemanticReductionAuthorityReloadV3`
+belongs only to the normalization generation; operation plans, reductions, and
+attempt-construction inputs are conceptual nested projections, never graph
+atomic member kinds. Plan,
+attempt, lineage, group-result, and terminal publications are distinct atomic
+generations; each request names the predecessor generation and complete
+required-member digest vector. `BootstrapGraphPlanAtomicWriteRequestV3` and
+`BootstrapGraphPlanAtomicReloadV3` validate exact kind/order/cardinality,
+generation+1, lease/fence/writer, request digest, and member payload type before
+visibility. A crash before CAS leaves no generation; after CAS, recovery reloads
+the indexed complete generation and performs zero duplicate compilation or
+effect. Found-before-current-control handles lost acknowledgement. Memory and
+independent-process JSONL must produce byte-identical plan, attempt, lineage,
+group-result, final-stage-evidence, terminal, and replay closures.
+
+The allowed member closure per atomic request discriminator is also exact:
+
+| Request kind | Complete ordered member closure |
+| --- | --- |
+| `bootstrap_graph_plan_checkpoint` | request, authority, current epoch, base read set, extensions, reconciliation, reference closure, per-group compilation request/artifact/certificate runs, per-group complete pre-execution evidence run, attempt construction inputs with exact evidence-digest projection, plan |
+| `bootstrap_graph_attempt_checkpoint` | request, current epoch, authority, attempt construction inputs, plan, complete authorization run, attempt |
+| `bootstrap_graph_lineage_checkpoint` | request, current epoch, attempt, complete latest lineage-entry run |
+| `bootstrap_graph_group_result_checkpoint` | request, current epoch, attempt, plan, the target authorization, target latest lineage entry, one group result |
+| `bootstrap_graph_retry_checkpoint` | request, current epoch, attempt, complete latest lineage-entry run, complete committed group-result run, retry progress |
+| `bootstrap_graph_final_stage_evidence_checkpoint` | request, current epoch, attempt, plan, complete final lineage-entry run, complete ordered group-result run (empty only for terminal-before-planning), one `BootstrapGraphFinalStageEvidenceV3` |
+| `bootstrap_graph_terminal_checkpoint` | request, current epoch, attempt, plan, complete final lineage-entry run, execution manifest, complete ordered group-result run, terminal handoff, final source result; the separately reloaded evidence is consumed to construct the manifest but does not add a terminal member kind |
+
+No member kind from a later closure may appear early; no earlier closure may be
+omitted or supplied only by digest. Repeated runs follow canonical source-group
+order except extensions, which follow their sealed read-set key order.
+
+This unreleased migration activates request/result/authority/plan/attempt/
+authorization/lineage/atomic/replay/trace/terminal codecs and registries in one
+revision. V1/V2 bootstrap graph inputs, generic alignment/group/plan wrappers,
+mixed registry readers, optional-plan terminal calls, and migration-by-
+inference reject. Rollback disables new bootstrap graph promotion and selects
+evidence-only while retaining readable V3 normalization and already committed
+graph lineage/results; it never rewrites them into V2 or deletes effects.
+
+Required attack families cover every field/digest/join; group omission,
+duplication and reorder; V2/mixed substitution; snapshot/read-set/extension/
+policy/capability/lease/fence/writer substitution; compile impurity; plan-
+authorization-attempt cycles; stale and foreign lineage; unrelated/related
+conflict boundaries; replay scalar/separate-nested substitution; final/
+unfinished/replanned partition overlap, gap and reorder; each reused/replacement
+cross-arm field and byte mutation; initial/successor discriminator, predecessor,
+authorization and trigger/index cross-products; `reused_unfinished` omission or
+compilation; retry exhaustion; crash at every atomic
+boundary; pre-graph versus post-attempt failure-arm substitution; lost
+acknowledgement; orphan-commit detection; partial commit; terminal handoff
+substitution; publication-intent field, member-intent kind/ID/order/cardinality/
+construction-input mutation; prewrite injection of handoff, final-member,
+manifest, atomic-write, publication-generation, or final-identity data;
+handoff-core field/core-digest substitution, descriptor self-reference or
+core/intent/descriptor mismatch on both success and finalized-failure;
+publication-request field/digest omission or substitution; missing, duplicate,
+reordered, cross-request, or digest-only coordinator/epoch/attempt/plan/lineage/
+execution-manifest/group-result/canonical-input carrier; supplied-carrier versus
+intent or realized-member mismatch; repository-search/materializer injection;
+successor/retry lineage-history truncation, predecessor/ordinal/latest-
+projection mutation; group-result construction disposition/CAS/effect-payload/
+receipt kind/order/status/coordinate mutation and derived-result substitution;
+typed effect payload-field mutation retaining its old digest, effect arm or
+not-applicable discriminator substitution, cross-group carrier/receipt swap,
+and carrier/receipt commit-coordinate/status/order mismatch on both found and
+absent terminal branches;
+same-group schema-valid carrier swap, plan-to-CAS proposed/event digest break,
+event `graph_delta_digest` break, CAS observed/publication graph/event/
+observation revision mutation, and observation terminal-status or graph-
+revision-reference mutation on both branches;
+canonical source outcome omission or field mutation; stale retained
+`source_result_digest`/`record_digest`; source/preparation/operation/group/status/
+scope/governance/message/delivery/fence cross-request substitution; ambient
+record reconstruction, digest-only outcome, or defaulted carrier on found and
+absent branches;
+each canonical outcome core field removal/substitution/reorder, core-digest
+retention, outcome-ID substitution or old cyclic ID preimage, source-result
+digest exclusion/order mutation, record-digest exclusion/order mutation, and
+core/completed-record byte inequality on both found and absent branches;
+group-execution-result nested CAS/cas-request-digest/group/attempt/epoch/result-
+digest mutation; result/outcome CAS byte inequality; result/outcome carrier
+inequality; carrier/receipt non-bijection; independently supplied duplicate
+outcome/carrier/receipt projection; construction/result disposition/status/
+plan/authorization/lineage/fence mismatch; and same-group schema-valid execution-
+result substitution on both found and absent branches;
+locator-index/final-identity substitution and indexed-write failure to realize
+the complete intent; handoff-only/result-only terminal responses and terminal reload/
+response-digest mutation; current ingress/scope revocation before repository and terminal
+calls; cross-tenant
+non-disclosure; four-root absence/substitution; migration and rollback; memory/
+independent-JSONL canonical equality; and zero V2 decoder, normalization,
+analyzer, graph, or terminal calls on each earlier rejection. The dedicated
+future selector is `bootstrap-graph-transaction-boundary.json`; its generated
+collection/count, timing inventory, three current-revision receipts, and
+aggregate are exclusive and must be mutation-tested before CI enforcement is
+claimed.
+
+Producer-port attacks remove or cross-wire each compiler, authorizer, or
+executor or terminal preparer in every normal root; attach one to evidence-only; substitute generic
+V1/V2 requests, groups, plans, artifacts, authorizations, or CAS results;
+reorder, omit, duplicate, or cross-link plan/manifest-input/authorization
+tuples; omit/duplicate/reorder/cross-group substitute pre-execution evidence;
+mutate any typed validation attempt, blocker, proof, snapshot/read-set/
+reconciliation/reference/plan-member/epoch join while retaining an old evidence
+digest; mismatch attempt evidence-digest projection; use empty/default/digest-
+only evidence, post-CAS final-stage evidence, or ambient lookup before CAS;
+remove/substitute/reorder any attempt-construction input field or retain
+old context/inputs digest; cross-link input plan/request/epoch; inject an
+authorization or attempt authority into compiler output; omit/reorder attempt-
+input members in plan/attempt checkpoints; authorize before plan reload; mutate
+an input after reload or assemble attempt before authorization; execute with stale epoch/read set/lineage
+or revoked scope; revoke at the executor's internal pre-CAS boundary; return
+detached effects, unknown/cross-phase unavailable reasons, or success after a
+failed recheck. Invalid compile/authorize cases have zero attempt, lineage,
+CAS, graph, or event effect. Post-attempt executor failures have zero new CAS
+effect and a durable retry/finalization record.
+Generation attacks supply caller integers, stale/foreign/store-mismatched
+snapshots, skip/reuse/reorder a checkpoint receipt, mutate one publication or
+successor generation, detach latest write/epoch, or independently increment
+operation and artifact generations at plan/attempt/lineage/retry/terminal
+boundaries. They also inject receipt/final-reload fields into reload core,
+final reload digest into receipt, wrong request/write/core digest, mismatched
+predecessor/successor, reordered two-pass construction, wrapper/receipt cycle,
+or found-retry core/receipt/wrapper byte inequality. Terminal-preparation
+attacks omit/substitute host authority or any coordinator-derived carrier,
+cross-link delivery/governance/message/scope/fence, execution-graph fingerprint,
+segment routes, or capability bindings; pass a prebuilt manifest construction;
+mismatch final compilation and final plan; omit/substitute/reorder the pre-
+execution closure, group constructions, or lineage; independently inject source
+outcomes, graph-validation attempts, transaction-group outcomes, causal
+blockers, proofs, manifest-group inputs, or execution-result digests instead of
+using the sealed final-stage evidence and other closed projections; omit,
+duplicate, reorder, cross-request, or digest-only substitute final-stage
+evidence; mismatch its attempt/lineage/group/epoch joins; use a normal evidence
+shape for partial replan or terminal-before-planning; search storage instead of
+accepting the exact reloaded member; return opaque/digest-only members,
+perform ambient search, mismatch predecessor generation, or mutate any of the
+nine prepared members. Manifest-construction attacks remove/substitute/reorder
+any complete route/governance/message/capability/source-outcome/validation-
+attempt/group-outcome/blocker/proof field, retain an old construction or
+manifest digest, cross-link request/attempt/plan/lineage/epoch, break group or
+execution-result bijection, supply digest-only stage outcomes, or mismatch any
+construction-to-manifest field. All reject before the next publication; post-attempt
+preparation failure durably finalizes or retries without orphaned effects.
+Two-stage manifest attacks mutate any pre-execution core field/digest/ID,
+include a group result, final lineage, or final manifest in the preimage,
+substitute the final manifest digest into an operation terminal observation,
+use a foreign or same-group pre-execution identity in CAS/effect/result
+construction, swap two group identities, collapse the closure to final-attempt
+identity, mutate predecessor identity bytes for reused results, give a
+replacement its predecessor identity, mutate closure order/projection/digest,
+force producing attempt/plan/lineage equality, omit or mutate the final
+manifest's complete nested closure, break its closure-digest equality, retain
+an old closure digest after changing a retained predecessor identity, leave a
+nested identity unresolved by the final result/operation-record projection, or
+change a source-wide shared authority field. Digest-only final manifests reject.
+Found and absent terminal validation both reconstruct the existing
+`ingestion_execution_manifest` member from supplied typed carriers, then
+recompute the complete per-group identity -> CAS/observation/result -> nested
+final closure -> closure digest -> manifest digest chain before returning or
+publishing. The terminal registry remains exactly nine kinds. Partial-commit plus
+related-conflict vectors retain predecessor bytes for committed/final groups
+and require new successor bytes only for replacements.
+
+Terminal authorization schedules additionally expire and release the lease
+immediately after the successful CAS but before acknowledgement and require
+found recovery through the completed-lease/terminal-control proof in memory and
+independent-process JSONL. Revoked or foreign tenant/principal/scope/fence input
+before lookup performs zero index reads and zero effects. The same historical,
+expired, or released lease on an absent locator rejects before publication.
+
+Control-epoch attacks additionally cover initial/core digest cycles, nonzero
+initial epoch, null/non-null predecessor crossovers, skipped/duplicate/reordered
+epochs, wrong transition kind, renewal versus lease-reclaim field changes,
+old-head plan/attempt/authorization/lineage/retry/CAS/terminal substitution,
+epoch-zero final-request-digest injection, core/replay/graph-authority
+substitution, same-writer versus different-writer lease reclaim, premature
+global cutover, `writer_changed` versus `writer_unavailable` discriminator and
+zero-effect cross-arm mutations, concurrent renewal/reclaim, crash before and after epoch CAS, and found-before-
+head lost acknowledgement. Memory and independent-process JSONL must produce
+the same epoch chain and reject every stale old epoch before effect.
+
+Terminal-locator attacks remove and substitute every locator field; swap
+expected/publication generations; mutate manifest ID/digest, member kind/order/
+cardinality, write/request/replay/source/operation/fence/epoch joins; create
+missing, duplicate, ambiguous and partial found indexes; crash before terminal
+CAS, after CAS before index acknowledgement, and after index before response;
+and rotate current generation after commit. Memory and independent-process
+JSONL must return the same found terminal bytes after lost acknowledgement with
+zero second publication and zero ambient enumeration. Legacy handoffs without
+the typed locator and mixed locator/write versions are unreleased migration
+rejections; rollback preserves already indexed V3 terminal generations and
+disables new promotion without reconstructing a locator.
+
+The revocation acceptance scenario is a real-root transaction, not a repository
+helper test. For each direct, factory, filesystem, and Hermes root and each
+memory and independent-process JSONL backend, invoke
+`ProviderMemoryService.sync_event` with a complete multi-group V3 source. A
+deterministic production-boundary test hook selects each executable group in a
+fresh run and revokes the current tenant/principal scope at
+`after_pre_cas_epoch_validation_before_compare_and_swap`, immediately before
+that group's actual `GraphCommitRepository.compare_and_swap`. The CAS itself
+must re-read current scope/revocation authority before its internal compare or
+write. It returns the safe closed post-attempt outcome, records one rejected CAS
+call but zero CAS linearization and zero graph/event effect
+for that run, and atomically publishes/reloads either durable retry progress or
+finalized terminal state; `pre_graph_noncommit` is forbidden. The public result
+and diagnostics reveal no target tenant, scope, graph key, record existence, or
+backend detail. Restart/reopen finds the durable post-attempt state and rejects
+resumption under the old epoch/scope even if the old lease remains live. JSONL
+uses a separately started process, not a second object in the first process.
+
+The future selector topology is a committed machine-checkable design artifact:
+
+```python
+class BootstrapGraphTransactionSelectorRowV1(BaseModel):
+    requirement_ids: tuple[Literal[
+        "GTC-R09", "GTC-R14", "GTC-R15", "GTC-R16", "GTC-R17",
+        "GTC-R18", "GTC-R19", "GTC-R20", "GTC-R21",
+    ], ...]
+    node_id: str
+    pytest_selector: str
+    root: Literal["direct", "factory", "filesystem", "hermes"]
+    backend: Literal["memory", "jsonl_independent_process"]
+    public_trigger: Literal["ProviderMemoryService.sync_event"]
+    scenario: Literal[
+        "initial_attempt", "successor_attempt", "reused_committed",
+        "reused_final", "reused_unfinished", "replacement",
+        "epoch_zero", "lease_renewed", "lease_reclaimed",
+        "writer_changed", "writer_unavailable", "pre_cas_scope_revoked",
+        "unrelated_conflict", "related_conflict", "partial_commit",
+        "durable_retry", "finalized_failure", "success_finalization",
+        "terminal_locator", "lost_ack", "reopen", "mixed_version", "rollback",
+        "coordinator_removed", "authority_omitted",
+    ]
+    injected_boundary: str
+    expected_durable_state: Literal[
+        "none", "epoch", "plan", "attempt", "lineage", "retry_progress",
+        "group_result", "terminal_result", "preserved_predecessor",
+    ]
+    expected_cas_calls: int
+    expected_cas_effects: int
+    expected_event_effects: int
+    expected_graph_effects: int
+    expected_external_calls_digest: str
+    non_disclosure_oracle_digest: str
+    row_digest: str
+
+class BootstrapGraphTransactionSelectorManifestV1(BaseModel):
+    schema_version: Literal[1]
+    owner: Literal["bootstrap-graph-transaction-boundary"]
+    rows: tuple[BootstrapGraphTransactionSelectorRowV1, ...]
+    exclusions: tuple["BootstrapGraphTransactionSelectorExclusionV1", ...]
+    required_tuple_digest: str
+    inventory_count: int
+    exclusion_count: int
+    collection_digest: str
+    manifest_digest: str
+
+class BootstrapGraphTransactionSelectorExclusionV1(BaseModel):
+    requirement_id: Literal[
+        "GTC-R09",
+        "GTC-R14", "GTC-R15", "GTC-R16", "GTC-R17",
+        "GTC-R18", "GTC-R19", "GTC-R20", "GTC-R21",
+    ]
+    scenario: str
+    root: Literal["direct", "factory", "filesystem", "hermes"]
+    backend: Literal["memory", "jsonl_independent_process"]
+    rationale: Literal["architecture_proves_non_applicable"]
+    rationale_authority: Literal["docs/design/semantic_ingestion_architecture.md"]
+    architecture_anchor: str
+    non_applicability_proof_digest: str
+    exclusion_digest: str
+```
+
+The committed path is
+`memorii/tests/ci/bootstrap-graph-transaction-boundary.json`. Row CTV order is
+the displayed field order; row and manifest domains are
+`memorii.semantic-ingestion.bootstrap-graph-transaction-selector-row.v1` and
+`...selector-manifest.v1`. Rows sort by
+`(scenario,root,backend,injected_boundary,node_id)` and are unique by both that
+key and `pytest_selector`. `inventory_count == len(rows)` and
+`exclusion_count == len(exclusions)`;
+`collection_digest` is generated from exact pytest collection, never typed by
+hand. Every row maps at least one GTC requirement, one exact public selector,
+one root/backend, the public trigger, one named injected boundary, and complete
+durable/call/effect/non-disclosure observables.
+
+The manifest exhaustively owns initial and successor attempts; all four reuse/
+replacement arms; epoch zero, renewal, same-writer reclaim, writer changed and
+writer unavailable; the pre-CAS revocation row for every actual group ordinal;
+unrelated and related conflict, partial commit, durable retry, success/failure
+finalization; lost acknowledgement and reopen at every atomic generation;
+mixed-version migration and rollback; and coordinator removal and authority
+omission. Every scenario has all applicable four-root/two-backend rows; an
+inapplicable combination is represented by a separately committed typed
+exclusion with requirement, reason, and validator proof, never silently absent.
+
+The required coverage universe is closed. For every table cell below, generate
+the exact Cartesian product `(requirement,scenario,root,backend)` across all
+four roots and both backends:
+
+| Requirement | Required scenarios |
+| --- | --- |
+| `GTC-R09` | `unrelated_conflict` |
+| `GTC-R14` | `initial_attempt`, `mixed_version`, `reopen` |
+| `GTC-R15` | `epoch_zero`, `lease_renewed`, `lease_reclaimed`, `writer_changed`, `writer_unavailable`, `pre_cas_scope_revoked` |
+| `GTC-R16` | `initial_attempt`, `successor_attempt`, `reused_committed`, `reused_final`, `reused_unfinished`, `replacement`, `related_conflict` |
+| `GTC-R17` | `successor_attempt`, `reused_committed`, `reused_final`, `reused_unfinished`, `replacement`, `partial_commit` |
+| `GTC-R18` | `durable_retry`, `partial_commit`, `lost_ack`, `reopen`, `related_conflict` |
+| `GTC-R19` | `success_finalization`, `finalized_failure`, `terminal_locator`, `lost_ack`, `reopen` |
+| `GTC-R20` | `coordinator_removed`, `authority_omitted`, `writer_changed`, `writer_unavailable`, `mixed_version`, `rollback` |
+| `GTC-R21` | `pre_cas_scope_revoked`, `initial_attempt`, `successor_attempt`, `lost_ack`, `reopen` |
+
+This table and the root/backend enums are the sole required-tuple authority:
+44 requirement/scenario pairs times eight root/backend combinations equals
+exactly 352 required tuples.
+Generation emits its committed sorted digest. An executed row covers exactly
+the tuple projection for each `requirement_ids` value; those IDs must equal the
+table's requirements for that scenario, not a chosen subset or superset.
+Executed tuples and verified exclusions are disjoint and their union equals the
+required universe exactly.
+
+An exclusion is legal only when the canonical architecture at its exact anchor
+proves the tuple semantically cannot exist. The proof digest covers the anchored
+normative paragraph plus tuple; the exclusion digest uses
+`memorii.semantic-ingestion.bootstrap-graph-transaction-selector-exclusion.v1`
+over every preceding field. Missing adapters/fixtures, slow execution, CI
+capacity, implementation absence, convenience, or a smaller desired matrix are
+never non-applicability authority.
+
+The `GTC-R09/unrelated_conflict` oracle injects one foreign write whose key and
+partition are outside the sealed read set immediately before group CAS. It
+permits exactly one authorized CAS linearization, one expected graph effect,
+and one expected event effect; it creates no successor attempt and performs no
+reconciliation, compilation, planning authorization, or plan publication.
+Removing this requirement/scenario pair, converting it to a rejection oracle,
+or permitting successor/recompile work fails required-universe validation.
+
+The topology validator rejects a missing required combination, orphan selector,
+duplicate key/selector, helper-only trigger, non-public construction, memory-
+only JSONL alias, unknown scenario/boundary/state, wrong requirement mapping,
+stale collection digest/count, generic-shard or terminal-shard overlap,
+unowned node, and add/remove/reorder mutation. The job collects only this
+manifest with `-W error -p no:cacheprovider`; timing inventory and three
+revision-bound producer receipts are published only after successful execution.
+The aggregate rejects missing/skipped/failed/cancelled/stale receipts, wrong
+producer edge, early receipt publication, selector/count/hash mismatch, and any
+aggregate dependency-edge mutation. These are future design requirements, not
+current test or CI evidence.
+The validator also rejects duplicate, missing, extra, tuple-mismatched, stale-
+anchor, unproved, wrongly authorized, or convenience exclusions; any row/
+exclusion overlap; union inequality; and mapping every row to one requirement
+or otherwise changing a scenario's exact requirement set.
+
+`GraphDependentObservedCounters.counters_digest` uses domain
+`memorii.semantic-ingestion.graph-dependent-observed-counters.v1` over every
+field other than `counters_digest`; it validates each observed value against the
+named policy before publication. The sole policy publication is one canonical
+`graph_dependent_execution_policy` replay artifact, indexed by its policy
+reference in the atomic source-normalization publication generation.
+`policy_digest` must equal the decoded artifact's
+digest and `artifact_digest` must equal its canonical bytes. The policy
+reference digest uses domain
+`memorii.semantic-ingestion.graph-dependent-execution-policy-reference.v1`
+over every reference field other than `reference_digest`.
+The policy
+reference, never a live configuration lookup, is carried by every subsequent
+attempt, lineage entry, progress image, replay bundle, graph-bound result, and
+execution manifest; each carries its own counters snapshot. Replay loads this
+one policy artifact by reference, verifies all digest joins, and rejects a
+missing, duplicate, substituted, changed-runtime, or counter-over-limit value
+before it exposes a plan, result, or graph effect.
+
+The request propagates the one existing `AuthenticatedIngressContext` and one
+existing `RequiredOutcomeScopeSet`; it does not mint copied tenant, principal,
+or scope fields. Each repository accepts the same `ingress`, scope set, fence,
+and lease from the request, verifies those bindings before its first read, and
+returns values that retain their existing binding digests. The coordinator
+compares those existing digests at every boundary. A graph-bound request with
+an absent required repository, compiler, policy, or authorization returns the
+typed non-committing terminal outcome `failed` with reason
+`graph_dependent_authority_unavailable`; it does not call legacy terminal
+persistence. Explicit graph-free `evidence_only`, `rejected`, and `unresolved`
+outcomes remain valid and need no plan or planning authorization.
+
+The required protocol boundaries are closed as follows:
+
+* `GraphSemanticSnapshotRepository.acquire(request, ingress, fence, lease)`
+  returns one `GraphSemanticSnapshotBundle` or a non-disclosing denial. Its
+  extensions (`read_identity`, `read_type`, `read_capability`,
+  `read_reference_closure`, and reservation collision reads) return a typed
+  value and `GraphReadSetExtension` under that same token.
+* `GraphDependentReconciliationProtocol.reconcile(alignment, snapshot,
+  extensions, ingress, policy)` returns the complete reconciliation,
+  reservation intents, closure, and canonical group inputs, or a typed
+  non-committing disposition. It has no storage write method.
+* `GraphPlanningCompiler.compile(request, policy)` is pure: it consumes the
+  sealed transaction context and emits one `CompilationResult`, planning
+  artifact, and certificates. It cannot query repositories, allocate a
+  reservation, or persist an artifact.
+* `GraphPlanningArtifactRepository.publish_and_reload(...)` atomically
+  publishes exactly the artifacts, certificates, and plan referenced by the
+  `plan_published` generation, then reloads and validates their canonical bytes.
+  The authorized read shape is closed:
+
+  ```python
+  class AuthorizedTransactionSemanticGroupPlanReadRequest(BaseModel):
+      reference: TransactionSemanticGroupPlanReference
+      authenticated_ingress: AuthenticatedIngressContext
+      required_outcome_scopes: RequiredOutcomeScopeSet
+      delivery_principal_binding_digest: str
+      required_scope_set_digest: str
+      operation_fence: OperationFenceBinding
+      operation_lease: OperationLeaseBinding
+      request_digest: str
+
+      model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+  class AuthorizedTransactionSemanticGroupPlanReadResult(BaseModel):
+      kind: Literal["available", "unavailable"]
+      request_digest: str
+      plan: TransactionSemanticGroupPlan | None
+      response_digest: str
+
+      model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+  ```
+
+  The request digest domain is
+  `memorii.semantic-ingestion.authorized-transaction-group-plan-read.v1` over
+  the reference, authenticated ingress principal-binding digest, required-scope
+  digest, fence binding digest, and lease binding digest. `authenticated_ingress`
+  and `required_outcome_scopes` are runtime-only typed inputs; only their named
+  canonical digests and the request/response digests are persisted in progress,
+  lineage, result, and replay closure. `get_authorized(request)` validates
+  before locating any plan member that the ingress principal and tenant equal
+  the fence/admission binding, the supplied required scope set equals the
+  ingress required scope set, the current authorized scope set is same-tenant
+  and covers every required scope, and the lease is current. It returns
+  `kind="unavailable"` with no plan
+  and a response digest that names only the request for every absence,
+  cross-tenant, forged-scope, revoked-current-scope, stale-lease, or
+  authorization failure. For
+  `kind="available"`, the response digest binds the request digest, reference,
+  and reloaded plan digest, and the plan must equal the complete checkpoint
+  member closure. Coordinator, recovery, lineage, CAS, result, and replay use
+  only `get_authorized(request)`. The existing `get(reference)` is retained
+  solely as an internal decoder used after `get_authorized` has admitted the
+  request; it is unreachable from graph-bound provider composition and cannot
+  be used by replay or a public repository protocol. A digest text, compiler
+  object, or plan member outside the checkpoint is not an authority substitute.
+* `GraphAttemptLineageRepository.publish_attempt`, `.reload_attempt`, and
+  `.append_lineage` are append-only, fence-bound operations. The latter accepts
+  only a reloaded attempt and reloaded plan authorization. It never derives an
+  authorization from a mutable current object.
+* `GraphCommitRepository.compare_and_swap(request, ingress, fence, lease)`
+  revalidates the exact read/write set, reservation-use authority, policy, and
+  lineage entry immediately before effect, then atomically records graph/event
+  effects, result, observation, and replay-artifact references.
+
+For one source-plan attempt, the generation/state sequence is mandatory:
+
+1. Publish the source-normalization closure in one pre-planning generation and
+   reload it. Its complete same-generation members include the request/result,
+   retained evidence manifest, policy bundles, consensus artifacts, sealed
+   `SourceProposalAlignment`, canonical groups, and the ingress/fence binding.
+2. Acquire the one authorized snapshot; derive graph-dependent reconciliation,
+   reservations, all read-set extensions, closure, fixed-point group plan,
+   compilation artifacts, and certificates. Publish the complete plan/artifact
+   closure in one `plan_published` generation and reload every member.
+3. From only that reloaded plan and its reloaded executions, artifacts, and
+   certificates, derive the complete canonical bijection of one
+   `GroupPlanningAuthorization` for every plan group. Construct the complete
+   `GraphDependentValidationAttempt` containing that bijection, publish it in
+   the next atomic generation, and reload it.
+4. Append the initial `SourceTransactionPlanLineage` entries from the reloaded
+   attempt. Reload the exact unfinished group's lineage entry and its
+   authorization immediately before CAS. Only then call CAS/group persistence.
+
+The former wording that an attempt is persisted before its authorization is
+therefore narrowed: it means the *complete attempt containing already
+reload-derived authorizations* is persisted before any CAS or terminal result
+uses it. It cannot mean an empty, provisional, or later-mutated attempt.
+`GraphDependentValidationAttempt`'s nonempty authorization invariant is the
+authoritative construction rule.
+
+Each generation is independently replayable. If a writer loses an
+acknowledgement after publication, recovery reloads the matching generation by
+fence, validates its complete member set and canonical bytes, and continues
+from its durable state; it never republishes a second same-purpose authority.
+If failure occurs before an acknowledged `plan_published` generation, no
+attempt exists and recovery recomputes from the reloaded pre-planning closure.
+If it occurs after plan publication but before attempt publication, recovery
+reloads the plan/artifact closure and deterministically derives the same
+group-authority bijection before publishing the first attempt. If it occurs after
+attempt publication but before lineage, recovery reloads that attempt and
+appends only missing lineage entries. If it occurs after lineage but before the
+CAS acknowledgement, recovery reads the durable group result keyed by the
+fence/lineage entry before retrying CAS. These recovery rules have no circular
+same-generation authority: a generation is authorized only by prior durable
+members plus the request's fence/ingress/lease, and never by a result that it
+is about to create.
+
+`GraphDependentExecutionPolicy` is the one immutable behavioral policy bound
+to the coordinator request, every attempt, every lineage entry, and the replay
+bundle. Version one fixes the first eleven fields above, in order, to
+`1, 256, 64, 16, 4096, 256, 1, 2, 1024, 512, 256`; fixes
+`maximum_decode_depth` to `64`; and requires the active
+`ReplayArtifactSchemaRegistry` fingerprint. The registry is the sole authority
+for `maximum_replay_artifacts` and `maximum_replay_bundle_bytes`: policy
+construction copies its `maximum_bundle_artifacts` and
+`maximum_bundle_canonical_bytes` exactly, and coordinator/replay validation
+rejects any inequality or fingerprint mismatch. Per-artifact canonical-byte
+limits also come only from that registry. Each counter has unit `count` except
+replay bundle bytes, uses the persisted observed total, and accepts only values
+at or below its maximum. At N+1 it returns terminal `failed` with,
+respectively, `operation_limit_exceeded`, `group_limit_exceeded`,
+`fixed_point_limit_exceeded`, `snapshot_record_limit_exceeded`,
+`snapshot_partition_limit_exceeded`, `related_conflict_retry_exhausted`,
+`attempt_limit_exceeded`, `read_set_extension_limit_exceeded`,
+`reservation_limit_exceeded`, `lineage_limit_exceeded`,
+`replay_artifact_limit_exceeded`, `replay_bundle_limit_exceeded`, or
+`replay_decode_depth_limit_exceeded`. No limit truncates input, closure,
+artifact, lineage, or result. Progress records retain the policy digest and
+observed counter values so replay validates the identical boundary.
+
+Compatibility is closed for the unreleased graph-bound wire:
+
+| Persisted input | Decoder and visibility rule | Migration/rollback rule | Required fixture oracle |
+| --- | --- | --- | --- |
+| Explicit typed pre-graph `evidence_only`, `rejected`, or `unresolved` outcome | Readable only when its explicit discriminated variant validates; it remains non-committing. | No graph-plan migration is attempted. | In-memory and JSONL byte/replay fixture preserves the exact terminal disposition and zero graph effect. |
+| Legacy graph-bound success with opaque, missing, null, empty, or sentinel plan authority | Typed `graph_bound_plan_authority_incompatible` before result, artifact, graph, or observation visibility. | It cannot migrate to success and no fallback may infer a plan. | One fixture per opaque/missing/null/empty/sentinel form proves no read disclosure and no effect. |
+| Legacy `retry_exhausted` preplanning control | Existing explicit terminal migration is the only accepted migration. | Reuse the current migration owner; a graph-bound promotion is prohibited. | Existing migration fixture plus in-memory/JSONL reopen proves the explicit terminal only. |
+| Current graph-bound outcome | Readable only with the complete typed attempt, plan, complete group-authority bijection, lineage entry, result, and replay closure. | Promotion requires all members; absence is incompatible before visibility. | Complete and one-member-removed fixtures prove exact replay or rejection. |
+| Rollback before or after a partial graph commit | New graph-bound promotion is disabled; valid pre-graph outcomes remain available. | Typed committed lineage, group results, and replay bytes are retained and replayed; rollback never rewrites or deletes them. | Before-commit and after-first-group fixtures prove no new effect and preserved committed history. |
+
+The coordinator records an authorized rejection without revealing whether a
+foreign tenant record, reservation, plan, or graph key exists. Cross-tenant,
+omitted-principal, forged-scope, and stale-session mutations are rejected at
+ingress and again before snapshot, every extension/reservation read, plan/attempt
+reload, CAS, terminal result, and replay. Tests observe zero target-tenant
+reads, zero reservations, zero CAS calls, and no target identifier in the
+denial; same-tenant authorized work remains observable normally.
+
 Repository APIs that return identity evidence, type evidence, claim state,
 correction targets, action state, policy state, or reference closure must return
 their read-set extension with the data. The coordinator rejects graph-derived
@@ -18065,6 +24096,88 @@ class IngestionStageOutcome(BaseModel):
     blocking_stages: tuple[IngestionStageInstanceRef, ...]
     reason_codes: tuple[str, ...]
 
+class ReusedPredecessorGroupAuthority(BaseModel):
+    kind: Literal["reused_predecessor"]
+    transaction_group_id: str
+    predecessor_lineage_entry_digest: str
+    predecessor_group_plan: TransactionSemanticGroupPlanReference
+    predecessor_authorization_digest: str
+    predecessor_plan_member_digest: str
+    authority_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+class ReplacementSuccessorGroupAuthority(BaseModel):
+    kind: Literal["replacement_successor"]
+    transaction_group_id: str
+    successor_authorization: GroupPlanningAuthorization
+    successor_plan_member_digest: str
+    authority_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+class TerminalBeforePlanningProofReference(BaseModel):
+    repository_id: str
+    repository_contract_fingerprint: str
+    artifact_digest: str
+    proof_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+class TerminalBeforePlanningProof(BaseModel):
+    source_id: str
+    source_digest: str
+    transaction_group_id: str
+    operation_ids: tuple[str, ...]
+    attempt_id: str
+    authorizing_attempt_digest: str
+    execution_manifest_digest: str
+    execution_graph_fingerprint: str
+    terminal_stage_outcome: IngestionStageOutcome
+    terminal_status: Literal["evidence_only", "rejected", "unresolved", "failed"]
+    final_result_core_digest: str
+    lineage_entry_core_digest: str
+    plan_member_digest: str
+    operation_fence_binding: OperationFenceBinding
+    execution_policy: GraphDependentExecutionPolicyReference
+    proof_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+class TerminalBeforePlanningProofRepository(Protocol):
+    def publish_and_reload(
+        self,
+        proof: TerminalBeforePlanningProof,
+        atomic_generation_id: str,
+    ) -> TerminalBeforePlanningProofReference: ...
+
+    def get(
+        self,
+        reference: TerminalBeforePlanningProofReference,
+    ) -> TerminalBeforePlanningProof: ...
+
+class ReusedFinalNonCommittingNoAuthorityGroup(BaseModel):
+    kind: Literal["reused_final_noncommitting_no_authority"]
+    transaction_group_id: str
+    predecessor_lineage_entry_digest: str
+    predecessor_plan_member_digest: str
+    closure_final_result: "NonCommittingFinalTransactionGroupResultReference"
+    terminal_before_planning_proof: TerminalBeforePlanningProofReference
+    planning_authorization_digest: None = None
+    authorizing_group_authority_digest: None = None
+    compilation_digest: None = None
+    cas_authorization: Literal["forbidden"] = "forbidden"
+    authority_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+SuccessorAttemptGroupAuthority = Annotated[
+    ReusedPredecessorGroupAuthority
+    | ReplacementSuccessorGroupAuthority
+    | ReusedFinalNonCommittingNoAuthorityGroup,
+    Field(discriminator="kind"),
+]
+
 class GraphDependentValidationAttempt(BaseModel):
     attempt_id: str
     scope: Literal["source_plan_attempt", "transaction_group_attempt"]
@@ -18093,12 +24206,14 @@ class GraphDependentValidationAttempt(BaseModel):
     reconciliation_digest: str
     reference_closure_digest: str
     transaction_group_plan: TransactionSemanticGroupPlanReference
-    planning_authorizations: tuple[GroupPlanningAuthorization, ...]
+    group_authorities: tuple[SuccessorAttemptGroupAuthority, ...]
     stage_outcomes: tuple[IngestionStageOutcome, ...]
     status: Literal["eligible", "superseded", "rejected", "unresolved", "failed"]
     attempt_digest: str
 
 class IngestionExecutionManifest(BaseModel):
+    pre_execution_manifests: BootstrapGraphPreExecutionManifestIdentityClosureV3
+    pre_execution_manifest_identity_closure_digest: str
     execution_graph_fingerprint: str
     segment_language_routes: SegmentLanguageRouteSet
     segment_governance_carriers: SegmentGovernanceCarrierSet
@@ -18111,6 +24226,7 @@ class IngestionExecutionManifest(BaseModel):
         tuple[str, tuple[IngestionStageOutcome, ...]], ...
     ]
     causal_blockers: tuple[IngestionStageInstanceRef, ...]
+    terminal_before_planning_proof_digests: tuple[str, ...]
     manifest_digest: str
 
 class SourceTraceArtifact(BaseModel):
@@ -18156,6 +24272,7 @@ ReplayArtifactKind = Literal[
     "transaction_group_plan",
     "independence_certificate",
     "planning_authorization",
+    "terminal_before_planning_proof",
 ]
 
 class ReplayArtifactSchemaEntry(BaseModel):
@@ -18197,6 +24314,7 @@ class ReplayArtifactBundle(BaseModel):
     artifact_schema_registry_fingerprint: str
     publications: tuple[ReplayArtifactPublication, ...]
     required_artifact_digests: tuple[str, ...]
+    terminal_before_planning_proof_digests: tuple[str, ...]
     total_canonical_bytes: int = Field(ge=0)
     bundle_digest: str
 
@@ -18247,7 +24365,7 @@ class CommittedTransactionGroupPersistenceRequest(BaseModel):
     governance_carrier_artifact: GovernanceCarrierArtifact
     operation_lease_binding: OperationLeaseBinding
     authorizing_attempt_digest: str
-    planning_authorization: GroupPlanningAuthorization
+    authorizing_group_authority: SuccessorAttemptGroupAuthority
     compilation: CompilationResult
     temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
@@ -18275,7 +24393,8 @@ class NonCommittingTransactionGroupPersistenceRequest(BaseModel):
     governance_carrier_artifact: GovernanceCarrierArtifact
     operation_lease_binding: OperationLeaseBinding
     authorizing_attempt_digest: str
-    planning_authorization: GroupPlanningAuthorization | None
+    authorizing_group_authority: SuccessorAttemptGroupAuthority | None
+    terminal_before_planning_proof: TerminalBeforePlanningProofReference | None
     compilation: CompilationResult | None
     temporal_decision_bindings: tuple[OperationTemporalDecisionBinding, ...]
     temporal_attachment_bindings: tuple[OperationTemporalAttachmentBinding, ...]
@@ -18622,6 +24741,8 @@ class TransactionGroupPlanLineageEntry(BaseModel):
     authorizing_attempt_digest: str
     authorizing_group_plan: TransactionSemanticGroupPlanReference
     planning_authorization_digest: str | None
+    authorizing_group_authority_digest: str | None
+    terminal_before_planning_proof: TerminalBeforePlanningProofReference | None
     supersedes_entry_digest: str | None
     entry_digest: str
 
@@ -18819,27 +24940,100 @@ class AtomicGenerationRequest(BaseModel):
 
 class SourceCheckpointAtomicWriteRequest(AtomicGenerationRequest):
     kind: Literal["checkpoint"]
-    progress_state: Literal["preplanning", "planned"]
+    progress_state: Literal["preplanning", "plan_published", "attempt_published", "planned"]
 
-class SourceNormalizationAtomicWriteRequest(SourceCheckpointAtomicWriteRequest):
-    kind: Literal["source_normalization_checkpoint"]
-    progress_state: Literal["preplanning"]
-    publication_generation: int
-    source_normalization_request: "SourceNormalizationRequest"
-    source_normalization_request_digest: str
-    source_normalization_result: "SourceNormalizationResult"
-    source_normalization_result_digest: str
-    evidence_manifest: "SourceNormalizationEvidenceManifest"
-    evidence_manifest_digest: str
-    consensus_policy_selection_bundle: "ConsensusPolicySelectionBundle"
-    consensus_policy_selection_bundle_digest: str
-    language_construction_policy_bundle: "LanguageConstructionPolicyAuthorityBundle"
-    language_construction_policy_bundle_digest: str
+# The sole SourceNormalizationAtomicWriteRequest declaration is the stable
+# schema-version-2 subtype in 3.4.2g. This 4.8 protocol consumes that exact
+# type; historical direct interpretation/identity fields are rejected before
+# publication or recovery and have no declaration here.
+
+class BootstrapWriterHandoffRequest(BaseModel):
+    source_id: str
+    source_digest: str
+    prepared_generation: int = Field(ge=1)
+    prepared_source_digest: str
+    authority_pin: BootstrapAdmissionPin
+    release_evidence: HostVerifiedBootstrapReleaseEvidence
+    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    current_delivery_authorization: DeliveryAuthorizationRequest
+    current_release_assertion: CurrentBootstrapReleaseAssertion
+    expected_writer_admission_digest: str
+    expected_writer_epoch: int = Field(ge=0)
+    request_digest: str
+
+class BootstrapWriterHandoffMarker(BaseModel):
+    source_id: str
+    source_digest: str
+    handoff_request_digest: str
+    prepared_generation: int = Field(ge=1)
+    prepared_source_digest: str
+    authority_pin_digest: str
+    release_evidence_digest: str
+    bootstrap_language_evidence_digest: str
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    pending_operation_id: str
+    pending_operation_digest: str
+    marker_digest: str
+
+class BootstrapRetainedPendingAuthorityUnavailable(BaseModel):
+    kind: Literal["retained_pending"]
+    source_id: str
+    source_digest: str
+    authority_pin_digest: str
+    release_evidence_digest: str
+    bootstrap_language_evidence_digest: str
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    reason: Literal["authorization_unavailable", "release_unavailable", "pin_mismatch"]
+    terminal_digest: str
+
+class BootstrapPreparedPublishedAuthorityUnavailable(BaseModel):
+    kind: Literal["prepared_published"]
+    source_id: str
+    source_digest: str
+    prepared_generation: int = Field(ge=1)
+    prepared_source_digest: str
+    authority_pin_digest: str
+    release_evidence_digest: str
+    bootstrap_language_evidence_digest: str
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    reason: Literal["authorization_unavailable", "release_unavailable"]
+    terminal_digest: str
+
+BootstrapAuthorityUnavailable = Annotated[
+    BootstrapRetainedPendingAuthorityUnavailable
+    | BootstrapPreparedPublishedAuthorityUnavailable,
+    Field(discriminator="kind"),
+]
+
+class BootstrapWriterHandoffResult(BaseModel):
+    kind: Literal["started", "already_started", "authority_unavailable", "writer_unavailable", "conflict"]
+    marker: BootstrapWriterHandoffMarker | None
+    authority_unavailable: BootstrapAuthorityUnavailable | None
+    result_digest: str
+
+class BootstrapHandoffAccessDenied(BaseModel):
+    kind: Literal["access_denied"]
+    reason: Literal["unavailable"]
+
+BootstrapWriterHandoffResponse = Annotated[
+    BootstrapHandoffAccessDenied | BootstrapWriterHandoffResult,
+    Field(discriminator="kind"),
+]
 
 class SemanticIngestionAtomicStore(Protocol):
     def admit_source(
         self, request: SourceAdmissionAtomicWriteRequest
     ) -> SourceAdmissionResult: ...
+
+    def bootstrap_writer_handoff(
+        self, request: BootstrapWriterHandoffRequest
+    ) -> BootstrapWriterHandoffResponse: ...
 
     def persist_terminal_group(
         self, request: TerminalGroupAtomicWriteRequest
@@ -18855,22 +25049,89 @@ class SemanticIngestionAtomicStore(Protocol):
 ```
 
 These are the only authoritative semantic-ingestion write boundaries.
-`admit_source` atomically publishes observation, retention attestation, and
-pending operation under one operation-fence binding and binds that operation to the
-writer epoch. Admission independently recomputes
+`bootstrap_writer_handoff` is the sole bootstrap bridge from pre-writer success
+to the existing writer-bound pending operation/preplanning control. Its atomic
+CAS consumes the exact prepared generation/source digest, V1 authority pin,
+original host-verified release evidence, closed language evidence, delivery
+identity, and operation-fence binding. Recovery first validates the current
+`DeliveryAuthorizationRequest` and host-only `CurrentBootstrapReleaseAssertion`
+before any durable-key lookup for a marker or terminal record. A failed session,
+scope, or release assertion returns strict in-memory
+`BootstrapHandoffAccessDenied(kind="access_denied", reason="unavailable")`:
+it has no coordinate, digest, durable-identity, or persisted field, exposes no
+lookup-visible state, and causes no mutation. Only after
+that validation succeeds does recovery read an exact existing marker whose
+`handoff_request_digest` equals the non-ephemeral request digest and return it
+byte-identically as `already_started`. When no marker exists, the linearized CAS
+checks the exact prepared terminal; if present it rejects without replacement.
+It otherwise compares both `expected_writer_epoch` and
+`expected_writer_admission_digest` with the current global writer admission. If
+the in-CAS revalidation after successful access validation observes a changed
+or unavailable release/authorization state before a marker exists, the same
+transaction persists exactly one
+`BootstrapPreparedPublishedAuthorityUnavailable`
+record bound to the original prepared generation, pin, release/language
+evidence, delivery identity, and fence; it creates no marker, pending operation,
+lease, writer binding, or writer effect and returns `authority_unavailable`.
+Every later handoff for that prepared tuple rejects, even after reauthorization.
+Only a current writer-admission mismatch after successful ephemeral validation is
+`writer_unavailable`. On success the CAS atomically creates the existing
+`SemanticWriterCommitBinding` and pending-operation/preplanning control with
+one durable `BootstrapWriterHandoffMarker`, and then returns `started`.
+Byte-identical duplicate recovery returns the persisted marker as
+`already_started`; competing prepared bytes, release/pin/language/delivery/fence
+substitution, stale writer epoch, or stale writer-admission digest rejects as `conflict` or
+`writer_unavailable` without a writer effect. A lost acknowledgement or restart
+reads the marker and returns the same result; no later handoff can create a
+second pending operation. This method is the first bootstrap boundary with
+writer authority. It is not callable for negative or merely pending outcomes.
+
+`BootstrapWriterHandoffRequest.request_digest` is SHA-256 of declaration-order
+CTV under `memorii.semantic_ingestion.bootstrap_writer_handoff_request.v1`
+over every request field except `request_digest`, excluding only the ephemeral
+`current_delivery_authorization` and `current_release_assertion`. The marker
+uses `memorii.semantic_ingestion.bootstrap_writer_handoff_marker.v1` over every
+shown marker field except `marker_digest`; it binds the persisted writer commit
+binding, pending-operation control, prepared generation identity, and exact
+non-ephemeral handoff request digest. The result
+uses `memorii.semantic_ingestion.bootstrap_writer_handoff_result.v1` over every
+shown result field except `result_digest`. Unknown fields, absent required
+fields, aliases, default insertion, or digest mismatch reject. CAS equality is
+the exact request-digest plus prepared generation/pin/release/language/delivery/
+fence tuple; matching lost-ack retries return the byte-identical persisted
+marker, while all competing tuples reject without replacement. `started` and
+`already_started` require the exact non-null marker; `writer_unavailable` and
+`conflict` require null marker and cannot create one; `authority_unavailable`
+requires the exact non-null terminal record and null marker. Each discriminated
+terminal variant uses its own domain,
+`memorii.semantic_ingestion.bootstrap_retained_pending_authority_unavailable.v1`
+or `memorii.semantic_ingestion.bootstrap_prepared_published_authority_unavailable.v1`,
+over every shown field except `terminal_digest`; it is the durable recovery
+answer for denial/reopen attempts and never permits reauthorization of that
+terminal tuple.
+For non-bootstrap sources, `admit_source` atomically publishes observation,
+retention attestation, and pending operation under one operation-fence binding
+and binds that operation to the writer epoch. For bootstrap sources it publishes
+only the retained observation, protected admission evidence, immutable fence,
+and typed pre-writer outcome; it creates no writer-bound pending operation,
+preplanning control, lease, or writer binding. The subsequent
+`bootstrap_writer_handoff` owns that creation. Admission independently recomputes
 `DeliveryIdentity.delivery_key_digest`, the validated segment-governance
 closure, canonical `RequiredOutcomeScopeSet`, and
 `AdmissionScopeAuthorizationProof`. It requires same-tenant complete-set subset
 coverage by the current trusted authorized set and exact proof/evidence
 agreement, then atomically persists the proof as audit authority with the
 observation and protected index. A denial publishes none of the atomic request.
-`immutable_admission_request_digest` is SHA-256 over canonical typed-value
+The existing non-bootstrap `immutable_admission_request_digest` is SHA-256 over canonical typed-value
 encoding of domain `memorii.semantic-ingestion.immutable-admission-request`,
 preimage version `1`, delivery key digest, immutable source ID/digest,
 required-outcome-scope-set digest, nullable governance-carrier-artifact digest,
 operation ID, operation-fence-binding digest, allocation namespace ID,
 writer-commit-binding digest, retention-attestation digest, and
-pending-operation digest, in that order. It excludes admission authorization
+pending-operation digest, in that order. The bootstrap pre-writer admission
+instead binds its retained source, closed language evidence, delivery/fence
+identity, and V1 authority pin; it has no writer-commit or pending-operation
+digest. Both forms exclude admission authorization
 evidence/proof and every current authorization coordinate. Matching replay
 reauthorizes with fresh evidence, compares only this immutable digest and its
 listed fields, and returns the original admission bytes without replacing or
@@ -18980,10 +25241,11 @@ loadable bytes as durable evidence. The planning and trace repositories are
 typed projections of this generation, not independently writable stores.
 
 The source-plan lineage is store-owned and append-only. Each entry binds one
-group attempt to the exact plan and planning authorization that were loaded
+group attempt to the exact plan and group-authority union arm that were loaded
 when that attempt became eligible. A pre-planning terminal attempt has
-`planning_authorization_digest=None`; every attempt that reached planning has a
-non-null digest matching the authorization inside its referenced plan.
+`authorizing_group_authority_digest=None` only with one non-null
+`terminal_before_planning_proof` reference; every attempt that reached planning has
+a non-null authority digest matching its reloaded union arm and no such proof.
 `supersedes_entry_digest` forms one acyclic chain per group, and exactly one
 entry per terminal group appears in `final_entry_digests`. Superseded entries
 remain auditable but cannot authorize a result.
@@ -19060,10 +25322,11 @@ requires the compilation request, operation membership, reconciliation,
 closure, effective read set, write set, semantic effect, and expected graph
 revision to match the authorizing attempt and current transaction context. A
 digest-only match cannot authorize a write. A non-committing request has no
-expected write-set or applied-delta field. It carries `compilation=None` and
-`planning_authorization=None` when blocked before planning; when planning and
-compilation ran and returned non-committing, both the exact authorization and
-result are retained, and the result must itself have `write_set=None` and
+expected write-set or applied-delta field. It carries `compilation=None`,
+`authorizing_group_authority=None`, and one loadable terminal-before-planning
+proof when blocked before planning; when planning and compilation ran and
+returned non-committing, both the exact authority arm and result are retained
+and the proof is null. The result must itself have `write_set=None` and
 `graph_delta=None`. A pre-graph source summary
 contains no plan, group result, or graph revision. Empty or sentinel
 success-shaped values are forbidden.
@@ -19108,14 +25371,14 @@ reservations, capability-status bindings, canonical decisions, closure, and
 group plan are newly materialized under that attempt's context. Reusing any of
 those graph-bound digests from a superseded context is invalid even when the
 resulting values happen to compare equal.
-An eligible `source_plan_attempt` carries a planning-authorization bijection
-over every group in its referenced plan. An eligible
-`transaction_group_attempt` carries exactly one authorization for its named
-group under the newly referenced plan. An attempt that terminates before
-planning carries an empty authorization set; it cannot later authorize
-persistence. Duplicate, missing, extra, cross-attempt, cross-group, or
-cross-repository authorizations invalidate the attempt and every dependent
-stage.
+An eligible `source_plan_attempt` carries a `group_authorities` bijection over
+every group in its referenced plan. An eligible `transaction_group_attempt`
+carries exactly one group-authority arm for its named group. Initial-plan arms
+are all `replacement_successor`; a successor may mix the three closed arms only
+under the replan closure rules below. An attempt that terminates before planning
+carries an empty authority set; it cannot later authorize persistence. Duplicate,
+missing, extra, cross-attempt, cross-group, cross-repository, or wrong-arm
+authorities invalidate the attempt and every dependent stage.
 
 The capability registry loads the immutable execution-graph template before the
 source run. Evidence normalization emits one exact
@@ -19147,6 +25410,3938 @@ Optional or shadow NLI failure is diagnostic only. NLI becomes causal only
 for operations whose sealed, separately certified capability binding marks it
 required.
 
+##### 4.8.2.1 Bootstrap V3 graph-transaction authority projection and replay
+
+`BootstrapRecoveryReplayRecordV3` is a normalization replay closure only.  It
+is not graph authority, a policy lookup key, a capability grant, or a terminal
+authority substitute.  The normalization writer must persist policy and
+capability bytes in its same atomic generation, and a normal bootstrap V3 graph
+run must then persist/reload one dedicated pre-epoch authority projection.  No coordinator,
+compiler, authorizer, executor, terminal preparer, or recovery path may obtain
+one of the projection's values from a fixture, a process-local cache, a static
+provider dictionary, a default, or an ambient repository search.
+
+```python
+class BootstrapGraphNormalizationAuthorityMemberV3(_BootstrapV3Contract):
+    recovery_key_digest: str
+    normalization_request_digest: str
+    normalization_result_digest: str
+    execution_policy: GraphDependentExecutionPolicy
+    execution_policy_canonical_bytes: bytes
+    capability_registry: CapabilityRegistrySnapshot
+    capability_registry_canonical_bytes: bytes
+    member_digest: str
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-normalization-authority-member.v3"
+    _digest_field = "member_digest"
+
+class BootstrapGraphNormalizationAuthorityReloadV3(_BootstrapV3Contract):
+    normalization_replay: BootstrapRecoveryReplayRecordV3
+    normalization_atomic_write_digest: str
+    normalization_operation_generation: int
+    normalization_artifact_generation: int
+    authority_member: BootstrapGraphNormalizationAuthorityMemberV3
+    reload_digest: str
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-normalization-authority-reload.v3"
+    _digest_field = "reload_digest"
+
+class BootstrapGraphPreparedSourceTerminalAuthorityV3(_BootstrapV3Contract):
+    prepared_source: PreparedSource
+    execution_graph: IngestionExecutionGraph
+    terminal_authority_digest: str
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-prepared-source-terminal-authority.v3"
+    _digest_field = "terminal_authority_digest"
+
+class BootstrapGraphTransactionAuthorityProjectionV3(_BootstrapV3Contract):
+    normalization_authority: BootstrapGraphNormalizationAuthorityReloadV3
+    graph_authority: BootstrapGraphSnapshotAuthorityV3
+    prepared_source_terminal: BootstrapGraphPreparedSourceTerminalAuthorityV3
+    authority_projection_digest: str
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-transaction-authority-projection.v3"
+    _digest_field = "authority_projection_digest"
+
+class BootstrapGraphAuthorityGenerationV3(_BootstrapV3Contract):
+    store_identity_digest: str
+    recovery_key_digest: str
+    normalization_atomic_write_digest: str
+    authority_projection_digest: str
+    operation_id: str
+    operation_fence_binding_digest: str
+    operation_generation: int
+    artifact_generation: int
+    generation_digest: str
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-authority-generation.v3"
+    _digest_field = "generation_digest"
+
+class BootstrapGraphTransactionAuthorityWriteRequestV3(_BootstrapV3Contract):
+    authority_projection: BootstrapGraphTransactionAuthorityProjectionV3
+    authenticated_ingress: AuthenticatedIngressContext
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    operation_fence_binding: OperationFenceBinding
+    operation_lease_binding: OperationLeaseBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    expected_normalization_operation_generation: int
+    expected_normalization_artifact_generation: int
+    write_digest: str
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-transaction-authority-write.v3"
+    _digest_field = "write_digest"
+
+class BootstrapGraphAuthorityPublicationCoreV3(_BootstrapV3Contract):
+    write_request_digest: str
+    authority_projection: BootstrapGraphTransactionAuthorityProjectionV3
+    publication_operation_generation: int
+    publication_artifact_generation: int
+    core_digest: str
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-authority-publication-core.v3"
+    _digest_field = "core_digest"
+
+class BootstrapGraphAuthorityPublicationReceiptV3(_BootstrapV3Contract):
+    recovery_key_digest: str
+    authority_projection_digest: str
+    write_request_digest: str
+    atomic_write_digest: str
+    publication_core_digest: str
+    successor_generation: BootstrapGraphAuthorityGenerationV3
+    receipt_digest: str
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-authority-publication-receipt.v3"
+    _digest_field = "receipt_digest"
+
+class BootstrapGraphTransactionAuthorityReloadV3(_BootstrapV3Contract):
+    publication_core: BootstrapGraphAuthorityPublicationCoreV3
+    publication_receipt: BootstrapGraphAuthorityPublicationReceiptV3
+    reload_digest: str
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-transaction-authority-reload.v3"
+    _digest_field = "reload_digest"
+```
+
+The field-source rules are exact.  The normalization writer copies policy and
+capability registry from the exact `SourceNormalizationDerivationAuthority`
+used for the atomic V3 normalization write.  The registered V3 codec produces
+both canonical byte fields, and each must decode byte-for-byte to its nested
+typed value.  Fresh and found graph paths obtain those values only through
+`reload_bootstrap_graph_normalization_authority_v3(normalization_replay)`.
+The graph builder does not accept derivation authority, policy, registry,
+reference, bytes, or digest from its caller and performs no live lookup.  A
+normalization generation without exactly one such member, or with any byte,
+request, result, recovery, or generation mismatch, is incompatible before a
+graph read.
+
+`normalization_replay` is the byte-identical record returned by
+`SemanticIngestionAtomicStore.reload_bootstrap_recovery_replay_v3`; its
+request/result/found closure is revalidated first.  `graph_authority.snapshot`
+and `base_read_set` are the one pair returned by
+`SemanticIngestionAtomicStore.graph_state_snapshot`; the projection builder must
+not rebuild either from records, call a compiler, or accept caller-supplied
+snapshot/read-set bytes.  The projection requires byte equality from the
+normalization authority member to
+`graph_authority.execution_policy.policy_digest`/reference and to
+`graph_authority.capability_registry_snapshot`; the policy reference is backed
+by the same normalization generation's persisted
+`graph_dependent_execution_policy` artifact, whose canonical bytes and digest
+must also equal the member's full policy.  `prepared_source_terminal`
+contains only the byte-identical `PreparedSource` atomically published by
+`SemanticIngestionAtomicStore.publish_bootstrap_prepared_source_if_absent` (or
+its exact `load_prepared_source` reload) and the canonical execution graph.
+Its source, digest, preparation fingerprint, routes, governance carriers,
+message-admission carriers, governance artifact, and required outcome scopes
+are projected from that `PreparedSource`; it may not be reconstructed from the
+normalization result.  Its execution graph must be
+`CANONICAL_INGESTION_EXECUTION_GRAPH`, not a host-selected fingerprint.
+
+The projection validates the following equality chain before it is persisted or
+returned: normalization atomic write and operation/artifact generation;
+recovery key; source ID/digest/preparation fingerprint; replay/result
+and alignment digests; prepared-source governance and required scopes; ingress
+principal binding and scope digest; fence, lease, and writer binding; snapshot
+and base-read-set digest; policy reference/artifact/full-policy digest; and
+capability-registry snapshot digest.  All fields displayed before each digest
+are its exact CTV preimage in displayed order.  Omitted, extra, duplicate,
+reordered, digest-only, separately supplied, or cross-generation fields reject.
+
+`AtomicStoreBootstrapGraphTransactionAuthorityRepositoryV3` is the sole
+production owner of this new generation.  Its two public operations are:
+
+```python
+class BootstrapGraphTransactionAuthorityRepositoryV3(Protocol):
+    def publish_or_reload(
+        self, *, request: BootstrapGraphTransactionAuthorityWriteRequestV3,
+    ) -> BootstrapGraphTransactionAuthorityReloadV3: ...
+
+    def reload_for_recovery(
+        self, *, recovery_key_digest: str,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        operation_fence_binding: OperationFenceBinding,
+    ) -> BootstrapGraphTransactionAuthorityReloadV3 | None: ...
+```
+
+`publish_or_reload` performs one conditional atomic-store write of the complete
+projection, a receipt, and the successor generation; it returns only a
+store-reloaded projection.  This is a dedicated pre-epoch family: it must not
+use or decode `BootstrapGraphCurrentGenerationV3` or
+`BootstrapGraphCheckpointReceiptV3`, because those types require a final
+request and control epoch that do not yet exist.  Construction is acyclic:
+seal request; CAS projection; construct immutable publication core; derive the
+successor authority generation from the realized write and core; construct the
+receipt without the reload digest; then construct the wrapper.  The durable
+index key is `(recovery_key_digest, authority_projection_digest)` and resolves
+exactly one write.  A recovery-key-only lookup may resolve projection identity
+only after authorization and rejects zero or multiple matches.
+
+`reload_for_recovery` authenticates principal, complete scopes,
+and fence before locating an index, returns the same exact bytes, and returns
+`None` without target-state disclosure for absent, foreign, revoked, stale, or
+malformed input.  Epoch zero is the sole bridge into the post-epoch family:
+`BootstrapGraphControlEpochTransitionRequestV3` and
+`BootstrapGraphControlEpochV3` add both the complete, exact store-reloaded
+`BootstrapGraphAuthorityPublicationReceiptV3` and its successor authority-
+generation digest.  A digest-only receipt projection is forbidden.  The
+transition CTV preimage inserts the typed receipt immediately after typed graph
+authority and its `successor_generation.generation_digest` immediately after
+the receipt.  The epoch CTV preimage inserts the same pair immediately after
+`preparation_fingerprint`.  All existing current ingress, scopes, fence, lease,
+writer, time, predecessor, transition, and epoch fields retain their relative
+order.  Successor control epochs retain the byte-identical
+pre-epoch receipt; they never replace it with a plan/checkpoint receipt.
+
+Before epoch-zero CAS, the epoch repository validates that the receipt is the
+byte-identical member of `BootstrapGraphTransactionAuthorityReloadV3`; its
+recovery key, projection digest, write request, atomic write, publication core,
+and receipt digests recompute; its successor generation equals the reload's
+projection, normalization atomic write, operation/fence, store identity, and
+realized generations; and that projection's replay, ingress principal/scopes,
+fence, initial lease, and writer equal the transition request.  The store then
+revalidates current lease/writer/fence authorization.  Any failure returns the
+existing non-disclosing unavailable arm before epoch append or request seal.
+The transition accepts only that receipt's successor generation.  After the
+epoch-zero CAS, `load_bootstrap_graph_current_generation_v3` constructs the
+first `BootstrapGraphCurrentGenerationV3` from authority-generation, final
+request, and epoch digests.  The first plan checkpoint consumes only that
+post-epoch generation.  Neither family can skip, reinterpret, or point backward
+across the bridge.
+
+The ordinary-root composition contract replaces a fixture-shaped authority
+provider with a mandatory builder:
+
+```python
+class BootstrapGraphTransactionAuthorityProjectionBuilderV3(Protocol):
+    def build_and_reload(
+        self, *, normalization_replay: BootstrapRecoveryReplayRecordV3,
+        prepared_source: PreparedSource,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        operation_fence_binding: OperationFenceBinding,
+        operation_lease_binding: OperationLeaseBinding,
+        writer_commit_binding: SemanticWriterCommitBinding,
+    ) -> BootstrapGraphTransactionAuthorityReloadV3 | None: ...
+```
+
+It calls only production owners: the atomic store reloads the normalization-
+generation member, creates the snapshot/read set, and writes/reloads the
+pre-epoch projection; the prepared-source owner reloads terminal authority.
+It then creates epoch zero and the coordinator request through the exact
+generation bridge.
+
+The mandatory normal bundle is
+`BootstrapGraphHostBundleV3(authority_builder, authority_repository,
+control_epoch_repository, plan_repository, compiler, authorizer,
+group_executor, terminal_preparer, terminal_persistence)`.  Fresh order is:
+reload normalization authority; reload prepared source; snapshot graph/read
+set; build and reload pre-epoch projection; transition/find epoch zero; seal
+request; create post-epoch current generation; invoke coordinator compiler,
+authorizer, executor, and terminal preparer; persist/reload terminal.  Recovery
+order is: reload normalization replay; call authority
+`reload_for_recovery`; validate its normalization and prepared-source closure;
+only then perform the authorized terminal locator lookup.  If terminal is
+absent, bridge/reload epoch and resume coordinator state.  Terminal lookup
+before authority reload is forbidden.
+
+`BootstrapGraphDependentAuthorityProviderV3` and
+`BootstrapGraphExecutionV3` remain test-only seams and are absent from every
+normal bundle, factory, filesystem, Hermes, and direct-root signature.  A
+normal production import or call to their `acquire` path fails the binding
+gate.  All four roots require every replacement bundle member;
+absence returns the closed pre-graph
+`graph_transaction_authority_unavailable` noncommit with zero snapshot, plan,
+lineage, CAS, graph, event, or legacy-terminal effect.
+
+Terminal host authority is constructed once, after reload, from the authority
+projection and the sealed plan compilation.  `source_id`, source digest,
+preparation fingerprint, execution graph, routes, governance/message carriers,
+governance artifact, scopes, and fence come only from
+`prepared_source_terminal`/the projection; delivery binding and delivery key
+come only from `graph_authority`; and `capability_bindings` is one canonical
+operation-order projection of the reloaded compilation against the persisted
+capability registry.  Every binding must name a registry entry with the same
+capability ID/fingerprint.  The terminal preparer receives that derived typed
+host authority, never a host-created equivalent, prepared-source substitute,
+or a capability registry lookup.  A recovery reload reconstructs exactly the
+same terminal authority before found-terminal validation; it does not require
+the original process's `PreparedSource` object or a live policy/capability
+lookup.
+
+Migration is unreleased and strict.  A graph-bound V3 record lacking this
+normalization-generation member, authority-projection generation, complete
+policy artifact, a capability
+registry snapshot, or prepared-source terminal authority is
+`graph_transaction_authority_incompatible` before plan/result visibility and
+cannot be inferred or promoted.  Rollback disables new graph promotion while
+retaining complete projections, checkpoints, lineage, and terminal records for
+read-only exact replay; it never writes a V1/V2 substitute, deletes an effect,
+or falls back to fixture/default authority.  Fresh and found tests independently
+mutate ambient policy and capability state after normalization: exact reload is
+unchanged, while any attempt to consume the ambient mutation rejects before
+snapshot or terminal lookup.  Required attacks remove, replace,
+reorder, cross-tenant substitute, cross-generation substitute, or stale-digest
+retain every projection field; separately mutate snapshot/read set, policy
+artifact/reference/full policy, registry/binding, prepared source/terminal
+carrier, generation/receipt, root builder, and recovery lookup.  Every sibling
+form rejects before disclosure or graph effect, in memory and independent-
+process JSONL across all four ordinary roots.
+
+Epoch-zero attacks additionally omit the typed authority receipt; substitute a
+schema-valid receipt from another recovery key, projection, write, store,
+operation, fence, or generation; retain a stale receipt after changing its
+projection or successor; pass only a receipt/generation digest; use a post-
+epoch `BootstrapGraphCheckpointReceiptV3`; or pair the correct receipt with a
+different replay, ingress, scope, lease, or writer.  Each mutation rejects
+before epoch-zero CAS, creates no post-epoch generation, and performs zero plan,
+terminal, graph, event, or observation effect.  Found and lost-ack paths must
+return the same receipt bytes and produce the same rejection matrix.
+
+##### 4.8.2.2 Built-in local V3 planning and effect adapters
+
+The V3 compiler, authorizer, and executor ports are not host extension points
+in an ordinary root. Direct, factory, filesystem, and Hermes composition must
+construct the same built-in adapters:
+
+```python
+class LocalBootstrapGraphPlanCompilerV3(BootstrapGraphPlanCompilerPortV3):
+    def __init__(self, *, transaction_coordinator: SemanticIngestionTransactionCoordinator,
+                 identity_planner: IdentityOperationPlanner) -> None: ...
+
+class LocalBootstrapGraphPlanningAuthorizerV3(BootstrapGraphPlanningAuthorizerPortV3):
+    def __init__(self, *, admission_authority: SemanticAdmissionAuthority,
+                 reservation_authority: IdentityReservationAuthority) -> None: ...
+
+class AtomicStoreBootstrapGraphGroupExecutorV3(BootstrapGraphGroupExecutorPortV3):
+    def __init__(self, *, persistence: SemanticTerminalPersistenceService,
+                 atomic_store: SemanticIngestionAtomicStore) -> None: ...
+```
+
+These adapters contain no parallel business logic. The compiler calls
+`SemanticIngestionTransactionCoordinator.execute`; its pure callback consumes
+the one `SealedGraphStateSnapshot` and uses `GraphPlanningState`,
+`GraphPlanningDelta`, and `build_frozen_identity_graph_planning_artifact`. The
+authorizer delegates to the existing admission and identity-reservation owners.
+The executor delegates materialization and the single CAS to
+`SemanticTerminalPersistenceService` and
+`SemanticIngestionAtomicStore.persist_terminal_group`. None may implement a
+second graph reader, planner, reservation registry, event builder, clock, CAS,
+or receipt issuer.
+
+The following native contracts replace fields in the earlier unreleased V3
+sketch that have no lawful pre-CAS production source:
+
+```python
+class BootstrapNativeGroupPlanningArtifactV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    operation_ids: tuple[str, ...]
+    proposal_digests: tuple[str, ...]
+    member_digests: tuple[str, ...]
+    segment_ids: tuple[str, ...]
+    dependency_group_ids: tuple[str, ...]
+    sealed_graph_snapshot: SealedGraphStateSnapshot
+    planning_state_before: GraphPlanningState
+    frozen_identity_artifacts: tuple[FrozenIdentityGraphPlanningArtifact, ...]
+    planning_state_after: GraphPlanningState
+    artifact_digest: str
+
+class BootstrapNoReservationUseV3(BaseModel):
+    kind: Literal["none"]
+    transaction_group_id: str
+    planned_identity_reservation_digests: tuple[()]
+    authority_digest: str
+
+class BootstrapIdentityReservationUseSetV3(BaseModel):
+    kind: Literal["identity_reservations"]
+    transaction_group_id: str
+    reservation_use_authorizations: tuple[ReservationUseAuthorization, ...]
+    authority_digest: str
+
+BootstrapReservationUseAuthorityV3 = Annotated[
+    BootstrapNoReservationUseV3 | BootstrapIdentityReservationUseSetV3,
+    Field(discriminator="kind"),
+]
+
+class BootstrapTransactionGroupPlanMemberV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    source_dependency_group_digest: str
+    native_planning_artifact: BootstrapNativeGroupPlanningArtifactV3
+    reference_integrity_ledger_digest: str
+    member_digest: str
+
+class BootstrapGraphPreExecutionGroupEvidenceV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    normalization_replay_digest: str
+    transaction_group_id: str
+    group_plan_member_digest: str
+    sealed_graph_snapshot_digest: str
+    graph_read_set: GraphReadSetToken
+    reference_integrity_ledger_digest: str
+    planning_state_before_digest: str
+    frozen_planning_artifact_digests: tuple[str, ...]
+    planning_state_after_digest: str
+    control_epoch_digest: str
+    evidence_digest: str
+
+class BootstrapGraphGroupCasRequestV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    normalization_replay_digest: str
+    attempt_digest: str
+    transaction_group_id: str
+    group_plan_member_digest: str
+    planning_authorization_digest: str
+    source_plan_lineage_entry_digest: str
+    pre_execution_manifest_identity_digest: str
+    sealed_graph_snapshot_digest: str
+    graph_read_set: GraphReadSetToken
+    native_planning_artifact_digest: str
+    reservation_use_authority: BootstrapReservationUseAuthorityV3
+    control_epoch_digest: str
+    cas_digest: str
+
+class BootstrapGraphAtomicEffectReceiptV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    group_result: SemanticEffectGroupResult
+    persisted_terminal_digest: str
+    persisted_artifact_closure_digest: str
+    graph_revision_before: str
+    graph_revision_after: str
+    event_revision_before: str
+    event_revision_after: str
+    observation_revision_before: str
+    observation_revision_after: str
+    atomic_write_digest: str
+    receipt_digest: str
+```
+
+`BootstrapNativeGroupPlanningArtifactV3.artifact_digest` is a CTV of every
+preceding field. Every nested frozen artifact must name the group, exact sealed
+snapshot/read-set/ledger digests, a disjoint operation, and a contiguous
+planning-state transition. Folding them in canonical operation-ID order must
+reproduce `planning_state_after`. A group with no identity graph transition
+has an empty artifact tuple and `planning_state_after == planning_state_before`;
+this explicit native no-op is the only noncommitting plan form.
+`claim_slot_digests`, `compilation_artifact_digest`,
+`independence_certificate_digest`, `proposed_delta_digest`, and pre-execution
+`event_batch_digest` are removed from plan, evidence, attempt-input, manifest,
+and CAS preimages.
+
+The exact field-source algorithm is:
+
+1. The callback argument, `snapshot.read_set`, and
+   `snapshot.reference_integrity.ledger_digest` supply the sealed snapshot,
+   read set, and ledger digest. No second read or caller digest is allowed.
+2. `GraphPlanningState.from_snapshot` over that canonical graph and codec
+   manifest supplies the before state. The existing identity planner and
+   `build_frozen_identity_graph_planning_artifact` supply each typed transition;
+   applying its `GraphPlanningDelta` supplies the next state.
+3. The after state, native artifact, member, plan, and pre-execution evidence
+   digests are recomputed in that order. Reference closure is the complete
+   snapshot ledger plus each frozen artifact's typed removed/added reference
+   edges. Free-standing reconciliation/reference-closure digests do not exist.
+4. The authorizer consumes only reloaded plan bytes. It creates one
+   `ReservationUseAuthorization` for every `PlannedIdentityReservation` in the
+   frozen artifacts. Exact empty/empty selects `BootstrapNoReservationUseV3`;
+   no-reservation authority alongside any reservation is invalid. Planning
+   authorization embeds this typed union, never a digest tuple.
+5. Immediately before CAS the executor revalidates epoch, ingress/scopes,
+   fence, lease, writer, read set, planning state, admission, and reservation
+   authority. It uses `materialize_frozen_identity_graph_plan` and
+   `materialize_frozen_identity_reference_mutations`. The atomic store alone
+   assigns commit time and graph/event/observation revisions and constructs the
+   event batch and observation delta.
+6. `BootstrapGraphAtomicEffectReceiptV3` is projected only from the durable
+   store result and exact post-CAS control/revision record returned by that
+   linearization. Group result, terminal, artifact closure, revisions, and
+   atomic-write digest must equal reloaded store records. It replaces the
+   independently constructed per-effect receipts. A request is never receipt
+   authority and no executor may calculate `applied` from proposed effects.
+
+All four roots construct repository/coordinator, reload the authority
+projection, create epoch/request, and then inject these three built-ins plus
+terminal preparation. Direct composition uses its existing atomic store and
+persistence service; the environment factory passes that closed bundle;
+filesystem supplies the filesystem stores; Hermes receives the completed
+provider service. Ordinary signatures expose no compiler, authorizer, executor,
+digest callback, or fixture-provider parameter. Protocol substitution is
+available only through an explicitly test-owned constructor unreachable from
+the four roots.
+
+Missing native planning/admission/reservation/CAS ownership, an unsupported
+operation with no native planning artifact, or a store unable to return the
+typed atomic result is `graph_transaction_native_adapter_unavailable`. Before
+attempt/lineage or possible effect it returns the pre-graph noncommit;
+afterward it persists the existing durable retry/finalized-failure form. It
+never hashes a fixture label, invents authorization, uses a zero digest, or
+falls back to legacy terminal persistence.
+
+Migration is strict because V3 is unreleased: records containing a removed
+synthetic field, digest-only planning/evidence, an untyped empty reservation
+vector, or independently built effect receipt are incompatible and cannot be
+promoted. Existing native semantic effects remain readable. Rollback disables
+new V3 promotion and retains authority, planning, retry, lineage, effect, and
+terminal records for exact replay; it neither rewrites the old V3 sketch nor
+deletes a committed effect.
+
+Required attacks, across four roots and memory plus independent-process JSONL,
+synthesize every removed digest; replace the callback snapshot/read set; omit,
+reorder, or cross-group a frozen artifact; retain stale state/delta/ledger;
+perform an ambient graph read; claim none while a reservation exists; swap,
+omit, duplicate, expire, or cross-tenant reservation authority; inject a
+fixture adapter into an ordinary root; precompute event/revision/receipt values;
+return a receipt without its durable atomic result; alter reloaded result,
+terminal, closure, revision, or atomic-write digest; and lose acknowledgement
+before/after CAS. Pre-CAS mutations have zero effect. Post-CAS retries reload
+one byte-identical store-issued result/receipt with no duplicate effect.
+
+Implementation evidence must include per-field contract tests, an independent
+CTV derivation, planning-fold/no-op and reservation-bijection tests, CAS
+lost-ack tests, static ordinary-root import/signature checks, and the complete
+four-root/backend attack matrix. Current fixture builders, zero production
+implementations of these named adapters, and the old ordinary-root path are
+expected design-only obligations and do not advance maturity beyond
+`specified` and `derivable`.
+
+##### 4.8.2.3 v46 non-publishing planner and atomic group-commit ownership
+
+This subsection supersedes any v45 implication that the compiler may call a
+publishing identity planner or that the executor may project a receipt after a
+separate persistence call. The canonical identity owner adds exactly one
+non-publishing entry point:
+
+```python
+class NonPublishingIdentityPlanningResultV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    sealed_graph_snapshot_digest: str
+    graph_read_set_digest: str
+    planning_state_before_digest: str
+    frozen_artifact: FrozenIdentityGraphPlanningArtifact
+    planning_state_after: GraphPlanningState
+    result_digest: str
+
+class IdentityOperationPlanner(Protocol):
+    def plan_nonpublishing(
+        self, *, sealed_graph_snapshot: SealedGraphStateSnapshot,
+        transaction_group_id: str,
+        current_planning_state: GraphPlanningState,
+        accepted_operation_artifact: AcceptedIdentityOperationArtifact,
+        compiled_transition: CompiledIdentityLineageTransition,
+        trusted_decision: TrustedAcceptedIdentityOperationDecision,
+        authority_verification: VerifiedIdentityDecisionAuthority,
+    ) -> NonPublishingIdentityPlanningResultV3: ...
+```
+
+`plan_nonpublishing` is the only compiler-callable identity API. It performs no
+load, publication, reservation, clock read, or mutation. It checks that the
+current planning state's base snapshot equals the supplied outer sealed
+snapshot; derives the read-set digest from that snapshot; calls the existing
+pure `build_frozen_identity_graph_planning_artifact` with the outer snapshot,
+group ID, and current state; applies its delta; and returns the frozen artifact
+and resulting state. Its CTV orders schema, group, snapshot, read set, before
+digest, complete artifact, after state, then result digest. The compiler folds
+one result per canonical operation and rejects any snapshot, group, before, or
+after discontinuity. Existing publishing APIs remain only for non-V3 callers
+and are forbidden in V3 roots.
+
+The atomic store owns the complete V3 group-commit family:
+
+```python
+class BootstrapGraphGroupCommitRequestV3(BaseModel):
+    schema_version: Literal[3]
+    operation_id: str
+    request_digest: str
+    normalization_replay_digest: str
+    attempt: BootstrapGraphDependentAttemptV3
+    group_plan_member: BootstrapTransactionGroupPlanMemberV3
+    planning_authorization: BootstrapGroupPlanningAuthorizationV3
+    source_plan_lineage_entry: BootstrapSourcePlanLineageEntryV3
+    pre_execution_manifest_identity: BootstrapGraphPreExecutionManifestIdentityV3
+    control_epoch: BootstrapGraphControlEpochV3
+    operation_fence_binding: OperationFenceBinding
+    operation_lease_binding: OperationLeaseBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    authenticated_ingress: AuthenticatedIngressContext
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    expected_generation: BootstrapGraphCurrentGenerationV3
+    request_ctv_digest: str
+
+class BootstrapGraphGroupCommitResultCoreV3(BaseModel):
+    schema_version: Literal[3]
+    request_ctv_digest: str
+    disposition: Literal["committed", "noncommitting", "failed"]
+    semantic_group_result: SemanticEffectGroupResult
+    graph_revision_before: str
+    graph_revision_after: str
+    event_revision_before: str
+    event_revision_after: str
+    observation_revision_before: str
+    observation_revision_after: str
+    publication_operation_generation: int
+    publication_artifact_generation: int
+    atomic_write_digest: str
+    core_digest: str
+
+class BootstrapGraphAtomicEffectReceiptV3(BaseModel):
+    schema_version: Literal[3]
+    request_ctv_digest: str
+    result_core_digest: str
+    transaction_group_id: str
+    semantic_group_result_digest: str
+    persisted_terminal_digest: str
+    persisted_artifact_closure_digest: str
+    graph_revision_before: str
+    graph_revision_after: str
+    event_revision_before: str
+    event_revision_after: str
+    observation_revision_before: str
+    observation_revision_after: str
+    atomic_write_digest: str
+    receipt_digest: str
+
+class BootstrapGraphGroupCommitResultV3(BaseModel):
+    schema_version: Literal[3]
+    core: BootstrapGraphGroupCommitResultCoreV3
+    receipt: BootstrapGraphAtomicEffectReceiptV3
+    result_digest: str
+
+class BootstrapGraphGroupCommitReloadV3(BaseModel):
+    schema_version: Literal[3]
+    operation_id: str
+    request_ctv_digest: str
+    persisted_result: BootstrapGraphGroupCommitResultV3
+    successor_generation: BootstrapGraphCurrentGenerationV3
+    reload_digest: str
+
+class BootstrapGraphGroupCommitRepositoryV3(Protocol):
+    def commit_or_reload(
+        self, *, request: BootstrapGraphGroupCommitRequestV3
+    ) -> BootstrapGraphGroupCommitReloadV3: ...
+    def reload_exact(
+        self, *, operation_id: str, request_ctv_digest: str,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        operation_fence_binding: OperationFenceBinding,
+    ) -> BootstrapGraphGroupCommitReloadV3 | None: ...
+```
+
+`SemanticIngestionAtomicStore` implements this repository. Inside one store
+transaction and one CAS it authenticates current authority; rechecks generation,
+epoch, lease, writer, read set, planning fold, admission, and reservations;
+materializes frozen graph/reference mutations; assigns commit time and all
+successor revisions; constructs graph, event, observation, terminal,
+artifact-closure, and group-result records; writes those records plus request
+index, result core, receipt, successor generation, and reload index; and returns
+the exact reload. The receipt is constructed inside that linearization from the
+just-persisted core. Its fields equal the core and nested group result.
+`result_digest` binds complete core then receipt; `reload_digest` binds
+operation/request, complete result, and successor generation. Found-before-
+write and lost-ack return the same bytes. A successful result without a receipt,
+or receipt without its core/index/generation, is unrepresentable.
+
+The executor now validates and calls `commit_or_reload` once. Its
+`BootstrapGraphGroupExecutionResultV3` nests the complete
+`BootstrapGraphGroupCommitReloadV3` as its sole effect authority; disposition,
+terminal, carrier, revision, and digest fields are typed validators over that
+reload. The coordinator checkpoints complete reloads, calls `reload_exact` for
+unknown acknowledgement, and threads them through retry and terminal. Final
+group construction, final-stage evidence, execution manifest, source result,
+terminal preparation/publication, and found-terminal validation consume the
+exact nested reload or strict typed projections, never caller-built effects.
+
+The supersession/rejection matrix is exhaustive:
+
+| Earlier field or carrier | v46 replacement | Rejection rule |
+| --- | --- | --- |
+| plan `claim_slot_digests` | removed | any presence rejects |
+| plan/manifest `compilation_artifact_digest` | complete non-publishing result/frozen artifact | digest-only or rebuilt value rejects |
+| `independence_certificate_digest` | validated before/artifact/after fold | any certificate field rejects |
+| plan/attempt/CAS `proposed_delta_digest` | complete frozen artifacts and typed deltas | scalar substitute rejects |
+| pre-CAS `event_batch_digest` | absent; store materializes event | any pre-CAS event identity rejects |
+| `reconciliation_digest` | typed planning fold | scalar, fixture, or ambient value rejects |
+| `reference_closure_digest` | sealed ledger plus typed reference mutations | scalar or searched closure rejects |
+| `reservation_use_authorization_digests` | complete reservation none/use union | empty/digest-only/wrong arm rejects |
+| manifest compilation/evidence digest fields | complete native artifact and evidence | detached digest or byte mismatch rejects |
+| old group CAS request effect scalars | complete group-commit request | old request kind/shape rejects |
+| caller-built CAS outcome/effect carriers | store-persisted result core | any caller outcome/carrier rejects |
+| per-effect receipt tuple | one atomic store receipt | old/synthesized/missing receipt rejects |
+| executor independent outcome/carriers/receipts | exact nested group-commit reload | duplicate or unequal projection rejects |
+| retry result/effect digest vectors | ordered complete group-commit reloads | digest-only/missing/reordered/rebuilt rejects |
+| final group independent disposition/effects | projection of nested reload | core/result mismatch rejects |
+| final-stage execution digests | ordered reload projection plus loadable reloads | unresolved/wrong-index digest rejects |
+| manifest proposed/applied effect digests | planning artifact/store reload projections | detached or pre/post substitution rejects |
+| terminal member/result effects | persisted reload or reverse-joined typed projection | legacy/rebuilt/missing reload rejects |
+
+All models use `extra="forbid"`; old fields cannot survive as ignored metadata.
+Encoders and member-kind registries remove superseded kinds rather than aliasing
+them. Mixed old/new plan, attempt, manifest, CAS, result, retry, or terminal
+closures are `graph_transaction_v3_commit_shape_incompatible` before lookup or
+effect.
+
+Attacks mutate every matrix row by omitting the replacement, restoring the old
+field, supplying both, changing nested bytes under a retained digest,
+cross-group/request/generation substitution, and vector reorder. Planner tests
+prove zero store/clock calls, outer-snapshot and group identity, fold continuity,
+and publishing-API rejection. Store tests fail before CAS, between pre-CAS
+materialization steps, immediately after CAS, and after return; only post-CAS
+cases reload one identical result/receipt. Memory and independent-process JSONL
+prove same-request convergence, different-request conflict, stale generation/
+read-set/reservation rejection, receipt/core bijection, successor threading,
+retry/terminal reverse joins, and exclusive built-in composition in all four
+ordinary roots.
+
+##### 4.8.2.4 v47 state-aware pure planning and normative reload-only schemas
+
+The v46 API omitted the domain `operation` and `candidate` required by the
+existing artifact builder and did not state delta sequence continuity. The
+canonical pure helper and planner contract are therefore replaced by:
+
+```python
+def build_frozen_identity_graph_planning_artifact_from_state(
+    *,
+    sealed_graph_snapshot: SealedGraphStateSnapshot,
+    transaction_group_id: str,
+    current_planning_state: GraphPlanningState,
+    accepted_operation_artifact: AcceptedIdentityOperationArtifact,
+    operation: IdentityOperation,
+    candidate: IdentityOperationCandidate,
+    compiled_transition: CompiledIdentityLineageTransition,
+    trusted_decision: TrustedAcceptedIdentityOperationDecision,
+    authority_verification: VerifiedIdentityDecisionAuthority,
+) -> FrozenIdentityGraphPlanningArtifact: ...
+
+class IdentityOperationPlanner(Protocol):
+    def plan_nonpublishing(
+        self, *,
+        sealed_graph_snapshot: SealedGraphStateSnapshot,
+        transaction_group_id: str,
+        current_planning_state: GraphPlanningState,
+        accepted_operation_artifact: AcceptedIdentityOperationArtifact,
+        operation: IdentityOperation,
+        candidate: IdentityOperationCandidate,
+        compiled_transition: CompiledIdentityLineageTransition,
+        trusted_decision: TrustedAcceptedIdentityOperationDecision,
+        authority_verification: VerifiedIdentityDecisionAuthority,
+    ) -> NonPublishingIdentityPlanningResultV3: ...
+```
+
+The helper is a thin state-aware form of the existing pure artifact builder; it
+does not call the publishing planner. It requires every argument above and has
+no optional/default/search path. Missing input is
+`identity_nonpublishing_planning_input_missing` before artifact construction.
+It checks exact operation equality across accepted artifact, operation,
+candidate, transition, trusted decision, and verification; exact group equality;
+and snapshot equality across the sealed snapshot, current planning state, read
+set, transition, and decision. It passes `current_planning_state` as the
+artifact's `planning_state_before`, builds the delta, applies it once, and
+returns that state as `planning_state_after`.
+
+For the first artifact in a group,
+`planning_delta.base_state_digest == initial_planning_state.state_digest` and
+`planning_delta.sequence == len(initial_planning_state.applied_planning_delta_digests) + 1`.
+For artifact `i > 0`, its base digest equals artifact `i-1`'s after-state digest,
+its before state equals that complete after state, and its sequence is exactly
+the predecessor sequence plus one. Each after state's applied-delta vector is
+the before vector with exactly that delta digest appended. No operation occurs
+twice; all artifacts name one group and one sealed snapshot. A later group
+starts from the outer compilation's current state after all prior canonical
+groups, but uses its own transaction-group ID and sequence continuation; it may
+not reset to the sealed base. Empty/no-op groups return unchanged state and no
+fabricated delta. Any base, sequence, vector, group, operation, candidate, or
+snapshot discontinuity is `identity_nonpublishing_planning_discontinuous` with
+zero publication, reservation, graph, event, observation, or clock effect.
+
+Tests require two operations in one group, two successive groups, reversed and
+duplicate operations, missing each required input independently, wrong
+candidate/operation/decision joins, stale base digest, skipped/reused sequence,
+altered applied-delta vector, cross-group artifact substitution, empty group,
+and injected publishing/store/clock calls. Every rejection has zero effects.
+
+One group commit may contain multiple operations. The v47 store family
+therefore also replaces v46's singular `semantic_group_result` core:
+
+```python
+class BootstrapGraphOperationCommitInputV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    operation_id: str
+    proposal_digest: str
+    member_digests: tuple[str, ...]
+    planning_result: NonPublishingIdentityPlanningResultV3 | None
+    input_digest: str
+
+class BootstrapGraphOperationCommitResultV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    operation_id: str
+    operation_input_digest: str
+    semantic_effect_group_result: SemanticEffectGroupResult
+    graph_delta_digest: str | None
+    event_batch_digest: str | None
+    observation_delta_digest: str
+    result_digest: str
+
+class BootstrapGraphGroupCommitRequestV3(BaseModel):
+    # all v46 authority/generation fields remain in their stated order
+    ordered_operation_inputs: tuple[BootstrapGraphOperationCommitInputV3, ...]
+    request_ctv_digest: str
+
+class BootstrapGraphGroupCommitResultCoreV3(BaseModel):
+    # request identity, disposition, revisions, generations, and atomic write
+    # remain in their stated order
+    ordered_operation_results: tuple[BootstrapGraphOperationCommitResultV3, ...]
+    core_digest: str
+
+class BootstrapGraphAtomicEffectReceiptV3(BaseModel):
+    # request/core/group/revision/atomic-write fields remain in stated order
+    ordered_operation_result_digests: tuple[str, ...]
+    receipt_digest: str
+```
+
+The plan member's canonical `operation_ids` is the authority vector. Request
+inputs and result operation IDs equal it exactly in order, length, and
+uniqueness; each input binds that operation's proposal/member/planning bytes,
+and each result binds the corresponding input digest and has the same operation
+ID in its nested `SemanticEffectGroupResult`. The receipt digest vector is the
+exact ordered projection of complete result digests. Graph/event digests are
+present exactly for committing operations; every operation has one observation
+delta. Group disposition is `committed` when at least one operation commits,
+`noncommitting` when none commits and all are terminal noncommits, and `failed`
+only under the defined group failure policy. All operation results, revisions,
+events, observations, core, receipt, indexes, and successor generation are
+published by the same group CAS.
+
+An explicit no-op group has one or more operation inputs with
+`planning_result=None`, one noncommitting result per operation, null graph/event
+digests, and one observation delta per operation; it is not an empty operation
+vector. Zero-operation groups are invalid. Missing, duplicate, reordered,
+cross-operation, extra, or singular-result-for-multi-operation closures reject
+before CAS or terminal visibility. Multi-operation same-group and no-op tests
+verify request-plan bijection, atomic all-or-nothing publication, result/receipt
+order, lost-ack exact reload, retry/final/manifest/terminal preservation, and
+one-field mutation rejection.
+
+The following definitions are the sole normative downstream V3 schemas. They
+replace every earlier same-named sketch in this section:
+
+```python
+class BootstrapGraphGroupExecutionResultV3(BaseModel):
+    schema_version: Literal[3]
+    group_commit_reload: BootstrapGraphGroupCommitReloadV3
+    execution_result_digest: str
+
+class BootstrapGraphGroupResultConstructionV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    normalization_replay_digest: str
+    attempt_digest: str
+    source_plan_lineage_entry: BootstrapSourcePlanLineageEntryV3
+    group_plan_member: BootstrapTransactionGroupPlanMemberV3
+    planning_authorization: BootstrapGroupPlanningAuthorizationV3
+    pre_execution_manifest_identity: BootstrapGraphPreExecutionManifestIdentityV3
+    group_commit_reload: BootstrapGraphGroupCommitReloadV3
+    operation_fence_binding_digest: str
+    control_epoch_digest: str
+    construction_digest: str
+
+class BootstrapGraphAttemptConstructionInputsV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_plan: BootstrapTransactionGroupPlanV3
+    pre_execution_evidence: tuple[BootstrapGraphPreExecutionGroupEvidenceV3, ...]
+    attempt_input_digest: str
+
+class BootstrapGraphExecutionManifestGroupInputV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    group_plan_member: BootstrapTransactionGroupPlanMemberV3
+    pre_execution_evidence: BootstrapGraphPreExecutionGroupEvidenceV3
+    group_commit_reload: BootstrapGraphGroupCommitReloadV3
+    input_digest: str
+
+class BootstrapGraphFinalStageEvidenceV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    normalization_replay_digest: str
+    attempt_digest: str
+    transaction_group_plan_digest: str
+    source_plan_lineage_digest: str
+    ordered_group_commit_reloads: tuple[BootstrapGraphGroupCommitReloadV3, ...]
+    source_outcomes: tuple[IngestionStageOutcome, ...]
+    graph_validation_attempts: tuple[GraphDependentValidationAttempt, ...]
+    causal_blockers: tuple[IngestionStageInstanceRef, ...]
+    terminal_before_planning_proof_digests: tuple[str, ...]
+    control_epoch_digest: str
+    evidence_digest: str
+
+class BootstrapGraphDurableRetryProgressV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    latest_attempt: BootstrapGraphDependentAttemptV3
+    complete_lineage: BootstrapSourcePlanLineageV3
+    ordered_completed_group_commit_reloads: tuple[BootstrapGraphGroupCommitReloadV3, ...]
+    pending_transaction_group_ids: tuple[str, ...]
+    control_epoch_digest: str
+    progress_digest: str
+
+class BootstrapGraphCanonicalSourceResultInputV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    normalization_replay_digest: str
+    source_plan_lineage_digest: str
+    ordered_group_result_constructions: tuple[BootstrapGraphGroupResultConstructionV3, ...]
+    ordered_group_commit_reloads: tuple[BootstrapGraphGroupCommitReloadV3, ...]
+    outcome_core: BootstrapGraphCanonicalSourceOutcomeCoreV3
+    canonical_source_terminal_outcome: CanonicalSourceTerminalOutcomeRecord
+    control_epoch_digest: str
+    input_digest: str
+
+class BootstrapGraphTerminalPublicationRequestV3(BaseModel):
+    schema_version: Literal[3]
+    coordinator_request: BootstrapGraphDependentCoordinatorRequestV3
+    control_epoch: BootstrapGraphControlEpochV3
+    final_attempt: BootstrapGraphDependentAttemptV3
+    final_plan: BootstrapTransactionGroupPlanV3
+    complete_lineage: BootstrapSourcePlanLineageV3
+    execution_manifest: IngestionExecutionManifest
+    ordered_group_commit_reloads: tuple[BootstrapGraphGroupCommitReloadV3, ...]
+    ordered_group_result_constructions: tuple[BootstrapGraphGroupResultConstructionV3, ...]
+    canonical_source_result_input: BootstrapGraphCanonicalSourceResultInputV3
+    handoff_core: BootstrapGraphTerminalHandoffCoreV3
+    publication_intent: BootstrapGraphTerminalPublicationIntentV3
+    handoff: BootstrapGraphTerminalPersistenceHandoffV3
+    predecessor_generation: BootstrapGraphCurrentGenerationV3
+    authenticated_ingress: AuthenticatedIngressContext
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    publication_request_digest: str
+```
+
+The plan, attempt, and pre-execution evidence carry only typed planning inputs;
+they contain no CAS request, effect, receipt, or future reload. The manifest,
+final evidence, source-result input, retry progress, and terminal request carry
+complete reloads, never standalone execution-result, disposition, carrier,
+revision, atomic-write, or receipt fields. Cardinality is exact: one reload per
+executed final group, canonical group order, unique request CTV and group ID;
+terminal-before-planning requires zero reloads; pending retry groups have none;
+reused committed/final groups retain byte-identical predecessor reloads;
+replacement groups contain only successor reloads. Constructions and reload
+vectors are a bijection by group and identical bytes. Within each reload, the
+ordered operation-input, operation-result, and receipt-digest vectors form a
+second exact bijection to `group_plan_member.operation_ids`. Retry, final
+evidence, manifest, source, and terminal validators recursively preserve that
+complete per-operation closure and never flatten it to a singular result.
+
+Canonical codecs are registered under domains
+`memorii.bootstrap-graph.group-commit-request.v3`,
+`group-commit-result-core.v3`, `group-atomic-effect-receipt.v3`,
+`group-commit-result.v3`, and `group-commit-reload.v3`. Preimages follow the
+field order shown: request excludes `request_ctv_digest`; core excludes
+`core_digest`; receipt includes request/core identities and excludes
+`receipt_digest`; result is `(schema_version, complete core, complete receipt)`;
+reload is `(schema_version, operation_id, request_ctv_digest, complete result,
+complete successor_generation)`. The store member kinds are exactly
+`bootstrap_graph_group_commit_request`,
+`bootstrap_graph_group_commit_result_core`,
+`bootstrap_graph_atomic_effect_receipt`,
+`bootstrap_graph_group_commit_result`, and
+`bootstrap_graph_group_commit_reload`. The request index key is
+`(store_identity_digest, operation_id, request_ctv_digest)` and resolves exactly
+one reload member digest; the reverse indexes by transaction group, atomic
+write, receipt, result, and successor generation must all resolve that same
+reload. `reload_exact` authenticates before index lookup and validates every
+forward/reverse edge and nested CTV before returning bytes.
+
+The codecs/member kinds for `bootstrap_graph_group_cas_request`, caller-built
+CAS outcome/effect carrier, `bootstrap_graph_group_effect_receipt`, and any
+digest-only group-execution result are withdrawn. Their discriminators/domains
+are unknown, not aliases. Likewise, the removed attempt, evidence, manifest,
+retry, construction, source, and terminal fields listed in the v46 matrix have
+no decoder compatibility. Old-only, mixed, old discriminator under new domain,
+new discriminator under old domain, extra legacy field, omitted reload,
+duplicate reload, digest-only reload, wrong index, and valid reload with an
+independently supplied effect all reject before disclosure or effect.
+
+Terminal publication is unrepresentable unless every executed final group has
+one loadable, byte-identical, reverse-index-valid reload and every terminal
+projection recomputes from it. Tests delete each reload member/index/reverse
+edge, swap any nested core/receipt/result/generation, alter vector order or
+cardinality, substitute predecessor/replacement reloads, and attempt all old or
+mixed encodings in memory and independent-process JSONL. No malformed terminal
+request reaches terminal CAS; a lost terminal acknowledgement reloads the same
+terminal closure without reconstructing group effects.
+
+The future selector gains a machine-checked v47 requirement-to-test-to-gate
+matrix, not prose-only coverage. One row exists for every supersession-table
+carrier and each omit/restore/both/retained-digest/cross-identity/reorder
+mutation, plus every planner discontinuity, store cut point, index/reverse-edge,
+and terminal-unrepresentability case. Each row names requirement ID, exact
+schema/carrier, mutation ID, root, backend, public trigger, pytest node ID,
+expected store calls, CAS linearizations, graph/event/observation effects,
+reload digest, successor generation, rejection code, and owning required job.
+Dedicated rows cover multi-operation committing, mixed committing/noncommitting,
+all-noncommitting no-op, missing/duplicate/reordered/cross-operation result, and
+singular-result substitution under one exact group CAS.
+The validator rejects missing or duplicate matrix keys, helper-only tests,
+fixture-injected ordinary roots, memory aliases for JSONL, uncollected nodes,
+unknown mutation/carrier/domain, stale collection digest, and any row not owned
+by the graph transaction required gate.
+
+The executable universe is the Cartesian product of direct, factory,
+filesystem, and Hermes roots with memory and independent-process JSONL. Every
+ordinary root must construct the built-ins by default and expose no fixture
+injection. Atomic-commit rows cover failure before validation, after validation,
+after materialization but before CAS, immediately after CAS before response,
+and after response; exact post-CAS reload equality, concurrent same-request
+convergence, different-request conflict, stale generation/read-set/reservation,
+revoked ingress/scope, wrong fence/lease/writer, and unauthorized pre-lookup
+reload are mandatory. Compatibility rows cover every old and mixed codec/kind/
+field combination. Rollback rows prove existing complete reloads remain exact
+read-only replay while every new group-commit request is rejected with zero new
+operation, generation, graph, event, observation, retry, or terminal write.
+Selector, tests, and gate remain design obligations and confer no implemented
+or CI-enforced evidence until their exact revision-bound receipts exist.
+
+##### 4.8.2.5 v48 group-keyed commit identity and exclusive binding vocabulary
+
+The group-commit family is keyed by group, never by one member operation. The
+v46/v47 `operation_id` field on `BootstrapGraphGroupCommitRequestV3` and
+`BootstrapGraphGroupCommitReloadV3`, and the `operation_id` argument to
+`reload_exact`, are withdrawn and replaced as follows:
+
+```python
+class BootstrapGraphGroupCommitRequestV3(BaseModel):
+    schema_version: Literal[3]
+    source_operation_id: str
+    transaction_group_id: str
+    operation_ids: tuple[str, ...]
+    # all authority, plan, authorization, lineage, identity, epoch, generation,
+    # and ordered_operation_inputs fields remain in their normative order
+    request_ctv_digest: str
+
+class BootstrapGraphGroupCommitReloadV3(BaseModel):
+    schema_version: Literal[3]
+    source_operation_id: str
+    transaction_group_id: str
+    operation_ids: tuple[str, ...]
+    request_ctv_digest: str
+    persisted_result: BootstrapGraphGroupCommitResultV3
+    successor_generation: BootstrapGraphCurrentGenerationV3
+    reload_digest: str
+
+class BootstrapGraphGroupCommitRepositoryV3(Protocol):
+    def commit_or_reload(
+        self, *, request: BootstrapGraphGroupCommitRequestV3
+    ) -> BootstrapGraphGroupCommitReloadV3: ...
+    def reload_exact(
+        self, *, source_operation_id: str, transaction_group_id: str,
+        operation_ids: tuple[str, ...], request_ctv_digest: str,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        operation_fence_binding: OperationFenceBinding,
+    ) -> BootstrapGraphGroupCommitReloadV3 | None: ...
+```
+
+`source_operation_id` is the source-level atomic control owner and is distinct
+from member operation IDs. `transaction_group_id` plus the complete canonical
+`operation_ids` vector is the group identity. The vector equals, byte for byte,
+the plan member, request operation inputs, result operation results, and receipt
+result-digest projection. The request CTV begins with schema, source operation,
+group, complete operation vector, then the remaining v47 fields. The reload CTV
+uses the field order shown. No scalar member operation selects a group reload.
+
+The primary index key is `(store_identity_digest, source_operation_id,
+transaction_group_id, operation_ids, request_ctv_digest)`. Reverse indexes by
+group, each member operation, atomic write, receipt, result, and successor
+generation all point to the one reload digest. The per-operation reverse index
+is explicit fanout only: key `(store_identity_digest, source_operation_id,
+transaction_group_id, member_operation_id, request_ctv_digest)` contains the
+complete `operation_ids` vector and same reload digest; it can never return an
+operation-local reload. `reload_exact` validates the group primary first, then
+requires exactly one fanout row for each vector member and no extra row.
+
+Two-operation recovery tests lose acknowledgement after the group CAS, reopen
+through each primary and per-operation reverse index, and require identical
+complete reload bytes, result/receipt vector order, and successor generation.
+Concurrent equal requests converge to that reload; any different group, vector,
+order, request digest, or source control conflicts without a second effect.
+Durable retry and terminal reload preserve the same two-operation group identity
+and reject a scalar-operation lookup, partial vector, per-operation split,
+duplicate fanout, missing fanout, or fanout to another group.
+
+The only active execution vocabulary is
+`BootstrapGraphGroupCommitRequestV3 -> BootstrapGraphGroupCommitReloadV3`.
+Active architecture and binding maps must not name the withdrawn group-CAS
+request, CAS outcome, effect-carrier, per-effect-receipt, or independent
+execution-result shapes. The binding validator maintains a denylist of their
+class names, codec domains, discriminators, member kinds, field names, and old
+call verbs. It scans every active V3 producer, call-order, terminal-equality,
+closure, member-order, root, recovery, and selector entry; any occurrence fails
+the binding gate. Historical candidate/review prose may retain names only when
+explicitly tagged non-active history and excluded from the runtime binding
+artifact.
+
+Terminal equality is now: plan member operation vector equals request inputs;
+the one group reload equals the store index; its result core equals its receipt;
+each ordered operation result equals its semantic terminal/graph/event/
+observation records; and every retry/final/manifest/source/terminal projection
+reverse-joins that same reload. There is no intermediate active CAS result or
+effect carrier. Mutation tests insert each denied token into every binding entry,
+replace the commit request or reload with an old name, add an operation-local
+lookup, or restore old terminal equality text; the validator rejects all.
+
+The group failure partition is closed. `BootstrapGraphGroupCommitResultCoreV3`
+allows only `disposition: Literal["committed", "noncommitting"]`; the earlier
+`failed` arm is withdrawn. Validation, authorization, stale generation/read set,
+reservation, lease/fence/writer, materialization, or infrastructure failure
+before CAS creates no group result, receipt, reload, successor generation,
+observation delta, or graph/event/observation revision. Once attempt or lineage
+exists, the coordinator records only `BootstrapGraphDurableRetryProgressV3`
+with the unchanged ordered completed-reload prefix and the whole failed group in
+`pending_transaction_group_ids`; before attempt/lineage it returns the existing
+pre-graph noncommit. A retryable pre-CAS failure is never a terminal
+noncommitting operation result.
+
+After CAS exactly one reload exists and cannot be `failed`. For `committed`, at
+least one ordered operation result has accepted terminal status, non-null graph
+and event digests, and one observation digest; core graph/event/observation
+successor revisions equal the single atomic group transition. Other operations
+in that atomic group may be noncommitting but still have their store-issued
+terminal result and observation. For `noncommitting`, every operation result has
+a terminal noncommitting status, null graph/event digests, one observation
+digest, unchanged graph/event revisions, and the one advanced observation
+revision recorded by the group CAS. The ordered vector and all result records
+publish atomically; partial per-operation publication is impossible.
+
+Lost acknowledgement after CAS calls group-keyed `reload_exact` and resumes
+from the returned committed/noncommitting reload. Failure to reload an uncertain
+post-CAS outcome remains durable retry with no fabricated observation and cannot
+finalize terminal. Terminal construction accepts only recovered committed/
+noncommitting reloads plus a separately authorized source-level finalized-
+failure path that claims no group effect. Tests cover every pre-CAS failure with
+zero revisions/observations, mixed-operation committed algebra, all-operation
+noncommitting algebra, post-CAS lost acknowledgement, unavailable reload,
+illegal failed disposition, and terminal publication from pending retry.
+
+Implementation evidence remains intentionally absent at design stage. Zero
+production callers for the new repository/default adapters and the current old
+root path remain truthful implementation/test/CI obligations, not evidence that
+the v48 semantic contract is incomplete or implemented.
+
+##### 4.8.2.6 v50 typed store materialization and complete plan member
+
+The group commit request must carry the complete typed semantic evaluation that
+the store needs; a plan digest is not enough to create a terminal or artifact
+closure. The canonical evaluator, owned beside the compiler but pure and
+non-publishing, produces:
+
+```python
+class HistoricalBootstrapGraphOperationReductionV3GenericGrammar(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    operation_id: str
+    proposal_digest: str
+    semantic_compilation: SemanticCompilationResult
+    terminal_outcome: SemanticTerminalOutcome
+    artifact_closure: SemanticArtifactClosure
+    reduction_digest: str
+
+class BootstrapGraphOperationStoreMaterializationInputV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    operation_id: str
+    operation_plan: BootstrapTransactionGroupOperationPlanV3
+    reduction: BootstrapGraphOperationReductionV3
+    planning_result: NonPublishingIdentityPlanningResultV3 | None
+    reservation_use_authority: BootstrapReservationUseAuthorityV3
+    input_digest: str
+
+class BootstrapGraphGroupCommitRequestV3(BaseModel):
+    # v48 source/group/vector and all authority/generation fields remain
+    ordered_operation_inputs: tuple[
+        BootstrapGraphOperationStoreMaterializationInputV3, ...
+    ]
+    request_ctv_digest: str
+```
+
+This v50 paragraph describes the withdrawn generic grammar only and is
+non-active historical rationale. `SemanticCompilationResult` was the complete typed compiler reduction, not a
+digest reference. `terminal_outcome` is the complete pre-commit semantic
+terminal including sealed operations, accepted carriers, terminal binding sets,
+lineage, arbitration policy, authorization read set, reasons, and terminal
+digest. `artifact_closure` is complete and must equal
+`SemanticArtifactClosure.create(terminal_outcome)`. The reduction validator
+requires operation/proposal/group equality across compilation, terminal,
+closure, operation plan, planning result, authorization, and request. Accepted
+terminal requires a non-null planning result when it changes graph state;
+noncommitting terminal requires no graph-planning delta. Unknown, missing, or
+extra reduction input fails before store entry. No graph delta, event batch,
+observation delta, commit coordinate, revision, clock value, or effect receipt
+is caller input.
+
+Inside the one group linearization the store derives
+`SemanticEffectGroupResult.create(terminal_outcome, artifact_closure)` for each
+operation; derives `SemanticGraphDelta.create(terminal_outcome)` only for an
+accepted terminal; materializes frozen graph/reference records; enriches them
+with the store-issued fence, revisions, and commit time; derives
+`SemanticEventInputBatch`, the durable semantic event record/batch, and
+`SemanticObservationDelta`; and validates all derived records before writing
+the complete ordered operation-result/core/receipt/reload closure. Thus the
+request supplies semantic truth selected before CAS while the store alone owns
+all persistence coordinates and effect records. Ambient proposal, compiler,
+terminal, carrier, policy, graph, or artifact lookup is forbidden.
+
+The complete replacement plan member is:
+
+```python
+class BootstrapTransactionGroupOperationPlanV3(BaseModel):
+    schema_version: Literal[3]
+    source_operation_membership: BootstrapSourceOperationMembershipV3
+    operation_id: str
+    proposal_digest: str
+    member_digests: tuple[str, ...]
+    segment_ids: tuple[str, ...]
+    dependency_group_ids: tuple[str, ...]
+    planning_result: NonPublishingIdentityPlanningResultV3 | None
+    operation_plan_digest: str
+
+class BootstrapTransactionGroupPlanMemberV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    source_dependency_group_digest: str
+    sealed_graph_snapshot_digest: str
+    graph_read_set: GraphReadSetToken
+    reference_integrity_ledger_digest: str
+    planning_state_before: GraphPlanningState
+    operation_plans: tuple[BootstrapTransactionGroupOperationPlanV3, ...]
+    planning_state_after: GraphPlanningState
+    required_reservation_digests: tuple[str, ...]
+    member_digest: str
+```
+
+There are 1--256 `operation_plans`, ordered by canonical `operation_id`, with
+unique operation/proposal IDs; every member/segment/dependency/reservation
+vector is sorted, unique, non-empty where the source dependency group requires
+it, and bounded at 4096 entries. `graph_read_set` and ledger digest come from the
+one outer sealed snapshot. `planning_state_before` is the state entering this
+group; folding every non-null planning result in operation order yields exactly
+`planning_state_after` with the v47 base/sequence rules. Null planning results
+leave state unchanged. `required_reservation_digests` is the exact sorted union
+from all non-null results. The member preimage follows the field order shown
+under `memorii.semantic-ingestion.bootstrap-transaction-group-plan-member.v3`.
+It has no claim-slot, detached compilation/certificate, proposed-effect, or
+event field; those names are `extra="forbid"` decode failures.
+
+The coordinator creates operation plans only from the sealed source dependency
+group, typed compilation/reduction output, and state-aware planner result. The
+plan checkpoint persists the complete member bytes. Attempt inputs contain the
+complete reloaded plan and pre-execution evidence whose operation vector,
+snapshot/read set/ledger, before/after state, and planning-result digest vector
+equal the member. Authorization consumes the complete member and produces the
+reservation-use bijection. Group commit construction joins each complete
+reloaded operation plan to exactly one reduction and authorization and copies
+the ordered typed materialization inputs into the request. Manifest pre-
+execution identity references the member and evidence; post-execution manifest,
+retry, final evidence, source, and terminal use only the group reload. No
+checkpoint consumer reads a removed field or reconstructs a parallel vector.
+
+Preimage order is: operation-plan schema, operation, proposal, member vector,
+segment vector, dependency-group vector, complete planning result/null, digest;
+group member fields as shown; reduction schema, group, operation, proposal,
+complete compilation, terminal, closure, digest; materialization input schema,
+group, operation, complete operation plan, reduction, planning result/null,
+reservation authority, digest; group request v48 fields followed by complete
+ordered materialization inputs and request digest. Every nested digest is
+recomputed before its parent. A mismatch at any join is
+`graph_group_materialization_input_incompatible` before CAS.
+
+Public constructor tests call direct, factory, filesystem, and Hermes roots
+with one and two-operation groups on memory and independent JSONL. They prove
+the plan member can be built without any withdrawn field, survives checkpoint
+reload byte-identically, supplies every attempt/authorization/commit consumer,
+and yields exact accepted, mixed, and all-noncommitting store records. Mutations
+omit or substitute compilation, terminal, closure, planning result, reservation,
+operation plan, snapshot/read set/ledger/state; alter any nested digest; add a
+caller graph/event/observation/revision/receipt; exceed every limit; restore any
+withdrawn plan field; or force ambient lookup. All reject before CAS with zero
+effect. Lost acknowledgement proves the store reload alone supplies exact
+derived records. These tests and constructors remain future evidence; zero
+production callers remains truthful until implementation.
+
+##### 4.8.2.7 v51 exhaustive active planning-to-commit supersession
+
+The following block is exhaustive and current. It supersedes every earlier V3
+definition of the same names and removes all “remaining fields” inheritance.
+
+```python
+class BootstrapGraphPlanCompilationV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    normalization_replay_digest: str
+    control_epoch_digest: str
+    transaction_group_plan: BootstrapTransactionGroupPlanV3
+    operation_reductions: tuple[BootstrapGraphOperationReductionV3, ...]
+    pre_execution_evidence: tuple[BootstrapGraphPreExecutionGroupEvidenceV3, ...]
+    attempt_construction_inputs: BootstrapGraphAttemptConstructionInputsV3
+    compilation_digest: str
+
+class BootstrapGroupPlanningAuthorizationV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    transaction_group_id: str
+    group_plan_member_digest: str
+    operation_ids: tuple[str, ...]
+    operation_plan_digests: tuple[str, ...]
+    admission_authority_digest: str
+    capability_binding_digests: tuple[str, ...]
+    reservation_use_authority: BootstrapReservationUseAuthorityV3
+    graph_read_set_digest: str
+    control_epoch_digest: str
+    operation_fence_binding_digest: str
+    operation_lease_binding_digest: str
+    writer_commit_binding_digest: str
+    authorization_digest: str
+
+class BootstrapGraphPlanAtomicMemberV3(BaseModel):
+    schema_version: Literal[3]
+    member_id: str
+    kind: Literal[
+        "bootstrap_graph_coordinator_request",
+        "bootstrap_graph_snapshot_authority",
+        "bootstrap_graph_control_epoch",
+        "graph_base_read_set",
+        "graph_read_set_extension",
+        "graph_reconciliation",
+        "reference_closure",
+        "group_compilation_request",
+        "group_compilation_artifact",
+        "group_independence_certificate",
+        "bootstrap_graph_pre_execution_group_evidence",
+        "bootstrap_transaction_group_plan",
+        "bootstrap_group_planning_authorization",
+        "bootstrap_graph_dependent_attempt",
+        "bootstrap_source_plan_lineage_entry",
+        "bootstrap_graph_retry_progress",
+        "bootstrap_graph_final_stage_evidence",
+        "ingestion_execution_manifest",
+        "transaction_group_result",
+        "bootstrap_graph_terminal_handoff",
+        "bootstrap_graph_canonical_source_result",
+    ]
+    canonical_payload: bytes
+    payload_digest: str
+    member_digest: str
+
+class BootstrapGraphGroupCommitRequestV3(BaseModel):
+    schema_version: Literal[3]
+    source_operation_id: str
+    transaction_group_id: str
+    operation_ids: tuple[str, ...]
+    request_digest: str
+    normalization_replay_digest: str
+    attempt: BootstrapGraphDependentAttemptV3
+    group_plan_member: BootstrapTransactionGroupPlanMemberV3
+    planning_authorization: BootstrapGroupPlanningAuthorizationV3
+    source_plan_lineage_entry: BootstrapSourcePlanLineageEntryV3
+    pre_execution_manifest_identity: BootstrapGraphPreExecutionManifestIdentityV3
+    control_epoch: BootstrapGraphControlEpochV3
+    operation_fence_binding: OperationFenceBinding
+    operation_lease_binding: OperationLeaseBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    authenticated_ingress: AuthenticatedIngressContext
+    required_outcome_scopes: RequiredOutcomeScopeSet
+    expected_generation: BootstrapGraphCurrentGenerationV3
+    ordered_operation_inputs: tuple[
+        BootstrapGraphOperationStoreMaterializationInputV3, ...
+    ]
+    request_ctv_digest: str
+```
+
+`BootstrapGraphPlanCompilationV3` contains all operation reductions, ordered by
+the plan's canonical group order and then each member's operation order. Its
+reduction projection equals the concatenation of all member operation IDs with
+no omission or extra. There is exactly one pre-execution evidence value per
+group and its member/snapshot/read-set/ledger/state fields equal that complete
+member. Attempt inputs embed the same complete plan and exact evidence tuple.
+The compilation preimage follows the fields shown and uses
+`memorii.semantic-ingestion.bootstrap-graph-plan-compilation.v3`.
+
+The preceding V51 checkpoint-order wording that listed operation-plan,
+operation-reduction, and attempt-construction-input *members* is historical and
+superseded. It has no active contract effect. The canonical active graph
+checkpoint order and every checkpoint reference derive solely from the v62
+21-literal `BootstrapGraphPlanAtomicMemberV3.kind` registry and the v62 closure
+table; those three values are nested projections in their owning members, not
+member kinds. Planning authorizations remain a complete native projection only
+after the plan reload. Every checkpoint reload returns the exact canonical
+payload bytes and member vector; it may not retain only a digest.
+
+Each atomic member preimage is `(schema_version, member_id, kind,
+canonical_payload, payload_digest)` under
+`memorii.semantic-ingestion.bootstrap-graph-plan-atomic-member.v3`.
+`payload_digest` is the registered codec digest of the decoded typed payload;
+`member_digest` is the member CTV. Member ID is deterministic from request,
+group, operation where applicable, kind, and payload digest. Duplicate IDs,
+wrong kind/payload type, noncanonical bytes, or member reordering reject.
+
+Authorization is one-to-one with a reloaded group member. Its operation IDs and
+operation-plan digests are exact ordered projections; read set, epoch, fence,
+lease, writer, capability, and admission authority are current and exact. The
+reservation union is complete: `none` is lawful only when the member's exact
+required-reservation vector is empty; `identity_reservations` contains exactly
+one current `ReservationUseAuthorization` per required digest in the same
+canonical order, with no omission, duplicate, or extra. Authorization preimage
+follows the fields shown under
+`memorii.semantic-ingestion.bootstrap-group-planning-authorization.v3`.
+
+The complete group commit request CTV follows exactly the field order shown
+under `memorii.bootstrap-graph.group-commit-request.v3`; nothing is inherited
+from an older definition. Joins are exhaustive: source/group/vector equal the
+plan member; request/replay equal compilation; attempt contains that plan;
+authorization names that member and exact reservation union; lineage names the
+same member/authorization/attempt; pre-identity names that group/attempt/plan/
+lineage; epoch/fence/lease/writer/ingress/scopes/generation are current; ordered
+materialization inputs are a bijection to operation plans. For each ordinal,
+operation and proposal IDs, operation-plan bytes/digest, typed reduction group/
+operation/proposal, planning result, and reservation authority all equal. The
+reduction's terminal and closure join the same operation, and closure recomputes
+from terminal. No digest substitutes for any typed value.
+
+Obsolete fields and domains are strict decode failures: claim slots, detached
+compilation/certificate, proposed delta/effect/event, reconciliation/reference-
+closure scalar, reservation digest tuple, old attempt evidence-digest vector,
+old plan compilation inputs, group-CAS request/outcome, effect-carrier, split
+receipt, and digest-only result/retry/terminal shapes. Their codec domains,
+member kinds, discriminators, and field aliases are absent from the active
+registry. Presence is `graph_transaction_v3_obsolete_shape` before lookup.
+
+Mutation and constructor obligations cover absent, extra, reordered, duplicate,
+and cross-group operation plans and reductions; reduction with correct digest
+but different bytes; member kind/payload/domain substitution; checkpoint lost
+acknowledgement and byte-identical reload; every reservation none/use omission,
+extra, reorder, stale, cross-tenant, and cross-group case; every obsolete field
+or domain; and an ambient compiler/terminal/artifact/reservation lookup. Direct,
+factory, filesystem, and Hermes public constructors on memory and independent
+JSONL must build the complete default path with no fixture injection. All
+invalid cases reject before group CAS and have zero graph/event/observation
+effect. These are future implementation/test/gate obligations only.
+
+##### 4.8.2.8 v52 individual planning-authorization tuple
+
+`BootstrapGraphPlanAuthorizationSetV3` is retired. It has no active schema,
+codec, domain, discriminator, member kind, repository member, or digest. The
+authorizer boundary is exactly:
+
+```python
+class BootstrapGraphPlanningAuthorizerPortV3(Protocol):
+    def authorize(
+        self, *,
+        request: BootstrapGraphDependentCoordinatorRequestV3,
+        reloaded_plan: BootstrapGraphPlanAtomicReloadV3,
+        control_epoch: BootstrapGraphControlEpochV3,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+    ) -> tuple[BootstrapGroupPlanningAuthorizationV3, ...] | BootstrapGraphV3ProducerUnavailable: ...
+```
+
+On success the tuple length equals the reloaded plan's group-member count and
+ordinal `i` authorizes group member `i` in canonical group order. Each element's
+request, group, member digest, operation IDs, operation-plan digests, read set,
+epoch, fence, lease, writer, capabilities, admission authority, and typed
+reservation union validate independently against the same reloaded plan and
+current authority. Authorization digests are unique. There is no tuple wrapper
+digest and no second authority identity.
+
+The coordinator converts each tuple element directly into one
+`bootstrap_group_planning_authorization` atomic member. The authorization
+checkpoint member vector is the predecessor reload's complete member vector
+followed by exactly those authorization members in canonical group order. The
+repository returns the ordinary `BootstrapGraphPlanAtomicReloadV3`; its core
+contains the complete ordered member bytes and its receipt successor threads to
+attempt publication. Attempt construction consumes that same ordered tuple:
+initial attempt `planning_authorizations` equals it byte for byte; successor
+replacement arms select the matching individual authorization while reused arms
+retain predecessor individual bytes. Group commit selects exactly one tuple
+element by group ordinal and embeds that complete authorization.
+
+The old aggregate class and
+`memorii.semantic-ingestion.bootstrap-graph-plan-authorization-set.v3` domain
+are `graph_transaction_v3_obsolete_shape`. Aggregate bytes, an aggregate digest,
+a nested authorization tuple wrapper, or an aggregate member kind reject at
+decode before checkpoint lookup. Missing, extra, duplicate, reordered,
+cross-plan, cross-group, stale-epoch, stale-lease/writer, reservation-arm, and
+schema-valid individual substitution mutations reject before attempt or group
+CAS with zero effect. Lost acknowledgement reloads the same individual member
+bytes/order; it never reconstructs an aggregate. Direct, factory, filesystem,
+and Hermes tests across both backends prove tuple cardinality/order, individual
+reservation bijection, attempt/group selection, old aggregate rejection, and no
+ambient authorization lookup.
+
+##### 4.8.2.9 v53 persisted semantic-reduction input authority
+
+The graph compiler cannot derive v50 reductions from dependency-group digests.
+The graph-free normalization owner must atomically seal the complete typed
+semantic inputs before graph planning:
+
+```python
+class HistoricalBootstrapSemanticOperationReductionInputV3Grammar(BaseModel):
+    schema_version: Literal[3]
+    operation_id: str
+    proposal: MemoryExtractionProposal
+    observations: tuple[SourceObservation, ...]
+    semantic_candidates: tuple[SemanticCandidate, ...]
+    independent_source_analysis: IndependentSourceAnalysis
+    arbitration_decision: SemanticArbitrationDecision
+    arbitration_policy_bundle: SemanticArbitrationPolicyBundle
+    authorization_read_set: SemanticAuthorizationReadSet
+    graph_free_identity_input: BootstrapGraphFreeIdentityPlanningInputV3 | None
+    source_dependency_group_id: str
+    input_digest: str
+
+class HistoricalBootstrapSemanticReductionAuthorityV3Grammar(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    normalization_replay_digest: str
+    source_alignment_digest: str
+    operation_inputs: tuple[HistoricalBootstrapSemanticOperationReductionInputV3Grammar, ...]
+    execution_policy_reference_digest: str
+    capability_registry_digest: str
+    operation_fence_binding_digest: str
+    writer_commit_binding_digest: str
+    authority_digest: str
+
+class HistoricalBootstrapSemanticReductionAuthorityMemberV3Grammar(BaseModel):
+    schema_version: Literal[3]
+    normalization_write_digest: str
+    operation_generation: int
+    artifact_generation: int
+    authority: HistoricalBootstrapSemanticReductionAuthorityV3Grammar
+    member_digest: str
+
+class HistoricalBootstrapSemanticReductionAuthorityReloadV3Grammar(BaseModel):
+    schema_version: Literal[3]
+    normalization_replay: BootstrapRecoveryReplayRecordV3
+    authority_member: BootstrapSemanticReductionAuthorityMemberV3
+    atomic_write_digest: str
+    reload_digest: str
+```
+
+`SourceNormalizationExecutionOwner` is the sole writer. Before normalization's
+atomic publication it receives already completed typed proposal, candidate,
+independent-analysis, arbitration, policy, authorization-read-set, and accepted
+identity-decision outputs from their canonical graph-free owners. It performs no
+model/provider call while constructing the member. The member is part of the
+same normalization generation as replay, alignment, dependency groups,
+policy/capability authority, and prepared-source identity. The atomic store is
+the sole reload owner through
+`reload_bootstrap_semantic_reduction_authority_v3(normalization_replay,
+authenticated_ingress, required_outcome_scopes, operation_fence_binding)`.
+
+Every operation input is complete. Proposal/candidate/analysis/arbitration/
+source IDs and digests agree; policy and authorization read set are the exact
+authorities used; the dependency group exists and contains that operation; the
+graph-free identity input is present for an identity operation and absent for a
+non-identity operation. Observation and candidate tuples use
+canonical ID order without duplicates. The authority operation vector is the
+exact concatenation of canonical group/operation order. Limits are 1--4096
+operations, 4096 observations and candidates per operation, and 64 MiB canonical
+authority bytes. Limit failure is graph-free and precedes publication.
+
+CTV order is exactly the field order shown. Domains are
+`memorii.bootstrap-graph.semantic-operation-reduction-input.v3`,
+`semantic-reduction-authority.v3`, `semantic-reduction-authority-member.v3`, and
+`semantic-reduction-authority-reload.v3`. Member CTV binds normalization write
+and both generations before complete authority; reload CTV binds complete replay
+and member before atomic write. Reload authenticates before lookup and validates
+normalization write/generations, replay/alignment/dependencies, policy/
+capability, fence/writer, and every nested CTV. Digest-only authority is invalid.
+
+`BootstrapGraphNormalizationAuthorityReloadV3` contains the complete member.
+The graph transaction authority projection and pre-epoch receipt bind its
+member/reload digests. The coordinator request contains
+`semantic_reduction_authority_reload` immediately after normalization replay,
+and request-core CTV contains the complete typed reload. Plan compilation also
+contains that same reload. The compiler boundary is:
+
+```python
+class BootstrapGraphPlanCompilerPortV3(Protocol):
+    def compile(
+        self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
+        semantic_reduction_authority: BootstrapSemanticReductionAuthorityReloadV3,
+        sealed_graph_snapshot: SealedGraphStateSnapshot,
+        current_planning_state: GraphPlanningState,
+    ) -> BootstrapGraphPlanCompilationV3 | BootstrapGraphV3ProducerUnavailable: ...
+```
+
+For each authority input, the built-in compiler calls only the pure semantic
+compiler/terminal reducer with the complete typed input plus sealed snapshot,
+then the state-aware non-publishing identity planner when the identity triple is
+present. Each emitted v50 reduction reverse-joins proposal, operation,
+compilation, terminal, closure, planning result, dependency group, and read set
+to that input. It never reruns preparation, normalization, model proposal,
+candidate assessment, independent analysis, arbitration, admission, or identity
+decision and never loads ambient equivalents.
+
+The semantic-reduction authority reload is a normalization-generation artifact,
+not a graph atomic member. The graph checkpoint records only the complete
+21-kind registry above; plan compilation, per-operation reductions, and attempt
+construction inputs are nested projections within their owning graph members,
+not kinds. The graph compiler binds the reloaded normalization artifact by its
+typed reference before graph checkpoint construction. Retry, replan, and reopen
+retain that same semantic input; replan may change graph-derived results under a
+new snapshot, never source inputs.
+
+All four roots require the same semantic-reduction authority repository in
+`BootstrapGraphHostBundleV3`. Fresh order is normalization publication, typed
+authority reload, graph authority projection, epoch/request, snapshot, compiler.
+Recovery reloads authority before terminal lookup and compiler/checkpoint access.
+Absence is `semantic_reduction_authority_unavailable` with zero graph read/plan/
+CAS/terminal effect. Caller authority, defaults, fixtures, and pipeline callbacks
+are forbidden.
+
+Migration is strict: an old normalization record lacking the same-generation
+member cannot enter graph V3, be inferred from digests, or rerun. Rollback keeps
+complete members for authenticated read-only replay and rejects new graph work.
+Tests mutate every nested input/authority/generation/join/order/limit; mutate
+ambient providers after normalization; inject forbidden pipeline calls; and
+cover lost ack, reopen, replan, migration, rollback, missing bundle/repository,
+checkpoint byte identity, and exact input-to-reduction joins across four roots
+and both backends. Evidence remains future and design-only.
+
+##### 4.8.2.10 v54 normalization atomic outer schema and member ordinal
+
+The v53 authority is carried into normalization by a pre-publication request;
+the generation-bound member is store-validated without a digest cycle:
+
+```python
+class HistoricalBootstrapGraphFreeIdentityPlanningInputV3Grammar(BaseModel):
+    schema_version: Literal[3]
+    operation_id: str
+    identity_operation: IdentityOperation
+    identity_candidate: IdentityOperationCandidate
+    independent_source_analysis: IndependentSourceAnalysis
+    source_evidence: tuple[EvidenceSpan, ...]
+    execution_policy_reference_digest: str
+    capability_id: str
+    operation_fence_binding_digest: str
+    input_digest: str
+
+class BootstrapSemanticReductionAuthorityRequestV3(BaseModel):
+    schema_version: Literal[3]
+    normalization_request_core: BootstrapNormalizationRequestCoreV3
+    authority: BootstrapSemanticReductionAuthorityV3
+    expected_operation_generation: int
+    expected_artifact_generation: int
+    publication_operation_generation: int
+    publication_artifact_generation: int
+    operation_fence_binding_digest: str
+    writer_commit_binding_digest: str
+    request_digest: str
+
+class BootstrapSemanticReductionAuthorityMemberV3(BaseModel):
+    schema_version: Literal[3]
+    authority_request: BootstrapSemanticReductionAuthorityRequestV3
+    canonical_payload: bytes
+    payload_digest: str
+    member_digest: str
+
+class BootstrapAtomicGenerationMemberV3(BaseModel):
+    schema_version: Literal[3]
+    member_id: str
+    kind: Literal[
+        "bootstrap_source_normalization_request",
+        "bootstrap_analysis_provenance",
+        "bootstrap_payload_limit_authority",
+        "bootstrap_proposal_run_payload",
+        "bootstrap_analysis_lane_result",
+        "bootstrap_analysis_evidence_bundle",
+        "bootstrap_interpretation_bundle",
+        "bootstrap_source_local_identity_partition_evidence",
+        "bootstrap_parser_consensus",
+        "bootstrap_semantic_scope_consensus",
+        "bootstrap_temporal_attachment_consensus",
+        "bootstrap_source_local_identity_resolution",
+        "bootstrap_source_proposal_alignment",
+        "bootstrap_dependency_groups",
+        "bootstrap_source_normalization_result",
+        "bootstrap_semantic_reduction_authority",
+        "bootstrap_graph_normalization_authority",
+        "bootstrap_source_normalization_evidence_manifest",
+        "bootstrap_graph_dependent_execution_policy",
+        "bootstrap_consensus_policy_selection_bundle",
+        "bootstrap_language_construction_policy_bundle",
+    ]
+    canonical_payload: bytes
+    payload_digest: str
+    member_digest: str
+
+class BootstrapSourceNormalizationAtomicWriteRequestV3(BaseModel):
+    schema_version: Literal[3]
+    kind: Literal["bootstrap_source_normalization_checkpoint"]
+    progress_state: Literal["preplanning"]
+    recovery_key_digest: str
+    handoff_marker_digest: str
+    consumed_claim_digest: str
+    recovery_control_snapshot_digest: str
+    normalization_ready_control_record_digest: str
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    expected_operation_generation: int
+    expected_artifact_generation: int
+    publication_operation_generation: int
+    publication_artifact_generation: int
+    source_normalization_request: BootstrapSourceNormalizationRequestV3
+    source_normalization_result: BootstrapSourceNormalizationResultV3
+    evidence_manifest: BootstrapSourceNormalizationEvidenceManifestV3
+    bootstrap_v3_payload_limit_authority: BootstrapV3PayloadLimitAuthority
+    normalization_request_core: BootstrapNormalizationRequestCoreV3
+    semantic_reduction_authority_request: BootstrapSemanticReductionAuthorityRequestV3
+    bootstrap_graph_normalization_authority: BootstrapGraphNormalizationAuthorityMemberV3
+    bootstrap_proposal_run_payload: BootstrapProposalRunPayloadV3
+    bootstrap_analysis_lane_results: tuple[BootstrapAnalysisLaneResultV3, ...]
+    bootstrap_recovery_key: BootstrapRecoveryKeyV3
+    bootstrap_recovery_claim: BootstrapRecoveryClaimV3
+    members: tuple[BootstrapAtomicGenerationMemberV3, ...]
+    required_artifact_digests: tuple[str, ...]
+    result_digest: str
+    provenance_manifest_digest: str
+    request_digest: str
+```
+
+This is the sole active outer schema and field order. Request CTV is every field
+shown except `request_digest`, under
+`memorii.semantic-ingestion.source-normalization-atomic-write-request.v3`.
+Semantic-authority-request CTV follows its fields under
+`memorii.bootstrap-graph.semantic-reduction-authority-request.v3`. Its expected
+generations equal the outer expected generations; publication generations equal
+the outer publication generations and each is expected plus one; fence/writer
+digests equal the outer typed bindings and the nested authority. The complete
+authority joins source/replay/alignment/dependencies/policy/capability/result to
+the outer typed members. This request form supersedes v53's member wording that
+named a final normalization write digest.
+
+Member category order is exactly the registry order above, with existing
+canonical variable runs retained. `bootstrap_semantic_reduction_authority` is a
+singleton immediately after `bootstrap_source_normalization_result` and
+immediately before the singleton `bootstrap_graph_normalization_authority`.
+There is exactly one of each. Its canonical payload is the exact encoded
+`semantic_reduction_authority_request`; graph-normalization authority follows it
+and must bind the same policy/capability/source/replay inputs. No valid member at
+another ordinal is accepted. `required_artifact_digests` is the exact ordered
+projection of all member payload digests.
+
+`SourceNormalizationExecutionOwner` receives one complete input object holding
+the normalization result/evidence, graph-free semantic-reduction authority,
+policy/capability graph authority, fence/lease/writer, recovery claim/control,
+expected generations, payload and lane closures. It alone constructs the outer
+request and member vector. It cannot accept a prebuilt request/member, digest-
+only authority, nullable authority, ambient provider, or default. Construction
+validates every join and canonical byte before calling the store.
+
+Inside the atomic store, decode and authenticate first; validate recovery claim,
+fence/lease/writer and current expected generations; recompute every nested CTV
+and member payload; require the exact category/order/cardinality and semantic-
+then-graph authority adjacency; verify all authority source/replay/alignment/
+dependency/policy/capability/fence/writer joins; verify required artifacts and
+outer request CTV; then perform one CAS to the stated publication generations.
+Reload by recovery key returns the complete outer request, found generations,
+semantic authority member, graph authority member, and atomic-write identity;
+it repeats all validation before exposing either member. Found generations must
+equal both authority requests and the outer publication values.
+
+Omitted, duplicate, reordered, extra, cross-source, cross-tenant, substituted,
+foreign expected/publication generation, stale fence/writer, digest-only, wrong
+payload type/domain, or valid semantic member at the wrong position rejects
+before CAS and before recovery/graph visibility. Tests mutate both adjacency
+directions and every other ordinal, retain old digests after movement, swap the
+semantic and graph authority members, and lose acknowledgement before/after the
+normalization CAS in memory and independent JSONL through all four roots. The
+post-CAS path reloads identical bytes; all pre-CAS mutations have zero effect.
+
+Identity authority is stage-correct. Normalization persists only
+`BootstrapGraphFreeIdentityPlanningInputV3`; it never persists
+`AcceptedIdentityOperationArtifact`, `TrustedAcceptedIdentityOperationDecision`,
+or `VerifiedIdentityDecisionAuthority`, because those bind a graph snapshot and
+read set not yet acquired. The graph-free carrier CTV follows its displayed
+field order under `memorii.bootstrap-graph.graph-free-identity-planning-input.v3`.
+Operation/candidate/analysis/evidence/fence/policy/capability joins equal the
+enclosing semantic input. It contains no graph revision, snapshot, read set,
+collision result, reservation-use authorization, accepted artifact, trusted
+decision, or verification.
+
+After each `SealedGraphStateSnapshot`, the built-in identity planner consumes
+the graph-free carrier and current planning state, performs current collision/
+reference/admission checks, creates planned reservations, and derives a fresh
+accepted artifact, trusted decision, and verified authority whose snapshot and
+read-set digests equal that exact snapshot. The non-publishing planning result
+carries the complete triple in its frozen artifact. Initial attempts always
+derive it. A replacement after conflict/new snapshot derives a new triple and
+planning result; stale predecessor bytes reject. A lawful reused committed,
+final, or unfinished group retains predecessor plan member, triple,
+authorization, and reload byte-identically and performs no new decision.
+
+Normalization decode rejects a snapshot-bound triple field, partial triple,
+graph snapshot/read-set field, or accepted-artifact digest. Tests cover initial
+derivation, replan under changed snapshot/read set, stale-snapshot reuse,
+lawful predecessor reuse, cross-group triple, and every partial-triple injection.
+Invalid initial/replacement cases fail before plan checkpoint/CAS with zero
+effect; reuse proves zero planner call and exact predecessor bytes across both
+backends and all four roots.
+
+##### 4.8.2.11 v55 exactly-one active normalization grammar
+
+The v54 definitions are the only normative declarations of
+`BootstrapSourceNormalizationAtomicWriteRequestV3`,
+`BootstrapAtomicGenerationMemberV3`, and
+`BootstrapSemanticReductionAuthorityMemberV3`. Earlier code blocks have
+`Historical*Grammar` names and are non-active explanatory artifacts: they have
+no registry entry, codec, decoder, constructor, repository method, or import.
+Static architecture validation requires exactly one class declaration with each
+active name and rejects an unqualified duplicate anywhere in current design or
+generated binding artifacts.
+
+`BootstrapRecoveryReplayRecordV3` is current only with:
+
+```python
+class BootstrapRecoveryReplayRecordV3(BaseModel):
+    schema_version: Literal[3]
+    request: BootstrapSourceNormalizationAtomicWriteRequestV3
+    found: BootstrapRecoveryFoundV3
+    replay_digest: str
+```
+
+Its request must decode through the sole v54 outer schema; `found` generations,
+atomic-write identity, member manifest, required artifacts, semantic-authority
+member, graph-authority member, fence, and writer reverse-join that request.
+Replay CTV is `(schema_version, complete request, complete found)` under
+`memorii.semantic-ingestion.bootstrap-recovery-replay.v3`. No historical member
+vector can be nested in a current replay, even if its digests are valid.
+
+Historical grammar has read-only migration disposition only. A legacy record
+may be decoded by an offline version-pinned inspection tool into a
+`HistoricalBootstrapNormalizationRecordV3` that exposes raw canonical bytes,
+legacy schema identity, atomic-write identity, and validation diagnostics. It
+cannot be returned by production replay APIs, converted to the v54 request,
+have missing semantic authority inferred, or enter graph authority projection,
+epoch, plan, commit, retry, or terminal publication. Rollback may retain and
+inspect it but graph V3 promotion and all new writes are forbidden.
+
+Required static test `test_bootstrap_normalization_v3_has_exactly_one_active_declaration`
+parses the architecture/type graph and asserts count one for each active name,
+zero active codecs for `Historical*Grammar`, and one recovery request target.
+Runtime tests feed the prior outer member registry, prior semantic member shape,
+duplicate active declaration/domain, legacy replay, legacy nested in current
+replay, and historical bytes relabeled with the current discriminator. Current
+decoders reject all before lookup or graph visibility. Offline inspection can
+read the unchanged historical bytes; memory and independent JSONL prove rollback
+read-only replay and rejection of graph promotion/new operations across all four
+roots.
+
+##### 4.8.2.12 v56 native bootstrap reduction authority
+
+The generic v53 semantic input grammar is withdrawn. Bootstrap normalization
+retains only V3-native proposal, lane, interpretation, identity-partition, and
+alignment carriers, so the current authority is:
+
+```python
+class BootstrapNativeOperationReductionInputV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    operation_id: str
+    normalized_proposal: BootstrapNormalizedProposalV3
+    operation_member: BootstrapProposalOperationMemberV3
+    operation_subject: BootstrapPreAlignmentOperationSubjectV3
+    lane_results: tuple[BootstrapAnalysisLaneResultV3, ...]
+    parser_consensus: BootstrapParserConsensusAssessmentV3
+    scope_consensus: BootstrapSemanticScopeConsensusV3
+    temporal_consensus_set: BootstrapOperationTemporalAttachmentConsensusSetV3
+    temporal_consensus: tuple[BootstrapTemporalAttachmentConsensusV3, ...]
+    operation_alignment: BootstrapOperationAlignmentV3
+    identity_partition_evidence: BootstrapSourceLocalIdentityPartitionEvidenceV3
+    source_local_identity: BootstrapSourceLocalIdentityResolutionV3
+    dependency_group: BootstrapSourceDependencyGroupV3
+    operation_execution_id: str
+    coverage_bindings: tuple[BootstrapOperationCoverageBindingV3, ...]
+    graph_free_identity_input: BootstrapGraphFreeIdentityPlanningInputV3 | None
+    planning_construction_authority: BootstrapNativePlanningConstructionAuthorityV3
+    input_digest: str
+
+class BootstrapNativeOperationCompilationV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    operation_input: BootstrapNativeOperationReductionInputV3
+    canonical_identity_authority: BootstrapCanonicalIdentityBindingAllocationReloadV3
+    resolved_graph_targets: tuple[GraphTargetReference, ...]
+    sealed_operations: tuple[SemanticSealedOperation, ...]
+    accepted_carriers: tuple[SemanticDurableCarrier, ...]
+    terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
+    terminal_status: Literal["accepted", "unresolved", "rejected", "evidence_only"]
+    reason_codes: tuple[str, ...]
+    compilation_digest: str
+
+class BootstrapGraphOperationReductionV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    operation_id: str
+    proposal_digest: str
+    operation_execution_id: str
+    sealed_snapshot_digest: str
+    effective_read_set_digest: str
+    canonical_identity_authority: BootstrapCanonicalIdentityBindingAllocationReloadV3
+    native_compilation: BootstrapNativeOperationCompilationV3
+    native_terminal: BootstrapNativeOperationTerminalV3
+    native_artifact_closure: BootstrapNativeOperationArtifactClosureV3
+    effect_materialization: BootstrapNativeOperationEffectMaterializationV3
+    reduction_digest: str
+
+class BootstrapSemanticReductionAuthorityV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    recovery_key_digest: str
+    normalization_request_core_digest: str
+    proposal_payload: BootstrapProposalRunPayloadV3
+    lane_results: tuple[BootstrapAnalysisLaneResultV3, ...]
+    interpretation_bundle: BootstrapGraphFreeInterpretationBundleV3
+    source_alignment: BootstrapSourceProposalAlignmentV3
+    operation_inputs: tuple[BootstrapNativeOperationReductionInputV3, ...]
+    operation_fence_binding_digest: str
+    writer_commit_binding_digest: str
+    authority_digest: str
+```
+
+`SourceNormalizationExecutionOwner` is not a new semantic producer. It projects
+each operation input deterministically from the retained proposal payload, four
+lane results per provenance segment, graph-free interpretation bundle, and
+source proposal alignment. It performs no conversion to
+`MemoryExtractionProposal`, `SourceObservation`, `SemanticCandidate`, generic
+independent-analysis/arbitration/policy/read-set types, and invokes no provider.
+The v54 outer request/member persists these complete native bytes.
+
+For each aligned operation, proposal/member are selected by exact digest;
+subject, parser/scope/temporal consensus and alignment share operation/proposal/
+member/segment/provenance; lane results are exactly stanza, spacy, predicate,
+temporal for that segment; identity partition/resolution equal the retained
+bundle/alignment; dependency group contains the operation; and coverage either
+covers its event or explicitly records unresolved. Identity kind requires a
+graph-free identity input projected from the native identity member, partition,
+and resolution; other kinds require null. No field is searched or reconstructed
+from a digest.
+
+Inputs follow canonical dependency-group then operation order and biject with
+all complete alignments. Limits are 1--4096 operations, exactly four lanes per
+segment, 4096 temporal rows per operation, and 64 MiB authority bytes. Preimages
+follow displayed order under `memorii.bootstrap-graph.native-operation-reduction-input.v3`,
+`native-operation-compilation.v3`, `graph-operation-reduction.v3`, and the
+semantic-reduction-authority domain. Authority CTV includes complete retained
+proposal/lane/interpretation/alignment carriers before projected inputs.
+
+`BootstrapNativeSemanticReducerV3` is the canonical bridge. Given one native
+input and sealed snapshot/read set, it resolves graph targets, maps the
+discriminated bootstrap operation and stable consensus into typed sealed
+operations, durable carriers, and binding sets, selects status/reasons from
+explicit coverage/consensus, constructs native compilation, then constructs
+the v59 native terminal, artifact closure, and effect materialization. It never constructs/calls the
+legacy generic compiler input family. Identity follows v54 fresh-triple rules.
+
+Joins are exact: operation/proposal equal input; sealed operations/carriers/
+bindings and status/reasons equal native compilation; closure recomputes from
+terminal; accepted requires stable required consensus and complete graph targets;
+unsupported/disagreement/unresolved coverage cannot yield an accepted carrier.
+Store input embeds this reduction unchanged; the store still solely owns
+persistence records and coordinates.
+
+`MemoryExtractionProposal`, `SourceObservation`, `SemanticCandidate`,
+`IndependentSourceAnalysis`, `SemanticArbitrationDecision`, generic arbitration
+policy/read-set inputs, `SemanticCompilationResult`, `SemanticTerminalOutcome`,
+and `SemanticArtifactClosure` inside bootstrap graph reduction are obsolete
+decode failures. No migration reconstructs them; old
+authority is offline read-only and cannot promote.
+
+Tests build fact/correction/retraction/action-state/identity from only retained
+native carriers; remove/duplicate/reorder/cross-link every carrier; substitute
+lane/provenance/consensus/alignment/dependency/coverage/identity rows; mutate
+bytes under digests; exceed limits; inject obsolete types/compiler calls; and
+mutate ambient providers. Four roots and two backends prove projection/recovery
+byte identity, initial/replan/reuse identity staging, terminal/closure equality,
+no legacy reconstruction, lost ack, old-authority rejection, and zero invalid
+effects. Evidence remains design-only.
+
+##### 4.8.2.13 v57 acyclic authority, native identity, and coverage binding
+
+Prepublication semantic authority cannot bind the not-yet-created normalization
+replay digest. The active authority fields are the v56 fields with
+`recovery_key_digest` and `normalization_request_core_digest` in place of
+`normalization_replay_digest`. The core digest is computed from the complete
+outer normalization request fields that precede semantic-authority request and
+all final/member/request digests. It binds source, preparation, recovery key/
+claim/control, normalization request/result inputs, fence/lease/writer, expected
+generations, proposal payload, lanes, interpretation, and alignment. The
+semantic authority request and member bind that acyclic core identity.
+
+Replay identity is added only after publication:
+
+```python
+class BootstrapSemanticReductionAuthorityReloadV3(BaseModel):
+    schema_version: Literal[3]
+    recovery_key_digest: str
+    normalization_request_core_digest: str
+    authority_member: BootstrapSemanticReductionAuthorityMemberV3
+    normalization_atomic_write_digest: str
+    publication_operation_generation: int
+    publication_artifact_generation: int
+    normalization_replay_digest: str
+    reload_digest: str
+```
+
+The store constructs this wrapper after the normalization CAS and after
+`BootstrapRecoveryReplayRecordV3.replay_digest` exists. Reload CTV follows the
+displayed order. It validates recovery/core/member/write/publication generations
+against the complete persisted outer request, recomputes replay, and only then
+binds replay digest. Prepublication request, authority, or member containing a
+replay field is obsolete decode failure. Lost acknowledgement returns identical
+postpublication wrapper bytes; no fixed point or placeholder digest is allowed.
+
+The active identity carrier is native:
+
+```python
+class BootstrapGraphFreeIdentityPlanningInputV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    operation_id: str
+    proposal_digest: str
+    identity_member: BootstrapProposalIdentityOperationV3
+    operation_subject: BootstrapPreAlignmentOperationSubjectV3
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    identity_partition_evidence: BootstrapSourceLocalIdentityPartitionEvidenceV3
+    source_local_identity: BootstrapSourceLocalIdentityResolutionV3
+    operation_alignment: BootstrapOperationAlignmentV3
+    dependency_group_id: str
+    operation_fence_binding_digest: str
+    input_digest: str
+```
+
+It is projected only from the retained identity proposal member, matching
+subject/provenance, interpretation-bundle partition evidence, alignment source-
+local resolution and operation alignment, and containing identity dependency
+group. Predecessor/successor mentions and reference assignments resolve to the
+partition/resolution evidence; subject/member/proposal/segment/provenance and
+operation IDs agree. The field-order CTV domain is
+`memorii.bootstrap-graph.graph-free-identity-planning-input.v3`. The prior
+generic `IdentityOperation`, `IdentityOperationCandidate`, generic evidence,
+policy, and capability arm is historical/obsolete and cannot decode. Snapshot-
+bound accepted/trusted/verified derivation remains post-snapshot as in v54.
+
+Coverage is operation-specific:
+
+```python
+class HistoricalBootstrapOperationCoverageBindingV3Grammar(BaseModel):
+    schema_version: Literal[3]
+    operation_id: str
+    predicate_event_id: str
+    proposal_digest: str
+    member_digest: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    operation_alignment_digest: str
+    disposition: BootstrapPredicateEventDispositionV3
+    binding_digest: str
+```
+
+The binding is constructed by the native projection owner, not searched. For a
+covered disposition, event ID equals the disposition event, operation ID is in
+its `operation_ids`, proposal digest is in its proposal vector, and alignment
+digest is in its alignment vector. For unresolved disposition, event ID equals
+the disposition event; the operation's proposal is in
+`related_proposal_digests`; its alignment/consensus state proves the exact
+unresolved reason; and no covered row names the same operation/event. In both
+arms, normalized proposal/member/subject/alignment/provenance reverse-join the
+native operation input and the source coverage audit contains the exact
+disposition bytes. One binding exists per operation and event assigned to it;
+multi-event operations use a canonical tuple of operation inputs split by event
+only when the proposal grammar permits it, otherwise reject ambiguity. CTV uses
+displayed order under `memorii.bootstrap-graph.operation-coverage-binding.v3`.
+
+Tests remove/add/reorder/substitute recovery/core/replay fields; inject a replay
+digest prepublication; cross write/generation/replay wrappers; and exercise
+pre/post-CAS lost acknowledgement. Identity tests inject the generic arm,
+cross-link member/subject/provenance/partition/resolution/alignment/dependency,
+and verify initial/replan/reuse staging. Coverage tests cover both arms and mutate
+operation/event/disposition/proposal/alignment/provenance/reason reverse joins,
+duplicate covered/unresolved rows, and ambiguous multi-event assignment. Four
+roots and both backends reject before graph effect and reload exact lawful bytes.
+
+##### 4.8.2.14 v58 typed normalization core and coverage-event vector
+
+The acyclic core is a typed persisted contract, not an informal prefix:
+
+```python
+class BootstrapNormalizationRequestCoreV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    recovery_key_digest: str
+    handoff_marker_digest: str
+    consumed_claim_digest: str
+    recovery_control_snapshot_digest: str
+    normalization_ready_control_record_digest: str
+    operation_lease_binding: OperationLeaseBinding
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    expected_operation_generation: int
+    expected_artifact_generation: int
+    publication_operation_generation: int
+    publication_artifact_generation: int
+    source_normalization_request: BootstrapSourceNormalizationRequestV3
+    source_normalization_result: BootstrapSourceNormalizationResultV3
+    evidence_manifest: BootstrapSourceNormalizationEvidenceManifestV3
+    bootstrap_v3_payload_limit_authority: BootstrapV3PayloadLimitAuthority
+    bootstrap_proposal_run_payload: BootstrapProposalRunPayloadV3
+    bootstrap_analysis_lane_results: tuple[BootstrapAnalysisLaneResultV3, ...]
+    bootstrap_recovery_key: BootstrapRecoveryKeyV3
+    bootstrap_recovery_claim: BootstrapRecoveryClaimV3
+    core_digest: str
+```
+
+Core CTV is the displayed field order excluding `core_digest`, under
+`memorii.semantic-ingestion.bootstrap-normalization-request-core.v3`.
+`SourceNormalizationExecutionOwner` constructs it before semantic authority.
+It explicitly excludes semantic authority/request/member, graph authority/
+member, all atomic members/vectors/digests, required-artifact projection, any
+provenance/result/request final digest dependent on those members, atomic write,
+found, replay/digest, and authority reload/wrapper. Unknown fields are forbidden.
+
+The semantic authority request embeds the complete core, not a caller digest;
+authority recovery/fence/writer/generations/proposal/lanes/alignment equal it.
+The outer request embeds the same core immediately before semantic authority,
+and duplicated fields are byte-equal. Store order is core, semantic request/
+member, graph member, remaining members/artifacts, final request, CAS, found/
+replay/reload. Reload returns exact core bytes and validates them first. Omitted,
+dependent-field injection, digest-only core, reordered encoding, altered core
+under old digest, or core/reload substitution rejects.
+
+Coverage is a vector because operation/event cardinality is many-to-many:
+
+```python
+class BootstrapOperationCoverageBindingV3(BaseModel):
+    schema_version: Literal[3]
+    operation_execution_id: str
+    operation_id: str
+    predicate_event_id: str
+    proposal_digest: str
+    member_digest: str
+    bootstrap_analysis_provenance: BootstrapAnalysisProvenanceV1
+    operation_alignment_digest: str
+    disposition: BootstrapPredicateEventDispositionV3
+    binding_digest: str
+
+```
+
+The active `BootstrapNativeOperationReductionInputV3` declaration in v56 is
+exhaustively superseded at its former singular-coverage ordinal: it carries
+`operation_execution_id`, then `coverage_bindings`, then `graph_free_identity_input`
+and `input_digest`; every other displayed v56 field and ordinal is unchanged.
+
+`operation_execution_id` is the stable CTV of source ID/digest, preparation,
+operation ID, proposal/member digest, segment, provenance digest, and dependency
+group ID under `memorii.bootstrap-graph.operation-execution-id.v3`. It excludes
+event, disposition, snapshot, attempt, and generation, so initial/replan/recovery
+retain it. Operation input, plan, reduction, result, manifest, retry, and terminal
+carry or recompute one identity and one downstream operation row.
+
+The active downstream carriers add `operation_execution_id` immediately after
+`operation_id` in `BootstrapTransactionGroupOperationPlanV3`,
+`BootstrapGraphOperationReductionV3`, and each ordered per-operation member of
+`BootstrapGraphGroupCommitRequestV3`, `BootstrapGraphGroupCommitReloadV3`, retry
+progress, final evidence, manifest, and terminal closure. In every projection it
+must equal the source input value; it is never regenerated from an event row.
+Each group's `operation_ids` remains the canonical unique projection of plan
+members, and `(operation_id, operation_execution_id)` bijects with those members.
+Any carrier with one row per coverage binding, duplicate operation ID, or a
+different execution identity is unrepresentable and rejects before CAS.
+
+Bindings are non-empty, sorted by `(predicate_event_id, binding_digest)`, unique
+by `(operation_execution_id, predicate_event_id)`, and share the containing
+input's operation/proposal/member/provenance/alignment. Their event set equals
+the alignment/coverage audit assignment. No event has both arms. Covered requires
+operation/proposal/alignment membership in disposition vectors. Unresolved
+requires related proposal membership and consensus/alignment proof of reason.
+
+Two events for one operation produce two bindings but one execution/plan/
+reduction/result. One event for multiple operations produces one binding per
+distinct execution; disposition vectors equal the canonical operation/proposal/
+alignment set. Mixed covered/unresolved remains one operation: accepted only if
+all required events are covered, otherwise one deterministic unresolved or
+evidence-only terminal with canonical reason union. Entirely unresolved also
+remains one row. Group operation IDs never expand by event.
+
+Binding CTV follows displayed fields; input CTV places execution identity and
+vector at the former singular ordinal. Tests cover zero/extra/duplicate/reorder,
+wrong identity/event, covered+unresolved duplicate, two-events/one-op,
+one-event/multi-op, covered/unresolved/mixed, stale replan identity, and duplicate
+downstream operation attempts. Core tests inject every excluded dependent field
+and mutate every included field/order/join. Four roots and both backends prove
+byte-identical core/reload and stable execution identity across lost ack/recovery.
+
+DREV-051 remains a truthful implementation obligation: production callers and
+default root activation remain zero/unimplemented. Mandatory order is unchanged:
+normalization inputs -> typed core -> semantic authority request/member -> graph
+authority member -> normalization CAS/reload -> graph projection -> epoch/request
+-> snapshot/compiler -> authorization -> group commit -> terminal. It is not a
+v58 semantic defect.
+
+##### 4.8.2.15 v59 native graph-operation reduction
+
+The active bootstrap reduction never constructs `SemanticCompilationResult`,
+`SemanticTerminalOutcome`, or `SemanticArtifactClosure`. Its complete native
+output vocabulary is:
+
+```python
+class BootstrapNativeRecordMaterializationIntentV3(BaseModel):
+    schema_version: Literal[3]
+    operation_execution_id: str
+    record_kind: GraphRecordKind
+    record_id: str
+    mutation_kind: Literal["create", "update"]
+    expected_prior_record_digest: str | None
+    canonical_after_record: CanonicalGraphRecordPayload
+    source_member_digest: str
+    intent_digest: str
+
+class BootstrapNativeFactEffectV3(BaseModel):
+    kind: Literal["fact"]
+    fact: BootstrapProposalFactV3
+    resolved_subject: GraphTargetReference
+    resolved_object: GraphTargetReference | BootstrapProposalTypedLiteralV3
+    claim_carriers: tuple[ClaimAssertion, ...]
+    terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
+    effect_digest: str
+
+class BootstrapNativeCorrectionEffectV3(BaseModel):
+    kind: Literal["correction"]
+    correction: BootstrapProposalCorrectionV3
+    corrected_targets: tuple[GraphTargetReference, ...]
+    replacement_effect: BootstrapNativeFactEffectV3
+    transition_carriers: tuple[TemporalTransitionRecord, ...]
+    effect_digest: str
+
+class BootstrapNativeRetractionEffectV3(BaseModel):
+    kind: Literal["retraction"]
+    retraction: BootstrapProposalRetractionV3
+    retracted_targets: tuple[GraphTargetReference, ...]
+    transition_carriers: tuple[TemporalTransitionRecord, ...]
+    effect_digest: str
+
+class BootstrapNativeActionStateEffectV3(BaseModel):
+    kind: Literal["action_state"]
+    action_state: BootstrapProposalActionStateV3
+    resolved_participants: tuple[GraphTargetReference, ...]
+    action_carriers: tuple[ActionRevision, ...]
+    terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
+    effect_digest: str
+
+class BootstrapNativeIdentityEffectV3(BaseModel):
+    kind: Literal["identity"]
+    identity_operation: BootstrapProposalIdentityOperationV3
+    fresh_identity_plan: NonPublishingIdentityPlanningResultV3
+    lineage_carriers: tuple[IdentityLineageRecord, ...]
+    reference_dispositions: tuple[ReferenceDisposition, ...]
+    terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
+    effect_digest: str
+
+BootstrapNativeAcceptedOperationEffectV3 = Annotated[
+    BootstrapNativeFactEffectV3 | BootstrapNativeCorrectionEffectV3 |
+    BootstrapNativeRetractionEffectV3 | BootstrapNativeActionStateEffectV3 |
+    BootstrapNativeIdentityEffectV3,
+    Field(discriminator="kind"),
+]
+
+BootstrapNativeTerminalReasonV3 = Literal[
+    "coverage_unresolved", "parser_disagreement", "scope_disagreement",
+    "temporal_disagreement", "graph_target_missing", "graph_target_ambiguous",
+    "stale_reference", "forbidden_domain", "policy_denied",
+    "identity_plan_unavailable", "reference_closure_incomplete",
+    "supported_evidence_not_promotable",
+]
+
+class BootstrapNativeOperationEffectMaterializationV3(BaseModel):
+    schema_version: Literal[3]
+    operation_execution_id: str
+    operation_id: str
+    terminal_status: Literal["accepted", "unresolved", "rejected", "evidence_only"]
+    accepted_effect: BootstrapNativeAcceptedOperationEffectV3 | None
+    record_intents: tuple[BootstrapNativeRecordMaterializationIntentV3, ...]
+    observation_disposition: Literal["committed", "unresolved", "rejected", "evidence_only"]
+    observation_reason_codes: tuple[BootstrapNativeTerminalReasonV3, ...]
+    materialization_digest: str
+
+class BootstrapNativeOperationTerminalV3(BaseModel):
+    schema_version: Literal[3]
+    operation_execution_id: str
+    operation_id: str
+    proposal_digest: str
+    operation_kind: Literal["fact", "correction", "retraction", "action_state", "identity"]
+    sealed_snapshot_digest: str
+    effective_read_set_digest: str
+    native_compilation_digest: str
+    status: Literal["accepted", "unresolved", "rejected", "evidence_only"]
+    reason_codes: tuple[BootstrapNativeTerminalReasonV3, ...]
+    coverage_binding_digests: tuple[str, ...]
+    accepted_effect_digest: str | None
+    record_intent_digests: tuple[str, ...]
+    terminal_digest: str
+
+class BootstrapNativeOperationArtifactClosureV3(BaseModel):
+    schema_version: Literal[3]
+    operation_execution_id: str
+    operation_id: str
+    terminal_digest: str
+    native_compilation_digest: str
+    accepted_effect_digest: str | None
+    record_intent_digests: tuple[str, ...]
+    coverage_binding_digests: tuple[str, ...]
+    graph_target_digests: tuple[str, ...]
+    planning_result_digest: str | None
+    closure_digest: str
+```
+
+Every class is `extra="forbid"`. CTV uses displayed order excluding only its
+trailing digest, with domains `memorii.bootstrap-graph.native-record-intent.v3`,
+`native-<kind>-effect.v3`, `native-operation-effect-materialization.v3`,
+`native-operation-terminal.v3`, and `native-operation-artifact-closure.v3`.
+The active `BootstrapGraphOperationReductionV3` field order is exactly
+`schema_version, transaction_group_id, operation_id, proposal_digest,
+operation_execution_id, sealed_snapshot_digest, effective_read_set_digest,
+canonical_identity_authority, native_compilation, native_terminal, native_artifact_closure,
+effect_materialization, reduction_digest`, under
+`memorii.bootstrap-graph.graph-operation-reduction.v3`.
+
+`BootstrapNativeSemanticReducerV3.reduce(input, transaction_group_id,
+sealed_snapshot, effective_read_set, current_planning_state)` is pure and total.
+It first validates the snapshot/read-set pair and input authority; resolves all
+mentioned subjects, objects, selectors, participants, predecessors, successors,
+and reference assignments only from that snapshot; then emits exactly one arm
+matching `operation_member.kind`. Fact emits claim carriers; correction emits
+the corrected target transition plus a complete nested replacement fact;
+retraction emits transition carriers and no replacement; action-state emits
+action revisions for the canonical role binding; identity requires the fresh
+snapshot/read-set-bound planning result and emits lineage plus the complete
+reference-disposition closure. No arm may contain another arm's carrier kind.
+
+Accepted requires every required coverage event covered, stable parser/scope/
+temporal consensus, all graph targets resolved, lawful temporal bindings, and
+for identity the fresh planning triple. Its accepted effect is non-null and its
+canonical record intents biject with the effect carriers. Unresolved covers
+missing/ambiguous target, unresolved coverage, or analyzer disagreement;
+rejected covers invalid/forbidden domain, stale reference, or policy denial;
+evidence-only covers supported retained evidence with no promotable operation.
+Those three arms require null accepted effect and empty record intents. Reason
+codes are the sorted unique closed registry projection of the failed predicates;
+no fallback status or free-form reason is permitted.
+
+The reason-to-status partition is exact: coverage/analyzer/target ambiguity or
+missing identity plan is `unresolved`; stale reference, forbidden domain,
+policy denial, or incomplete reference closure is `rejected`; only
+`supported_evidence_not_promotable` is `evidence_only`; accepted has an empty
+reason tuple. Multiple predicates in different nonaccepting classes select
+`rejected` over `unresolved` over `evidence_only`, while retaining the canonical
+union of all applicable reasons.
+
+The terminal copies the exact snapshot/read-set/compilation/coverage/effect and
+intent digests. Closure is the canonical sorted unique projection of terminal,
+compilation, targets, planning result, effect, intents, and coverage. The
+materialization object copies the same status/effect/intents and supplies only
+the observation disposition/reasons. The store derives graph deltas, record
+versions, event envelopes, observation revisions, commit time, CAS receipt, and
+reload from these intents; none is reducer or caller input. Record IDs and
+payloads are deterministic functions of the typed operation arm, resolved
+targets, temporal closure, and identity plan, never ambient lookup.
+
+`BootstrapGraphOperationStoreMaterializationInputV3`, plan compilation,
+checkpoint member, authorization, attempt evidence, group commit, retry, final
+evidence, manifest, and terminal consume only this native reduction and exact
+closure projections. The v50 generic reduction grammar, its discriminator,
+codec/domain/member kind, `semantic_compilation`, `terminal_outcome`,
+`artifact_closure`, and any conversion from them are obsolete decode failures
+only when selected by a bootstrap graph V3 key or flow discriminator.
+Historical bytes are offline read-only and cannot enter V3 recovery or new work.
+
+Tests cover all five accepted arms and every nonaccepting status; absent/extra/
+wrong-arm carrier, effect/intent bijection, snapshot/read-set substitution,
+stale identity plan, coverage/status/reason mutation, closure/preimage/order/
+digest mutation, generic/mixed codec injection, and ambient provider mutation.
+Four roots over memory and independent JSONL prove byte-identical checkpoint,
+lost-ack/retry/terminal consumption and exact store-derived graph/event/
+observation effects. Evidence remains design-only and zero callers remains an
+implementation obligation.
+
+##### 4.8.2.16 v60 closed effect validation and V3-only supersession
+
+The following table is the complete accepted-effect validator. `C` is the
+canonical source-evidence citation count, `P` the matching provenance count,
+`T` the canonical distinct corrected/retracted target count, `R` the identity
+plan's created/revised entity-or-alias record count, and `D` its complete
+reference-disposition count. Each count is derived from the typed effect before
+intent validation; none is caller-selected. Within each row, intents occur in
+the displayed kind-block order and then by `(record_id, intent_digest)`.
+
+| Effect arm | Required carrier shape | Exact ordered record-intent kinds and cardinality | Exact field source | Observation |
+| --- | --- | --- | --- | --- |
+| `fact` | exactly one `ClaimAssertion`; one terminal binding set; no transition/action/lineage carrier | `claim_assertion` x1, `claim_projection` x1, `relation_revision` x0 for literal or x1 for entity object, `citation` xC, `provenance` xP | assertion/projection slot, value, temporal/trust closure and IDs from fact plus resolved subject/object; relation only from two resolved entities; citations from assertion/predicate/temporal evidence; provenance from matching retained bootstrap provenance | `committed`, empty reasons |
+| `correction` | `T>=1` correction transitions plus exactly one nested `BootstrapNativeFactEffectV3`; no other nested arm | `temporal_transition` xT followed by the nested fact row's complete intent vector, including its x1 claim/projection and conditional relation, then its citations/provenance | transition target IDs/prior digests from `corrected_targets`, kind=`correction`, interval and source member from correction evidence; `correction.replacement_effect.fact == correction.correction.replacement_fact`; replacement inherits the outer operation, snapshot/read-set, group, and provenance identities as defined below and independently satisfies the fact row | `committed`, empty reasons |
+| `retraction` | `T>=1` retraction transitions; no claim/action/lineage carrier | `temporal_transition` xT, `citation` xC, `provenance` xP | target IDs/prior digests from `retracted_targets`, kind=`retraction`, after-record closes the lawful interval without deleting history; evidence/provenance from retraction assertion/anchor | `committed`, empty reasons |
+| `action_state` | exactly one `ActionRevision` for the logical action/state transition and one terminal binding set | `action_revision` x1, `citation` xC, `provenance` xP | action ID, state, branch, canonical role participants, temporal closure and statement digest from action member plus resolved participants; evidence/provenance from action/state/assertion anchors | `committed`, empty reasons |
+| `identity` | exactly one `IdentityLineageRecord`; exact `D` reference dispositions; fresh planning result; no claim/transition/action carrier | `entity_revision|alias_revision` xR in plan order, `identity_lineage` x1, `reference_disposition` xD, `citation` xC, `provenance` xP | revision/alias identities and create/update/prior digest from fresh plan; lineage transition from operation+plan; each disposition bijects with one planned reference assignment/closure entry and copies target path, predecessor/successor and basis; evidence/provenance from identity assertion/anchor | `committed`, empty reasons |
+
+For every arm, `source_member_digest` is the exact discriminated operation
+member digest; `operation_execution_id` equals the containing input; `record_id`
+equals the ID inside `canonical_after_record`; create iff the sealed snapshot has
+no record at that ID and expected prior is null, otherwise update iff the exact
+snapshot record digest equals expected prior. No other record kind, count, or
+ordering is lawful. `C` and `P` are canonical unique projections, so repeated
+evidence does not multiply records. Correction is the sole arm allowed to nest
+a fact effect. The exact required equality is
+`correction.replacement_effect.fact == correction.correction.replacement_fact`;
+the validator rejects replacement-fact substitution before any intent is
+accepted. The nested effect has no independent operation, proposal, execution,
+group, snapshot/read-set, provenance, observation, terminal, or closure field:
+its intent `operation_execution_id` inherits the containing
+`effect_materialization.operation_execution_id`; its operation/proposal,
+sealed-snapshot, effective-read-set, and transaction-group identities inherit
+the containing reduction and terminal; its `source_member_digest` and every
+citation/provenance projection inherit the outer correction member and its
+retained correction evidence. Resolved subject/object and fact claim carriers
+are validated only against that inherited snapshot/read-set and the equal
+replacement fact. It cannot itself be correction. Its intents are spliced once
+after all correction transitions, not emitted as another operation result.
+
+For nonaccepted terminals the effect and intent vector are empty and observation
+disposition equals terminal status byte-for-byte. Observation reasons equal the
+terminal reason tuple byte-for-byte. Accepted maps only to `committed` with both
+reason tuples empty. The store-independent
+`validate_bootstrap_native_operation_reduction_v3` recomputes the operation-arm
+table, every count/order/field source, the exact replacement-fact path equality
+and inherited identity/provenance projection, nested-correction splice,
+terminal/observation mapping, all CTVs and closure projections using only the
+reduction, sealed snapshot, and effective read set. Compiler, coordinator,
+memory store, and JSONL store must call the same pure validator before
+persistence; backend acceptance cannot repair or reinterpret a reduction.
+
+The V3 supersession registry is exhaustive.  It applies to the exact current
+reduction carrier and to every V3 atomic member that can retain, replay, or
+project it; a member not named here is not authorized to carry a reduction.
+`BootstrapGraphPlanAtomicMemberV3.kind` has exactly the following reduction
+closure: `bootstrap_graph_coordinator_request`,
+`bootstrap_graph_snapshot_authority`, `bootstrap_graph_control_epoch`,
+`graph_base_read_set`, `graph_read_set_extension`, `graph_reconciliation`,
+`reference_closure`, `group_compilation_request`,
+`group_compilation_artifact`, `group_independence_certificate`,
+`bootstrap_graph_pre_execution_group_evidence`,
+`bootstrap_transaction_group_plan`, `bootstrap_group_planning_authorization`,
+`bootstrap_graph_dependent_attempt`, `bootstrap_source_plan_lineage_entry`,
+`bootstrap_graph_retry_progress`, `bootstrap_graph_final_stage_evidence`,
+`ingestion_execution_manifest`, `transaction_group_result`,
+`bootstrap_graph_terminal_handoff`, and
+`bootstrap_graph_canonical_source_result`.  The terminal-member projection is
+the exact subset `bootstrap_graph_coordinator_request`,
+`bootstrap_graph_control_epoch`, `bootstrap_graph_dependent_attempt`,
+`bootstrap_transaction_group_plan`, `bootstrap_source_plan_lineage_entry`,
+`ingestion_execution_manifest`, `transaction_group_result`,
+`bootstrap_graph_terminal_handoff`, and
+`bootstrap_graph_canonical_source_result`.  All other member kinds reject a
+reduction payload.  The qualified codec registry keys below are literal keys,
+not aliases or illustrative labels.
+
+| V3 surface | Withdrawn V3 form/key | Sole current V3 replacement | Required behavior |
+| --- | --- | --- | --- |
+| Reduction payload owner | `BootstrapGraphPlanCompilationV3.operation_reductions[]` carrying generic `semantic_compilation`, `terminal_outcome`, or `artifact_closure` | `BootstrapGraphPlanCompilationV3.operation_reductions[]` carries one `BootstrapGraphOperationReductionV3` with `native_compilation`, `native_terminal`, `native_artifact_closure`, and `effect_materialization` | operation order and plan coverage biject; the old generic field names, their digests, and an extra reduction member kind reject |
+| Qualified payload codec registry | `bootstrap_graph_operation_reduction_v3` generic schema branch; nested keys `semantic_compilation`, `terminal_outcome`, `artifact_closure` | `bootstrap_graph_operation_reduction_v3/native`; nested keys `native_compilation`, `native_terminal`, `native_artifact_closure`, `effect_materialization`, `native_fact_effect`, `native_correction_effect`, `native_retraction_effect`, `native_action_state_effect`, `native_identity_effect`, and `native_record_materialization_intent` | one encoder and decoder per literal key; no alias, union fallback, structural coercion, or generic digest bridge |
+| Plan compiler and checkpoint encoders/decoders | `encode_bootstrap_graph_operation_reduction_v3_generic`, `decode_bootstrap_graph_operation_reduction_v3_generic`, and every generic branch in plan/attempt/lineage checkpoint encoding | `encode_bootstrap_graph_operation_reduction_v3_native`, `decode_bootstrap_graph_operation_reduction_v3_native`, then the pure validator | generic, mixed, relabelled, or unknown bytes reject before checkpoint lookup, digest acceptance, or persistence |
+| Store materialization request and consumer conversion | `BootstrapGraphOperationStoreMaterializationInputV3.reduction` resolved through generic terminal/closure; `SemanticEffectGroupResult.create(terminal_outcome, artifact_closure)`, `SemanticGraphDelta.create(terminal_outcome)`, or equivalent bridge | materialization input embeds the exact native reduction; store invokes the pure validator then derives records, graph delta, events, and observation from intents | a generic field, converter import/call, ambient lookup, missing native field, or failed validation rejects before CAS |
+Decode dispatch is fixed: read `BootstrapGraphPlanAtomicMemberV3.kind`, select
+only that row's literal decoder, and validate the decoded native
+payload/projection before reading its payload digest, any cross-member reference,
+or a dependent member. The following is one normative row per complete V3
+atomic-member vocabulary. `members[k]` means the persisted
+`BootstrapGraphPlanAtomicWriteRequestV3.members[]` record and its byte-identical
+`BootstrapGraphPlanAtomicReloadCoreV3.members[]` found reload; the named
+consumer is also the only recovery consumer. Every row rejects wrong-kind,
+cross-member, generic, mixed, relabelled, and digest-only payloads before CAS
+or visibility.
+
+| Literal member kind | Exact native projection or prohibition | Literal codec key, encoder, decoder | Persisted member / found reload / recovery consumer | Fail-closed behavior |
+| --- | --- | --- | --- | --- |
+| `bootstrap_graph_coordinator_request` | native reduction identities only; no reduction payload | `bootstrap_graph_v3/bootstrap_graph_coordinator_request/native`; `encode_bootstrap_graph_coordinator_request_v3_native`; `decode_bootstrap_graph_coordinator_request_v3_native` | `members[bootstrap_graph_coordinator_request]` / same member / coordinator request recovery | reject all non-native or reduction-bearing bytes |
+| `bootstrap_graph_snapshot_authority` | prohibit reduction | `bootstrap_graph_v3/bootstrap_graph_snapshot_authority/native`; `encode_bootstrap_graph_snapshot_authority_v3_native`; `decode_bootstrap_graph_snapshot_authority_v3_native` | `members[bootstrap_graph_snapshot_authority]` / same member / snapshot-authority recovery | reject payload or foreign projection |
+| `bootstrap_graph_control_epoch` | prohibit reduction | `bootstrap_graph_v3/bootstrap_graph_control_epoch/native`; `encode_bootstrap_graph_control_epoch_v3_native`; `decode_bootstrap_graph_control_epoch_v3_native` | `members[bootstrap_graph_control_epoch]` / same member / epoch recovery | reject payload or foreign projection |
+| `graph_base_read_set` | exact native reduction `effective_read_set_digest` projection only | `bootstrap_graph_v3/graph_base_read_set/native`; `encode_graph_base_read_set_v3_native`; `decode_graph_base_read_set_v3_native` | `members[graph_base_read_set]` / same member / read-set recovery | reject generic closure or mismatched projection |
+| `graph_read_set_extension` | exact native reduction read-set-extension projection only | `bootstrap_graph_v3/graph_read_set_extension/native`; `encode_graph_read_set_extension_v3_native`; `decode_graph_read_set_extension_v3_native` | `members[graph_read_set_extension]` / same member / read-set recovery | reject generic closure or mismatched projection |
+| `graph_reconciliation` | exact native compilation target projection only | `bootstrap_graph_v3/graph_reconciliation/native`; `encode_graph_reconciliation_v3_native`; `decode_graph_reconciliation_v3_native` | `members[graph_reconciliation]` / same member / reconciliation recovery | reject generic compilation or foreign targets |
+| `reference_closure` | exact native compilation reference projection only | `bootstrap_graph_v3/reference_closure/native`; `encode_reference_closure_v3_native`; `decode_reference_closure_v3_native` | `members[reference_closure]` / same member / closure recovery | reject generic closure or cross-member bytes |
+| `group_compilation_request` | native operation/proposal/snapshot/read-set identities only; no result | `bootstrap_graph_v3/group_compilation_request/native`; `encode_group_compilation_request_v3_native`; `decode_group_compilation_request_v3_native` | `members[group_compilation_request]` / same member / compiler recovery | reject result, generic, or mixed bytes |
+| `group_compilation_artifact` | exact `native_compilation` plus ordered native reductions | `bootstrap_graph_v3/group_compilation_artifact/native`; `encode_group_compilation_artifact_v3_native`; `decode_group_compilation_artifact_v3_native` | `members[group_compilation_artifact]` / same member / compiler recovery | reject generic compilation/terminal/closure |
+| `group_independence_certificate` | native reduction digest/coverage projection only | `bootstrap_graph_v3/group_independence_certificate/native`; `encode_group_independence_certificate_v3_native`; `decode_group_independence_certificate_v3_native` | `members[group_independence_certificate]` / same member / certificate recovery | reject embedded reduction or generic digest bridge |
+| `bootstrap_graph_pre_execution_group_evidence` | native terminal/closure evidence projection only | `bootstrap_graph_v3/bootstrap_graph_pre_execution_group_evidence/native`; `encode_bootstrap_graph_pre_execution_group_evidence_v3_native`; `decode_bootstrap_graph_pre_execution_group_evidence_v3_native` | `members[bootstrap_graph_pre_execution_group_evidence]` / same member / pre-execution recovery | reject generic terminal or closure |
+| `bootstrap_transaction_group_plan` | ordered native reduction references only | `bootstrap_graph_v3/bootstrap_transaction_group_plan/native`; `encode_bootstrap_transaction_group_plan_v3_native`; `decode_bootstrap_transaction_group_plan_v3_native` | `members[bootstrap_transaction_group_plan]` / same member / plan recovery | reject payload substitution or generic references |
+| `bootstrap_group_planning_authorization` | exact native reduction/plan authorization projection only | `bootstrap_graph_v3/bootstrap_group_planning_authorization/native`; `encode_bootstrap_group_planning_authorization_v3_native`; `decode_bootstrap_group_planning_authorization_v3_native` | `members[bootstrap_group_planning_authorization]` / same member / authorization recovery | reject generic or cross-group projection |
+| `bootstrap_graph_dependent_attempt` | complete ordered native reduction digest/terminal projection | `bootstrap_graph_v3/bootstrap_graph_dependent_attempt/native`; `encode_bootstrap_graph_dependent_attempt_v3_native`; `decode_bootstrap_graph_dependent_attempt_v3_native` | `members[bootstrap_graph_dependent_attempt]` / same member / attempt recovery | reject generic result or missing member |
+| `bootstrap_source_plan_lineage_entry` | exact native plan/reduction terminal projection only | `bootstrap_graph_v3/bootstrap_source_plan_lineage_entry/native`; `encode_bootstrap_source_plan_lineage_entry_v3_native`; `decode_bootstrap_source_plan_lineage_entry_v3_native` | `members[bootstrap_source_plan_lineage_entry]` / same member / lineage recovery | reject generic or predecessor substitution |
+| `bootstrap_graph_retry_progress` | exact native terminal/closure/materialization projection only | `bootstrap_graph_v3/bootstrap_graph_retry_progress/native`; `encode_bootstrap_graph_retry_progress_v3_native`; `decode_bootstrap_graph_retry_progress_v3_native` | `members[bootstrap_graph_retry_progress]` / same member / retry recovery | reject generic promotion or payload omission |
+| `bootstrap_graph_final_stage_evidence` | exact native terminal and materialization projection only | `bootstrap_graph_v3/bootstrap_graph_final_stage_evidence/native`; `encode_bootstrap_graph_final_stage_evidence_v3_native`; `decode_bootstrap_graph_final_stage_evidence_v3_native` | `members[bootstrap_graph_final_stage_evidence]` / same member / final-stage recovery | reject generic terminal/closure or wrong operation |
+| `ingestion_execution_manifest` | ordered native terminal/closure/materialization projections only | `bootstrap_graph_v3/ingestion_execution_manifest/native`; `encode_ingestion_execution_manifest_v3_native`; `decode_ingestion_execution_manifest_v3_native` | `members[ingestion_execution_manifest]` / same member / manifest recovery | reject generic result, reordering, or cross-member copy |
+| `transaction_group_result` | exact native materialization and store receipt projection only | `bootstrap_graph_v3/transaction_group_result/native`; `encode_transaction_group_result_v3_native`; `decode_transaction_group_result_v3_native` | `members[transaction_group_result]` / same member / group-result recovery | reject generic converter output or digest-only result |
+| `bootstrap_graph_terminal_handoff` | terminal-subset ordered native terminal/closure/materialization projections only | `bootstrap_graph_v3/bootstrap_graph_terminal_handoff/native`; `encode_bootstrap_graph_terminal_handoff_v3_native`; `decode_bootstrap_graph_terminal_handoff_v3_native` | `members[bootstrap_graph_terminal_handoff]` / same member / terminal-handoff recovery | reject non-subset member, generic, or mixed payload |
+| `bootstrap_graph_canonical_source_result` | terminal-subset ordered native terminal/materialization result projections only | `bootstrap_graph_v3/bootstrap_graph_canonical_source_result/native`; `encode_bootstrap_graph_canonical_source_result_v3_native`; `decode_bootstrap_graph_canonical_source_result_v3_native` | `members[bootstrap_graph_canonical_source_result]` / same member / source-result recovery | reject generic terminal, foreign group, or digest-only payload |
+
+This matrix retires only bootstrap graph V3 wire, persistence, replay, and
+consumer paths. `SemanticCompilationResult`, `SemanticTerminalOutcome`,
+`SemanticArtifactClosure`, their codecs, and their compilers remain valid for
+their separately governed non-bootstrap/non-V3 flows; global deletion or
+relabeling is forbidden. Registry lookup is qualified by flow discriminator and
+schema version, so a lawful non-V3 payload can never satisfy a Bootstrap V3 key.
+
+Store-independent tests instantiate every table row and mutate each count,
+block order, record kind/ID/mutation/prior/after payload/source member, carrier,
+target, evidence/provenance projection, terminal/observation status/reason, and
+digest. Correction tests separately mutate
+`correction.replacement_effect.fact`,
+`correction.correction.replacement_fact`, inherited operation-execution,
+operation/proposal, group, snapshot/read-set, source-member, and provenance
+paths; omit/duplicate/reorder the nested fact; add recursive/wrong-arm nesting;
+emit a second operation; or splice its intents twice. The row validator
+enumerates all 21 literal member kinds and the nine-member terminal subset,
+proves dispatch by kind precedes payload decoding, and requires exactly one
+literal codec key, encoder, decoder, persisted-member location, found reload,
+and recovery consumer per row. It mutates each row with wrong-kind,
+cross-member, generic, mixed, relabelled, and digest-only bytes. Supersession
+tests also inject old and non-V3 payloads under V3 keys and prove lawful generic
+non-V3 round trips remain unchanged. The same mutation corpus runs against the
+pure validator and both stores; all failures precede CAS.
+
+A static architecture/binding validator extracts every graph atomic-member
+order, checkpoint member reference, and terminal-subset reference and compares
+each to the single 21-literal registry above. It rejects stale 19-item orders,
+omitted legal kinds, additions, duplicates, reorderings, aliases, `[]`
+pseudo-kinds, normalization authority reload as a graph member, operation-plan
+or reduction vectors as kinds, attempt-construction inputs as a kind, terminal
+subset drift, cross-artifact disagreement, or restoration of the former V51
+operation-plan/reduction/attempt-input checkpoint phrasing or order. The semantic authority reload
+remains a separately typed normalization-generation reference; all named
+operation-plan, reduction, and attempt-input values are nested projections, not
+atomic-member identities.
+
+##### 4.8.2.17 v64 native target and materialization planner
+
+The native reducer does not invent graph targets, planning payloads, terminal
+bindings, citations, provenance, or identity materialization. One pure owner
+supplies that closed boundary:
+
+```python
+class BootstrapNativeTargetPlanningRequestV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    operation_input: BootstrapNativeOperationReductionInputV3
+    sealed_snapshot: SealedGraphStateSnapshot
+    effective_read_set: GraphReadSet
+    current_planning_state: GraphPlanningState
+    target_resolution_authority: BootstrapNativeTargetResolutionAuthorityV3
+    request_digest: str
+
+class BootstrapSnapshotTargetAuthorityV3(BaseModel):
+    kind: Literal["snapshot"]
+    target: GraphTargetReference
+    sealed_snapshot_digest: str
+    effective_read_set_digest: str
+    snapshot_record_digest: str
+    authority_digest: str
+
+class BootstrapPendingTargetAuthorityV3(BaseModel):
+    kind: Literal["pending"]
+    target: GraphTargetReference
+    source_local_cluster_id: str
+    source_coordinate_digest: str
+    producing_transaction_group_id: str
+    producer_operation_execution_id: str
+    producer_membership_digest: str
+    canonical_prefix_proof: BootstrapCanonicalPlanningPrefixProofV3
+    planning_record_digest: str
+    authority_digest: str
+
+class BootstrapNewFirstUseTargetAuthorityV3(BaseModel):
+    kind: Literal["new_first_use"]
+    target: GraphTargetReference
+    source_local_cluster_id: str
+    source_coordinate_digest: str
+    canonical_identity_decision_digest: str
+    planned_identity_reservation_digest: str
+    seed_producer_operation_execution_id: str
+    seed_producer_source_coordinate_digest: str
+    seed_producer_transaction_group_id: str
+    seed_producer_membership_digest: str
+    canonical_prefix_proof: BootstrapCanonicalPlanningPrefixProofV3
+    authority_digest: str
+
+BootstrapNativeTargetAuthorityV3 = Annotated[
+    BootstrapSnapshotTargetAuthorityV3 | BootstrapPendingTargetAuthorityV3 |
+    BootstrapNewFirstUseTargetAuthorityV3,
+    Field(discriminator="kind"),
+]
+
+class BootstrapNativeTargetBindingV3(BaseModel):
+    schema_version: Literal[3]
+    role: Literal["fact_subject", "fact_object", "corrected_target",
+                  "retracted_target", "action_participant",
+                  "identity_predecessor", "identity_successor",
+                  "identity_reference_target"]
+    source_coordinate_digest: str
+    authority: BootstrapNativeTargetAuthorityV3
+    binding_digest: str
+
+class BootstrapNativePlanningRecordV3(BaseModel):
+    schema_version: Literal[3]
+    operation_execution_id: str
+    record_kind: GraphRecordKind
+    record_id: str
+    precondition: PlanningRecordPrecondition
+    planning_payload: CanonicalPlanningRecordPayload
+    source_member_digest: str
+    record_digest: str
+
+class BootstrapNativeTemporalTerminalBindingV3(BaseModel):
+    schema_version: Literal[3]
+    operation_execution_id: str
+    operation_id: str
+    temporal_role: str
+    temporal_consensus_digest: str
+    planning_record_digest: str
+    binding_digest: str
+
+class BootstrapNativeEvidenceProjectionV3(BaseModel):
+    schema_version: Literal[3]
+    operation_execution_id: str
+    evidence_item_digest: str
+    citation_record: BootstrapNativePlanningRecordV3
+    provenance_record: BootstrapNativePlanningRecordV3
+    projection_digest: str
+
+class BootstrapNativeIdentityMaterializationV3(BaseModel):
+    schema_version: Literal[3]
+    canonical_identity_authority: BootstrapCanonicalIdentityBindingAllocationReloadV3
+    graph_free_identity_input_digest: str
+    fresh_planning_result: NonPublishingIdentityPlanningResultV3
+    revision_and_alias_records: tuple[BootstrapNativePlanningRecordV3, ...]
+    lineage_record: BootstrapNativePlanningRecordV3
+    reference_disposition_records: tuple[BootstrapNativePlanningRecordV3, ...]
+    identity_digest: str
+
+class BootstrapGraphTargetMaterializationPlanV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    transaction_group_id: str
+    operation_execution_id: str
+    operation_id: str
+    proposal_digest: str
+    operation_kind: Literal["fact", "correction", "retraction", "action_state", "identity"]
+    sealed_snapshot_digest: str
+    effective_read_set_digest: str
+    planning_state_before_digest: str
+    target_bindings: tuple[BootstrapNativeTargetBindingV3, ...]
+    operation_seed: BootstrapNativeOperationPlanningSeedV3
+    planning_records: tuple[BootstrapNativePlanningRecordV3, ...]
+    terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
+    evidence_projections: tuple[BootstrapNativeEvidenceProjectionV3, ...]
+    identity_materialization: BootstrapNativeIdentityMaterializationV3 | None
+    planning_state_after: GraphPlanningState
+    plan_digest: str
+
+class BootstrapNativePlanningUnavailableV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    transaction_group_id: str
+    operation_execution_id: str
+    operation_id: str
+    proposal_digest: str
+    status: Literal["unresolved", "rejected", "evidence_only"]
+    reason_codes: tuple[BootstrapNativeTerminalReasonV3, ...]
+    sealed_snapshot_digest: str
+    effective_read_set_digest: str
+    planning_state_before_digest: str
+    unavailable_digest: str
+
+class BootstrapGraphTargetMaterializationPlannerV3(Protocol):
+    def plan(self, *, request: BootstrapNativeTargetPlanningRequestV3
+             ) -> BootstrapGraphTargetMaterializationPlanV3 | BootstrapNativePlanningUnavailableV3: ...
+```
+
+All are frozen and `extra="forbid"`. Each digest is CTV of displayed fields
+excluding itself under, respectively, `native-target-planning-request.v3`,
+`native-target-binding.v3`, `native-planning-record.v3`,
+`native-evidence-projection.v3`, `native-identity-materialization.v3`, and
+`target-materialization-plan.v3`; unavailable uses
+`native-planning-unavailable.v3`, each prefixed `memorii.bootstrap-graph.`.
+Tuples order by target role/source coordinate/target digest, record kind/ID/
+digest, terminal operation/role/digest, and evidence source span/item digest.
+The plan is bounded by v58 limits, 4096 records, and 16 MiB per operation.
+
+`BuiltInBootstrapGraphTargetMaterializationPlannerV3`, owned by
+`memorii.core.memory_evolution.bootstrap_graph_planning`, is the sole ordinary
+implementation. Its constructor receives only the canonical graph-record codec
+manifest, predicate-state registry, temporal-policy evaluator, and existing pure
+`IdentityOperationPlanner`; none may read storage. Request bytes supply the
+complete v58 retained authority input, sealed snapshot/read set, and fold state.
+There is no repository, provider, analyzer, clock, fixture, generic compiler,
+or callback dependency.
+
+The algorithm validates all input/source/proposal/member/provenance/coverage/
+dependency joins and snapshot/read-set/state continuity. It resolves mentions
+through retained source-local identity and then only snapshot or prior pending
+planning records; zero/multiple targets return typed missing/ambiguous failure.
+It evaluates typed predicate, temporal, trust, lifecycle and precondition rules,
+then emits only the canonical pre-CAS planning payload. The codec manifest proves
+the planning kind is supported but does not construct durable record bytes.
+Each unique evidence item produces exactly one citation and one provenance
+record with domain-separated IDs derived from source, operation-execution,
+span/item and cited record. Native temporal terminal bindings derive only from retained
+temporal consensus plus planned records and biject with required carrier roles.
+Finally it folds records into `planning_state_after` in canonical order with
+exact delta-base and sequence continuity.
+
+Arm mapping is complete. Fact resolves subject/entity object and plans claim,
+projection and optional relation. Correction resolves all corrected selectors,
+plans their transitions, then calls the fact subroutine once for the equal
+replacement fact under the same identity. Retraction plans only target-closing
+transitions. Action-state resolves every role participant and plans one action
+revision. Identity calls `IdentityOperationPlanner.plan_non_publishing` exactly
+once with native graph-free input and the same snapshot/read set/state, validates
+the fresh accepted/trusted/verified triple, then plans exact revisions/aliases,
+one lineage and complete reference dispositions. Non-identity requires null
+identity materialization and zero identity-planner calls.
+
+`BootstrapNativeSemanticReducerV3` accepts the complete plan explicitly and may
+only validate/project it into native compilation, effect, intents, terminal and
+closure. Every intent derives from one planning record: kind/ID/planning payload/
+source member are equal. Durable `CanonicalGraphRecordPayload` and durable
+reference coordinates are constructed only inside group CAS. Absent precondition
+means create/null prior, durable means update/durable digest, and pending means
+update against the named predecessor.
+The reducer cannot call `compile_accepted_carriers`, `SemanticIngestionCompiler`,
+generic terminal/closure constructors, repositories, or rebuild planner fields.
+
+Invalid input/read-set/state, unsupported codec/predicate/temporal rule,
+missing/ambiguous/stale target, invalid payload projection, incomplete evidence,
+binding mismatch, identity abstention/stale triple, reference gap, limits, or
+digest/join mismatch returns typed unavailable with empty plan/effect/intents
+and no state advance. Partial plans are unrepresentable.
+
+`BootstrapGraphHostBundleV3` requires the planner beside compiler, authorizer,
+group executor and terminal preparer. Direct, factory, filesystem and Hermes
+roots construct the same built-in using production registries and identity
+planner. Order is authority reload -> sealed snapshot/read set -> target plan ->
+reducer/compilation -> checkpoint. Recovery validates the persisted plan nested
+in the compilation artifact before reduction reuse and never replans after an
+unknown acknowledgement.
+
+Tests cover all five arms, literal/entity facts, multi-target correction/
+retraction, multi-participant action, alias/rekey/merge/split identity, pending
+same-group records, initial/replan/recovery and zero-effect failures. Mutations
+remove/duplicate/reorder/substitute every target, record, binding, citation/
+provenance, identity result, snapshot/read-set/precondition/state, codec and
+digest; inject ambient/generic compiler access; and prove all four roots over
+memory/independent JSONL use the built-in without fixtures. Store-independent
+golden vectors prove byte-identical plans, intents and lost-ack reload. Evidence
+remains design-only until implementation gates exist.
+
+##### 4.8.2.18 v65 fully planning-native closure and identity admission
+
+v65 supersedes the v64 nullable target coordinates, durable pre-CAS payload,
+generic terminal binding, and direct identity-planner invocation. A target
+binding contains exactly one discriminated `BootstrapNativeTargetAuthorityV3`.
+The snapshot arm requires an authenticated snapshot record and forbids pending
+coordinates; the pending arm requires a byte-identical earlier
+`PendingPlanningStateRecord`, its producing group and planning digest and forbids
+snapshot coordinates. If the same record ID exists in current pending state and
+the base snapshot, pending authority wins; using the snapshot arm is stale.
+Removal/transition preconditions likewise name the pending predecessor when one
+exists, otherwise the durable snapshot predecessor, otherwise absent. No union
+arm permits both or neither authority.
+
+`BootstrapNativePlanningRecordV3` contains only
+`CanonicalPlanningRecordPayload`. The store-owned V3 materializer, inside the
+authorized group CAS, converts that payload plus store-issued revision, commit
+time, fence and durable reference coordinates into
+`CanonicalGraphRecordPayload`; it then revalidates kind/ID/precondition and the
+record-intent bijection before visibility. No pre-CAS carrier contains a durable
+payload or a durable reference fabricated from a planned commit coordinate.
+
+`BootstrapNativeTemporalTerminalBindingV3` is the sole V3 terminal-binding
+carrier. Its CTV is displayed field order excluding `binding_digest`, domain
+`memorii.bootstrap-graph.native-temporal-terminal-binding.v3`. It binds one
+retained temporal-consensus decision to one planning record and the exact
+operation execution. `SemanticTerminalBindingSet` is forbidden in Bootstrap V3.
+
+The plan's `planning_records` is the exact duplicate-free ordered union of:
+all records referenced by target pending authorities, all arm effect records,
+both records from every evidence projection, every record named by a native
+terminal binding, and all identity-materialization records. Order is
+`(record_kind, record_id, record_digest)`. Every union member is referenced by
+at least one owner, every owner references one union member byte-identically,
+target/evidence/terminal/identity projections have their specified bijections,
+and no nested copy may differ. Snapshot targets are authorities, not new union
+records. Missing, extra, duplicate or reordered union members reject.
+
+Identity admission is a separate pure boundary:
+
+```python
+class BootstrapNativeIdentityAdmissionRequestV3(BaseModel):
+    schema_version: Literal[3]
+    transaction_group_id: str
+    operation_execution_id: str
+    canonical_identity_authority: BootstrapCanonicalIdentityBindingAllocationReloadV3
+    graph_free_input: BootstrapGraphFreeIdentityPlanningInputV3
+    sealed_snapshot: SealedGraphStateSnapshot
+    effective_read_set: GraphReadSet
+    current_planning_state: GraphPlanningState
+    predecessor_identity_materialization: BootstrapNativeIdentityMaterializationV3 | None
+    mode: Literal["initial", "replacement", "reuse"]
+    request_digest: str
+
+class BootstrapNativeIdentityAdmissionV3(BaseModel):
+    schema_version: Literal[3]
+    request_digest: str
+    accepted_operation_artifact: AcceptedIdentityOperationArtifact
+    trusted_decision: TrustedAcceptedIdentityOperationDecision
+    authority_verification: VerifiedIdentityDecisionAuthority
+    planning_result: NonPublishingIdentityPlanningResultV3
+    admission_digest: str
+
+class BootstrapNativeIdentityAdmissionPortV3(Protocol):
+    def admit_and_plan(self, *, request: BootstrapNativeIdentityAdmissionRequestV3
+                       ) -> BootstrapNativeIdentityAdmissionV3 | BootstrapNativePlanningUnavailableV3: ...
+```
+
+CTVs use displayed order excluding trailing digest under
+`memorii.bootstrap-graph.native-identity-admission-request.v3` and
+`native-identity-admission.v3`. The built-in implementation derives the exact
+accepted artifact, trusted decision and verified authority from only graph-free
+input plus the supplied snapshot/read set/current state, validates all four
+objects bind the same operation/snapshot/read-set/fence/state, then calls
+`IdentityOperationPlanner.plan_nonpublishing` exactly once. Mode/nullability is
+closed: `initial` requires `predecessor_identity_materialization is None`;
+`replacement` and `reuse` each require it non-null and byte-valid. Replacement
+derives a new accepted/trusted/verified triple and calls the planner exactly
+once. For both replacement and reuse,
+`request.transaction_group_id == predecessor.fresh_planning_result.transaction_group_id`,
+`request.graph_free_input.input_digest == predecessor.graph_free_identity_input_digest`,
+and every record in predecessor revision/alias, lineage, and reference-
+disposition closures has `operation_execution_id == request.operation_execution_id`.
+Before the replacement call it requires the request snapshot digest differ from
+`predecessor.fresh_planning_result.sealed_graph_snapshot_digest` and the request
+read-set digest differ from
+`predecessor.fresh_planning_result.graph_read_set_digest`; after the call, the
+new triple and result must equal the current request snapshot/read-set and state,
+not either predecessor authority. Equality of either current authority to its
+predecessor is `identity_replacement_stale_authority`, with zero planner call.
+Reuse additionally requires
+`request.current_planning_state == predecessor.fresh_planning_result.planning_state_after`
+byte-for-byte. This exact after-state continuity is the sole reuse rule; a later,
+earlier, equivalent-looking, or independently reconstructed state rejects rather
+than applying a retained-whole-group bypass. Reuse then returns the complete
+predecessor identity materialization byte-for-byte, performs zero accepted/
+trusted/verified derivation and zero planner calls, and does not require the
+current snapshot/read-set to replace predecessor authority.
+Missing identity input performs zero calls and maps to typed unavailable.
+Non-identity never invokes the port. Any initial-with-predecessor,
+replacement/reuse-without-predecessor, cross-operation/group predecessor, or
+schema-valid substituted predecessor/input/record/state rejects before derivation.
+
+The reducer signature is exactly
+`reduce(request: BootstrapNativeTargetPlanningRequestV3,
+planning: BootstrapGraphTargetMaterializationPlanV3 |
+BootstrapNativePlanningUnavailableV3) -> BootstrapGraphOperationReductionV3`.
+Both arms repeat and validate request digest, operation execution, operation,
+proposal, group, snapshot/read-set and planning-state-before identity. A plan
+produces the v60 validated native effect closure. Unavailable produces one
+native terminal and artifact closure with the identical unavailable status and
+reasons, null accepted effect, empty record intents/targets/planning records,
+unchanged state and zero effects. Accepted is impossible from unavailable;
+unbound or cross-request unavailable objects reject rather than finalize.
+
+The target planner depends on the identity-admission port, not directly on the
+generic identity planner. Host bundles and all four roots inject the built-in
+V3 admission implementation and its pure planner. Tests cover exactly-one
+target authority, pending-over-snapshot precedence including removals, planning
+union bijections/order, no durable pre-CAS bytes, native temporal bindings,
+initial/replacement/reuse/absence call counts and freshness; every mode/nullability
+permutation; predecessor operation/group/schema substitution; replacement with
+stale snapshot only, stale read set only, or both stale; cross-request plan
+and unavailable substitution; cross-group predecessor result, graph-free-input
+digest substitution, identity materialization record execution-ID substitution,
+and reuse before-state/later-state/reconstructed-state substitution; all
+unavailable terminal mappings; and spies for
+every forbidden generic/ambient path across memory and independent JSONL.
+
+##### 4.8.2.19 v68 native target-resolution authority and payload seeds
+
+The planner receives no implicit mention-to-graph mapping. The coordinator
+derives and seals this complete authority from the same snapshot/read set and
+current planning state before calling the v65 planner:
+
+```python
+class BootstrapNativeMentionTargetCandidateV3(BaseModel):
+    schema_version: Literal[3]
+    mention_digest: str
+    source_local_cluster_id: str
+    canonical_identity_decision_digest: str
+    canonical_identity_proof_digest: str
+    target_authority: BootstrapNativeTargetAuthorityV3
+    logical_entity_id: str
+    entity_revision_id: str
+    alias_record_ids: tuple[str, ...]
+    type_evidence_record_ids: tuple[str, ...]
+    candidate_digest: str
+
+class BootstrapNativeSelectorTargetV3(BaseModel):
+    schema_version: Literal[3]
+    selector_digest: str
+    selector_kind: Literal["claim", "action", "alias"]
+    target_authority: BootstrapNativeTargetAuthorityV3
+    target_record_kind: Literal["claim_assertion", "action_revision", "alias_revision"]
+    target_record_id: str
+    target_record_planning_or_snapshot_digest: str
+    selector_target_digest: str
+
+class BootstrapNativeTargetResolutionAuthorityV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    operation_execution_id: str
+    sealed_snapshot_digest: str
+    effective_read_set_digest: str
+    canonical_prefix_proof: BootstrapCanonicalPlanningPrefixProofV3
+    canonical_identity_authority: BootstrapCanonicalIdentityBindingAllocationReloadV3
+    mention_candidates: tuple[BootstrapNativeMentionTargetCandidateV3, ...]
+    selector_targets: tuple[BootstrapNativeSelectorTargetV3, ...]
+    authority_digest: str
+
+class BootstrapNativeEntitySeedV3(BaseModel):
+    kind: Literal["entity"]
+    source_local_cluster_id: str
+    mention_digests: tuple[str, ...]
+    canonical_identity_decision_digest: str
+    canonical_identity_proof_digest: str
+    seed_producer_operation_execution_id: str
+    seed_producer_source_coordinate_digest: str
+    logical_entity_id: str
+    entity_revision_id: str
+    entity_revision: PlanningEntityRevision
+    aliases: tuple[PlanningAliasRevision, ...]
+    type_evidence: tuple[PlanningTypeEvidence, ...]
+    alias_type_proof_digest: str
+    seed_digest: str
+
+class BootstrapNativeFactPlanningSeedV3(BaseModel):
+    kind: Literal["fact"]
+    fact: BootstrapProposalFactV3
+    subject_target: BootstrapNativeTargetBindingV3
+    object_target: BootstrapNativeTargetBindingV3 | None
+    created_entities: tuple[BootstrapNativeEntitySeedV3, ...]
+    claim_assertion: PlanningClaimAssertion
+    claim_projection: PlanningClaimProjection
+    relation_revision: PlanningRelationRevision | None
+    citations: tuple[PlanningCitationRecord, ...]
+    provenances: tuple[PlanningProvenanceRecord, ...]
+    terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
+    seed_digest: str
+
+class BootstrapNativeCorrectionPlanningSeedV3(BaseModel):
+    kind: Literal["correction"]
+    selector_targets: tuple[BootstrapNativeSelectorTargetV3, ...]
+    transitions: tuple[PlanningTemporalTransitionRecord, ...]
+    replacement_fact: BootstrapNativeFactPlanningSeedV3
+    seed_digest: str
+
+class BootstrapNativeRetractionPlanningSeedV3(BaseModel):
+    kind: Literal["retraction"]
+    selector_targets: tuple[BootstrapNativeSelectorTargetV3, ...]
+    transitions: tuple[PlanningTemporalTransitionRecord, ...]
+    citations: tuple[PlanningCitationRecord, ...]
+    provenances: tuple[PlanningProvenanceRecord, ...]
+    seed_digest: str
+
+class BootstrapNativeActionPlanningSeedV3(BaseModel):
+    kind: Literal["action_state"]
+    participant_targets: tuple[BootstrapNativeTargetBindingV3, ...]
+    created_entities: tuple[BootstrapNativeEntitySeedV3, ...]
+    action_revision: PlanningActionRevision
+    citations: tuple[PlanningCitationRecord, ...]
+    provenances: tuple[PlanningProvenanceRecord, ...]
+    terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
+    seed_digest: str
+
+class BootstrapNativeIdentityPlanningSeedV3(BaseModel):
+    kind: Literal["identity"]
+    predecessor_targets: tuple[BootstrapNativeTargetBindingV3, ...]
+    successor_targets: tuple[BootstrapNativeTargetBindingV3, ...]
+    selector_targets: tuple[BootstrapNativeSelectorTargetV3, ...]
+    admission: BootstrapNativeIdentityAdmissionV3
+    materialization: BootstrapNativeIdentityMaterializationV3
+    citations: tuple[PlanningCitationRecord, ...]
+    provenances: tuple[PlanningProvenanceRecord, ...]
+    seed_digest: str
+
+BootstrapNativeOperationPlanningSeedV3 = Annotated[
+    BootstrapNativeFactPlanningSeedV3 | BootstrapNativeCorrectionPlanningSeedV3 |
+    BootstrapNativeRetractionPlanningSeedV3 | BootstrapNativeActionPlanningSeedV3 |
+    BootstrapNativeIdentityPlanningSeedV3,
+    Field(discriminator="kind"),
+]
+```
+
+The target-planning request adds `target_resolution_authority` immediately after
+`current_planning_state`; the plan adds `operation_seed` immediately before
+`planning_records`. CTVs follow displayed order excluding their trailing digest
+under `memorii.bootstrap-graph.native-mention-target-candidate.v3`,
+`native-selector-target.v3`, `native-target-resolution-authority.v3`, and
+`native-<arm>-planning-seed.v3`. All tuples are canonical and duplicate-free:
+mentions by mention/candidate digest, selectors by selector/target digest,
+created entities by logical/revision ID, and records by kind/ID/digest.
+
+`BootstrapNativeTargetResolutionProjectorV3`, owned with the built-in planner in
+`memorii.core.memory_evolution.bootstrap_graph_planning`, is the sole production
+authority builder. It takes the v58 operation input, sealed snapshot/read set,
+and current planning state. It first constructs an authenticated index from
+snapshot `entity_revision`, `alias_revision`, `type_evidence`, claim, action,
+and reference records covered by the read set, then overlays pending planning
+records by record ID. Pending replaces the snapshot candidate for identical
+record identity. It may not scan a repository or use names, embeddings,
+confidence, model output, fixture aliases, or legacy compiler artifacts.
+
+Mention mapping is exact: a retained mention belongs to one source-local cluster;
+the cluster's `BootstrapSourceLocalIdentityResolutionV3` either names a verified
+existing logical/revision identity whose complete alias/type proof is present in
+the authenticated index, or authorizes a new source-local identity. Existing
+resolution emits exactly one candidate; zero is missing and more than one is
+ambiguous. New identity uses
+`logical_entity_id = H(native-logical-entity.v3, source_id, source_digest,
+preparation_fingerprint, cluster_id)` and
+`entity_revision_id = H(native-entity-revision.v3, logical_entity_id,
+operation_execution_id, 1)`. Its `PlanningEntityRevision`, alias rows for every
+explicit retained alias/apposition/external-ID proof, and type-evidence rows for
+every certified retained type assertion are constructed from those exact bytes.
+Name-only repetition or an absent proof cannot create or reuse a target.
+
+Selector mapping never performs semantic search. Claim selector `fact_digest`
+recomputes the canonical claim-slot/value identity and must resolve exactly one
+current/pending `claim_assertion`; action selector recomputes the logical action
+ID and resolves exactly one `action_revision`; alias selector combines namespace
+plus exact anchored alias bytes and resolves exactly one `alias_revision`.
+Correction and retraction require every selector target to exist and be unique;
+missing is `graph_target_missing`, multiple/stale is rejected, and neither arm
+may create the corrected/retracted target. Identity reference assignments use
+the same selector algorithm and fail on incomplete closure.
+
+Planning seeds are deterministic constructors, not compiler outputs. Fact IDs
+are domain-separated CTVs of operation execution, predicate, resolved subject,
+typed object/value, polarity, commitment and temporal-decision digest; those
+bytes populate claim assertion/projection and optional entity relation.
+Correction/retraction transition IDs bind operation execution, selector target,
+transition kind and temporal decision; correction invokes the fact seed once for
+the exact replacement fact. Action revision ID binds logical-action digest,
+canonical participant target vector, state, branch and temporal decision.
+Identity seed is exactly the v67 admission/materialization result. Citation and
+provenance IDs bind operation execution, evidence item/span and cited planning
+record. Every field of each `CanonicalPlanningRecordPayload` is sourced from the
+typed operation, target authority, retained consensus/evidence, registry-owned
+policy fingerprint, or `PlannedCommitCoordinate`; no scalar is defaulted.
+Field-source closure is exact: `record_kind` is the union discriminator; record
+ID uses the specified domain; operation ID comes from the native input; entity/
+logical IDs come only from target authority; predicate/object/polarity/
+commitment/state/branch/roles come byte-for-byte from the operation member;
+slot/value/cardinality/qualifier partition come from the predicate registry;
+valid/effective intervals and temporal evidence/binding come from retained
+temporal consensus; source/provenance/span fields come from retained provenance
+and evidence; reference paths/dispositions come from identity assignment plus
+fresh plan; version is predecessor version plus one or one for absent creation;
+planning codec fingerprint is the exact manifest entry; and only recorded/system/
+graph revision fields use the group's typed `PlannedCommitCoordinate`. The
+governing record-kind planning digest is recomputed after all fields are filled.
+Any schema field not assigned by these rules makes construction unavailable;
+omission, null/default insertion, or extra fields are never compatible.
+
+The planner validates that `operation_seed` alone projects the exact target,
+evidence, terminal-binding, identity and `planning_records` union required by
+v65. The store later materializes only declared planned commit coordinates and
+codec fields inside CAS; it cannot change semantic seed fields. There is no call
+to `compile_accepted_carriers`, generic semantic compilation, graph lookup, or
+ambient allocation.
+
+Tests cover existing snapshot, pending overlay, lawful creation, literal/entity
+fact, correction/retraction missing/ambiguous target, multi-role action and all
+identity modes. Mutations cross cluster/mention/resolution/alias/type proof,
+selector kind/digest/target, snapshot/read-set/pending authority, every ID
+preimage and planning-payload field, seed/union order and cardinality, and inject
+legacy compiler or ambient lookup. Golden vectors independently recompute every
+mapping and seed for all four roots and both stores, including recovery bytes and
+zero-effect failures.
+
+##### 4.8.2.20 v69 canonical identity binding and source-wide allocation authority
+
+Source-local clustering is evidence, never canonical graph binding or allocation
+authority. Before any per-operation target projection, the coordinator invokes
+the production canonical identity resolver once for the complete source cluster
+set and persists/reloads this snapshot/read-set/scope-bound authority:
+
+```python
+class BootstrapCanonicalIdentityDecisionProofV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    source_local_cluster_id: str
+    mention_digests: tuple[str, ...]
+    required_scope_set_digest: str
+    authorized_scope_identity: str
+    sealed_snapshot_digest: str
+    effective_read_set_digest: str
+    authority_base_planning_state_digest: str
+    identity_partition_evidence_digest: str
+    source_local_resolution_digest: str
+    alias_proof_digests: tuple[str, ...]
+    type_proof_digests: tuple[str, ...]
+    proof_digest: str
+
+class BootstrapExistingCanonicalIdentityDecisionV3(BaseModel):
+    kind: Literal["existing"]
+    proof: BootstrapCanonicalIdentityDecisionProofV3
+    target: GraphTargetReference
+    snapshot_or_pending_authority: BootstrapNativeTargetAuthorityV3
+    identity_binding_proof: IdentityBindingEvidence
+    alias_record_ids: tuple[str, ...]
+    type_evidence_record_ids: tuple[str, ...]
+    decision_digest: str
+
+class BootstrapNewCanonicalIdentityAllocationV3(BaseModel):
+    kind: Literal["new"]
+    proof: BootstrapCanonicalIdentityDecisionProofV3
+    allocation_namespace_id: str
+    allocation_policy_fingerprint: str
+    allocation_key: str
+    logical_entity_id: str
+    entity_revision_id: str
+    alias_proofs: tuple[BootstrapProposalEvidenceItemV3, ...]
+    type_proofs: tuple[BootstrapProposalEvidenceItemV3, ...]
+    planned_identity_reservation: PlannedIdentityReservation
+    seed_producer_operation_execution_id: str
+    seed_producer_source_coordinate_digest: str
+    allocation_proof_digest: str
+    decision_digest: str
+
+class BootstrapAbsentCanonicalIdentityDecisionV3(BaseModel):
+    kind: Literal["absent"]
+    proof: BootstrapCanonicalIdentityDecisionProofV3
+    reason: Literal["no_binding_proof", "ambiguous_existing", "allocation_forbidden",
+                    "incomplete_alias_type_proof", "scope_unavailable"]
+    decision_digest: str
+
+BootstrapCanonicalIdentityClusterDecisionV3 = Annotated[
+    BootstrapExistingCanonicalIdentityDecisionV3 |
+    BootstrapNewCanonicalIdentityAllocationV3 |
+    BootstrapAbsentCanonicalIdentityDecisionV3,
+    Field(discriminator="kind"),
+]
+
+class BootstrapCanonicalIdentityBindingAllocationAuthorityV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    recovery_key_digest: str
+    sealed_snapshot_digest: str
+    effective_read_set_digest: str
+    authority_base_planning_state_digest: str
+    required_scope_set_digest: str
+    authorized_scope_identity: str
+    allocation_namespace_id: str
+    source_operation_memberships: tuple[BootstrapSourceOperationMembershipV3, ...]
+    referenced_cluster_ids: tuple[str, ...]
+    cluster_decisions: tuple[BootstrapCanonicalIdentityClusterDecisionV3, ...]
+    first_use_dependencies: tuple[BootstrapCanonicalFirstUseDependencyV3, ...]
+    authority_digest: str
+
+class BootstrapCanonicalIdentityBindingAllocationReloadV3(BaseModel):
+    schema_version: Literal[3]
+    authority: BootstrapCanonicalIdentityBindingAllocationAuthorityV3
+    source_plan_checkpoint_digest: str
+    publication_generation_digest: str
+    reload_digest: str
+```
+
+Every model is frozen and forbids extras. CTVs follow displayed order excluding
+the trailing digest under `memorii.bootstrap-graph.existing-canonical-identity-
+decision.v3`, `new-canonical-identity-allocation.v3`, `canonical-identity-
+binding-allocation-authority.v3`, and `canonical-identity-binding-allocation-
+reload.v3`. Decisions order by cluster ID then decision digest; mention, alias,
+type, and proof tuples use canonical source order and are duplicate-free.
+
+`BootstrapCanonicalIdentityBindingAllocationProjectorV3`, owned by
+`memorii.core.memory_evolution.bootstrap_graph_planning`, receives the complete
+source-local partition/resolution evidence, authenticated scope authority,
+stable allocation namespace, sealed snapshot/read set, and current planning
+state. For every referenced cluster exactly once it either validates one scoped
+existing target through complete `IdentityBindingEvidence` plus authenticated
+alias/type ancestry, or issues one new allocation. It cannot accept source-local
+resolution as the decision, match by name/type/confidence, or omit a referenced
+cluster. Existing-candidate cardinality other than one is unavailable unless the
+scope-authorized new-allocation policy explicitly permits the new arm.
+
+New `allocation_key = H(canonical-cluster-allocation.v3, source_id,
+source_digest, preparation_fingerprint, recovery_key_digest,
+allocation_namespace_id, authorized_scope_identity, cluster_id,
+ordered mention_digests, ordered alias-proof digests, ordered type-proof
+digests)`. Logical entity and initial revision IDs derive from that allocation
+key, never from operation execution. Thus all operations in the source reuse one
+decision/allocation. Once the first operation adds its pending entity seed,
+later operations bind that pending target and emit no second seed. Existing
+decisions emit zero entity seeds. An absent canonical decision always produces
+zero create, even if source-local resolution is otherwise complete.
+
+The source plan checkpoint persists the authority once before per-operation
+target planning and reloads exact bytes on recovery. Each
+`BootstrapNativeTargetResolutionAuthorityV3` embeds the same complete reload
+authority (the active field named `canonical_identity_authority` denotes these
+reloaded authoritative bytes), and its CTV binds it before mention candidates.
+Each mention candidate's cluster, mention vector, logical/revision IDs, target
+authority, alias/type rows and proof ancestry must equal its one cluster
+decision. Cross-scope, stale snapshot/read-set/state, foreign generation/source,
+or decision substitution rejects before planning.
+
+The active `BootstrapNativeEntitySeedV3` fields are the v69 fields shown in the
+v68 declaration: cluster ID, complete ordered `mention_digests`, canonical
+decision and proof digests, IDs, entity/alias/type planning records, combined
+alias/type proof digest, then seed digest. Exactly one seed exists for every
+newly authorized referenced cluster not already present as pending; no seed is
+lawful for existing or absent decisions. Alias records biject with all explicit
+alias proofs, type records biject with all certified type proofs, and the
+combined proof digest covers both complete vectors. Omitting or reordering one
+of two mentions changes the allocation key and rejects rather than creating a
+second identity.
+
+All four roots inject the production canonical identity projector and scope/
+allocation authorities into the host bundle. Fresh order is snapshot/readset/
+scope -> source-wide canonical authority publish+reload -> per-operation target
+authority/seed; recovery reloads it before any operation plan. Tests cover
+existing reuse with zero seed, absent decision with zero create, two operations
+sharing one new allocation then pending reuse, stale snapshot/read-set/state,
+cross-scope/source/generation/cluster/decision substitution, two-mention reorder/
+omit/duplicate, alias/type proof omission/substitution, lost acknowledgement,
+and byte-identical memory/independent-JSONL recovery across all roots.
+
+##### 4.8.2.21 v70 closed identity decisions, reservation, and first-use order
+
+v70 explicitly supersedes the v68 rule
+`entity_revision_id = H(... operation_execution_id ...)`: no active canonical
+identity allocation ID or allocation key includes an operation execution ID.
+The source-wide v69 allocation key and reservation are the sole allocation
+authority. Old per-operation allocation bytes, codecs, replay, or seeds reject.
+
+The active decision family is the three-arm family shown above. Authority
+`referenced_cluster_ids` is the canonical duplicate-free projection of every
+cluster referenced by every retained operation, and it bijects by cluster ID
+with `cluster_decisions`; no unreferenced decision is lawful. All three arms
+embed the same `BootstrapCanonicalIdentityDecisionProofV3`. Its proof CTV is
+displayed order excluding `proof_digest` under
+`memorii.bootstrap-graph.canonical-identity-decision-proof.v3`; each arm digest
+includes the complete proof first. Existing requires one scoped authenticated
+target and ancestry. New requires allocation policy authorization. Absent is a
+first-class zero-target/zero-seed decision with one closed reason; it cannot be
+silently converted to new.
+
+The new arm's `PlannedIdentityReservation` is complete and byte-equal to the
+existing planning contract: planned logical/revision/alias/type IDs, collision-
+read `GraphReadSetExtension`, exact expected-absent `GraphWriteIntent` set,
+allocation namespace/key/policy, scope and reservation digest. Every allocated
+ID is covered by the collision extension and one expected-absent write. The
+plan authorization carries the reservation-use authority, and group CAS requires
+byte-equal reservation, rechecks every collision read and expected absence, and
+atomically consumes it with materialization. Collision before CAS is a related
+conflict/replan; same allocation key on lost acknowledgement reloads the exact
+result and never reallocates.
+
+Source-plan dependency/order chooses
+`seed_producer_operation_execution_id` deterministically as the first canonical
+operation (dependency-group order, then operation order) that references the new
+cluster. Only that operation may use `BootstrapNewFirstUseTargetAuthorityV3` and
+emit the one entity seed. Its target authority binds decision, reservation and
+producer. All earlier operations are impossible by definition; all later
+operations must resolve the exact pending planning record through
+`BootstrapPendingTargetAuthorityV3` and emit zero seed. Reversing runtime group
+execution does not change producer selection: a consumer cannot run before its
+producer dependency has established the pending record.
+
+The active entity-seed CTV inserts
+`seed_producer_operation_execution_id` after proof digest as shown, and requires
+it equal new decision, target authority, source-plan dependency and containing
+operation. Existing/absent arms prohibit it and seeds. Target candidates bind
+the complete common proof and exact arm decision.
+
+`BootstrapNativeIdentityAdmissionRequestV3` embeds the exact canonical identity
+authority reload before graph-free input. Admission validates each predecessor,
+successor and reference-assignment cluster against one decision, and every
+target/materialization record reverse-joins decision proof, scope, snapshot/
+readset/state, allocation/reservation when new, and operation producer/pending
+authority. Replacement/reuse also require their predecessor materialization's
+canonical authority identity to equal the current lawful lineage; authority
+substitution cannot be hidden behind equal graph-free input bytes.
+
+Tests exercise each existing/new/absent first-use arm; reverse operation/group
+order; cross-group producer substitution; later consumer using new-first-use;
+producer using pending; collision extension/write omission, collision race and
+CAS reservation mismatch; absent-to-new coercion; forged common proof; every
+predecessor/successor/reference/materialization reverse join; lost acknowledgement
+and exact recovery across memory/independent JSONL and all four roots.
+
+##### 4.8.2.22 v71 first-use dependency, prefix proof, and authority closure
+
+```python
+class BootstrapSourceOperationMembershipV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    source_dependency_group_id: str
+    dependency_group_ordinal: int
+    transaction_group_id: str
+    operation_id: str
+    operation_execution_id: str
+    operation_ordinal: int
+    operation_member_digest: str
+    membership_digest: str
+
+class BootstrapCanonicalClusterReferenceOccurrenceV3(BaseModel):
+    membership: BootstrapSourceOperationMembershipV3
+    source_local_cluster_id: str
+    source_coordinate_digest: str
+    occurrence_digest: str
+
+class BootstrapCanonicalFirstUseConsumerV3(BaseModel):
+    occurrence: BootstrapCanonicalClusterReferenceOccurrenceV3
+    consumer_digest: str
+
+class BootstrapCanonicalFirstUseDependencyV3(BaseModel):
+    schema_version: Literal[3]
+    source_local_cluster_id: str
+    canonical_identity_proof_digest: str
+    producer_membership: BootstrapSourceOperationMembershipV3
+    producer_occurrences: tuple[BootstrapCanonicalClusterReferenceOccurrenceV3, ...]
+    consumers: tuple[BootstrapCanonicalFirstUseConsumerV3, ...]
+    dependency_digest: str
+
+class BootstrapCanonicalPlanningPrefixProofV3(BaseModel):
+    schema_version: Literal[3]
+    authority_base_planning_state_digest: str
+    membership: BootstrapSourceOperationMembershipV3
+    preceding_memberships: tuple[BootstrapSourceOperationMembershipV3, ...]
+    prefix_planning_state_digest: str
+    required_producer_record_digests: tuple[str, ...]
+    prefix_proof_digest: str
+```
+
+CTV domains are `memorii.bootstrap-graph.canonical-first-use-consumer.v3`,
+`canonical-first-use-dependency.v3`, and `canonical-planning-prefix-proof.v3`,
+with displayed order excluding the trailing digest. Consumers order by source-
+plan member ordinal then operation execution ID and are duplicate-free.
+Dependencies order by cluster ID/proof digest and biject exactly with new
+decisions. Prefix predecessor members are the exact source-plan prefix.
+
+Target-authority CTVs are closed: snapshot uses displayed
+`kind,target,sealed_snapshot_digest,effective_read_set_digest,
+snapshot_record_digest`; pending uses
+`kind,target,cluster,producer_group,producer_execution,producer_plan_member,
+prefix_proof,planning_record`; new-first-use uses
+`kind,target,decision,reservation,producer_execution,producer_group,
+producer_plan_member,prefix_proof`. Each excludes `authority_digest` and uses
+respectively `memorii.bootstrap-graph.snapshot-target-authority.v3`,
+`pending-target-authority.v3`, and `new-first-use-target-authority.v3`. The union
+discriminator is literal `kind`; unknown, missing, multiple, or cross-arm fields
+reject. Snapshot/pending require one existing target. New-first-use cardinality
+is exactly one per new cluster producer. A consumer has exactly one pending arm.
+
+Absent-decision CTV is exactly `kind,proof,reason` excluding digest under
+`memorii.bootstrap-graph.absent-canonical-identity-decision.v3`. It contains no
+target, allocation, reservation, producer, dependency, seed, or materialization;
+any such field or relabelled existing/new bytes reject before lookup.
+
+The authority's base planning state is immutable: it authenticates the state at
+source-wide decision publication and never changes as operations fold. Each
+operation target authority instead embeds one
+`BootstrapCanonicalPlanningPrefixProofV3`. The producer proof has empty
+`preceding_plan_member_digests`, prefix state equal authority base, and no
+producer record requirement. Each consumer proof names the exact source-plan
+prefix ending in the producer member; its state equals deterministic application
+of that prefix and `required_producer_record_digests` equals the complete new
+entity/alias/type planning records emitted by the producer. The consumer pending
+authority reverse-joins those byte-identical records. A consumer scheduled before
+producer is not executable; it remains pending without replanning or fallback.
+Stale base, truncated/reordered prefix, missing producer record, or foreign plan
+member is a closed related-conflict/replan outcome.
+
+The complete typed `BootstrapCanonicalIdentityBindingAllocationReloadV3`, not a
+digest, is embedded byte-identically in target resolution, identity admission,
+identity materialization, native compilation, native reduction, group compilation
+artifact, plan checkpoint/reload, retry, final evidence, manifest and terminal
+replay closure. Each carrier's CTV places it before any derived target/seed/
+reduction field. Found recovery decodes and authenticates the closure before any
+index search, then validates source/recovery/generation/base-state/scope/
+cluster-decision/dependency/prefix joins. Digest-only authority, repository
+search, reconstruction, or different-but-equivalent bytes reject.
+
+The v62 atomic table remains 21 kinds: this authority and dependency vector are
+nested typed payloads, not new member kinds. `group_compilation_artifact` owns
+the complete reload, first-use dependency vector, prefix proofs, seeds and native
+reductions; `bootstrap_transaction_group_plan`, attempt, retry, final evidence,
+manifest, result and terminal members carry exact typed projections or the same
+complete closure as their existing ownership requires. Their literal decoders
+reject missing, digest-only, reordered, substituted, cross-generation or
+cross-member authority/dependency/prefix bytes.
+
+Tests exhaust all target-arm preimage fields/discriminators/cardinalities and
+cross-arm injection; absent extras; dependency producer/consumer group,
+execution, order and plan-member substitution; producer empty-prefix and
+consumer exact-prefix rules; stale/reversed scheduling and producer-record joins;
+complete authority omission/digest-only/search/reconstruction at every carrier;
+lost acknowledgement/recovery, four roots, memory and independent JSONL.
+
+##### 4.8.2.23 v72 acyclic membership and exact prefix semantics
+
+`BootstrapSourceOperationMembershipV3` is constructed and persisted before any
+canonical identity decision or compilation. Its only inputs are the normalized
+source operation member, canonical dependency-group order and canonical
+operation order. CTV is displayed order excluding `membership_digest` under
+`memorii.bootstrap-graph.source-operation-membership.v3`; ordinals are contiguous
+from zero, and the complete source vector is canonical and duplicate-free. It
+contains no target, identity decision, allocation, planning state, compilation,
+plan-member, reduction, or checkpoint digest, breaking the v71 cycle.
+
+The source plan checkpoint persists this complete membership vector before the
+canonical authority. First-use dependencies and prefix proofs use complete typed
+memberships as shown in the active declarations, never compiled plan-member
+digests. Each later `BootstrapTransactionGroupOperationPlanV3` embeds its exact
+membership first; group member, compilation artifact and atomic member validators
+reverse-bind group/operation/execution/order/member digest to it. A compiled plan
+cannot alter membership, and membership never points forward to compilation.
+
+For each new cluster, the dependency relation is exact. Its producer membership
+is the earliest referencing membership. `consumers` is every and only later
+membership whose retained operation references that cluster, in source order.
+The union of producer plus consumers bijects with the complete cluster-reference
+projection; duplicate, missing, earlier, nonreferencing or unlisted references
+reject. Every pending target arm maps to exactly one consumer membership and its
+dependency; every consumer has exactly one pending arm for that cluster. The
+new-first-use arm maps only the producer membership.
+
+Prefix proof semantics are exact: `preceding_memberships` is the full canonical
+source membership vector strictly before the proof's membership, including all
+intervening operations whether or not they reference this cluster. Prefix state
+is the deterministic fold of every preceding membership's complete planning
+records from `authority_base_planning_state_digest`. Producer has the actual full
+preceding vector before producer (empty only when producer is globally first),
+and its prefix contains no record for the new cluster. A consumer prefix includes
+producer and all intervening memberships. `required_producer_record_digests`
+equals exactly the producer seed's entity revision plus complete alias/type
+record vector; it is a duplicate-free subset of pending records in the consumer
+prefix state, and the pending target equals the entity revision record. Extra,
+missing or merely equivalent records reject.
+
+Pending and new-first-use target arms embed the complete
+`BootstrapCanonicalPlanningPrefixProofV3`; they do not carry a separate prefix
+digest field. Their CTV includes the complete proof at that displayed ordinal;
+the nested `prefix_proof_digest` is authenticated inside it. The active pending
+preimage is `kind,target,cluster,producer_group,producer_execution,
+producer_membership_digest,canonical_prefix_proof,planning_record_digest`; the
+new-first-use preimage is `kind,target,decision,reservation,producer_execution,
+producer_group,producer_membership_digest,canonical_prefix_proof`. Any old
+digest-only prefix, both embedded+digest, or mismatch rejects.
+
+The complete typed canonical authority reload also carries the pre-compilation
+membership vector through its source-plan checkpoint closure. Identity admission,
+materialization, native compilation/reduction and every checkpoint/replay carrier
+validate membership/dependency/prefix reverse joins before use. The terminal port
+must decode and authenticate the complete authority reload, source/recovery/
+publication generation, immutable base state, membership vector, dependencies,
+and all used prefix proofs before request-index or recovery-index access. Failure
+is the same non-disclosing unavailable result with zero lookup or effect; terminal
+lookup can never serve as authority discovery.
+
+Tests mutate every membership input/ordinal/order/digest; restore forward plan-
+member references; omit/add/reorder cluster consumers or references; map two
+pending arms to one consumer; omit an intervening prefix membership; change fold
+state or producer-record exact subset; use producer empty prefix when not global
+first; inject digest-only/both prefix forms; mutate compiled reverse binding;
+and assert terminal request/recovery index spies remain zero on every authority,
+generation, base, membership, dependency or prefix failure. Four roots and both
+backends cover reverse scheduling, lost acknowledgement and byte-identical reload.
+Implementation absence remains a later evidence obligation, not a design defect.
+
+##### 4.8.2.24 v73 occurrence-aware first-use dependency
+
+`BootstrapCanonicalClusterReferenceOccurrenceV3` is the canonical unit of
+cluster reference. Its CTV is `membership,source_local_cluster_id,
+source_coordinate_digest` under
+`memorii.bootstrap-graph.canonical-cluster-reference-occurrence.v3`. One entry
+exists for every exact retained reference site: fact subject, entity object,
+attribution bearer, each action role/participant ordinal, corrected/retracted
+fact subject/object, nested replacement fact subject/object, and each identity
+predecessor/successor/reference-assignment ordinal. `source_coordinate_digest`
+is the domain-separated CTV of operation member digest, discriminated arm path,
+role/participant or nested ordinal, mention/selector digest, and evidence span.
+Two roles naming the same mention remain distinct occurrences.
+
+Dependency CTVs use the active displayed fields. Consumer CTV is `occurrence`
+excluding digest under `memorii.bootstrap-graph.canonical-first-use-consumer.v3`.
+Dependency CTV includes producer membership, complete `producer_occurrences`,
+and consumers. Producer occurrences are every occurrence for that cluster in the
+earliest referencing membership, ordered by source coordinate. Consumers are
+one entry per occurrence in every later referencing membership, ordered by
+membership ordinal then source coordinate. The union is a duplicate-free exact
+bijection with all cluster-reference occurrences; membership-level producer
+selection and full prefix fold remain unchanged. Exactly one allocation and one
+entity seed exist even when the producer membership has several occurrences.
+
+Every producer occurrence binds one `new_first_use` target arm with equal cluster
+and source-coordinate digest; only the canonically first producer occurrence is
+the seed-producing coordinate, while co-occurrences share the same allocation,
+reservation, producer membership, prefix and target and emit no extra seed.
+Every consumer occurrence binds exactly one `pending` arm with equal cluster and
+source coordinate; no pending arm can satisfy two occurrences. The enclosing
+`BootstrapNativeTargetBindingV3.source_coordinate_digest` must equal the nested
+arm coordinate. Snapshot arms remain occurrence-bound by the enclosing binding.
+The v73 pending target preimage is exactly
+`kind,target,cluster,source_coordinate,producer_group,producer_execution,
+producer_membership,canonical_prefix_proof,planning_record`; new-first-use is
+`kind,target,cluster,source_coordinate,decision,reservation,producer_execution,
+producer_group,producer_membership,canonical_prefix_proof`. These supersede the
+v72 preimages; old coordinate-free bytes reject.
+
+Same-cluster fact subject+object therefore yields two producer or consumer
+occurrences but one identity. Repeated action participants preserve each role/
+participant coordinate even with equal mention bytes. Correction keeps corrected
+fact and nested replacement paths distinct; selector targets and replacement
+mention targets cannot substitute for one another. Recovery reloads and terminal
+pre-index authentication validate the complete occurrence relation before any
+target, seed, request or recovery lookup.
+
+Tests omit, duplicate, reorder or cross-wire occurrence coordinates; collapse
+same-cluster subject/object; deduplicate repeated action participants; exchange
+corrected and nested-replacement paths; move an occurrence across operation/
+membership/cluster; bind one pending arm to two consumers; create multiple seeds
+from producer co-occurrences; and mutate recovered occurrence bytes. All fail
+before index access across four roots, memory and independent JSONL.
+
+##### 4.8.2.25 v74 canonical producer-occurrence selection
+
+Within the producer membership, `producer_occurrences` is ordered strictly by
+lexicographic lower-case 64-hex `source_coordinate_digest`. Coordinate digests
+must be unique within `(membership_digest, cluster_id)`; an equal digest for two
+structurally different occurrences is integrity failure, not a secondary tie.
+The first ordered occurrence is the sole seed-producing occurrence.
+
+The active new allocation decision, `BootstrapNewFirstUseTargetAuthorityV3`,
+and `BootstrapNativeEntitySeedV3` each carry
+`seed_producer_source_coordinate_digest` immediately after
+`seed_producer_operation_execution_id`. It equals the first producer occurrence
+coordinate and the selected target binding's enclosing source coordinate. The
+new-decision, new-first-use-target, and entity-seed CTVs include it at that exact
+ordinal under their existing domains. Authority reload, dependency validation,
+checkpoint/replay, recovery, and terminal pre-index validation recompute the
+ordered occurrence vector and require the same value; it is never caller-chosen.
+
+Every nonselected occurrence in the producer membership emits no entity seed.
+It still uses a coordinate-specific `new_first_use` arm with the identical
+allocation, reservation, producer membership, prefix and target. Occurrences in
+later memberships use coordinate-specific pending arms. Reordering serialized
+occurrences rejects; canonical reordering of equivalent input restores the same
+selected coordinate and cannot change allocation/IDs or create a second seed.
+
+The active v74 new-first-use target preimage is
+`kind,target,cluster,source_coordinate,decision,reservation,
+producer_execution,seed_producer_source_coordinate,producer_group,
+producer_membership,canonical_prefix_proof`. The entity-seed preimage is its
+displayed v69/v70 field order with the producer coordinate immediately after
+producer execution. The new-decision preimage likewise includes it immediately
+after producer execution. Older coordinate-absent bytes reject.
+
+Tests swap producer occurrence order, substitute a nonfirst coordinate in the
+decision/target/seed independently, duplicate a coordinate, force equal digest
+with different structural bytes, emit a seed for a nonselected occurrence, and
+mutate recovered/terminal coordinate bytes. All reject before request/recovery
+index access across four roots and both backends.
+
+##### 4.8.2.26 v75 complete planning-construction field authority
+
+The v74 audit is negative. The retained input has operation structure, source
+spans, consensus, clusters and occurrence coordinates, but lacks complete typed
+governance/admission carriers, accepted temporal evidence/decision bindings,
+predicate/action policy results, planning codec entries, source authority, and
+identity authority-record/verifier fields required by the live constructors.
+Those values cannot be defaulted or recovered from a digest.
+
+```python
+class BootstrapNativeEvidenceConstructionV3(BaseModel):
+    evidence_item_digest: str
+    source_span: SourceSpanReference
+    source_authority: SourceAuthority
+    citation_id: str
+    provenance_id: str
+    evidence_digest: str
+
+class BootstrapNativeTemporalConstructionV3(BaseModel):
+    temporal_role: str
+    temporal_consensus_digest: str
+    effective_time: EffectiveTimeCoordinate
+    accepted_temporal_evidence: AcceptedTemporalEvidence
+    temporal_decision_binding: OperationTemporalDecisionBinding
+    temporal_policy_fingerprint: str
+    construction_digest: str
+
+class BootstrapNativeIdentityConstructionAuthorityV3(BaseModel):
+    graph_free_identity_input_digest: str
+    authority_record_id: str
+    authority_record_digest: str
+    verifier_id: str
+    semantic_authorization_read_set_digest: str
+    identity_policy_fingerprint: str
+    operation_fence_id: str
+    operation_fence_binding_digest: str
+    construction_digest: str
+
+class BootstrapNativePlanningConstructionAuthorityV3(BaseModel):
+    schema_version: Literal[3]
+    source_id: str
+    source_digest: str
+    preparation_fingerprint: str
+    operation_id: str
+    operation_execution_id: str
+    source_dependency_group_id: str
+    segment_governance: AcceptedOperationGovernanceCarrier
+    message_admission_identities: tuple[MessageAdmissionIdentity, ...]
+    required_scope_set_digest: str
+    predicate_registry_fingerprint: str
+    predicate_trust_rule: PredicateTrustRule
+    action_policy_fingerprint: str
+    action_transition: AcceptedActionTransitionReference | None
+    planning_codec_entries: tuple[CanonicalGraphRecordCodecEntry, ...]
+    temporal_constructions: tuple[BootstrapNativeTemporalConstructionV3, ...]
+    evidence_constructions: tuple[BootstrapNativeEvidenceConstructionV3, ...]
+    identity_construction: BootstrapNativeIdentityConstructionAuthorityV3 | None
+    authority_digest: str
+```
+
+CTV is displayed order excluding the trailing digest under
+`memorii.bootstrap-graph.native-planning-construction-authority.v3`; nested
+domains are `native-evidence-construction.v3`, `native-temporal-construction.v3`
+and `native-identity-construction-authority.v3`. The normalization owner obtains
+these bytes only from same-generation admission, temporal-policy, graph-policy,
+codec-manifest and canonical-identity owners, persists them inside each native
+operation input, and reloads them exactly. Ambient lookup and defaults reject.
+
+The literal Planning* field map is:
+
+| Constructor fields | Exact nested V3 path |
+| --- | --- |
+| record kind and ID | seed discriminator; v68-v74 ID preimage |
+| operation ID | `operation_input.operation_id` |
+| version | predecessor target record version + 1; literal 1 only for reserved expected-absent creation |
+| planning codec fingerprint | `planning_construction_authority.planning_codec_entries[record_kind].planning_projection_codec_fingerprint` |
+| entity/logical/alias/type IDs and scope | canonical decision/allocation proof and reservation |
+| entity/alias/type source evidence/authority | decision alias/type proof -> matching evidence construction span/authority; identity policy fingerprint |
+| claim slot/value/predicate/polarity/commitment | fact member + predicate registry/trust rule + subject/object target decisions |
+| claim projection/relation endpoints | subject/object target logical/revision IDs + claim assertion ID; relation null only for literal |
+| action ID/state/branch/roles/transition | action member + every occurrence target + action transition/policy fields |
+| temporal transition target/kind/previous/next | selector target + correction/retraction literal + prefix projection + correction replacement seed |
+| valid/effective time, temporal evidence/binding | unique temporal construction keyed operation+role+consensus digest |
+| citation/provenance ID, source/span/cited record | exact evidence construction keyed evidence item + seed planning record |
+| identity lineage/reference fields | identity member + occurrence decisions + fresh plan + selector closure |
+| commit-owned time/revision only | typed `PlannedCommitCoordinate` |
+| trailing planning digest | completed constructor fields under governing Planning* domain |
+
+Every schema field must resolve through exactly one row; missing/duplicate source,
+null/default insertion, extra constructor field, or path substitution is typed
+unavailable. No generic carrier compiler fills a gap.
+
+For implementers, the preceding family table expands to the following literal
+constructor map. `I` means the enclosing
+`BootstrapNativeOperationReductionInputV3`, `A` means
+`I.planning_construction_authority`, `T[c]` is the unique target binding for
+source coordinate `c`, `E[d]` is the unique `A.evidence_constructions` row for
+evidence digest `d`, and `M[k]` is the unique `A.planning_codec_entries` row for
+record kind `k`. These are typed path aliases, not lookup permission.
+
+| Constructor | Exact field -> source map |
+| --- | --- |
+| every `Planning*` envelope | `record_kind -> discriminated seed kind`; `planning_record -> fields in this table`; no other envelope field exists |
+| every planning record common fields | `operation_id -> I.operation_id`; `record_version -> T[c].snapshot.target.record_version + 1` for update, `1` only when `T[c].new_first_use.reservation.expected_absent_write_intents` proves creation; `planning_codec_fingerprint -> M[record_kind].planning_projection_codec_fingerprint`; `planning_record_digest -> CTV of the complete preceding planning payload under M[record_kind]` |
+| `PlanningEntityRevision` | `entity_revision_id/logical_entity_id -> T[c].decision.target`; `lifecycle -> "active"` only for a new authorized entity seed, otherwise copied from the authenticated predecessor target; `source_evidence -> E[d].source_span` for the seed's complete ordered evidence-digest vector |
+| `PlanningAliasRevision` | `alias_revision_id/entity_revision_id/logical_entity_id/alias_namespace/normalized_alias_key -> T[c].new_first_use.decision.reservation plus its complete alias proof`; `source_evidence -> matching E[d].source_span` |
+| `PlanningTypeEvidence` | `evidence_id/entity_reference/asserted_type/origin/registry_record_id/proof_ancestry_ids -> canonical decision complete alias/type proof`; `source_evidence/authority -> E[d].source_span/E[d].source_authority`; `valid_interval/recorded_at -> matching temporal row effective time / PlannedCommitCoordinate(committed_at)`; `proof_policy_fingerprint -> A.identity_construction.identity_policy_fingerprint` |
+| `PlanningClaimAssertion` | `claim_assertion_id -> fact seed ID preimage`; `claim_slot_key/predicate_id/value/polarity/commitment -> I.operation_member.fact fields plus A.predicate_trust_rule`; `subject/object references -> T[subject-coordinate].target and optional T[object-coordinate].target`; `valid_interval/temporal_evidence/temporal_decision_binding -> unique A.temporal_constructions[role="claim"]`; common fields as above |
+| `PlanningClaimProjection` | `claim_projection_id/claim_assertion_id -> fact seed IDs`; `subject_entity_revision_id/subject_logical_entity_id -> T[subject-coordinate].target`; `object_* -> T[object-coordinate].target`, and both are literal `None` only when the retained fact object discriminator is literal |
+| `PlanningRelationRevision` | `relation_revision_id -> relation seed ID preimage`; `subject_* -> T[subject-coordinate].target`; `object_* -> T[object-coordinate].target`; `predicate_id -> I.operation_member.fact.predicate_id`, validated by `A.predicate_trust_rule` |
+| `PlanningActionRevision` | `action_revision_id/action_id/action_kind/state/branch/role assignments -> I.operation_member.action plus the one `T[c].target` for every ordered action occurrence`; `transition -> A.action_transition`; `valid_interval/temporal_evidence/temporal_decision_binding -> unique A.temporal_constructions[role="action"]`; policy fingerprint -> `A.action_policy_fingerprint` |
+| `PlanningTemporalTransition` | `transition_id -> temporal seed ID preimage`; `claim_slot_key/compared_claim_ids/previous_projection_claim_ids -> selector target plus authenticated prefix state`; `next_projection_claim_ids -> empty for retraction, singleton nested-replacement projection for correction`; `transition_kind -> retained correction/retraction discriminator`; `effective_time/transition_temporal_evidence/transition_temporal_decision_binding -> unique A.temporal_constructions[role="transition"]`; `system_interval -> PlannedCommitCoordinate(committed_at)`; `source_ids/provenance_ids -> matching E[d] rows` |
+| `PlanningCitation` | `citation_id -> E[d].citation_id`; `cited_record_id -> exact planning seed record using d`; `entity_revision_id/logical_entity_id -> that seed's T[c].target or literal None only for a source-only cited record` |
+| `PlanningProvenance` | `provenance_id/source_id -> E[d].provenance_id/A.source_id`; `entity_revision_id/logical_entity_id -> cited seed's T[c].target or literal None only for source-only provenance` |
+| `PlanningIdentityLineage` | `transition.operation_id/operation -> I.operation_id/I.operation_member.identity.operation`; predecessor/successor revision and logical IDs -> occurrence-ordered `T[c].decision`; `effective_time/temporal evidence/decision/policy -> unique identity temporal row`; `recorded_at -> PlannedCommitCoordinate(committed_at)`; `source_evidence -> E[d].source_span`; `reference_dispositions -> selector closure and authenticated prefix state`; `transition_digest -> completed transition CTV` |
+| `PlanningReferenceDisposition` | `reference_disposition_id/target_record_kind/target_record_id/target_reference_path -> fresh identity plan selector disposition`; predecessor/successor IDs -> exact identity target decisions; `disposition/basis -> retained identity assignment`; `source_evidence -> matching E[d].source_span` |
+| `PlanningSnapshotGraphRecord` | `record_id -> canonical ID from the completed payload`; `record_version -> payload.record_version`; `payload -> one mapped planning payload`; `planning_projection_codec_fingerprint/planning_projection_schema_fingerprint -> M[record_kind]`; `planning_record_digest -> envelope CTV` |
+| `PlanningGraphRecordMutation` and ledger entries | `mutation_kind/before -> T[c] arm and authenticated prefix state`; `record_kind/record_id/after -> completed planning record`; removed edges -> predecessor record reference extraction; added edges -> planned record reference extraction; entry `operation_id -> I.operation_id`; entry commit coordinate -> graph-revision-after coordinate; all target/path/base fields -> exact extracted edge and corresponding predecessor/after digest; trailing digests -> completed CTVs |
+
+No string, `None`, version, lifecycle, policy, timestamp, identifier, evidence,
+authority, reference, or digest default exists beyond the two literal cases named
+above (new entity lifecycle and literal-object nulls) and the closed temporal
+transition empty/singleton rule. A field absent from these typed paths is
+`native_planning_construction_unavailable`, not an invitation to copy a model
+default.
+
+Identity accepted/trusted/verified construction is also literal:
+
+| Field family | Exact nested V3 path |
+| --- | --- |
+| accepted operation ID/kind | operation input ID; identity member operation |
+| predecessors/successors | occurrence-ordered canonical decisions converted to lineage identities |
+| source evidence/reference assignments | identity assertion/anchor/assignment evidence constructions + selector targets + decision successors/disposition |
+| accepted operation digest | completed accepted operation |
+| artifact fence/evidence/read set | identity construction fence ID; accepted evidence digests; semantic authorization read-set digest |
+| successor reservations/alias payload | exact new-decision reservations; alias-only explicit alias proof payload, mutually exclusive |
+| authority record/verifier | identity construction authority record ID/digest/verifier |
+| sealed/candidate/analysis digests | native sealed identity digest; canonical decision digest; native input/alignment authority digest |
+| trusted snapshot/readset/fence | exact admission request snapshot/read set and construction fence binding |
+| verification mirrored fields | byte-equal trusted decision/sealed/candidate/analysis/fence/snapshot/readset |
+| verified/artifact authority digests | completed verification digest, byte-equal at every artifact join |
+| all trailing digests | recompute only after all preceding fields |
+
+The identity constructor expansion is exact: `AcceptedIdentityOperation` maps
+`operation_id -> I.operation_id`, `operation -> I.operation_member.identity.operation`,
+`predecessors/successors -> canonical tuples from the corresponding occurrence
+T[c].decision targets`, `source_evidence -> E[d].source_span`, and
+`reference_assignments -> retained identity assignment plus selector-target and
+E[d] rows`; its digest is computed last. `AcceptedIdentityOperationArtifact`
+maps `operation ->` that exact object, `operation_fence_id ->
+A.identity_construction.operation_fence_id`, sealed/candidate/analysis fields to
+the exact graph-free input/member/alignment digests, evidence digests to the
+accepted evidence projection, read set to the identity construction authority,
+successor reservations to every and only new successor decision, and alias
+payload only to an alias operation's complete alias proof. `TrustedAcceptedIdentityOperationDecision`
+copies the accepted operation and alias payload, maps the same sealed/candidate/
+analysis/fence fields, maps snapshot/read set to the admission request, maps
+authority to the completed verified authority, and computes `decision_digest`
+last. `VerifiedIdentityDecisionAuthority` copies decision/sealed/candidate/
+analysis/fence/snapshot/read-set bytes exactly, maps record ID/digest/verifier to
+`A.identity_construction`, and computes verification last. The artifact's
+verified/record/verifier-authority fields then copy that verification exactly and
+compute `artifact_digest` last. Missing identity construction on an identity arm,
+present identity construction on a nonidentity arm, partial tuples, inferred
+assignments, caller-built authorities, or digest-only substitution reject.
+
+`BuiltInBootstrapPlanningConstructionProjectorV3` in
+`memorii.core.memory_evolution.bootstrap_graph_planning` is the sole owner. It is
+pure over native input, complete construction authority, canonical identity
+reload, target authority, snapshot/read set and prefix state; it constructs seeds
+and the accepted/trusted/verified triple, after which identity admission calls
+`plan_nonpublishing`. It cannot call `compile_accepted_carriers`, generic
+compilation/reconciliation, repositories, clocks, or ambient owners.
+
+Tests cover every Planning* kind and identity operation with per-field equality
+oracles, then remove/duplicate/substitute each authority row and mutate every
+join. Default/null and ambient policy/codec/admission/verifier/clock/generic-
+compiler spies remain zero. Four roots and both backends prove persisted reload,
+all five arms and byte-identical lost-ack recovery.
+
+##### 4.8.2.27 v76 native group-commit terminal closure
+
+The native group-commit store boundary is already the sole linearization point,
+but the currently implemented coordinator tail still constructs
+`BootstrapGraphGroupExecutionResultV3` and
+`BootstrapGraphGroupResultConstructionV3`.  Those legacy V3 contracts embed a
+withdrawn CAS request, caller-shaped CAS outcome, effect carriers, and
+per-effect receipts.  They cannot be used as an adapter around
+`BootstrapGraphGroupCommitReloadV3`: doing so would make a second, non-store
+authority for a committed effect.  This is a P1 ordinary accepted-fact failure,
+because a successful native group commit cannot reach the required terminal
+publication path.
+
+The following single persisted `transaction_group_result` replacement is the
+sole post-commit V3 result.  It replaces both legacy classes above.  It is a
+typed terminal projection of the exact reload, not a second execution outcome.
+
+```python
+class BootstrapNativeGroupCommitTerminalConstructionV3(BaseModel):
+    request_digest: str
+    normalization_replay_digest: str
+    attempt: BootstrapGraphDependentAttemptV3
+    source_plan_lineage_entry: BootstrapSourcePlanLineageEntryV3
+    group_plan_member: BootstrapTransactionGroupPlanMemberV3
+    planning_authorization: BootstrapGroupPlanningAuthorizationV3
+    group_commit_reload: BootstrapGraphGroupCommitReloadV3
+    operation_fence_binding: OperationFenceBinding
+    control_epoch: BootstrapGraphControlEpochV3
+    result_digest: str
+```
+
+Its CTV domain is
+`memorii.bootstrap-graph.native-group-commit-terminal-construction.v3`, in displayed
+field order excluding `result_digest`.  The construction validates all of the
+following before it can be checkpointed, retried, manifested, or terminally
+published:
+
+1. the request and normalization replay equal the attempt; the attempt, lineage
+   entry, plan member, authorization, pre-execution identity, fence, and epoch
+   have one request and epoch identity;
+2. the lineage entry, plan member, authorization, pre-execution identity, reload, and every nested
+   operation result name one transaction group, and the reload operation vector
+   equals the plan member and authorization vector exactly in canonical order;
+3. `group_commit_reload.request_ctv_digest` is the request derived from that
+   exact attempt/member/authorization/lineage/pre-execution authority, and its
+   successor generation is the only successor that may be used for the next
+   checkpoint; and
+4. the reload recursively validates its persisted core, receipt, result,
+   operation results, revisions, atomic-write identity, and all indexes.
+
+`disposition` and terminal observation status are properties, never persisted
+duplicates.  The disposition is the reload core disposition.  The terminal
+observation status is `committed` for a committed core; otherwise it is
+`rejected` when every operation final status is rejected, `unresolved` when any
+operation final status is unresolved, and `evidence_only` for the remaining
+all-noncommitting terminal partition.  A failed group remains the existing
+pre-commit producer-unavailable/retry/finalized-failure path; it has no native
+commit reload and therefore no terminal result.
+
+The native coordinator executes this fixed suffix for each authorized final
+group: build `BootstrapGraphGroupCommitRequestV3`; call
+`AtomicStoreBootstrapGraphGroupCommitRepositoryV3.commit_or_reload` exactly
+once; construct exactly one `BootstrapNativeGroupCommitTerminalConstructionV3` from
+the returned reload and the already reloaded authority tuple; checkpoint that
+one typed result under the existing `transaction_group_result` member kind;
+then advance only with the reload successor generation.  If the checkpoint
+acknowledgement is lost, recovery first uses the group-commit repository's
+authenticated exact reload, reconstructs the same terminal result byte for
+byte, and persists/reloads the checkpoint without another group-commit call.
+There is no `execute_cas` port, CAS-shaped executor return, carrier conversion,
+or receipt reconstruction in this path.
+
+The existing `transaction_group_result` atomic-member kind changes its payload
+codec from `BootstrapGraphGroupResultV3` to
+`BootstrapNativeGroupCommitTerminalConstructionV3`; its literal member kind is
+unchanged.  `BootstrapGraphGroupResultV3`,
+`BootstrapGraphGroupExecutionResultV3`,
+`BootstrapGraphGroupResultConstructionV3`,
+`BootstrapGraphGroupCasRequestV3`, `BootstrapGraphGroupCasOutcomeV3`,
+`BootstrapGraphGroupEffectCarrierV3`, and
+`BootstrapGraphGroupEffectReceiptV3` are withdrawn from the native V3 codec,
+checkpoint, coordinator, retry, manifest, terminal, and found-reload surfaces.
+They remain available only to separately governed non-native flows.  Native
+decode treats every one of their tags, their field names, and any mixed result
+as unknown/incompatible before lookup or effect.
+
+The checkpoint retains each complete construction, while downstream V3 owners
+carry its ordered nested reload-digest projection in canonical group order.
+They resolve every digest through the checkpoint construction and validate the
+exact nested reload before use; no downstream caller supplies an execution
+result, disposition, carrier, revision, receipt, or reconstructed reload:
+
+```python
+class BootstrapGraphFinalStageEvidenceV3(BaseModel):
+    # existing request, attempt, plan, lineage, source outcomes, validation,
+    # blockers, terminal-before-planning proof, and epoch fields remain
+    ordered_group_commit_reload_digests: tuple[str, ...]
+    evidence_digest: str
+
+class BootstrapGraphExecutionManifestGroupInputV3(BaseModel):
+    transaction_group_id: str
+    group_plan_member: BootstrapTransactionGroupPlanMemberV3
+    pre_execution_evidence: BootstrapGraphPreExecutionGroupEvidenceV3
+    group_commit_reload_digest: str
+    input_digest: str
+
+class BootstrapGraphDurableRetryProgressV3(BaseModel):
+    # existing retry identity and authority fields remain
+    ordered_completed_group_commit_reload_digests: tuple[str, ...]
+    progress_digest: str
+
+class BootstrapGraphCanonicalSourceResultInputV3(BaseModel):
+    # existing request, replay, lineage, outcome, canonical terminal, epoch fields remain
+    ordered_group_commit_reload_digests: tuple[str, ...]
+    input_digest: str
+
+class BootstrapGraphTerminalPublicationRequestV3(BaseModel):
+    # existing coordinator, epoch, attempt, plan, lineage, manifest, canonical
+    # input, handoff, intent, generation, admission, and bindings remain
+    ordered_group_commit_reload_digests: tuple[str, ...]
+    publication_request_digest: str
+```
+
+`BootstrapGraphTerminalPreparationPortV3`, terminal-stage outcome construction,
+execution-manifest construction, canonical source-result construction, terminal
+persistence, and found-terminal validation resolve those exact checkpoint
+constructions by the ordered reload-digest projection.  The canonical source
+result keeps its existing ordered persisted group-result digest vector, which is
+the ordered `result_digest` projection of the complete constructions, not the
+reload digest vector.  The final evidence, manifest group inputs, canonical
+source input, and terminal request each prove a complete one-to-one join with
+`final_plan.canonical_group_order`; each reload digest resolves to exactly one
+byte-identical construction and nested reload.  Terminal-before-planning carries
+zero reload digests; retry carries only previously checkpointed constructions;
+a related-conflict successor retains predecessor construction bytes for
+committed groups and creates successor bytes only for the unfinished suffix.
+
+The atomic registry remains exactly twenty-one member kinds.  No native
+execution-result, reload, carrier, receipt, or construction member kind is
+added.  The group-commit repository owns its own request/reload indexes, while
+the plan checkpoint owns the one persisted construction reference.  A terminal
+reload validates both closures: the checkpoint construction must recursively
+validate its reload and the group-commit repository must return byte-identical
+reload bytes for that request identity.  Missing or substituted repository
+bytes, changed predecessor/successor generation, omitted construction,
+duplicate/reordered group, reload/result mismatch, unresolved reload digest,
+legacy tag, independently supplied status, or any effect field outside the
+nested reload rejects before terminal CAS.
+
+Required evidence is narrowly limited to this seam: one normal accepted native
+fact reaches terminal persistence through the complete result; native no-op
+reaches evidence-only terminal status; memory and independent-process JSONL
+lost acknowledgement after group commit has one effect and byte-identical
+recovered terminal result; direct, factory, filesystem, and Hermes roots use
+the same native executor; and mutations for every withdrawn legacy field/tag,
+all native-result joins, group order/cardinality, nested reload/receipt/core,
+checkpoint acknowledgement loss, and terminal found reload fail closed.  This
+amendment changes no target/materializer semantics, operation arms, roots,
+successor modes, or planning-construction authority.
+
 #### 4.8.3 Output contract
 
 ```python
@@ -19163,6 +29358,7 @@ class CommittedTransactionGroupExecutionResult(BaseModel):
     authorizing_attempt_digest: str
     authorizing_group_plan: TransactionSemanticGroupPlanReference
     planning_authorization_digest: str | None
+    authorizing_group_authority_digest: str | None
     final_status: Literal["committed"]
     retry_disposition: Literal["terminal"]
     graph_revision_before: str
@@ -19190,6 +29386,8 @@ class NonCommittingTransactionGroupExecutionResult(BaseModel):
     authorizing_attempt_digest: str
     authorizing_group_plan: TransactionSemanticGroupPlanReference
     planning_authorization_digest: str | None
+    authorizing_group_authority_digest: str | None
+    terminal_before_planning_proof: TerminalBeforePlanningProofReference | None
     final_status: Literal["evidence_only", "rejected", "unresolved", "failed"]
     retry_disposition: Literal["terminal", "retryable"]
     observed_graph_revision: str | None
@@ -19252,6 +29450,7 @@ class GraphBoundSourceIngestionResult(BaseModel):
     ]
     graph_revision_before: str
     graph_revision_after: str
+    terminal_before_planning_proof_digests: tuple[str, ...]
     execution_manifest_digest: str
     dependency_fingerprints: tuple[str, ...]
 
@@ -19271,6 +29470,87 @@ class PrePlanningSourceIngestionProgress(BaseModel):
     reusable_artifact_digests: tuple[str, ...]
     retry_attempt_count: int = Field(ge=1)
     retry_reason_codes: tuple[str, ...]
+    execution_policy: GraphDependentExecutionPolicyReference
+    observed_counters: GraphDependentObservedCounters
+    operation_lease_binding: OperationLeaseBinding
+    progress_digest: str
+
+class CommittedFinalTransactionGroupResultReference(BaseModel):
+    kind: Literal["committed"]
+    transaction_group_id: str
+    result_digest: str
+    authorizing_plan_lineage_entry_digest: str
+    authorizing_group_authority_digest: str
+    plan_member_digest: str
+    reference_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+class NonCommittingFinalTransactionGroupResultReference(BaseModel):
+    kind: Literal["non_committing"]
+    transaction_group_id: str
+    terminal_status: Literal["evidence_only", "rejected", "unresolved", "failed"]
+    result_digest: str
+    authorizing_plan_lineage_entry_digest: str
+    authorizing_group_authority_digest: str | None
+    terminal_before_planning_proof: TerminalBeforePlanningProofReference | None
+    plan_member_digest: str
+    reference_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+FinalTransactionGroupResultReference = Annotated[
+    CommittedFinalTransactionGroupResultReference
+    | NonCommittingFinalTransactionGroupResultReference,
+    Field(discriminator="kind"),
+]
+
+class GraphDependentReplanClosure(BaseModel):
+    kind: Literal["pre_commit_conflict", "partial_commit_conflict"]
+    predecessor_lineage: SourceTransactionPlanLineageReference
+    final_group_results: tuple[FinalTransactionGroupResultReference, ...]
+    unfinished_transaction_group_ids: tuple[str, ...]
+    replanned_transaction_group_ids: tuple[str, ...]
+    closure_digest: str
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+class PlanPublishedSourceIngestionProgress(BaseModel):
+    kind: Literal["plan_published"]
+    source_id: str
+    source_digest: str
+    operation_id: str
+    transaction_group_plan: TransactionSemanticGroupPlanReference
+    replan_closure: GraphDependentReplanClosure | None
+    predecessor_lineage: SourceTransactionPlanLineageReference | None
+    final_group_results: tuple[FinalTransactionGroupResultReference, ...]
+    unfinished_transaction_group_ids: tuple[str, ...]
+    replanned_transaction_group_ids: tuple[str, ...]
+    successor_group_authorities: tuple[SuccessorAttemptGroupAuthority, ...]
+    execution_manifest_digest: str
+    replay_artifact_bundle_digest: str
+    execution_policy: GraphDependentExecutionPolicyReference
+    observed_counters: GraphDependentObservedCounters
+    operation_lease_binding: OperationLeaseBinding
+    progress_digest: str
+
+class AttemptPublishedSourceIngestionProgress(BaseModel):
+    kind: Literal["attempt_published"]
+    source_id: str
+    source_digest: str
+    operation_id: str
+    transaction_group_plan: TransactionSemanticGroupPlanReference
+    replan_closure: GraphDependentReplanClosure | None
+    predecessor_lineage: SourceTransactionPlanLineageReference | None
+    final_group_results: tuple[FinalTransactionGroupResultReference, ...]
+    unfinished_transaction_group_ids: tuple[str, ...]
+    replanned_transaction_group_ids: tuple[str, ...]
+    successor_group_authorities: tuple[SuccessorAttemptGroupAuthority, ...]
+    graph_validation_attempt_digest: str
+    execution_manifest_digest: str
+    replay_artifact_bundle_digest: str
+    execution_policy: GraphDependentExecutionPolicyReference
+    observed_counters: GraphDependentObservedCounters
     operation_lease_binding: OperationLeaseBinding
     progress_digest: str
 
@@ -19280,7 +29560,12 @@ class PlannedSourceIngestionProgress(BaseModel):
     source_digest: str
     operation_id: str
     plan_lineage: SourceTransactionPlanLineageReference
+    transaction_group_plan: TransactionSemanticGroupPlanReference
+    graph_validation_attempt_digest: str
+    execution_manifest_digest: str
     replay_artifact_bundle_digest: str
+    execution_policy: GraphDependentExecutionPolicyReference
+    observed_counters: GraphDependentObservedCounters
     terminal_group_result_digests: tuple[str, ...]
     unfinished_transaction_group_ids: tuple[str, ...]
     latest_retryable_attempt_digests: tuple[str, ...]
@@ -19288,7 +29573,10 @@ class PlannedSourceIngestionProgress(BaseModel):
     progress_digest: str
 
 SourceIngestionProgress = Annotated[
-    PrePlanningSourceIngestionProgress | PlannedSourceIngestionProgress,
+    PrePlanningSourceIngestionProgress
+    | PlanPublishedSourceIngestionProgress
+    | AttemptPublishedSourceIngestionProgress
+    | PlannedSourceIngestionProgress,
     Field(discriminator="kind"),
 ]
 ```
@@ -19306,15 +29594,246 @@ stage, reuses every sealed acknowledged artifact, and invokes a paid or learned
 stage again only when no complete acknowledged artifact exists under its
 idempotency key and the bounded retry policy permits it.
 
-The transition from `pre_planning` to `planned` occurs once through
-`checkpoint_source_progress`: the request atomically publishes the complete
-plan, planning artifacts, certificates, authorizations, and planned progress.
-There is no reverse transition. Retryable transaction-group outcomes are legal
-only with `PlannedSourceIngestionProgress`; a pre-planning checkpoint must have
-an empty `retryable_attempt_outcomes`. Stale-owner takeover reloads the exact
-variant and artifact generation before selecting the next stage. Terminal
-source state remains reachable only through `finalize_source`, never by changing
+`pre_planning` is the durable `source_normalization_published` state. Its
+generation contains exactly its progress member, sealed source-normalization
+closure, execution manifest, replay bundle, and the one loadable policy artifact
+and reference; it contains no plan, attempt, lineage, graph revision, or
+sentinel plan identity. Its only nonterminal
+successor is `plan_published`, whose next generation contains exactly the
+reloaded plan, every planning artifact and certificate, policy artifact and
+reference, replay bundle, execution manifest, counters, and progress member.
+It contains no validation attempt or new lineage. For a replan, that same
+generation additionally carries read-only references to the authorized
+predecessor lineage and every final result named by progress; it does not
+republish or rewrite their bytes. The following `attempt_published` generation
+retains those references and adds exactly its replacement attempt; the final
+`planned` generation retains them and adds only the replacement lineage entries.
+
+For initial planning, `replan_closure` and `predecessor_lineage` are null and
+`final_group_results`, `unfinished_transaction_group_ids`, and
+`replanned_transaction_group_ids` are all empty in both intermediate variants.
+Its complete successor authority set consists only of
+`replacement_successor` arms, one per reloaded plan member.
+`plan_published` has only `attempt_published` as a nonterminal successor. That
+generation retains the complete plan/artifact/policy closure and adds exactly
+one complete `GraphDependentValidationAttempt` whose authorization bijection
+was derived from reloaded plan members; its progress names that attempt digest.
+It contains no lineage. `attempt_published` has only `planned` as a
+nonterminal successor. That generation retains the preceding closure and adds
+the append-only `SourceTransactionPlanLineage` plus every initial group entry;
+`planned` requires that lineage reference, the exact plan and attempt digests,
+and the same policy/counters closure. Thus a plan never exists in preplanning,
+and a planned state always has lineage. A replan has the legal
+transition `planned -> plan_published -> attempt_published -> planned`. Its
+first intermediate image must name the authorized, reloaded predecessor-lineage
+closure, a canonical tuple of final group-result references, and the exact
+canonical unfinished and replanned group-ID sets. The predecessor group IDs are
+the disjoint, complete partition `final_group_results.ids +
+unfinished_transaction_group_ids`; `replanned_transaction_group_ids` is a
+nonempty subset of unfinished IDs. Each final reference resolves to its final
+predecessor lineage entry with exactly equal authority, operation membership,
+policy, fence, plan-member, and result digests; a null authority is equal only
+with the same terminal-before-planning proof. Every successor
+`TransactionSemanticGroupPlan` remains a
+complete, canonical, snapshot-bound partition of the original source operation
+set. Its groups, planned executions, and certificates cover every group exactly
+once. Committed and unfinished-but-not-replanned groups are immutable reused
+entries naming their predecessor final-lineage entry digest, authorization
+digest, operation IDs, and original plan-member digest; validation requires
+byte equality to the predecessor closure. Only exact replanned groups receive
+new compilation artifacts/certificates and replacement authorizations.
+
+The compiler input is the complete predecessor effective plan, reused entries,
+exact replanned subset, fresh graph snapshot/read extensions, and sealed source
+alignment. Its output is one complete successor plan with one replacement
+compilation per replanned group. It cannot drop, duplicate, compile, or regroup
+a reused group. Every successor attempt has a complete `group_authorities`
+bijection over every successor plan group. A reused group has exactly one
+`ReusedPredecessorGroupAuthority`, whose predecessor lineage-entry, plan,
+authorization, and member digests reload to byte-identical predecessor bytes;
+it is never reissued under the successor plan. A replaced group has exactly one
+`ReplacementSuccessorGroupAuthority`, whose embedded
+`GroupPlanningAuthorization` names the successor plan and replacement artifact.
+The only third arm is `ReusedFinalNonCommittingNoAuthorityGroup`: it binds the
+predecessor lineage entry, predecessor plan-member digest, and exact final
+non-committing result reference, and fixes planning authority, group-authority,
+and compilation digests to null with `cas_authorization="forbidden"`. It is
+valid only when that final reference and its result/lineage carry the same
+loaded terminal-before-planning proof reference and null authority digest. Conversely,
+a nullable non-committing final-result authority is valid only under this arm;
+a non-null authority or absent/mismatched proof rejects. This arm is immutable
+final history, never invokes compilation, graph read, reservation, CAS, or
+retry, and cannot be selected for an unfinished/replanned ID.
+The `authority_digest` commits its discriminator and every displayed field.
+The progress image and attempt name the same canonical ordered union. For the
+reused and replacement arms, each result names the matching authority digest.
+For the no-authority arm, the predecessor result and lineage remain byte-
+identical with null authority and no forward successor field; only the later arm
+reverse-links exactly one `closure_final_result`. That reference must equal the
+predecessor group ID, terminal status, final result digest, lineage-entry digest,
+plan-member digest, null authority, and proof repository/artifact/proof digests;
+the proof's group, operations, attempt, stage outcome, fence, and policy must
+also equal that predecessor closure. The replay bundle and execution manifest
+carry the complete ordered authority-digest closure with the complete
+successor-plan reference. A predecessor/plan/member/authorization discriminator
+substitution, duplicate, omission, extra arm, or reused-as-replacement mutation
+fails before lineage, CAS, disclosure, or replay. A no-authority-arm proof,
+final-result, null field, lineage, plan-member, result-status, or CAS-forbidden
+mutation fails by the same rule. Lineage appends only
+replacement entries for replanned groups while retaining predecessor final
+entries for reused groups. A replan cannot begin from preplanning, cannot
+re-run a final group, and cannot regroup a final or non-replanned unfinished
+group.
+
+Every progress digest uses domain
+`memorii.semantic-ingestion.source-progress.<kind>.v1` over every displayed
+field except `progress_digest`; the atomic generation request binds the
+progress digest and every member payload digest in canonical member-ID order.
+`ReusedPredecessorGroupAuthority.authority_digest`,
+`ReplacementSuccessorGroupAuthority.authority_digest`, and
+`ReusedFinalNonCommittingNoAuthorityGroup.authority_digest` use respectively
+`memorii.semantic-ingestion.reused-group-authority.v1` and
+`memorii.semantic-ingestion.replacement-group-authority.v1` and
+`memorii.semantic-ingestion.reused-final-no-authority-group.v1` over every
+displayed field except the digest. `CommittedFinalTransactionGroupResultReference`
+and `NonCommittingFinalTransactionGroupResultReference` use their respective
+`memorii.semantic-ingestion.final-group-result.<kind>.v1` domains over every
+displayed field except `reference_digest`; `GraphDependentReplanClosure` uses
+`memorii.semantic-ingestion.replan-closure.v1` over its discriminator and every
+displayed member. The attempt digest, intermediate progress digests, lineage,
+replay bundle, execution manifest, graph-bound group result, and graph-bound
+source result include the canonical ordered authority-union digests and, when a
+replan exists, the closure digest and canonical final-result-reference digests,
+including each terminal-before-planning proof digest. No replay or recovery
+operation may resolve a live authority, reconstruct a missing arm from a
+result, or turn a no-authority arm into a compilation/CAS input.
+`ReplayArtifactBundle.terminal_before_planning_proof_digests`,
+`IngestionExecutionManifest.terminal_before_planning_proof_digests`, and
+`GraphBoundSourceIngestionResult.terminal_before_planning_proof_digests` are
+the same canonical ordered, duplicate-free projection of the no-authority arms
+and nested terminal group results. Missing, extra, reordered, or substituted
+proof digests reject before result visibility, reopen, or replay.
+
+`TerminalBeforePlanningProof` is the only evidence that can authorize the
+no-authority arm. Its digest uses
+`memorii.semantic-ingestion.terminal-before-planning-proof.v1` over every
+displayed field except `proof_digest`; it is a registered
+`terminal_before_planning_proof` replay artifact with one exact schema-registry
+entry, decoder fingerprint, retention policy, and size limit. The terminal
+group repository produces it exactly during the atomic publication of a
+terminal-before-planning non-committing result, publishes it through
+`TerminalBeforePlanningProofRepository.publish_and_reload`, and adds its
+artifact digest to the replay bundle's required closure before that atomic
+generation becomes visible. `get(reference)` decodes the registered canonical
+payload, recomputes the artifact and proof digests, and validates every proof
+coordinate before a no-authority arm, result, lineage, progress, manifest, or
+replay reader can use it.
+
+The proof's `execution_graph_fingerprint` selects the exact loaded
+`CanonicalIngestionExecutionGraphTemplate`; its planning cutoff is the first
+canonical `graph_compilation` instance for the proof's transaction group. The
+only allowed terminal proof outcome has
+`instance.scope="transaction_group_attempt"`, the exact non-null proof
+`transaction_group_id` and `attempt_id`, one of the canonical pre-cutoff stages
+`graph_proposal_alignment`, `canonical_identity_resolution`,
+`planned_identity_reservation`, `capability_status_binding_validation`,
+`type_evidence_resolution`, `claim_slot_construction`,
+`semantic_reconciliation`, or `reference_closure`, and status exactly one of
+`evidence_only`, `rejected`, `unresolved`, or `failed`. It cannot be
+`complete`, `committed`, or `not_started`.
+
+Before accepting the proof, the validator loads the exact
+`GraphDependentValidationAttempt` by `authorizing_attempt_digest` and the exact
+`IngestionExecutionManifest` by `execution_manifest_digest`; both must have the
+proof graph fingerprint, source, group, operation set, fence, policy, and
+attempt coordinates. The manifest's canonical outcome membership must contain
+the exact terminal outcome under that group/attempt. Every manifest instance for
+that group whose stage is `graph_compilation`, `temporal_projection`,
+`trust_arbitration`, `identity_lineage`, or `transaction_group_persistence` is
+either absent because the closed template does not instantiate it or is exactly
+`not_started` with no start/completion timestamp or artifact digest. The loaded
+attempt has no group-authority arm for that group; its group planning
+authorization, compilation, planning artifact/certificate, reservation-use,
+write-set, delta, event, and CAS inputs for that group are absent, and the
+terminal result has no compilation or graph effect. The terminal disposition
+must equal the proof status and the final-result reference.
+
+Validation order is fixed: load/decode registry and proof; load and validate
+attempt and manifest references; verify canonical stage scope/status/membership
+and every post-cutoff absence; verify empty authority/compilation/effect inputs;
+then verify final-result/lineage cores and only then admit the no-authority arm.
+Any wrong scope, group, attempt, stage, status, manifest member, post-cutoff
+outcome, authority, compilation artifact, or terminal disposition rejects before
+successor publication, replay disclosure, or CAS.
+
+There is no digest cycle. First, the terminal result and lineage each compute a
+canonical *core* preimage digest over their complete declaration-order fields
+except their proof reference and outer digest; those are respectively
+`final_result_core_digest` and `lineage_entry_core_digest`. Second, the proof
+commits those two cores together with its group, operation, attempt, terminal
+stage outcome, terminal status, plan-member, fence, and policy fields. Third,
+the proof artifact/reference is formed. Finally, the published result, lineage,
+and final-result reference include that proof reference in their ordinary outer
+digest preimages. The atomic generation binds all final outer digests and the
+bundle closure. Thus a proof binds the exact final result and lineage without
+requiring predecessor bytes to point to a later successor arm.
+`GraphDependentReplanClosure.kind="pre_commit_conflict"` requires predecessor
+lineage, no `final_group_results` arm with `kind="committed"`, and a nonempty
+replanned subset of unfinished groups. It may retain final non-committing
+members. `kind="partial_commit_conflict"` requires at least one final-result
+arm with `kind="committed"` and a nonempty replanned subset of unfinished
+groups. Both variants
+reuse sealed source alignment and all acknowledged provider/parser/NLI/semantic-
+analysis artifacts byte-for-byte; they reacquire only graph-dependent context,
+reconciliation, closure, and compilation for replanned groups. The first
+related conflict selects exactly one variant. At N+1 the policy returns
+`related_conflict_retry_exhausted` without a third plan/attempt or repeated
+semantic analysis, retaining the complete predecessor final-result history.
+
+Allowed initial predecessors are admission -> `pre_planning`; `pre_planning` ->
+`plan_published`; `plan_published` -> `attempt_published`; and
+`attempt_published` -> `planned`. The only additional predecessor is an
+authorized `pre_commit_conflict` or `partial_commit_conflict`
+`planned -> plan_published` replan with the complete preserving closure above.
+Only `planned` may append group outcomes or finalize.
+Any skipped, reverse, duplicate, cross-generation, mixed-member, or
+predecessor-closure-mismatched
+transition rejects before visibility. Terminal finalization is a separate
+atomic operation from `planned` after every group is terminal; it never changes
 the progress discriminator.
+
+Lost acknowledgement and reopen always reload the exact generation by fence,
+validate the variant's complete closure, predecessor preservation, and policy
+joins, then resume its one allowed successor or return the already durable
+result. A stale owner first
+proves the current lease/epoch, reloads the exact variant before a read or
+write, and either resumes with a new current lease or returns the existing
+non-disclosing unavailable outcome. It cannot regenerate a missing same-
+generation authorization from a caller object, publish a duplicate plan or
+attempt, replace a committed group, or attach lineage after an unvalidated CAS.
+On retry exhaustion the exact unfinished/replanned set becomes the typed
+terminal `failed` or `unresolved` disposition selected by the execution policy;
+the final-result closure remains immutable and the source cannot finalize as
+fully committed. Rollback disables new replacement-plan promotion, reloads and
+replays the retained predecessor/final-result closure, and never removes or
+rewrites a final result or lineage entry.
+
+The following existing replay-authoritative contracts are extended with exactly
+`execution_policy: GraphDependentExecutionPolicyReference` and
+`observed_counters: GraphDependentObservedCounters`, and their existing digest
+preimages are extended by those two fields in declaration order:
+`GraphDependentValidationAttempt`, `TransactionGroupPlanLineageEntry`,
+`SourceTransactionPlanLineage`, every four `SourceIngestionProgress` variants,
+`ReplayArtifactBundle`, `IngestionExecutionManifest`,
+`GraphBoundSourceIngestionResult`, and each graph-bound
+`TransactionGroupExecutionResult`. The policy reference's artifact digest must
+appear in the bundle's required artifact digests; the same policy/counters pair
+must equal across attempt, matching lineage entry, progress image, manifest,
+group result, and source result. The `plan_published` and
+`attempt_published` images make the pair durable before lineage exists. A
+policy/counter mismatch, absent policy artifact, duplicate policy artifact, or
+live-policy lookup is a replay-integrity failure before any plan read, CAS, or
+result disclosure.
 
 `PreGraphSourceIngestionResult.failure_reason` is non-null exactly when
 `final_status="failed"`; `lease_recovery_exhausted` is the exact reason for the
@@ -19348,9 +29867,11 @@ stored byte-identical result and binding; it cannot reconstruct a binding from
 an operation ID or scalar fence ID.
 
 Each result's group ID, operation IDs, attempt digest, plan reference, and
-planning-authorization digest must exactly equal its final lineage entry. A
-null planning-authorization digest is allowed only when that exact terminal
-attempt ended before planning and cannot accompany `committed`.
+authorizing group-authority digest must exactly equal its final lineage entry.
+A null group-authority digest is allowed only when that exact terminal attempt
+ended before planning and cannot accompany `committed`; a non-null digest must
+resolve to the exact union arm in the reloaded attempt and, for a replan, the
+same intermediate-progress/replay/manifest closure.
 `fully_committed` requires every final group to be `committed`.
 Each committed group has non-null, matching event-batch, applied-delta, and
 `TransactionGroupCommitTimeAttestation` digests created in the same atomic
@@ -19757,7 +30278,7 @@ service, or pass a test-only configuration field.
 #### 4.8.6 Validation strategy
 
 - run a two-process writer-fence matrix over source admission, pre-planning and
-  planned checkpoints, committed and non-committing groups, source
+  plan-published, attempt-published, and lineage-published states, committed and non-committing groups, source
   finalization, and every generic store method named by
   `SemanticRecordOwnershipManifest`. Pause the old writer immediately before
   mutation, advance or roll back writer admission, then release it; require a
@@ -23495,7 +34016,7 @@ issue namespace:
 | Hot graph dependencies repeatedly conflict | Record/partition MVCC read sets, bounded closures, and one deterministic retry | High-contention groups may return unresolved and require later reprocessing |
 | Planning evidence is missing, mutable, or substituted | Content-addressed typed group plans/artifacts, per-group authorizations, planning-specific ledger coordinates, nested verification, independent certificate recomputation before first commit, and mandatory pre-CAS reload | Large multi-group sources increase temporary artifact storage and validation cost |
 | Progress or terminal state references replay evidence that was not atomically published | One generation publishes canonical artifact bytes, indexes, and first referencing state; every later write validates complete artifact closure | Atomic generations increase write amplification and require capacity and compaction testing |
-| A retryable source failure occurs before any transaction plan exists | Discriminated pre-planning progress records exact next DAG stage and reusable artifact closure, then transitions atomically and only once to planned progress | Crashes before a provider response is acknowledged can still consume one bounded retry |
+| A retryable source failure occurs before any transaction plan exists | Discriminated source-normalization progress records exact next DAG stage and reusable artifact closure, then advances through plan-published, attempt-published, and planned closures | Crashes before a provider response is acknowledged can still consume one bounded retry |
 | A retry result is attributed to the wrong plan or authorization | Append-only per-group plan lineage, immutable committed-group membership, one final lineage entry per terminal group, and result-to-entry equality checks | Late dependencies discovered after a partial commit can force remaining groups to terminate unresolved rather than regroup |
 | Event, retry, and record identities are conflated | Separate envelope `event_id`, logical `dedupe_key`, and payload record identity; bind only payload entity/record IDs to the compiler change | More identity coordinates increase audit and test surface |
 | Historical same-version events replay inconsistently | Reject current-writer collisions and reject non-identical historical equal-version conflicts under frozen `SIA-ED-REPLAY-001` | The affected replay scope remains blocked for diagnosis and append-only repair; no winner is selected |
@@ -24489,3 +35010,14 @@ presence without this execution is not LRG-05 evidence.
 The design-owned prototype's complete known-answer body/envelope bytes and
 digests are pinned by the current static-tooling command rather than this raw
 design input, avoiding a self-referential design digest.
+All preceding recovery-wire/probe phase-table and
+`source-normalization-authority-boundary` topology text in this section is
+historical, non-normative, and has zero active-contract effect. The complete
+active recovery namespace is defined only by the inventory in section
+3.4.2f.2; this archival clause neither shortens nor overrides that inventory.
+The key derives from pre-marker `handoff_request_digest`; the marker V3
+authenticates key/generation fields without entering the key preimage. The
+sole topology is the seven-field `bootstrap-v3-authority-boundary.json` schema
+(`requirement_id,root,backend,outcome,signal,node_id,pytest_selector`) and its
+explicit future schedule table in the WorkPlan. No old selector, recovery
+model, domain, phase row, decoder, or receipt is active.

@@ -399,6 +399,9 @@ def test_unit_pytest_owners_partition_the_live_unit_corpus_exactly_once() -> Non
         "provider-compatibility": (
             "tests/unit/core/semantic_ingestion/test_provider_compatibility.py",
         ),
+        "bootstrap-graph-transaction-boundary": (
+            "tests/unit/core/semantic_ingestion/test_bootstrap_graph_production_roots.py",
+        ),
     }
     owners = {"broad": broad}
     for owner, paths in owner_paths.items():
@@ -575,6 +578,7 @@ def test_projection_history_job_is_exact_and_disjoint_from_broad_unit_shards() -
         "SCENARIO_RESULT": "semantic-ingestion-scenario",
         "ACCEPTANCE_RESULT": "semantic-ingestion-acceptance",
         "PROJECTION_HISTORY_RESULT": "semantic-projection-history",
+        "BOOTSTRAP_GRAPH_RESULT": "bootstrap-graph-transaction-boundary-aggregate",
     }
     assert set(semantic_umbrella["needs"]) == set(expected_dependencies.values())
     umbrella_step = semantic_umbrella["steps"][0]

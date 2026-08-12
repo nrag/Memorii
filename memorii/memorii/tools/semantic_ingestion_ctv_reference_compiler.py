@@ -42,6 +42,7 @@ EXPECTED_GRAMMAR = {
 PROTOCOL_NAMES = {
     "AuthenticatedIngressContextResolver",
     "CapabilityBaselineApprovalVerifier",
+    "CurrentBootstrapReleaseVerifier",
     "DeploymentAuthorizationTrustStore",
     "DeploymentAuthorizationVerifier",
     "GraphObservationAuthorizer",

@@ -10,6 +10,7 @@ from memorii.core.filesystem_storage.bundle import build_filesystem_provider
 from memorii.core.memory_evolution.admission import (
     GovernedSourceAdmissionService,
     SemanticIngestionOutcomeLookupRequest,
+    source_admission_source_digest,
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
     BOOTSTRAP_COORDINATE,
@@ -47,6 +48,10 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     encode_typed_value,
     normalize_delivery_id,
 )
+from memorii.core.memory_evolution.source_admission import (
+    ProviderEventNormalizer,
+    derive_bootstrap_authenticated_language_evidence,
+)
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
@@ -55,10 +60,15 @@ from memorii.core.memory_plane.store import (
     MemoryPlaneRevisionConflictError,
 )
 from memorii.core.provider.factory import build_provider_memory_service_from_env
-from memorii.core.provider.models import ProviderOperation
+from memorii.core.provider.models import ProviderEvent, ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 from memorii.integrations.hermes_provider import HermesMemoryProvider
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    DeterministicTestHostBootstrapMaterialVerifier,
+    build_test_host_verified_bootstrap_release_evidence,
+    present_authenticated_host_bootstrap_material,
+)
 
 
 def _binding() -> DeliveryPrincipalBinding:
@@ -85,6 +95,17 @@ def _ingress(*scopes: str, required_scopes: tuple[str, ...] | None = None) -> Au
     )
 
 
+def test_provider_event_normalizer_rejects_empty_semantic_source_text() -> None:
+    with pytest.raises(ValueError, match="String should have at least 1 character"):
+        ProviderEventNormalizer(_ingress("semantic:read")).normalize(
+            ProviderEvent(
+                event_id="empty-semantic-source",
+                operation=ProviderOperation.CHAT_ASSISTANT_TURN,
+                content="",
+            )
+        )
+
+
 def _source() -> CanonicalMemoryRecord:
     return CanonicalMemoryRecord(
         memory_id="tx:exact-id",
@@ -109,6 +130,7 @@ class _TestHostBootstrapCapability:
         self._release_metadata = BootstrapProfileReleaseMetadata(
             coordinate=BOOTSTRAP_COORDINATE,
             bootstrap_profile_trust_anchor_digest=self._trust_anchor.trust_anchor_digest,
+            signed_release_digest="1" * 64,
         )
         self._resolver = resolver or _TrustedResolver()
         self._enabled = enabled
@@ -150,8 +172,22 @@ class _TestHostBootstrapCapability:
             release_metadata=self.release_metadata,
             trust_anchor=self.trust_anchor,
             artifact_payloads=self.artifact_payloads,
+            release_evidence=build_test_host_verified_bootstrap_release_evidence(
+                metadata=self.release_metadata,
+                external_root_digest="2" * 64,
+                active_lifecycle_snapshot_digest="3" * 64,
+                verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
             authenticated_ingress_resolver=self.authenticated_ingress_resolver,
             profile_enabled=self.profile_enabled,
+        )
+
+    def load_bootstrap_material_presentation(self):
+        material = self.load_verified_bootstrap_material()
+        return (
+            present_authenticated_host_bootstrap_material(material)
+            if material is not None
+            else None
         )
 
 
@@ -244,9 +280,20 @@ def _runtime_mutated_bootstrap_material(
         release_metadata=BootstrapProfileReleaseMetadata(
             coordinate=BOOTSTRAP_COORDINATE,
             bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
+            signed_release_digest="1" * 64,
         ),
         trust_anchor=anchor,
         artifact_payloads=serialize_bootstrap_profile_artifacts(mutated),
+        release_evidence=build_test_host_verified_bootstrap_release_evidence(
+            metadata=BootstrapProfileReleaseMetadata(
+                coordinate=BOOTSTRAP_COORDINATE,
+                bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
+                signed_release_digest="1" * 64,
+            ),
+            external_root_digest="2" * 64,
+            active_lifecycle_snapshot_digest="3" * 64,
+            verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
         authenticated_ingress_resolver=_TrustedResolver(),
         profile_enabled=True,
     )
@@ -304,6 +351,34 @@ def test_runtime_bootstrap_component_identity_mutations_fail_closed() -> None:
         )
 
 
+def test_bootstrap_release_evidence_rejects_before_artifact_decode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    material = _TestHostBootstrapCapability().load_verified_bootstrap_material()
+    assert material is not None
+    invalid = HostVerifiedBootstrapMaterial(
+        release_metadata=material.release_metadata,
+        trust_anchor=material.trust_anchor,
+        artifact_payloads=material.artifact_payloads,
+        release_evidence=material.release_evidence.model_copy(
+            update={"signed_release_digest": "f" * 64}
+        ),
+        authenticated_ingress_resolver=material.authenticated_ingress_resolver,
+        profile_enabled=material.profile_enabled,
+    )
+
+    def decoded_too_early(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("artifact decoding preceded release-evidence validation")
+
+    monkeypatch.setattr(
+        "memorii.core.memory_evolution.bootstrap_profile.decode_artifact",
+        decoded_too_early,
+    )
+    with pytest.raises(BootstrapProfileVerificationError) as exc_info:
+        verify_bootstrap_profile(invalid)
+    assert exc_info.value.reason.value == "invalid_manifest"
+
+
 def test_admission_rejects_partial_scope_before_any_retention() -> None:
     memory_plane = MemoryPlaneService()
     admission = GovernedSourceAdmissionService(memory_plane)
@@ -335,6 +410,33 @@ def test_admission_uses_host_required_scopes_not_public_source_metadata() -> Non
     index = memory_plane.get_record(f"semantic_ingestion:admission:{identity.delivery_key_digest}")
     assert index is not None
     assert index.content["required_scopes"] == ["host:classification", "host:task"]
+
+
+def test_bootstrap_language_evidence_is_derived_and_retained_with_the_observation() -> None:
+    source = _source()
+    ingress = _ingress("task:task:one", "user:user:alice")
+    evidence = derive_bootstrap_authenticated_language_evidence(
+        ingress=ingress,
+        source_id=source.memory_id,
+        source_digest=source_admission_source_digest(source),
+        original_text=source.text,
+        segment_governance_set_digest="1" * 64,
+        governance_carrier_artifact_digest="2" * 64,
+        segment_governance_carriers_digest="3" * 64,
+        message_admission_carriers_digest="4" * 64,
+    )
+    accepted = GovernedSourceAdmissionService(MemoryPlaneService()).admit(
+        source=source,
+        delivery_identity=DeliveryIdentity.create(_binding(), "delivery:bootstrap-evidence"),
+        ingress=ingress,
+        operation_id="operation:bootstrap-evidence",
+        bootstrap_language_evidence=evidence,
+    )
+    assert accepted.observation.bootstrap_language_evidence == evidence
+    mutated = evidence.model_dump(mode="python")
+    mutated["language_declaration"] = "fr"
+    with pytest.raises(ValueError, match="language evidence digest"):
+        type(evidence).model_validate(mutated)
 
 
 def test_host_required_scopes_are_retained_for_evidence_only_admission() -> None:
@@ -495,7 +597,7 @@ class _InstalledCapabilityEntryPoint:
 
 
 class _UnavailableHostBoundary:
-    def load_verified_bootstrap_material(self):
+    def load_bootstrap_material_presentation(self):
         return None
 
 
@@ -508,7 +610,10 @@ def _service_with_capability(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        return ProviderMemoryService(memory_plane=memory_plane)
+        return ProviderMemoryService(
+            memory_plane=memory_plane,
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
 
 
 def test_default_provider_root_is_profile_unapproved_evidence_only() -> None:
@@ -523,9 +628,7 @@ def test_default_provider_root_is_profile_unapproved_evidence_only() -> None:
     assert result.transcript_ids == []
     assert result.candidate_ids == []
     assert result.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"
-    assert {record.source_kind for record in memory_plane.list_records()} == {
-        "semantic_ingestion_writer_admission"
-    }
+    assert tuple(memory_plane.list_records()) == ()
     with pytest.raises(ValueError, match="reserved composite"):
         service.sync_event(
             operation=ProviderOperation.CHAT_USER_TURN, content="ignored", operation_id="composite:v1:" + "0" * 64
@@ -745,7 +848,10 @@ def test_factory_loads_installed_host_capability_and_ignores_public_language_lab
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        service = build_provider_memory_service_from_env(memory_plane=MemoryPlaneService())
+        service = build_provider_memory_service_from_env(
+            memory_plane=MemoryPlaneService(),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
     host_ingress = AuthenticatedHostIngress(
         provider_identity="provider:test",
         principal_handle=object(),
@@ -1155,7 +1261,10 @@ def test_installed_capability_loader_works_through_hermes_and_filesystem_roots(t
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        filesystem = build_filesystem_provider(tmp_path / "filesystem-root")
+        filesystem = build_filesystem_provider(
+            tmp_path / "filesystem-root",
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
     filesystem_result = filesystem.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1180,7 +1289,10 @@ def test_normal_roots_discover_installed_host_capability_without_arguments(
         session_handle=object(),
         received_at=datetime.now(UTC),
     )
-    direct = ProviderMemoryService(memory_plane=MemoryPlaneService())
+    direct = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
     direct_result = direct.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1191,7 +1303,10 @@ def test_normal_roots_discover_installed_host_capability_without_arguments(
     assert direct_result.transcript_ids[0].startswith("semantic_ingestion:source:")
     assert direct_result.blocked_reasons["semantic_ingestion"] == "source_only"
 
-    factory = build_provider_memory_service_from_env(memory_plane=MemoryPlaneService())
+    factory = build_provider_memory_service_from_env(
+        memory_plane=MemoryPlaneService(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
     factory_result = factory.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1201,12 +1316,17 @@ def test_normal_roots_discover_installed_host_capability_without_arguments(
     )
     assert factory_result.blocked_reasons["semantic_ingestion"] == "source_only"
 
-    hermes = HermesMemoryProvider()
+    hermes = HermesMemoryProvider(
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier()
+    )
     assert hermes.sync_turn(
         "Atlas owner is Bob.", "Receipt is confirmed.", operation_id="installed-hermes",
         task_id="task:one", authenticated_host_ingress=host_ingress,
     ).blocked_reasons["semantic_ingestion"] == "source_only"
-    filesystem = build_filesystem_provider(tmp_path / "installed-filesystem")
+    filesystem = build_filesystem_provider(
+        tmp_path / "installed-filesystem",
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
     assert filesystem.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1417,7 +1537,8 @@ def test_bootstrap_release_and_corpus_fail_closed_without_runtime_state() -> Non
     artifacts = build_bootstrap_profile_artifacts(_complete_corpus_cases())
     anchor = build_bootstrap_trust_anchor(artifacts)
     metadata = BootstrapProfileReleaseMetadata(
-        coordinate=BOOTSTRAP_COORDINATE, bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest
+        coordinate=BOOTSTRAP_COORDINATE, bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
+        signed_release_digest="1" * 64,
     )
     assert verify_bootstrap_release(provider=DeterministicTestTrustRootProvider(anchor.trust_anchor_digest), metadata=metadata, anchor=anchor)
     assert not verify_bootstrap_release(provider=None, metadata=metadata, anchor=anchor)

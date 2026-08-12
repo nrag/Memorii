@@ -8,19 +8,19 @@ python3.12 -I docs/design/semantic_ingestion/traceability_golden_vectors/check_c
   --registry docs/design/semantic_ingestion/traceability_registry/registry-v1.json \
   --authority docs/design/semantic_ingestion/traceability_golden_vectors/ctv-binding-authority-v2.json \
   --validator docs/design/semantic_ingestion/traceability_golden_vectors/validate_ctv_binding_authority_v2.py \
-  --expected-design-sha256 7391e4f0ee09888ad6ea15d074b6fc349477c6a661a56c41d174e32cde4a5e80 \
+  --expected-design-sha256 786c9f22c33db76bb16518cfa6da57ae95084b126e36d6462d6cd122d75fa17e \
   --expected-registry-sha256 8c5ad6e6260c793472ddbc2df8637230fbb5d5b28405b0b558ac4491c945d37e \
-  --expected-authority-sha256 29dc9aa8faa36387f5a18918f6feb4b39c02cdb4abcd02d9ed35cf8d1d690254 \
-  --expected-validator-sha256 826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e \
+  --expected-authority-sha256 fe5778f0518f198ebe44e239460a8fac2a747cac58c7c94c0b3dfb148fae1ab2 \
+  --expected-validator-sha256 317133f2e92ad8032968314b3f16ff1b08b031c93c0ebcd3bbd789a876de5d6d \
   --expected-checker-sha256 e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732
 ```
 
 The gate requires architecture SHA-256
-`7391e4f0ee09888ad6ea15d074b6fc349477c6a661a56c41d174e32cde4a5e80`,
+`786c9f22c33db76bb16518cfa6da57ae95084b126e36d6462d6cd122d75fa17e`,
 authority SHA-256
-`29dc9aa8faa36387f5a18918f6feb4b39c02cdb4abcd02d9ed35cf8d1d690254`,
+`fe5778f0518f198ebe44e239460a8fac2a747cac58c7c94c0b3dfb148fae1ab2`,
 validator SHA-256
-`826541e7864583bbe3c32e3f153c008f07a881f33d38861237dfac80d9f3657e`,
+`317133f2e92ad8032968314b3f16ff1b08b031c93c0ebcd3bbd789a876de5d6d`,
 hermetic gate SHA-256
 `e2c35870a99e587f34cbffc701f42587520ee015009cd51647367da56716c732`,
 exactly 56 schemas, exactly 249 enum rows, and profile digest

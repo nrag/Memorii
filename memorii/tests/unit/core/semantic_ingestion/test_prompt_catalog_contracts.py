@@ -71,6 +71,8 @@ def _request() -> TextPreparationRequest:
             text="Clean-room source.",
             source_type=SourceType.USER,
             timestamp=datetime(2026, 8, 5, tzinfo=UTC),
+            source_digest=sha256(b"clean-room-preparation").hexdigest(),
+            delivery_key_digest=sha256(b"clean-room-delivery").hexdigest(),
         ),
         policy=_policy(),
     )

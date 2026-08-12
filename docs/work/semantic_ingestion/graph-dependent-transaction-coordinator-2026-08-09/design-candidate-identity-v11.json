@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_replay_replan_finalization",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "d36afb1bdbefd3e55387371e638e0709d8c0d36d10e82027b8323785c63c7850",
+  "review_scope": [
+    "typed normalization replay authority",
+    "native V3 replan and reuse closure",
+    "current repository and terminal authorization",
+    "post-attempt durable retry and finalization"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "4e519cdd235905cd6677a2e959e4c78f9ffbf3ae35b98be1d7bb73f94162a644",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "51a242f4e888fafa532ca1d5f8239f5e92fbc8a5221b03a5774183469c302b5b",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "1847e8dd5e4eba92cf3c98785c3008a7cb3ad6ead5f9d0ae8509faa5d4a8cbf6",
+    "docs/work/semantic_ingestion/source-normalization-authority-bundle-2026-08-10/design.plan.md": "05fa22accd930fa91d6e2cbfb1c5b346dbd144074238aba314ed4120dd15297b"
+  },
+  "checks": [
+    "git diff --check",
+    "binding JSON parse",
+    "stale scalar/noncommit symbol scan"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

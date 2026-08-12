@@ -19,6 +19,14 @@ dependencies = [
 local = [
   "openai>=1.0",
   "pytest>=8.0",
+  "numpy>=1.26,<2",
+  "stanza==1.14.0",
+  "spacy==3.8.14",
+  "torch==2.2.2",
+  "spacy-curated-transformers==0.3.1",
+  "curated-transformers==0.1.1",
+  "curated-tokenizers==0.0.9",
+  "en-core-web-trf @ https://github.com/explosion/spacy-models/releases/download/en_core_web_trf-3.8.0/en_core_web_trf-3.8.0-py3-none-any.whl#sha256=272a31e9d8530d1e075351d30a462d7e80e31da23574f1b274e200f3fff35bf5",
 ]
 live = [
   "openai>=1.0",
@@ -42,7 +50,7 @@ prod = [
 include-package-data = true
 
 [tool.setuptools.package-data]
-memorii = ["core/benchmark/fixture_sets/*.json", "prompts/**/*.yaml"]
+memorii = ["core/benchmark/fixture_sets/*.json", "core/semantic_ingestion/resources/*.json", "prompts/**/*.yaml"]
 
 [tool.setuptools.packages.find]
 where = ["."]

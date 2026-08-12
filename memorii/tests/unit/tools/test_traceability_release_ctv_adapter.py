@@ -22,7 +22,7 @@ def _binding(schema_id: str) -> CanonicalTypedValueProfileBinding:
         profile_digest="9dc8b3d01e3f78ed6a11c7668cbb576b09f48ddf107c5efe441bb8bad234fd7f",
         schema_id=schema_id,
         schema_version=1,
-        binding_digest="2e1ba193b6fac94c03598d7c27489f5fa69e48c5a052072124acb398adfd8ce2",
+        binding_digest="6481447738cc6cacc82564f5506181aa9c494c7bec1ae8d9f6fd0e5aeaec1b5c",
     )
 
 

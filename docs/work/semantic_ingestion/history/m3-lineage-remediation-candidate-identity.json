@@ -1,0 +1,91 @@
+{
+  "format": "memorii.dirty-candidate-identity.v1",
+  "created": "2026-08-08",
+  "base_commit": "bdc7dc9",
+  "head_commit": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty-local",
+  "candidate_scope": "semantic-ingestion lineage-remediation safety correction",
+  "candidate_freeze": {
+    "state": "frozen-for-read-only-design-readiness-audit",
+    "statement": "No writer may alter this partial safety-remediation surface until the read-only design-readiness audit is reconciled or the coordinator explicitly unfreezes it. This is not an acceptance candidate: the production Step-1 source ingestor, admitted-record/governance/projection mapping, and explicit router/resource authority remain incomplete."
+  },
+  "git_status": {
+    "command": "git status --porcelain=v1 -z --untracked-files=all",
+    "entry_count": 21,
+    "sha256": "1a3a6492bc8ba30968687ada11ef7034e53d2054d06b1f797fa22cfcc567ffca",
+    "staged_entry_count": 0,
+    "untracked_entry_count": 1
+  },
+  "tracked_diff": {
+    "command": "git diff --binary",
+    "sha256": "ce5ad12147f416c49d20d0c6940ea83a509b3e11f2d6990cfd85a163c0b02fa2"
+  },
+  "staged_diff": {
+    "command": "git diff --cached --binary",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "remediation_paths": [
+    {"status": "D", "path": "docs/design/semantic_ingestion/sealed_source_lineage.md", "working_sha256": null},
+    {"status": "M", "path": "docs/work/semantic_ingestion/implementation.plan.md", "working_sha256": "8f574eba83ce96451ac066c61174f234f8b679a0bf7a1f501823fb7ddbcca754"},
+    {"status": "M", "path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md", "working_sha256": "b104f4455db7a7149a9d4c7680bbea2773d23e3d0baafeb3855395aee5b925eb"},
+    {"status": "M", "path": "docs/work/semantic_ingestion/resume.md", "working_sha256": "735fe045507aad19c992594b66bbbb41a7b2c79c3e91bd9801f2864e6c227e52"},
+    {"status": "M", "path": "memorii/memorii/core/memory_evolution/atomic_store.py", "working_sha256": "fd081f33ca28d4e632d392630d913d2fb750322f787a1a3b450948cedca445bc"},
+    {"status": "M", "path": "memorii/memorii/core/memory_evolution/semantic_analysis/policies.py", "working_sha256": "231512fd20ff6dabfa6e37d97828c84839121be6e63a1d60ebff2693985b47f3"},
+    {"status": "M", "path": "memorii/memorii/core/provider/ingestion.py", "working_sha256": "27adfe97106e607bf193263f564c936df21a182cf8adbaf0b677882f62382eb4"},
+    {"status": "M", "path": "memorii/memorii/core/semantic_ingestion/__init__.py", "working_sha256": "35f2e98f57fbcc95d2004a8c16529e373c3e64600857e9b76de53a4cc8073b35"},
+    {"status": "M", "path": "memorii/memorii/core/semantic_ingestion/capability.py", "working_sha256": "a1b0459192d4acda7940d9d20e7faf717f8023ecf6be7d124e3ba566ab7ff9d3"},
+    {"status": "M", "path": "memorii/memorii/core/semantic_ingestion/carriers.py", "working_sha256": "881a5c61aa40db5bfb2d743072ea7f4cd37d4449cf48514f7f233fa6e82ae60f"},
+    {"status": "M", "path": "memorii/memorii/core/semantic_ingestion/contracts.py", "working_sha256": "0af8571047f5ceca2ecf4e41572a961eca38fb35b629bc44505edbfd88b4663a"},
+    {"status": "M", "path": "memorii/memorii/core/semantic_ingestion/persistence.py", "working_sha256": "020df686c593ff5e97929d805e175d2995b9634a6ea66865774d5801aaa96be7"},
+    {"status": "M", "path": "memorii/memorii/core/semantic_ingestion/pipeline.py", "working_sha256": "2e23553bec8958dd73835db7f174c55b9a97c81dbd09218cdfe3950acdb06428"},
+    {"status": "??", "path": "memorii/memorii/core/semantic_ingestion/source_preparation.py", "working_sha256": "a2f9bb10392960fd4a3c3d09af5fc0a539a45a3c15f7377dea7c41177bd0af1a"},
+    {"status": "M", "path": "memorii/tests/unit/core/semantic_ingestion/clean_room_request_test_support.py", "working_sha256": "0aea1363be2a07cf4957941289c032436fd9ea2f3acce6dfdb67484d012687e5"},
+    {"status": "M", "path": "memorii/tests/unit/core/semantic_ingestion/semantic_terminal_test_support.py", "working_sha256": "6fdc6ba0ef515091b11e6173d1077c2abc7aa7d11f7dd453de478cc7c1191154"},
+    {"status": "M", "path": "memorii/tests/unit/core/semantic_ingestion/test_execution_lineage_models.py", "working_sha256": "c00c649d3858962a91611744cfd8b7c79c981cbb5abdb74aff00b2697a55e8b8"},
+    {"status": "M", "path": "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py", "working_sha256": "eb0d976b4f01cf56371b0ea3a20115cd3be2c7c0274529b293231d93b25d6ee4"},
+    {"status": "M", "path": "memorii/tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py", "working_sha256": "13c4e989ac1947b1f51a3762057dceb3ec6725bd3a7cf1bb67017938f74e5b3e"},
+    {"status": "M", "path": "memorii/tests/unit/core/semantic_ingestion/test_slice_b_policy_authorities.py", "working_sha256": "3d64a0940050c138c9c8f9588ba6aab78f404571bdf3ff60c0b42cb2e7d8d150"}
+  ],
+  "identity_artifact": {
+    "path": "docs/work/semantic_ingestion/history/m3-lineage-remediation-candidate-identity.json",
+    "state": "untracked",
+    "self_excluded_from_remediation_paths": true
+  },
+  "environment": {
+    "working_directory": "/Users/nandaraghunathan/Code/Memorii/Memorii",
+    "python": ".venv/bin/python (Python 3.12.13)",
+    "ruff": ".venv/bin/ruff (0.15.21)"
+  },
+  "evidence": [
+    {
+      "command": ".venv/bin/python -m py_compile memorii/memorii/core/memory_evolution/atomic_store.py memorii/memorii/core/memory_evolution/semantic_analysis/policies.py memorii/memorii/core/semantic_ingestion/carriers.py memorii/memorii/core/semantic_ingestion/contracts.py memorii/memorii/core/semantic_ingestion/persistence.py memorii/memorii/core/semantic_ingestion/pipeline.py memorii/tests/unit/core/semantic_ingestion/clean_room_request_test_support.py memorii/tests/unit/core/semantic_ingestion/semantic_terminal_test_support.py memorii/tests/unit/core/semantic_ingestion/test_execution_lineage_models.py memorii/tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py",
+      "result": "pass"
+    },
+    {
+      "command": "PYTHONPATH=memorii .venv/bin/ruff check memorii/memorii/core/memory_evolution/atomic_store.py memorii/memorii/core/memory_evolution/semantic_analysis/policies.py memorii/memorii/core/semantic_ingestion/carriers.py memorii/memorii/core/semantic_ingestion/contracts.py memorii/memorii/core/semantic_ingestion/persistence.py memorii/memorii/core/semantic_ingestion/pipeline.py memorii/tests/unit/core/semantic_ingestion/clean_room_request_test_support.py memorii/tests/unit/core/semantic_ingestion/semantic_terminal_test_support.py memorii/tests/unit/core/semantic_ingestion/test_execution_lineage_models.py memorii/tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py memorii/tests/unit/core/semantic_ingestion/test_slice_b_policy_authorities.py",
+      "result": "pass"
+    },
+    {
+      "command": "git diff --check",
+      "result": "pass"
+    },
+    {
+      "command": "PYTHONPATH=memorii .venv/bin/python -m py_compile memorii/memorii/core/memory_evolution/atomic_store.py memorii/memorii/core/semantic_ingestion/source_preparation.py memorii/memorii/core/semantic_ingestion/capability.py memorii/memorii/core/semantic_ingestion/pipeline.py memorii/memorii/core/provider/ingestion.py && PYTHONPATH=memorii .venv/bin/ruff check memorii/memorii/core/memory_evolution/atomic_store.py memorii/memorii/core/semantic_ingestion/source_preparation.py memorii/memorii/core/semantic_ingestion/capability.py memorii/memorii/core/semantic_ingestion/pipeline.py memorii/memorii/core/provider/ingestion.py",
+      "result": "pass (partial candidate static check)"
+    },
+    {
+      "command": "PYTHONPATH=memorii .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_slice_b_policy_authorities.py memorii/tests/unit/core/semantic_ingestion/test_source_group_plan_contracts.py memorii/tests/unit/core/semantic_ingestion/test_plan_lineage_contracts.py memorii/tests/unit/core/semantic_ingestion/test_semantic_pipeline.py -q",
+      "result": "historical: 76 passed in 15.89s"
+    },
+    {
+      "command": "PYTHONPATH=memorii:memorii/tests/unit/core/semantic_ingestion .venv/bin/python -m pytest memorii/tests/unit/core/semantic_ingestion/test_execution_lineage_models.py memorii/tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py::test_jsonl_terminal_wire_remains_legacy_and_excludes_m4_members_after_lost_ack memorii/tests/unit/core/semantic_ingestion/test_semantic_terminal_persistence.py::test_retry_and_lost_ack_are_byte_idempotent memorii/tests/unit/core/semantic_ingestion/test_slice_b_policy_authorities.py -q",
+      "result": "pass (focused selection; tool output buffered after 21 initial tests)"
+    }
+  ],
+  "limitations": [
+    "Local dirty-tree identity only; no hosted CI or clean-checkout claim.",
+    "The full terminal-persistence family was not re-run to completion in this remediation; focused JSONL wire/retry proof passed with UserWarning promoted to error.",
+    "M3 graph-plan repository implementation and its complete multi-group lineage proof remain open."
+    ,"This partial candidate is frozen only for a read-only design-readiness audit; it does not establish source-preparation implementation completeness or acceptance."
+  ]
+}

@@ -59,6 +59,7 @@ EXPECTED_GRAMMAR = {
 EXPECTED_PROTOCOL_CLASSES = {
     "AuthenticatedIngressContextResolver",
     "CapabilityBaselineApprovalVerifier",
+    "CurrentBootstrapReleaseVerifier",
     "DeploymentAuthorizationTrustStore",
     "DeploymentAuthorizationVerifier",
     "GraphObservationAuthorizer",
@@ -69,6 +70,10 @@ EXPECTED_STRENUM_CLASSES = {"SourceKind"}
 EXPECTED_UNREACHABLE_DEFAULT_NONE_FIELDS = {
     ("ActionTransitionRoleRequirement", "maximum_cardinality_override"),
     ("ActionTransitionRoleRequirement", "minimum_cardinality_override"),
+    ("AuthenticatedIngressContext", "language_declaration"),
+    ("AuthenticatedIngressContext", "semantic_egress_governance"),
+    ("AuthenticatedIngressContext", "semantic_source_authority"),
+    ("AuthenticatedIngressContext", "semantic_source_interval"),
     ("OracleEffectRoleCardinality", "maximum_cardinality"),
 }
 EXPECTED_GENERATION_MEMBER_DISCRIMINATORS = (
@@ -670,6 +675,41 @@ def parse_field_call(node: ast.Call) -> dict[str, Any]:
     return {"constraints": constraints, "default": default}
 
 
+def parse_literal_default(node: ast.expr) -> dict[str, Any]:
+    """Normalize a direct scalar default exactly like ``Field(default=...)``."""
+    try:
+        value = ast.literal_eval(node)
+    except ValueError as error:
+        raise ValueError("model field default must be a canonical literal scalar") from error
+    if value is not None and not isinstance(value, (str, bool, int)):
+        raise ValueError("model field default must be a canonical literal scalar")
+    if isinstance(value, float) or isinstance(value, int) and isinstance(value, bool):
+        raise ValueError("model field default must be a canonical literal scalar")
+    return {"constraints": {}, "default": {"kind": "literal", "value": value}}
+
+
+def is_frozen_forbid_model_config(node: ast.stmt) -> bool:
+    if not (
+        isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+        and node.targets[0].id == "model_config"
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name)
+        and node.value.func.id == "ConfigDict"
+        and not node.value.args
+    ):
+        return False
+    keywords = {keyword.arg: keyword.value for keyword in node.value.keywords}
+    return (
+        set(keywords) == {"extra", "frozen"}
+        and isinstance(keywords["extra"], ast.Constant)
+        and keywords["extra"].value == "forbid"
+        and isinstance(keywords["frozen"], ast.Constant)
+        and keywords["frozen"].value is True
+    )
+
+
 def validate_protocol_method(node: ast.FunctionDef) -> None:
     if (
         node.decorator_list
@@ -720,6 +760,8 @@ def validate_class_body(node: ast.ClassDef) -> str:
                 raise ValueError(f"{node.name}: StrEnum body must be string literals")
         return "strenum"
     for child in node.body:
+        if is_frozen_forbid_model_config(child):
+            continue
         if (
             not isinstance(child, ast.AnnAssign)
             or not isinstance(child.target, ast.Name)
@@ -730,9 +772,10 @@ def validate_class_body(node: ast.ClassDef) -> str:
             )
         validate_type_expression(child.annotation)
         if child.value is not None:
-            if not isinstance(child.value, ast.Call):
-                raise ValueError(f"{node.name}.{child.target.id}: unsupported default")
-            parse_field_call(child.value)
+            if isinstance(child.value, ast.Call):
+                parse_field_call(child.value)
+            else:
+                parse_literal_default(child.value)
     return "model"
 
 
@@ -1000,9 +1043,9 @@ class Compiler:
     def field_policy(self, field: ast.AnnAssign) -> dict[str, Any]:
         if field.value is None:
             return {"constraints": {}, "default": {"kind": "required"}}
-        if not isinstance(field.value, ast.Call):
-            raise ValueError("unsupported model field default")
-        return parse_field_call(field.value)
+        if isinstance(field.value, ast.Call):
+            return parse_field_call(field.value)
+        return parse_literal_default(field.value)
 
     def normalize(
         self,

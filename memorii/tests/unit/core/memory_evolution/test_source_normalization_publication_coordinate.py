@@ -55,7 +55,9 @@ def _hand_ctv(value: object) -> bytes:
 
 def _coordinate() -> SourceNormalizationPublicationCoordinate:
     return SourceNormalizationPublicationCoordinate.create(
-        operation_fence_binding=_fence(), expected_current_artifact_generation=41
+        operation_fence_binding=_fence(),
+        preparation_fingerprint="a" * 64,
+        expected_current_artifact_generation=41,
     )
 
 
@@ -95,6 +97,7 @@ def test_coordinate_has_a_hand_authored_ctv_digest_vector() -> None:
     coordinate = _coordinate()
     body = {
         "operation_fence_binding": coordinate.operation_fence_binding.model_dump(mode="python"),
+        "preparation_fingerprint": coordinate.preparation_fingerprint,
         "expected_current_artifact_generation": 41,
         "next_publication_generation": 42,
     }
@@ -127,7 +130,9 @@ def test_coordinate_rejects_each_mutated_declared_field(field: str, value: objec
 def test_coordinate_create_rejects_invalid_expected_generation(generation: object) -> None:
     with pytest.raises(ValueError):
         SourceNormalizationPublicationCoordinate.create(
-            operation_fence_binding=_fence(), expected_current_artifact_generation=generation  # type: ignore[arg-type]
+            operation_fence_binding=_fence(),
+            preparation_fingerprint="a" * 64,
+            expected_current_artifact_generation=generation,  # type: ignore[arg-type]
         )
 
 

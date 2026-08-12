@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, cast
@@ -37,6 +38,8 @@ from memorii.core.memory_evolution.atomic_store import (
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapProfileVerificationError,
+    HostBootstrapCapability,
+    HostBootstrapMaterialVerifier,
     InstalledHostBootstrapCapabilityProvider,
     VerifiedBootstrapProfile,
     verify_bootstrap_profile,
@@ -128,10 +131,15 @@ from memorii.core.provider.tool_schemas import provider_tool_schemas, provider_t
 from memorii.core.provider.tools import ProviderToolCallResult
 from memorii.core.provider.work_state_projection import WorkStateMemoryProjector
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
+from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
+    BuiltInLocalHostSemanticIngestionCapability,
     ConflictClarificationSemanticPipelineAdapter,
     HostSemanticIngestionRuntimeBuilder,
+)
+from memorii.core.semantic_ingestion.source_normalization_host import (
+    SourceNormalizationHostBundleBuilder,
 )
 from memorii.core.solver.frontier import SolverFrontierPlanner
 from memorii.core.work_state.models import WorkStateKind, WorkStateRecord, WorkStateStatus
@@ -166,6 +174,38 @@ class ProviderMemoryService:
 
     _DEFAULT_DECISION_STATE_SERVICE = object()
     _DEFAULT_PROMOTION_DECISION_PROVIDER = object()
+    _SCENARIO_TEST_CONSTRUCTION = object()
+
+    @classmethod
+    def _from_scenario_test_host(
+        cls,
+        *,
+        host_bootstrap_capability: HostBootstrapCapability,
+        host_bootstrap_material_verifier: HostBootstrapMaterialVerifier,
+        bootstrap_graph_host_bundle_builder: BootstrapGraphHostBundleBuilder | None = None,
+        **kwargs: object,
+    ) -> ProviderMemoryService:
+        """Private fixture composition path; ordinary construction is production-only."""
+        if bootstrap_graph_host_bundle_builder is not None:
+            if not isinstance(
+                host_bootstrap_capability,
+                BuiltInLocalHostSemanticIngestionCapability,
+            ):
+                raise ValueError(
+                    "scenario graph host bundle requires the built-in local capability"
+                )
+            host_bootstrap_capability = replace(
+                host_bootstrap_capability,
+                bootstrap_graph_host_bundle_builder=(
+                    bootstrap_graph_host_bundle_builder
+                ),
+            )
+        return cls(
+            host_bootstrap_capability=host_bootstrap_capability,
+            host_bootstrap_material_verifier=host_bootstrap_material_verifier,
+            _host_construction=cls._SCENARIO_TEST_CONSTRUCTION,
+            **kwargs,
+        )
 
     def __init__(
         self,
@@ -195,19 +235,74 @@ class ProviderMemoryService:
         semantic_integrity_root: Path | None = None,
         identity_lineage_audit_reader: ScopedIdentityLineageAuditReader | None = None,
         identity_lineage_audit_authorizer: IdentityLineageAuditAuthorizer | None = None,
+        host_bootstrap_capability: HostBootstrapCapability | None = None,
+        host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
+        source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+        _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
-        capability_provider = InstalledHostBootstrapCapabilityProvider()
-        try:
-            host_bootstrap_capability = capability_provider.load()
-        except (ImportError, OSError, RuntimeError, TypeError, ValueError):
-            host_bootstrap_capability = None
-        verified_material = None
-        if host_bootstrap_capability is not None:
+        if host_bootstrap_capability is None:
+            capability_provider = InstalledHostBootstrapCapabilityProvider()
             try:
-                verified_material = host_bootstrap_capability.load_verified_bootstrap_material()
+                host_bootstrap_capability = capability_provider.load()
+            except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+                host_bootstrap_capability = None
+        if source_normalization_host_bundle_builder is not None:
+            if not isinstance(host_bootstrap_capability, BuiltInLocalHostSemanticIngestionCapability):
+                raise ValueError("source normalization host bundle requires the built-in local host capability")
+            if host_bootstrap_capability.source_normalization_host_bundle_builder is not None:
+                raise ValueError("source normalization host bundle is already configured")
+            host_bootstrap_capability = replace(
+                host_bootstrap_capability,
+                source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+            )
+        if (
+            isinstance(
+                host_bootstrap_capability,
+                BuiltInLocalHostSemanticIngestionCapability,
+            )
+            and host_bootstrap_capability.bootstrap_graph_host_bundle_builder
+            is not None
+            and _host_construction is not self._SCENARIO_TEST_CONSTRUCTION
+        ):
+            raise ValueError(
+                "bootstrap graph host injection is restricted to the scenario-test harness"
+            )
+        verified_material = None
+        if (
+            host_bootstrap_capability is not None
+            and host_bootstrap_material_verifier is not None
+        ):
+            try:
+                presentation = host_bootstrap_capability.load_bootstrap_material_presentation()
+                verified_material = (
+                    host_bootstrap_material_verifier.verify(
+                        presentation=presentation,
+                        required_trust_domain=(
+                            "scenario_test"
+                            if _host_construction is self._SCENARIO_TEST_CONSTRUCTION
+                            else "production"
+                        ),
+                        server_time=(now_provider or (lambda: datetime.now(UTC)))(),
+                    )
+                    if presentation is not None
+                    else None
+                )
             except (ImportError, OSError, RuntimeError, TypeError, ValueError):
                 verified_material = None
+        required_domain = (
+            "scenario_test"
+            if _host_construction is self._SCENARIO_TEST_CONSTRUCTION
+            else "production"
+        )
+        if (
+            verified_material is not None
+            and (
+                verified_material.trust_domain != required_domain
+                or verified_material.release_evidence.trust_domain != required_domain
+            )
+        ):
+            verified_material = None
         self._authenticated_ingress_resolver = None
         self._bootstrap_profile: VerifiedBootstrapProfile | None = None
         self._bootstrap_unavailable_reason = "invalid_config"
@@ -247,15 +342,57 @@ class ProviderMemoryService:
             )
         if authenticated_ingress_resolver is not None:
             self._authenticated_ingress_resolver = authenticated_ingress_resolver
+        if semantic_integrity_lifecycle is None and semantic_integrity_root is not None:
+            integrity_repository = FileConflictIntegrityRepository(
+                semantic_integrity_root / "integrity.jsonl",
+                repository_id="semantic_ingestion",
+                snapshot_provider=lambda: self._semantic_atomic_store.semantic_integrity_snapshot(),
+                clean_replay_verifier=(
+                    lambda repaired, retained, authority: self._semantic_atomic_store.prepare_semantic_clean_recovery(
+                        repaired,
+                        retained,
+                        authority,
+                    )
+                ),
+                now_provider=self._now_provider,
+            )
+            semantic_integrity_lifecycle = PrivilegedSemanticIntegrityLifecycle(
+                integrity_repository,
+                attention_repository=(
+                    conflict_attention_repository
+                    if isinstance(conflict_attention_repository, FileConflictAttentionRepository)
+                    else None
+                ),
+                clean_recovery_request_retainer=(
+                    lambda request: self._semantic_atomic_store.retain_semantic_clean_recovery_request(request)
+                ),
+                clean_recovery_activator=(
+                    lambda request: self._semantic_atomic_store.activate_semantic_clean_recovery(request)
+                ),
+                clean_recovery_reconciler=(
+                    lambda released: self._semantic_atomic_store.reconcile_semantic_clean_recovery(released)
+                ),
+            )
         semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None
         runtime_builder = cast(HostSemanticIngestionRuntimeBuilder | None, host_bootstrap_capability)
         if self._bootstrap_profile is not None and runtime_builder is not None and hasattr(
             runtime_builder, "build_semantic_ingestion_runtime"
         ):
             try:
-                semantic_runtime = runtime_builder.build_semantic_ingestion_runtime(
-                    memory_plane=self._memory_plane, now_provider=self._now_provider,
-                )
+                if isinstance(runtime_builder, BuiltInLocalHostSemanticIngestionCapability):
+                    semantic_runtime = runtime_builder.build_semantic_ingestion_runtime(
+                        memory_plane=self._memory_plane,
+                        now_provider=self._now_provider,
+                        bootstrap_profile=self._bootstrap_profile,
+                        verified_material=verified_material,
+                        semantic_integrity_lifecycle=semantic_integrity_lifecycle,
+                    )
+                else:
+                    semantic_runtime = runtime_builder.build_semantic_ingestion_runtime(
+                        memory_plane=self._memory_plane,
+                        now_provider=self._now_provider,
+                        bootstrap_profile=self._bootstrap_profile,
+                    )
                 if semantic_runtime is not None:
                     with suppress(OSError):
                         semantic_runtime.validate(
@@ -296,57 +433,20 @@ class ProviderMemoryService:
             self._semantic_writer_admission = SemanticWriterAdmissionStore(
                 self._memory_plane, bounded_preplanning_ownership_manifest(), now_provider=self._now_provider
             )
-            self._semantic_writer_admission.create_initial_evidence_only(
-                admission_id="memorii-provider-semantic-writer-v1",
-                writer_implementation_fingerprint="memorii-provider-semantic-evidence-only-v1",
-                graph_schema_fingerprint="memorii-semantic-graph-preactivation-v1",
-            )
+            # An unauthenticated host presentation must not cause a persistent
+            # semantic control write merely by constructing a provider root.
+            if self._bootstrap_profile is not None:
+                self._semantic_writer_admission.create_initial_evidence_only(
+                    admission_id="memorii-provider-semantic-writer-v1",
+                    writer_implementation_fingerprint="memorii-provider-semantic-evidence-only-v1",
+                    graph_schema_fingerprint="memorii-semantic-graph-preactivation-v1",
+                )
         else:
             # Active semantic composition is explicit: the host supplies the
             # already migrated/certified writer owner instead of a boolean
             # bypass that could silently activate graph writes.
             runtime_writer.current()
             self._semantic_writer_admission = runtime_writer
-        if semantic_integrity_lifecycle is None and semantic_integrity_root is not None:
-            integrity_repository = FileConflictIntegrityRepository(
-                semantic_integrity_root / "integrity.jsonl",
-                repository_id="semantic_ingestion",
-                snapshot_provider=lambda: self._semantic_atomic_store.semantic_integrity_snapshot(),
-                clean_replay_verifier=(
-                    lambda repaired, retained, authority: self._semantic_atomic_store.prepare_semantic_clean_recovery(
-                        repaired,
-                        retained,
-                        authority,
-                    )
-                ),
-                now_provider=self._now_provider,
-            )
-            semantic_integrity_lifecycle = PrivilegedSemanticIntegrityLifecycle(
-                integrity_repository,
-                attention_repository=(
-                    conflict_attention_repository
-                    if isinstance(
-                        conflict_attention_repository,
-                        FileConflictAttentionRepository,
-                    )
-                    else None
-                ),
-                clean_recovery_request_retainer=(
-                    lambda request: self._semantic_atomic_store.retain_semantic_clean_recovery_request(
-                        request
-                    )
-                ),
-                clean_recovery_activator=(
-                    lambda request: self._semantic_atomic_store.activate_semantic_clean_recovery(
-                        request
-                    )
-                ),
-                clean_recovery_reconciler=(
-                    lambda released: self._semantic_atomic_store.reconcile_semantic_clean_recovery(
-                        released
-                    )
-                ),
-            )
         self._semantic_integrity_lifecycle = semantic_integrity_lifecycle
         integrity_attention_publisher: Callable[[str, datetime], None] | None = None
         if isinstance(conflict_attention_repository, FileConflictAttentionRepository):

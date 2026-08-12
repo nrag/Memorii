@@ -1,0 +1,31 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_persisted_semantic_reduction_authority",
+  "semantic_predecessor": "design-candidate-identity-v52.json",
+  "semantic_change_from_predecessor": "add a normalization-owned same-generation persisted and reloaded complete typed semantic-reduction input authority for graph compiler consumption without pipeline rerun ambient lookup or fabrication",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "809f3d8cc9fb1f022b2c3c6e653db2cb243a790c01eebb08a28ec6c0f32366b5",
+  "review_scope": [
+    "complete typed per-operation semantic-reduction authority input",
+    "normalization atomic member generation and authenticated store reload ownership",
+    "graph authority request compiler plan checkpoint and attempt joins",
+    "pipeline rerun ambient lookup caller authority and fabrication prohibition",
+    "four-root limits absence migration rollback reopen and mutation proof obligations"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "859ffc5fadc3cdaa1855a3a6fd53173da64af2d19f3a58aaaabd61e3bb4e352e",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "d3498c425a5c497cca160cfe87c6df153b1632d1c97e7444770f60e8dd5da2a8",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "3258b6d91ff90d272290570e4fa45889cee75441a324ce780584d58f12786fbd"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "semantic authority owner schema CTV generation reload and limit anchors",
+    "request compiler checkpoint root migration and mutation anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

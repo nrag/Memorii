@@ -1,0 +1,25 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_typed_canonical_source_terminal_outcome",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "f16b169bdf8ed3c6eba28af38b7a9cc1156ef3f0447a885bb846dce7ff42b270",
+  "review_scope": [
+    "complete typed canonical source terminal outcome input",
+    "source result and record digest derivation",
+    "governance message delivery scope and group joins"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "7bad832813b9dadd55a8d720fa51bf830d893b7f2885268cefa620ad77c0e471",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "8db6dce52e271caf9475f234b3c1dce3b10aaa8301163c52a6314daf70fe8adf",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "d295a7cdc47dd73f573d77f899f985413c990b19635741361aa8784cdb4f3dde"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from memorii.core.memory_evolution.bootstrap_profile import (
     BOOTSTRAP_COORDINATE,
+    BootstrapAuthenticatedLanguageEvidence,
     BootstrapProfileOutcome,
     BootstrapUnavailableReason,
     GovernedSourceAdmissionFact,
@@ -33,6 +34,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     RequiredOutcomeScopeSet,
     encode_typed_value,
 )
+from memorii.core.memory_evolution.models import SourceObservation
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import MemoryPlaneRevisionConflictError, RecordAbsentPrecondition
@@ -66,6 +68,7 @@ class SourceAdmissionAccepted(BaseModel):
     required_outcome_scopes: RequiredOutcomeScopeSet
     admission_index_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     operation_fence_binding: OperationFenceBinding
+    observation: SourceObservation
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -97,6 +100,7 @@ class GovernedSourceAdmissionService:
         matched_corpus_case_id: str | None = None,
         selection_digest: str | None = None,
         verification_digest: str | None = None,
+        bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None = None,
     ) -> SourceAdmissionAccepted:
         if self._memory_plane.get_record("semantic_ingestion:writer_admission:current") is not None:
             raise ValueError("governed source admission must use the semantic atomic store")
@@ -199,6 +203,12 @@ class GovernedSourceAdmissionService:
             required_outcome_scopes=required,
             admission_index_digest=_index_digest(index),
             operation_fence_binding=operation_fence,
+            observation=_admitted_observation(
+                source=source,
+                source_digest=source_digest,
+                delivery_identity=delivery_identity,
+                bootstrap_language_evidence=bootstrap_language_evidence,
+            ),
         )
 
     def prepare_atomic(
@@ -215,6 +225,7 @@ class GovernedSourceAdmissionService:
         matched_corpus_case_id: str | None = None,
         selection_digest: str | None = None,
         verification_digest: str | None = None,
+        bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None = None,
     ) -> PreparedSourceAdmission:
         """Prepare, but do not publish, the governed-source admission evidence for writer-safe preplanning atomic admission."""
         _validate_governed_source(source)
@@ -259,6 +270,12 @@ class GovernedSourceAdmissionService:
             source_id=source.memory_id, source_digest=source_digest, delivery_identity=delivery_identity,
             required_outcome_scopes=required, admission_index_digest=_index_digest(index),
             operation_fence_binding=operation_fence,
+            observation=_admitted_observation(
+                source=source,
+                source_digest=source_digest,
+                delivery_identity=delivery_identity,
+                bootstrap_language_evidence=bootstrap_language_evidence,
+            ),
         )
         return PreparedSourceAdmission(accepted=accepted, records=(source, index, selection, verification, outcome))
 
@@ -285,6 +302,11 @@ class GovernedSourceAdmissionService:
             required_outcome_scopes=required,
             admission_index_digest=_index_digest(index),
             operation_fence_binding=operation_fence,
+            observation=_admitted_observation(
+                source=source,
+                source_digest=source_digest,
+                delivery_identity=delivery_identity,
+            ),
         )
 
     def lookup(
@@ -449,7 +471,53 @@ class GovernedSourceAdmissionService:
 
 
 def source_admission_source_digest(source: CanonicalMemoryRecord) -> str:
+    material = source.content.get("source_admission")
+    if isinstance(material, dict) and "step_one_material_ctv" in material:
+        from memorii.core.memory_evolution.source_admission import step_one_source_digest
+
+        key = material.get("delivery_key_digest")
+        if not isinstance(key, str):
+            raise ValueError("Step-1 source record has no delivery key")
+        return step_one_source_digest(
+            source_id=source.memory_id, delivery_key_digest=key, original_text=source.text,
+        )
     return sha256(source_admission_source_bytes(source)).hexdigest()
+
+
+def _admitted_observation(
+    *,
+    source: CanonicalMemoryRecord,
+    source_digest: str,
+    delivery_identity: DeliveryIdentity,
+    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None = None,
+) -> SourceObservation:
+    """Project the immutable retained record without recomputing its identity."""
+
+    from memorii.core.memory_evolution.record_projection import (
+        source_observation_from_record,
+        source_type_from_record,
+    )
+
+    if isinstance(source.content.get("source_admission"), dict) and "step_one_material_ctv" in source.content["source_admission"]:
+        observation = source_observation_from_record(source)
+        if observation.source_digest != source_digest or observation.delivery_key_digest != delivery_identity.delivery_key_digest:
+            raise ValueError("Step-1 admission observation does not bind its delivery")
+        return observation.model_copy(update={"bootstrap_language_evidence": bootstrap_language_evidence})
+
+    return SourceObservation(
+        source_id=source.memory_id,
+        text=source.text,
+        source_type=source_type_from_record(source),
+        timestamp=source.timestamp,
+        domain=source.domain,
+        session_id=source.session_id,
+        task_id=source.task_id,
+        user_id=source.user_id,
+        language=source.language,
+        source_digest=source_digest,
+        delivery_key_digest=delivery_identity.delivery_key_digest,
+        bootstrap_language_evidence=bootstrap_language_evidence,
+    )
 
 
 def source_admission_source_bytes(source: CanonicalMemoryRecord) -> bytes:

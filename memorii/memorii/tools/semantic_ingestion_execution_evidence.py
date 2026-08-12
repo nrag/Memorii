@@ -497,7 +497,7 @@ _CURRENT_RELEASE_MEMBER_BINDINGS = {
     ),
     "release": (
         "SemanticIngestionTraceabilityReleaseBody.v1", 1,
-        "2e1ba193b6fac94c03598d7c27489f5fa69e48c5a052072124acb398adfd8ce2",
+        "6481447738cc6cacc82564f5506181aa9c494c7bec1ae8d9f6fd0e5aeaec1b5c",
     ),
     "release_history": (
         "TraceabilityReleaseHistoryBody.v1", 1,

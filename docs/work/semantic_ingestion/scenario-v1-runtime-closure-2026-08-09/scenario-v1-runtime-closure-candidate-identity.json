@@ -1,0 +1,35 @@
+{
+  "format": "memorii.design-candidate-identity.v1",
+  "created": "2026-08-09",
+  "base_commit": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "head_commit": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "scoped-dirty-local",
+  "candidate_freeze": {
+    "state": "review-ready-design-delta",
+    "statement": "This identity freezes only the V1 four-scenario corpus/analyzer/built-in-host-runner design delta. It does not approve implementation, artifact issuance, deployment, or unrelated dirty-tree changes."
+  },
+  "canonical_identities": {
+    "workplan_path": "docs/work/semantic_ingestion/scenario-v1-runtime-closure-2026-08-09/design.plan.md",
+    "workplan_sha256": "2f77281e331d4ed77693ea6836d79bd09c87309967f440ed10689f1b7fe22675",
+    "architecture_path": "docs/design/semantic_ingestion_architecture.md",
+    "architecture_sha256": "786c9f22c33db76bb16518cfa6da57ae95084b126e36d6462d6cd122d75fa17e",
+    "scenario_authority_path": "docs/design/semantic_ingestion/scenario_first_fixture_authority.md",
+    "scenario_authority_sha256": "cfe5e0742b7a2072527eeb9efc452f695146840e0cc93e3d15911d406324d5e5",
+    "scenario_input_path": "docs/design/semantic_ingestion/traceability_golden_vectors/scenario-first-v1.json",
+    "scenario_input_sha256": "4cb5bfd804ac1d0639dc4e419b1a33f8ecea0666ffebc4c1407348d85f021dbe"
+  },
+  "review_scope": {
+    "included_paths": [
+      "docs/work/semantic_ingestion/scenario-v1-runtime-closure-2026-08-09/design.plan.md",
+      "docs/design/semantic_ingestion_architecture.md",
+      "docs/design/semantic_ingestion/scenario_first_fixture_authority.md",
+      "docs/design/semantic_ingestion/traceability_golden_vectors/scenario-first-v1.json"
+    ],
+    "exclusions": [
+      "this identity artifact is a pin, not a reviewed semantic input",
+      "all other dirty-tree changes",
+      "production implementation and tests",
+      "V1/CTV artifact generation, release issuance, deployment, and M4"
+    ]
+  }
+}

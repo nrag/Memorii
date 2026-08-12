@@ -12,12 +12,14 @@ from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
     _is_atomic_clarification_projection_write,
+    _is_bootstrap_graph_v3_epoch_transition_write,
     bounded_preplanning_ownership_manifest,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.semantic_control import (
     SEMANTIC_CONTROL_ID_PREFIXES,
     SEMANTIC_CONTROL_SOURCE_KINDS,
+    semantic_control_class,
 )
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import (
@@ -32,6 +34,69 @@ from memorii.domain.enums import (
     MemoryDomain,
     MemoryRecordVisibility,
 )
+
+
+def _bootstrap_graph_v3_epoch_transition_records() -> tuple[CanonicalMemoryRecord, ...]:
+    """The exact content join emitted by the dedicated graph epoch store."""
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    request_core_digest = sha256(b"graph-request-core").hexdigest()
+    epoch_digest = sha256(b"graph-epoch").hexdigest()
+    transition_digest = sha256(b"graph-transition").hexdigest()
+    epoch = {
+        "request_core_digest": request_core_digest,
+        "epoch_digest": epoch_digest,
+        "epoch": 0,
+    }
+
+    def record(*, kind: str, content: dict[str, object]) -> CanonicalMemoryRecord:
+        return CanonicalMemoryRecord(
+            memory_id=f"semantic_ingestion:bootstrap_graph_v3:{kind}",
+            domain=MemoryDomain.EXECUTION,
+            text="",
+            content=content,
+            status=CommitStatus.COMMITTED,
+            source_kind=f"semantic_ingestion_bootstrap_graph_v3_{kind}",
+            timestamp=timestamp,
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+
+    return (
+        record(
+            kind="epoch",
+            content={"semantic_ingestion_kind": "bootstrap_graph_v3_epoch", "epoch": epoch},
+        ),
+        record(
+            kind="epoch_head",
+            content={
+                "semantic_ingestion_kind": "bootstrap_graph_v3_epoch_head",
+                "request_core_digest": request_core_digest,
+                "epoch": 0,
+                "epoch_digest": epoch_digest,
+            },
+        ),
+        record(
+            kind="epoch_transition",
+            content={
+                "semantic_ingestion_kind": "bootstrap_graph_v3_epoch_transition",
+                "transition_digest": transition_digest,
+                "transition": {"transition_digest": transition_digest},
+                "epoch": epoch,
+            },
+        ),
+    )
+
+
+def test_bootstrap_graph_v3_epoch_transition_admits_exact_atomic_record_tuple() -> None:
+    records = _bootstrap_graph_v3_epoch_transition_records()
+
+    assert _is_bootstrap_graph_v3_epoch_transition_write(list(records), [])
+
+    bad_head = records[1].model_copy(
+        update={"content": records[1].content | {"epoch_digest": sha256(b"other").hexdigest()}}
+    )
+    assert not _is_bootstrap_graph_v3_epoch_transition_write(
+        [records[0], bad_head, records[2]], []
+    )
 
 
 def _clarification_terminal_pair(
@@ -417,3 +482,49 @@ def test_every_semantic_control_source_and_namespace_rejects_direct_cas(
         )
 
     assert backend.read_snapshot() == before
+
+
+@pytest.mark.parametrize(
+    ("memory_id", "source_kind"),
+    (
+        (
+            "semantic_ingestion:bootstrap-v3-recovery:" + ("a" * 64),
+            "semantic_ingestion_bootstrap_v3_recovery_index",
+        ),
+        (
+            "semantic_ingestion:source-normalization-recovery:" + ("b" * 64),
+            "semantic_ingestion_source_normalization_recovery_index",
+        ),
+    ),
+)
+def test_recovery_indices_are_classified_as_recovery_namespaces(
+    memory_id: str,
+    source_kind: str,
+) -> None:
+    record = CanonicalMemoryRecord(
+        memory_id=memory_id,
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={},
+        status=CommitStatus.COMMITTED,
+        source_kind=source_kind,
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+    assert semantic_control_class(record) == "recovery"
+
+
+def test_mismatched_bootstrap_recovery_namespace_stays_unknown() -> None:
+    record = CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:bootstrap-v3-recovery:" + ("c" * 64),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_handoff_marker",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+    assert semantic_control_class(record) == "unknown"

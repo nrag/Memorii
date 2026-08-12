@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta  # type: ignore[attr-defined]
 from hashlib import sha256
@@ -347,6 +347,7 @@ class AuthenticatedIngressContext(BaseModel):
     semantic_egress_governance: AuthenticatedSemanticEgressGovernance | None = None
     semantic_source_authority: AuthenticatedSemanticSourceAuthority | None = None
     semantic_source_interval: AuthenticatedSemanticSourceInterval | None = None
+    structured_source_envelope: AuthenticatedStructuredSourceEnvelope | None = None
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -374,6 +375,49 @@ class AuthenticatedIngressContext(BaseModel):
         }:
             raise ValueError("language evidence tuple is invalid")
         return self
+
+
+class AuthenticatedStructuredSourceEnvelope(BaseModel):
+    """Host-authenticated structured source bytes for one public delivery.
+
+    This is intentionally out-of-band from :class:`ProviderEvent`: public
+    event content may mirror these bytes but can neither create nor replace the
+    authenticated carrier.  The Step-1 normalizer parses the closed envelope
+    shape and requires its canonical bytes to match exactly.
+    """
+
+    event_id: str = Field(min_length=1)
+    operation: Literal["session_end", "pre_compress", "delegation_result"]
+    canonical_envelope_json: str = Field(min_length=1)
+    envelope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def validate_digest(self) -> AuthenticatedStructuredSourceEnvelope:
+        expected = _digest(
+            b"memorii.semantic-ingestion.authenticated-structured-source-envelope.v1",
+            self.event_id.encode("utf-8"),
+            self.operation.encode("utf-8"),
+            self.canonical_envelope_json.encode("utf-8"),
+        )
+        if self.envelope_digest != expected:
+            raise ValueError("authenticated structured source envelope digest mismatch")
+        return self
+
+    @classmethod
+    def create(
+        cls, *, event_id: str, operation: Literal["session_end", "pre_compress", "delegation_result"], canonical_envelope_json: str
+    ) -> AuthenticatedStructuredSourceEnvelope:
+        return cls(
+            event_id=event_id,
+            operation=operation,
+            canonical_envelope_json=canonical_envelope_json,
+            envelope_digest=_digest(
+                b"memorii.semantic-ingestion.authenticated-structured-source-envelope.v1",
+                event_id.encode("utf-8"), operation.encode("utf-8"), canonical_envelope_json.encode("utf-8"),
+            ),
+        )
 
 
 class AuthenticatedSemanticSourceAuthority(BaseModel):
@@ -547,6 +591,15 @@ class SemanticWriterCommitBinding(BaseModel):
     graph_schema_fingerprint: str = Field(min_length=1)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @property
+    def binding_digest(self) -> str:
+        """Return the canonical identity used by graph-dependent V3 joins."""
+
+        return _digest(
+            b"memorii.semantic-ingestion.semantic-writer-commit-binding.v1",
+            encode_typed_value(self.model_dump(mode="python")),
+        )
 
 
 class SemanticRecordOwnershipManifest(BaseModel):
@@ -752,7 +805,7 @@ def _normalized_typed_json(value: Any, *, check: Callable[[], None] | None = Non
             "$type": "frozenset" if isinstance(value, frozenset) else "set",
             "items": [item for _, item in items],
         }
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         entries = []
         for key in sorted(value, key=lambda item: _json(item)):
             if not isinstance(key, str):

@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_acyclic_membership_exact_prefix",
+  "semantic_predecessor": "design-candidate-identity-v71.json",
+  "semantic_change_from_predecessor": "break first-use compilation cycle with pre-compilation source-operation memberships, define exact cluster consumer relation and full preceding prefix folds, and authenticate authority closure before terminal lookup",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "64be56bfae0caaeef1d85b4d9ff1e9d0a5f67ff1f47504c888cfefba080eb324",
+  "review_scope": [
+    "acyclic pre-compilation source-operation membership CTV and persistence",
+    "compiled operation-plan reverse binding without forward plan-member reference",
+    "per-cluster producer plus all later consumer bijection to all references",
+    "full preceding membership prefix state fold and exact producer-record subset",
+    "embedded typed prefix proof target CTV with digest-only rejection",
+    "terminal complete authority authentication before request or recovery index access"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "ecf6a002250c932912e0adb69924a0b4b2151f75c21f2b8613aa90ddd5be230c",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "6a65988395fcd3284bc52aaa321ece5d3c0638e554d1d322218ab304bb775bf3",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "a457dbbd4662b44fd355fb710d7f646f07d9c7c0a6b12848cfe23b3216fab2be"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "single source-operation membership and prefix proof declarations",
+    "no active digest-only canonical prefix field",
+    "cluster relation prefix fold terminal pre-index mutation anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

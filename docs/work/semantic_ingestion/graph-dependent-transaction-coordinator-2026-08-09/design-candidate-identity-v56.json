@@ -1,0 +1,31 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_native_retained_carrier_reduction_authority",
+  "semantic_predecessor": "design-candidate-identity-v55.json",
+  "semantic_change_from_predecessor": "replace unowned generic semantic inputs with a fully native bootstrap reduction authority projected only from retained proposal lane interpretation identity and alignment carriers",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "527b3877e043ac67fba3f707acc62f0d16a78683763111255b6ae27750bf3309",
+  "review_scope": [
+    "native per-operation reduction input from retained bootstrap V3 carriers",
+    "SourceNormalizationExecutionOwner deterministic projection without new producer",
+    "BootstrapNativeSemanticReducerV3 snapshot bridge terminal and closure mapping",
+    "exact carrier joins preimages order limits persistence and compiler mapping",
+    "generic type obsolete rejection and five-operation-kind four-root tests"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "c030d60c11dcc62e043c08931fa2fee255dd47902a7f6ae9a9b9a3537c7bea7d",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "0ab0fba6e5990bd5488c9da2d644e5782e16cd3ef3398ce59809a9bc247357ed",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "e6a86a59bb4a4f437f150fa0f970dab10d0a5a7e37e7d37c6a2ae9888b98485d"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "exactly one active native semantic reduction authority declaration",
+    "native source projection reducer join limit and obsolete-type anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

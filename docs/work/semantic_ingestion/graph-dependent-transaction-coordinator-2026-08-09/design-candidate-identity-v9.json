@@ -1,0 +1,20 @@
+{
+  "artifact_kind": "graph_dependent_transaction_coordinator_design_candidate_identity",
+  "schema_version": 1,
+  "created_at": "2026-08-10",
+  "review_mode": "delta",
+  "git_head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "pre_identity_dirty_tree_status_sha256": "7b3eafd0355145a828a418cbeb5a0f3c55ddd5c20a538088b7f4bb111cdddd74",
+  "pre_identity_dirty_tree_binary_diff_sha256": "8b708c583bc9c9755a859a266eb4fc08547504d529aef998f41c8c8121e1ddcb",
+  "reviewed_artifacts": [
+    {"path": "docs/design/semantic_ingestion_architecture.md", "sha256": "8cc2052243b440cdb5443702e63e0f4ad3f454225504de7026961433f949986e"},
+    {"path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md", "sha256": "b28ddddfd24ed04e83c4aa9acb829b38f2a2a7feb6840ee2dbf6200330282674"},
+    {"path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json", "sha256": "3cba90adbcf1e694465bef18ecddd8536070fa42b0e56c6a177ee13087bc53c5"},
+    {"path": "docs/work/semantic_ingestion/terminal-persistence-performance-2026-08-09/testing.plan.md", "sha256": "cd031d4e89ee2c1936cb7193baeddaed76a7b0a67de9f1497f0165d01319bce9"}
+  ],
+  "parent_candidate": "design-candidate-identity-v8.json",
+  "remediated_findings": ["DREV-027"],
+  "scope": "DREV-027 CI producer-consumer ordering delta on otherwise approved v8 bounded design",
+  "candidate_status": "frozen_for_delta_review"
+}

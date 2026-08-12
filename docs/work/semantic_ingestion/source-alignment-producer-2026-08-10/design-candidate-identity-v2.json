@@ -1,0 +1,27 @@
+{
+  "artifact_kind": "source_alignment_producer_design_candidate_identity",
+  "schema_version": 1,
+  "created_at": "2026-08-10",
+  "git_head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "dirty_tree_status_sha256": "e82230e360a43a12649fbe9faca94777790f746163d047ce7509eacf6a7fb555",
+  "dirty_tree_binary_diff_sha256": "82856fc6c519699c3c3703432150e99b3a82d7e93f1ae3264976c7fb4454a0a0",
+  "parent_candidate": "design-candidate-identity.json",
+  "remediated_findings": ["DREV-001", "DREV-002", "DREV-003", "DREV-004", "TREV-001"],
+  "reviewed_artifacts": [
+    {
+      "path": "docs/design/semantic_ingestion_architecture.md",
+      "sha256": "b029194427e8d081021921391366b04d0fb388f87a0143b2fdaacf1f27ed27b8"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/source-alignment-producer-2026-08-10/design.plan.md",
+      "sha256": "80c24deb5d7b76f42a70cdb9e36b2319e82835a60a321574ba370dd01f485fee"
+    },
+    {
+      "path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md",
+      "sha256": "df985ba43e4c52fc54b18e00cb428a85bcd3af48422261fba443963194debde3"
+    }
+  ],
+  "scope": "Delta review of value-bearing scope, complete subject coordinates, temporal roles, route-bound pre-partition mentions, conservative identity ambiguity propagation, and executable test/gate ownership",
+  "candidate_status": "frozen_for_delta_review"
+}

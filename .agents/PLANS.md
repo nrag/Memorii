@@ -78,6 +78,13 @@ Each milestone packet owns:
 * progress, decisions, review findings, and remediation for that milestone
 * revision-bound completion or exact blocker state
 
+Milestone acceptance is local evidence only. It never satisfies the parent
+WorkPlan or parent milestone completion contract unless the parent requirement
+allocation explicitly marks every requirement it owns complete and records the
+same revision-bound evidence. A bounded slice approval must state its parent
+requirements as `partial`, `blocked`, or `not_applicable`; it must not call the
+parent milestone complete by implication.
+
 A milestone packet is part of its parent WorkPlan, not a new WorkPlan and not a
 new work type. Work that crosses into design, debugging, testing architecture,
 or PR review still requires a separate linked WorkPlan under normal routing.
@@ -388,6 +395,36 @@ unrun or failing, any known failure lacks the required disposition evidence, or
 any required current-revision CI check is non-green or unavailable without an
 explicit blocked outcome.
 
+### Production Entrypoint Bindings
+
+For every in-scope requirement that affects runtime behavior, persistence,
+transactions, lifecycle, replay, recovery, or an integration, maintain a
+`production_entrypoint_bindings` ledger. It proves the requirement is reachable
+through a real composition root rather than merely represented by a schema,
+helper, repository, fixture, or unit test.
+
+| Requirement | Canonical trigger and composition root | Exact callsite and arguments/authority | Owner chain: validation -> write/read -> outcome | Proof and caller count | Status or explicit blocker |
+| ----------- | --------------------------------------- | -------------------------------------- | ------------------------------------------------- | ---------------------- | -------------------------- |
+
+Each implemented entry must name the real trigger, the constructor or factory
+that composes it, each canonical owner in order, the exact arguments and
+authority carried at the callsite, every validation boundary, and the durable
+write/read or terminal outcome. Record a focused path proof and the number of
+production callers found by the mapping query. A zero caller, a test-only
+caller, a dependency-injection default that leaves the owner absent, or an
+optional fallback that bypasses the chain is `not implemented`, not partial
+implementation. If the design deliberately excludes a requirement, record the
+governing exclusion and the fail-closed behavior; otherwise record a concrete
+blocker rather than fabricating inputs or a synthetic terminal result.
+
+One cheap Spark-class `code-mapper` preflight must produce the ledger artifact
+before the first writer edit for the affected execution boundary. It is
+revision-bound, names the searched composition roots and queries, and is the
+shared map consumed by the Terra reviewers. Reuse it for a frozen candidate;
+refresh it only when a remediation changes a mapped trigger, owner, authority,
+or persistence boundary. Reviewers must challenge its coverage, not repeat
+undirected repository mapping.
+
 ### Sources Of Truth
 
 List the exact specifications, code, tests, logs, incidents, measurements, or
@@ -669,6 +706,15 @@ Do not launch a coherent-milestone or final reviewer cohort until:
 * focused checks for the changed behavior are green or their failures are the
   explicit subject of the review
 * the changed-surface and evidence ledgers are current
+* the required `production_entrypoint_bindings` ledger and its Spark preflight
+  artifact are current for every in-scope runtime, persistence, transaction,
+  lifecycle, replay, recovery, or integration requirement
+
+The candidate is not reviewable when a required binding is absent, has zero
+production callers, relies on an optional fallback, or lacks an exact
+callsite/authority chain. Treat that as a review-readiness blocker; do not let
+reviewers infer reachability from type definitions, helper tests, or a bounded
+slice report.
 
 If the gate is not satisfied, use a bounded mapper, test-matrix consultation,
 or root-cause challenge instead of a full review. After remediation, request a
@@ -1049,6 +1095,12 @@ Implementation is complete only when:
   recorded without inflating it into a product defect
 * no accidental stubs, skipped tests, ignored errors, undocumented TODOs, or
   incomplete fallback paths remain
+* every required `production_entrypoint_bindings` entry is implemented with a
+  nonzero production caller, an exact composition-root callsite and authority
+  chain, and a focused path proof; any excluded entry has an explicit governing
+  exclusion and fail-closed behavior
+* no bounded slice approval is used as evidence that a parent milestone or
+  parent WorkPlan requirement is complete
 * the live diff is fully classified, every scope delta is resolved, every
   affected authority chain is current, and every required local job passes
 * no known failure is excluded without identical clean-merge-base reproduction

@@ -1,0 +1,32 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_identity_admission_predecessor_joins",
+  "semantic_predecessor": "design-candidate-identity-v66.json",
+  "semantic_change_from_predecessor": "add transaction-group identity, bind every predecessor input and materialization record, and define exact predecessor after-state continuity for reuse",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "207bd67f00edf812b6ebee0e8b910993e2c3df255b4b9268f09f89e9f61caff4",
+  "review_scope": [
+    "transaction_group_id in identity admission request CTV",
+    "replacement and reuse predecessor planning-result group equality",
+    "graph-free input digest and all materialization record execution identity joins",
+    "reuse exact predecessor planning-state-after continuity",
+    "cross-group state input and record substitution tests"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "3ad4648f1f778fc8995440cdd5f4c37c2f29a80785dd900a218bcfabdf347187",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "ecb9e1244986cf83fc646bc70e4b6c52edda619a4bc48faa2c7fd91cb4164e09",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "0e0b5561ebba7fe3c0d2a5e96464464c7562e7acbd61d5298595a191150b5fde"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "transaction-group and predecessor join anchors",
+    "reuse exact after-state continuity anchor",
+    "cross-group state input and record mutation anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

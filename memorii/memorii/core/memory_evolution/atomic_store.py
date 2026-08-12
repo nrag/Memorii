@@ -19,6 +19,14 @@ from memorii.core.memory_evolution.admission import (
     source_admission_source_bytes,
     source_admission_source_digest,
 )
+from memorii.core.memory_evolution.bootstrap_profile import (
+    BootstrapAdmissionPin,
+    BootstrapAuthenticatedLanguageEvidence,
+    BootstrapSegmentGrammarProof,
+    CurrentBootstrapReleaseAssertion,
+    CurrentBootstrapReleaseVerifier,
+    HostVerifiedBootstrapReleaseEvidence,
+)
 from memorii.core.memory_evolution.conflict_attention import (
     ClarificationFailureClass,
     ClarificationSubmissionOutcome,
@@ -52,6 +60,8 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     decode_typed_value,
     encode_typed_value,
 )
+from memorii.core.memory_evolution.source_admission import DeliveryAuthorizationRequest
+from memorii.core.memory_evolution.source_governance import require_complete_scope_authorization
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
@@ -129,6 +139,12 @@ _CLARIFICATION_RECOVERY_BINDING_DOMAIN = b"memorii.semantic-ingestion.clarificat
 
 
 class PreplanningStoreError(ValueError):
+    pass
+
+
+class _BootstrapAuthorityUnavailableAtCommit(PreplanningStoreError):
+    """The host rejected the final, transaction-linearized release check."""
+
     pass
 
 
@@ -244,6 +260,44 @@ class AtomicGenerationMember(BaseModel):
         "execution_plan",
         "recovery_authority_binding",
         "stage_artifact",
+        "source_normalization_request",
+        "bootstrap_analysis_provenance",
+        "bootstrap_v3_payload_limit_authority",
+        "bootstrap_proposal_run_payload",
+        "bootstrap_analysis_lane_result",
+        "bootstrap_pre_alignment_operation_subject_set",
+        "bootstrap_analyzer_scope_observation",
+        "bootstrap_analyzer_temporal_attachment_observation",
+        "bootstrap_source_local_identity_partition_evidence",
+        "bootstrap_parser_consensus_assessment",
+        "bootstrap_semantic_scope_consensus",
+        "bootstrap_temporal_attachment_consensus",
+        "bootstrap_operation_temporal_attachment_consensus_set",
+        "bootstrap_source_local_identity_resolution",
+        "bootstrap_proposal_coverage_audit",
+        "bootstrap_operation_alignment",
+        "bootstrap_source_dependency_group",
+        "bootstrap_graph_free_interpretation_bundle",
+        "bootstrap_source_proposal_alignment",
+        "bootstrap_source_normalization_request",
+        "bootstrap_source_normalization_evidence_manifest",
+        "bootstrap_source_normalization_result",
+        "bootstrap_normalization_request_core",
+        "bootstrap_semantic_reduction_authority",
+        "bootstrap_graph_normalization_authority",
+        "graph_free_interpretation_bundle",
+        "source_local_identity_partition_evidence",
+        "parser_consensus",
+        "semantic_scope_consensus",
+        "temporal_attachment_consensus",
+        "source_local_identity_resolution",
+        "source_proposal_alignment",
+        "source_dependency_groups",
+        "source_normalization_result",
+        "source_normalization_evidence_manifest",
+        "graph_dependent_execution_policy",
+        "consensus_policy_selection_bundle",
+        "language_construction_policy_bundle",
     ]
     canonical_payload: bytes
     payload_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -453,6 +507,293 @@ class SourceFinalizationAtomicWriteRequest(AtomicGenerationRequest):
     expected_group_result_digests: tuple[str, ...]
 
 
+class BootstrapRetainedPendingAuthorityUnavailable(BaseModel):
+    kind: Literal["retained_pending"] = "retained_pending"
+    source_id: str
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority_pin_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    release_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    bootstrap_language_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    reason: Literal["authorization_unavailable", "release_unavailable", "pin_mismatch"]
+    terminal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_terminal(self) -> BootstrapRetainedPendingAuthorityUnavailable:
+        body = self.model_dump(mode="python", exclude={"terminal_digest"})
+        if self.terminal_digest != sha256(
+            b"memorii.semantic_ingestion.bootstrap_retained_pending_authority_unavailable.v1\0"
+            + encode_typed_value(body)
+        ).hexdigest():
+            raise ValueError("bootstrap retained pending authority terminal digest mismatch")
+        if (
+            self.operation_fence_binding.source_id != self.source_id
+            or self.operation_fence_binding.source_digest != self.source_digest
+            or self.operation_fence_binding.delivery_identity != self.delivery_identity
+        ):
+            raise ValueError("bootstrap retained pending authority terminal fence is substituted")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> BootstrapRetainedPendingAuthorityUnavailable:
+        body = dict(values)
+        body.pop("terminal_digest", None)
+        digest_body = cls.model_construct(
+            **body, terminal_digest="0" * 64
+        ).model_dump(mode="python", exclude={"terminal_digest"})
+        return cls(
+            **body,
+            terminal_digest=sha256(
+                b"memorii.semantic_ingestion.bootstrap_retained_pending_authority_unavailable.v1\0"
+                + encode_typed_value(digest_body)
+            ).hexdigest(),
+        )
+
+
+class BootstrapPreparedPublishedAuthorityUnavailable(BaseModel):
+    kind: Literal["prepared_published"] = "prepared_published"
+    source_id: str
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prepared_generation: int = Field(ge=1)
+    prepared_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority_pin_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    release_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    bootstrap_language_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    reason: Literal["authorization_unavailable", "release_unavailable"]
+    terminal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_terminal(self) -> BootstrapPreparedPublishedAuthorityUnavailable:
+        body = self.model_dump(mode="python", exclude={"terminal_digest"})
+        if self.terminal_digest != sha256(
+            b"memorii.semantic_ingestion.bootstrap_prepared_published_authority_unavailable.v1\0"
+            + encode_typed_value(body)
+        ).hexdigest():
+            raise ValueError("bootstrap prepared authority terminal digest mismatch")
+        if (
+            self.operation_fence_binding.source_id != self.source_id
+            or self.operation_fence_binding.source_digest != self.source_digest
+            or self.operation_fence_binding.delivery_identity != self.delivery_identity
+        ):
+            raise ValueError("bootstrap prepared authority terminal fence is substituted")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> BootstrapPreparedPublishedAuthorityUnavailable:
+        body = dict(values)
+        body.pop("terminal_digest", None)
+        digest_body = cls.model_construct(
+            **body, terminal_digest="0" * 64
+        ).model_dump(mode="python", exclude={"terminal_digest"})
+        return cls(
+            **body,
+            terminal_digest=sha256(
+                b"memorii.semantic_ingestion.bootstrap_prepared_published_authority_unavailable.v1\0"
+                + encode_typed_value(digest_body)
+            ).hexdigest(),
+        )
+
+
+class BootstrapWriterHandoffRequest(BaseModel):
+    source_id: str
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prepared_generation: int = Field(ge=1)
+    prepared_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority_pin: BootstrapAdmissionPin
+    release_evidence: HostVerifiedBootstrapReleaseEvidence
+    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    current_delivery_authorization: DeliveryAuthorizationRequest
+    current_release_assertion: CurrentBootstrapReleaseAssertion
+    expected_writer_admission_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_writer_epoch: int = Field(ge=0)
+    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_request(self) -> BootstrapWriterHandoffRequest:
+        body = self.model_dump(
+            mode="python",
+            exclude={"request_digest", "current_delivery_authorization", "current_release_assertion"},
+        )
+        expected = sha256(
+            b"memorii.semantic_ingestion.bootstrap_writer_handoff_request.v1\0"
+            + encode_typed_value(body)
+        ).hexdigest()
+        if self.request_digest != expected:
+            raise ValueError("bootstrap writer handoff request digest mismatch")
+        if (
+            self.operation_fence_binding.source_id != self.source_id
+            or self.operation_fence_binding.source_digest != self.source_digest
+            or self.operation_fence_binding.delivery_identity != self.delivery_identity
+            or self.authority_pin.source_id != self.source_id
+            or self.authority_pin.source_digest != self.source_digest
+            or self.authority_pin.operation_fence_binding_digest != self.operation_fence_binding.binding_digest
+            or self.authority_pin.release_evidence_digest != self.release_evidence.evidence_digest
+            or self.authority_pin.bootstrap_language_evidence_digest
+            != self.bootstrap_language_evidence.evidence_digest
+            or self.bootstrap_language_evidence.source_id != self.source_id
+            or self.bootstrap_language_evidence.source_digest != self.source_digest
+        ):
+            raise ValueError("bootstrap writer handoff fence is substituted")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> BootstrapWriterHandoffRequest:
+        body = dict(values)
+        body.pop("request_digest", None)
+        digest_body = cls.model_construct(
+            **body,
+            request_digest="0" * 64,
+        ).model_dump(
+            mode="python",
+            exclude={
+                "request_digest",
+                "current_delivery_authorization",
+                "current_release_assertion",
+            },
+        )
+        return cls(
+            **body,
+            request_digest=sha256(
+                b"memorii.semantic_ingestion.bootstrap_writer_handoff_request.v1\0"
+                + encode_typed_value(digest_body)
+            ).hexdigest(),
+        )
+
+
+class BootstrapWriterHandoffMarker(BaseModel):
+    source_id: str
+    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    handoff_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prepared_generation: int = Field(ge=1)
+    prepared_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    authority_pin_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    release_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    bootstrap_language_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delivery_identity: DeliveryIdentity
+    operation_fence_binding: OperationFenceBinding
+    writer_commit_binding: SemanticWriterCommitBinding
+    pending_operation_id: str
+    pending_operation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    marker_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_marker(self) -> BootstrapWriterHandoffMarker:
+        body = self.model_dump(mode="python", exclude={"marker_digest"})
+        if self.marker_digest != sha256(
+            b"memorii.semantic_ingestion.bootstrap_writer_handoff_marker.v1\0" + encode_typed_value(body)
+        ).hexdigest():
+            raise ValueError("bootstrap writer handoff marker digest mismatch")
+        if (
+            self.operation_fence_binding.source_id != self.source_id
+            or self.operation_fence_binding.source_digest != self.source_digest
+            or self.operation_fence_binding.delivery_identity != self.delivery_identity
+            or self.pending_operation_id != self.operation_fence_binding.operation_fence_id
+        ):
+            raise ValueError("bootstrap writer handoff marker fence is substituted")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> BootstrapWriterHandoffMarker:
+        body = dict(values)
+        body.pop("marker_digest", None)
+        digest_body = cls.model_construct(
+            **body, marker_digest="0" * 64
+        ).model_dump(mode="python", exclude={"marker_digest"})
+        return cls(
+            **body,
+            marker_digest=sha256(
+                b"memorii.semantic_ingestion.bootstrap_writer_handoff_marker.v1\0" + encode_typed_value(digest_body)
+            ).hexdigest(),
+        )
+
+
+class BootstrapWriterHandoffMarkerV3(BootstrapWriterHandoffMarker):
+    """The V3 marker is the sole normal handoff marker.
+
+    It retains the authenticated V1 handoff coordinates so existing consumers
+    cannot accidentally lose fence or writer binding, and adds the immutable
+    recovery identity in the same sealed wire.
+    """
+
+    schema_version: Literal[3]
+    handoff_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    recovery_key_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_predecessor_operation_generation: int = Field(ge=1)
+    expected_predecessor_artifact_generation: int = Field(ge=1)
+    expected_predecessor_control_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    marker_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @model_validator(mode="after")
+    def validate_marker(self) -> BootstrapWriterHandoffMarkerV3:
+        if self.marker_digest != sha256(
+            b"memorii.semantic-ingestion.bootstrap-handoff-marker.v3\0"
+            + encode_typed_value(self.model_dump(mode="python", exclude={"marker_digest"}))
+        ).hexdigest():
+            raise ValueError("bootstrap V3 handoff marker digest mismatch")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> BootstrapWriterHandoffMarkerV3:
+        body = dict(values)
+        body.pop("marker_digest", None)
+        digest_body = cls.model_construct(
+            **body,
+            marker_digest="0" * 64,
+        ).model_dump(
+            mode="python",
+            exclude={"marker_digest"},
+        )
+        return cls(
+            **body,
+            marker_digest=sha256(
+                b"memorii.semantic-ingestion.bootstrap-handoff-marker.v3\0"
+                + encode_typed_value(digest_body)
+            ).hexdigest(),
+        )
+
+
+class BootstrapWriterHandoffResult(BaseModel):
+    kind: Literal["started", "already_started", "authority_unavailable", "writer_unavailable", "conflict"]
+    marker: BootstrapWriterHandoffMarker | BootstrapWriterHandoffMarkerV3 | None = None
+    authority_unavailable: BootstrapPreparedPublishedAuthorityUnavailable | None = None
+    result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @classmethod
+    def create(cls, *, kind: str, marker: BootstrapWriterHandoffMarker | BootstrapWriterHandoffMarkerV3 | None = None,
+               authority_unavailable: BootstrapPreparedPublishedAuthorityUnavailable | None = None) -> BootstrapWriterHandoffResult:
+        body = {"kind": kind, "marker": marker, "authority_unavailable": authority_unavailable}
+        digest_body = cls.model_construct(
+            **body, result_digest="0" * 64
+        ).model_dump(mode="python", exclude={"result_digest"})
+        return cls(**body, result_digest=sha256(
+            b"memorii.semantic_ingestion.bootstrap_writer_handoff_result.v1\0" + encode_typed_value(digest_body)
+        ).hexdigest())
+
+
+class BootstrapHandoffAccessDenied(BaseModel):
+    kind: Literal["access_denied"] = "access_denied"
+    reason: Literal["unavailable"] = "unavailable"
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class SemanticIngestionAtomicStore:
     """The only writer-safe preplanning owner permitted to publish preplanning control evidence."""
 
@@ -472,6 +813,7 @@ class SemanticIngestionAtomicStore:
         identity_decision_authority_verifier: object | None = None,
         semantic_conflict_authority_resolver: SemanticConflictAuthorityResolver
         | None = None,
+        current_bootstrap_release_verifier: CurrentBootstrapReleaseVerifier | None = None,
     ) -> None:
         if max_lease_recoveries < 0:
             raise ValueError("max lease recoveries must be non-negative")
@@ -518,6 +860,11 @@ class SemanticIngestionAtomicStore:
         self._identity_decision_authority_verifier = (
             identity_decision_authority_verifier
         )
+        assert_current = getattr(current_bootstrap_release_verifier, "assert_current", None)
+        if current_bootstrap_release_verifier is not None and not callable(assert_current):
+            raise TypeError("current bootstrap release verifier is invalid")
+        self._current_bootstrap_release_verifier = current_bootstrap_release_verifier
+
         self._checkpoint_resume_authority = _store_checkpoint_authority(
             registry=event_schema_registry,
             registry_history=event_schema_registry_history,
@@ -565,6 +912,647 @@ class SemanticIngestionAtomicStore:
             publication_capability=self._write_capability,
         )
 
+    def publish_prepared_source(
+        self, prepared_source: object, *, writer_binding: SemanticWriterCommitBinding
+    ) -> object:
+        """Persist one validated Step-2 authority through the atomic owner."""
+        from memorii.core.semantic_ingestion.contracts import (
+            PreparedSource,
+            encode_semantic_contract,
+        )
+
+        if not isinstance(prepared_source, PreparedSource):
+            raise PreplanningStoreError("prepared source publication has an invalid type")
+        prepared = PreparedSource.model_validate(prepared_source.model_dump(mode="python"))
+        writer_record = self._writers.require_current(writer_binding)
+        authorization = self._writers._authorize_atomic(writer_binding, capability=self._write_capability)
+        record_id = "semantic_ingestion:prepared_source:" + sha256(prepared.source_id.encode("utf-8")).hexdigest()
+        record = CanonicalMemoryRecord(
+            memory_id=record_id, domain=MemoryDomain.TRANSCRIPT, text="",
+            content={"source_id": prepared.source_id, "source_digest": prepared.source_digest,
+                "preparation_fingerprint": prepared.preparation_fingerprint,
+                "prepared_source_wire": base64.b64encode(
+                    encode_semantic_contract(prepared)
+                ).decode("ascii")},
+            status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_prepared_source",
+            timestamp=self._now(), visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        existing = self._memory_plane.get_record(record_id)
+        if existing is not None:
+            return self._load_prepared_source_record(existing, prepared.source_id, prepared.source_digest)
+        try:
+            self._memory_plane.conditionally_write_records(
+                (record,),
+                preconditions=(RecordAbsentPrecondition(memory_id=record_id), RecordDigestPrecondition(
+                    memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record))),
+                authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError:
+            existing = self._memory_plane.get_record(record_id)
+            if existing is None:
+                raise
+            return self._load_prepared_source_record(existing, prepared.source_id, prepared.source_digest)
+        return prepared
+
+    def load_prepared_source(self, *, source_id: str, source_digest: str) -> object | None:
+        record = self._memory_plane.get_record(
+            "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest()
+        )
+        return None if record is None else self._load_prepared_source_record(record, source_id, source_digest)
+
+    def publish_bootstrap_prepared_source_if_absent(
+        self,
+        *,
+        prepared_source: object,
+        authority_pin: BootstrapAdmissionPin,
+        release_evidence: HostVerifiedBootstrapReleaseEvidence,
+        language_evidence: BootstrapAuthenticatedLanguageEvidence,
+        grammar_proofs: tuple[BootstrapSegmentGrammarProof, ...],
+        operation_fence_binding: OperationFenceBinding,
+        authorization: DeliveryAuthorizationRequest,
+        release_assertion: CurrentBootstrapReleaseAssertion,
+    ) -> tuple[object, int]:
+        """Source-owned Step-2 CAS.  It has no writer control side effect."""
+        from memorii.core.semantic_ingestion.contracts import PreparedSource, encode_semantic_contract
+
+        if not isinstance(prepared_source, PreparedSource):
+            raise PreplanningStoreError("bootstrap prepared source has an invalid type")
+        prepared = PreparedSource.model_validate(prepared_source.model_dump(mode="python"))
+        if (
+            prepared.source_id != authority_pin.source_id
+            or prepared.source_digest != authority_pin.source_digest
+            or language_evidence.source_id != prepared.source_id
+            or language_evidence.source_digest != prepared.source_digest
+            or authority_pin.release_evidence_digest != release_evidence.evidence_digest
+            or authority_pin.bootstrap_language_evidence_digest != language_evidence.evidence_digest
+            or authority_pin.operation_fence_binding_digest != operation_fence_binding.binding_digest
+            or operation_fence_binding.source_id != prepared.source_id
+            or operation_fence_binding.source_digest != prepared.source_digest
+            or operation_fence_binding.delivery_identity != authorization.delivery_identity
+        ):
+            raise PreplanningStoreError("bootstrap prepared publication authority is substituted")
+        existing_terminal = self._load_bootstrap_authority_terminal(
+            source_id=prepared.source_id,
+            source_digest=prepared.source_digest,
+        )
+        if existing_terminal is not None:
+            return existing_terminal, 0
+        if not self._bootstrap_assertion_is_valid(
+            assertion=release_assertion,
+            release_evidence=release_evidence,
+            assertion_phase="prepared_publication",
+        ) or not self._current_bootstrap_access_is_valid(
+            authorization=authorization,
+            release_evidence=release_evidence,
+            assertion_phase="prepared_publication",
+            expected_delivery_identity=operation_fence_binding.delivery_identity,
+            language_evidence=language_evidence,
+        ):
+            terminal = BootstrapRetainedPendingAuthorityUnavailable.create(
+                source_id=prepared.source_id,
+                source_digest=prepared.source_digest,
+                authority_pin_digest=authority_pin.pin_digest,
+                release_evidence_digest=release_evidence.evidence_digest,
+                bootstrap_language_evidence_digest=language_evidence.evidence_digest,
+                delivery_identity=operation_fence_binding.delivery_identity,
+                operation_fence_binding=operation_fence_binding,
+                reason="release_unavailable",
+            )
+            self._persist_bootstrap_authority_terminal_if_absent(terminal)
+            return terminal, 0
+        expected_routes = prepared.segment_language_routes.routes
+        if (
+            tuple(proof.segment_id for proof in grammar_proofs)
+            != tuple(route.segment_id for route in expected_routes)
+            or any(
+                proof.source_id != prepared.source_id
+                or proof.normalized_segment_digest != route.normalized_segment_digest
+                or proof.proof_digest != getattr(route, "grammar_proof_digest", None)
+                for proof, route in zip(grammar_proofs, expected_routes, strict=True)
+            )
+        ):
+            raise PreplanningStoreError("bootstrap grammar proofs do not exactly bind prepared routes")
+        # The pin's fence digest is stable identity, not a delivery-key alias.
+        # Its equality is enforced by the handoff tuple where the full fence is available.
+        wire = encode_semantic_contract(prepared)
+        record_id = "semantic_ingestion:prepared_source:" + sha256(prepared.source_id.encode("utf-8")).hexdigest()
+        record = CanonicalMemoryRecord(
+            memory_id=record_id, domain=MemoryDomain.TRANSCRIPT, text="",
+            content={
+                "source_id": prepared.source_id,
+                "source_digest": prepared.source_digest,
+                "preparation_fingerprint": prepared.preparation_fingerprint,
+                "prepared_source_wire": base64.b64encode(wire).decode("ascii"),
+                "bootstrap_authority_pin": authority_pin.model_dump(mode="json"),
+                "bootstrap_release_evidence": release_evidence.model_dump(mode="json"),
+                "bootstrap_language_evidence": language_evidence.model_dump(mode="json"),
+                "bootstrap_grammar_proofs": [proof.model_dump(mode="json") for proof in grammar_proofs],
+                "prepared_generation": 1,
+            },
+            status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_prepared_source",
+            timestamp=self._now(), visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        current = self._writers.current()
+        binding = self._writers.commit_binding(current)
+        writer_record = self._writers.require_current(binding)
+        writer_authorization = self._writers._authorize_atomic(binding, capability=self._write_capability)
+        existing = self._memory_plane.get_record(record_id)
+        if existing is not None:
+            loaded = self._load_prepared_source_record(existing, prepared.source_id, prepared.source_digest)
+            if existing.content != record.content:
+                raise PreplanningStoreError("bootstrap prepared publication conflicts with existing source")
+            return loaded, 1
+        try:
+            self._memory_plane.conditionally_write_records(
+                (record,),
+                preconditions=(
+                    RecordAbsentPrecondition(memory_id=record_id),
+                    RecordAbsentPrecondition(
+                        memory_id=self._bootstrap_authority_terminal_record_id(
+                            prepared.source_id
+                        )
+                    ),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                ),
+                authorization=writer_authorization,
+                transaction_precondition=self._bootstrap_current_precondition(
+                    authorization=authorization,
+                    release_evidence=release_evidence,
+                    assertion_phase="prepared_publication",
+                    expected_delivery_identity=operation_fence_binding.delivery_identity,
+                    language_evidence=language_evidence,
+                ),
+            )
+        except _BootstrapAuthorityUnavailableAtCommit:
+            existing_terminal = self._load_bootstrap_authority_terminal(
+                source_id=prepared.source_id,
+                source_digest=prepared.source_digest,
+            )
+            if existing_terminal is not None:
+                return existing_terminal, 0
+            terminal = BootstrapRetainedPendingAuthorityUnavailable.create(
+                source_id=prepared.source_id,
+                source_digest=prepared.source_digest,
+                authority_pin_digest=authority_pin.pin_digest,
+                release_evidence_digest=release_evidence.evidence_digest,
+                bootstrap_language_evidence_digest=language_evidence.evidence_digest,
+                delivery_identity=operation_fence_binding.delivery_identity,
+                operation_fence_binding=operation_fence_binding,
+                reason="release_unavailable",
+            )
+            return self._persist_bootstrap_authority_terminal_if_absent(terminal), 0
+        except MemoryPlaneRevisionConflictError as exc:
+            existing_terminal = self._load_bootstrap_authority_terminal(
+                source_id=prepared.source_id,
+                source_digest=prepared.source_digest,
+            )
+            if existing_terminal is not None:
+                return existing_terminal, 0
+            existing = self._memory_plane.get_record(record_id)
+            if existing is None or existing.content != record.content:
+                raise PreplanningStoreError("bootstrap prepared publication CAS conflicted") from exc
+        return prepared, 1
+
+    def bootstrap_writer_handoff(
+        self, request: BootstrapWriterHandoffRequest
+    ) -> BootstrapHandoffAccessDenied | BootstrapWriterHandoffResult:
+        """Create writer state exactly once after source-owned publication.
+
+        The current authorization and release assertion are checked before any
+        marker lookup, preserving the non-disclosing recovery boundary.
+        """
+        terminal = self._load_bootstrap_authority_terminal(
+            source_id=request.source_id, source_digest=request.source_digest
+        )
+        if isinstance(terminal, BootstrapRetainedPendingAuthorityUnavailable):
+            if (
+                terminal.authority_pin_digest == request.authority_pin.pin_digest
+                and terminal.release_evidence_digest == request.release_evidence.evidence_digest
+                and terminal.bootstrap_language_evidence_digest
+                == request.bootstrap_language_evidence.evidence_digest
+                and terminal.delivery_identity == request.delivery_identity
+                and terminal.operation_fence_binding == request.operation_fence_binding
+            ):
+                return BootstrapWriterHandoffResult.create(
+                    kind="authority_unavailable", authority_unavailable=terminal
+                )
+            return BootstrapWriterHandoffResult.create(kind="conflict")
+        if isinstance(terminal, BootstrapPreparedPublishedAuthorityUnavailable):
+            if (
+                terminal.prepared_generation == request.prepared_generation
+                and terminal.prepared_source_digest == request.prepared_source_digest
+                and terminal.authority_pin_digest == request.authority_pin.pin_digest
+                and terminal.release_evidence_digest == request.release_evidence.evidence_digest
+                and terminal.bootstrap_language_evidence_digest
+                == request.bootstrap_language_evidence.evidence_digest
+                and terminal.delivery_identity == request.delivery_identity
+                and terminal.operation_fence_binding == request.operation_fence_binding
+            ):
+                return BootstrapWriterHandoffResult.create(
+                    kind="authority_unavailable", authority_unavailable=terminal
+                )
+            return BootstrapWriterHandoffResult.create(kind="conflict")
+        if not self._bootstrap_assertion_is_valid(
+            assertion=request.current_release_assertion,
+            release_evidence=request.release_evidence,
+            assertion_phase="pre_handoff_retry",
+        ) or not self._current_bootstrap_access_is_valid(
+            authorization=request.current_delivery_authorization,
+            release_evidence=request.release_evidence,
+            assertion_phase="pre_handoff_retry",
+            expected_delivery_identity=request.delivery_identity,
+            language_evidence=request.bootstrap_language_evidence,
+        ):
+            return BootstrapHandoffAccessDenied()
+        marker_id = "semantic_ingestion:bootstrap-handoff:" + sha256(
+            request.source_id.encode("utf-8") + request.request_digest.encode("ascii")
+        ).hexdigest()
+        existing = self._memory_plane.get_record(marker_id)
+        if existing is not None:
+            try:
+                marker = BootstrapWriterHandoffMarkerV3.model_validate(existing.content["marker"])
+            except (KeyError, TypeError, ValueError):
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            if marker.handoff_request_digest != request.request_digest:
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            return BootstrapWriterHandoffResult.create(kind="already_started", marker=marker)
+        prepared_record = self._memory_plane.get_record(
+            "semantic_ingestion:prepared_source:" + sha256(request.source_id.encode("utf-8")).hexdigest()
+        )
+        if prepared_record is None:
+            return BootstrapWriterHandoffResult.create(kind="conflict")
+        content = prepared_record.content
+        if (
+            content.get("source_digest") != request.source_digest
+            or content.get("prepared_generation") != request.prepared_generation
+            or content.get("bootstrap_authority_pin") != request.authority_pin.model_dump(mode="json")
+            or content.get("bootstrap_release_evidence") != request.release_evidence.model_dump(mode="json")
+            or content.get("bootstrap_language_evidence") != request.bootstrap_language_evidence.model_dump(mode="json")
+        ):
+            return BootstrapWriterHandoffResult.create(kind="conflict")
+        try:
+            prepared = self._load_prepared_source_record(prepared_record, request.source_id, request.source_digest)
+        except PreplanningStoreError:
+            return BootstrapWriterHandoffResult.create(kind="conflict")
+        from memorii.core.semantic_ingestion.contracts import encode_semantic_contract
+        if request.prepared_source_digest != sha256(encode_semantic_contract(prepared)).hexdigest():
+            return BootstrapWriterHandoffResult.create(kind="conflict")
+        current = self._writers.current()
+        if (
+            current.writer_epoch != request.expected_writer_epoch
+            or current.admission_digest != request.expected_writer_admission_digest
+        ):
+            return BootstrapWriterHandoffResult.create(kind="writer_unavailable")
+        binding = self._writers.commit_binding(current)
+        writer_record = self._writers.require_current(binding)
+        writer_authorization = self._writers._authorize_atomic(binding, capability=self._write_capability)
+        control = PreplanningOperationControl(
+            operation_fence=request.operation_fence_binding,
+            persistence_namespace_id=request.operation_fence_binding.operation_fence_id,
+            writer_binding=binding,
+            max_lease_recoveries=self._max_lease_recoveries,
+            graph_revision=self.semantic_replay_state().graph_revision,
+        )
+        # Revalidate at the write linearization point.  A current failure here
+        # becomes a retained terminal; pre-lookup denial remains ephemeral.
+        if not self._current_bootstrap_access_is_valid(
+            authorization=request.current_delivery_authorization,
+            release_evidence=request.release_evidence,
+            assertion_phase="writer_handoff",
+            expected_delivery_identity=request.delivery_identity,
+            language_evidence=request.bootstrap_language_evidence,
+        ):
+            terminal = BootstrapPreparedPublishedAuthorityUnavailable.create(
+                source_id=request.source_id,
+                source_digest=request.source_digest,
+                prepared_generation=request.prepared_generation,
+                prepared_source_digest=request.prepared_source_digest,
+                authority_pin_digest=request.authority_pin.pin_digest,
+                release_evidence_digest=request.release_evidence.evidence_digest,
+                bootstrap_language_evidence_digest=request.bootstrap_language_evidence.evidence_digest,
+                delivery_identity=request.delivery_identity,
+                operation_fence_binding=request.operation_fence_binding,
+                reason="release_unavailable",
+            )
+            persisted = self._persist_bootstrap_authority_terminal_if_absent(terminal)
+            if not isinstance(persisted, BootstrapPreparedPublishedAuthorityUnavailable):
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            return BootstrapWriterHandoffResult.create(kind="authority_unavailable", authority_unavailable=persisted)
+        publication = _publication(control)
+        # The recovery key is minted before the marker so the marker can
+        # authenticate it without introducing a digest cycle.
+        from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryKeyV3, contract_digest
+
+        recovery_key_body = {
+            "source_id": request.source_id,
+            "source_digest": request.source_digest,
+            "preparation_fingerprint": prepared.preparation_fingerprint,
+            "operation_id": request.operation_fence_binding.operation_id,
+            "operation_fence_digest": request.operation_fence_binding.binding_digest,
+            "bootstrap_profile_manifest_digest": request.release_evidence.evidence_digest,
+            "handoff_request_digest": request.request_digest,
+        }
+        recovery_key = BootstrapRecoveryKeyV3(
+            **recovery_key_body,
+            recovery_key_digest=contract_digest(
+                b"memorii.semantic-ingestion.bootstrap-recovery-key.v3", recovery_key_body
+            ),
+        )
+        marker = BootstrapWriterHandoffMarkerV3.create(
+            schema_version=3,
+            source_id=request.source_id, source_digest=request.source_digest,
+            handoff_request_digest=request.request_digest,
+            prepared_generation=request.prepared_generation,
+            prepared_source_digest=request.prepared_source_digest,
+            authority_pin_digest=request.authority_pin.pin_digest,
+            release_evidence_digest=request.release_evidence.evidence_digest,
+            bootstrap_language_evidence_digest=request.bootstrap_language_evidence.evidence_digest,
+            delivery_identity=request.delivery_identity,
+            operation_fence_binding=request.operation_fence_binding,
+            writer_commit_binding=binding,
+            pending_operation_id=request.operation_fence_binding.operation_fence_id,
+            pending_operation_digest=sha256(encode_typed_value(control.model_dump(mode="python"))).hexdigest(),
+            recovery_key_digest=recovery_key.recovery_key_digest,
+            expected_predecessor_operation_generation=control.generation,
+            expected_predecessor_artifact_generation=control.generation,
+            expected_predecessor_control_digest=sha256(
+                encode_typed_value(control.model_dump(mode="python"))
+            ).hexdigest(),
+        )
+        marker_record = CanonicalMemoryRecord(
+            memory_id=marker_id, domain=MemoryDomain.TRANSCRIPT, text="",
+            content={"marker": marker.model_dump(mode="json")}, status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_bootstrap_handoff_marker", timestamp=self._now(),
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        recovery_record = _bootstrap_v3_unclaimed_recovery_record(
+            recovery_key=recovery_key, operation_generation=control.generation,
+            artifact_generation=control.generation, marker=marker, timestamp=self._now(),
+        )
+        records = (*_publication_records(publication, self._now()), marker_record, recovery_record)
+        try:
+            self._memory_plane.conditionally_write_records(
+                records,
+                preconditions=(
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records),
+                    RecordAbsentPrecondition(
+                        memory_id=self._bootstrap_authority_terminal_record_id(
+                            request.source_id
+                        )
+                    ),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                ),
+                authorization=writer_authorization,
+                transaction_precondition=self._bootstrap_current_precondition(
+                    authorization=request.current_delivery_authorization,
+                    release_evidence=request.release_evidence,
+                    assertion_phase="writer_handoff",
+                    expected_delivery_identity=request.delivery_identity,
+                    language_evidence=request.bootstrap_language_evidence,
+                ),
+            )
+        except _BootstrapAuthorityUnavailableAtCommit:
+            existing_terminal = self._load_bootstrap_authority_terminal(
+                source_id=request.source_id,
+                source_digest=request.source_digest,
+            )
+            if isinstance(existing_terminal, BootstrapPreparedPublishedAuthorityUnavailable):
+                return BootstrapWriterHandoffResult.create(
+                    kind="authority_unavailable", authority_unavailable=existing_terminal
+                )
+            if existing_terminal is not None:
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            terminal = BootstrapPreparedPublishedAuthorityUnavailable.create(
+                source_id=request.source_id,
+                source_digest=request.source_digest,
+                prepared_generation=request.prepared_generation,
+                prepared_source_digest=request.prepared_source_digest,
+                authority_pin_digest=request.authority_pin.pin_digest,
+                release_evidence_digest=request.release_evidence.evidence_digest,
+                bootstrap_language_evidence_digest=request.bootstrap_language_evidence.evidence_digest,
+                delivery_identity=request.delivery_identity,
+                operation_fence_binding=request.operation_fence_binding,
+                reason="release_unavailable",
+            )
+            persisted = self._persist_bootstrap_authority_terminal_if_absent(terminal)
+            if not isinstance(persisted, BootstrapPreparedPublishedAuthorityUnavailable):
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            return BootstrapWriterHandoffResult.create(
+                kind="authority_unavailable", authority_unavailable=persisted
+            )
+        except MemoryPlaneRevisionConflictError:
+            terminal = self._load_bootstrap_authority_terminal(
+                source_id=request.source_id,
+                source_digest=request.source_digest,
+            )
+            if isinstance(terminal, BootstrapPreparedPublishedAuthorityUnavailable):
+                return BootstrapWriterHandoffResult.create(
+                    kind="authority_unavailable", authority_unavailable=terminal
+                )
+            if terminal is not None:
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            existing = self._memory_plane.get_record(marker_id)
+            if existing is not None:
+                try:
+                    marker = BootstrapWriterHandoffMarkerV3.model_validate(existing.content["marker"])
+                except (KeyError, TypeError, ValueError):
+                    return BootstrapWriterHandoffResult.create(kind="conflict")
+                if marker.handoff_request_digest == request.request_digest:
+                    return BootstrapWriterHandoffResult.create(kind="already_started", marker=marker)
+            return BootstrapWriterHandoffResult.create(kind="conflict")
+        return BootstrapWriterHandoffResult.create(kind="started", marker=marker)
+
+    def _current_bootstrap_access_is_valid(
+        self,
+        *,
+        authorization: DeliveryAuthorizationRequest,
+        release_evidence: HostVerifiedBootstrapReleaseEvidence,
+        assertion_phase: Literal["prepared_publication", "pre_handoff_retry", "writer_handoff"],
+        expected_delivery_identity: DeliveryIdentity,
+        language_evidence: BootstrapAuthenticatedLanguageEvidence,
+    ) -> bool:
+        """Validate ephemeral host authority without letting it enter durable bytes."""
+        if (
+            authorization.delivery_identity != expected_delivery_identity
+            or authorization.delivery_identity.delivery_principal_binding_digest
+            != language_evidence.delivery_principal_binding_digest
+        ):
+            return False
+        try:
+            require_complete_scope_authorization(
+                ingress=authorization.ingress,
+                required_outcome_scopes=authorization.ingress.required_outcome_scopes,
+            )
+        except (AttributeError, TypeError, ValueError):
+            return False
+        verifier = self._current_bootstrap_release_verifier
+        if verifier is None:
+            return False
+        try:
+            raw_assertion = verifier.assert_current(
+                authorization=authorization,
+                release_evidence=release_evidence,
+                assertion_phase=assertion_phase,
+            )
+            assertion = CurrentBootstrapReleaseAssertion.model_validate(
+                raw_assertion.model_dump(mode="python")
+            )
+        except (AttributeError, TypeError, ValueError, OSError):
+            return False
+        return self._bootstrap_assertion_is_valid(
+            assertion=assertion,
+            release_evidence=release_evidence,
+            assertion_phase=assertion_phase,
+        )
+
+    @staticmethod
+    def _bootstrap_assertion_is_valid(
+        *,
+        assertion: CurrentBootstrapReleaseAssertion,
+        release_evidence: HostVerifiedBootstrapReleaseEvidence,
+        assertion_phase: Literal["prepared_publication", "pre_handoff_retry", "writer_handoff"],
+    ) -> bool:
+        try:
+            value = CurrentBootstrapReleaseAssertion.model_validate(
+                assertion.model_dump(mode="python")
+            )
+        except (AttributeError, TypeError, ValueError):
+            return False
+        return (
+            value.assertion_phase == assertion_phase
+            and value.coordinate == release_evidence.coordinate
+            and value.signed_release_digest == release_evidence.signed_release_digest
+            and value.bootstrap_anchor_digest == release_evidence.bootstrap_anchor_digest
+            and value.active_lifecycle_snapshot_digest
+            == release_evidence.active_lifecycle_snapshot_digest
+        )
+
+    def _bootstrap_current_precondition(
+        self,
+        *,
+        authorization: DeliveryAuthorizationRequest,
+        release_evidence: HostVerifiedBootstrapReleaseEvidence,
+        assertion_phase: Literal["prepared_publication", "pre_handoff_retry", "writer_handoff"],
+        expected_delivery_identity: DeliveryIdentity,
+        language_evidence: BootstrapAuthenticatedLanguageEvidence,
+    ) -> Callable[[], None]:
+        """Return the opaque, non-persisted host check for the write lock.
+
+        ``MemoryPlaneStore.apply_batch`` invokes this after acquiring its
+        transaction lock and immediately before applying records.  The host
+        verifier owns revocation linearization, so a failed or malformed
+        response prevents the entire batch from becoming visible.
+        """
+        def validate() -> None:
+            if not self._current_bootstrap_access_is_valid(
+                authorization=authorization,
+                release_evidence=release_evidence,
+                assertion_phase=assertion_phase,
+                expected_delivery_identity=expected_delivery_identity,
+                language_evidence=language_evidence,
+            ):
+                raise _BootstrapAuthorityUnavailableAtCommit(
+                    "bootstrap release authority unavailable at write commit"
+                )
+
+        return validate
+
+    @staticmethod
+    def _bootstrap_authority_terminal_record_id(source_id: str) -> str:
+        return "semantic_ingestion:bootstrap-authority-unavailable:" + sha256(
+            source_id.encode("utf-8")
+        ).hexdigest()
+
+    def _load_bootstrap_authority_terminal(
+        self, *, source_id: str, source_digest: str
+    ) -> BootstrapRetainedPendingAuthorityUnavailable | BootstrapPreparedPublishedAuthorityUnavailable | None:
+        record = self._memory_plane.get_record(self._bootstrap_authority_terminal_record_id(source_id))
+        if record is None:
+            return None
+        if record.source_kind != "semantic_ingestion_bootstrap_authority_unavailable":
+            raise PreplanningStoreError("bootstrap authority terminal record is substituted")
+        try:
+            payload = record.content["terminal"]
+            kind = payload["kind"]
+            terminal = (
+                BootstrapRetainedPendingAuthorityUnavailable.model_validate(payload)
+                if kind == "retained_pending"
+                else BootstrapPreparedPublishedAuthorityUnavailable.model_validate(payload)
+                if kind == "prepared_published"
+                else None
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("bootstrap authority terminal record is invalid") from exc
+        if terminal is None or terminal.source_id != source_id or terminal.source_digest != source_digest:
+            raise PreplanningStoreError("bootstrap authority terminal identity is substituted")
+        return terminal
+
+    def _persist_bootstrap_authority_terminal_if_absent(
+        self,
+        terminal: BootstrapRetainedPendingAuthorityUnavailable | BootstrapPreparedPublishedAuthorityUnavailable,
+    ) -> BootstrapRetainedPendingAuthorityUnavailable | BootstrapPreparedPublishedAuthorityUnavailable:
+        record_id = self._bootstrap_authority_terminal_record_id(terminal.source_id)
+        record = CanonicalMemoryRecord(
+            memory_id=record_id,
+            domain=MemoryDomain.TRANSCRIPT,
+            text="",
+            content={"terminal": terminal.model_dump(mode="json")},
+            status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_bootstrap_authority_unavailable",
+            timestamp=self._now(),
+            visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        existing = self._load_bootstrap_authority_terminal(
+            source_id=terminal.source_id, source_digest=terminal.source_digest
+        )
+        if existing is not None:
+            if existing != terminal:
+                raise PreplanningStoreError("bootstrap authority terminal conflicts with existing source")
+            return existing
+        current = self._writers.current()
+        binding = self._writers.commit_binding(current)
+        writer_record = self._writers.require_current(binding)
+        authorization = self._writers._authorize_atomic(binding, capability=self._write_capability)
+        try:
+            self._memory_plane.conditionally_write_records(
+                (record,),
+                preconditions=(
+                    RecordAbsentPrecondition(memory_id=record_id),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                ),
+                authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            existing = self._load_bootstrap_authority_terminal(
+                source_id=terminal.source_id, source_digest=terminal.source_digest
+            )
+            if existing is None or existing != terminal:
+                raise PreplanningStoreError("bootstrap authority terminal CAS conflicted") from exc
+            return existing
+        return terminal
+
+    @staticmethod
+    def _load_prepared_source_record(record: CanonicalMemoryRecord, source_id: str, source_digest: str) -> object:
+        from memorii.core.semantic_ingestion.contracts import (
+            PreparedSource,
+            decode_semantic_contract,
+        )
+
+        content = record.content
+        if (record.source_kind != "semantic_ingestion_prepared_source" or content.get("source_id") != source_id
+                or content.get("source_digest") != source_digest or not isinstance(content.get("prepared_source_wire"), str)):
+            raise PreplanningStoreError("prepared source record is substituted or invalid")
+        try:
+            prepared = decode_semantic_contract(
+                base64.b64decode(content["prepared_source_wire"], validate=True),
+                PreparedSource,
+            )
+        except (ValueError, TypeError) as exc:
+            raise PreplanningStoreError("prepared source record payload is invalid") from exc
+        if content.get("preparation_fingerprint") != prepared.preparation_fingerprint:
+            raise PreplanningStoreError("prepared source record fingerprint is substituted")
+        return prepared
+
     def publish_preplanning(
         self,
         *,
@@ -572,6 +1560,114 @@ class SemanticIngestionAtomicStore:
         writer_binding: SemanticWriterCommitBinding,
     ) -> PreplanningPublication:
         raise PreplanningStoreError("new preplanning publication requires atomic source admission")
+
+    def publish_admitted_source(
+        self,
+        *,
+        prepared: PreparedSourceAdmission,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> SourceAdmissionAccepted:
+        """Publish only the immutable Step-1 admission evidence.
+
+        Bootstrap preparation owns the next source-only CAS.  In particular,
+        this boundary must not allocate a preplanning control, lease, or
+        writer-bound generation; those begin at ``bootstrap_writer_handoff``.
+        """
+        linearization = self._semantic_integrity_linearization
+        if linearization is None:
+            return self._publish_admitted_source_linearized(
+                prepared=prepared,
+                writer_binding=writer_binding,
+            )
+        with linearization.exclusive():
+            return self._publish_admitted_source_linearized(
+                prepared=prepared,
+                writer_binding=writer_binding,
+            )
+
+    def _publish_admitted_source_linearized(
+        self,
+        *,
+        prepared: PreparedSourceAdmission,
+        writer_binding: SemanticWriterCommitBinding,
+    ) -> SourceAdmissionAccepted:
+        admission = prepared.accepted
+        existing_records = tuple(
+            self._memory_plane.get_record(record.memory_id)
+            for record in prepared.records
+        )
+        if any(record is not None for record in existing_records):
+            if not all(
+                _same_admission_record(existing, expected)
+                for existing, expected in zip(existing_records, prepared.records, strict=True)
+            ):
+                raise PreplanningStoreError(
+                    "atomic admission evidence is partial or mismatched"
+                )
+            return admission
+        writer_record = self._writers.require_current(writer_binding)
+        authorization = self._writers._authorize_atomic(
+            writer_binding,
+            capability=self._write_capability,
+        )
+        try:
+            self._memory_plane.conditionally_write_records(
+                prepared.records,
+                preconditions=(
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in prepared.records),
+                    RecordDigestPrecondition(
+                        memory_id=writer_record.memory_id,
+                        expected_digest=record_digest(writer_record),
+                    ),
+                ),
+                authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            if not all(
+                _same_admission_record(
+                    self._memory_plane.get_record(record.memory_id), record
+                )
+                for record in prepared.records
+            ):
+                raise PreplanningStoreError(
+                    "atomic admission conflict is not an exact committed retry"
+                ) from exc
+        return admission
+
+    def assert_current_bootstrap_release(
+        self,
+        *,
+        authorization: DeliveryAuthorizationRequest,
+        release_evidence: HostVerifiedBootstrapReleaseEvidence,
+        assertion_phase: Literal[
+            "prepared_publication", "pre_handoff_retry", "writer_handoff"
+        ],
+    ) -> CurrentBootstrapReleaseAssertion | None:
+        """Obtain an ephemeral assertion solely from the host-installed verifier."""
+        verifier = self._current_bootstrap_release_verifier
+        if verifier is None:
+            return None
+        try:
+            assertion = verifier.assert_current(
+                authorization=authorization,
+                release_evidence=release_evidence,
+                assertion_phase=assertion_phase,
+            )
+            value = CurrentBootstrapReleaseAssertion.model_validate(
+                assertion.model_dump(mode="python")
+            )
+        except (AttributeError, TypeError, ValueError, OSError):
+            return None
+        if (
+            value.assertion_phase != assertion_phase
+            or value.coordinate != release_evidence.coordinate
+            or value.signed_release_digest != release_evidence.signed_release_digest
+            or value.bootstrap_anchor_digest != release_evidence.bootstrap_anchor_digest
+            or value.active_lifecycle_snapshot_digest
+            != release_evidence.active_lifecycle_snapshot_digest
+        ):
+            return None
+        return value
 
     def _publish_preplanning(
         self,
@@ -841,6 +1937,30 @@ class SemanticIngestionAtomicStore:
         digest_values["operation_fence_binding"] = fence.model_dump(mode="python")
         return OperationLeaseBinding(**values, binding_digest=sha256(encode_typed_value(digest_values)).hexdigest())
 
+    def current_source_normalization_lease(
+        self,
+        *,
+        operation_fence: OperationFenceBinding,
+        expected_operation_generation: int,
+        expected_artifact_generation: int,
+        writer_commit_binding: SemanticWriterCommitBinding,
+    ) -> OperationLeaseBinding:
+        """Return only the live lease for one exact preplanning publication CAS.
+
+        Host composition uses this narrow read to issue publication authority;
+        callers cannot substitute another operation, generation, or writer.
+        """
+        control = self.get_operation(operation_fence)
+        if (
+            control.operation_fence != operation_fence
+            or control.generation != expected_operation_generation
+            or expected_artifact_generation != control.generation
+            or control.writer_binding != writer_commit_binding
+            or control.lease is None
+        ):
+            raise PreplanningStoreError("source normalization publication lease is unavailable")
+        return self.lease_binding(control)
+
     def install_authorization_authority(
         self,
         *,
@@ -944,7 +2064,353 @@ class SemanticIngestionAtomicStore:
         control = _control_from_record(self._required_control_record(operation_fence))
         if generation < 2 or generation > control.generation:
             raise PreplanningStoreError("generation is outside the admitted operation")
-        return self._read_generation_members(control, generation)
+        try:
+            return self._read_generation_members(control, generation)
+        except PreplanningStoreError:
+            # The V3 recovery-ready generation carries only its sealed control
+            # snapshot and claim; exposing it as an empty internal generation
+            # prevents generic retry scans from treating it as corrupt output.
+            for record in self._memory_plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_v3_recovery_index"
+            ):
+                snapshot = record.content.get("control_snapshot")
+                if (
+                    (
+                        record.content.get("state") == "claimed"
+                        and isinstance(snapshot, dict)
+                        and snapshot.get("control_record", {}).get("operation_generation") == generation
+                        and snapshot.get("control_record", {}).get("operation_fence_digest")
+                        == operation_fence.binding_digest
+                    )
+                    or (
+                        record.content.get("state") == "found"
+                        and record.content.get("publication_operation_generation") == generation + 1
+                    )
+                ):
+                    return ()
+            raise
+
+    def recover_source_normalization(
+        self, *, request_identity: str
+    ) -> tuple[int, str, tuple[AtomicGenerationMember, ...]] | None:
+        """Read exactly one source-normalization recovery-index target.
+
+        The index is written with its generation CAS.  This method is a read
+        boundary only: it never scans or reconstructs candidate artifacts.
+        """
+        records = self._memory_plane.list_records(
+            source_kind="semantic_ingestion_source_normalization_recovery_index"
+        )
+        matches = [record for record in records if record.content.get("request_identity") == request_identity]
+        if not matches:
+            return None
+        if len(matches) != 1:
+            raise PreplanningStoreError("source normalization recovery index is ambiguous")
+        record = matches[0]
+        try:
+            namespace = str(record.content["namespace_id"])
+            generation = int(record.content["publication_generation"])
+            atomic_request_digest = str(record.content["atomic_request_digest"])
+            control = self._control_by_operation_fence_id(namespace)
+            if _control_namespace(control) != namespace:
+                raise ValueError
+            return generation, atomic_request_digest, self._read_generation_members(control, generation)
+        except (KeyError, TypeError, ValueError, PreplanningStoreError) as exc:
+            raise PreplanningStoreError("source normalization recovery index is corrupt") from exc
+
+    def recover_bootstrap_v3_source_normalization(
+        self, *, recovery_key_digest: str
+    ) -> tuple[int, str, str, tuple[AtomicGenerationMember, ...]] | None:
+        """Reload the one V3 Found entry without re-running derivation work."""
+        record = self._memory_plane.get_record(
+            "semantic_ingestion:bootstrap-v3-recovery:" + recovery_key_digest
+        )
+        if record is None:
+            return None
+        try:
+            content = record.content
+            if (
+                content["schema_version"] != 3
+                or content["recovery_key_digest"] != recovery_key_digest
+                or content["state"] != "found"
+                or content["kind"] != "found"
+            ):
+                raise ValueError
+            control = self._control_by_operation_fence_id(str(content["namespace_id"]))
+            generation = int(content["publication_artifact_generation"])
+            members = self._read_generation_members(control, generation)
+            # A Found lookup has no caller-owned request to repair or fill in
+            # missing analysis.  Decode the retained V3 closure directly from
+            # this generation before exposing its result to recovery.
+            from memorii.core.semantic_ingestion.source_normalization_repository import (
+                AtomicStoreSourceNormalizationRepository,
+            )
+            AtomicStoreSourceNormalizationRepository.validate_bootstrap_v3_reloaded_members(members)
+            return generation, str(content["atomic_request_digest"]), str(content["result_digest"]), members
+        except (KeyError, TypeError, ValueError, PreplanningStoreError) as exc:
+            raise PreplanningStoreError("bootstrap V3 recovery index is corrupt") from exc
+
+    def bootstrap_v3_recovery_snapshot(self) -> tuple[tuple[str, str, str], ...]:
+        """Return only the durable V3 recovery identities for testable reload proof."""
+        rows: list[tuple[str, str, str]] = []
+        for record in self._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_v3_recovery_index"
+        ):
+            content = record.content
+            if content.get("schema_version") != 3 or content.get("state") not in {"claimed", "found"}:
+                raise PreplanningStoreError("bootstrap V3 recovery index is corrupt")
+            key = content.get("recovery_key_digest")
+            if not isinstance(key, str):
+                raise PreplanningStoreError("bootstrap V3 recovery index is corrupt")
+            digest = (
+                content.get("claim_digest")
+                if content["state"] == "claimed"
+                else content.get("consumed_claim_digest")
+            )
+            if not isinstance(digest, str):
+                raise PreplanningStoreError("bootstrap V3 recovery index is corrupt")
+            rows.append((key, content["state"], digest))
+        return tuple(sorted(rows))
+
+    def probe_bootstrap_v3_recovery(self, *, probe: object, server_time: datetime, monotonic_tick: int) -> object:
+        """Atomically return Found, one live claim, or a closed unavailable arm."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapNormalizationReadyControlRecordV3,
+            BootstrapRecoveryClaimedV3,
+            BootstrapRecoveryClaimV3,
+            BootstrapRecoveryControlSnapshotV3,
+            BootstrapRecoveryFoundV3,
+            BootstrapRecoveryProbeV3,
+            contract_digest,
+        )
+        try:
+            probe = BootstrapRecoveryProbeV3.model_validate(probe.model_dump(mode="python"))
+        except (AttributeError, TypeError, ValueError):
+            return _bootstrap_v3_unavailable("0" * 64, "invalid_probe")
+        memory_id = _bootstrap_v3_recovery_id(probe.recovery_key.recovery_key_digest)
+        record = self._memory_plane.get_record(memory_id)
+        if record is None:
+            return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "storage_unavailable")
+        content = record.content
+        try:
+            if content["recovery_key_digest"] != probe.recovery_key.recovery_key_digest:
+                raise ValueError
+            if content["state"] == "found":
+                body = {name: content[name] for name in (
+                    "kind", "recovery_key_digest", "consumed_claim_digest",
+                    "recovery_control_snapshot_digest", "predecessor_operation_generation",
+                    "predecessor_artifact_generation", "publication_operation_generation",
+                    "publication_artifact_generation", "result_digest", "provenance_manifest_digest",
+                )}
+                return BootstrapRecoveryFoundV3(**body, response_digest=contract_digest(
+                    b"memorii.semantic-ingestion.bootstrap-recovery-found.v3", body))
+            if (content["operation_fence_digest"] != probe.recovery_key.operation_fence_digest
+                    or content["handoff_marker_digest"] != probe.handoff_marker_digest
+                    or content["predecessor_operation_generation"] != probe.expected_predecessor_operation_generation
+                    or content["predecessor_artifact_generation"] != probe.expected_predecessor_artifact_generation
+                    or content["predecessor_control_digest"] != probe.expected_predecessor_control_digest):
+                return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "stale_predecessor")
+            live = content["state"] == "claimed" and server_time < datetime.fromisoformat(content["expires_server_time"]) and monotonic_tick < content["expires_monotonic_tick"]
+            if live:
+                return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "foreign_live_claim")
+            fence = OperationFenceBinding.model_validate(content["operation_fence"])
+            writer_binding = SemanticWriterCommitBinding.model_validate(content["writer_commit_binding"])
+            control_record = self._required_control_record(fence)
+            control = _control_from_record(control_record)
+            if content["state"] == "claimed":
+                # The first claim owns the predecessor-to-ready transition.  A
+                # later claimant must instead reuse that exact ready snapshot;
+                # comparing it to the old predecessor would make every expiry
+                # unrecoverable after the successful generation advance.
+                prior_claim = BootstrapRecoveryClaimV3.model_validate_json(
+                    json.dumps(
+                        {name: content[name] for name in BootstrapRecoveryClaimV3.model_fields}
+                    )
+                )
+                snapshot = prior_claim.control_snapshot.control_record
+                if (
+                    content.get("control_snapshot") != prior_claim.control_snapshot.model_dump(mode="json")
+                    or control.generation != snapshot.operation_generation
+                    or control.operation_fence != fence
+                    or control.writer_binding != snapshot.writer_commit_binding
+                    or control.lease is None
+                    or self.lease_binding(control) != snapshot.operation_lease_binding
+                ):
+                    return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "stale_control_snapshot")
+                if snapshot.operation_lease_binding.lease_expires_at <= server_time:
+                    return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "lease_unavailable")
+                current = self._writers.current()
+                if self._writers.commit_binding(current) != snapshot.writer_commit_binding:
+                    return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "writer_unavailable")
+                claim_body = prior_claim.model_dump(
+                    mode="python",
+                    exclude={
+                        "claim_digest", "claim_nonce", "issued_server_time",
+                        "expires_server_time", "issued_monotonic_tick",
+                        "expires_monotonic_tick", "renewal_count",
+                    },
+                )
+                claim_body.update(
+                    claim_nonce=token_hex(24),
+                    issued_server_time=server_time,
+                    expires_server_time=server_time + timedelta(seconds=10),
+                    issued_monotonic_tick=monotonic_tick,
+                    expires_monotonic_tick=monotonic_tick + 10,
+                    renewal_count=0,
+                )
+                claim = BootstrapRecoveryClaimV3(
+                    **claim_body,
+                    claim_digest=contract_digest(
+                        b"memorii.semantic-ingestion.bootstrap-recovery-claim.v3", claim_body
+                    ),
+                )
+                next_record = record.model_copy(
+                    update={"content": {**content, **claim.model_dump(mode="json")}}
+                )
+                self._memory_plane.conditionally_write_records(
+                    (next_record,),
+                    preconditions=(
+                        RecordDigestPrecondition(memory_id=memory_id, expected_digest=record_digest(record)),
+                    ),
+                    authorization=self._writers._authorize_atomic(
+                        snapshot.writer_commit_binding, capability=self._write_capability
+                    ),
+                )
+                response = {"kind": "claimed", "claim": claim}
+                return BootstrapRecoveryClaimedV3(**response, response_digest=contract_digest(
+                    b"memorii.semantic-ingestion.bootstrap-recovery-claimed.v1", response))
+            if content["state"] != "unclaimed":
+                return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "index_corrupt")
+            predecessor_digest = sha256(encode_typed_value(control.model_dump(mode="python"))).hexdigest()
+            if (control.generation != probe.expected_predecessor_operation_generation
+                    or predecessor_digest != probe.expected_predecessor_control_digest):
+                return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "stale_predecessor")
+            current = self._writers.current()
+            if self._writers.commit_binding(current) != writer_binding:
+                return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "writer_unavailable")
+            lease = PreplanningLease(owner_id="bootstrap-v3-recovery", execution_token=token_hex(24), ownership_epoch=1,
+                acquired_at=server_time, expires_at=server_time + timedelta(seconds=60), renewal_interval=timedelta(seconds=30))
+            next_control = control.model_copy(update={"generation": control.generation + 1, "lease": lease,
+                "state_revision": control.state_revision + 1, "attempt_count": control.attempt_count + 1})
+            lease_binding = self.lease_binding(next_control)
+            ready_body = {"schema_version": 3, "recovery_key_digest": probe.recovery_key.recovery_key_digest,
+                "handoff_marker_digest": probe.handoff_marker_digest, "source_id": probe.recovery_key.source_id,
+                "source_digest": probe.recovery_key.source_digest, "preparation_fingerprint": probe.recovery_key.preparation_fingerprint,
+                "operation_id": probe.recovery_key.operation_id, "operation_fence_digest": probe.recovery_key.operation_fence_digest,
+                "predecessor_operation_generation": control.generation, "predecessor_artifact_generation": control.generation,
+                "predecessor_control_digest": predecessor_digest, "operation_generation": next_control.generation,
+                "artifact_generation": next_control.generation, "transition": "post_handoff_normalization_ready",
+                "operation_lease_binding": lease_binding, "writer_commit_binding": writer_binding,
+                "progress_digest": sha256(encode_typed_value(next_control.model_dump(mode="python"))).hexdigest()}
+            ready = BootstrapNormalizationReadyControlRecordV3(**ready_body, control_record_digest=contract_digest(
+                b"memorii.semantic-ingestion.bootstrap-normalization-ready-control-record.v3", ready_body))
+            snapshot_body = {"control_record": ready}
+            snapshot = BootstrapRecoveryControlSnapshotV3(**snapshot_body, snapshot_digest=contract_digest(
+                b"memorii.semantic-ingestion.bootstrap-recovery-control-snapshot.v3", snapshot_body))
+            body = {"recovery_key_digest": probe.recovery_key.recovery_key_digest,
+                    "handoff_marker_digest": probe.handoff_marker_digest,
+                    "operation_fence_digest": probe.recovery_key.operation_fence_digest, "control_snapshot": snapshot,
+                    "claim_nonce": token_hex(24), "issued_server_time": server_time,
+                    "expires_server_time": server_time + timedelta(seconds=10),
+                    "issued_monotonic_tick": monotonic_tick, "expires_monotonic_tick": monotonic_tick + 10,
+                    "renewal_count": 0, "max_claim_renewals": 10, "max_claim_total_duration_ticks": 10}
+            claim = BootstrapRecoveryClaimV3(**body, claim_digest=contract_digest(
+                b"memorii.semantic-ingestion.bootstrap-recovery-claim.v3", body))
+            next_record = record.model_copy(update={"content": {**content, "state": "claimed", **claim.model_dump(mode="json")}})
+            self._memory_plane.conditionally_write_records((_control_record(next_control, control_record.timestamp), next_record), preconditions=(
+                RecordDigestPrecondition(memory_id=memory_id, expected_digest=record_digest(record)),
+                RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
+            ), authorization=self._writers._authorize_atomic(
+                writer_binding, capability=self._write_capability
+            ))
+            response = {"kind": "claimed", "claim": claim}
+            return BootstrapRecoveryClaimedV3(**response, response_digest=contract_digest(
+                b"memorii.semantic-ingestion.bootstrap-recovery-claimed.v1", response))
+        except MemoryPlaneRevisionConflictError:
+            return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "foreign_live_claim")
+        except (KeyError, TypeError, ValueError):
+            return _bootstrap_v3_unavailable(probe.recovery_key.recovery_key_digest, "index_corrupt")
+
+    def renew_or_abort_bootstrap_v3_recovery(self, *, claim: object, server_time: datetime, monotonic_tick: int) -> object:
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapRecoveryClaimV3,
+            BootstrapRecoveryRenewedV3,
+            contract_digest,
+        )
+        try:
+            claim = BootstrapRecoveryClaimV3.model_validate(claim.model_dump(mode="python"))
+        except (AttributeError, TypeError, ValueError):
+            return _bootstrap_v3_aborted("0" * 64, "snapshot_substituted")
+        record = self._memory_plane.get_record(_bootstrap_v3_recovery_id(claim.recovery_key_digest))
+        if record is None:
+            return _bootstrap_v3_aborted(claim.recovery_key_digest, "consumed")
+        content = record.content
+        if content.get("state") == "found":
+            return _bootstrap_v3_aborted(claim.recovery_key_digest, "consumed")
+        if content.get("state") != "claimed" or content.get("claim_digest") != claim.claim_digest or content.get("claim_nonce") != claim.claim_nonce:
+            return _bootstrap_v3_aborted(claim.recovery_key_digest, "foreign")
+        try:
+            fence = claim.control_snapshot.control_record.operation_lease_binding.operation_fence_binding
+            control = self.get_operation(fence)
+            snapshot = claim.control_snapshot.control_record
+            if (
+                control.generation != snapshot.operation_generation
+                or control.operation_fence != fence
+                or control.writer_binding != snapshot.writer_commit_binding
+                or control.lease is None
+                or self.lease_binding(control) != snapshot.operation_lease_binding
+            ):
+                return _bootstrap_v3_aborted(claim.recovery_key_digest, "control_advanced")
+            if snapshot.operation_lease_binding.lease_expires_at <= server_time:
+                return _bootstrap_v3_aborted(claim.recovery_key_digest, "lease_expired")
+            if self._writers.commit_binding(self._writers.current()) != snapshot.writer_commit_binding:
+                return _bootstrap_v3_aborted(claim.recovery_key_digest, "writer_superseded")
+        except (PreplanningStoreError, ValueError):
+            return _bootstrap_v3_aborted(claim.recovery_key_digest, "snapshot_substituted")
+        if server_time >= claim.expires_server_time or monotonic_tick >= claim.expires_monotonic_tick:
+            return _bootstrap_v3_aborted(claim.recovery_key_digest, "expired")
+        if claim.renewal_count >= claim.max_claim_renewals:
+            return _bootstrap_v3_aborted(claim.recovery_key_digest, "renewal_bound")
+        body = claim.model_dump(mode="python", exclude={"claim_digest", "issued_server_time", "expires_server_time", "issued_monotonic_tick", "expires_monotonic_tick", "renewal_count"})
+        body.update(issued_server_time=server_time, expires_server_time=server_time + timedelta(seconds=10),
+                    issued_monotonic_tick=monotonic_tick, expires_monotonic_tick=monotonic_tick + 10,
+                    renewal_count=claim.renewal_count + 1)
+        renewed = BootstrapRecoveryClaimV3(**body, claim_digest=contract_digest(
+            b"memorii.semantic-ingestion.bootstrap-recovery-claim.v3", body))
+        next_record = record.model_copy(update={"content": {**content, **renewed.model_dump(mode="json")}})
+        try:
+            current = self._writers.current()
+            writer_binding = self._writers.commit_binding(current)
+            self._memory_plane.conditionally_write_records((next_record,), preconditions=(
+                RecordDigestPrecondition(memory_id=record.memory_id, expected_digest=record_digest(record)),
+            ), authorization=self._writers._authorize_atomic(
+                writer_binding, capability=self._write_capability
+            ))
+        except MemoryPlaneRevisionConflictError:
+            return _bootstrap_v3_aborted(claim.recovery_key_digest, "foreign")
+        body = {"kind": "renewed", "claim": renewed}
+        return BootstrapRecoveryRenewedV3(**body, response_digest=contract_digest(
+            b"memorii.semantic-ingestion.bootstrap-recovery-renewed.v3", body))
+
+    def source_normalization_recovery_snapshot(
+        self, *, request_identity: str
+    ) -> tuple[int, int, str]:
+        """Return a bounded snapshot proof for an indexed recovery absence."""
+        matches = [
+            record for record in self._memory_plane.list_records(
+                source_kind="semantic_ingestion_source_normalization_recovery_index"
+            )
+            if record.content.get("request_identity") == request_identity
+        ]
+        if len(matches) > 1:
+            raise PreplanningStoreError("source normalization recovery index is ambiguous")
+        if matches:
+            namespace = str(matches[0].content.get("namespace_id"))
+            control = self._control_by_operation_fence_id(namespace)
+            snapshot = sha256(encode_typed_value(matches[0].content)).hexdigest()
+            return control.generation, control.generation, snapshot
+        snapshot = sha256(encode_typed_value(("source_normalization_recovery", request_identity, ()))) .hexdigest()
+        return 1, 1, snapshot
 
     @property
     def event_schema_registry(self) -> SemanticEventSchemaRegistry:
@@ -2670,6 +4136,403 @@ class SemanticIngestionAtomicStore:
                 key=lambda record: record.memory_id,
             )
         )
+
+    def reload_bootstrap_recovery_replay_v3(self, *, recovery_key_digest: str) -> object | None:
+        """Reload one exact found normalization closure; never scan generations."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapRecoveryFoundV3,
+            BootstrapRecoveryReplayRecordV3,
+            BootstrapSourceNormalizationRequestV3,
+            BootstrapSourceNormalizationResultV3,
+            contract_digest,
+            decode_semantic_contract,
+            encode_semantic_contract,
+        )
+        record = self._memory_plane.get_record(_bootstrap_v3_recovery_id(recovery_key_digest))
+        if record is None or record.source_kind != "semantic_ingestion_bootstrap_v3_recovery_index":
+            return None
+        content = record.content
+        try:
+            if content["state"] != "found" or content["recovery_key_digest"] != recovery_key_digest:
+                return None
+            found_body = {name: content[name] for name in (
+                "kind", "recovery_key_digest", "consumed_claim_digest",
+                "recovery_control_snapshot_digest", "predecessor_operation_generation",
+                "predecessor_artifact_generation", "publication_operation_generation",
+                "publication_artifact_generation", "result_digest", "provenance_manifest_digest",
+            )}
+            found = BootstrapRecoveryFoundV3(
+                **found_body,
+                response_digest=contract_digest(
+                    b"memorii.semantic-ingestion.bootstrap-recovery-found.v3", found_body,
+                ),
+            )
+            recovered = self.recover_bootstrap_v3_source_normalization(
+                recovery_key_digest=recovery_key_digest
+            )
+            if recovered is None:
+                return None
+            _generation, _request_digest, result_digest, members = recovered
+            request_member = next(item for item in members if item.kind == "bootstrap_source_normalization_request")
+            result_member = next(item for item in members if item.kind == "bootstrap_source_normalization_result")
+            request = decode_semantic_contract(request_member.canonical_payload, BootstrapSourceNormalizationRequestV3)
+            result = decode_semantic_contract(result_member.canonical_payload, BootstrapSourceNormalizationResultV3)
+            if (
+                encode_semantic_contract(request) != request_member.canonical_payload
+                or encode_semantic_contract(result) != result_member.canonical_payload
+                or request_member.payload_digest != sha256(request_member.canonical_payload).hexdigest()
+                or result_member.payload_digest != sha256(result_member.canonical_payload).hexdigest()
+                or result.result_digest != result_digest
+                or result.result_digest != found.result_digest
+                or result.source_normalization_request_digest != request.request_digest
+            ):
+                return None
+            return BootstrapRecoveryReplayRecordV3.create(
+                recovery_key_digest=recovery_key_digest, found_response=found,
+                source_normalization_request=request,
+                source_normalization_result=result,
+            )
+        except (KeyError, StopIteration, TypeError, ValueError):
+            return None
+
+    def reload_bootstrap_graph_normalization_authority_v3(
+        self, *, normalization_replay: object,
+    ) -> object | None:
+        """Reload the policy/capability member from the exact found generation."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphNormalizationAuthorityMemberV3,
+            BootstrapGraphNormalizationAuthorityReloadV3,
+            BootstrapRecoveryReplayRecordV3,
+            decode_semantic_contract,
+            encode_semantic_contract,
+        )
+
+        if not isinstance(normalization_replay, BootstrapRecoveryReplayRecordV3):
+            return None
+        try:
+            recovered = self.recover_bootstrap_v3_source_normalization(
+                recovery_key_digest=normalization_replay.recovery_key_digest
+            )
+            if recovered is None:
+                return None
+            generation, atomic_write_digest, result_digest, members = recovered
+            member = next(
+                item for item in members
+                if item.kind == "bootstrap_graph_normalization_authority"
+            )
+            authority = decode_semantic_contract(
+                member.canonical_payload, BootstrapGraphNormalizationAuthorityMemberV3,
+            )
+            if (
+                encode_semantic_contract(authority) != member.canonical_payload
+                or member.payload_digest != sha256(member.canonical_payload).hexdigest()
+                or authority.recovery_key_digest != normalization_replay.recovery_key_digest
+                or authority.normalization_request_digest
+                != normalization_replay.source_normalization_request.request_digest
+                or authority.normalization_result_digest != result_digest
+            ):
+                return None
+            return BootstrapGraphNormalizationAuthorityReloadV3.create(
+                normalization_replay=normalization_replay,
+                normalization_atomic_write_digest=atomic_write_digest,
+                normalization_operation_generation=generation,
+                normalization_artifact_generation=generation,
+                authority_member=authority,
+            )
+        except (PreplanningStoreError, StopIteration, TypeError, ValueError):
+            return None
+
+    def reload_bootstrap_semantic_reduction_authority_v3(
+        self, *, normalization_replay: object,
+    ) -> object | None:
+        """Reload the exact native reduction member from the found generation.
+
+        No caller may reconstruct a reduction from the replay wrapper or from
+        live graph state: the retained core bytes are the authority boundary.
+        """
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapNormalizationRequestCoreV3,
+            BootstrapRecoveryReplayRecordV3,
+            BootstrapSemanticReductionAuthorityMemberV3,
+            BootstrapSemanticReductionAuthorityReloadV3,
+            decode_semantic_contract,
+            encode_semantic_contract,
+        )
+
+        if not isinstance(normalization_replay, BootstrapRecoveryReplayRecordV3):
+            return None
+        try:
+            recovered = self.recover_bootstrap_v3_source_normalization(
+                recovery_key_digest=normalization_replay.recovery_key_digest
+            )
+            if recovered is None:
+                return None
+            generation, atomic_write_digest, _result_digest, members = recovered
+            core_member = next(
+                item for item in members
+                if item.kind == "bootstrap_normalization_request_core"
+            )
+            authority_member = next(
+                item for item in members
+                if item.kind == "bootstrap_semantic_reduction_authority"
+            )
+            core = decode_semantic_contract(
+                core_member.canonical_payload, BootstrapNormalizationRequestCoreV3
+            )
+            authority = decode_semantic_contract(
+                authority_member.canonical_payload,
+                BootstrapSemanticReductionAuthorityMemberV3,
+            )
+            if (
+                encode_semantic_contract(core) != core_member.canonical_payload
+                or encode_semantic_contract(authority) != authority_member.canonical_payload
+                or core_member.payload_digest != sha256(core_member.canonical_payload).hexdigest()
+                or authority_member.payload_digest
+                != sha256(authority_member.canonical_payload).hexdigest()
+                or authority.normalization_request_core != core
+                or core.recovery_key.recovery_key_digest
+                != normalization_replay.recovery_key_digest
+                or core.source_alignment
+                != normalization_replay.source_normalization_request.source_alignment
+            ):
+                return None
+            return BootstrapSemanticReductionAuthorityReloadV3.create(
+                normalization_replay=normalization_replay,
+                normalization_atomic_write_digest=atomic_write_digest,
+                normalization_operation_generation=generation,
+                normalization_artifact_generation=generation,
+                authority_member=authority,
+            )
+        except (PreplanningStoreError, StopIteration, TypeError, ValueError):
+            return None
+
+    def publish_or_reload_bootstrap_graph_transaction_authority_v3(
+        self, *, request: object,
+    ) -> object:
+        """CAS the complete pre-epoch graph authority and return reloaded bytes.
+
+        This deliberately has a distinct record family from graph checkpoints:
+        an authority projection exists before a control epoch or final request.
+        """
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphAuthorityGenerationV3,
+            BootstrapGraphAuthorityPublicationCoreV3,
+            BootstrapGraphAuthorityPublicationReceiptV3,
+            BootstrapGraphTransactionAuthorityReloadV3,
+            BootstrapGraphTransactionAuthorityWriteRequestV3,
+            encode_semantic_contract,
+        )
+
+        if not isinstance(request, BootstrapGraphTransactionAuthorityWriteRequestV3):
+            raise PreplanningStoreError("bootstrap graph authority write has an invalid type")
+        request = BootstrapGraphTransactionAuthorityWriteRequestV3.model_validate(
+            request.model_dump(mode="python")
+        )
+        projection = request.authority_projection
+        existing = self._memory_plane.get_record(
+            _bootstrap_graph_v3_authority_id(projection.authority_projection_digest)
+        )
+        if existing is not None:
+            return _bootstrap_graph_v3_authority_from_record(existing)
+        control_record = self._required_control_record(request.operation_fence_binding)
+        control = _control_from_record(control_record)
+        if (
+            control.writer_binding != request.writer_commit_binding
+            or control.lease is None
+            or self.lease_binding(control) != request.operation_lease_binding
+            or request.operation_lease_binding.lease_expires_at <= self._now()
+        ):
+            raise PreplanningStoreError("bootstrap graph authority is no longer current")
+        writer_record = self._writers.require_current(request.writer_commit_binding)
+        authorization = self._writers._authorize_atomic(
+            request.writer_commit_binding,
+            capability=self._write_capability,
+            lease_expires_at=request.operation_lease_binding.lease_expires_at,
+            server_now=self._now,
+        )
+        atomic_write_digest = sha256(
+            b"memorii.semantic-ingestion.bootstrap-graph-authority-atomic-write.v3\0"
+            + request.write_digest.encode("ascii")
+        ).hexdigest()
+        core = BootstrapGraphAuthorityPublicationCoreV3.create(
+            write_request_digest=request.write_digest,
+            authority_projection=projection,
+            publication_operation_generation=control.generation,
+            publication_artifact_generation=control.generation,
+        )
+        generation = BootstrapGraphAuthorityGenerationV3.create(
+            store_identity_digest=sha256(_control_namespace(control).encode("utf-8")).hexdigest(),
+            recovery_key_digest=projection.normalization_authority.normalization_replay.recovery_key_digest,
+            normalization_atomic_write_digest=(
+                projection.normalization_authority.normalization_atomic_write_digest
+            ),
+            authority_projection_digest=projection.authority_projection_digest,
+            operation_id=control.operation_fence.operation_id,
+            operation_fence_binding_digest=request.operation_fence_binding.binding_digest,
+            operation_generation=control.generation,
+            artifact_generation=control.generation,
+        )
+        receipt = BootstrapGraphAuthorityPublicationReceiptV3.create(
+            recovery_key_digest=generation.recovery_key_digest,
+            authority_projection_digest=projection.authority_projection_digest,
+            write_request_digest=request.write_digest,
+            atomic_write_digest=atomic_write_digest,
+            publication_core_digest=core.core_digest,
+            successor_generation=generation,
+        )
+        reload = BootstrapGraphTransactionAuthorityReloadV3.create(
+            publication_core=core, publication_receipt=receipt,
+        )
+        timestamp = self._now()
+        record = _bootstrap_graph_v3_authority_record(reload, timestamp)
+        index = _bootstrap_graph_v3_authority_index_record(reload, timestamp)
+        try:
+            self._memory_plane.conditionally_write_records(
+                (record, index),
+                preconditions=(
+                    RecordAbsentPrecondition(memory_id=record.memory_id),
+                    RecordAbsentPrecondition(memory_id=index.memory_id),
+                    RecordDigestPrecondition(
+                        memory_id=control_record.memory_id,
+                        expected_digest=record_digest(control_record),
+                    ),
+                    RecordDigestPrecondition(
+                        memory_id=writer_record.memory_id,
+                        expected_digest=record_digest(writer_record),
+                    ),
+                ),
+                authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            existing = self._memory_plane.get_record(record.memory_id)
+            if existing is None:
+                raise PreplanningStoreError("bootstrap graph authority publication conflicted") from exc
+        reloaded = self._memory_plane.get_record(record.memory_id)
+        if reloaded is None:
+            raise PreplanningStoreError("bootstrap graph authority publication was not durable")
+        result = _bootstrap_graph_v3_authority_from_record(reloaded)
+        if encode_semantic_contract(result) != encode_semantic_contract(reload):
+            raise PreplanningStoreError("bootstrap graph authority reload is substituted")
+        return result
+
+    def publish_or_reload_bootstrap_canonical_identity_authority_v3(
+        self, *, request: object,
+    ) -> object:
+        """Persist one pre-plan canonical identity authority or reload it exactly."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapCanonicalIdentityAuthorityWriteRequestV3,
+            encode_semantic_contract,
+        )
+        if not isinstance(request, BootstrapCanonicalIdentityAuthorityWriteRequestV3):
+            raise PreplanningStoreError("canonical identity authority write has an invalid type")
+        request = BootstrapCanonicalIdentityAuthorityWriteRequestV3.model_validate(
+            request.model_dump(mode="python")
+        )
+        reload = request.authority_reload
+        record_id = _bootstrap_canonical_identity_authority_id(reload.reload_digest)
+        existing = self._memory_plane.get_record(record_id)
+        if existing is not None:
+            return _bootstrap_canonical_identity_authority_from_record(existing)
+        control_record = self._required_control_record(request.operation_fence_binding)
+        control = _control_from_record(control_record)
+        if (
+            control.writer_binding != request.writer_commit_binding
+            or control.lease is None
+            or self.lease_binding(control) != request.operation_lease_binding
+            or request.operation_lease_binding.lease_expires_at <= self._now()
+        ):
+            raise PreplanningStoreError("canonical identity authority is no longer current")
+        writer_record = self._writers.require_current(request.writer_commit_binding)
+        authorization = self._writers._authorize_atomic(
+            request.writer_commit_binding, capability=self._write_capability,
+            lease_expires_at=request.operation_lease_binding.lease_expires_at,
+            server_now=self._now,
+        )
+        record = CanonicalMemoryRecord(
+            memory_id=record_id, domain=MemoryDomain.EXECUTION, text="",
+            content={
+                "semantic_ingestion_kind": "bootstrap_canonical_identity_authority_v3",
+                "reload_digest": reload.reload_digest,
+                "canonical_hex": encode_semantic_contract(reload).hex(),
+            }, status=CommitStatus.COMMITTED,
+            source_kind="semantic_ingestion_bootstrap_canonical_identity_authority_v3",
+            timestamp=self._now(), visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+        )
+        try:
+            self._memory_plane.conditionally_write_records(
+                (record,), preconditions=(
+                    RecordAbsentPrecondition(memory_id=record.memory_id),
+                    RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                ), authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            existing = self._memory_plane.get_record(record_id)
+            if existing is None:
+                raise PreplanningStoreError("canonical identity authority publication conflicted") from exc
+        reloaded = self._memory_plane.get_record(record_id)
+        if reloaded is None:
+            raise PreplanningStoreError("canonical identity authority was not durable")
+        result = _bootstrap_canonical_identity_authority_from_record(reloaded)
+        if encode_semantic_contract(result) != encode_semantic_contract(reload):
+            raise PreplanningStoreError("canonical identity authority reload is substituted")
+        return result
+
+    def reload_bootstrap_graph_transaction_authority_for_recovery_v3(
+        self,
+        *,
+        recovery_key_digest: str,
+        authenticated_ingress: object,
+        required_outcome_scopes: object,
+        operation_fence_binding: object,
+    ) -> object | None:
+        """Authorized, non-disclosing recovery lookup for a pre-epoch projection."""
+        from memorii.core.memory_evolution.ingestion_contracts import (
+            AuthenticatedIngressContext,
+            OperationFenceBinding,
+        )
+        from memorii.core.semantic_ingestion.contracts import RequiredOutcomeScopeSet
+
+        if (
+            not isinstance(authenticated_ingress, AuthenticatedIngressContext)
+            or not isinstance(required_outcome_scopes, RequiredOutcomeScopeSet)
+            or not isinstance(operation_fence_binding, OperationFenceBinding)
+        ):
+            return None
+        try:
+            control = _control_from_record(self._required_control_record(operation_fence_binding))
+            if control.operation_fence != operation_fence_binding:
+                return None
+        except (PreplanningStoreError, ValueError):
+            return None
+        matches = []
+        for record in self._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_graph_v3_authority_index"
+        ):
+            if record.content.get("recovery_key_digest") != recovery_key_digest:
+                continue
+            authority_id = record.content.get("authority_record_id")
+            if not isinstance(authority_id, str):
+                return None
+            authority = self._memory_plane.get_record(authority_id)
+            if authority is None:
+                return None
+            try:
+                reloaded = _bootstrap_graph_v3_authority_from_record(authority)
+            except (PreplanningStoreError, ValueError):
+                return None
+            projection = reloaded.publication_core.authority_projection
+            graph = projection.graph_authority
+            if (
+                graph.operation_fence_binding != operation_fence_binding
+                or graph.required_scope_set_digest
+                != required_outcome_scopes.required_scope_set_digest
+                or graph.delivery_principal_binding_digest
+                != authenticated_ingress.delivery_principal_binding.binding_digest
+            ):
+                return None
+            matches.append(reloaded)
+        return matches[0] if len(matches) == 1 else None
 
     def _semantic_clean_recovery_authority_records(
         self,
@@ -6143,8 +8006,7 @@ class SemanticIngestionAtomicStore:
                 )
             else:
                 carriers.append(carrier)
-        body = graph_delta.model_dump(mode="python", exclude={"delta_digest"})
-        body["carriers"] = tuple(
+        updated_delta = graph_delta.model_copy(update={"carriers": tuple(
             sorted(
                 carriers,
                 key=lambda item: (
@@ -6153,16 +8015,19 @@ class SemanticIngestionAtomicStore:
                     item.record_digest,
                 ),
             )
-        )
+        )})
         if records:
-            body["graph_records"] = tuple(
-                sorted(
-                    records,
-                    key=lambda item: (item.record_kind, item.record_digest),
-                )
+            updated_delta = updated_delta.model_copy(
+                update={"graph_records": tuple(sorted(records, key=lambda item: (item.record_kind, item.record_digest)))}
             )
+        body = updated_delta.model_dump(mode="python", exclude={"delta_digest"})
         return SemanticGraphDelta.model_validate(
-            body | {"delta_digest": contract_digest(b"memorii.semantic-ingestion.graph-delta.v1", body)}
+            body
+            | {
+                "delta_digest": contract_digest(
+                    b"memorii.semantic-ingestion.graph-delta.v1", body
+                )
+            }
         )
 
     def prepare_semantic_event_batch(
@@ -6308,12 +8173,25 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("terminal semantic conflict authority preflight failed") from exc
 
     def checkpoint_source_progress(
-        self, request: SourceCheckpointAtomicWriteRequest
+        self, request: SourceCheckpointAtomicWriteRequest | AtomicGenerationRequest
     ) -> tuple[AtomicGenerationMember, ...]:
         recovered = self._recover_exact_generation_if_current(request)
         if recovered is not None:
             return recovered
         control = self._require_current_generation_authority(request)
+        # Bootstrap V3's generation-three closure has a sealed recovery
+        # control/progress snapshot.  It must not grow a second generic
+        # progress member merely to satisfy the older checkpoint grammar.
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapSourceNormalizationAtomicWriteRequestV3,
+        )
+        if isinstance(request, BootstrapSourceNormalizationAtomicWriteRequestV3):
+            return self._publish_generation(
+                request,
+                next_state="preplanning",
+                allowed_kinds={member.kind for member in request.members},
+                clear_lease=True,
+            )
         counts = _member_kind_counts(request.members)
         if request.progress_state == "planned" and control.state == "planned" and counts.get("plan") == 1:
             planned_generations_list: list[tuple[AtomicGenerationMember, ...]] = []
@@ -6372,8 +8250,1697 @@ class SemanticIngestionAtomicStore:
             "execution_plan",
             "recovery_authority_binding",
             "stage_artifact",
+            # Source normalization is a complete graph-free authority.  Its
+            # specialized request validates the exact category closure before
+            # this generic transaction owner sees the generation.
+            "source_normalization_request",
+            "graph_free_interpretation_bundle",
+            "source_local_identity_partition_evidence",
+            "parser_consensus",
+            "semantic_scope_consensus",
+            "temporal_attachment_consensus",
+            "source_local_identity_resolution",
+            "source_proposal_alignment",
+            "source_dependency_groups",
+            "source_normalization_result",
+            "source_normalization_evidence_manifest",
+            "graph_dependent_execution_policy",
+            "consensus_policy_selection_bundle",
+            "language_construction_policy_bundle",
+            # Bootstrap V3 is a standalone wire schema.  These members are
+            # intentionally not admitted through the generic V2 categories.
+            "bootstrap_proposal_run_payload",
+            "bootstrap_analysis_lane_result",
+            "bootstrap_pre_alignment_operation_subject_set",
+            "bootstrap_analyzer_scope_observation",
+            "bootstrap_analyzer_temporal_attachment_observation",
+            "bootstrap_parser_consensus_assessment",
+            "bootstrap_semantic_scope_consensus",
+            "bootstrap_temporal_attachment_consensus",
+            "bootstrap_operation_temporal_attachment_consensus_set",
+            "bootstrap_source_local_identity_partition_evidence",
+            "bootstrap_source_local_identity_resolution",
+            "bootstrap_proposal_coverage_audit",
+            "bootstrap_operation_alignment",
+            "bootstrap_source_dependency_group",
+            "bootstrap_graph_free_interpretation_bundle",
+            "bootstrap_source_proposal_alignment",
+            "bootstrap_source_normalization_request",
+            "bootstrap_source_normalization_evidence_manifest",
+            "bootstrap_source_normalization_result",
+            "bootstrap_normalization_request_core",
+            "bootstrap_semantic_reduction_authority",
+            "bootstrap_graph_normalization_authority",
         }
-        return self._publish_generation(request, next_state=request.progress_state, allowed_kinds=allowed)
+        progress_state = getattr(request, "progress_state", None)
+        source_normalization_members = {
+            "source_normalization_request",
+            "source_normalization_result",
+            "source_normalization_evidence_manifest",
+            "bootstrap_proposal_run_payload",
+            "bootstrap_analysis_lane_result",
+            "bootstrap_graph_free_interpretation_bundle",
+            "bootstrap_source_proposal_alignment",
+        }
+        # A source-normalization generation itself is graph-free preplanning.
+        # Its later terminal checkpoint is a distinct generic transaction and
+        # must be allowed to advance that same operation to planned.
+        if counts.keys() & source_normalization_members and progress_state != "preplanning":
+            raise PreplanningStoreError("source normalization checkpoint progress is invalid")
+        return self._publish_generation(request, next_state=progress_state, allowed_kinds=allowed)
+
+    def transition_or_find_bootstrap_graph_control_epoch_v3(self, *, request: object) -> object:
+        """Append one immutable V3 control epoch or recover its exact prior write."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphControlEpochAdvancedV3,
+            BootstrapGraphControlEpochFoundV3,
+            BootstrapGraphControlEpochTransitionRequestV3,
+        )
+
+        if not isinstance(request, BootstrapGraphControlEpochTransitionRequestV3):
+            raise PreplanningStoreError("bootstrap graph epoch transition has an invalid type")
+        request = BootstrapGraphControlEpochTransitionRequestV3.model_validate(
+            request.model_dump(mode="python")
+        )
+        linearization = self._semantic_integrity_linearization
+        if linearization is None:
+            return self._transition_or_find_bootstrap_graph_control_epoch_v3_linearized(
+                request=request,
+                found_type=BootstrapGraphControlEpochFoundV3,
+                advanced_type=BootstrapGraphControlEpochAdvancedV3,
+            )
+        with linearization.exclusive():
+            return self._transition_or_find_bootstrap_graph_control_epoch_v3_linearized(
+                request=request,
+                found_type=BootstrapGraphControlEpochFoundV3,
+                advanced_type=BootstrapGraphControlEpochAdvancedV3,
+            )
+
+    def _transition_or_find_bootstrap_graph_control_epoch_v3_linearized(
+        self, *, request: object, found_type: type, advanced_type: type
+    ) -> object:
+        from memorii.core.semantic_ingestion.contracts import BootstrapGraphControlEpochV3
+
+        transition_record = self._memory_plane.get_record(
+            _bootstrap_graph_v3_transition_id(request.transition_digest)
+        )
+        if transition_record is not None:
+            epoch = _bootstrap_graph_v3_epoch_from_transition_record(transition_record)
+            return found_type.create(kind="found", epoch=epoch)
+        try:
+            current_writer = self._writers.commit_binding(self._writers.current())
+            if current_writer != request.writer_commit:
+                return _bootstrap_graph_v3_epoch_unavailable(request, "writer_changed")
+            self._writers.require_current(request.writer_commit)
+            control_record = self._required_control_record(request.operation_fence)
+            control = _control_from_record(control_record)
+            if (
+                control.operation_fence != request.operation_fence
+                or control.writer_binding != request.writer_commit
+                or control.lease is None
+                or self.lease_binding(control) != request.operation_lease
+                or request.operation_lease.lease_expires_at <= self._now()
+            ):
+                return _bootstrap_graph_v3_epoch_unavailable(request, "lease_unavailable")
+            authority = request.graph_authority
+            if (
+                authority.operation_fence_binding != request.operation_fence
+                or (
+                    request.expected_epoch_digest is None
+                    and authority.operation_lease_binding != request.operation_lease
+                )
+                or authority.writer_commit_binding != request.writer_commit
+                or authority.required_scope_set_digest
+                != request.required_outcome_scopes.required_scope_set_digest
+                or authority.delivery_principal_binding_digest
+                != request.authenticated_ingress.delivery_principal_binding.binding_digest
+            ):
+                return _bootstrap_graph_v3_epoch_unavailable(request, "ingress_unavailable")
+            head_record = self._memory_plane.get_record(
+                _bootstrap_graph_v3_epoch_head_id(request.request_core_digest)
+            )
+            if request.expected_epoch_digest is None:
+                if request.transition != "initial" or head_record is not None:
+                    return _bootstrap_graph_v3_epoch_unavailable(request, "stale_epoch")
+                epoch_number = 0
+                predecessor = None
+            else:
+                if head_record is None or head_record.content.get("epoch_digest") != request.expected_epoch_digest:
+                    return _bootstrap_graph_v3_epoch_unavailable(request, "stale_epoch")
+                prior = self._memory_plane.get_record(
+                    _bootstrap_graph_v3_epoch_id(
+                        request.request_core_digest, int(head_record.content.get("epoch", -1))
+                    )
+                )
+                if prior is None:
+                    return _bootstrap_graph_v3_epoch_unavailable(request, "stale_epoch")
+                prior_epoch = _bootstrap_graph_v3_epoch_from_record(prior)
+                prior_lease = prior_epoch.operation_lease_binding
+                next_lease = request.operation_lease
+                same_lease_owner = (
+                    next_lease.owner_id == prior_lease.owner_id
+                    and next_lease.execution_token == prior_lease.execution_token
+                    and next_lease.ownership_epoch == prior_lease.ownership_epoch
+                )
+                if request.transition == "initial":
+                    return _bootstrap_graph_v3_epoch_unavailable(
+                        request, "invalid_transition"
+                    )
+                if request.transition == "lease_renewed" and (
+                    not same_lease_owner
+                    or next_lease.state_revision <= prior_lease.state_revision
+                    or next_lease.lease_expires_at <= prior_lease.lease_expires_at
+                ):
+                    return _bootstrap_graph_v3_epoch_unavailable(
+                        request, "invalid_transition"
+                    )
+                if request.transition == "lease_reclaimed" and (
+                    same_lease_owner
+                    or next_lease.ownership_epoch != prior_lease.ownership_epoch + 1
+                    or prior_lease.lease_expires_at > self._now()
+                ):
+                    return _bootstrap_graph_v3_epoch_unavailable(
+                        request, "invalid_transition"
+                    )
+                epoch_number = prior_epoch.epoch + 1
+                predecessor = prior_epoch.epoch_digest
+            epoch = BootstrapGraphControlEpochV3.create(
+                request_core_digest=request.request_core_digest,
+                normalization_replay_digest=request.normalization_replay.replay_digest,
+                source_id=request.graph_authority.source_id,
+                source_digest=request.graph_authority.source_digest,
+                preparation_fingerprint=request.graph_authority.preparation_fingerprint,
+                epoch=epoch_number,
+                predecessor_epoch_digest=predecessor,
+                transition=request.transition,
+                delivery_principal_binding_digest=request.authenticated_ingress.delivery_principal_binding.binding_digest,
+                required_scope_set_digest=(
+                    request.required_outcome_scopes.required_scope_set_digest
+                ),
+                operation_fence_binding=request.operation_fence,
+                operation_lease_binding=request.operation_lease,
+                writer_commit_binding=request.writer_commit,
+                issued_server_time=self._now(),
+                issued_monotonic_tick=epoch_number,
+            )
+            timestamp = self._now()
+            epoch_record = _bootstrap_graph_v3_epoch_record(epoch=epoch, timestamp=timestamp)
+            head = _bootstrap_graph_v3_epoch_head_record(epoch=epoch, timestamp=timestamp)
+            index = _bootstrap_graph_v3_transition_record(
+                transition=request, epoch=epoch, timestamp=timestamp
+            )
+            writer_record = self._writers.require_current(request.writer_commit)
+            authorization = self._writers._authorize_atomic(
+                request.writer_commit,
+                capability=self._write_capability,
+                lease_expires_at=request.operation_lease.lease_expires_at,
+                server_now=self._now,
+            )
+            head_precondition = (
+                RecordAbsentPrecondition(memory_id=head.memory_id)
+                if head_record is None
+                else RecordDigestPrecondition(memory_id=head_record.memory_id, expected_digest=record_digest(head_record))
+            )
+            self._memory_plane.conditionally_write_records(
+                (epoch_record, head, index),
+                preconditions=(
+                    RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                    RecordFencePrecondition(
+                        memory_id=control_record.memory_id,
+                        expected_fence=MemoryRecordFence(
+                            execution_token=request.operation_lease.execution_token,
+                            ownership_epoch=request.operation_lease.ownership_epoch,
+                        ),
+                    ),
+                    head_precondition,
+                    *(RecordAbsentPrecondition(memory_id=item.memory_id) for item in (epoch_record, index)),
+                ),
+                authorization=authorization,
+            )
+            return advanced_type.create(kind="advanced", epoch=epoch)
+        except SemanticWriterAdmissionError:
+            return _bootstrap_graph_v3_epoch_unavailable(request, "writer_unavailable")
+        except MemoryPlaneRevisionConflictError:
+            raced = self._memory_plane.get_record(
+                _bootstrap_graph_v3_transition_id(request.transition_digest)
+            )
+            if raced is not None:
+                return found_type.create(
+                    kind="found", epoch=_bootstrap_graph_v3_epoch_from_transition_record(raced)
+                )
+            return _bootstrap_graph_v3_epoch_unavailable(request, "stale_epoch")
+
+    def checkpoint_bootstrap_graph_transaction_v3(
+        self,
+        *,
+        request: object,
+        authenticated_ingress: object,
+        required_outcome_scopes: object,
+        control_epoch: object,
+    ) -> object:
+        """Publish and reload one sealed V3 graph checkpoint.
+
+        Bootstrap graph artifacts intentionally have a separate persisted
+        grammar.  They never enter the generic generation/member tables: the
+        graph request's member digest, ordering, epoch, and recovery identity
+        are all part of its own durable closure.
+        """
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphCheckpointReceiptV3,
+            BootstrapGraphCurrentGenerationV3,
+            BootstrapGraphPlanAtomicReloadCoreV3,
+            BootstrapGraphPlanAtomicReloadV3,
+            BootstrapGraphPlanAtomicWriteRequestV3,
+            validate_bootstrap_graph_plan_atomic_members_v3,
+        )
+
+        if not isinstance(request, BootstrapGraphPlanAtomicWriteRequestV3):
+            raise PreplanningStoreError("bootstrap graph checkpoint has an invalid type")
+        request = BootstrapGraphPlanAtomicWriteRequestV3.model_validate(
+            request.model_dump(mode="python")
+        )
+        try:
+            validate_bootstrap_graph_plan_atomic_members_v3(request.members)
+        except ValueError as exc:
+            raise PreplanningStoreError("bootstrap graph checkpoint member is not native") from exc
+        linearization = self._semantic_integrity_linearization
+        if linearization is None:
+            return self._checkpoint_bootstrap_graph_transaction_v3_linearized(
+                request=request,
+                authenticated_ingress=authenticated_ingress,
+                required_outcome_scopes=required_outcome_scopes,
+                control_epoch=control_epoch,
+                current_generation_type=BootstrapGraphCurrentGenerationV3,
+                reload_core_type=BootstrapGraphPlanAtomicReloadCoreV3,
+                receipt_type=BootstrapGraphCheckpointReceiptV3,
+                reload_type=BootstrapGraphPlanAtomicReloadV3,
+            )
+        with linearization.exclusive():
+            return self._checkpoint_bootstrap_graph_transaction_v3_linearized(
+                request=request,
+                authenticated_ingress=authenticated_ingress,
+                required_outcome_scopes=required_outcome_scopes,
+                control_epoch=control_epoch,
+                current_generation_type=BootstrapGraphCurrentGenerationV3,
+                reload_core_type=BootstrapGraphPlanAtomicReloadCoreV3,
+                receipt_type=BootstrapGraphCheckpointReceiptV3,
+                reload_type=BootstrapGraphPlanAtomicReloadV3,
+            )
+
+    def load_bootstrap_graph_current_generation_v3(
+        self, *, request: object, control_epoch: object, authenticated_ingress: object,
+        required_outcome_scopes: object,
+    ) -> object:
+        """Return the sealed predecessor snapshot; callers cannot supply scalars."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphControlEpochV3,
+            BootstrapGraphCurrentGenerationV3,
+        )
+        if not isinstance(control_epoch, BootstrapGraphControlEpochV3):
+            raise PreplanningStoreError("bootstrap graph control epoch is invalid")
+        if (
+            request.request_core_digest != control_epoch.request_core_digest
+            or authenticated_ingress.delivery_principal_binding.binding_digest
+            != control_epoch.delivery_principal_binding_digest
+            or required_outcome_scopes.required_scope_set_digest
+            != control_epoch.required_scope_set_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph current generation authority is substituted")
+        control = _control_from_record(self._required_control_record(control_epoch.operation_fence_binding))
+        head = self._memory_plane.get_record(_bootstrap_graph_v3_epoch_head_id(control_epoch.request_core_digest))
+        if head is None or head.content.get("epoch_digest") != control_epoch.epoch_digest:
+            raise PreplanningStoreError("bootstrap graph control epoch is not current")
+        return BootstrapGraphCurrentGenerationV3.create(
+            store_identity_digest=sha256(_control_namespace(control).encode()).hexdigest(),
+            operation_id=control.operation_fence.operation_id,
+            request_digest=request.request_digest,
+            operation_generation=control.generation, artifact_generation=control.generation,
+            latest_atomic_write_digest=control.last_request_digest,
+            control_epoch_digest=control_epoch.epoch_digest,
+        )
+    def _checkpoint_bootstrap_graph_transaction_v3_linearized(
+        self,
+        *,
+        request: object,
+        authenticated_ingress: object,
+        required_outcome_scopes: object,
+        control_epoch: object,
+        current_generation_type: type,
+        reload_core_type: type,
+        receipt_type: type,
+        reload_type: type,
+    ) -> object:
+        from memorii.core.semantic_ingestion.contracts import (
+            validate_bootstrap_graph_plan_atomic_members_v3,
+        )
+
+        try:
+            validate_bootstrap_graph_plan_atomic_members_v3(request.members)
+        except ValueError as exc:
+            raise PreplanningStoreError("bootstrap graph reload member is not native") from exc
+        self._validate_bootstrap_graph_v3_current_authority(
+            request=request,
+            authenticated_ingress=authenticated_ingress,
+            required_outcome_scopes=required_outcome_scopes,
+            control_epoch=control_epoch,
+        )
+        control_record = self._required_control_record(request.operation_fence_binding)
+        control = _control_from_record(control_record)
+        existing = self._memory_plane.get_record(
+            _bootstrap_graph_v3_idempotency_id(request.write_digest)
+        )
+        if existing is not None:
+            return self._reload_bootstrap_graph_transaction_v3(
+                request=request,
+                authenticated_ingress=authenticated_ingress,
+                required_outcome_scopes=required_outcome_scopes,
+                control_epoch=control_epoch,
+                current_generation_type=current_generation_type,
+                reload_core_type=reload_core_type,
+                receipt_type=receipt_type,
+                reload_type=reload_type,
+            )
+        if (
+            request.predecessor_generation.operation_generation != control.generation
+            or request.predecessor_generation.artifact_generation != control.generation
+            or request.predecessor_generation.operation_id != request.operation_fence_binding.operation_id
+            or request.predecessor_generation.request_digest != request.request_digest
+            or request.predecessor_generation.control_epoch_digest != control_epoch.epoch_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph checkpoint generation is stale")
+        if control.state in {"terminal", "lease_recovery_exhausted"}:
+            raise PreplanningStoreError("bootstrap graph operation is terminal")
+        next_terminal = request.kind == "bootstrap_graph_terminal_checkpoint"
+        next_control = control.model_copy(
+            update={
+                "generation": control.generation + 1,
+                "last_request_digest": request.write_digest,
+                "state": "terminal" if next_terminal else control.state,
+                "lease": None if next_terminal else control.lease,
+                "last_completed_lease_binding_digest": (
+                    request.operation_lease_binding.binding_digest
+                    if next_terminal
+                    else control.last_completed_lease_binding_digest
+                ),
+            }
+        )
+        timestamp = self._now()
+        members = tuple(
+            _bootstrap_graph_v3_member_record(
+                namespace_id=_control_namespace(control), generation=control.generation + 1,
+                member=member,
+                timestamp=timestamp,
+            )
+            for member in request.members
+        )
+        manifest = _bootstrap_graph_v3_manifest_record(
+            namespace_id=_control_namespace(control), request=request, timestamp=timestamp
+        )
+        index = _bootstrap_graph_v3_idempotency_record(
+            namespace_id=_control_namespace(control), request=request, timestamp=timestamp
+        )
+        retry_index = (
+            _bootstrap_graph_v3_retry_record(request=request, timestamp=timestamp)
+            if request.kind == "bootstrap_graph_retry_checkpoint"
+            else None
+        )
+        writer_record = self._writers.require_current(request.writer_commit_binding)
+        authorization = self._writers._authorize_atomic(
+            request.writer_commit_binding,
+            capability=self._write_capability,
+            lease_expires_at=request.operation_lease_binding.lease_expires_at,
+            server_now=self._now,
+        )
+        try:
+            written = (
+                _control_record(next_control, control_record.timestamp),
+                *members,
+                manifest,
+                index,
+                *((retry_index,) if retry_index is not None else ()),
+            )
+            self._memory_plane.conditionally_write_records(
+                written,
+                preconditions=(
+                    RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                    RecordFencePrecondition(
+                        memory_id=control_record.memory_id,
+                        expected_fence=MemoryRecordFence(
+                            execution_token=request.operation_lease_binding.execution_token,
+                            ownership_epoch=request.operation_lease_binding.ownership_epoch,
+                        ),
+                    ),
+                    *(RecordAbsentPrecondition(memory_id=item.memory_id) for item in (*members, manifest, index, *((retry_index,) if retry_index is not None else ()))),
+                ),
+                authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            if self._memory_plane.get_record(_bootstrap_graph_v3_idempotency_id(request.write_digest)) is None:
+                raise PreplanningStoreError("bootstrap graph checkpoint CAS conflicted") from exc
+        return self._reload_bootstrap_graph_transaction_v3(
+            request=request,
+            authenticated_ingress=authenticated_ingress,
+            required_outcome_scopes=required_outcome_scopes,
+            control_epoch=control_epoch,
+            current_generation_type=current_generation_type,
+            reload_core_type=reload_core_type,
+            receipt_type=receipt_type,
+            reload_type=reload_type,
+        )
+
+    def reload_bootstrap_graph_transaction_v3(
+        self,
+        *,
+        request: object,
+        authenticated_ingress: object,
+        required_outcome_scopes: object,
+        control_epoch: object,
+    ) -> object:
+        """Re-read the exact persisted V3 checkpoint after current-authority checks."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphCheckpointReceiptV3,
+            BootstrapGraphCurrentGenerationV3,
+            BootstrapGraphPlanAtomicReloadCoreV3,
+            BootstrapGraphPlanAtomicReloadV3,
+            BootstrapGraphPlanAtomicWriteRequestV3,
+        )
+
+        if not isinstance(request, BootstrapGraphPlanAtomicWriteRequestV3):
+            raise PreplanningStoreError("bootstrap graph reload has an invalid type")
+        return self._reload_bootstrap_graph_transaction_v3(
+            request=request,
+            authenticated_ingress=authenticated_ingress,
+            required_outcome_scopes=required_outcome_scopes,
+            control_epoch=control_epoch,
+            current_generation_type=BootstrapGraphCurrentGenerationV3,
+            reload_core_type=BootstrapGraphPlanAtomicReloadCoreV3,
+            receipt_type=BootstrapGraphCheckpointReceiptV3,
+            reload_type=BootstrapGraphPlanAtomicReloadV3,
+        )
+
+    def reload_bootstrap_graph_retry_by_request_v3(
+        self,
+        *,
+        request: object,
+        authenticated_ingress: object,
+        required_outcome_scopes: object,
+        control_epoch: object,
+    ) -> object | None:
+        """Reload the exact durable retry checkpoint without scanning generations."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphPlanAtomicWriteRequestV3,
+        )
+
+        retry = self._memory_plane.get_record(
+            _bootstrap_graph_v3_retry_id(request.request_digest)
+        )
+        if retry is None:
+            return None
+        if (
+            retry.source_kind != "semantic_ingestion_bootstrap_graph_v3_retry_index"
+            or retry.content.get("semantic_ingestion_kind")
+            != "bootstrap_graph_v3_retry_index"
+            or retry.content.get("request_digest") != request.request_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph retry index is corrupt")
+        write_digest = retry.content.get("write_digest")
+        index = self._memory_plane.get_record(
+            _bootstrap_graph_v3_idempotency_id(write_digest)
+        )
+        manifest_id = None if index is None else index.content.get("manifest_id")
+        manifest = None if not isinstance(manifest_id, str) else self._memory_plane.get_record(manifest_id)
+        if (
+            index is None
+            or index.source_kind != "semantic_ingestion_bootstrap_graph_v3_idempotency"
+            or index.content.get("request_digest") != request.request_digest
+            or index.content.get("request_write_digest") != write_digest
+            or manifest is None
+            or manifest.source_kind != "semantic_ingestion_bootstrap_graph_v3_manifest"
+        ):
+            raise PreplanningStoreError("bootstrap graph retry index is corrupt")
+        try:
+            retry_request = BootstrapGraphPlanAtomicWriteRequestV3.model_validate_json(
+                json.dumps(manifest.content["request"])
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("bootstrap graph retry checkpoint is corrupt") from exc
+        if retry_request.kind != "bootstrap_graph_retry_checkpoint":
+            raise PreplanningStoreError("bootstrap graph retry checkpoint is substituted")
+        return self.reload_bootstrap_graph_transaction_v3(
+            request=retry_request,
+            authenticated_ingress=authenticated_ingress,
+            required_outcome_scopes=required_outcome_scopes,
+            control_epoch=control_epoch,
+        )
+
+    def reload_bootstrap_graph_terminal_v3(
+        self,
+        *,
+        handoff: object,
+        authenticated_ingress: object,
+        required_outcome_scopes: object,
+        control_epoch: object,
+    ) -> object:
+        """Found-only terminal recovery through the prepublication locator.
+
+        This deliberately does not scan generations or infer a terminal write
+        from ambient state.  An absent locator must be constructed by the V3
+        coordinator from its retained typed carriers before this port can CAS.
+        """
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphTerminalPersistenceHandoffV3,
+            BootstrapGraphTerminalReloadV3,
+        )
+
+        if not isinstance(handoff, BootstrapGraphTerminalPersistenceHandoffV3):
+            raise PreplanningStoreError("bootstrap graph terminal handoff has an invalid type")
+        handoff = BootstrapGraphTerminalPersistenceHandoffV3.model_validate(
+            handoff.model_dump(mode="python")
+        )
+        core = handoff.core
+        intent = handoff.publication_intent
+        if (
+            core.operation_fence_binding.binding_digest
+            != intent.operation_fence_binding_digest
+            or core.operation_lease_binding.binding_digest
+            != intent.operation_lease_binding_digest
+            or core.writer_commit_binding.binding_digest
+            != intent.writer_commit_binding_digest
+            or core.control_epoch_digest != intent.control_epoch_digest
+            or authenticated_ingress.delivery_principal_binding.binding_digest
+            != intent.delivery_principal_binding_digest
+            or required_outcome_scopes.required_scope_set_digest
+            != intent.required_scope_set_digest
+            or control_epoch.epoch_digest != intent.control_epoch_digest
+            or control_epoch.operation_fence_binding != core.operation_fence_binding
+        ):
+            raise PreplanningStoreError("bootstrap graph terminal authority is substituted")
+        index = self._memory_plane.get_record(
+            _bootstrap_graph_v3_terminal_locator_id(intent.locator_digest)
+        )
+        if index is None:
+            raise PreplanningStoreError("bootstrap graph terminal publication is absent")
+        if (
+            index.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator"
+            or index.content.get("locator_digest") != intent.locator_digest
+            or index.content.get("handoff_digest") != handoff.handoff_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph terminal locator is corrupt")
+        try:
+            reload = BootstrapGraphTerminalReloadV3.model_validate(index.content["reload"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("bootstrap graph terminal locator is corrupt") from exc
+        control = reload.terminal_control
+        identity = reload.final_write_identity
+        if (
+            reload.atomic_write_locator_digest != intent.locator_digest
+            or reload.handoff_digest != handoff.handoff_digest
+            or control.state != "terminal_published"
+            or control.locator_digest != intent.locator_digest
+            or control.completed_lease_binding_digest != core.operation_lease_binding.binding_digest
+            or identity.locator_digest != intent.locator_digest
+            or identity.terminal_control_digest != control.terminal_control_digest
+            or identity.completed_lease_binding_digest != control.completed_lease_binding_digest
+            or reload.delivery_principal_binding_digest != intent.delivery_principal_binding_digest
+            or reload.required_scope_set_digest != intent.required_scope_set_digest
+            or reload.operation_fence_binding_digest != intent.operation_fence_binding_digest
+            or reload.operation_lease_binding_digest != control.completed_lease_binding_digest
+            or reload.control_epoch_digest != intent.control_epoch_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph terminal reload is substituted")
+        return reload
+
+    def persist_bootstrap_graph_terminal_v3(self, *, request: object) -> object:
+        """Atomically publish the sealed terminal V3 closure or reload its locator.
+
+        The locator is intentionally the only recovery coordinate.  In
+        particular, this path never searches old generations for a plausible
+        terminal result: an acknowledgement can be recovered only when it is
+        bound to the same immutable publication intent.
+        """
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphCanonicalSourceResultV3,
+            BootstrapGraphCheckpointReceiptV3,
+            BootstrapGraphCurrentGenerationV3,
+            BootstrapGraphPlanAtomicMemberV3,
+            BootstrapGraphPlanAtomicWriteIdentityV3,
+            BootstrapGraphTerminalControlV3,
+            BootstrapGraphTerminalPublicationRequestV3,
+            BootstrapGraphTerminalReloadV3,
+            BootstrapNativeGroupCommitTerminalConstructionV3,
+            encode_semantic_contract,
+        )
+
+        if not isinstance(request, BootstrapGraphTerminalPublicationRequestV3):
+            raise PreplanningStoreError("bootstrap graph terminal publication has an invalid type")
+        request = BootstrapGraphTerminalPublicationRequestV3.model_validate(
+            request.model_dump(mode="python")
+        )
+        linearization = self._semantic_integrity_linearization
+        if linearization is None:
+            return self._persist_bootstrap_graph_terminal_v3_linearized(
+                request=request,
+                member_type=BootstrapGraphPlanAtomicMemberV3,
+                group_result_type=BootstrapNativeGroupCommitTerminalConstructionV3,
+                canonical_result_type=BootstrapGraphCanonicalSourceResultV3,
+                identity_type=BootstrapGraphPlanAtomicWriteIdentityV3,
+                terminal_control_type=BootstrapGraphTerminalControlV3,
+                current_generation_type=BootstrapGraphCurrentGenerationV3,
+                receipt_type=BootstrapGraphCheckpointReceiptV3,
+                reload_type=BootstrapGraphTerminalReloadV3,
+                encoder=encode_semantic_contract,
+            )
+        with linearization.exclusive():
+            return self._persist_bootstrap_graph_terminal_v3_linearized(
+                request=request,
+                member_type=BootstrapGraphPlanAtomicMemberV3,
+                group_result_type=BootstrapNativeGroupCommitTerminalConstructionV3,
+                canonical_result_type=BootstrapGraphCanonicalSourceResultV3,
+                identity_type=BootstrapGraphPlanAtomicWriteIdentityV3,
+                terminal_control_type=BootstrapGraphTerminalControlV3,
+                current_generation_type=BootstrapGraphCurrentGenerationV3,
+                receipt_type=BootstrapGraphCheckpointReceiptV3,
+                reload_type=BootstrapGraphTerminalReloadV3,
+                encoder=encode_semantic_contract,
+            )
+
+    def reload_bootstrap_graph_terminal_by_request_v3(self, *, request: object) -> object | None:
+        """Reload an acknowledged terminal result by its authenticated request identity."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphTerminalReloadV3,
+            rebuild_bootstrap_graph_effect_contracts,
+        )
+
+        rebuild_bootstrap_graph_effect_contracts()
+
+        record = self._memory_plane.get_record(
+            _bootstrap_graph_v3_terminal_request_id(request.request_digest)
+        )
+        if record is None:
+            return None
+        if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator":
+            raise PreplanningStoreError("bootstrap graph terminal request index is corrupt")
+        try:
+            reload = BootstrapGraphTerminalReloadV3.model_validate(
+                record.content["reload"], strict=False
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("bootstrap graph terminal request index is corrupt") from exc
+        if (
+            record.content.get("coordinator_request_digest") != request.request_digest
+            or record.content.get("locator_digest") != reload.atomic_write_locator_digest
+            or reload.delivery_principal_binding_digest
+            != request.authenticated_ingress.delivery_principal_binding.binding_digest
+            or reload.required_scope_set_digest
+            != request.required_outcome_scopes.required_scope_set_digest
+            or reload.operation_fence_binding_digest
+            != request.initial_control_epoch.operation_fence_binding.binding_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph terminal request index is substituted")
+        return self._reload_bootstrap_graph_terminal_exact_v3(
+            locator_digest=reload.atomic_write_locator_digest,
+            expected_reload=reload,
+            expected_request_digest=request.request_digest,
+            expected_normalization_replay_digest=request.normalization_replay.replay_digest,
+            expected_delivery_principal_binding_digest=(
+                request.authenticated_ingress.delivery_principal_binding.binding_digest
+            ),
+            expected_required_scope_set_digest=(
+                request.required_outcome_scopes.required_scope_set_digest
+            ),
+            expected_operation_fence_binding=request.initial_control_epoch.operation_fence_binding,
+        )
+
+    def reload_bootstrap_graph_terminal_by_recovery_v3(
+        self, *, normalization_replay: object, authenticated_ingress: object,
+        required_outcome_scopes: object, operation_fence_binding: object,
+    ) -> object | None:
+        """Recover a terminal graph result from the exact normalization replay key."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphTerminalReloadV3,
+            rebuild_bootstrap_graph_effect_contracts,
+        )
+
+        rebuild_bootstrap_graph_effect_contracts()
+
+        record = self._memory_plane.get_record(
+            _bootstrap_graph_v3_terminal_recovery_id(normalization_replay.recovery_key_digest)
+        )
+        if record is None:
+            return None
+        if record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator":
+            raise PreplanningStoreError("bootstrap graph terminal recovery index is corrupt")
+        try:
+            reload = BootstrapGraphTerminalReloadV3.model_validate(
+                record.content["reload"], strict=False
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("bootstrap graph terminal recovery index is corrupt") from exc
+        canonical = reload.canonical_source_result
+        if (
+            record.content.get("normalization_recovery_key_digest")
+            != normalization_replay.recovery_key_digest
+            or record.content.get("normalization_replay_digest")
+            != normalization_replay.replay_digest
+            or record.content.get("normalization_result_digest")
+            != normalization_replay.source_normalization_result.result_digest
+            or record.content.get("locator_digest") != reload.atomic_write_locator_digest
+            or canonical.normalization_replay_digest != normalization_replay.replay_digest
+            or reload.delivery_principal_binding_digest
+            != authenticated_ingress.delivery_principal_binding.binding_digest
+            or reload.required_scope_set_digest
+            != required_outcome_scopes.required_scope_set_digest
+            or reload.operation_fence_binding_digest != operation_fence_binding.binding_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph terminal recovery index is substituted")
+        return self._reload_bootstrap_graph_terminal_exact_v3(
+            locator_digest=reload.atomic_write_locator_digest,
+            expected_reload=reload,
+            expected_normalization_replay_digest=normalization_replay.replay_digest,
+            expected_delivery_principal_binding_digest=(
+                authenticated_ingress.delivery_principal_binding.binding_digest
+            ),
+            expected_required_scope_set_digest=(
+                required_outcome_scopes.required_scope_set_digest
+            ),
+            expected_operation_fence_binding=operation_fence_binding,
+        )
+
+    def _persist_bootstrap_graph_terminal_v3_linearized(
+        self, *, request: object, member_type: type, group_result_type: type,
+        canonical_result_type: type, identity_type: type, terminal_control_type: type,
+        current_generation_type: type, receipt_type: type,
+        reload_type: type, encoder: Callable[[object], bytes],
+    ) -> object:
+        intent = request.publication_intent
+        locator_id = _bootstrap_graph_v3_terminal_locator_id(intent.locator_digest)
+        existing = self._memory_plane.get_record(locator_id)
+        if existing is not None:
+            return self._reload_bootstrap_graph_terminal_v3(request=request, reload_type=reload_type)
+
+        # The absent branch is a live mutation: authenticate it before reading
+        # the operation control or epoch head, while a found terminal locator
+        # can subsequently prove its historical completed lease.
+        if (
+            request.authenticated_ingress.delivery_principal_binding.binding_digest
+            != intent.delivery_principal_binding_digest
+            or request.required_outcome_scopes.required_scope_set_digest
+            != intent.required_scope_set_digest
+            or request.operation_fence_binding.binding_digest != intent.operation_fence_binding_digest
+            or request.operation_lease_binding.binding_digest != intent.operation_lease_binding_digest
+            or request.writer_commit_binding.binding_digest != intent.writer_commit_binding_digest
+            or request.control_epoch.epoch_digest != intent.control_epoch_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph terminal authority is substituted")
+        self._validate_bootstrap_graph_v3_current_authority(
+            request=_TerminalAuthorityRequest(request),
+            authenticated_ingress=request.authenticated_ingress,
+            required_outcome_scopes=request.required_outcome_scopes,
+            control_epoch=request.control_epoch,
+        )
+        control_record = self._required_control_record(request.operation_fence_binding)
+        control = _control_from_record(control_record)
+        if (
+            request.predecessor_generation.operation_generation != control.generation
+            or request.predecessor_generation.artifact_generation != control.generation
+            or control.state in {"terminal", "lease_recovery_exhausted"}
+        ):
+            raise PreplanningStoreError("bootstrap graph terminal generation is stale")
+
+        payloads = _bootstrap_graph_v3_terminal_payloads(
+            request=request, group_result_type=group_result_type,
+            canonical_result_type=canonical_result_type,
+        )
+        members = _bootstrap_graph_v3_terminal_members(
+            request=request, payloads=payloads, member_type=member_type, encoder=encoder,
+        )
+        generation = control.generation + 1
+        member_records = tuple(
+            _bootstrap_graph_v3_member_record(
+                namespace_id=_control_namespace(control), generation=generation,
+                member=member, timestamp=self._now(),
+            ) for member in members
+        )
+        manifest_digest = sha256(
+            encode_typed_value(tuple(member.model_dump(mode="json") for member in members))
+        ).hexdigest()
+        atomic_write_digest = request.publication_request_digest
+        terminal_control = terminal_control_type.create(
+            state="terminal_published", operation_id=request.operation_fence_binding.operation_id,
+            request_digest=request.coordinator_request.request_digest,
+            locator_digest=intent.locator_digest, atomic_write_digest=atomic_write_digest,
+            member_manifest_digest=manifest_digest,
+            publication_operation_generation=generation, publication_artifact_generation=generation,
+            delivery_principal_binding_digest=intent.delivery_principal_binding_digest,
+            required_scope_set_digest=intent.required_scope_set_digest,
+            operation_fence_binding_digest=intent.operation_fence_binding_digest,
+            control_epoch_digest=intent.control_epoch_digest,
+            completed_lease_binding_digest=request.operation_lease_binding.binding_digest,
+            writer_commit_binding_digest=intent.writer_commit_binding_digest,
+        )
+        identity = identity_type.create(
+            checkpoint_kind="bootstrap_graph_terminal_checkpoint", source_id=intent.source_id,
+            source_digest=intent.source_digest, preparation_fingerprint=intent.preparation_fingerprint,
+            operation_id=intent.operation_id, publication_intent_digest=intent.intent_digest,
+            locator_digest=intent.locator_digest, request_digest=request.coordinator_request.request_digest,
+            normalization_replay_digest=request.coordinator_request.normalization_replay.replay_digest,
+            atomic_write_digest=atomic_write_digest, expected_operation_generation=control.generation,
+            expected_artifact_generation=control.generation, publication_operation_generation=generation,
+            publication_artifact_generation=generation,
+            member_manifest_id=_bootstrap_graph_v3_manifest_id(_control_namespace(control), generation),
+            member_manifest_digest=manifest_digest,
+            required_member_digests=tuple(member.member_digest for member in members),
+            operation_fence_binding_digest=intent.operation_fence_binding_digest,
+            control_epoch_digest=intent.control_epoch_digest,
+            terminal_control_digest=terminal_control.terminal_control_digest,
+            completed_lease_binding_digest=request.operation_lease_binding.binding_digest,
+        )
+        canonical_result = payloads["bootstrap_graph_canonical_source_result"][0]
+        successor = current_generation_type.create(
+            store_identity_digest=sha256(_control_namespace(control).encode()).hexdigest(),
+            operation_id=request.operation_fence_binding.operation_id,
+            request_digest=request.coordinator_request.request_digest,
+            operation_generation=generation, artifact_generation=generation,
+            latest_atomic_write_digest=atomic_write_digest,
+            control_epoch_digest=request.control_epoch.epoch_digest,
+        )
+        receipt = receipt_type.create(
+            checkpoint_kind="bootstrap_graph_terminal_checkpoint",
+            predecessor_generation=request.predecessor_generation,
+            write_request_digest=request.publication_request_digest,
+            atomic_write_digest=atomic_write_digest,
+            reload_core_digest=terminal_control.terminal_control_digest,
+            publication_operation_generation=generation,
+            publication_artifact_generation=generation,
+            successor_generation=successor,
+        )
+        reload = reload_type.create(
+            handoff_digest=request.handoff.handoff_digest,
+            atomic_write_locator_digest=intent.locator_digest, final_write_identity=identity,
+            terminal_control=terminal_control, canonical_source_result=canonical_result,
+            delivery_principal_binding_digest=intent.delivery_principal_binding_digest,
+            required_scope_set_digest=intent.required_scope_set_digest,
+            operation_fence_binding_digest=intent.operation_fence_binding_digest,
+            operation_lease_binding_digest=request.operation_lease_binding.binding_digest,
+            control_epoch_digest=intent.control_epoch_digest,
+            checkpoint_receipt=receipt,
+        )
+        timestamp = self._now()
+        manifest = _bootstrap_graph_v3_terminal_manifest_record(
+            namespace_id=_control_namespace(control), generation=generation, members=members,
+            manifest_digest=manifest_digest, request=request, timestamp=timestamp,
+        )
+        terminal_record = _bootstrap_graph_v3_terminal_control_record(terminal_control, timestamp)
+        identity_record = _bootstrap_graph_v3_terminal_identity_record(identity, timestamp)
+        locator_record = _bootstrap_graph_v3_terminal_locator_record(
+            locator_digest=intent.locator_digest, handoff_digest=request.handoff.handoff_digest,
+            reload=reload, timestamp=timestamp,
+        )
+        request_record = _bootstrap_graph_v3_terminal_request_record(
+            request_digest=request.coordinator_request.request_digest,
+            locator_digest=intent.locator_digest, reload=reload, timestamp=timestamp,
+        )
+        recovery_record = _bootstrap_graph_v3_terminal_recovery_record(
+            normalization_replay=request.coordinator_request.normalization_replay,
+            locator_digest=intent.locator_digest, reload=reload, timestamp=timestamp,
+        )
+        next_control = control.model_copy(update={
+            "generation": generation, "last_request_digest": atomic_write_digest,
+            "state": "terminal", "lease": None,
+            "last_completed_lease_binding_digest": request.operation_lease_binding.binding_digest,
+        })
+        writer_record = self._writers.require_current(request.writer_commit_binding)
+        authorization = self._writers._authorize_atomic(
+            request.writer_commit_binding, capability=self._write_capability,
+            lease_expires_at=request.operation_lease_binding.lease_expires_at, server_now=self._now,
+        )
+        records = (_control_record(next_control, control_record.timestamp), *member_records,
+                   manifest, terminal_record, identity_record, locator_record, request_record,
+                   recovery_record)
+        try:
+            self._memory_plane.conditionally_write_records(
+                records,
+                preconditions=(
+                    RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
+                    RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                    RecordFencePrecondition(memory_id=control_record.memory_id, expected_fence=MemoryRecordFence(execution_token=request.operation_lease_binding.execution_token, ownership_epoch=request.operation_lease_binding.ownership_epoch)),
+                    *(RecordAbsentPrecondition(memory_id=item.memory_id) for item in records[1:]),
+                ), authorization=authorization,
+            )
+        except MemoryPlaneRevisionConflictError as exc:
+            if self._memory_plane.get_record(locator_id) is None:
+                raise PreplanningStoreError("bootstrap graph terminal CAS conflicted") from exc
+        return self._reload_bootstrap_graph_terminal_v3(request=request, reload_type=reload_type)
+
+    def _reload_bootstrap_graph_terminal_v3(self, *, request: object, reload_type: type) -> object:
+        """Validate a terminal locator and every persisted immutable join."""
+        intent = request.publication_intent
+        if (
+            request.authenticated_ingress.delivery_principal_binding.binding_digest != intent.delivery_principal_binding_digest
+            or request.required_outcome_scopes.required_scope_set_digest
+            != intent.required_scope_set_digest
+            or request.operation_fence_binding.binding_digest != intent.operation_fence_binding_digest
+            or request.control_epoch.epoch_digest != intent.control_epoch_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph terminal authority is substituted")
+        return self._reload_bootstrap_graph_terminal_exact_v3(
+            locator_digest=intent.locator_digest,
+            reload_type=reload_type,
+            expected_handoff_digest=request.handoff.handoff_digest,
+            expected_request_digest=request.coordinator_request.request_digest,
+            expected_normalization_replay_digest=(
+                request.coordinator_request.normalization_replay.replay_digest
+            ),
+            expected_delivery_principal_binding_digest=(
+                request.authenticated_ingress.delivery_principal_binding.binding_digest
+            ),
+            expected_required_scope_set_digest=(
+                request.required_outcome_scopes.required_scope_set_digest
+            ),
+            expected_operation_fence_binding=request.operation_fence_binding,
+            expected_operation_lease_binding_digest=(
+                request.operation_lease_binding.binding_digest
+            ),
+            expected_control_epoch_digest=request.control_epoch.epoch_digest,
+        )
+
+    def _reload_bootstrap_graph_terminal_exact_v3(
+        self,
+        *,
+        locator_digest: str,
+        expected_reload: object | None = None,
+        reload_type: type | None = None,
+        expected_handoff_digest: str | None = None,
+        expected_request_digest: str | None = None,
+        expected_normalization_replay_digest: str | None = None,
+        expected_delivery_principal_binding_digest: str,
+        expected_required_scope_set_digest: str,
+        expected_operation_fence_binding: OperationFenceBinding,
+        expected_operation_lease_binding_digest: str | None = None,
+        expected_control_epoch_digest: str | None = None,
+    ) -> object:
+        """Reload one terminal only after proving its immutable persisted closure."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphPlanAtomicMemberV3,
+            BootstrapGraphTerminalReloadV3,
+        )
+
+        index = self._memory_plane.get_record(
+            _bootstrap_graph_v3_terminal_locator_id(locator_digest)
+        )
+        if index is None or index.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_locator":
+            raise PreplanningStoreError("bootstrap graph terminal publication is absent")
+        try:
+            reload = BootstrapGraphTerminalReloadV3.model_validate(
+                index.content["reload"], strict=False
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError("bootstrap graph terminal locator is corrupt") from exc
+        if reload_type is not None:
+            try:
+                reload = reload_type.model_validate(index.content["reload"], strict=False)
+            except (KeyError, TypeError, ValueError) as exc:
+                raise PreplanningStoreError("bootstrap graph terminal locator is corrupt") from exc
+        if expected_reload is not None and reload != expected_reload:
+            raise PreplanningStoreError("bootstrap graph terminal index is substituted")
+
+        identity = reload.final_write_identity
+        terminal = reload.terminal_control
+        control = _control_from_record(
+            self._required_control_record(expected_operation_fence_binding)
+        )
+        manifest = self._memory_plane.get_record(identity.member_manifest_id)
+        terminal_record = self._memory_plane.get_record(
+            _bootstrap_graph_v3_terminal_control_id(locator_digest)
+        )
+        identity_record = self._memory_plane.get_record(
+            _bootstrap_graph_v3_terminal_identity_id(locator_digest)
+        )
+        members_value = () if manifest is None else manifest.content.get("members", ())
+        try:
+            members = tuple(
+                BootstrapGraphPlanAtomicMemberV3.model_validate(item, strict=False)
+                for item in members_value
+            )
+        except (TypeError, ValueError) as exc:
+            raise PreplanningStoreError("bootstrap graph terminal member closure is corrupt") from exc
+        member_values = tuple(member.model_dump(mode="json") for member in members)
+        expected_kinds = (
+            "bootstrap_graph_coordinator_request",
+            "bootstrap_graph_control_epoch",
+            "bootstrap_graph_dependent_attempt",
+            "bootstrap_transaction_group_plan",
+            "bootstrap_source_plan_lineage_entry",
+            "ingestion_execution_manifest",
+            "transaction_group_result",
+            "bootstrap_graph_terminal_handoff",
+            "bootstrap_graph_canonical_source_result",
+        )
+        kind_order = {kind: offset for offset, kind in enumerate(expected_kinds)}
+        member_ids = tuple(member.member_id for member in members)
+        member_digests = tuple(member.member_digest for member in members)
+        kinds = tuple(member.kind for member in members)
+        if (
+            index.content.get("locator_digest") != locator_digest
+            or index.content.get("handoff_digest") != reload.handoff_digest
+            or reload.atomic_write_locator_digest != locator_digest
+            or identity.locator_digest != locator_digest
+            or terminal.locator_digest != locator_digest
+            or identity.terminal_control_digest != terminal.terminal_control_digest
+            or terminal.request_digest != identity.request_digest
+            or terminal.atomic_write_digest != identity.atomic_write_digest
+            or terminal.member_manifest_digest != identity.member_manifest_digest
+            or terminal.publication_operation_generation != identity.publication_operation_generation
+            or terminal.publication_artifact_generation != identity.publication_artifact_generation
+            or terminal.operation_fence_binding_digest != identity.operation_fence_binding_digest
+            or terminal.control_epoch_digest != identity.control_epoch_digest
+            or terminal.completed_lease_binding_digest != identity.completed_lease_binding_digest
+            or reload.operation_fence_binding_digest != terminal.operation_fence_binding_digest
+            or reload.operation_lease_binding_digest != terminal.completed_lease_binding_digest
+            or reload.control_epoch_digest != terminal.control_epoch_digest
+            or reload.checkpoint_receipt.atomic_write_digest != identity.atomic_write_digest
+            or reload.checkpoint_receipt.reload_core_digest != terminal.terminal_control_digest
+            or control.state != "terminal"
+            or control.last_completed_lease_binding_digest != reload.operation_lease_binding_digest
+            or manifest is None
+            or manifest.source_kind != "semantic_ingestion_bootstrap_graph_v3_manifest"
+            or manifest.content.get("semantic_ingestion_kind") != "bootstrap_graph_v3_terminal_manifest"
+            or manifest.content.get("locator_digest") != locator_digest
+            or manifest.content.get("manifest_digest") != identity.member_manifest_digest
+            or sha256(encode_typed_value(member_values)).hexdigest()
+            != identity.member_manifest_digest
+            or not members
+            or len(member_ids) != len(set(member_ids))
+            or identity.required_member_digests != member_digests
+            or set(kinds) != set(expected_kinds)
+            or tuple(sorted(kinds, key=kind_order.__getitem__)) != kinds
+            or any(kinds.count(kind) != 1 for kind in (
+                "bootstrap_graph_coordinator_request",
+                "bootstrap_graph_control_epoch",
+                "bootstrap_graph_dependent_attempt",
+                "bootstrap_transaction_group_plan",
+                "ingestion_execution_manifest",
+                "bootstrap_graph_terminal_handoff",
+                "bootstrap_graph_canonical_source_result",
+            ))
+            or terminal_record is None
+            or terminal_record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_control"
+            or terminal_record.content.get("terminal_control") != terminal.model_dump(mode="json")
+            or identity_record is None
+            or identity_record.source_kind != "semantic_ingestion_bootstrap_graph_v3_terminal_identity"
+            or identity_record.content.get("identity") != identity.model_dump(mode="json")
+            or reload.delivery_principal_binding_digest
+            != expected_delivery_principal_binding_digest
+            or reload.required_scope_set_digest != expected_required_scope_set_digest
+            or reload.operation_fence_binding_digest
+            != expected_operation_fence_binding.binding_digest
+            or (expected_handoff_digest is not None and reload.handoff_digest != expected_handoff_digest)
+            or (expected_request_digest is not None and identity.request_digest != expected_request_digest)
+            or (
+                expected_normalization_replay_digest is not None
+                and identity.normalization_replay_digest
+                != expected_normalization_replay_digest
+            )
+            or (
+                expected_operation_lease_binding_digest is not None
+                and reload.operation_lease_binding_digest
+                != expected_operation_lease_binding_digest
+            )
+            or (
+                expected_control_epoch_digest is not None
+                and reload.control_epoch_digest != expected_control_epoch_digest
+            )
+        ):
+            raise PreplanningStoreError("bootstrap graph terminal reload is corrupt or substituted")
+        for member, member_value in zip(members, member_values, strict=True):
+            record = self._memory_plane.get_record(
+                _bootstrap_graph_v3_member_id(
+                    _control_namespace(control),
+                    identity.publication_operation_generation,
+                    member.member_id,
+                )
+            )
+            if (
+                record is None
+                or record.source_kind != "semantic_ingestion_bootstrap_graph_v3_member"
+                or record.content.get("member") != member_value
+            ):
+                raise PreplanningStoreError("bootstrap graph terminal member closure is incomplete")
+        return reload
+
+    def _reload_bootstrap_graph_transaction_v3(
+        self,
+        *,
+        request: object,
+        authenticated_ingress: object,
+        required_outcome_scopes: object,
+        control_epoch: object,
+        current_generation_type: type,
+        reload_core_type: type,
+        receipt_type: type,
+        reload_type: type,
+    ) -> object:
+        from memorii.core.semantic_ingestion.contracts import (
+            validate_bootstrap_graph_plan_atomic_members_v3,
+        )
+
+        try:
+            validate_bootstrap_graph_plan_atomic_members_v3(request.members)
+        except ValueError as exc:
+            raise PreplanningStoreError("bootstrap graph reload member is not native") from exc
+        self._validate_bootstrap_graph_v3_current_authority(
+            request=request,
+            authenticated_ingress=authenticated_ingress,
+            required_outcome_scopes=required_outcome_scopes,
+            control_epoch=control_epoch,
+            allow_terminal_recovery=True,
+        )
+        control = _control_from_record(self._required_control_record(request.operation_fence_binding))
+        index = self._memory_plane.get_record(_bootstrap_graph_v3_idempotency_id(request.write_digest))
+        if (
+            index is None
+            or index.source_kind != "semantic_ingestion_bootstrap_graph_v3_idempotency"
+            or index.content.get("request_write_digest") != request.write_digest
+            or index.content.get("namespace_id") != _control_namespace(control)
+            or index.content.get("publication_operation_generation")
+            != request.publication_operation_generation
+        ):
+            raise PreplanningStoreError("bootstrap graph checkpoint is absent")
+        manifest = self._memory_plane.get_record(
+            _bootstrap_graph_v3_manifest_id(_control_namespace(control), request.publication_operation_generation)
+        )
+        if (
+            manifest is None
+            or manifest.source_kind != "semantic_ingestion_bootstrap_graph_v3_manifest"
+            or manifest.content.get("request") != request.model_dump(mode="json")
+        ):
+            raise PreplanningStoreError("bootstrap graph checkpoint manifest is corrupt")
+        for member in request.members:
+            record = self._memory_plane.get_record(
+                _bootstrap_graph_v3_member_id(
+                    _control_namespace(control), request.publication_operation_generation, member.member_id
+                )
+            )
+            if (
+                record is None
+                or record.source_kind != "semantic_ingestion_bootstrap_graph_v3_member"
+                or record.content.get("member") != member.model_dump(mode="json")
+            ):
+                raise PreplanningStoreError("bootstrap graph checkpoint member closure is incomplete")
+        core = reload_core_type.create(
+            write_request_digest=request.write_digest,
+            publication_operation_generation=request.publication_operation_generation,
+            publication_artifact_generation=request.publication_artifact_generation,
+            members=request.members,
+            required_member_digests=request.required_member_digests,
+            delivery_principal_binding_digest=(
+                authenticated_ingress.delivery_principal_binding.binding_digest
+            ),
+            required_scope_set_digest=required_outcome_scopes.required_scope_set_digest,
+            operation_fence_binding_digest=request.operation_fence_binding.binding_digest,
+            operation_lease_binding_digest=request.operation_lease_binding.binding_digest,
+            control_epoch_digest=control_epoch.epoch_digest,
+        )
+        successor = current_generation_type.create(
+            store_identity_digest=sha256(_control_namespace(control).encode()).hexdigest(),
+            operation_id=request.operation_fence_binding.operation_id,
+            request_digest=request.request_digest,
+            operation_generation=request.publication_operation_generation,
+            artifact_generation=request.publication_artifact_generation,
+            latest_atomic_write_digest=request.write_digest,
+            control_epoch_digest=control_epoch.epoch_digest,
+        )
+        receipt = receipt_type.create(
+            checkpoint_kind=request.kind, predecessor_generation=request.predecessor_generation,
+            write_request_digest=request.write_digest, atomic_write_digest=request.write_digest,
+            reload_core_digest=core.core_digest,
+            publication_operation_generation=request.publication_operation_generation,
+            publication_artifact_generation=request.publication_artifact_generation,
+            successor_generation=successor,
+        )
+        return reload_type.create(core=core, checkpoint_receipt=receipt)
+
+    def _validate_bootstrap_graph_v3_current_authority(
+        self,
+        *,
+        request: object,
+        authenticated_ingress: object,
+        required_outcome_scopes: object,
+        control_epoch: object,
+        allow_terminal_recovery: bool = False,
+    ) -> None:
+        """Validate mutable authority before any V3 graph record lookup."""
+        from memorii.core.semantic_ingestion.contracts import BootstrapGraphControlEpochV3
+
+        if not isinstance(control_epoch, BootstrapGraphControlEpochV3):
+            raise PreplanningStoreError("bootstrap graph control epoch is invalid")
+        if (
+            request.control_epoch_digest != control_epoch.epoch_digest
+            or request.operation_fence_binding != control_epoch.operation_fence_binding
+            or request.writer_commit_binding != control_epoch.writer_commit_binding
+            or request.operation_lease_binding != control_epoch.operation_lease_binding
+            or authenticated_ingress.delivery_principal_binding.binding_digest
+            != control_epoch.delivery_principal_binding_digest
+            or required_outcome_scopes.required_scope_set_digest
+            != control_epoch.required_scope_set_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph current authority is substituted")
+        self._writers.require_current(request.writer_commit_binding)
+        control_record = self._required_control_record(request.operation_fence_binding)
+        control = _control_from_record(control_record)
+        active = (
+            control.lease is not None
+            and self.lease_binding(control) == request.operation_lease_binding
+            and request.operation_lease_binding.lease_expires_at > self._now()
+        )
+        terminal = (
+            allow_terminal_recovery
+            and control.state == "terminal"
+            and control.last_request_digest == request.write_digest
+            and control.last_completed_lease_binding_digest
+            == request.operation_lease_binding.binding_digest
+        )
+        if not active and not terminal:
+            raise PreplanningStoreError("bootstrap graph lease is stale or expired")
+        head = self._memory_plane.get_record(
+            _bootstrap_graph_v3_epoch_head_id(control_epoch.request_core_digest)
+        )
+        if (
+            head is None
+            or head.source_kind != "semantic_ingestion_bootstrap_graph_v3_epoch_head"
+            or head.content.get("epoch_digest") != control_epoch.epoch_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph control epoch is not current")
+
+    def commit_or_reload_bootstrap_graph_group_v3(self, *, request: object) -> object:
+        """Atomically materialize and persist one complete V3 group outcome.
+
+        This deliberately has no per-operation write entry point: the primary
+        record and every member fanout row are written in the same CAS as the
+        control successor, so an acknowledgement loss can only reload the
+        whole group closure.
+        """
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphAtomicEffectReceiptV3,
+            BootstrapGraphCurrentGenerationV3,
+            BootstrapGraphGroupCommitReloadV3,
+            BootstrapGraphGroupCommitRequestV3,
+            BootstrapGraphGroupCommitResultCoreV3,
+            BootstrapGraphGroupCommitResultV3,
+            BootstrapGraphOperationCommitResultV3,
+            contract_digest,
+            encode_semantic_contract,
+            validate_bootstrap_native_operation_reduction_v3,
+        )
+
+        if not isinstance(request, BootstrapGraphGroupCommitRequestV3):
+            raise PreplanningStoreError("bootstrap graph group commit has an invalid type")
+        request = BootstrapGraphGroupCommitRequestV3.model_validate(request.model_dump(mode="python"))
+        for item in request.ordered_operation_inputs:
+            validate_bootstrap_native_operation_reduction_v3(
+                item.reduction,
+                sealed_snapshot_digest=request.attempt.graph_snapshot_digest,
+                effective_read_set_digest=request.attempt.sealed_read_set_digest,
+            )
+        self._validate_bootstrap_graph_v3_current_authority(
+            request=request,
+            authenticated_ingress=request.authenticated_ingress,
+            required_outcome_scopes=request.required_outcome_scopes,
+            control_epoch=request.control_epoch,
+        )
+        primary_id = _bootstrap_graph_v3_group_commit_primary_id(
+            request.source_operation_id, request.transaction_group_id,
+            request.operation_ids, request.request_ctv_digest,
+        )
+        existing = self._memory_plane.get_record(primary_id)
+        if existing is not None:
+            return _bootstrap_graph_v3_group_commit_reload_from_record(existing, request)
+
+        def write() -> object:
+            control_record = self._required_control_record(request.operation_fence_binding)
+            control = _control_from_record(control_record)
+            if (
+                control.generation != request.expected_generation.operation_generation
+                or request.expected_generation.artifact_generation != control.generation
+                or request.expected_generation.control_epoch_digest != request.control_epoch.epoch_digest
+            ):
+                raise PreplanningStoreError("bootstrap graph group commit generation is stale")
+            before_graph = control.graph_revision
+            before_observation = control.observation_revision
+            accepted = any(
+                item.reduction.native_terminal.status == "accepted"
+                for item in request.ordered_operation_inputs
+            )
+            after_graph = before_graph if not accepted else sha256(
+                b"memorii.semantic-ingestion.bootstrap-graph-group-revision.v3\0"
+                + before_graph.encode() + request.request_ctv_digest.encode()
+            ).hexdigest()
+            after_observation = sha256(
+                b"memorii.semantic-ingestion.bootstrap-graph-group-observation-revision.v3\0"
+                + before_observation.encode() + request.request_ctv_digest.encode()
+            ).hexdigest()
+            committed_at = self._now()
+            operation_results = []
+            effect_records: list[CanonicalMemoryRecord] = []
+            all_materialized_records: list[object] = []
+            for item in request.ordered_operation_inputs:
+                reduction = item.reduction
+                materialization = reduction.effect_materialization
+                is_accepted = reduction.native_terminal.status == "accepted"
+                materialized_records: tuple[object, ...] = ()
+                if is_accepted:
+                    from memorii.core.memory_evolution.graph_planning import (
+                        PlanningCommitValues,
+                        materialize_canonical_planning_payload,
+                    )
+
+                    commit_values = PlanningCommitValues(
+                        transaction_group_id=request.transaction_group_id,
+                        graph_revision_before=before_graph,
+                        graph_revision_after=after_graph,
+                        committed_at=committed_at,
+                    )
+                    materialized_records = tuple(
+                        materialize_canonical_planning_payload(
+                            intent.canonical_after_record,
+                            commit_values=commit_values,
+                            authorizing_transaction_group_id=request.transaction_group_id,
+                        )
+                        for intent in materialization.record_intents
+                    )
+                    all_materialized_records.extend(materialized_records)
+                    if tuple(
+                        (record.record_kind, record.record_digest)
+                        for record in materialized_records
+                    ) != tuple(sorted(
+                        (
+                            record.record_kind,
+                            record.record_digest,
+                        )
+                        for record in materialized_records
+                    )):
+                        raise PreplanningStoreError(
+                            "bootstrap graph materialized records are not canonical"
+                        )
+                graph_payload = encode_typed_value(tuple(
+                    record.model_dump(mode="python") for record in materialized_records
+                ))
+                graph_digest = None if not is_accepted else contract_digest(
+                    b"memorii.semantic-ingestion.bootstrap-graph-native-delta.v3",
+                    {
+                        "operation_execution_id": item.operation_execution_id,
+                        "graph_revision_before": before_graph,
+                        "graph_revision_after": after_graph,
+                        "records": tuple(
+                            record.model_dump(mode="python")
+                            for record in materialized_records
+                        ),
+                    },
+                )
+                event_payload = encode_typed_value({
+                    "operation_execution_id": item.operation_execution_id,
+                    "operation_id": item.operation_id,
+                    "transaction_group_id": request.transaction_group_id,
+                    "graph_delta_digest": graph_digest,
+                    "record_digests": tuple(
+                        record.record_digest
+                        for record in materialized_records
+                    ),
+                    "committed_at": committed_at,
+                })
+                event_digest = None if not is_accepted else contract_digest(
+                    b"memorii.semantic-ingestion.bootstrap-graph-native-event-batch.v3",
+                    decode_typed_value(event_payload),
+                )
+                observation_payload = encode_typed_value({
+                    "operation_execution_id": item.operation_execution_id,
+                    "operation_id": item.operation_id,
+                    "disposition": materialization.observation_disposition,
+                    "reason_codes": materialization.observation_reason_codes,
+                    "graph_delta_digest": graph_digest,
+                    "event_batch_digest": event_digest,
+                    "observation_revision_before": before_observation,
+                    "observation_revision_after": after_observation,
+                })
+                observation_digest = contract_digest(
+                    b"memorii.semantic-ingestion.bootstrap-graph-native-observation.v3",
+                    decode_typed_value(observation_payload),
+                )
+                operation_results.append(BootstrapGraphOperationCommitResultV3.create(
+                    transaction_group_id=request.transaction_group_id,
+                    operation_id=item.operation_id,
+                    operation_execution_id=item.operation_execution_id,
+                    operation_input_digest=item.input_digest,
+                    reduction=reduction,
+                    final_status=reduction.native_terminal.status,
+                    graph_delta_digest=graph_digest,
+                    event_batch_digest=event_digest,
+                    observation_delta_digest=observation_digest,
+                ))
+                effect_records.append(_bootstrap_graph_v3_group_commit_effect_record(
+                    primary_id=primary_id, operation_id=item.operation_id,
+                    kind="result", payload=encode_semantic_contract(operation_results[-1]),
+                    timestamp=committed_at, carrier_digest=operation_results[-1].result_digest,
+                ))
+                if is_accepted:
+                    effect_records.append(_bootstrap_graph_v3_group_commit_effect_record(
+                        primary_id=primary_id, operation_id=item.operation_id,
+                        kind="graph_delta", payload=graph_payload, timestamp=committed_at,
+                        carrier_digest=graph_digest,
+                    ))
+                    effect_records.append(_bootstrap_graph_v3_group_commit_effect_record(
+                        primary_id=primary_id, operation_id=item.operation_id,
+                        kind="event_batch", payload=event_payload, timestamp=committed_at,
+                        carrier_digest=event_digest,
+                    ))
+                effect_records.append(_bootstrap_graph_v3_group_commit_effect_record(
+                    primary_id=primary_id, operation_id=item.operation_id,
+                    kind="observation_delta", payload=observation_payload,
+                    timestamp=committed_at, carrier_digest=observation_digest,
+                ))
+            canonical_event_records: tuple[CanonicalMemoryRecord, ...] = ()
+            canonical_event_preconditions: tuple[MemoryPlanePrecondition, ...] = ()
+            if accepted:
+                from memorii.core.semantic_ingestion.contracts import SemanticGraphDelta
+                from memorii.core.semantic_ingestion.event_replay import (
+                    build_semantic_memory_event_batch,
+                    replay_semantic_event_batches,
+                )
+
+                durable_kinds = {
+                    "claim_assertion",
+                    "action_revision",
+                    "identity_lineage",
+                    "temporal_transition",
+                }
+                durable_carriers = tuple(
+                    record
+                    for record in all_materialized_records
+                    if record.record_kind in durable_kinds
+                )
+                graph_records = tuple(
+                    record
+                    for record in all_materialized_records
+                    if record.record_kind not in durable_kinds
+                )
+                delta_body = {
+                    "kind": "semantic_graph_delta",
+                    "operation_id": request.transaction_group_id,
+                    "carriers": durable_carriers,
+                    "graph_records": graph_records,
+                    "terminal_binding_sets": (),
+                }
+                canonical_graph_delta = SemanticGraphDelta(
+                    **delta_body,
+                    delta_digest=contract_digest(
+                        b"memorii.semantic-ingestion.graph-delta.v1",
+                        delta_body,
+                    ),
+                )
+                prior_replay_state = self.semantic_replay_state()
+                if prior_replay_state.graph_revision != before_graph:
+                    raise PreplanningStoreError(
+                        "bootstrap graph replay state is stale"
+                    )
+                canonical_event_batch = build_semantic_memory_event_batch(
+                    graph_delta=canonical_graph_delta,
+                    prior_state=prior_replay_state,
+                    repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+                    source_id=request.operation_fence_binding.source_id,
+                    transaction_group_id=request.transaction_group_id,
+                    operation_fence_id=(
+                        request.operation_fence_binding.operation_fence_id
+                    ),
+                    writer_epoch=request.writer_commit_binding.expected_writer_epoch,
+                    graph_revision_before=before_graph,
+                    graph_revision_after=after_graph,
+                    timestamp=committed_at,
+                    registry=self._event_schema_registry_history.current,
+                )
+                next_replay_state = replay_semantic_event_batches(
+                    repository_id=_SEMANTIC_EVENT_REPOSITORY_ID,
+                    batches=(canonical_event_batch,),
+                    registry_history=self._event_schema_registry_history,
+                    initial_state=prior_replay_state,
+                )
+                from memorii.core.memory_evolution.reference_integrity import (
+                    advance_reference_integrity,
+                )
+
+                prior_reference_integrity = self.reference_integrity_snapshot()
+                next_reference_integrity = advance_reference_integrity(
+                    prior_reference_integrity,
+                    prior_state=prior_replay_state,
+                    next_state=next_replay_state,
+                    operation_id=request.transaction_group_id,
+                    completed_at=committed_at,
+                )
+                replay_state_record = self._memory_plane.get_record(
+                    _semantic_replay_state_id()
+                )
+                reference_integrity_record = self._memory_plane.get_record(
+                    _reference_integrity_ledger_id()
+                )
+                if reference_integrity_record is None:
+                    raise PreplanningStoreError(
+                        "bootstrap graph reference integrity authority is absent"
+                    )
+                canonical_event_records = (
+                    _semantic_event_batch_record(canonical_event_batch, committed_at),
+                    _semantic_replay_state_record(next_replay_state, committed_at),
+                    _reference_integrity_ledger_record(
+                        next_reference_integrity, committed_at
+                    ),
+                )
+                canonical_event_preconditions = (
+                    RecordAbsentPrecondition(
+                        memory_id=canonical_event_records[0].memory_id
+                    ),
+                    (
+                        RecordAbsentPrecondition(
+                            memory_id=canonical_event_records[1].memory_id
+                        )
+                        if replay_state_record is None
+                        else RecordDigestPrecondition(
+                            memory_id=replay_state_record.memory_id,
+                            expected_digest=record_digest(replay_state_record),
+                        )
+                    ),
+                    RecordDigestPrecondition(
+                        memory_id=reference_integrity_record.memory_id,
+                        expected_digest=record_digest(reference_integrity_record),
+                    ),
+                )
+            atomic_write = sha256(
+                b"memorii.semantic-ingestion.bootstrap-graph-group-atomic-write.v3\0"
+                + request.request_ctv_digest.encode() + str(control.generation + 1).encode()
+            ).hexdigest()
+            core = BootstrapGraphGroupCommitResultCoreV3.create(
+                request_ctv_digest=request.request_ctv_digest,
+                disposition="committed" if accepted else "noncommitting",
+                ordered_operation_results=tuple(operation_results),
+                graph_revision_before=before_graph, graph_revision_after=after_graph,
+                event_revision_before=before_graph, event_revision_after=after_graph,
+                observation_revision_before=before_observation, observation_revision_after=after_observation,
+                publication_operation_generation=control.generation + 1,
+                publication_artifact_generation=control.generation + 1,
+                atomic_write_digest=atomic_write,
+            )
+            receipt = BootstrapGraphAtomicEffectReceiptV3.create(
+                request_ctv_digest=request.request_ctv_digest, result_core_digest=core.core_digest,
+                transaction_group_id=request.transaction_group_id,
+                ordered_operation_result_digests=tuple(item.result_digest for item in operation_results),
+                graph_revision_before=before_graph, graph_revision_after=after_graph,
+                event_revision_before=before_graph, event_revision_after=after_graph,
+                observation_revision_before=before_observation, observation_revision_after=after_observation,
+                atomic_write_digest=atomic_write,
+            )
+            result = BootstrapGraphGroupCommitResultV3.create(core=core, receipt=receipt)
+            successor = BootstrapGraphCurrentGenerationV3.create(
+                store_identity_digest=sha256(_control_namespace(control).encode()).hexdigest(),
+                operation_id=request.source_operation_id, request_digest=request.request_digest,
+                operation_generation=control.generation + 1, artifact_generation=control.generation + 1,
+                latest_atomic_write_digest=atomic_write, control_epoch_digest=request.control_epoch.epoch_digest,
+            )
+            reload = BootstrapGraphGroupCommitReloadV3.create(
+                source_operation_id=request.source_operation_id, transaction_group_id=request.transaction_group_id,
+                operation_ids=request.operation_ids, request_ctv_digest=request.request_ctv_digest,
+                persisted_result=result, successor_generation=successor,
+            )
+            next_control = control.model_copy(update={
+                "generation": control.generation + 1, "state": "planned",
+                "last_request_digest": request.request_ctv_digest,
+                "graph_revision": after_graph, "observation_revision": after_observation,
+                "group_result_digests": (*control.group_result_digests, result.result_digest),
+            })
+            records = (
+                _control_record(next_control, control_record.timestamp),
+                _bootstrap_graph_v3_group_commit_primary_record(primary_id, request, reload, timestamp=self._now()),
+                *(_bootstrap_graph_v3_group_commit_fanout_record(
+                    source_operation_id=request.source_operation_id,
+                    transaction_group_id=request.transaction_group_id,
+                    operation_ids=request.operation_ids, member_operation_id=operation_id,
+                    request_ctv_digest=request.request_ctv_digest, primary_id=primary_id,
+                    reload_digest=reload.reload_digest, timestamp=self._now(),
+                ) for operation_id in request.operation_ids),
+                *effect_records,
+                *canonical_event_records,
+            )
+            writer_record = self._writers.require_current(request.writer_commit_binding)
+            authorization = self._writers._authorize_atomic(
+                request.writer_commit_binding, capability=self._write_capability,
+                lease_expires_at=request.operation_lease_binding.lease_expires_at, server_now=self._now,
+            )
+            try:
+                self._memory_plane.conditionally_write_records(
+                    records,
+                    preconditions=(
+                        RecordDigestPrecondition(memory_id=control_record.memory_id, expected_digest=record_digest(control_record)),
+                        RecordDigestPrecondition(memory_id=writer_record.memory_id, expected_digest=record_digest(writer_record)),
+                        *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in records[1:-len(canonical_event_records) or None]),
+                        *canonical_event_preconditions,
+                    ), authorization=authorization,
+                )
+            except MemoryPlaneRevisionConflictError as exc:
+                found = self._memory_plane.get_record(primary_id)
+                if found is None:
+                    raise PreplanningStoreError("bootstrap graph group commit CAS conflicted") from exc
+                return _bootstrap_graph_v3_group_commit_reload_from_record(found, request)
+            return reload
+
+        if self._semantic_integrity_linearization is None:
+            return write()
+        with self._semantic_integrity_linearization.exclusive():
+            return write()
+
+    def reload_exact_bootstrap_graph_group_v3(
+        self, *, source_operation_id: str, transaction_group_id: str,
+        operation_ids: tuple[str, ...], request_ctv_digest: str,
+        authenticated_ingress: object, required_outcome_scopes: object,
+        operation_fence_binding: object,
+    ) -> object | None:
+        """Reload one group primary only after caller authority is authenticated."""
+        primary_id = _bootstrap_graph_v3_group_commit_primary_id(
+            source_operation_id, transaction_group_id, operation_ids, request_ctv_digest,
+        )
+        record = self._memory_plane.get_record(primary_id)
+        if record is None:
+            return None
+        request = _bootstrap_graph_v3_group_commit_request_from_record(record)
+        if (
+            request.authenticated_ingress != authenticated_ingress
+            or request.required_outcome_scopes != required_outcome_scopes
+            or request.operation_fence_binding != operation_fence_binding
+        ):
+            raise PreplanningStoreError("bootstrap graph group commit reload authority is substituted")
+        self._validate_bootstrap_graph_v3_current_authority(
+            request=request, authenticated_ingress=authenticated_ingress,
+            required_outcome_scopes=required_outcome_scopes, control_epoch=request.control_epoch,
+            allow_terminal_recovery=True,
+        )
+        return _bootstrap_graph_v3_group_commit_reload_from_record(record, request)
 
     def persist_terminal_group(
         self,
@@ -6491,6 +10058,12 @@ class SemanticIngestionAtomicStore:
         observation_revision_after: str | None = None,
         clear_lease: bool = False,
     ) -> tuple[AtomicGenerationMember, ...]:
+        # Import here to keep the memory-evolution owner independent of the
+        # semantic contract module at import time.
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapSourceNormalizationAtomicWriteRequestV3,
+        )
+
         writer_record = self._writers.require_current(request.writer_commit_binding)
         control_record = self._required_control_record(request.operation_fence_binding)
         control = _control_from_record(control_record)
@@ -6531,9 +10104,26 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("generation contains a forbidden member kind")
         if any(sha256(member.canonical_payload).hexdigest() != member.payload_digest for member in request.members):
             raise PreplanningStoreError("generation member digest is invalid")
-        available_artifacts = {member.payload_digest for member in request.members if member.kind == "replay_artifact"}
+        source_normalization_request = getattr(request, "kind", None) in {
+            "source_normalization_checkpoint",
+            "bootstrap_source_normalization_checkpoint",
+        }
+        available_artifacts = {
+            member.payload_digest
+            for member in request.members
+            if member.kind == "replay_artifact" or source_normalization_request
+        }
         for prior_generation in range(2, control.generation + 1):
-            for member in self._read_generation_members(control, prior_generation):
+            try:
+                prior_members = self._read_generation_members(control, prior_generation)
+            except PreplanningStoreError:
+                # V3 recovery's generation two is a sealed control/claim
+                # transition, not a candidate generation.  It intentionally
+                # has no generic generation manifest or members.
+                if self._is_bootstrap_v3_ready_generation(control, prior_generation):
+                    continue
+                raise
+            for member in prior_members:
                 if member.kind == "replay_artifact":
                     available_artifacts.add(member.payload_digest)
         if not set(request.required_artifact_digests).issubset(available_artifacts):
@@ -6580,6 +10170,31 @@ class SemanticIngestionAtomicStore:
             _generation_member_record(control, generation, member, self._now()) for member in request.members
         )
         manifest_record = _generation_manifest_record(control, generation, request, self._now())
+        recovery_index_record: CanonicalMemoryRecord | None = None
+        recovery_claim_record: CanonicalMemoryRecord | None = None
+        if isinstance(request, BootstrapSourceNormalizationAtomicWriteRequestV3):
+            claim = request.bootstrap_recovery_claim
+            now = self._now()
+            if now >= claim.expires_server_time:
+                raise PreplanningStoreError("bootstrap recovery claim is expired")
+            recovery_claim_record = self._memory_plane.get_record(
+                _bootstrap_v3_recovery_id(claim.recovery_key_digest)
+            )
+            if recovery_claim_record is None or recovery_claim_record.content.get("state") != "claimed":
+                raise PreplanningStoreError("bootstrap recovery claim is not live")
+            if (
+                recovery_claim_record.content.get("claim_digest") != claim.claim_digest
+                or recovery_claim_record.content.get("claim_nonce") != claim.claim_nonce
+                or recovery_claim_record.content.get("control_snapshot") != claim.control_snapshot.model_dump(mode="json")
+                or control.generation != claim.expected_operation_generation
+            ):
+                raise PreplanningStoreError("bootstrap recovery claim is substituted")
+            recovery_index_record = _bootstrap_v3_recovery_index_record(
+                control=control,
+                generation=generation,
+                request=request,
+                timestamp=now,
+            )
         authorization = self._writers._authorize_atomic(
             request.writer_commit_binding,
             capability=self._write_capability,
@@ -6613,6 +10228,7 @@ class SemanticIngestionAtomicStore:
                 _control_record(next_control, control_record.timestamp),
                 *member_records,
                 manifest_record,
+                *(() if recovery_index_record is None else (recovery_index_record,)),
                 *event_authority_records,
             )
         ]
@@ -6624,6 +10240,7 @@ class SemanticIngestionAtomicStore:
                     _control_record(next_control, control_record.timestamp),
                     *member_records,
                     manifest_record,
+                    *(() if recovery_index_record is None else (recovery_index_record,)),
                     *event_authority_records,
                 ),
                 preconditions=(
@@ -6640,10 +10257,10 @@ class SemanticIngestionAtomicStore:
                             ownership_epoch=request.operation_lease_binding.ownership_epoch,
                         ),
                     ),
-                    *(
-                        RecordAbsentPrecondition(memory_id=record.memory_id)
-                        for record in (*member_records, manifest_record)
-                    ),
+                    *(RecordAbsentPrecondition(memory_id=record.memory_id) for record in (*member_records, manifest_record)),
+                    *((
+                        RecordDigestPrecondition(memory_id=recovery_claim_record.memory_id, expected_digest=record_digest(recovery_claim_record)),
+                    ) if recovery_claim_record is not None else ()),
                     *event_authority_preconditions,
                     *(
                         (
@@ -6764,6 +10381,7 @@ class SemanticIngestionAtomicStore:
             SemanticContractCodecError,
             SemanticLifecycleTransition,
             SemanticTerminalOutcome,
+            TransactionSemanticGroupPlan,
             decode_semantic_contract,
             encode_semantic_contract,
         )
@@ -6825,15 +10443,6 @@ class SemanticIngestionAtomicStore:
                     )
                 }
             ),
-            "plan": encode_typed_value(
-                {
-                    "kind": (
-                        "semantic_terminal_committed"
-                        if terminal.status == "accepted"
-                        else "semantic_terminal_non_committing"
-                    )
-                }
-            ),
             "planning_artifact": encode_typed_value(
                 {
                     "operation_id": terminal.operation_id,
@@ -6874,6 +10483,33 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError(
                 "planned terminal checkpoint artifacts are substituted"
             )
+        plan_member = unique_member("plan")
+        legacy_plan_payload = encode_typed_value(
+            {
+                "kind": (
+                    "semantic_terminal_committed"
+                    if terminal.status == "accepted"
+                    else "semantic_terminal_non_committing"
+                )
+            }
+        )
+        if plan_member.canonical_payload != legacy_plan_payload:
+            try:
+                plan = decode_semantic_contract(
+                    plan_member.canonical_payload,
+                    TransactionSemanticGroupPlan,
+                )
+            except (SemanticContractCodecError, ValueError) as exc:
+                raise PreplanningStoreError(
+                    "planned terminal checkpoint plan is invalid"
+                ) from exc
+            if (
+                encode_semantic_contract(plan) != plan_member.canonical_payload
+                or plan.source_id != operation_fence.source_id
+            ):
+                raise PreplanningStoreError(
+                    "planned terminal checkpoint plan does not bind the admitted source"
+                )
 
         lifecycle_members = tuple(
             member for member in members if member.kind == "lifecycle"
@@ -7192,7 +10828,14 @@ class SemanticIngestionAtomicStore:
             "artifact_index",
             "artifact_closure",
         }
-        tracked = tuple(member for member in request.members if member.kind in tracked_kinds)
+        # Source normalization is a graph-free, pre-planning closure.  Its
+        # retained progress record is not a semantic replay progress artifact;
+        # replay authority begins only after graph-dependent work.
+        tracked = (
+            ()
+            if getattr(request, "kind", None) == "source_normalization_checkpoint"
+            else tuple(member for member in request.members if member.kind in tracked_kinds)
+        )
         if batch is None and not tracked:
             return (), ()
         bindings = tuple(
@@ -7792,6 +11435,25 @@ class SemanticIngestionAtomicStore:
             or manifest.content.get("semantic_ingestion_kind") != "generation_manifest"
             or manifest.content.get("generation") != generation
         ):
+            if self._is_bootstrap_v3_ready_generation(control, generation):
+                return ()
+            graph_manifest = self._memory_plane.get_record(
+                _bootstrap_graph_v3_manifest_id(_control_namespace(control), generation)
+            )
+            if (
+                graph_manifest is not None
+                and graph_manifest.source_kind
+                == "semantic_ingestion_bootstrap_graph_v3_manifest"
+                and graph_manifest.content.get("semantic_ingestion_kind")
+                == "bootstrap_graph_v3_manifest"
+                and graph_manifest.content.get("request", {}).get(
+                    "predecessor_generation", {}
+                ).get("operation_generation")
+                == generation - 1
+            ):
+                # Bootstrap graph checkpoints have a disjoint member grammar;
+                # the generic terminal lease session must not decode them.
+                return ()
             raise PreplanningStoreError("committed generation manifest is absent")
         try:
             members = tuple(AtomicGenerationMember.model_validate(item) for item in manifest.content["members"])
@@ -7813,6 +11475,32 @@ class SemanticIngestionAtomicStore:
             ):
                 raise PreplanningStoreError("committed generation is incomplete")
         return members
+
+    def _is_bootstrap_v3_ready_generation(
+        self, control: PreplanningOperationControl, generation: int
+    ) -> bool:
+        """Recognize the manifest-free V3 recovery transition by its sealed index."""
+        namespace = _control_namespace(control)
+        for record in self._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_v3_recovery_index"
+        ):
+            content = record.content
+            snapshot = content.get("control_snapshot")
+            if (
+                content.get("state") == "claimed"
+                and isinstance(snapshot, dict)
+                and snapshot.get("control_record", {}).get("operation_generation") == generation
+                and snapshot.get("control_record", {}).get("operation_fence_digest")
+                == control.operation_fence.binding_digest
+            ):
+                return True
+            if (
+                content.get("state") == "found"
+                and content.get("namespace_id") == namespace
+                and content.get("publication_operation_generation") == generation + 1
+            ):
+                return True
+        return False
 
     def _control_by_operation_fence_id(self, operation_fence_id: str) -> PreplanningOperationControl:
         controls: list[PreplanningOperationControl] = []
@@ -8049,6 +11737,295 @@ def _generation_member_id(namespace_id: str, generation: int, member_id: str) ->
 
 def _generation_manifest_id(namespace_id: str, generation: int) -> str:
     return f"semantic_ingestion:generation:{namespace_id}:{generation}:manifest"
+
+
+def _bootstrap_graph_v3_member_id(namespace_id: str, generation: int, member_id: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:member:" + namespace_id + ":" + str(generation) + ":" + sha256(member_id.encode("utf-8")).hexdigest()
+
+
+def _bootstrap_graph_v3_group_commit_primary_id(
+    source_operation_id: str, transaction_group_id: str,
+    operation_ids: tuple[str, ...], request_ctv_digest: str,
+) -> str:
+    key = encode_typed_value((source_operation_id, transaction_group_id, operation_ids, request_ctv_digest))
+    return "semantic_ingestion:bootstrap-graph-v3:group-commit:" + sha256(key).hexdigest()
+
+
+def _bootstrap_graph_v3_group_commit_fanout_id(
+    source_operation_id: str, transaction_group_id: str, member_operation_id: str,
+    request_ctv_digest: str,
+) -> str:
+    key = encode_typed_value((source_operation_id, transaction_group_id, member_operation_id, request_ctv_digest))
+    return "semantic_ingestion:bootstrap-graph-v3:group-commit-fanout:" + sha256(key).hexdigest()
+
+
+def _bootstrap_graph_v3_group_commit_primary_record(
+    primary_id: str, request: object, reload: object, *, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    from memorii.core.semantic_ingestion.contracts import encode_semantic_contract
+
+    return CanonicalMemoryRecord(
+        memory_id=primary_id, domain=MemoryDomain.EXECUTION, text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_group_commit_primary",
+            "request_hex": encode_semantic_contract(request).hex(),
+            "reload_hex": encode_semantic_contract(reload).hex(),
+        }, status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_primary",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_group_commit_fanout_record(
+    *, source_operation_id: str, transaction_group_id: str, operation_ids: tuple[str, ...],
+    member_operation_id: str, request_ctv_digest: str, primary_id: str,
+    reload_digest: str, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_group_commit_fanout_id(
+            source_operation_id, transaction_group_id, member_operation_id, request_ctv_digest,
+        ), domain=MemoryDomain.EXECUTION, text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_group_commit_fanout",
+            "source_operation_id": source_operation_id,
+            "transaction_group_id": transaction_group_id,
+            "operation_ids": operation_ids,
+            "member_operation_id": member_operation_id,
+            "request_ctv_digest": request_ctv_digest,
+            "primary_id": primary_id,
+            "reload_digest": reload_digest,
+        }, status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_fanout",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_group_commit_effect_record(
+    *, primary_id: str, operation_id: str, kind: str, payload: bytes, timestamp: datetime,
+    carrier_digest: str | None = None,
+) -> CanonicalMemoryRecord:
+    digest = sha256(payload).hexdigest()
+    return CanonicalMemoryRecord(
+        memory_id="semantic_ingestion:bootstrap-graph-v3:group-commit-effect:" + sha256(
+            encode_typed_value((primary_id, operation_id, kind, digest))
+        ).hexdigest(), domain=MemoryDomain.EXECUTION, text="",
+        content={"semantic_ingestion_kind": "bootstrap_graph_v3_group_commit_effect", "primary_id": primary_id,
+                 "operation_id": operation_id, "kind": kind, "payload_hex": payload.hex(),
+                 "payload_digest": digest, "carrier_digest": carrier_digest or digest},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_group_commit_effect",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_group_commit_request_from_record(record: CanonicalMemoryRecord) -> object:
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphGroupCommitRequestV3,
+        decode_semantic_contract,
+    )
+
+    try:
+        raw = bytes.fromhex(record.content["request_hex"])
+        request = decode_semantic_contract(raw, BootstrapGraphGroupCommitRequestV3)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PreplanningStoreError("bootstrap graph group commit primary is corrupt") from exc
+    return request
+
+
+def _bootstrap_graph_v3_group_commit_reload_from_record(record: CanonicalMemoryRecord, request: object) -> object:
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphGroupCommitReloadV3,
+        decode_semantic_contract,
+        encode_semantic_contract,
+    )
+
+    try:
+        raw = bytes.fromhex(record.content["reload_hex"])
+        reload = decode_semantic_contract(raw, BootstrapGraphGroupCommitReloadV3)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PreplanningStoreError("bootstrap graph group commit primary is corrupt") from exc
+    if (
+        record.source_kind != "semantic_ingestion_bootstrap_graph_v3_group_commit_primary"
+        or encode_semantic_contract(reload) != raw
+        or reload.source_operation_id != request.source_operation_id
+        or reload.transaction_group_id != request.transaction_group_id
+        or reload.operation_ids != request.operation_ids
+        or reload.request_ctv_digest != request.request_ctv_digest
+    ):
+        raise PreplanningStoreError("bootstrap graph group commit primary is substituted")
+    return reload
+
+
+def _bootstrap_graph_v3_manifest_id(namespace_id: str, generation: int) -> str:
+    return f"semantic_ingestion:bootstrap-graph-v3:manifest:{namespace_id}:{generation}"
+
+
+def _bootstrap_graph_v3_idempotency_id(write_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:idempotency:" + write_digest
+
+
+def _bootstrap_graph_v3_authority_id(projection_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:authority:" + projection_digest
+
+
+def _bootstrap_canonical_identity_authority_id(reload_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:canonical-identity-authority:" + reload_digest
+
+
+def _bootstrap_graph_v3_authority_index_id(
+    recovery_key_digest: str, projection_digest: str,
+) -> str:
+    return (
+        "semantic_ingestion:bootstrap-graph-v3:authority-index:"
+        + recovery_key_digest + ":" + projection_digest
+    )
+
+
+def _bootstrap_graph_v3_retry_id(request_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:retry:" + request_digest
+
+
+def _bootstrap_graph_v3_epoch_id(request_core_digest: str, epoch: int) -> str:
+    return f"semantic_ingestion:bootstrap-graph-v3:epoch:{request_core_digest}:{epoch}"
+
+
+def _bootstrap_graph_v3_epoch_head_id(request_core_digest: str) -> str:
+    return f"semantic_ingestion:bootstrap-graph-v3:epoch-head:{request_core_digest}"
+
+
+def _bootstrap_graph_v3_transition_id(transition_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:epoch-transition:" + transition_digest
+
+
+def _bootstrap_graph_v3_terminal_locator_id(locator_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:terminal-locator:" + locator_digest
+
+
+def _bootstrap_graph_v3_terminal_request_id(request_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:terminal-request:" + request_digest
+
+
+def _bootstrap_graph_v3_terminal_recovery_id(recovery_key_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:terminal-recovery:" + recovery_key_digest
+
+
+def _bootstrap_graph_v3_terminal_control_id(locator_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:terminal-control:" + locator_digest
+
+
+def _bootstrap_graph_v3_terminal_identity_id(locator_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:terminal-identity:" + locator_digest
+
+
+@dataclass(frozen=True)
+class _TerminalAuthorityRequest:
+    """The common current-authority validator's deliberately small view."""
+
+    request: object
+
+    @property
+    def control_epoch_digest(self) -> str:
+        return self.request.control_epoch.epoch_digest
+
+    @property
+    def operation_fence_binding(self) -> OperationFenceBinding:
+        return self.request.operation_fence_binding
+
+    @property
+    def operation_lease_binding(self) -> OperationLeaseBinding:
+        return self.request.operation_lease_binding
+
+    @property
+    def writer_commit_binding(self) -> SemanticWriterCommitBinding:
+        return self.request.writer_commit_binding
+
+    @property
+    def write_digest(self) -> str:
+        return self.request.publication_request_digest
+
+
+def _bootstrap_graph_v3_terminal_payloads(*, request: object, group_result_type: type,
+                                          canonical_result_type: type) -> dict[str, tuple[object, ...]]:
+    """Materialize the sealed nine-kind terminal grammar in its declared order."""
+    group_results = tuple(
+        group_result_type.model_validate(item.model_dump(mode="python"))
+        for item in request.ordered_group_result_constructions
+    )
+    if tuple(item.transaction_group_id for item in group_results) != request.final_plan.canonical_group_order:
+        raise PreplanningStoreError("bootstrap graph terminal group result order is invalid")
+    entry_by_digest = {entry.entry_digest: entry for entry in request.complete_lineage.entries}
+    latest_entries = tuple(
+        entry_by_digest[digest] for _, digest in request.complete_lineage.latest_entry_by_group
+    )
+    if tuple(item.transaction_group_id for item in latest_entries) != request.final_plan.canonical_group_order:
+        raise PreplanningStoreError("bootstrap graph terminal lineage is incomplete")
+    canonical_result = canonical_result_type.create(
+        request_digest=request.canonical_source_result_input.request_digest,
+        normalization_replay_digest=request.canonical_source_result_input.normalization_replay_digest,
+        source_plan_lineage_digest=request.canonical_source_result_input.source_plan_lineage_digest,
+        ordered_group_result_digests=tuple(
+            item.result_digest
+            for item in request.ordered_group_result_constructions
+        ),
+        canonical_source_result=request.canonical_source_result_input.completed_canonical_source_result,
+        control_epoch_digest=request.canonical_source_result_input.control_epoch_digest,
+    )
+    core = request.handoff_core
+    if (
+        core.ordered_group_result_digests != tuple(item.result_digest for item in group_results)
+        or core.final_source_result_digest != canonical_result.result_digest
+        or core.execution_manifest_digest != request.execution_manifest.manifest_digest
+    ):
+        raise PreplanningStoreError("bootstrap graph terminal handoff closure is substituted")
+    return {
+        "bootstrap_graph_coordinator_request": (request.coordinator_request,),
+        "bootstrap_graph_control_epoch": (request.control_epoch,),
+        "bootstrap_graph_dependent_attempt": (request.final_attempt,),
+        "bootstrap_transaction_group_plan": (request.final_plan,),
+        "bootstrap_source_plan_lineage_entry": request.complete_lineage.entries,
+        "ingestion_execution_manifest": (request.execution_manifest,),
+        "transaction_group_result": group_results,
+        "bootstrap_graph_terminal_handoff": (request.handoff,),
+        "bootstrap_graph_canonical_source_result": (canonical_result,),
+    }
+
+
+def _bootstrap_graph_v3_terminal_members(*, request: object, payloads: dict[str, tuple[object, ...]],
+                                         member_type: type, encoder: Callable[[object], bytes]) -> tuple[object, ...]:
+    digest_field_by_kind = {
+        "bootstrap_graph_coordinator_request": "request_digest",
+        "bootstrap_graph_control_epoch": "epoch_digest",
+        "bootstrap_graph_dependent_attempt": "attempt_digest",
+        "bootstrap_transaction_group_plan": "plan_digest",
+        "bootstrap_source_plan_lineage_entry": "entry_digest",
+        "ingestion_execution_manifest": "manifest_digest",
+        "transaction_group_result": "result_digest",
+        "bootstrap_graph_canonical_source_result": "result_digest",
+    }
+    members: list[object] = []
+    offsets: dict[str, int] = {}
+    for intent in request.publication_intent.member_intents:
+        index = offsets.get(intent.kind, 0)
+        values = payloads.get(intent.kind, ())
+        if index >= len(values):
+            raise PreplanningStoreError("bootstrap graph terminal member intent is incomplete")
+        payload = values[index]
+        offsets[intent.kind] = index + 1
+        if intent.kind == "bootstrap_graph_terminal_handoff":
+            payload_digest = payload.core.core_digest
+        else:
+            digest_field = digest_field_by_kind.get(intent.kind)
+            payload_digest = getattr(payload, digest_field, None) if digest_field else None
+        if payload_digest != intent.construction_input_digest:
+            raise PreplanningStoreError("bootstrap graph terminal member intent is substituted")
+        canonical_payload = encoder(payload)
+        members.append(member_type.create(
+            member_id=intent.member_id, kind=intent.kind, canonical_payload=canonical_payload,
+            payload_digest=sha256(canonical_payload).hexdigest(),
+        ))
+    if any(offsets.get(kind, 0) != len(values) for kind, values in payloads.items()):
+        raise PreplanningStoreError("bootstrap graph terminal member intent is incomplete")
+    return tuple(members)
 
 
 def _store_checkpoint_authority(
@@ -8705,6 +12682,466 @@ def _generation_manifest_record(
         timestamp=timestamp,
         visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
     )
+
+
+def _bootstrap_graph_v3_authority_record(
+    reload: object, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    from memorii.core.semantic_ingestion.contracts import encode_semantic_contract
+
+    projection = reload.publication_core.authority_projection
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_authority_id(projection.authority_projection_digest),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_pre_epoch_authority",
+            "projection_digest": projection.authority_projection_digest,
+            "canonical_hex": encode_semantic_contract(reload).hex(),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_pre_epoch_authority",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_authority_index_record(
+    reload: object, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    projection = reload.publication_core.authority_projection
+    recovery_key = reload.publication_receipt.recovery_key_digest
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_authority_index_id(
+            recovery_key, projection.authority_projection_digest,
+        ),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_pre_epoch_authority_index",
+            "recovery_key_digest": recovery_key,
+            "projection_digest": projection.authority_projection_digest,
+            "authority_record_id": _bootstrap_graph_v3_authority_id(
+                projection.authority_projection_digest
+            ),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_authority_index",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_authority_from_record(record: CanonicalMemoryRecord) -> object:
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphTransactionAuthorityReloadV3,
+        decode_semantic_contract,
+        encode_semantic_contract,
+    )
+
+    try:
+        raw = bytes.fromhex(record.content["canonical_hex"])
+        reload = decode_semantic_contract(
+            raw, BootstrapGraphTransactionAuthorityReloadV3,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PreplanningStoreError("bootstrap graph authority record is corrupt") from exc
+    if (
+        record.source_kind != "semantic_ingestion_bootstrap_graph_v3_pre_epoch_authority"
+        or encode_semantic_contract(reload) != raw
+        or record.content.get("projection_digest")
+        != reload.publication_core.authority_projection.authority_projection_digest
+    ):
+        raise PreplanningStoreError("bootstrap graph authority record is substituted")
+    return reload
+
+
+def _bootstrap_canonical_identity_authority_from_record(record: CanonicalMemoryRecord) -> object:
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapCanonicalIdentityBindingAllocationReloadV3,
+        decode_semantic_contract,
+        encode_semantic_contract,
+    )
+    try:
+        raw = bytes.fromhex(record.content["canonical_hex"])
+        reload = decode_semantic_contract(
+            raw, BootstrapCanonicalIdentityBindingAllocationReloadV3,
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PreplanningStoreError("canonical identity authority record is corrupt") from exc
+    if (
+        record.source_kind != "semantic_ingestion_bootstrap_canonical_identity_authority_v3"
+        or record.content.get("reload_digest") != reload.reload_digest
+        or encode_semantic_contract(reload) != raw
+    ):
+        raise PreplanningStoreError("canonical identity authority record is substituted")
+    return reload
+
+
+def _bootstrap_graph_v3_member_record(
+    *, namespace_id: str, generation: int, member: object, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_member_id(namespace_id, generation, member.member_id),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_member",
+            "member": member.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_member",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_manifest_record(
+    *, namespace_id: str, request: object, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_manifest_id(
+            namespace_id, request.publication_operation_generation
+        ),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_manifest",
+            "request": request.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_manifest",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_terminal_manifest_record(
+    *, namespace_id: str, generation: int, members: tuple[object, ...],
+    manifest_digest: str, request: object, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_manifest_id(namespace_id, generation),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_terminal_manifest",
+            "publication_request_digest": request.publication_request_digest,
+            "locator_digest": request.publication_intent.locator_digest,
+            "manifest_digest": manifest_digest,
+            "members": tuple(member.model_dump(mode="json") for member in members),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_manifest",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_terminal_control_record(control: object, timestamp: datetime) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_terminal_control_id(control.locator_digest),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={"semantic_ingestion_kind": "bootstrap_graph_v3_terminal_control", "terminal_control": control.model_dump(mode="json")},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_control",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_terminal_identity_record(identity: object, timestamp: datetime) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_terminal_identity_id(identity.locator_digest),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={"semantic_ingestion_kind": "bootstrap_graph_v3_terminal_identity", "identity": identity.model_dump(mode="json")},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_identity",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_terminal_locator_record(
+    *, locator_digest: str, handoff_digest: str, reload: object, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_terminal_locator_id(locator_digest),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_terminal_locator",
+            "locator_digest": locator_digest, "handoff_digest": handoff_digest,
+            "reload": reload.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_terminal_request_record(
+    *, request_digest: str, locator_digest: str, reload: object, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_terminal_request_id(request_digest),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_terminal_locator",
+            "coordinator_request_digest": request_digest,
+            "locator_digest": locator_digest,
+            "reload": reload.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_terminal_recovery_record(
+    *, normalization_replay: object, locator_digest: str, reload: object,
+    timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_terminal_recovery_id(
+            normalization_replay.recovery_key_digest
+        ),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_terminal_locator",
+            "normalization_recovery_key_digest": normalization_replay.recovery_key_digest,
+            "normalization_replay_digest": normalization_replay.replay_digest,
+            "normalization_result_digest": (
+                normalization_replay.source_normalization_result.result_digest
+            ),
+            "locator_digest": locator_digest,
+            "reload": reload.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_idempotency_record(
+    *, namespace_id: str, request: object, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_idempotency_id(request.write_digest),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_idempotency",
+            "request_write_digest": request.write_digest,
+            "request_digest": request.request_digest,
+            "namespace_id": namespace_id,
+            "publication_operation_generation": request.publication_operation_generation,
+            "publication_artifact_generation": request.publication_artifact_generation,
+            "manifest_id": _bootstrap_graph_v3_manifest_id(
+                namespace_id, request.publication_operation_generation
+            ),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_idempotency",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_retry_record(
+    *, request: object, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_retry_id(request.request_digest),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_retry_index",
+            "request_digest": request.request_digest,
+            "write_digest": request.write_digest,
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_retry_index",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_epoch_record(*, epoch: object, timestamp: datetime) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_epoch_id(epoch.request_core_digest, epoch.epoch),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={"semantic_ingestion_kind": "bootstrap_graph_v3_epoch", "epoch": epoch.model_dump(mode="json")},
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_epoch",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_epoch_head_record(*, epoch: object, timestamp: datetime) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_epoch_head_id(epoch.request_core_digest),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_epoch_head",
+            "request_core_digest": epoch.request_core_digest,
+            "epoch": epoch.epoch,
+            "epoch_digest": epoch.epoch_digest,
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_epoch_head",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_transition_record(
+    *, transition: object, epoch: object, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_transition_id(transition.transition_digest),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_epoch_transition",
+            "transition_digest": transition.transition_digest,
+            "transition": transition.model_dump(mode="json"),
+            "epoch": epoch.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_epoch_transition",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_epoch_from_record(record: CanonicalMemoryRecord) -> object:
+    from memorii.core.semantic_ingestion.contracts import BootstrapGraphControlEpochV3
+
+    if (
+        record.source_kind != "semantic_ingestion_bootstrap_graph_v3_epoch"
+        or record.content.get("semantic_ingestion_kind") != "bootstrap_graph_v3_epoch"
+    ):
+        raise PreplanningStoreError("bootstrap graph epoch record is corrupt")
+    try:
+        return BootstrapGraphControlEpochV3.model_validate(
+            record.content["epoch"], strict=False
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PreplanningStoreError("bootstrap graph epoch record is corrupt") from exc
+
+
+def _bootstrap_graph_v3_epoch_from_transition_record(record: CanonicalMemoryRecord) -> object:
+    from memorii.core.semantic_ingestion.contracts import BootstrapGraphControlEpochV3
+
+    if (
+        record.source_kind != "semantic_ingestion_bootstrap_graph_v3_epoch_transition"
+        or record.content.get("semantic_ingestion_kind") != "bootstrap_graph_v3_epoch_transition"
+    ):
+        raise PreplanningStoreError("bootstrap graph transition record is corrupt")
+    try:
+        return BootstrapGraphControlEpochV3.model_validate(
+            record.content["epoch"], strict=False
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PreplanningStoreError("bootstrap graph transition record is corrupt") from exc
+
+
+def _bootstrap_graph_v3_epoch_unavailable(request: object, reason: str) -> object:
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphControlEpochUnavailableV3,
+        contract_digest,
+    )
+
+    return BootstrapGraphControlEpochUnavailableV3.create(
+        kind="unavailable",
+        request_core_digest=request.request_core_digest,
+        reason=reason,
+        reason_digest=contract_digest(
+            b"memorii.semantic-ingestion.bootstrap-graph-control-epoch-unavailable-reason.v3",
+            {"reason": reason},
+        ),
+    )
+
+
+def _bootstrap_v3_recovery_index_record(
+    *, control: PreplanningOperationControl, generation: int, request: object, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    """Build the Found index record written in the publication CAS.
+
+    The caller has already validated the V3 request type.  Keeping the index
+    outside the member list makes it a lookup key rather than candidate data.
+    """
+    key = request.bootstrap_recovery_key
+    claim = request.bootstrap_recovery_claim
+    result = request.source_normalization_result
+    content = {
+        "schema_version": 3,
+        "kind": "found",
+        "state": "found",
+        "recovery_key_digest": key.recovery_key_digest,
+        "consumed_claim_digest": claim.claim_digest,
+        "recovery_control_snapshot_digest": claim.control_snapshot.snapshot_digest,
+        "predecessor_operation_generation": claim.control_snapshot.control_record.predecessor_operation_generation,
+        "predecessor_artifact_generation": claim.control_snapshot.control_record.predecessor_artifact_generation,
+        "publication_operation_generation": generation,
+        "publication_artifact_generation": generation,
+        "namespace_id": _control_namespace(control),
+        "atomic_request_digest": request.request_digest,
+        "result_digest": result.result_digest,
+        "provenance_manifest_digest": request.evidence_manifest.manifest_digest,
+    }
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_v3_recovery_id(key.recovery_key_digest),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content=content,
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_v3_recovery_index",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_v3_recovery_id(recovery_key_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-v3-recovery:" + recovery_key_digest
+
+
+def _bootstrap_v3_unclaimed_recovery_record(
+    *, recovery_key: object, operation_generation: int, artifact_generation: int,
+    marker: BootstrapWriterHandoffMarkerV3, timestamp: datetime
+) -> CanonicalMemoryRecord:
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_v3_recovery_id(recovery_key.recovery_key_digest),
+        domain=MemoryDomain.EXECUTION, text="",
+        content={"schema_version": 3, "state": "unclaimed", "recovery_key_digest": recovery_key.recovery_key_digest,
+                 "operation_fence_digest": recovery_key.operation_fence_digest,
+                 "handoff_marker_digest": marker.marker_digest,
+                 "predecessor_operation_generation": operation_generation,
+                 "predecessor_artifact_generation": artifact_generation,
+                 "predecessor_control_digest": marker.expected_predecessor_control_digest,
+                 "operation_fence": marker.operation_fence_binding.model_dump(mode="json"),
+                 "writer_commit_binding": marker.writer_commit_binding.model_dump(mode="json"),
+                 "source_id": recovery_key.source_id, "source_digest": recovery_key.source_digest,
+                 "preparation_fingerprint": recovery_key.preparation_fingerprint,
+                 "operation_id": recovery_key.operation_id},
+        status=CommitStatus.COMMITTED, source_kind="semantic_ingestion_bootstrap_v3_recovery_index",
+        timestamp=timestamp, visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_v3_unavailable(recovery_key_digest: str, reason: str) -> object:
+    from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryUnavailableV3, contract_digest
+    core = {"kind": "unavailable", "recovery_key_digest": recovery_key_digest, "reason": reason}
+    body = {**core, "reason_digest": contract_digest(b"memorii.semantic-ingestion.bootstrap-recovery-unavailable.v3", core)}
+    return BootstrapRecoveryUnavailableV3(**body, response_digest=contract_digest(
+        b"memorii.semantic-ingestion.bootstrap-recovery-unavailable.v3", body))
+
+
+def _bootstrap_v3_aborted(recovery_key_digest: str, reason: str) -> object:
+    from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryAbortedV3, contract_digest
+    core = {"kind": "aborted", "recovery_key_digest": recovery_key_digest, "reason": reason}
+    body = {**core, "reason_digest": contract_digest(b"memorii.semantic-ingestion.bootstrap-recovery-aborted.v3", core)}
+    return BootstrapRecoveryAbortedV3(**body, response_digest=contract_digest(
+        b"memorii.semantic-ingestion.bootstrap-recovery-aborted.v3", body))
 
 
 def generation_request_digest(request: AtomicGenerationRequest) -> str:

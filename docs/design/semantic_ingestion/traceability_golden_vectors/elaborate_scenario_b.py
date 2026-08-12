@@ -1089,12 +1089,6 @@ def content_digest(content: bytes) -> str:
 def tool_pins() -> dict[str, str]:
     paths = {
         "checker": Path(__file__).with_name("validate_scenario_first.py"),
-        "extractor": ROOT
-        / "memorii"
-        / "memorii"
-        / "core"
-        / "memory_evolution"
-        / "extraction.py",
         "ingress_runner": Path(__file__).with_name("run_scenario_ingress.py"),
         "provider_composition": ROOT
         / "memorii"
@@ -1103,6 +1097,12 @@ def tool_pins() -> dict[str, str]:
         / "provider"
         / "service.py",
         "renderer": Path(__file__).with_name("validate_scenario_first.py"),
+        "scenario_host_authority": ROOT
+        / "memorii"
+        / "tests"
+        / "fixtures"
+        / "semantic_ingestion"
+        / "scenario_fixture_authority.py",
     }
     return {name: sha(path.read_bytes()) for name, path in sorted(paths.items())}
 
@@ -1154,8 +1154,8 @@ def validate_run(
     if set(run) != expected or run["format"] != "memorii-sia-scenario-ingress-run-v2":
         raise ValueError("scenario run shape")
     if (
-        run["projection_policy"] != "scenario_semantic_persisted_projection"
-        or run["projection_version"] != 1
+        run["projection_policy"] != "scenario_persisted_public_ingress_projection"
+        or run["projection_version"] != 2
     ):
         raise ValueError("scenario run projection policy")
     if (
@@ -1165,9 +1165,7 @@ def validate_run(
         run["ctv_authority_sha256"],
     ) != (sha(scenario), sha(design), sha(registry), sha(authority)):
         raise ValueError("scenario run raw pin")
-    if run["tool_pins"] != tool_pins() or run["oracle_spy_observation_count"] != len(
-        run["runs"]
-    ):
+    if run["tool_pins"] != tool_pins() or run["oracle_spy_observation_count"] != 0:
         raise ValueError("scenario run tool pin or oracle observation")
     if (
         not isinstance(run["runs"], list)
@@ -1175,9 +1173,16 @@ def validate_run(
         or not isinstance(run["stable_evidence"], list)
     ):
         raise ValueError("scenario run evidence")
+    private_ids = {
+        turn["turn_id"]
+        for scenario_value in json.loads(scenario)["scenarios"]
+        for turn in scenario_value["interaction"]["turns"]
+    }
+    if any(value.encode("utf-8") in canonical(run) for value in private_ids):
+        raise ValueError("scenario private renderer identity leaked into run")
+    event_ids: set[str] = set()
     for item in run["runs"]:
         if set(item) != {
-            "rendered_source_id",
             "provider_event_id",
             "rendered_bytes_base64",
             "source_span_map",
@@ -1186,9 +1191,18 @@ def validate_run(
         }:
             raise ValueError("scenario run item")
         rendered = base64.b64decode(item["rendered_bytes_base64"], validate=True)
+        event_id = item["provider_event_id"]
+        if (
+            not isinstance(event_id, str)
+            or len(event_id) != 67
+            or not event_id.startswith("sf-")
+            or any(character not in "0123456789abcdef" for character in event_id[3:])
+            or event_id in event_ids
+        ):
+            raise ValueError("scenario opaque event identifier")
+        event_ids.add(event_id)
         if item["source_span_map"] != [
             {
-                "source_id": item["rendered_source_id"],
                 "byte_start": 0,
                 "byte_end": len(rendered),
             }

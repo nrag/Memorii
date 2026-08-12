@@ -15,13 +15,51 @@ from functools import lru_cache
 from hashlib import sha256
 from typing import Any, cast
 
+from memorii.core.memory_evolution.bootstrap_profile import (
+    BOOTSTRAP_COORDINATE,
+    BootstrapGrammarCorpusCase,
+    BootstrapProfileReleaseMetadata,
+    CurrentBootstrapReleaseAssertion,
+    HostVerifiedBootstrapMaterial,
+    build_bootstrap_profile_artifacts,
+    build_bootstrap_trust_anchor,
+    serialize_bootstrap_profile_artifacts,
+)
+from memorii.core.memory_evolution.delivery_coordinate_migration import (
+    DeliveryCoordinateMigrationCheckpoint,
+    activate_migration,
+    build_migration_plan,
+    certify_migration,
+)
 from memorii.core.memory_evolution.ingestion_contracts import (
+    AuthenticatedHostIngress,
+    AuthenticatedIngressContext,
+    AuthenticatedSemanticEgressGovernance,
+    AuthenticatedSemanticSourceAuthority,
+    AuthenticatedSemanticSourceInterval,
     CanonicalTypedValueProfileBinding,
+    DeliveryPrincipalBinding,
+    RequiredOutcomeScopeSet,
     artifact_preimage,
     decode_artifact,
     decode_typed_value,
     encode_typed_value,
     serialize_artifact,
+)
+from memorii.core.semantic_ingestion.capability import (
+    BuiltInLocalHostSemanticIngestionCapability,
+    SemanticDeploymentAuthorizationUse,
+    SemanticIngestionRuntimeAuthorization,
+)
+from memorii.core.semantic_ingestion.contracts import (
+    PredicateTemporalRule,
+    PredicateTrustRule,
+    SemanticArbitrationPolicyBundle,
+    SemanticPipelinePolicy,
+    TemporalPolicySnapshot,
+    TimeInterval,
+    TrustPolicySnapshot,
+    contract_digest,
 )
 from memorii.tools.semantic_ingestion_execution_evidence import (
     artifact_digest,
@@ -41,6 +79,11 @@ from memorii.tools.semantic_ingestion_traceability_registry import (
 from memorii.tools.semantic_ingestion_traceability_release import (
     IndependentGenerationVerificationResult,
     VerifierHeldTrustMaterial,
+)
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    DeterministicTestHostBootstrapMaterialVerifier,
+    build_test_host_verified_bootstrap_release_evidence,
+    present_authenticated_host_bootstrap_material,
 )
 
 
@@ -62,6 +105,274 @@ PROFILE_VERSION = 2
 PROFILE_DIGEST = "9dc8b3d01e3f78ed6a11c7668cbb576b09f48ddf107c5efe441bb8bad234fd7f"
 TEST_BOOTSTRAP_KEY = "scenario-first-closure-test-bootstrap-key"
 TEST_RECOVERY_KEY = "scenario-first-closure-test-recovery-key"
+
+
+def _scenario_digest(value: str) -> str:
+    return sha256(value.encode("utf-8")).hexdigest()
+
+
+class _ScenarioIngressResolver:
+    """Scenario-only host boundary; it never receives comparator-private data."""
+
+    def resolve(
+        self, host_ingress: AuthenticatedHostIngress, server_time: datetime
+    ) -> AuthenticatedIngressContext:
+        if host_ingress.provider_identity != "scenario-test-host":
+            raise ValueError("scenario host ingress identity is invalid")
+        principal = DeliveryPrincipalBinding.create(
+            principal_subject_id="scenario-principal",
+            tenant_partition_id="scenario-tenant",
+            provider_identity=host_ingress.provider_identity,
+        )
+        scopes = RequiredOutcomeScopeSet.create(
+            tenant_partition_id=principal.tenant_partition_id,
+            scopes={"user:scenario-user", "session:scenario-session", "task:scenario-task"},
+        )
+        return AuthenticatedIngressContext(
+            delivery_principal_binding=principal,
+            required_outcome_scopes=scopes,
+            current_authorized_scopes=scopes,
+            language_declaration="en",
+            language_evidence_kind="authenticated_host_declaration",
+            language_evidence_trust="trusted",
+            language_governance_agreement="agrees",
+            semantic_egress_governance=AuthenticatedSemanticEgressGovernance(
+                classification="scenario_test",
+                provider="local",
+                model="local-rule-v1",
+                region="test",
+                retention_mode="fixture",
+                training_use=False,
+            ),
+            semantic_source_authority=AuthenticatedSemanticSourceAuthority(
+                authority_class="official",
+                authenticated_provenance_class="scenario_test_host",
+                governing_principal_id="scenario-principal",
+                policy_revision="scenario-trust-v1",
+                provenance_digest=_scenario_digest("scenario-source-authority"),
+            ),
+            semantic_source_interval=AuthenticatedSemanticSourceInterval(
+                start=datetime(2026, 1, 1, tzinfo=UTC),
+                end=datetime(2027, 1, 1, tzinfo=UTC),
+                authority_basis="server_source_metadata",
+                provenance_digest=_scenario_digest("scenario-source-interval"),
+                policy_revision="scenario-trust-v1",
+            ),
+        )
+
+
+class _ScenarioRuntimeAuthorizationVerifier:
+    def verify(
+        self,
+        *,
+        authorization_bytes: bytes,
+        use: SemanticDeploymentAuthorizationUse,
+        server_time: datetime,
+    ) -> SemanticIngestionRuntimeAuthorization:
+        del server_time
+        body = {
+            "authorization_digest": sha256(authorization_bytes).hexdigest(),
+            "target_profile_manifest_digest": use.profile_manifest_digest,
+            "verified_bootstrap_release_digest": use.verified_bootstrap_release_digest,
+            "deployment_artifact_digest": _scenario_digest("scenario-deployment"),
+            "authority_snapshot_digest": _scenario_digest("scenario-authority-snapshot"),
+            "active_epoch": 1,
+            "expires_at": datetime(2030, 1, 1, tzinfo=UTC),
+            "signer_id": "scenario-test-host",
+        }
+        return SemanticIngestionRuntimeAuthorization(
+            **body,
+            decision_digest=contract_digest(
+                b"memorii.semantic-ingestion.verified-deployment-authorization.v1", body
+            ),
+        )
+
+
+class _ScenarioCurrentReleaseVerifier:
+    def assert_current(self, *, authorization: object, release_evidence: object, assertion_phase: str):
+        del authorization
+        body = {
+            "coordinate": release_evidence.coordinate.model_dump(mode="python"),
+            "signed_release_digest": release_evidence.signed_release_digest,
+            "bootstrap_anchor_digest": release_evidence.bootstrap_anchor_digest,
+            "active_lifecycle_snapshot_digest": release_evidence.active_lifecycle_snapshot_digest,
+            "assertion_phase": assertion_phase,
+            "assertion_nonce": f"scenario-host:{assertion_phase}",
+        }
+        return CurrentBootstrapReleaseAssertion(
+            **body,
+            assertion_digest=sha256(
+                b"memorii.semantic_ingestion.current_bootstrap_release_assertion.v1\0"
+                + encode_typed_value(body)
+            ).hexdigest(),
+        )
+
+
+class _ScenarioPolicyProvider:
+    def current_policy(self, *, source_id: str, source_digest: str) -> SemanticPipelinePolicy:
+        del source_id, source_digest
+        interval = TimeInterval(
+            start=datetime(2026, 1, 1, tzinfo=UTC), end=datetime(2027, 1, 1, tzinfo=UTC)
+        )
+        predicates = ("owner", "status")
+        trust = TrustPolicySnapshot.create(
+            policy_revision="scenario-trust-v1",
+            system_effective_interval=interval,
+            rules=tuple(
+                PredicateTrustRule(
+                    predicate_id=predicate,
+                    eligible_authority_classes=frozenset({"official"}),
+                    authority_rank_by_class={"official": 10},
+                )
+                for predicate in predicates
+            ),
+        )
+        temporal = TemporalPolicySnapshot.create(
+            policy_revision="scenario-temporal-v1",
+            system_effective_interval=interval,
+            rules=tuple(
+                PredicateTemporalRule(
+                    predicate_id=predicate,
+                    valid_time_requirement="required",
+                    allow_open_end=True,
+                )
+                for predicate in predicates
+            ),
+        )
+        return SemanticPipelinePolicy(
+            arbitration_bundle=SemanticArbitrationPolicyBundle.create(
+                trust_policy=trust,
+                temporal_policy=temporal,
+                arbitration_as_of=datetime(2026, 7, 30, tzinfo=UTC),
+            )
+        )
+
+
+class _ScenarioInitialWriterActivation:
+    """Fixture-host approval for an empty, verified scenario writer epoch."""
+
+    def activate_initial_writer(self, *, writers: object, now_provider) -> None:
+        from memorii.core.memory_evolution.writer_admission import SemanticWriterAdmissionStore
+
+        if not isinstance(writers, SemanticWriterAdmissionStore):
+            raise TypeError("scenario writer activation requires semantic writer authority")
+        current = writers.current()
+        if current.active_runtime_mode == "verified_semantic":
+            return
+        if current.active_runtime_mode != "evidence_only":
+            raise ValueError("scenario writer activation requires an evidence-only initial epoch")
+        plan = build_migration_plan(
+            migration_plan_id="scenario-initial-semantic-writer",
+            source_writer_epoch=current.writer_epoch,
+            legacy_snapshot_token=sha256(encode_typed_value(())).hexdigest(),
+            entries=(),
+        )
+        checkpoint_body = {
+            "migration_plan_id": plan.migration_plan_id,
+            "plan_digest": plan.plan_digest,
+            "completed_entry_digests": (),
+            "target_generation": current.writer_epoch + 1,
+        }
+        checkpoint = DeliveryCoordinateMigrationCheckpoint(
+            **checkpoint_body,
+            checkpoint_digest=sha256(encode_typed_value(checkpoint_body)).hexdigest(),
+        )
+        certificate = certify_migration(
+            plan,
+            checkpoint,
+            independent_verifier_fingerprint="scenario-test-host-empty-writer-activation",
+        )
+        writers.transition(
+            expected=writers.commit_binding(current),
+            admission_id="scenario-semantic-writer",
+            runtime_mode="verified_semantic",
+            writer_implementation_fingerprint="scenario-local-semantic-runtime",
+            graph_schema_fingerprint="memorii-semantic-graph-v1",
+            migration_activation=activate_migration(plan, certificate),
+            migration_plan=plan,
+            migration_checkpoint=checkpoint,
+            migration_certificate=certificate,
+            target_records=(),
+        )
+
+
+def _scenario_corpus_cases() -> tuple[BootstrapGrammarCorpusCase, ...]:
+    values = (
+        ("scenario_abstain_mismatch", "en", "mismatched", "mismatched", "disagrees", b"mismatch", "abstain_form", "language_mismatch"),
+        ("scenario_abstain_missing", None, "missing", "missing", "missing", b"missing", "abstain_form", "missing_language_declaration"),
+        ("scenario_abstain_non_english", "fr", "authenticated_host_declaration", "trusted", "agrees", b"bonjour", "abstain_form", "non_english_language"),
+        ("scenario_abstain_untrusted", None, "untrusted", "untrusted", "missing", b"untrusted", "abstain_form", "untrusted_language"),
+        ("scenario_insufficient", b"No source-grounded assertion is available.", "abstain_form", "extractor_abstained"),
+        ("scenario_owner_alice", b"Atlas owner is Alice.", "supported_form", None),
+        ("scenario_owner_bob", b"Atlas owner is Bob.", "supported_form", None),
+        ("scenario_status_running", b"Orion status is running.", "supported_form", None),
+        ("scenario_unsupported_grammar", b"unstructured", "unsupported_form", "unsupported_grammar"),
+        ("scenario_unsupported_residue", b"Atlas is Bob. trailing", "unsupported_form", "mixed_residue"),
+    )
+    cases: list[BootstrapGrammarCorpusCase] = []
+    for value in values:
+        if len(value) == 4:
+            case_id, source, disposition, reason = value
+            language, kind, trust, agreement = "en", "authenticated_host_declaration", "trusted", "agrees"
+        else:
+            case_id, language, kind, trust, agreement, source, disposition, reason = value
+        cases.append(BootstrapGrammarCorpusCase(
+            case_id=case_id, declared_language=language, language_evidence_kind=kind,
+            language_evidence_trust=trust, governance_agreement=agreement,
+            normalized_segment_bytes=source, disposition=disposition, expected_reason=reason,
+        ))
+    return tuple(cases)
+
+
+def build_scenario_test_host_capability() -> BuiltInLocalHostSemanticIngestionCapability:
+    """Construct the only scenario-test runtime root, sealed to ``scenario_test``.
+
+    This is fixture composition, not a production capability provider.  Its
+    material is deliberately generated in-process and is never discoverable by
+    the installed production/default host capability path.
+    """
+    artifacts = build_bootstrap_profile_artifacts(_scenario_corpus_cases())
+    anchor = build_bootstrap_trust_anchor(artifacts)
+    metadata = BootstrapProfileReleaseMetadata(
+        coordinate=BOOTSTRAP_COORDINATE,
+        bootstrap_profile_trust_anchor_digest=anchor.trust_anchor_digest,
+        signed_release_digest=_scenario_digest("scenario-test-signed-release"),
+    )
+    material = HostVerifiedBootstrapMaterial(
+        release_metadata=metadata,
+        trust_anchor=anchor,
+        artifact_payloads=serialize_bootstrap_profile_artifacts(artifacts),
+        release_evidence=build_test_host_verified_bootstrap_release_evidence(
+            metadata=metadata,
+            external_root_digest=_scenario_digest("scenario-test-root"),
+            active_lifecycle_snapshot_digest=_scenario_digest("scenario-test-lifecycle"),
+            verified_at=datetime(2026, 7, 30, tzinfo=UTC),
+            trust_domain="scenario_test",
+        ),
+        authenticated_ingress_resolver=_ScenarioIngressResolver(),
+        profile_enabled=True,
+        trust_domain="scenario_test",
+    )
+    return BuiltInLocalHostSemanticIngestionCapability(
+        bootstrap_material_presentation=present_authenticated_host_bootstrap_material(material),
+        authorization_bytes=b"scenario-test-host-authorization-v1",
+        authorization_verifier=_ScenarioRuntimeAuthorizationVerifier(),
+        policy_provider=_ScenarioPolicyProvider(),
+        current_bootstrap_release_verifier=_ScenarioCurrentReleaseVerifier(),
+        initial_writer_activation=_ScenarioInitialWriterActivation(),
+    )
+
+
+def build_scenario_test_provider_service(*, memory_plane, now_provider):
+    """Fixture-private route to the only non-production provider composition."""
+    from memorii.core.provider.service import ProviderMemoryService
+
+    return ProviderMemoryService._from_scenario_test_host(
+        memory_plane=memory_plane,
+        host_bootstrap_capability=build_scenario_test_host_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        now_provider=now_provider,
+    )
 
 # The registered semantic ingestion package is a closed 18-member CTV-v2/raw-ledger closure.
 # Keep this local to the fixture producer rather than importing the execution

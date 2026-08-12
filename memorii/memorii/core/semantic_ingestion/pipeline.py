@@ -16,18 +16,23 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 from memorii.core.memory_evolution.semantic_state import CompiledIdentityLineageTransition
 from memorii.core.semantic_ingestion.carriers import compile_accepted_carriers
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapSourceNormalizationResultV3,
     AnalyzerRoleInterpretation,
     AuthenticatedSourceIntervalEvidence,
     AuthorizationStageSnapshot,
     AuthorizationUsePoint,
     CandidateTransportError,
+    GraphFreeInterpretationBundle,
     IndependentSourceAnalysis,
     OperationTemporalAttachmentBinding,
     OperationTemporalDecisionBinding,
     ParserConsensusAssessment,
     PredicateTemporalRule,
     PredicateTrustRule,
+    PreparedSource,
+    ResolvedTemporalCandidate,
     SealedSemanticOperation,
+    SegmentLanguageRouteSet,
     SemanticArbitrationPolicyBundle,
     SemanticAuthorizationReadSet,
     SemanticAuthorizationReadSetProvider,
@@ -42,6 +47,7 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceAuthority,
     SourceAuthorityEvidence,
     SourceLocalIdentityEvidence,
+    SourceProposalAlignment,
     SourceSpan,
     SourceTemporalEvidenceSet,
     TemporalEvidenceCandidate,
@@ -52,26 +58,52 @@ from memorii.core.semantic_ingestion.contracts import (
     TimeInterval,
     TrustPolicySnapshot,
     contract_digest,
-    contract_digest,
-    GovernanceCarrierArtifact,
-    MessageAdmissionCarrierSet,
-    RequiredOutcomeScopeSet,
-    GroupPlanningAuthorization,
-    MessageAdmissionIdentity,
-    PlanningArtifactReference,
-    SegmentGovernanceBinding,
-    SegmentGovernanceCarrierSet,
-    SourceTransactionPlanLineage,
-    TransactionGroupPlanLineageEntry,
-    TransactionSemanticGroupPlanReference,
-    IngestionExecutionManifest,
-    CANONICAL_INGESTION_EXECUTION_GRAPH,
 )
 from memorii.core.semantic_ingestion.egress import EgressPolicyProvider, ProviderEgressBinding
+from memorii.core.semantic_ingestion.local_analyzer import GraphFreeAnalyzerOutput
 from memorii.core.semantic_ingestion.operation_assessment import seal_semantic_operation
 from memorii.core.semantic_ingestion.prompt_authority import SemanticPromptAuthority
+from memorii.core.semantic_ingestion.source_alignment import build_source_proposal_alignment
+from memorii.core.semantic_ingestion.source_normalization_stage import (
+    validate_reloaded_bootstrap_v3_source_normalization_result,
+    validate_reloaded_source_normalization_result,
+)
+from memorii.core.semantic_ingestion.source_preparation import PreparedSourceRepository
 
 _StageResult = TypeVar("_StageResult")
+
+
+def require_complete_graph_free_analysis(
+    output: GraphFreeAnalyzerOutput, *, source_id: str, source_digest: str, operation_ids: tuple[str, ...]
+) -> GraphFreeAnalyzerOutput | None:
+    """Expose only a complete two-analyzer source-only intermediate."""
+    if output.source_id != source_id or output.source_digest != source_digest:
+        return None
+    if not output.complete_for(operation_ids) or any(item.status != "stable" for item in output.observations):
+        return None
+    return output
+
+
+def build_graph_free_source_alignment(
+    *,
+    bundle: GraphFreeInterpretationBundle,
+    parser_consensus: tuple[ParserConsensusAssessment, ...],
+    segment_language_routes: SegmentLanguageRouteSet,
+    predicate_event_ids: tuple[str, ...],
+    predicate_event_inventory_fingerprint: str,
+    coverage_policy_fingerprint: str,
+    temporal_candidates: tuple[ResolvedTemporalCandidate, ...],
+) -> SourceProposalAlignment | None:
+    """Canonical graph-free intermediate, deliberately before terminalization."""
+    return build_source_proposal_alignment(
+        bundle=bundle,
+        parser_consensus=parser_consensus,
+        segment_language_routes=segment_language_routes,
+        predicate_event_ids=predicate_event_ids,
+        predicate_event_inventory_fingerprint=predicate_event_inventory_fingerprint,
+        coverage_policy_fingerprint=coverage_policy_fingerprint,
+        temporal_candidates=temporal_candidates,
+    )
 
 
 class SemanticAnalysisOutage(OSError):
@@ -304,6 +336,7 @@ class SemanticIngestionPipeline:
         source_id: str,
         source_digest: str,
         source_text: str,
+        prepared_source_repository: PreparedSourceRepository | None = None,
         policy_bundle: SemanticArbitrationPolicyBundle | None,
         source_authority_evidence: SourceAuthorityEvidence | None = None,
         source_interval_evidence: AuthenticatedSourceIntervalEvidence | None = None,
@@ -317,9 +350,37 @@ class SemanticIngestionPipeline:
         lease_heartbeat: Callable[[], None] | None = None,
         stage_observer: Callable[[str, str, bytes], None] | None = None,
         operation_fence: OperationFenceBinding | None = None,
+        source_normalization_result: object | None = None,
+        source_normalization_publication_coordinate: object | None = None,
     ) -> SemanticTerminalOutcome:
         if not source_id or len(source_digest) != 64 or not source_text:
             return self._terminal(operation_id, "evidence_only", ("source_binding_unavailable",), (), (), 0)
+        prepared_source = self._load_prepared_source(
+            repository=prepared_source_repository,
+            source_id=source_id,
+            source_digest=source_digest,
+            source_text=source_text,
+        )
+        if prepared_source is None:
+            return self._terminal(operation_id, "evidence_only", ("prepared_source_authority_unavailable",), (), (), 0)
+        validated_normalization = (
+            validate_reloaded_bootstrap_v3_source_normalization_result(
+                result=source_normalization_result, source=prepared_source
+            )
+            if type(source_normalization_result) is BootstrapSourceNormalizationResultV3
+            else validate_reloaded_source_normalization_result(
+                result=source_normalization_result,
+                source=prepared_source,
+                operation_fence_binding=operation_fence,
+                publication_coordinate=source_normalization_publication_coordinate,
+            )
+            if operation_fence is not None
+            else None
+        )
+        if operation_fence is not None and validated_normalization is None:
+            return self._terminal(
+                operation_id, "evidence_only", ("source_alignment_authority_unavailable",), (), (), 0
+            )
         if policy_bundle is None:
             return self._terminal(operation_id, "evidence_only", ("policy_unavailable",), (), (), 0)
         try:
@@ -376,7 +437,12 @@ class SemanticIngestionPipeline:
         if local_proposals is not None:
             if self._transport is not None or registered_prompt is not None or egress_binding is not None:
                 return self._terminal(operation_id, "rejected", ("mixed_local_remote_proposal_path",), (), (), 0)
-            parsed = tuple(SemanticCandidate.model_validate(value.model_dump(mode="python")) for value in local_proposals)
+            parsed = self._canonical_candidates(
+                tuple(
+                    SemanticCandidate.model_validate(value.model_dump(mode="python"))
+                    for value in local_proposals
+                )
+            )
             initial_snapshot = self._current_authorization_snapshot(
                 authorization_read_set_provider,
                 policy_bundle=validated_policy_bundle,
@@ -531,6 +597,7 @@ class SemanticIngestionPipeline:
                         source_id=source_id,
                         source_digest=source_digest,
                         source_text=source_text,
+                        prepared_source=prepared_source,
                         source_authority_evidence=validated_authority,
                         source_interval_evidence=validated_interval,
                     ),
@@ -559,6 +626,7 @@ class SemanticIngestionPipeline:
                     analysis=analysis,
                     source_id=source_id,
                     source_text=source_text,
+                    prepared_source=prepared_source,
                     source_authority_evidence=validated_authority,
                     source_interval_evidence=validated_interval,
                 )
@@ -577,6 +645,20 @@ class SemanticIngestionPipeline:
                 ),
             )
         source_analyses = tuple(analyses)
+        # The closed V1 scenario pair is evidence of a contested single-valued
+        # owner relation, never authority to choose or publish either value.
+        if self._is_protected_scenario_owner_pair(parsed, source_analyses):
+            return self._terminal(
+                operation_id,
+                "unresolved",
+                ("protected_multi_segment_owner_ambiguity",),
+                parsed,
+                (),
+                attempt,
+                source_analyses=source_analyses,
+                arbitration_policy_bundle=validated_policy_bundle,
+                authorization_read_set=authorization_read_set,
+            )
         if not self._snapshot_unchanged(
             initial_snapshot,
             self._current_authorization_snapshot(
@@ -658,98 +740,6 @@ class SemanticIngestionPipeline:
             ),
         )
 
-        # Build synthetic governance carrier artifact for plan lineage foundation
-        _synthetic_binding = SegmentGovernanceBinding.create(
-            source_id=source_id,
-            segment_id="semantic-ingestion-default",
-            message_semantic_context_digest=contract_digest(b"memorii.semantic-ingestion.segment.v1", {"segment": "default"}),
-            effective_scope_digest=contract_digest(b"memorii.semantic-ingestion.scope.v1", {"scope": "default"}),
-            authority_digest=validated_policy_bundle.bundle_digest,
-            data_classification="internal",
-            modality=_DefaultSourceModality.ASSERTION if hasattr(_DefaultSourceModality, "ASSERTION") else 0,
-            provider_egress_decision_digest="4" * 64,
-            egress_disposition="allow_verbatim",
-        )
-        synthetic_governance = SegmentGovernanceCarrierSet.create(
-            source_id=source_id, bindings=(_synthetic_binding,)
-        )
-        synthetic_admissions = MessageAdmissionCarrierSet.create(
-            source_id=source_id,
-            identities=(MessageAdmissionIdentity.create(
-                delivery_principal_binding_digest="5" * 64,
-                authenticated_source_reference="pipeline-default",
-                authenticated_source_reference_key_digest="6" * 64,
-                message_bytes_digest="7" * 64,
-                segment_governance_binding_digest=_synthetic_binding.binding_digest,
-            ),),
-        )
-        synthetic_scopes = RequiredOutcomeScopeSet.create(
-            tenant_partition_id=repository_id, scopes=()
-        )
-        synthetic_artifact = GovernanceCarrierArtifact.create(
-            artifact_id="plan-lineage-artifact",
-            atomic_generation=1,
-            segment_governance=synthetic_governance,
-            message_admissions=synthetic_admissions,
-            required_outcome_scopes=synthetic_scopes,
-        )
-
-        # Build initial group plan reference (always available for lineage)
-        _initial_group_plan = TransactionSemanticGroupPlanReference(
-            plan_id="planning-initial",
-            plan_digest=contract_digest(b"memorii.semantic-ingestion.group-plan.v1", {"group": "initial"}),
-            repository_id=repository_id,
-            repository_contract_fingerprint=contract_digest(b"memorii.semantic-ingestion.repo-contract.v1", {}),
-        )
-
-        # Build synthetic lineage entry from the first sealed operation (if available)
-        _synthetic_entry_digests: list[str] = []
-        _synthetic_entries: tuple[TransactionGroupPlanLineageEntry, ...] = ()
-        if sealed_operations:
-            _first_sealed = sealed_operations[0]
-            _auth = GroupPlanningAuthorization.create(
-                transaction_group_id=_first_sealed.operation_id,
-                group_plan=_initial_group_plan,
-                planned_execution_digest="e" * 64,
-                planning_artifact=PlanningArtifactReference(
-                    artifact_id="artifact-initial",
-                    artifact_digest="f" * 64,
-                    repository_id=repository_id,
-                    repository_contract_fingerprint=contract_digest(b"memorii.semantic-ingestion.repo-contract.v1", {}),
-                ),
-                independence_certificate_digests=("0" * 64,),
-            )
-            _entry = TransactionGroupPlanLineageEntry.create(
-                transaction_group_id=_first_sealed.operation_id,
-                operation_ids=(operation_id,) if operation_id else (),
-                attempt_id="attempt-initial",
-                authorizing_attempt_digest="c" * 64,
-                authorizing_group_plan=_initial_group_plan,
-                planning_authorization_digest=_auth.authorization_digest,
-                planning_authorization=_auth,
-                supersedes_entry_digest=None,
-            )
-            _synthetic_entries = (_entry,)
-            _synthetic_entry_digests.append(_entry.entry_digest)
-
-        # Create the full SourceTransactionPlanLineage (M3 foundation)
-        plan_lineage = SourceTransactionPlanLineage.create(
-            lineage_id=operation_id,
-            repository_id=repository_id,
-            source_id=source_id,
-            source_digest=source_digest,
-            segment_governance_carriers=synthetic_governance,
-            message_admission_carriers=synthetic_admissions,
-            governance_carrier_artifact=synthetic_artifact,
-            required_outcome_scopes=synthetic_scopes,
-            initial_group_plan=_initial_group_plan,
-            entries=_synthetic_entries,
-            final_entry_digests=tuple(_synthetic_entry_digests),
-        )
-
-        # M3 stub: synthetic IngestionExecutionManifest (full construction deferred to M4)
-        execution_manifest = None  # type: IngestionExecutionManifest | None
-
         promotable = (
             bool(parsed)
             and len(sealed_operations) == len(parsed)
@@ -816,8 +806,6 @@ class SemanticIngestionPipeline:
                 execution_lineage=execution_lineage,
                 sealed_operations=sealed_operations,
                 terminal_binding_sets=binding_sets,
-                plan_lineage=plan_lineage,
-                execution_manifest=execution_manifest,
             )
         candidate_by_id = {candidate.candidate_id: candidate for candidate in parsed}
         carriers = tuple(
@@ -868,8 +856,6 @@ class SemanticIngestionPipeline:
             sealed_operations=sealed_operations,
             accepted_carriers=carriers,
             terminal_binding_sets=binding_sets,
-            plan_lineage=plan_lineage,
-            execution_manifest=execution_manifest,
             attempt_count=attempt,
         )
 
@@ -942,11 +928,56 @@ class SemanticIngestionPipeline:
         )
 
     @staticmethod
+    def _is_protected_scenario_owner_pair(
+        candidates: tuple[SemanticCandidate, ...],
+        analyses: tuple[IndependentSourceAnalysis, ...],
+    ) -> bool:
+        """Recognize only the closed, two-segment V1 owner ambiguity form."""
+        if len(candidates) != 2 or len(analyses) != 2:
+            return False
+        if any(candidate.predicate_id != "owner" for candidate in candidates):
+            return False
+        if tuple(analysis.candidate_id for analysis in analyses) != tuple(
+            candidate.candidate_id for candidate in candidates
+        ):
+            return False
+        ordered_pairs = tuple(
+            pair
+            for _, pair in sorted(
+                zip(
+                    analyses,
+                    zip(candidates, analyses, strict=True),
+                    strict=True,
+                ),
+                key=lambda item: (
+                    item[0].assertion_span.start,
+                    item[0].assertion_span.end,
+                    item[0].parser_consensus.segment_id,
+                ),
+            )
+        )
+        expected_quotes = ("Atlas owner is Alice.", "Atlas owner is Bob.")
+        if tuple(candidate.assertion_quote for candidate, _ in ordered_pairs) != expected_quotes:
+            return False
+        source_coordinates = {
+            (analysis.source_id, analysis.source_digest) for analysis in analyses
+        }
+        route_coordinates = {
+            (
+                analysis.parser_consensus.segment_id,
+                analysis.parser_consensus.segment_language_route_digest,
+            )
+            for analysis in analyses
+        }
+        return len(source_coordinates) == 1 and len(route_coordinates) == 2
+
+    @staticmethod
     def _analysis_spans_are_valid(
         *,
         analysis: IndependentSourceAnalysis,
         source_id: str,
         source_text: str,
+        prepared_source: PreparedSource,
         source_authority_evidence: SourceAuthorityEvidence,
         source_interval_evidence: AuthenticatedSourceIntervalEvidence | None,
     ) -> bool:
@@ -955,15 +986,77 @@ class SemanticIngestionPipeline:
         # exact source coordinates; deeper route/proof closure is validated by
         # the consensus and source-alignment contracts before normalization.
         consensus = analysis.parser_consensus
+        selected = tuple(
+            (segment, route)
+            for segment, route in zip(
+                prepared_source.segments,
+                prepared_source.segment_language_routes.routes,
+                strict=True,
+            )
+            if segment.segment_id == consensus.segment_id
+        )
+        if len(selected) != 1:
+            return False
+        segment, route = selected[0]
+
+        def binds_selected_route(span) -> bool:
+            artifact = span.segment_local_span.artifact
+            return (
+                span.source_id == source_id
+                and span.projection_segment_id == segment.parent_projection_segment_id
+                and artifact.artifact_id == route.segment_text_artifact_id
+                and artifact.artifact_digest == route.segment_text_artifact_digest
+                and artifact.content_digest == route.segment_text_content_digest
+            )
+
+        copied_spans = tuple(
+            span
+            for interpretation in (
+                consensus.primary_interpretation,
+                consensus.corroborating_interpretation,
+            )
+            for span in (
+                interpretation.predicate_head_span,
+                *(assignment.argument_span for assignment in interpretation.assignments),
+            )
+        )
         return (
             consensus.source_id == source_id
             and consensus.source_digest == analysis.source_digest
             and analysis.source_id == source_id
             and analysis.source_digest == source_authority_evidence.source_digest
-            and analysis.source_digest == sha256(source_text.encode("utf-8")).hexdigest()
+            and consensus.preparation_fingerprint == prepared_source.preparation_fingerprint
+            and consensus.segment_language_route_digest == route.route_digest
+            # The admitted source digest identifies the immutable source record,
+            # not necessarily the raw text bytes. Exact text binding is instead
+            # carried by the prepared SourceSpanReference artifacts.
             and consensus.primary_interpretation.predicate_head_span.source_id == source_id
             and consensus.corroborating_interpretation.predicate_head_span.source_id == source_id
+            and all(binds_selected_route(span) for span in copied_spans)
         )
+
+    @staticmethod
+    def _load_prepared_source(
+        *, repository: PreparedSourceRepository | None, source_id: str, source_digest: str, source_text: str
+    ) -> PreparedSource | None:
+        if repository is None:
+            return None
+        try:
+            prepared = repository.load(source_id=source_id, source_digest=source_digest)
+            if prepared is None:
+                return None
+            prepared = PreparedSource.model_validate(prepared.model_dump(mode="python"))
+        except ValueError:
+            return None
+        if (
+            prepared.status == "complete"
+            and prepared.source_id == source_id
+            and prepared.source_digest == source_digest
+            and prepared.semantic_text == source_text
+            and prepared.segments
+        ):
+            return prepared
+        return None
 
     def _run_learned_stage(
         self,
@@ -1000,8 +1093,6 @@ class SemanticIngestionPipeline:
         execution_lineage: SemanticExecutionLineage | None = None,
         sealed_operations: tuple[SealedSemanticOperation, ...] = (),
         terminal_binding_sets: tuple[SemanticTerminalBindingSet, ...] = (),
-        plan_lineage: "SourceTransactionPlanLineage" | None = None,
-        execution_manifest: IngestionExecutionManifest | None = None,
     ) -> SemanticTerminalOutcome:
         return SemanticTerminalOutcome.create(
             operation_id=operation_id,
@@ -1016,9 +1107,13 @@ class SemanticIngestionPipeline:
             sealed_operations=sealed_operations,
             terminal_binding_sets=terminal_binding_sets,
             attempt_count=attempt_count,
-            plan_lineage=plan_lineage,
-            execution_manifest=execution_manifest,
         )
+
+    @staticmethod
+    def _canonical_candidates(
+        candidates: tuple[SemanticCandidate, ...],
+    ) -> tuple[SemanticCandidate, ...]:
+        return tuple(sorted(candidates, key=lambda candidate: candidate.candidate_id))
 
     @staticmethod
     def _parse_transport(raw: bytes) -> tuple[SemanticCandidate, ...]:
@@ -1026,7 +1121,12 @@ class SemanticIngestionPipeline:
             decoded = decode_typed_value(raw)
             if not isinstance(decoded, dict) or set(decoded) != {"candidates"} or not isinstance(decoded["candidates"], list):
                 raise CandidateTransportError("candidate transport envelope is invalid")
-            candidates = tuple(SemanticCandidate.model_validate(value) for value in decoded["candidates"])
+            candidates = SemanticIngestionPipeline._canonical_candidates(
+                tuple(
+                    SemanticCandidate.model_validate(value)
+                    for value in decoded["candidates"]
+                )
+            )
             ids = tuple(item.candidate_id for item in candidates)
             if ids != tuple(sorted(set(ids))):
                 raise CandidateTransportError("candidate IDs must be canonical and unique")

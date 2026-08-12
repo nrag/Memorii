@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_complete_lineage_and_group_result_construction",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "9865f6c2db395e9a3b4a173dd9f48726d7f9ba173efe9f9ba6284a50aa53a9aa",
+  "review_scope": [
+    "typed group-result construction outcomes and effect receipts",
+    "complete lineage history and derived latest projection",
+    "accurate unimplemented terminal binding status"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "033b24ed8b474aefd210e70a11f21c1c49b9afe7601013e0cf63f9500b49b9d5",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "0793367ce6cf5971fe2359be13948dd93f6f56c036a05781136435e975d82aef",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "3bed920001f2208482eebd48ce74689b77b9b547ec659fa01f65dd44aa04ac75"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "stale digest-only and implementation-claim search",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

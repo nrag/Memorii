@@ -1,8 +1,8 @@
-﻿"""Closed, content-addressed language construction policies."""
+"""Closed, content-addressed language construction policies."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from hashlib import sha256
 from typing import ClassVar, Literal
 
@@ -13,11 +13,31 @@ from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
 Commitment = Literal["asserted", "believed", "reported", "quoted", "questioned", "instructed", "hypothetical"]
 
 
-class _CanonicalMap(dict[str, object]):
-    """Map-shaped but hashable CTV member for frozensets of policy models."""
+class _CanonicalMap(Mapping[str, object]):
+    """Immutable hashable mapping that survives Python-mode Pydantic dumps."""
+
+    __slots__ = ("_items",)
+
+    def __init__(self, values: Mapping[str, object]) -> None:
+        self._items = tuple(values.items())
+
+    def __iter__(self) -> Iterator[str]:
+        return (key for key, _ in self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __getitem__(self, key: str) -> object:
+        for candidate, value in self._items:
+            if candidate == key:
+                return value
+        raise KeyError(key)
+
+    def items(self) -> tuple[tuple[str, object], ...]:
+        return self._items
 
     def __hash__(self) -> int:
-        return hash(encode_typed_value(dict(self)))
+        return hash(encode_typed_value(self))
 
 
 def _digest(domain: bytes, body: object) -> str:
@@ -27,12 +47,12 @@ def _digest(domain: bytes, body: object) -> str:
 def _canonical(value: object) -> object:
     if isinstance(value, BaseModel):
         return _CanonicalMap({name: _canonical(getattr(value, name)) for name in type(value).model_fields})
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return _CanonicalMap({key: _canonical(item) for key, item in sorted(value.items(), key=lambda x: x[0])})
     if isinstance(value, (frozenset, set)):
-        encoded = [(encode_typed_value(item), item) for item in value]
+        encoded = [(encode_typed_value(_canonical(item)), _canonical(item)) for item in value]
         encoded.sort(key=lambda x: x[0])
-        return frozenset(_canonical(item) for _, item in encoded)
+        return frozenset(item for _, item in encoded)
     if isinstance(value, tuple):
         return tuple(_canonical(item) for item in value)
     return value
@@ -172,7 +192,9 @@ class PredicateSemanticPolicy(_ContentAddressedPolicy):
             return {
                 **value,
                 "supported_constructions": frozenset(
-                    item if isinstance(item, ConstructionFamily) else ConstructionFamily.model_validate(dict(item))
+                    item
+                    if isinstance(item, ConstructionFamily)
+                    else ConstructionFamily.model_validate(dict(item.items()) if isinstance(item, Mapping) else dict(item))
                     for item in value["supported_constructions"]
                 ),
             }

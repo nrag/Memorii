@@ -1,0 +1,29 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_nonpublishing_planner_atomic_group_commit",
+  "semantic_predecessor": "design-candidate-identity-v45.json",
+  "semantic_change_from_predecessor": "close rejected v45 planner and persistence ownership with a canonical pure identity planning API, one store-owned group commit result/receipt linearization, exhaustive legacy field supersession, and typed reload threading",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "bb1099a6a89ed650c8c2c6c570659a7f343324af1a23d55860beeeeb6a2bb176",
+  "review_scope": [
+    "IdentityOperationPlanner.plan_nonpublishing outer snapshot group and planning-state contract",
+    "BootstrapGraphGroupCommitRepositoryV3 atomic request result receipt generation and reload",
+    "exhaustive plan attempt manifest CAS result retry and terminal supersession matrix",
+    "typed group-commit reload threading attacks tests migration and four-root closure"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "7dfe66582ec8a08b9ae049b7a5e65d6aa8fc38990450c038f6828687d6eb5e97",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "f8d9d06eaf08d20e55a3fcd8a53e7f96a981e6094c857ffa66e2da7cd94cb637",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "ace611bc796ad771099b3048070fe81d5c3d33e75c0e47e2ae7422b49f311d77"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "planner store reload supersession and failure anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

@@ -1,0 +1,31 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_individual_planning_authorization_tuple",
+  "semantic_predecessor": "design-candidate-identity-v51.json",
+  "semantic_change_from_predecessor": "retire the planning authorization aggregate and use only the canonical ordered tuple of individual group authorizations through checkpoint reload attempt and commit",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "809f3d8cc9fb1f022b2c3c6e653db2cb243a790c01eebb08a28ec6c0f32366b5",
+  "review_scope": [
+    "retirement and obsolete decode rejection of BootstrapGraphPlanAuthorizationSetV3",
+    "individual authorization tuple cardinality and canonical plan group order",
+    "authorization checkpoint member/reload order and byte identity",
+    "initial successor replacement and group commit individual consumers",
+    "authorization mutation and four-root no-ambient proof obligations"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "27f0a73a69a2883705cdd9f922b34380baa5059b7e8e320b6de9e66363e89d09",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "262cb38d8e98362019eb52a810410846decfb7223fff4d52695200c6a504fd29",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "042909b82b93ffa5ee461fb9ea16da8c374ce02cccdb22e9cb6473c4410b8208"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "aggregate retirement and tuple port anchors",
+    "checkpoint attempt group consumer and mutation anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

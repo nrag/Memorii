@@ -373,6 +373,11 @@ class JsonlMemoryPlaneStore:
         self._governed_write_policy: GovernedWritePolicy | None = None
         self._checkpoint_signature_owner: object | None = None
         self._checkpoint_signature_authority: _BackendCheckpointSignatureAuthority | None = None
+        # Repeated control-plane reads happen under the existing file lock.
+        # Cache only a fully validated snapshot and key it to identity metadata
+        # so a second store handle's replace is observed immediately.
+        self._validated_batches: list[_PersistedBatch] | None = None
+        self._validated_batches_identity: tuple[int, int, int, int] | None = None
 
     @property
     def durable(self) -> bool:
@@ -560,6 +565,12 @@ class JsonlMemoryPlaneStore:
         ]
 
     def _read_batches_unlocked(self) -> list[_PersistedBatch]:
+        identity = self._records_identity_unlocked()
+        if (
+            self._validated_batches is not None
+            and self._validated_batches_identity == identity
+        ):
+            return self._validated_batches
         batches: list[_PersistedBatch] = []
         expected_revision = 1
         for line_number, line in enumerate(self._iter_jsonl_lines_unlocked(), start=1):
@@ -579,7 +590,20 @@ class JsonlMemoryPlaneStore:
                 )
             batches.append(batch)
             expected_revision += 1
+        # Never cache an exception or incomplete tail: only this fully
+        # parsed, checksum-validated sequence is reusable under the lock.
+        self._validated_batches = batches
+        self._validated_batches_identity = identity
         return batches
+
+    def _records_identity_unlocked(self) -> tuple[int, int, int, int] | None:
+        if not self._records_path.exists():
+            return None
+        try:
+            stat = self._records_path.stat()
+        except OSError as exc:
+            raise MemoryPlaneCorruptionError("cannot stat memory-plane log") from exc
+        return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
 
     def _iter_jsonl_lines_unlocked(self) -> list[str]:
         if not self._records_path.exists():
@@ -608,8 +632,15 @@ class JsonlMemoryPlaneStore:
                 os.fsync(handle.fileno())
             os.replace(temporary_path, self._records_path)
             _fsync_directory(self._base_path)
+            # The caller supplied the exact validated sequence just written.
+            # Refresh identity after replace so subsequent local reads do not
+            # parse it again, while other handles still detect the new inode.
+            self._validated_batches = batches
+            self._validated_batches_identity = self._records_identity_unlocked()
         except BaseException:
             temporary_path.unlink(missing_ok=True)
+            self._validated_batches = None
+            self._validated_batches_identity = None
             raise
 
     def _locked(self, *, exclusive: bool) -> AbstractContextManager[None]:

@@ -322,6 +322,28 @@ def test_requirement_coordinate_is_allowed_only_in_exact_registry_metadata(tmp_p
     assert violations[0].value == requirement
 
 
+def test_graph_selector_requirements_are_allowed_only_in_exact_traceability_field(
+    tmp_path: Path,
+) -> None:
+    root, allowlist = _root(tmp_path)
+    manifest = root / "memorii/tests/ci/bootstrap-graph-transaction-boundary.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    requirement = "GTC-" + "R19"
+    manifest.write_text(
+        json.dumps({"rows": [{"requirement_" + "ids": [requirement]}]}),
+        encoding="utf-8",
+    )
+    assert scan_repository(root, allowlist_path=allowlist) == ()
+
+    manifest.write_text(
+        json.dumps({"rows": [{"node_" + "id": requirement}]}),
+        encoding="utf-8",
+    )
+    violations = scan_repository(root, allowlist_path=allowlist)
+    assert len(violations) == 1
+    assert violations[0].value == requirement
+
+
 def test_python_traceability_exception_requires_exact_registry_proof(tmp_path: Path) -> None:
     root, allowlist = _root(tmp_path)
     registry = root / "docs/design/semantic_ingestion/traceability_registry/registry-v1.json"

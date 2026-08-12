@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from memorii.core.decision_state import DecisionStateService, JsonlDecisionStateStore
@@ -13,12 +15,17 @@ from memorii.core.llm_decision import (
     JsonlGoldenCandidateStore,
     JsonlLLMDecisionTraceStore,
 )
+from memorii.core.memory_evolution.bootstrap_profile import (
+    HostBootstrapCapability,
+    HostBootstrapMaterialVerifier,
+)
 from memorii.core.memory_evolution.conflict_integrity import (
     PrivilegedSemanticIntegrityLifecycle,
 )
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
 from memorii.core.work_state import JsonlWorkStateStore, WorkStateService
 
 
@@ -70,11 +77,16 @@ class FilesystemStorageBundle:
     def build_provider_memory_service(
         self,
         *,
+        memory_plane: MemoryPlaneService | None = None,
         semantic_integrity_lifecycle: PrivilegedSemanticIntegrityLifecycle
         | None = None,
+        host_bootstrap_capability: HostBootstrapCapability | None = None,
+        host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
+        source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+        now_provider: Callable[[], datetime] | None = None,
     ) -> ProviderMemoryService:
         return build_provider_memory_service_from_env(
-            memory_plane=self.build_memory_plane_service(),
+            memory_plane=memory_plane or self.build_memory_plane_service(),
             work_state_service=self.build_work_state_service(),
             decision_state_service=self.build_decision_state_service(),
             semantic_integrity_lifecycle=semantic_integrity_lifecycle,
@@ -83,6 +95,10 @@ class FilesystemStorageBundle:
                 if semantic_integrity_lifecycle is not None
                 else self.storage_root / "semantic_integrity"
             ),
+            host_bootstrap_capability=host_bootstrap_capability,
+            host_bootstrap_material_verifier=host_bootstrap_material_verifier,
+            source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+            now_provider=now_provider,
         )
 
     def storage_status(self) -> StorageRootStatus:
@@ -93,11 +109,21 @@ def build_filesystem_provider(
     storage_root: str | Path,
     policy: FilesystemStoragePolicy | None = None,
     *,
+    memory_plane: MemoryPlaneService | None = None,
     semantic_integrity_lifecycle: PrivilegedSemanticIntegrityLifecycle
     | None = None,
+    host_bootstrap_capability: HostBootstrapCapability | None = None,
+    host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
+    source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+    now_provider: Callable[[], datetime] | None = None,
 ) -> ProviderMemoryService:
     return FilesystemStorageBundle.from_root(
         storage_root=storage_root, policy=policy
     ).build_provider_memory_service(
-        semantic_integrity_lifecycle=semantic_integrity_lifecycle
+        memory_plane=memory_plane,
+        semantic_integrity_lifecycle=semantic_integrity_lifecycle,
+        host_bootstrap_capability=host_bootstrap_capability,
+        host_bootstrap_material_verifier=host_bootstrap_material_verifier,
+        source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+        now_provider=now_provider,
     )

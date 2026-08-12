@@ -4,14 +4,29 @@ from threading import Barrier, Event, Lock, Thread
 
 import pytest
 from memorii.core.memory_evolution.admission import GovernedSourceAdmissionService, SourceAdmissionAccepted
-from memorii.core.memory_evolution.atomic_store import PreplanningStoreError, SemanticIngestionAtomicStore
+from memorii.core.memory_evolution.atomic_store import (
+    BootstrapPreparedPublishedAuthorityUnavailable,
+    BootstrapRetainedPendingAuthorityUnavailable,
+    BootstrapWriterHandoffMarkerV3,
+    PreplanningStoreError,
+    SemanticIngestionAtomicStore,
+)
+from memorii.core.memory_evolution.bootstrap_profile import (
+    BOOTSTRAP_COORDINATE,
+    BootstrapAuthenticatedLanguageEvidence,
+    CurrentBootstrapReleaseAssertion,
+    HostVerifiedBootstrapReleaseEvidence,
+)
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
+    CanonicalTypedValueError,
     DeliveryIdentity,
     DeliveryPrincipalBinding,
     OperationFenceBinding,
     RequiredOutcomeScopeSet,
+    encode_typed_value,
 )
+from memorii.core.memory_evolution.source_admission import DeliveryAuthorizationRequest
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
@@ -483,3 +498,250 @@ def test_authorization_rotation_preserves_delivery_fence_and_allocation_identity
     assert rotated.delivery_identity == first.delivery_identity
     assert rotated.operation_fence_binding == first.operation_fence_binding
     assert rotated.operation_fence_binding.allocation_namespace_id == first.operation_fence_binding.allocation_namespace_id
+
+
+def test_ctv_encoder_still_rejects_raw_delivery_identity_models() -> None:
+    principal = DeliveryPrincipalBinding.create(
+        principal_subject_id="principal:a",
+        tenant_partition_id="tenant:a",
+        provider_identity="provider:test",
+    )
+    identity = DeliveryIdentity.create(principal, "delivery:raw-model")
+
+    with pytest.raises(CanonicalTypedValueError, match="canonical_value_type_invalid"):
+        encode_typed_value(identity)
+
+
+def test_bootstrap_writer_handoff_marker_v3_create_lowers_typed_nested_members() -> None:
+    plane = MemoryPlaneService()
+    admission, fence = _handoff(plane)
+    writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
+    binding = writers.commit_binding(
+        writers.create_initial_evidence_only(
+            admission_id="writer-admission",
+            writer_implementation_fingerprint="writer",
+            graph_schema_fingerprint="schema",
+        )
+    )
+
+    marker = BootstrapWriterHandoffMarkerV3.create(
+        schema_version=3,
+        source_id=admission.source_id,
+        source_digest=admission.source_digest,
+        handoff_request_digest="1" * 64,
+        recovery_key_digest="2" * 64,
+        current_operation_generation=1,
+        current_artifact_generation=1,
+        prepared_generation=1,
+        prepared_source_digest="3" * 64,
+        authority_pin_digest="4" * 64,
+        release_evidence_digest="5" * 64,
+        bootstrap_language_evidence_digest="6" * 64,
+        delivery_identity=fence.delivery_identity,
+        operation_fence_binding=fence,
+        writer_commit_binding=binding,
+        pending_operation_id=fence.operation_fence_id,
+        pending_operation_digest="7" * 64,
+    )
+
+    assert BootstrapWriterHandoffMarkerV3.model_validate(marker.model_dump(mode="python")) == marker
+
+
+@pytest.mark.parametrize("durable", (False, True))
+@pytest.mark.parametrize("prepared", (False, True))
+def test_bootstrap_authority_unavailable_terminals_are_exactly_idempotent_and_reopen(
+    tmp_path: Path, durable: bool, prepared: bool
+) -> None:
+    plane = MemoryPlaneService(
+        record_store=JsonlMemoryPlaneStore(tmp_path / "bootstrap") if durable else InMemoryMemoryPlaneStore()
+    )
+    admission, fence = _handoff(plane)
+    writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
+    writers.create_initial_evidence_only(
+        admission_id="writer-admission", writer_implementation_fingerprint="writer", graph_schema_fingerprint="schema"
+    )
+    store = SemanticIngestionAtomicStore(plane, writers)
+    common = {
+        "source_id": admission.source_id,
+        "source_digest": admission.source_digest,
+        "authority_pin_digest": "1" * 64,
+        "release_evidence_digest": "2" * 64,
+        "bootstrap_language_evidence_digest": "3" * 64,
+        "delivery_identity": fence.delivery_identity,
+        "operation_fence_binding": fence,
+    }
+    terminal = (
+        BootstrapPreparedPublishedAuthorityUnavailable.create(
+            **common, prepared_generation=1, prepared_source_digest="4" * 64, reason="release_unavailable"
+        )
+        if prepared
+        else BootstrapRetainedPendingAuthorityUnavailable.create(**common, reason="pin_mismatch")
+    )
+    assert store._persist_bootstrap_authority_terminal_if_absent(terminal) == terminal
+    assert store._persist_bootstrap_authority_terminal_if_absent(terminal) == terminal
+    before_retry = tuple(plane.list_records())
+    rejected_write = CanonicalMemoryRecord(
+        memory_id="bootstrap:must-not-reopen",
+        domain=MemoryDomain.TRANSCRIPT,
+        text="",
+        content={},
+        status=CommitStatus.COMMITTED,
+        source_kind="test_bootstrap_authority_terminal",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    with pytest.raises(MemoryPlaneRevisionConflictError, match="record_absent"):
+        plane.conditionally_write_records(
+            (rejected_write,),
+            preconditions=(
+                RecordAbsentPrecondition(memory_id=rejected_write.memory_id),
+                RecordAbsentPrecondition(
+                    memory_id=store._bootstrap_authority_terminal_record_id(
+                        admission.source_id
+                    )
+                ),
+            ),
+        )
+    assert tuple(plane.list_records()) == before_retry
+    if durable:
+        reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(tmp_path / "bootstrap"))
+        reopened = SemanticIngestionAtomicStore(
+            reopened_plane,
+            SemanticWriterAdmissionStore(reopened_plane, bounded_preplanning_ownership_manifest()),
+        )
+        assert reopened._load_bootstrap_authority_terminal(
+            source_id=admission.source_id, source_digest=admission.source_digest
+        ) == terminal
+    else:
+        assert store._load_bootstrap_authority_terminal(
+            source_id=admission.source_id, source_digest=admission.source_digest
+        ) == terminal
+
+
+def test_current_bootstrap_release_verifier_is_invoked_for_each_exact_phase() -> None:
+    plane = MemoryPlaneService()
+    admission, fence = _handoff(plane)
+    writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
+    evidence = HostVerifiedBootstrapReleaseEvidence.model_construct(
+        coordinate=BOOTSTRAP_COORDINATE,
+        signed_release_digest="1" * 64,
+        bootstrap_anchor_digest="2" * 64,
+        external_root_digest="3" * 64,
+        active_lifecycle_snapshot_digest="4" * 64,
+        lifecycle_state="active",
+        verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+        evidence_digest="5" * 64,
+    )
+    language = BootstrapAuthenticatedLanguageEvidence.model_construct(
+        source_id=admission.source_id,
+        source_digest=admission.source_digest,
+        delivery_principal_binding_digest=fence.delivery_identity.delivery_principal_binding_digest,
+    )
+
+    class Verifier:
+        phases: list[str] = []
+
+        def assert_current(self, *, authorization, release_evidence, assertion_phase):
+            self.phases.append(assertion_phase)
+            return CurrentBootstrapReleaseAssertion.model_construct(
+                coordinate=release_evidence.coordinate,
+                signed_release_digest=release_evidence.signed_release_digest,
+                bootstrap_anchor_digest=release_evidence.bootstrap_anchor_digest,
+                active_lifecycle_snapshot_digest=release_evidence.active_lifecycle_snapshot_digest,
+                assertion_phase=assertion_phase,
+                assertion_nonce=assertion_phase,
+                assertion_digest="6" * 64,
+            )
+
+    verifier = Verifier()
+    store = SemanticIngestionAtomicStore(plane, writers, current_bootstrap_release_verifier=verifier)
+    authorization = DeliveryAuthorizationRequest(
+        delivery_identity=fence.delivery_identity,
+        ingress=AuthenticatedIngressContext(
+            delivery_principal_binding=DeliveryPrincipalBinding.create(
+                principal_subject_id="principal:a", tenant_partition_id="tenant:a", provider_identity="provider:test"
+            ),
+            required_outcome_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
+            current_authorized_scopes=RequiredOutcomeScopeSet.create(tenant_partition_id="tenant:a", scopes=set()),
+        ),
+    )
+    # The host fixture intentionally returns an unchecked model_construct()
+    # value.  A final release check must fail closed instead of trusting it.
+    assert not store._current_bootstrap_access_is_valid(
+        authorization=authorization, release_evidence=evidence, assertion_phase="prepared_publication",
+        expected_delivery_identity=fence.delivery_identity, language_evidence=language,
+    )
+    assert verifier.phases == ["prepared_publication"]
+
+
+@pytest.mark.parametrize("durable", (False, True))
+def test_final_bootstrap_release_recheck_fails_closed_before_any_write(
+    tmp_path: Path, durable: bool
+) -> None:
+    plane = MemoryPlaneService(
+        record_store=(
+            JsonlMemoryPlaneStore(tmp_path / "final-release-check")
+            if durable
+            else InMemoryMemoryPlaneStore()
+        )
+    )
+    admission, fence = _handoff(plane)
+    writers = SemanticWriterAdmissionStore(plane, bounded_preplanning_ownership_manifest())
+    writers.create_initial_evidence_only(
+        admission_id="writer-admission",
+        writer_implementation_fingerprint="writer",
+        graph_schema_fingerprint="schema",
+    )
+
+    class RevokedAtCommit:
+        def assert_current(self, **_kwargs):
+            raise OSError("release authority revoked")
+
+    store = SemanticIngestionAtomicStore(
+        plane, writers, current_bootstrap_release_verifier=RevokedAtCommit()
+    )
+    record = CanonicalMemoryRecord(
+        memory_id="bootstrap:final-check-must-not-write",
+        domain=MemoryDomain.TRANSCRIPT,
+        text="",
+        content={},
+        status=CommitStatus.COMMITTED,
+        source_kind="test_bootstrap_final_check",
+        timestamp=datetime(2026, 1, 1, tzinfo=UTC),
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+    authorization = DeliveryAuthorizationRequest(
+        delivery_identity=fence.delivery_identity,
+        ingress=AuthenticatedIngressContext(
+            delivery_principal_binding=DeliveryPrincipalBinding.create(
+                principal_subject_id="principal:a",
+                tenant_partition_id="tenant:a",
+                provider_identity="provider:test",
+            ),
+            required_outcome_scopes=RequiredOutcomeScopeSet.create(
+                tenant_partition_id="tenant:a", scopes=set()
+            ),
+            current_authorized_scopes=RequiredOutcomeScopeSet.create(
+                tenant_partition_id="tenant:a", scopes=set()
+            ),
+        ),
+    )
+    language = BootstrapAuthenticatedLanguageEvidence.model_construct(
+        source_id=admission.source_id,
+        source_digest=admission.source_digest,
+        delivery_principal_binding_digest=fence.delivery_identity.delivery_principal_binding_digest,
+    )
+    before = tuple(plane.list_records())
+    with pytest.raises(PreplanningStoreError, match="unavailable at write commit"):
+        plane.conditionally_write_records(
+            (record,),
+            preconditions=(RecordAbsentPrecondition(memory_id=record.memory_id),),
+            transaction_precondition=store._bootstrap_current_precondition(
+                authorization=authorization,
+                release_evidence=HostVerifiedBootstrapReleaseEvidence.model_construct(),
+                assertion_phase="prepared_publication",
+                expected_delivery_identity=fence.delivery_identity,
+                language_evidence=language,
+            ),
+        )
+    assert tuple(plane.list_records()) == before

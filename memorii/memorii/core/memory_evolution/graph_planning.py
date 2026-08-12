@@ -725,6 +725,51 @@ class FrozenIdentityGraphPlanningArtifact(BaseModel):
         )
 
 
+class NonPublishingIdentityPlanningResultV3(BaseModel):
+    """Pure planner output that carries its complete state transition."""
+
+    schema_version: Literal[3]
+    transaction_group_id: str = Field(min_length=1)
+    sealed_graph_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    graph_read_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    planning_state_before_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    frozen_artifact: FrozenIdentityGraphPlanningArtifact
+    planning_state_after: GraphPlanningState
+    result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    @model_validator(mode="after")
+    def validate_result(self) -> NonPublishingIdentityPlanningResultV3:
+        artifact = self.frozen_artifact
+        if (
+            artifact.producer_transaction_group_id != self.transaction_group_id
+            or artifact.sealed_graph_snapshot_digest != self.sealed_graph_snapshot_digest
+            or artifact.planning_state_before.state_digest
+            != self.planning_state_before_digest
+            or artifact.planning_state_after != self.planning_state_after
+        ):
+            raise ValueError("identity_nonpublishing_planning_result_binding_invalid")
+        body = self.model_dump(mode="python", exclude={"result_digest"})
+        if self.result_digest != graph_digest(
+            b"memorii.identity-nonpublishing-planning-result.v3\0", body
+        ):
+            raise ValueError("identity_nonpublishing_planning_result_digest_invalid")
+        return self
+
+    @classmethod
+    def create(cls, **values: object) -> NonPublishingIdentityPlanningResultV3:
+        body = {"schema_version": 3, **values}
+        return cls.model_validate(
+            body
+            | {
+                "result_digest": graph_digest(
+                    b"memorii.identity-nonpublishing-planning-result.v3\0", body
+                )
+            }
+        )
+
+
 def materialize_frozen_identity_graph_plan(
     artifact: FrozenIdentityGraphPlanningArtifact,
     *,
@@ -832,18 +877,48 @@ def materialize_frozen_identity_reference_mutations(
     return tuple(values)
 
 
-def build_frozen_identity_graph_planning_artifact(
+def build_frozen_identity_graph_planning_artifact_from_state(
     *,
-    graph_snapshot,
+    sealed_graph_snapshot,
+    transaction_group_id: str,
+    current_planning_state: GraphPlanningState,
     accepted_operation_artifact: AcceptedIdentityOperationArtifact,
     compiled_transition: CompiledIdentityLineageTransition,
     operation,
     candidate,
     trusted_decision: TrustedAcceptedIdentityOperationDecision,
     authority_verification: VerifiedIdentityDecisionAuthority,
-    producer_transaction_group_id: str,
 ) -> FrozenIdentityGraphPlanningArtifact:
-    """Build the complete immutable identity output plan before publication."""
+    """Build one identity artifact against the caller-owned planning prefix.
+
+    This is deliberately pure: the caller supplies the one sealed snapshot and
+    the exact accumulated planning state.  In particular, this helper must not
+    reacquire a snapshot or reset the state for a later operation in a group.
+    """
+
+    graph_snapshot = sealed_graph_snapshot
+    if (
+        not transaction_group_id
+        or current_planning_state.base_snapshot_digest
+        != graph_snapshot.canonical_graph.snapshot_digest
+        or current_planning_state.codec_manifest_fingerprint
+        != canonical_graph_codec_manifest().manifest_fingerprint
+        or compiled_transition.graph_revision_before
+        != graph_snapshot.graph_state.graph_revision
+        or trusted_decision.operation != accepted_operation_artifact.operation
+        or accepted_operation_artifact.operation.operation_id != operation.operation_id
+        or operation.candidate_id != candidate.candidate_id
+        or accepted_operation_artifact.candidate_digest != candidate.candidate_digest
+        or trusted_decision.candidate_digest != candidate.candidate_digest
+        or trusted_decision.sealed_operation_digest != operation.sealed_operation_digest
+        or accepted_operation_artifact.sealed_operation_digest
+        != operation.sealed_operation_digest
+        or trusted_decision.graph_snapshot_digest != graph_snapshot.snapshot_digest
+        or authority_verification.graph_snapshot_digest != graph_snapshot.snapshot_digest
+        or trusted_decision.graph_read_set_digest != graph_snapshot.read_set.read_set_digest
+        or authority_verification.graph_read_set_digest != graph_snapshot.read_set.read_set_digest
+    ):
+        raise ValueError("identity_nonpublishing_planning_discontinuous")
 
     accepted = accepted_operation_artifact.operation
     carriers = compile_accepted_carriers(
@@ -934,28 +1009,25 @@ def build_frozen_identity_graph_planning_artifact(
             key=lambda item: (item.payload_record_kind, item.record_id),
         )
     )
-    before = GraphPlanningState.create(
-        base_snapshot_digest=graph_snapshot.canonical_graph.snapshot_digest,
-        records=tuple(
-            DurablePlanningStateRecord(record=item)
-            for item in graph_snapshot.canonical_graph.records
-        ),
-        codec_manifest_fingerprint=canonical_graph_codec_manifest().manifest_fingerprint,
-        applied_planned_delta_digests=(),
-    )
+    before = current_planning_state
     ledger_coordinate = PlannedCommitCoordinate(
-        transaction_group_id=producer_transaction_group_id,
+        transaction_group_id=transaction_group_id,
         coordinate="graph_revision_after",
     )
     durable_before = {
         (item.payload_record_kind, item.record_id): item
         for item in graph_snapshot.canonical_graph.records
     }
+    planned_before = {
+        (item.record.payload.record_kind, item.record.record_id): item
+        for item in before.records
+        if isinstance(item, PendingPlanningStateRecord)
+    }
     mutations = []
     for durable in output_records:
         payload = _planning_payload(
             durable.payload,
-            transaction_group_id=producer_transaction_group_id,
+            transaction_group_id=transaction_group_id,
         )
         planned = PlanningSnapshotGraphRecord.create(
             record_id=durable.record_id,
@@ -973,7 +1045,7 @@ def build_frozen_identity_graph_planning_artifact(
                 (
                     PlanningReferenceLedgerEntry.create(
                         commit_coordinate=ledger_coordinate,
-                        operation_id=producer_transaction_group_id,
+                        operation_id=transaction_group_id,
                         change="add",
                         record_kind=durable.payload_record_kind,
                         record_id=durable.record_id,
@@ -986,14 +1058,16 @@ def build_frozen_identity_graph_planning_artifact(
                 key=lambda item: item.planning_ledger_entry_digest,
             )
         )
-        prior = durable_before.get((durable.payload_record_kind, durable.record_id))
+        key = (durable.payload_record_kind, durable.record_id)
+        prior = durable_before.get(key)
+        pending_prior = planned_before.get(key)
         references_removed = (
             tuple(
                 sorted(
                     (
                         PlanningReferenceLedgerEntry.create(
                             commit_coordinate=ledger_coordinate,
-                            operation_id=producer_transaction_group_id,
+                            operation_id=transaction_group_id,
                             change="remove",
                             record_kind=prior.payload_record_kind,
                             record_id=prior.record_id,
@@ -1014,21 +1088,27 @@ def build_frozen_identity_graph_planning_artifact(
             record_kind=durable.payload_record_kind,
             record_id=durable.record_id,
             before=(
-                AbsentPlanningPrecondition()
-                if prior is None
-                else DurablePlanningPrecondition(
+                DurablePlanningPrecondition(
                     record_version=prior.record_version,
                     record_digest=prior.record_digest,
                 )
+                if prior is not None
+                else PendingPlanningPrecondition(
+                    producing_transaction_group_id=pending_prior.producing_transaction_group_id,
+                    record_version=pending_prior.record.record_version,
+                    planning_record_digest=pending_prior.record.planning_record_digest,
+                )
+                if pending_prior is not None
+                else AbsentPlanningPrecondition()
             ),
             after_planning_record=planned,
             reference_edges_removed=references_removed,
             reference_edges_added=references_added,
         ))
     delta = GraphPlanningDelta.create(
-        sequence=1,
+        sequence=len(before.applied_planned_delta_digests) + 1,
         base_state_digest=before.state_digest,
-        producing_transaction_group_id=producer_transaction_group_id,
+        producing_transaction_group_id=transaction_group_id,
         mutations=tuple(
             sorted(mutations, key=lambda item: (item.record_kind, item.record_id))
         ),
@@ -1039,7 +1119,7 @@ def build_frozen_identity_graph_planning_artifact(
         trusted_decision=trusted_decision,
         authority_verification=authority_verification,
         compiled_transition=compiled_transition,
-        producer_transaction_group_id=producer_transaction_group_id,
+        producer_transaction_group_id=transaction_group_id,
         sealed_graph_snapshot_digest=graph_snapshot.snapshot_digest,
         graph_snapshot_digest=graph_snapshot.canonical_graph.snapshot_digest,
         graph_replay_state_digest=graph_snapshot.graph_state.state_digest,
@@ -1385,6 +1465,20 @@ def _materialize_planning_payload(
     return canonical_graph_record_adapter().validate_python(values)
 
 
+def materialize_canonical_planning_payload(
+    payload: CanonicalPlanningRecordPayload,
+    *,
+    commit_values: PlanningCommitValues,
+    authorizing_transaction_group_id: str,
+) -> BaseModel:
+    """Materialize one validated native planning payload at store commit time."""
+    return _materialize_planning_payload(
+        payload,
+        commit_values=commit_values,
+        authorizing_transaction_group_id=authorizing_transaction_group_id,
+    )
+
+
 def _planning_payload(record: BaseModel, *, transaction_group_id: str):
     classes = {
         "entity_revision": PlanningEntityRevision,
@@ -1422,6 +1516,13 @@ def _planning_payload(record: BaseModel, *, transaction_group_id: str):
     return cls(planning_record=values)
 
 
+def canonical_planning_payload_from_record(
+    record: BaseModel, *, transaction_group_id: str,
+) -> CanonicalPlanningRecordPayload:
+    """Project a durable record into its validated pre-CAS planning payload."""
+    return _planning_payload(record, transaction_group_id=transaction_group_id)
+
+
 __all__ = [
     "AbsentPlanningPrecondition",
     "CanonicalPlanningRecordPayload",
@@ -1430,7 +1531,10 @@ __all__ = [
     "GraphPlanningDelta",
     "GraphPlanningState",
     "FrozenIdentityGraphPlanningArtifact",
-    "build_frozen_identity_graph_planning_artifact",
+    "NonPublishingIdentityPlanningResultV3",
+    "build_frozen_identity_graph_planning_artifact_from_state",
+    "canonical_planning_payload_from_record",
+    "materialize_canonical_planning_payload",
     "PendingPlanningPrecondition",
     "PendingPlanningStateRecord",
     "PlannedCommitCoordinate",

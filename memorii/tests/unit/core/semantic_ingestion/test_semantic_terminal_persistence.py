@@ -8586,6 +8586,78 @@ def test_filesystem_reopen_recovers_exact_terminal_without_duplicate_effects(tmp
     assert len(reopened_plane.list_records(source_kind="semantic_projection_trust_history_entry")) == 1
 
 
+def test_jsonl_terminal_wire_remains_legacy_and_excludes_semantic_transaction_members_after_lost_ack(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The M3 store path preserves the legacy terminal wire through recovery."""
+
+    storage = tmp_path / "legacy-terminal-wire"
+    _, _, store, _, fence, service, repository = _setup(
+        verified=True,
+        backend=JsonlMemoryPlaneStore(storage),
+    )
+    terminal = accepted_terminal(operation_id=fence.operation_id)
+    terminal_wire = encode_semantic_contract(terminal)
+    assert terminal.terminal_digest == "ef9b7bb808cac99dbb271ddafcb8c81723225ff474557ca8662a3c4e95eb88cf"
+    assert sha256(terminal_wire).hexdigest() == "eb0e4b6edcb167c8e70f0a7ead59d37b230a0150fbe409bfe23541ce220dab2b"
+    assert decode_semantic_contract(terminal_wire, SemanticTerminalOutcome) == terminal
+    for forbidden in ("plan_lineage", "execution_manifest"):
+        with pytest.raises(ValueError):
+            SemanticTerminalOutcome.model_validate(
+                terminal.model_dump(mode="python") | {forbidden: {}}
+            )
+
+    _activate(repository, fence, terminal)
+    original_finalize = store.finalize_source
+    lost_ack = False
+
+    def finalize_then_lose_ack(request):
+        nonlocal lost_ack
+        result = original_finalize(request)
+        if not lost_ack:
+            lost_ack = True
+            raise OSError("simulated finalization lost acknowledgement")
+        return result
+
+    monkeypatch.setattr(store, "finalize_source", finalize_then_lose_ack)
+    with pytest.raises(OSError, match="finalization lost acknowledgement"):
+        service.persist(fence=fence, terminal=terminal, authorization_verifier=AUTHORIZATION)
+    assert lost_ack
+
+    expected_kinds = {
+        2: (
+            "artifact_closure", "artifact_index", "authorization_read_set",
+            "independence_certificate", "lifecycle", "plan", "planning_artifact",
+            "planning_authorization", "progress", "terminal_artifact",
+        ),
+        3: ("artifact_closure", "artifact_index", "event_batch", "graph_delta", "group_result", "observation_delta"),
+        4: ("artifact_closure", "lifecycle", "observation_delta", "source_result", "source_summary", "terminal_operation"),
+    }
+    for generation, kinds in expected_kinds.items():
+        members = store.generation_members(fence, generation)
+        assert tuple(member.kind for member in members) == kinds
+        assert {member.kind for member in members}.isdisjoint({"plan_lineage", "execution_manifest"})
+    checkpoint_terminal = next(
+        member for member in store.generation_members(fence, 2) if member.kind == "terminal_artifact"
+    )
+    assert checkpoint_terminal.canonical_payload == terminal_wire
+
+    records_after_lost_ack = tuple(store._memory_plane.list_records())
+    reopened_plane = MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
+    reopened_writers = SemanticWriterAdmissionStore(
+        reopened_plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: NOW
+    )
+    reopened_store = SemanticIngestionAtomicStore(reopened_plane, reopened_writers, now_provider=lambda: NOW)
+    reopened = SemanticTerminalPersistenceService(
+        atomic_store=reopened_store,
+        writer_binding_provider=lambda: reopened_writers.commit_binding(reopened_writers.current()),
+    )
+    reopened.persist(fence=fence, terminal=terminal, authorization_verifier=AUTHORIZATION)
+    assert tuple(reopened_plane.list_records()) == records_after_lost_ack
+    assert reopened_store.get_operation(fence).generation == 4
+
+
 def test_terminal_group_jsonl_failure_keeps_old_complete_authority_then_retries(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,

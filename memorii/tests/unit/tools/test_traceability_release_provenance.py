@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 from memorii.core.memory_evolution.ingestion_contracts import (
+    decode_artifact,
+    decode_typed_value,
     encode_typed_value,
     serialize_artifact,
 )
@@ -416,6 +418,80 @@ def test_current_ctv_rotation_chain_authorizes_and_replays_byte_identically(tmp_
     assert isinstance(replay, TraceabilityGateAuthorized), replay
     assert replay == first
     assert (tmp_path / "watermark.json").read_bytes() == watermark
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("bootstrap_profile_coordinate", {"profile_id": "other", "profile_version": 1}),
+        ("bootstrap_profile_trust_anchor_digest", "0" * 64),
+    ),
+)
+def test_release_profile_binding_mutation_rejects_before_watermark(
+    field: str, replacement: object
+) -> None:
+    """Signed profile authority cannot be substituted through a CTV envelope."""
+    chain = _current_chain()
+    release = decode_typed_value(decode_artifact(chain["release"]).canonical_value_bytes)
+    assert isinstance(release, dict)
+    release[field] = replacement
+
+    class Watermark:
+        calls = 0
+
+        def compare_and_advance(self, epoch: int, sequence: int, digest: str) -> object:
+            self.calls += 1
+            raise AssertionError("invalid release binding must not reach watermark")
+
+    watermark = Watermark()
+    result = verify_release_gate(
+        registry=chain["registry"],  # type: ignore[arg-type]
+        bootstrap_artifact=chain["bootstrap"],  # type: ignore[arg-type]
+        recovery_artifact=chain["recovery"],  # type: ignore[arg-type]
+        lifecycle_artifact=chain["lifecycle"],  # type: ignore[arg-type]
+        release_artifact=serialize_artifact(release, _binding("release")),
+        active_pointer_artifact=chain["pointer"],  # type: ignore[arg-type]
+        release_history_artifact=chain["history"],  # type: ignore[arg-type]
+        verifier_material=chain["material"],  # type: ignore[arg-type]
+        watermark_store=watermark,  # type: ignore[arg-type]
+        expected_release_roots=chain["roots"],  # type: ignore[arg-type]
+        now=chain["now"],  # type: ignore[arg-type]
+    )
+    assert result == TraceabilityGateRejected("bootstrap_profile_release_binding_invalid")
+    assert watermark.calls == 0
+
+
+def test_release_old_shape_rejects_before_watermark() -> None:
+    """The pre-profile V1 body remains an explicit non-authorizing shape."""
+    chain = _current_chain()
+    release = decode_typed_value(decode_artifact(chain["release"]).canonical_value_bytes)
+    assert isinstance(release, dict)
+    release.pop("bootstrap_profile_coordinate")
+    release.pop("bootstrap_profile_trust_anchor_digest")
+
+    class Watermark:
+        calls = 0
+
+        def compare_and_advance(self, epoch: int, sequence: int, digest: str) -> object:
+            self.calls += 1
+            raise AssertionError("legacy release shape must not reach watermark")
+
+    watermark = Watermark()
+    result = verify_release_gate(
+        registry=chain["registry"],  # type: ignore[arg-type]
+        bootstrap_artifact=chain["bootstrap"],  # type: ignore[arg-type]
+        recovery_artifact=chain["recovery"],  # type: ignore[arg-type]
+        lifecycle_artifact=chain["lifecycle"],  # type: ignore[arg-type]
+        release_artifact=serialize_artifact(release, _binding("release")),
+        active_pointer_artifact=chain["pointer"],  # type: ignore[arg-type]
+        release_history_artifact=chain["history"],  # type: ignore[arg-type]
+        verifier_material=chain["material"],  # type: ignore[arg-type]
+        watermark_store=watermark,  # type: ignore[arg-type]
+        expected_release_roots=chain["roots"],  # type: ignore[arg-type]
+        now=chain["now"],  # type: ignore[arg-type]
+    )
+    assert result == TraceabilityGateRejected("legacy_incomplete_provenance")
+    assert watermark.calls == 0
 
 
 def test_current_ctv_release_successor_advances_exactly_once(tmp_path: Path) -> None:

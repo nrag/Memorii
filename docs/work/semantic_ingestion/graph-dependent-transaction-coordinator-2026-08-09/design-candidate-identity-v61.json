@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_nested_correction_per_member_supersession",
+  "semantic_predecessor": "design-candidate-identity-v60.json",
+  "semantic_change_from_predecessor": "fix the correction replacement-fact equality and inherited identity paths, then make V3 supersession one decode-dispatched normative row per atomic member kind",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "527b3877e043ac67fba3f707acc62f0d16a78683763111255b6ae27750bf3309",
+  "review_scope": [
+    "correction replacement-effect path equality and inherited outer identities",
+    "nested replacement fact substitution and single-splice mutations",
+    "all 21 V3 atomic member kinds and the nine-member terminal subset",
+    "per-kind literal codec, encoder, decoder, persistence, found reload, and recovery dispatch",
+    "decode-before-payload validation and wrong-kind cross-member generic mixed rejection",
+    "preservation of separately governed generic non-V3 contracts"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "726ed597161e49d071ccf631a2bb13b3b12c516a6f17137b581c23439e28ec67",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "892ca3b662547126d712dfc0632ca732c6da87a32f431f7b44a7e55c54cf95d3",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "9b767af3682010c94ee6a2cdb614bf0888943d34c5732e6482075693eda9c0e1"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "exact correction replacement path and inherited-identity anchors",
+    "21 literal member rows and nine-member terminal-subset anchors",
+    "decode dispatch precedes payload anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

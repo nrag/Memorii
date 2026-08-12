@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_acyclic_canonical_source_outcome",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "f16b169bdf8ed3c6eba28af38b7a9cc1156ef3f0447a885bb846dce7ff42b270",
+  "review_scope": [
+    "DREV-040 canonical source outcome core",
+    "acyclic outcome ID source-result and record digest order",
+    "found and absent core/id/digest mutation coverage"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "4d1a684ba4d9510679c146b1c31669986b69f3ec12aa0e3836f88cfebbaf14ef",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "7d856e7fb38e7444500f8f2f6de1e86804eb0a07fe7c51f9d712c59b84496172",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "6ee76fda18d48a3cda50d62ccf0e0095c11ad034706ec6e652881ed4badbe789"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "retired cyclic outcome-ID preimage search",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

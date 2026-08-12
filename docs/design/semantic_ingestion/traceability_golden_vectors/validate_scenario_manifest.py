@@ -45,10 +45,10 @@ RAW_NAMES = (
     "registry",
     "ctv_binding_authority",
     "tool_checker",
-    "tool_extractor",
     "tool_ingress_runner",
     "tool_provider_composition",
     "tool_renderer",
+    "tool_scenario_host_authority",
 )
 
 
@@ -135,8 +135,8 @@ def _validate_run(run: dict[str, Any], raw: dict[str, bytes]) -> None:
     if set(run) != required or run["format"] != "memorii-sia-scenario-ingress-run-v2":
         raise ValueError("run shape")
     if (
-        run["projection_policy"] != "scenario_semantic_persisted_projection"
-        or run["projection_version"] != 1
+        run["projection_policy"] != "scenario_persisted_public_ingress_projection"
+        or run["projection_version"] != 2
     ):
         raise ValueError("run projection policy")
     if (
@@ -151,9 +151,7 @@ def _validate_run(run: dict[str, Any], raw: dict[str, bytes]) -> None:
         sha(raw["ctv_binding_authority"]),
     ):
         raise ValueError("run raw pin")
-    if run["tool_pins"] != _tool_pins() or run["oracle_spy_observation_count"] != len(
-        run["runs"]
-    ):
+    if run["tool_pins"] != _tool_pins() or run["oracle_spy_observation_count"] != 0:
         raise ValueError("run tool pin or oracle count")
     if (
         not isinstance(run["runs"], list)
@@ -162,9 +160,16 @@ def _validate_run(run: dict[str, Any], raw: dict[str, bytes]) -> None:
         or not run["runs"]
     ):
         raise ValueError("run evidence cardinality")
+    private_ids = {
+        turn["turn_id"]
+        for scenario_value in json.loads(raw["scenario"])["scenarios"]
+        for turn in scenario_value["interaction"]["turns"]
+    }
+    if any(value.encode("utf-8") in canonical(run) for value in private_ids):
+        raise ValueError("private renderer identity leaked into run")
+    event_ids: set[str] = set()
     for row, projection in zip(run["runs"], run["stable_evidence"], strict=True):
         if set(row) != {
-            "rendered_source_id",
             "provider_event_id",
             "rendered_bytes_base64",
             "source_span_map",
@@ -173,9 +178,18 @@ def _validate_run(run: dict[str, Any], raw: dict[str, bytes]) -> None:
         }:
             raise ValueError("run item shape")
         rendered = _decode_base64(row["rendered_bytes_base64"], "rendered bytes")
+        event_id = row["provider_event_id"]
+        if (
+            not isinstance(event_id, str)
+            or len(event_id) != 67
+            or not event_id.startswith("sf-")
+            or any(character not in "0123456789abcdef" for character in event_id[3:])
+            or event_id in event_ids
+        ):
+            raise ValueError("opaque event identifier")
+        event_ids.add(event_id)
         if row["source_span_map"] != [
             {
-                "source_id": row["rendered_source_id"],
                 "byte_start": 0,
                 "byte_end": len(rendered),
             }

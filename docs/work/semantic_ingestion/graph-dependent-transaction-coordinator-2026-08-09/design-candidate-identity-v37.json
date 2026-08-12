@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_self_contained_manifest_identity_closure",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "1b75f3a810e43ff85f51342c6e53403eb28d090b30d082df7e2f912873686ee7",
+  "review_scope": [
+    "DREV-045 complete typed closure embedded in IngestionExecutionManifest",
+    "existing nine-kind manifest-member reconstruction on found and absent paths",
+    "digest-only omitted altered-retained-digest and unresolved-identity attacks"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "d04c3c6bb8de46ca395a50a1b491877972cbcdcfae1b30094d317a192ef80c7d",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "43a380615ff6bcedb96c4eb5ee31079b7d9e77801111a0e4f00c0af7ba151033",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "481f76817b73382dc1bfc45f58d09d43bb643255b8238b3bd24fa5f3574a0987"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "complete nested closure and digest equality assertion",
+    "closed nine-kind registry assertion",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

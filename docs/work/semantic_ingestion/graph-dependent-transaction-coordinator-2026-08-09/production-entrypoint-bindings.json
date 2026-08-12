@@ -1,0 +1,769 @@
+{
+  "artifact_kind": "production_entrypoint_binding_map",
+  "schema_version": 1,
+  "recorded_at": "2026-08-09",
+  "scope": "graph-dependent semantic-ingestion coordinator design delta",
+  "production_roots": [
+    "memorii/memorii/core/provider/service.py",
+    "memorii/memorii/core/provider/ingestion.py",
+    "memorii/memorii/core/provider/factory.py",
+    "memorii/memorii/core/filesystem_storage/bundle.py",
+    "memorii/memorii/integrations/hermes_provider.py"
+  ],
+  "canonical_chain": [
+    {
+      "owner": "memorii.core.provider.service.ProviderMemoryService",
+      "trigger": "sync_event",
+      "authority_in": ["AuthenticatedIngressContext", "ProviderEvent"],
+      "authority_out": ["ProviderIngestionCoordinator"],
+      "current_production_callers": 1,
+      "completion_requirement": "one ordinary caller"
+    },
+    {
+      "owner": "memorii.core.provider.ingestion.ProviderIngestionCoordinator",
+      "trigger": "_run_semantic_ingestion",
+      "authority_in": ["BootstrapRecoveryReplayRecordV3", "PreparedSource", "AuthenticatedIngressContext", "OperationFenceBinding", "OperationLeaseBinding", "SemanticWriterCommitBinding"],
+      "authority_out": ["BootstrapGraphHostBundle.execute"],
+      "current_production_callers": 2,
+      "completion_requirement": "fresh and Found-recovery paths both invoke the shared graph host bundle; incomplete composition fails closed"
+    },
+    {
+      "owner": "memorii.core.semantic_ingestion.source_normalization_execution.SourceNormalizationExecutionOwner",
+      "trigger": "host_bundle.execution_owner.normalize_after_recovery_claim",
+      "authority_in": ["GraphFreeSourceNormalizationInvocation", "BootstrapWriterHandoffResult", "BootstrapRecoveryClaimV3", "SourceNormalizationAuthorityBundle"],
+      "authority_out": ["SourceNormalizationResult or SourceNormalizationNonCommit"],
+      "current_production_callers": 1,
+      "completion_requirement": "the host-owned complete-input producer must be non-null and produce the sealed atomic request; absence is source_alignment_authority_unavailable before terminal persistence"
+    },
+    {
+      "owner": "memorii.core.semantic_ingestion.source_normalization_stage.BootstrapV3SourceNormalizationStage",
+      "trigger": "SourceNormalizationExecutionOwner.normalize_after_recovery_claim",
+      "authority_in": ["BootstrapNormalizationRequestCoreV3", "retained proposal/lane/interpretation/alignment carriers"],
+      "authority_out": ["BootstrapSemanticReductionAuthorityMemberV3.operation_inputs"],
+      "current_production_callers": 1,
+      "completion_requirement": "the ordinary provider root persists only canonical native operation inputs derived from retained authority; no generic proposal/candidate/compiler input is constructed"
+    },
+    {
+      "owner": "memorii.core.semantic_ingestion.bootstrap_graph_repository.AtomicStoreBootstrapGraphTransactionAuthorityRepositoryV3",
+      "trigger": "BootstrapGraphHostBundleV3 fresh or recovery entry",
+      "authority_in": ["BootstrapGraphNormalizationAuthorityReloadV3", "PreparedSource", "authenticated ingress/scopes/fence/lease/writer"],
+      "authority_out": ["BootstrapGraphTransactionAuthorityReloadV3 with dedicated BootstrapGraphAuthorityGenerationV3"],
+      "current_production_callers": 1,
+      "completion_requirement": "the built-in local graph authority reloads persisted normalization authority, publishes or reloads the exact transaction authority before epoch coordination, and all ordinary roots receive that default bundle when no explicit builder is supplied"
+    },
+    {
+      "owner": "memorii.core.semantic_ingestion.bootstrap_graph_coordinator.BootstrapGraphDependentCoordinatorV3",
+      "trigger": "BootstrapGraphHostBundle.execute",
+      "authority_in": ["BootstrapGraphDependentCoordinatorRequestV3", "BootstrapGraphControlEpochTransitionRequestV3", "four host producer ports"],
+      "authority_out": ["reloaded plan", "attempt", "lineage", "group results", "durable retry or terminal reload"],
+      "current_production_callers": 1,
+      "completion_requirement": "the shared host-bundle caller is reachable from every normal root with complete injected authority"
+    },
+    {
+      "owner": "memorii.core.semantic_ingestion.bootstrap_graph_repository.AtomicStoreBootstrapGraphPlanRepositoryV3",
+      "trigger": "V3 plan/attempt/lineage/group/retry checkpoint publication and reload",
+      "authority_in": ["BootstrapGraphPlanAtomicWriteRequestV3", "BootstrapGraphControlEpochV3", "current ingress and scopes"],
+      "authority_out": ["BootstrapGraphPlanAtomicReloadV3 with store-issued successor generation"],
+      "current_production_callers": 1,
+      "completion_requirement": "all coordinator checkpoints consume only store-reloaded predecessors and receipts"
+    },
+    {
+      "owner": "memorii.core.semantic_ingestion.bootstrap_graph_repository.AtomicStoreBootstrapGraphGroupCommitRepositoryV3",
+      "trigger": "native group executor after a complete reload-derived authorization tuple",
+      "authority_in": ["BootstrapGraphGroupCommitRequestV3", "BootstrapGraphCurrentGenerationV3", "BootstrapGraphOperationReductionV3"],
+      "authority_out": ["BootstrapGraphGroupCommitReloadV3"],
+      "current_production_callers": 1,
+      "completion_requirement": "the native coordinator executor invokes commit_or_reload exactly once per authorized group; the atomic store returns the persisted typed reload on both first write and lost acknowledgement"
+    },
+    {
+      "owner": "memorii.core.semantic_ingestion.bootstrap_graph_repository.AtomicStoreBootstrapGraphTerminalPersistencePortV3",
+      "trigger": "persist_and_reload or exact found reload",
+      "authority_in": ["BootstrapGraphTerminalPublicationRequestV3"],
+      "authority_out": ["BootstrapGraphTerminalReloadV3"],
+      "current_production_callers": 1,
+      "completion_requirement": "terminal publication and both found-reload indexes retain the exact ordered V3 member closure; request and recovery callers validate canonical locator, terminal control, final identity, manifest digest/vector, and persisted member bytes"
+    }
+  ],
+  "composition_roots": [
+    {
+      "root": "memorii.core.provider.service.ProviderMemoryService direct composition",
+      "required_dependency": "installs the complete built-in BootstrapGraphHostBundle with persisted normalization, transaction-authority, snapshot/read-set, native commit, and terminal authority when no explicit builder is supplied",
+      "current_callers": 1
+    },
+    {
+      "root": "memorii.core.provider.factory.build_provider_memory_service_from_env",
+      "required_dependency": "inherits the direct root's complete built-in BootstrapGraphHostBundle; explicit replacement remains typed and complete",
+      "current_callers": 1
+    },
+    {
+      "root": "memorii.core.filesystem_storage.bundle.FilesystemStorageBundle.build_provider_memory_service",
+      "required_dependency": "inherits the factory's complete built-in bundle, including persisted normalization/transaction authority and all native coordinator ports",
+      "current_callers": 4
+    },
+    {
+      "root": "memorii.integrations.hermes_provider.HermesMemoryProvider",
+      "required_dependency": "uses the factory-built complete built-in bundle or an already-complete service; fixture-shaped acquire and partial legacy bypass are forbidden",
+      "current_callers": 1
+    }
+  ],
+  "current_gap": {
+    "source_alignment_constructors": 1,
+    "source_normalization_execution_owner_calls": 1,
+    "graph_free_complete_input_producers": 1,
+    "graph_attempt_constructors": 1,
+    "planning_authorization_constructors": 1,
+    "plan_lineage_constructors": 1,
+    "transaction_plan_repository_references": 1,
+    "legacy_terminal_persist_calls_without_plan": 0,
+    "classification": "implemented: every ordinary V3 root constructs the concrete built-in graph host bundle, reloads or publishes persisted transaction authority, performs native group commit, and reaches exact terminal recovery; fixture authority injection is confined to the private scenario-test harness"
+  },
+  "exact_queries": [
+    {
+      "id": "bootstrap_graph_v3_coordinator_owner",
+      "command": "rg -n '^class BootstrapGraphDependentCoordinatorV3:' memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py | wc -l",
+      "expected_count": 1
+    },
+    {
+      "id": "service_composes_ingestion",
+      "command": "rg -n 'ProviderIngestionCoordinator\\(' memorii/memorii/core/provider/service.py | wc -l",
+      "expected_count": 1
+    },
+    {
+      "id": "shared_graph_bundle_execute_calls",
+      "command": "rg -n 'graph_bundle\\.execute\\(' memorii/memorii/core/provider/ingestion.py | wc -l",
+      "expected_count": 2
+    },
+    {
+      "id": "source_normalization_execution_owner_call",
+      "command": "rg -n 'host_bundle\\.execution_owner\\.normalize_after_recovery_claim\\(' memorii/memorii/core/provider/ingestion.py | wc -l",
+      "expected_count": 1
+    },
+    {
+      "id": "bootstrap_graph_host_execute_owner",
+      "command": "rg -n '^    def execute\\(' memorii/memorii/core/semantic_ingestion/bootstrap_graph_host.py | wc -l",
+      "expected_count": 1
+    },
+    {
+      "id": "bootstrap_graph_attempt_and_lineage_assembly_calls",
+      "command": "rg -n 'BootstrapGraphArtifactAssemblerV3\\.build_(initial_attempt|initial_lineage)' memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py | wc -l",
+      "expected_count": 2
+    },
+    {
+      "id": "bootstrap_graph_plan_repository_owner",
+      "command": "rg -n '^class AtomicStoreBootstrapGraphPlanRepositoryV3:' memorii/memorii/core/semantic_ingestion/bootstrap_graph_repository.py | wc -l",
+      "expected_count": 1
+    },
+    {
+      "id": "bootstrap_graph_terminal_port_owner",
+      "command": "rg -n '^class AtomicStoreBootstrapGraphTerminalPersistencePortV3:' memorii/memorii/core/semantic_ingestion/bootstrap_graph_repository.py | wc -l",
+      "expected_count": 1
+    },
+    {
+      "id": "bootstrap_graph_terminal_prepare_call",
+      "command": "rg -n 'self\\._preparer\\.prepare\\(' memorii/memorii/core/semantic_ingestion/bootstrap_graph_coordinator.py | wc -l",
+      "expected_count": 1
+    },
+    {
+      "id": "factory_root",
+      "command": "rg -n '^def build_provider_memory_service_from_env' memorii/memorii/core/provider/factory.py | wc -l",
+      "expected_count": 1
+    },
+    {
+      "id": "filesystem_root",
+      "command": "rg -n 'build_provider_memory_service' memorii/memorii/core/filesystem_storage/bundle.py | wc -l",
+      "expected_count": 4
+    },
+    {
+      "id": "hermes_factory_root",
+      "command": "rg -n 'build_provider_memory_service_from_env\\(' memorii/memorii/integrations/hermes_provider.py | wc -l",
+      "expected_count": 1
+    }
+  ],
+  "acceptance_rule": "Before implementation completion, every canonical-chain entry that is currently zero must have at least one non-test production caller from the ordinary provider root, every graph-free runtime call must have a real complete-input producer, and every graph-bound terminal path must carry the complete reloaded authority chain.",
+  "bootstrap_v3_amendment": {
+    "status": "implemented_and_locally_verified",
+    "canonical_trigger": "ProviderMemoryService.sync_event",
+    "normalization_input": [
+      "BootstrapRecoveryReplayRecordV3 containing typed BootstrapSourceNormalizationAtomicWriteRequestV3 and BootstrapRecoveryFoundV3",
+      "nested BootstrapSourceNormalizationRequestV3",
+      "nested BootstrapSourceNormalizationResultV3",
+      "nested BootstrapSourceProposalAlignmentV3",
+      "nested BootstrapSourceDependencyGroupV3 tuple"
+    ],
+    "authority_provider": "test-only ScenarioBootstrapGraphHostBundle.acquire, reachable only through ProviderMemoryService._from_scenario_test_host; absent from ordinary root signatures and the production BootstrapGraphHostBundle",
+    "m31_graph_transaction_authority_projection": {
+      "status": "implemented_and_locally_verified",
+      "canonical_owner": "AtomicStoreBootstrapGraphTransactionAuthorityRepositoryV3 plus normalization-generation authority reload",
+      "projection": "BootstrapGraphTransactionAuthorityProjectionV3",
+      "write_reload": "BootstrapGraphTransactionAuthorityRepositoryV3.publish_or_reload(BootstrapGraphTransactionAuthorityWriteRequestV3) -> BootstrapGraphTransactionAuthorityReloadV3",
+      "recovery_reload": "BootstrapGraphTransactionAuthorityRepositoryV3.reload_for_recovery(recovery_key_digest, authenticated_ingress, required_outcome_scopes, operation_fence_binding) -> BootstrapGraphTransactionAuthorityReloadV3 | None",
+      "real_field_owners": {
+        "snapshot_and_base_read_set": "SemanticIngestionAtomicStore.graph_state_snapshot",
+        "policy_and_capability_registry": "exact BootstrapGraphNormalizationAuthorityMemberV3 bytes atomically persisted with normalization and loaded only by reload_bootstrap_graph_normalization_authority_v3; the writer source is SourceNormalizationDerivationAuthority but graph callers cannot supply it",
+        "prepared_source_terminal": "SemanticIngestionAtomicStore.publish_bootstrap_prepared_source_if_absent or exact load_prepared_source reload",
+        "terminal_capability_bindings": "sealed BootstrapGraphPlanCompilationV3 projected against the persisted capability registry"
+      },
+      "normalization_authority_reload": "BootstrapGraphNormalizationAuthorityReloadV3 binds replay, normalization atomic-write digest and generations, exact policy bytes, exact capability-registry bytes, and one strict member digest",
+      "pre_epoch_generation": "BootstrapGraphAuthorityGenerationV3 plus BootstrapGraphAuthorityPublicationCoreV3/ReceiptV3; keyed by recovery_key_digest+authority_projection_digest and deliberately distinct from request/epoch-bound BootstrapGraphCurrentGenerationV3/BootstrapGraphCheckpointReceiptV3",
+      "generation_bridge": "epoch-zero transition request and epoch carry the exact typed store-reloaded BootstrapGraphAuthorityPublicationReceiptV3 plus publication_receipt.successor_generation.generation_digest in their CTV preimages; repository validates receipt/projection/replay/auth/fence/lease/writer before CAS; only after epoch/request seal may load_bootstrap_graph_current_generation_v3 construct the first post-epoch generation",
+      "ordinary_root_signature": "BootstrapGraphTransactionAuthorityProjectionBuilderV3.build_and_reload(normalization_replay, prepared_source, authenticated_ingress, required_outcome_scopes, operation_fence_binding, operation_lease_binding, writer_commit_binding) -> BootstrapGraphTransactionAuthorityReloadV3 | None",
+      "mandatory_host_bundle": "BootstrapGraphHostBundleV3(authority_builder, authority_repository, control_epoch_repository, plan_repository, compiler, authorizer, group_executor, terminal_preparer, terminal_persistence)",
+      "required_roots": ["direct", "factory", "filesystem", "hermes"],
+      "fresh_order": "normalization-authority reload -> prepared-source reload -> graph snapshot/read set -> pre-epoch projection publish/reload including typed authority receipt -> validate receipt and successor projection/replay/auth/fence/lease/writer -> epoch-zero CAS/request -> post-epoch generation -> coordinator ports -> terminal persistence",
+      "recovery_rule": "reopen authenticates and calls authority reload_for_recovery before terminal locator lookup; exact projection bytes are validated before found return or coordinator resume; no process-local PreparedSource, live policy/capability lookup, fixture constants, defaults, or store search",
+      "absence": "graph_transaction_authority_unavailable pre-graph noncommit with zero snapshot, plan, lineage, CAS, graph, event, or legacy-terminal effect",
+      "migration_rollback": "unreleased records without the complete authority projection are incompatible and cannot be inferred; rollback disables new promotion but retains complete V3 records for exact read-only replay",
+      "attack_family": "fresh/found ambient policy and capability mutation plus remove, duplicate, reorder, cross-tenant, cross-generation, digest-only, or stale-digest-retained normalization member, snapshot/read-set, policy/reference/artifact, capability registry/bindings, prepared source/terminal authority, pre/post-epoch generation/receipt/bridge, replacement bundle/root, and recovery-before-terminal order; epoch-zero specifically rejects omitted/substituted/cross-generation/stale/digest-only typed authority receipt and post-epoch checkpoint receipt across memory and independent-process JSONL",
+      "evidence_observation": "zero production callers for the new authority repository and current ordinary roots using the old host path are expected implementation obligations at specified/derivable design maturity; they are not semantic design defects and do not advance implemented, locally verified, or CI-enforced maturity",
+      "native_local_adapter_closure_v45": {
+        "status": "specified_and_derivable_only",
+        "compiler": "LocalBootstrapGraphPlanCompilerV3 calls SemanticIngestionTransactionCoordinator.execute and consumes its one SealedGraphStateSnapshot; GraphPlanningState, GraphPlanningDelta, and build_frozen_identity_graph_planning_artifact are the only planning sources",
+        "authorizer": "LocalBootstrapGraphPlanningAuthorizerV3 consumes only reloaded plan bytes and existing admission plus identity-reservation authority; a typed none/use union replaces empty reservation digest tuples",
+        "executor": "AtomicStoreBootstrapGraphGroupExecutorV3 materializes frozen plans through canonical graph-planning helpers and delegates the single CAS to SemanticTerminalPersistenceService/SemanticIngestionAtomicStore.persist_terminal_group",
+        "removed_synthetic_fields": [
+          "claim_slot_digests",
+          "compilation_artifact_digest",
+          "independence_certificate_digest",
+          "proposed_delta_digest",
+          "pre_execution_event_batch_digest",
+          "reconciliation_digest",
+          "reference_closure_digest",
+          "withdrawn_independent_execution_authority_shapes"
+        ],
+        "native_field_sources": {
+          "snapshot_readset_ledger": "one SealedGraphStateSnapshot callback argument and its read_set/reference_integrity.ledger_digest",
+          "planning": "GraphPlanningState before/after plus ordered FrozenIdentityGraphPlanningArtifact values and their GraphPlanningDelta transitions",
+          "reference_closure": "complete ReferenceEdgeLedgerSnapshot plus typed reference_edges_removed/reference_edges_added on each frozen artifact",
+          "reservation_authority": "bijection between PlannedIdentityReservation and existing ReservationUseAuthorization; explicit typed none arm only for exact empty/empty",
+          "effects_receipt": "durable SemanticEffectGroupResult plus exact store-issued post-CAS control/revision/atomic-write record"
+        },
+        "four_root_rule": "direct, factory, filesystem, and Hermes construct the built-in local adapters from canonical stores/services; ordinary signatures expose no adapter or fixture injection",
+        "absence": "graph_transaction_native_adapter_unavailable uses pre-graph noncommit before possible effect and durable retry/finalized failure afterward",
+        "migration_rollback": "unreleased prior V3 synthetic shapes are incompatible; rollback disables promotion and retains native records without rewrite or deletion",
+        "attack_family": "synthetic digest, callback snapshot/read-set substitution, stale planning fold/ledger, ambient read, reservation none/use mismatch or substitution, fixture injection at four roots, precomputed receipt/revision, durable-result/receipt mismatch, and pre/post-CAS lost acknowledgement across memory and independent-process JSONL",
+        "implementation_obligation": "named production adapters currently have zero implementations and ordinary roots retain the old path; implementation, tests, CI, and operations remain unclaimed"
+      },
+      "native_planner_atomic_commit_closure_v46": {
+        "status": "specified_and_derivable_only",
+        "v45_findings": "confirmed: compiler lacked a canonical non-publishing identity API over the outer sealed snapshot; executor lacked one store-owned request/result/reload linearization and exhaustive legacy field supersession",
+        "identity_planning_api": "IdentityOperationPlanner.plan_nonpublishing(sealed_graph_snapshot, transaction_group_id, current_planning_state, accepted_operation_artifact, compiled_transition, trusted_decision, authority_verification) -> NonPublishingIdentityPlanningResultV3",
+        "identity_planning_constraints": "pure outer-snapshot/group-bound GraphPlanningState fold through build_frozen_identity_graph_planning_artifact; zero load, publish, reservation, clock, revision enrichment, or graph mutation",
+        "group_commit_owner": "SemanticIngestionAtomicStore implements BootstrapGraphGroupCommitRepositoryV3.commit_or_reload and reload_exact",
+        "group_commit_linearization": "authenticate and revalidate -> materialize frozen graph/reference effects -> assign time/revisions -> build semantic effects/result -> atomically persist records/index/core/receipt/successor/reload -> return exact reload",
+        "effect_authority": "v76 BootstrapNativeGroupCommitTerminalConstructionV3 contains one exact BootstrapGraphGroupCommitReloadV3 plus request/attempt/lineage/member/authorization/pre-execution/fence/epoch joins; its store-issued core and receipt remain nested reload authority and are never reconstructed",
+        "retry_terminal_threading": "checkpoint complete native terminal constructions; unknown acknowledgement calls reload_exact and reconstructs the identical wrapper; final evidence, manifest, source result, terminal publication, and found validation consume exact ordered nested reload digests resolved through that wrapper only",
+        "superseded_fields": [
+          "claim_slot_digests",
+          "compilation_artifact_digest",
+          "independence_certificate_digest",
+          "proposed_delta_digest",
+          "pre-CAS event_batch_digest",
+          "reconciliation_digest",
+          "reference_closure_digest",
+          "reservation_use_authorization_digests",
+          "withdrawn caller-built execution authority shapes",
+          "withdrawn split receipt tuple",
+          "digest-only retry/final/terminal effect carriers"
+        ],
+        "mixed_shape_failure": "graph_transaction_v3_commit_shape_incompatible before lookup or effect; extra fields forbidden and superseded member kinds have no aliases",
+        "attack_test_expansion": "every supersession row gets omit/restore/both/retained-digest mutation/cross-group-request-generation/reorder attacks; planner purity and outer-snapshot fold; pre/post-CAS fault injection; receipt-core bijection; lost-ack reload; four roots across memory and independent-process JSONL",
+        "evidence_obligation": "design-only; production API/repository/adapters/root activation/tests/CI/operations remain unimplemented and unclaimed"
+      },
+      "stateful_planner_reload_only_schema_v47": {
+        "status": "specified_and_derivable_only",
+        "planner_helper": "build_frozen_identity_graph_planning_artifact_from_state receives outer sealed snapshot, transaction group, current planning state, accepted artifact, operation, candidate, transition, trusted decision, and verification; missing inputs fail closed",
+        "continuity": "delta base equals current state digest; sequence equals applied-delta count plus one and increments exactly; after applied vector appends exactly one digest; same-group and cross-group folds never reset to sealed base",
+        "multi_operation_group_commit": "request ordered BootstrapGraphOperationCommitInputV3 and core ordered BootstrapGraphOperationCommitResultV3 vectors equal group_plan_member.operation_ids exactly; receipt carries the exact ordered result-digest projection and all publish in one CAS",
+        "no_op_group": "non-empty operation vector, planning_result null per operation, one noncommitting SemanticEffectGroupResult and observation per operation, null graph/event digests; zero-operation group forbidden",
+        "normative_downstream_carriers": [
+          "BootstrapNativeGroupCommitTerminalConstructionV3(exact group_commit_reload plus authority joins)",
+          "BootstrapGraphExecutionManifestGroupInputV3(one exact nested reload digest)",
+          "BootstrapGraphFinalStageEvidenceV3(ordered nested reload digests)",
+          "BootstrapGraphDurableRetryProgressV3(ordered completed nested reload digests)",
+          "BootstrapGraphCanonicalSourceResultInputV3(ordered nested reload digests plus persisted construction result digests)",
+          "BootstrapGraphTerminalPublicationRequestV3(ordered nested reload digests as sole effect authority)"
+        ],
+        "store_domains": [
+          "memorii.bootstrap-graph.group-commit-request.v3",
+          "memorii.bootstrap-graph.group-commit-result-core.v3",
+          "memorii.bootstrap-graph.group-atomic-effect-receipt.v3",
+          "memorii.bootstrap-graph.group-commit-result.v3",
+          "memorii.bootstrap-graph.group-commit-reload.v3"
+        ],
+        "store_indexes": "active v48 rule: primary (store identity, source operation, transaction group, complete operation_ids, request CTV) resolves one group reload; one reverse fanout row per member operation carries the complete operation_ids and same reload digest; group/atomic-write/receipt/result/successor indexes resolve that identical reload; authentication and all CTV/edge validation precede return",
+        "withdrawn": "old CAS request/outcome/effect-carrier/per-effect-receipt/digest-only execution codecs, domains, discriminators, member kinds, and all superseded downstream fields are unknown and have no aliases",
+        "cardinality": "exactly one canonical native terminal construction per executed final group; zero for terminal-before-planning and pending groups; retained predecessor wrapper bytes for reuse and successor wrapper only for replacement; each wrapper contains exactly one reload",
+        "terminal_rule": "terminal publication is unrepresentable unless every executed final group has one loadable byte-identical reverse-index-valid native terminal construction and all ordered reload-digest projections resolve through it",
+        "selector_matrix": "machine-checked requirement-test-gate row for every carrier/mutation/planner discontinuity/store cut/index/terminal case plus multi-operation committing, mixed, no-op, missing/duplicate/reordered/cross-operation and singular-result substitution; each row carries requirement, schema, mutation, root, backend, public node, store/CAS/effect/reload/generation/rejection observables, and required-job owner",
+        "coverage_universe": "4 roots x memory and independent-process JSONL, default built-in composition without fixture injection; pre/post-CAS cuts, exact reload/convergence/conflict/auth failures, every old/mixed incompatibility, and rollback existing-replay/new-operation-rejection",
+        "evidence_obligation": "selector, implementation, tests, and gate are future design obligations; no maturity advancement claimed"
+      },
+      "group_keyed_commit_exclusive_vocabulary_v48": {
+        "status": "specified_and_derivable_only",
+        "group_identity": "source_operation_id plus transaction_group_id plus canonical operation_ids vector; no scalar member operation identifies a reload",
+        "primary_index": "store identity, source operation, transaction group, complete operation_ids, request CTV -> one BootstrapGraphGroupCommitReloadV3",
+        "operation_fanout": "one reverse row per member operation contains the complete operation_ids and points to the same group reload; group primary is validated first and fanout is never operation-local authority",
+        "active_execution_chain": "BootstrapGraphGroupCommitRequestV3 -> BootstrapGraphGroupCommitReloadV3 only",
+        "failure_partition": "pre-linearization validation/authorization/generation/read-set/reservation/lease/fence/writer/materialization/infrastructure failure creates no reload, result, receipt, observation, or revision and records durable retry only after attempt/lineage; successful reload disposition is committed or noncommitting only; failed reload is forbidden",
+        "operation_algebra": "committed has at least one accepted operation with graph/event/observation and one group revision transition; noncommitting has terminal results and observations for every operation, null graph/event digests, unchanged graph/event revisions, and one group observation transition",
+        "lost_ack": "group-key reload_exact must recover identical complete bytes before retry or terminal; unavailable uncertain reload remains durable retry with no fabricated observation",
+        "two_operation_recovery": "primary and every per-operation fanout converge on identical request/result/receipt/vector/generation bytes across lost acknowledgement, retry, reopen, and terminal",
+        "binding_validator": "denylisted withdrawn class names, domains, discriminators, member kinds, fields, and old call verbs are rejected in every active producer, call order, equality, closure, root, recovery, member order, and selector entry",
+        "mutations": "scalar member-operation key, restoration of the stale primary (store identity, operation ID, request CTV) rule anywhere in active bindings, partial/reordered/duplicate vector, split per-operation reload, missing/extra/wrong fanout, conflicting request, restored denied binding token, illegal failed disposition, pre-CAS observation/revision, and terminal from pending retry",
+        "current_evidence": "zero production callers and absent implementation/test/CI evidence remain truthful expected design-stage obligations"
+      },
+      "typed_store_materialization_complete_plan_v50": {
+        "status": "specified_and_derivable_only",
+        "operation_reduction": "complete BootstrapGraphOperationReductionV3 embeds native compilation, BootstrapNativeOperationTerminalV3, BootstrapNativeOperationArtifactClosureV3, and BootstrapNativeOperationEffectMaterializationV3; generic compilation/terminal/closure fields are obsolete",
+        "store_input": "BootstrapGraphOperationStoreMaterializationInputV3 embeds complete operation plan, reduction, planning result or null, and reservation-use authority; group request contains one ordered input per operation_id",
+        "store_derivation": "inside one linearization derive SemanticEffectGroupResult, accepted-only SemanticGraphDelta, materialized graph/reference records, SemanticEventInputBatch and durable event, SemanticObservationDelta, revisions, receipt, result, successor, and reload; no caller effect or ambient lookup",
+        "plan_member": "BootstrapTransactionGroupPlanMemberV3(transaction_group_id, source_dependency_group_digest, sealed_graph_snapshot_digest, graph_read_set, reference_integrity_ledger_digest, planning_state_before, ordered operation_plans, planning_state_after, required_reservation_digests, member_digest)",
+        "operation_plan": "BootstrapTransactionGroupOperationPlanV3(operation_id, proposal_digest, member_digests, segment_ids, dependency_group_ids, complete planning_result or null, operation_plan_digest)",
+        "limits": "1..256 canonical unique operation plans; nested canonical vectors bounded at 4096; exact state fold and reservation union",
+        "consumer_map": "coordinator builds complete operation plans and reductions; plan checkpoint reloads member bytes; attempt/evidence join full member; authorizer consumes it; request receives full typed materialization inputs; all post-execution consumers use only group reload",
+        "removed_plan_fields": "claim slot, detached compilation/certificate, proposed effect, and pre-CAS event fields are forbidden unknown extras and have no consumer",
+        "public_constructor_matrix": "four roots x memory and independent JSONL x one/two-operation accepted/mixed/noncommitting plus missing/substituted/ambient/caller-effect/limit/withdrawn-field mutations",
+        "current_evidence": "design-only; public constructors, production callers, deterministic tests, CI, and operations remain unimplemented and unclaimed"
+      },
+      "exhaustive_active_planning_commit_supersession_v51": {
+        "status": "specified_and_derivable_only",
+        "plan_compilation": "complete BootstrapGraphPlanCompilationV3 contains typed transaction plan, all operation reductions in group/operation order, one complete pre-execution evidence per group, complete attempt inputs, and compilation digest",
+        "plan_checkpoint_order": "historical V51 wording only, superseded by v62: it listed operation-plan/reduction/attempt-input members and is not an active graph atomic order",
+        "atomic_member_registry": "historical V51 pseudo-kind registry only, superseded by the exact active 21 literal BootstrapGraphPlanAtomicMemberV3.kind registry in atomic_member_order",
+        "planning_authorization": "complete member-bound operation ID/plan digest projections, admission/capability/current readset/epoch/fence/lease/writer, and typed reservation none/use union with exact reservation bijection",
+        "group_commit_request": "one exhaustive BootstrapGraphGroupCommitRequestV3 CTV with source/group/vector, request/replay, complete attempt/member/authorization/lineage/pre-identity/epoch/current authority/generation, ordered complete store-materialization inputs, and no inherited fields",
+        "joins": "reduction concatenation equals plan operation vector; evidence and attempt equal full plan/member state; each materialization input exactly joins operation plan, reduction group/operation/proposal, planning result, reservation authorization, terminal, and recomputed closure",
+        "strict_obsolete_decode": "withdrawn plan/attempt/compilation/reconciliation/reference/effect/event/CAS/carrier/split-receipt/digest-only fields, domains, kinds, discriminators, and aliases return graph_transaction_v3_obsolete_shape before lookup",
+        "mutation_matrix": "absent/extra/reordered/duplicate/cross-group plan and reduction; equal digest changed bytes; member kind/payload/domain; byte-identical checkpoint lost-ack reload; reservation bijection; obsolete shape; ambient lookup",
+        "public_roots": "direct, factory, filesystem, and Hermes default built-ins across memory and independent JSONL without fixture injection",
+        "current_evidence": "design-only; zero production callers and absent constructor/test/gate evidence remain truthful"
+      },
+      "individual_planning_authorization_tuple_v52": {
+        "status": "specified_and_derivable_only",
+        "authorizer_return": "canonical ordered tuple[BootstrapGroupPlanningAuthorizationV3, ...] or unavailable; tuple cardinality and order equal reloaded plan group members",
+        "aggregate_retired": "BootstrapGraphPlanAuthorizationSetV3 and its codec/domain/discriminator/member/digest are obsolete decode failures with no active alias",
+        "checkpoint_order": "predecessor reload complete member vector followed by exactly one bootstrap_group_planning_authorization member per canonical group; ordinary atomic reload returns exact bytes and receipt successor",
+        "attempt_consumers": "initial attempt carries the tuple byte-identically; successor replacement selects one matching individual authorization and reused arms retain predecessor individual bytes",
+        "group_commit_consumer": "select exactly one individual authorization by group ordinal and embed its complete bytes in the group request",
+        "mutations": "missing, extra, duplicate, reordered, cross-plan, cross-group, stale-epoch, stale lease/writer, reservation-arm, schema-valid substitution, aggregate wrapper/domain/member, and lost-ack reconstruction",
+        "proof_matrix": "four public roots x memory/independent JSONL prove tuple cardinality/order, reservation bijection, checkpoint byte reload, attempt/group selection, aggregate rejection, and no ambient lookup",
+        "current_evidence": "design-only; implementation/test/CI evidence and production callers remain absent and unclaimed"
+      },
+      "persisted_semantic_reduction_authority_v53": {
+        "status": "superseded_non_active_by_v56_native_carriers",
+        "canonical_writer": "SourceNormalizationExecutionOwner projects only retained BootstrapProposalRunPayloadV3, four-lane results, BootstrapGraphFreeInterpretationBundleV3, BootstrapSourceProposalAlignmentV3 and native per-operation inputs; generic v53 type names are historical grammar only",
+        "atomic_member": "BootstrapSemanticReductionAuthorityMemberV3 is persisted in the same normalization write/generations as replay/alignment/dependencies/policy/capability/prepared-source identity",
+        "reload_owner": "atomic store reload_bootstrap_semantic_reduction_authority_v3 authenticates before lookup and returns complete BootstrapSemanticReductionAuthorityReloadV3 bytes",
+        "request_compiler_boundary": "prepublication authority binds acyclic recovery key plus normalization request core; only postpublication reload adds normalization replay digest, and graph projection/receipt, coordinator request, plan compilation, attempt inputs, and checkpoint bind that complete reload",
+        "compiler": "built-in BootstrapNativeSemanticReducerV3 consumes exact native authority operation inputs plus one sealed graph snapshot/current planning state and non-publishing identity planning; it never reconstructs or calls generic semantic compiler inputs, earlier stages, or ambient state",
+        "checkpoint_order": "semantic-reduction authority reload is normalization-generation-only and is bound by typed reference before graph checkpoint construction; graph member order derives solely from the 21 literal BootstrapGraphPlanAtomicMemberV3.kind registry, while operation plans/reductions/attempt inputs are nested non-kind projections",
+        "roots": "direct, factory, filesystem, and Hermes require one semantic-reduction authority repository; fresh reload precedes graph projection/compiler and recovery reload precedes terminal lookup",
+        "limits": "1..4096 canonical operations, at most 4096 observations/candidates per operation, 64 MiB authority bytes",
+        "absence_migration": "missing/incompatible authority is zero-effect semantic_reduction_authority_unavailable; unreleased old normalization records cannot infer/rerun/promote; rollback is read-only exact replay and rejects new work",
+        "mutations": "all nested retained native proposal/lane/interpretation/alignment/consensus/identity/dependency/coverage/generation/order/limit fields, obsolete generic type injection, ambient mutations and forbidden pipeline calls, lost ack/reopen/replan/migration/rollback/missing bundle across four roots and two backends",
+        "current_evidence": "design-only; implementation, production callers, tests, CI, and operations remain absent and unclaimed"
+      },
+      "normalization_outer_semantic_authority_member_v54": {
+        "status": "specified_and_derivable_only",
+        "outer_schema": "complete BootstrapSourceNormalizationAtomicWriteRequestV3 includes semantic_reduction_authority_request plus all recovery/control/current authority/generation/typed result/evidence/payload/lane/key/claim/member/artifact fields in one CTV",
+        "owner_input": "SourceNormalizationExecutionOwner complete input supplies native proposal/lane/interpretation/alignment reduction authority, graph normalization policy/capability authority, normalization typed closure, recovery/control, fence/lease/writer, generations, payload and lanes; no generic reconstruction, prebuilt/digest/default/ambient form",
+        "member_registry": "bootstrap_semantic_reduction_authority singleton immediately after bootstrap_source_normalization_result and before bootstrap_graph_normalization_authority; exact full registry/order and required payload digest projection",
+        "acyclic_member": "BootstrapSemanticReductionAuthorityRequestV3 binds recovery key + normalization request core, expected/publication generations and fence/writer before publication; it contains neither final atomic write nor replay digest; postpublication reload adds both write and replay",
+        "store_algorithm": "decode/authenticate, validate recovery and current generation/fence/lease/writer, recompute nested CTVs/member bytes, enforce registry/cardinality/semantic-then-graph adjacency and authority joins, validate artifacts/request, then one CAS and exact found reload",
+        "generation_joins": "semantic request expected/publication generations equal outer values, publication equals expected plus one, found generations equal both; fence/writer and source/replay/alignment/dependency/policy/capability joins exact",
+        "mutations": "omitted/duplicate/reordered/extra/substituted/cross-source/cross-tenant/foreign-generation/stale-fence-writer/digest-only/wrong-payload-domain and valid semantic member at every wrong position, including swap with graph authority",
+        "identity_stage_partition": "normalization persists only BootstrapGraphFreeIdentityPlanningInputV3 operation/candidate/analysis/evidence/policy/capability/fence bytes; after each sealed snapshot the planner derives a fresh accepted/trusted/verified snapshot/readset-bound triple for initial/replacement, while lawful reuse retains predecessor bytes",
+        "identity_mutations": "snapshot-bound or partial triple in normalization, initial missing derivation, replacement stale snapshot/readset triple, cross-group triple, lawful reuse changed bytes or unexpected planner call",
+        "current_evidence": "design-only; implementation, tests, CI, and production callers remain absent and unclaimed"
+      },
+      "exactly_one_active_normalization_grammar_v55": {
+        "status": "specified_and_derivable_only",
+        "active_declarations": "exactly one each BootstrapSourceNormalizationAtomicWriteRequestV3, BootstrapAtomicGenerationMemberV3, BootstrapSemanticReductionAuthorityMemberV3, and BootstrapRecoveryReplayRecordV3; all resolve to v54/v55 grammar",
+        "historical_grammar": "earlier shapes renamed Historical*Grammar with no codec, registry, decoder, constructor, repository, import, or production replay authority",
+        "recovery_replay": "BootstrapRecoveryReplayRecordV3 carries only complete v54 request plus found; replay CTV and found generations/write/manifest/artifacts/semantic+graph authority/fence/writer reverse joins exact",
+        "migration": "legacy bytes are readable only through offline version-pinned HistoricalBootstrapNormalizationRecordV3 inspection; no conversion, inference, production replay, graph projection, epoch, plan, commit, retry, terminal, or new write",
+        "static_check": "test_bootstrap_normalization_v3_has_exactly_one_active_declaration asserts one active class/codec target, zero Historical codecs, and one recovery request target",
+        "legacy_tests": "prior outer registry/member shape, duplicate active declaration/domain, legacy replay/current nesting, relabeled discriminator, rollback read-only inspection, graph promotion and new-operation rejection across four roots and two backends",
+        "current_evidence": "design-only; static/runtime tests and production behavior remain future obligations"
+      },
+      "native_bootstrap_reduction_authority_v56": {
+        "status": "specified_and_derivable_only",
+        "retained_sources": "BootstrapProposalRunPayloadV3, exact four BootstrapAnalysisLaneResultV3 per segment, BootstrapGraphFreeInterpretationBundleV3, and BootstrapSourceProposalAlignmentV3 only",
+        "native_operation_input": "complete proposal/member/subject/lanes/parser-scope-temporal consensus/alignment/identity partition+resolution/dependency, one stable operation_execution_id, a nonempty canonical coverage_bindings vector, and native graph-free identity carrier when identity",
+        "projection_owner": "SourceNormalizationExecutionOwner deterministically projects native inputs from retained bytes; no new producer/provider and no digest search",
+        "native_reducer": "BootstrapNativeSemanticReducerV3 consumes one native input plus sealed snapshot/read set, selects exactly one of five native accepted-effect arms or a closed nonaccepting status, and emits deterministic record intents, terminal, closure and materialization bytes",
+        "active_reduction": "BootstrapGraphOperationReductionV3 contains only native compilation/terminal/artifact-closure/effect-materialization fields; SemanticCompilationResult, SemanticTerminalOutcome and SemanticArtifactClosure are not bootstrap inputs",
+        "order_limits": "canonical group/operation bijection, exactly four lanes per segment, 1..4096 operations, <=4096 temporal rows each, <=64 MiB authority",
+        "obsolete_generic": "MemoryExtractionProposal, SourceObservation, SemanticCandidate, IndependentSourceAnalysis, SemanticArbitrationDecision, generic policy/readset and SemanticCompilationResult reduction inputs are strict obsolete decode failures with no reconstruction/migration",
+        "tests": "all five operation kinds from retained carriers; every native carrier omission/duplication/reorder/cross-link/substitution/digest/limit mutation; obsolete generic/compiler/ambient injection; four roots x two backends recovery/replan/reuse/terminal/closure/lost-ack/old-authority proof",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "acyclic_native_identity_coverage_v57": {
+        "status": "specified_and_derivable_only",
+        "prepublication_identity": "BootstrapSemanticReductionAuthorityV3 uses recovery_key_digest + normalization_request_core_digest and contains no normalization_replay_digest",
+        "postpublication_reload": "BootstrapSemanticReductionAuthorityReloadV3 binds recovery/core/member, atomic write, publication generations, then computed replay digest",
+        "native_identity": "BootstrapGraphFreeIdentityPlanningInputV3 contains retained BootstrapProposalIdentityOperationV3, subject, provenance, partition evidence, source-local resolution, alignment, dependency group and fence only; generic IdentityOperation/Candidate arm is obsolete",
+        "coverage_binding": "Historical singular coverage grammar is obsolete; the current BootstrapOperationCoverageBindingV3 includes stable operation_execution_id and appears only in the operation input's canonical coverage_bindings vector",
+        "covered_join": "event/disposition equal and operation/proposal/alignment belong to covered vectors",
+        "unresolved_join": "event/disposition equal, proposal is related, alignment/consensus proves reason, and no covered duplicate exists for operation/event",
+        "mutations": "prepublication replay injection, cross core/write/generation/replay, generic identity arm, every identity carrier cross-link, covered/unresolved operation-event-disposition-proposal-provenance-alignment-reason mutation and multi-event ambiguity",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "typed_normalization_core_coverage_vector_v58": {
+        "status": "specified_and_derivable_only",
+        "normalization_core": "BootstrapNormalizationRequestCoreV3 is the strict typed pre-authority object with the exhaustive architecture field order and CTV; SourceNormalizationExecutionOwner derives it before either authority member and the store reloads exact bytes before validating the authority",
+        "core_exclusions": "semantic and graph authority request/member, atomic member registry/vector/digests, required-artifact projection, final digests dependent on members, atomic write/found/replay and all postpublication wrappers are forbidden unknown fields; digest-only or dependent cores reject",
+        "outer_join": "semantic authority request and outer normalization request embed the exact same core bytes; duplicated source/recovery/generation/fence/writer/proposal/lane/alignment fields are byte-equal",
+        "operation_identity": "operation_execution_id CTV binds source/preparation/operation/proposal/member/segment/provenance/dependency group and excludes event/disposition/snapshot/attempt/generation; one identity persists across initial, replan, recovery, retry, result, manifest and terminal",
+        "coverage_vector": "coverage_bindings is nonempty, canonical by event+binding digest, unique by operation_execution_id+event, and exactly equals the operation's assigned coverage audit events; every binding reverse-joins operation/proposal/member/provenance/alignment",
+        "cardinality": "two events for one operation remain one downstream operation with two bindings; one event for multiple operations has one binding per distinct execution; unresolved and mixed coverage never duplicate operation IDs and deterministically produce one nonaccepting terminal when any required event is unresolved",
+        "mutations": "omitted/extra/reordered/dependent/digest-only core; every core join; zero/extra/duplicate/reordered/cross-operation coverage; covered-unresolved collision; two-events-one-operation, one-event-multi-operation, unresolved and mixed cases; stale identity and duplicate downstream row",
+        "mandatory_order": "normalization inputs -> typed core -> semantic authority request/member -> graph authority member -> normalization CAS/reload -> graph projection -> epoch/request -> snapshot/compiler -> authorization -> group commit -> terminal",
+        "drev_051": "known implementation obligation only: default composition and production caller evidence remain truthfully zero and are not a v58 semantic defect",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "native_operation_reduction_v59": {
+        "status": "specified_and_derivable_only",
+        "reduction": "BootstrapGraphOperationReductionV3 contains operation execution identity, exact snapshot/read-set digests, native compilation, BootstrapNativeOperationTerminalV3, BootstrapNativeOperationArtifactClosureV3 and BootstrapNativeOperationEffectMaterializationV3 in one exhaustive CTV",
+        "five_arms": "fact -> claim carriers; correction -> corrected transitions plus nested replacement fact; retraction -> transition carriers; action_state -> canonical action revisions; identity -> fresh snapshot-bound plan, lineage and complete reference dispositions",
+        "terminal_partition": "accepted has exactly one matching accepted-effect arm and a carrier-bijective canonical record-intent vector; unresolved/rejected/evidence_only have null effect and zero record intents with sorted unique closed-registry reasons",
+        "store_boundary": "native record intents provide exact record kind/id/mutation/prior digest/canonical after-record/source member; store alone derives graph delta, versions, events, observations, revisions, time, CAS receipt and reload",
+        "joins": "operation/proposal/execution/snapshot/readset/coverage/targets/planning/effect/intents/status/reasons join byte-exactly across input, compilation, terminal, closure, materialization, plan and group request",
+        "supersession": "Historical generic reduction plus SemanticCompilationResult, SemanticTerminalOutcome, SemanticArtifactClosure fields/codecs/domains/member kinds and converters are strict obsolete decode failures only under bootstrap graph V3 keys; governed non-V3 flows retain their generic contracts",
+        "consumers": "plan checkpoint, authorization, attempt evidence, store materialization input, group commit, retry, final evidence, manifest and terminal carry only the native reduction or its exact projections",
+        "mutations": "all five arms; every nonaccepting status; wrong/extra/missing arm carrier; effect-intent bijection; snapshot/readset/identity/coverage/status/reason/closure/preimage/order/digest; generic/mixed shape; ambient lookup; lost ack and recovery",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "closed_effect_validator_v3_supersession_v60": {
+        "status": "specified_and_derivable_only",
+        "validator": "store-independent validate_bootstrap_native_operation_reduction_v3 recomputes the five-arm carrier/intent table, symbolic cardinalities, block order, every field source, terminal-observation mapping, CTV and closure from reduction+sealed snapshot+read set",
+        "fact": "one claim assertion, one claim projection, optional entity relation, exact unique citations and provenance; committed with no reasons",
+        "correction": "one or more correction transitions then exactly one nonrecursive nested replacement fact intent vector spliced once under the same operation execution identity; no second operation result",
+        "retraction_action_identity": "retraction has target-bijective transitions; action has one action revision; identity has plan-ordered revisions/aliases, one lineage, complete reference dispositions; each appends exact citations/provenance",
+        "nonaccepted": "null effect and empty intents; observation disposition and reasons equal terminal status/reasons; accepted maps only to committed with empty reasons",
+        "v3_supersession": "exhaustive matrix names the reduction payload owner, literal qualified registry keys, encoder/decoder, store request, persistence/reload, replay/recovery, consumer conversion, and every V3 atomic-member kind: bootstrap_graph_coordinator_request, bootstrap_graph_snapshot_authority, bootstrap_graph_control_epoch, graph_base_read_set, graph_read_set_extension, graph_reconciliation, reference_closure, group_compilation_request, group_compilation_artifact, group_independence_certificate, bootstrap_graph_pre_execution_group_evidence, bootstrap_transaction_group_plan, bootstrap_group_planning_authorization, bootstrap_graph_dependent_attempt, bootstrap_source_plan_lineage_entry, bootstrap_graph_retry_progress, bootstrap_graph_final_stage_evidence, ingestion_execution_manifest, transaction_group_result, bootstrap_graph_terminal_handoff, bootstrap_graph_canonical_source_result; each names native replacement/projection or strict rejection",
+        "scope": "supersession applies only to bootstrap graph V3 wire/persistence/replay/consumer keys; SemanticCompilationResult, SemanticTerminalOutcome and SemanticArtifactClosure remain valid and unchanged for separately governed non-V3 flows",
+        "mutations": "every arm count/order/field/carrier/intent/status/reason; nested correction omission/duplication/recursion/substitution/double splice; every supersession matrix old/mixed/relabel/generic-digest/non-V3-under-V3 mutation; pure validator plus both stores before CAS",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "nested_correction_and_per_member_supersession_v61": {
+        "status": "specified_and_derivable_only",
+        "correction_path": "validate exact equality correction.replacement_effect.fact == correction.correction.replacement_fact; nested effect has no independent operation/proposal/execution/group/snapshot/readset/provenance/observation/terminal/closure identity, inherits outer materialization/reduction/terminal/correction-member identities, and splices one fact vector once",
+        "dispatch": "read BootstrapGraphPlanAtomicMemberV3.kind first; select only that literal row decoder and validate native payload/projection before payload digest, cross-member reference, or dependent member read",
+        "member_rows": "one normative row each for bootstrap_graph_coordinator_request, bootstrap_graph_snapshot_authority, bootstrap_graph_control_epoch, graph_base_read_set, graph_read_set_extension, graph_reconciliation, reference_closure, group_compilation_request, group_compilation_artifact, group_independence_certificate, bootstrap_graph_pre_execution_group_evidence, bootstrap_transaction_group_plan, bootstrap_group_planning_authorization, bootstrap_graph_dependent_attempt, bootstrap_source_plan_lineage_entry, bootstrap_graph_retry_progress, bootstrap_graph_final_stage_evidence, ingestion_execution_manifest, transaction_group_result, bootstrap_graph_terminal_handoff, bootstrap_graph_canonical_source_result; each names native projection/prohibition, literal codec key, encoder, decoder, persisted member, found reload, recovery consumer, and wrong-kind/cross-member/generic/mixed rejection",
+        "terminal_subset": "exactly bootstrap_graph_coordinator_request, bootstrap_graph_control_epoch, bootstrap_graph_dependent_attempt, bootstrap_transaction_group_plan, bootstrap_source_plan_lineage_entry, ingestion_execution_manifest, transaction_group_result, bootstrap_graph_terminal_handoff, bootstrap_graph_canonical_source_result",
+        "mutations": "replacement fact path and each inherited outer identity/provenance path; all 21 row literals and nine terminal-subset members; decode-order, wrong-kind, cross-member, generic, mixed, relabelled, digest-only, old-V3 and non-V3-under-V3 injections; pure validator plus both stores before CAS",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "atomic_member_registry_cleanup_v62": {
+        "status": "specified_and_derivable_only",
+        "registry": "the sole graph atomic-member registry and order is the exact 21 literal BootstrapGraphPlanAtomicMemberV3.kind values recorded in atomic_member_order; every checkpoint and member reference derives from that array",
+        "normalization_boundary": "BootstrapSemanticReductionAuthorityReloadV3 is a normalization-generation-only artifact bound by typed reference before graph checkpoint construction; it is never a graph atomic member",
+        "nested_non_kinds": "BootstrapTransactionGroupOperationPlanV3[], BootstrapGraphOperationReductionV3[], and BootstrapGraphAttemptConstructionInputsV3 are conceptual nested projections owned by plan/compilation/attempt members, never member kinds",
+        "terminal_subset": "exactly bootstrap_graph_coordinator_request, bootstrap_graph_control_epoch, bootstrap_graph_dependent_attempt, bootstrap_transaction_group_plan, bootstrap_source_plan_lineage_entry, ingestion_execution_manifest, transaction_group_result, bootstrap_graph_terminal_handoff, bootstrap_graph_canonical_source_result",
+        "validator": "static architecture/binding validator extracts every atomic order and member-kind reference, requires exact equality to the 21-kind registry, rejects stale 19-item orders, omitted legal kinds, array-style pseudo-kinds, normalization reload as graph member, and conceptual nested projections relabelled as kinds",
+        "mutations": "delete, add, reorder, duplicate, stale-19, alias, [] suffix, terminal-subset drift, normalization-reload injection, operation-plan/reduction/attempt-input kind injection, restoration of the former V51 operation-plan/reduction/attempt-input member phrasing/order, and cross-artifact order/reference disagreement",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "native_target_materialization_planner_v64": {
+        "status": "specified_and_derivable_only",
+        "port": "BootstrapGraphTargetMaterializationPlannerV3.plan accepts one complete BootstrapNativeTargetPlanningRequestV3 and returns a complete BootstrapGraphTargetMaterializationPlanV3 or typed unavailable",
+        "implementation_owner": "BuiltInBootstrapGraphTargetMaterializationPlannerV3 in memorii.core.memory_evolution.bootstrap_graph_planning; constructor has only canonical codec manifest, predicate registry, temporal evaluator and pure IdentityOperationPlanner, with no storage/provider/analyzer/clock/fixture/generic compiler dependency",
+        "input": "complete v58 retained operation input plus transaction group, sealed snapshot, effective read set and current planning state; exact source/proposal/member/provenance/coverage/dependency/snapshot/readset/state joins",
+        "output": "stable operation identity, canonical target bindings, dual planning+durable record payloads with preconditions, terminal binding sets, one citation+provenance projection per unique evidence item, optional identity materialization, and exact state fold",
+        "five_arms": "fact plans claim/projection/optional relation; correction plans target transitions plus one inherited replacement-fact subplan; retraction plans closing transitions; action plans one revision from all participants; identity invokes fresh nonpublishing planner once and plans revisions/aliases/lineage/reference dispositions",
+        "reducer_boundary": "BootstrapNativeSemanticReducerV3 receives the plan explicitly and projects records to intents; compile_accepted_carriers, SemanticIngestionCompiler, generic terminal/closure constructors, repositories and ambient rebuild are forbidden",
+        "failure": "typed unavailable with empty plan/effect/intents and zero planning-state advance for invalid continuity, target, codec/policy/temporal, evidence/binding, identity, reference, limit, digest or join failure; partial plan unrepresentable",
+        "composition": "BootstrapGraphHostBundleV3 requires the planner; direct, factory, filesystem and Hermes construct the same built-in; authority reload -> snapshot/readset -> target plan -> reducer/compilation -> checkpoint; recovery validates persisted nested plan and never replans unknown acknowledgement",
+        "tests": "all five arms and identity variants, pending same-group fold, every target/record/binding/evidence/identity/snapshot/readset/precondition/state/codec/digest mutation, ambient/generic call spies, four roots x memory/independent JSONL, exact recovery bytes",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "planning_native_closure_identity_admission_v65": {
+        "status": "specified_and_derivable_only",
+        "target_authority": "BootstrapNativeTargetAuthorityV3 is an exactly-one snapshot|pending union; pending current-state authority takes precedence over snapshot for the same record, including transition/removal preconditions",
+        "pre_cas_records": "BootstrapNativePlanningRecordV3 carries CanonicalPlanningRecordPayload only; store constructs CanonicalGraphRecordPayload and durable reference coordinates inside authorized CAS",
+        "terminal_binding": "BootstrapNativeTemporalTerminalBindingV3 is the sole V3 terminal binding and bijects retained temporal consensus to one planning record and operation execution; generic SemanticTerminalBindingSet rejects",
+        "planning_union": "planning_records is exact canonical duplicate-free union of pending target, effect, evidence citation/provenance, temporal-binding and identity-materialization records with bidirectional byte-equal references; snapshot targets are not new records",
+        "identity_port": "BootstrapNativeIdentityAdmissionRequestV3 includes transaction_group_id. Initial requires null predecessor and derives/plans once. Replacement/reuse require exact predecessor with equal result transaction group, graph-free input digest, and operation_execution_id on every materialization record. Replacement requires both current snapshot/readset differ, then derives/plans once. Reuse requires current state byte-equal predecessor planning_state_after and returns predecessor byte-identically with zero derivation/planner",
+        "reducer": "reduce(request, plan|unavailable) validates request/operation/proposal/group/execution/snapshot/readset/state identity; unavailable maps exact status/reasons to native zero-effect terminal+closure with empty vectors and unchanged state",
+        "failure": "both plan and unavailable are request-bound; cross-request substitution, accepted unavailable, partial union, dual/no target authority, durable pre-CAS payload or generic carrier reject",
+        "composition": "target planner depends on injected V3 identity admission port; all four roots construct built-in admission and pure identity planner, with no generic/ambient bridge",
+        "tests": "target exactly-one and pending precedence/removal; record union bijections/order; no durable pre-CAS; native temporal bindings; every identity mode/nullability permutation; cross-group, graph-free-input, record-execution-ID and reuse-state substitution; stale snapshot/readset/both; exact call counts; unavailable/request substitution; four roots x two stores",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "native_target_mapping_payload_seeds_v68": {
+        "status": "specified_and_derivable_only",
+        "authority": "BootstrapNativeTargetResolutionAuthorityV3 contains authenticated mention-cluster candidates and selector targets derived from exact sealed snapshot/readset plus pending planning-state overlay; request embeds it before digest",
+        "owner": "BootstrapNativeTargetResolutionProjectorV3 in memorii.core.memory_evolution.bootstrap_graph_planning is the sole production builder; no repository scan, names/embedding/confidence, fixture alias, generic compiler or ambient allocation",
+        "mention_mapping": "retained mention -> unique source-local cluster -> verified existing logical/revision identity with alias/type proof, or proof-authorized deterministic new identity IDs from source+cluster+operation execution; zero/multiple is unavailable",
+        "selector_mapping": "claim fact digest recomputes slot/value identity, action recomputes logical action, alias uses namespace+anchored bytes; exact snapshot/pending record required; correction/retraction cannot create missing target; identity assignments require complete closure",
+        "seeds": "five-arm BootstrapNativeOperationPlanningSeedV3 union provides every CanonicalPlanningRecordPayload field from typed operation, target authority, retained consensus/evidence, registry policy or PlannedCommitCoordinate; plan embeds seed before exact planning-record union",
+        "creation": "fact/action entity creation is source/cluster proof-gated with domain-separated logical and revision IDs; claim/relation/action/transition/citation/provenance IDs have exact operation/target/evidence/temporal preimages; correction nests one exact replacement fact seed",
+        "store_boundary": "planner validates seed projects exact v65 target/evidence/binding/identity/record union; store materializes only planned commit coordinates and codec-owned durable fields inside CAS and cannot change semantic seed fields",
+        "tests": "snapshot/pending/create, literal/entity fact, missing/ambiguous correction/retraction, action/identity; every cluster/resolution/proof/selector/authority/ID/preimage/payload/seed/union mutation; legacy/ambient spies; four roots x two stores golden vectors",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "canonical_identity_binding_allocation_authority_v69": {
+        "status": "specified_and_derivable_only",
+        "authority": "source-wide BootstrapCanonicalIdentityBindingAllocationAuthorityV3 maps every referenced source-local cluster exactly once to scoped existing target+proof or one stable new allocation, bound to source/recovery/snapshot/readset/planning state/scopes/allocation namespace",
+        "reload": "source plan checkpoint persists/reloads exact BootstrapCanonicalIdentityBindingAllocationReloadV3 before per-operation target planning; target authority embeds the same reload bytes and joins source/generation/snapshot/readset/state/scope",
+        "allocation": "new allocation key derives from source+recovery+stable namespace+scope+cluster+complete ordered mentions+alias/type proofs and excludes operation execution; two operations reuse one allocation and later pending target with no duplicate seed",
+        "entity_seed": "BootstrapNativeEntitySeedV3 uses cluster_id, complete mention_digests, decision/proof digests, IDs, exact entity/alias/type records and combined proof digest; exactly one seed per newly authorized referenced cluster, zero for existing/absent/pending",
+        "boundary": "source-local resolution is never canonical binding/allocation authority; name/type/confidence matching and missing cluster decision cannot create an identity",
+        "composition": "all four roots inject production canonical identity projector plus scope/allocation authority; snapshot/readset/scope -> authority publish/reload -> operation target authority/seed; recovery reload first",
+        "tests": "existing zero-seed, absent zero-create, two operations one allocation/pending reuse, stale snapshot/readset/state, cross-scope/source/generation/cluster/decision, two-mention reorder/omit/duplicate, alias/type proof mutations, lost ack, memory/JSONL all roots",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "closed_identity_decision_reservation_first_use_v70": {
+        "status": "specified_and_derivable_only",
+        "supersession": "v68 per-operation entity revision/allocation ID rule is obsolete; allocation key/IDs never include operation execution and old codecs/replay/seeds reject",
+        "decision_closure": "referenced_cluster_ids exactly biject cluster decisions; existing/new/absent arms all embed one common source/scope/snapshot/readset/state/partition/resolution/alias/type proof preimage",
+        "new_reservation": "new arm binds allocation policy fingerprint, complete PlannedIdentityReservation, collision readset extension, expected-absent writes and CAS reservation-use joins",
+        "first_use": "source plan selects canonical seed_producer_operation_execution_id by dependency-group/operation order; producer alone uses new_first_use target and emits one seed; later operations depend on producer pending state and emit zero seeds regardless runtime reversal",
+        "identity_admission": "request embeds exact canonical authority reload; predecessor/successor/reference assignment and all materialization records reverse-join cluster decision/proof/scope/snapshot/readset/state/allocation/reservation/producer-or-pending authority",
+        "tests": "all existing/new/absent first-use arms, reverse order, cross-group producer, producer/pending arm swaps, collision extension/write/CAS/race, absent coercion, forged proof, all reverse joins, lost ack memory/JSONL all roots",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "first_use_dependency_prefix_authority_closure_v71": {
+        "status": "specified_and_derivable_only",
+        "target_ctvs": "exact snapshot, pending and new_first_use displayed preimages/domains with kind discriminator, exactly-one cardinality and cross-arm/unknown/multiple rejection; absent decision exact kind+proof+reason CTV forbids all target/allocation fields",
+        "dependency": "BootstrapCanonicalFirstUseDependencyV3 keyed cluster+proof persists producer execution/group/plan member and canonical ordered consumer execution/group/plan-member vector; new decisions biject dependencies",
+        "prefix": "immutable authority_base_planning_state_digest is separate from per-operation BootstrapCanonicalPlanningPrefixProofV3; producer uses empty prefix/base, consumers use exact prefix through producer and byte-equal required producer records",
+        "scheduling": "reverse-scheduled consumer remains nonexecutable pending; stale base/prefix, missing producer record or foreign plan member is related conflict/replan without fallback",
+        "closure_threading": "complete typed authority reload is embedded in target authority, identity admission/materialization, native compilation/reduction, group compilation artifact, checkpoint/reload/replay/retry/final/manifest/terminal; digest-only/search/reconstruction rejects",
+        "atomic_table": "no new atomic member kind; group_compilation_artifact owns complete nested authority/dependency/prefix/seed/reduction closure and each existing downstream member carries exact typed closure/projection under its literal decoder",
+        "tests": "all target/absent preimage discriminator cardinality cross-arm mutations; dependency producer/consumer/order/member; base/prefix/record/scheduling; every carrier complete/digest-only/search; lost ack four roots memory/JSONL",
+        "current_evidence": "design-only; implementation, tests, CI, production callers and operations remain absent and unclaimed"
+      },
+      "acyclic_membership_exact_prefix_v72": {
+        "status": "specified_and_derivable_only",
+        "membership": "BootstrapSourceOperationMembershipV3 derives only normalized source/dependency-group/operation canonical order before identity decisions or compilation; authority persists complete vector and compiled operation plans reverse-bind without forward cycle",
+        "cluster_relation": "per new cluster producer is earliest referencing membership and consumers are every and only later referencing membership in exact order; producer+consumers biject all cluster references and each consumer maps one pending arm",
+        "prefix": "proof contains full canonical preceding membership vector including intervening operations and exact state fold from immutable authority base; required producer records exactly equal entity+all alias/type seed records and are a subset of pending prefix state",
+        "target_ctv": "pending/new-first-use embed complete typed prefix proof at one ordinal, with producer_membership_digest; old digest-only or embedded+digest forms reject",
+        "closure": "authority reload carries membership vector; admission/materialization/compilation/reduction/checkpoint/replay reverse-bind memberships/dependencies/prefixes; terminal authenticates complete reload source/recovery/generation/base/membership/dependency/prefix before any request/recovery index access",
+        "tests": "membership order/digest/forward ref, cluster relation bijection, pending consumer mapping, intervening prefix/fold/producer subset, embedded-vs-digest, compiled reverse bind, zero terminal index calls, reverse scheduling/lost ack/four roots/two backends",
+        "current_evidence": "design-only; implementation absence is a later evidence obligation rather than a design finding"
+      },
+      "occurrence_aware_first_use_dependency_v73": {
+        "status": "specified_and_derivable_only",
+        "occurrence": "BootstrapCanonicalClusterReferenceOccurrenceV3 is one exact membership+cluster+source-coordinate entry per retained role/path occurrence, including nested/ordinal coordinates even when mention bytes repeat",
+        "bijection": "producer_occurrences are all occurrences in earliest referencing membership; consumers are one per occurrence in all later memberships; their ordered duplicate-free union bijects all cluster-reference occurrences while producer ordering/prefix remains membership-level",
+        "target_join": "every producer occurrence has coordinate-bound new_first_use arm, every later consumer occurrence one coordinate-bound pending arm, enclosing binding coordinate equals arm; producer co-occurrences share one allocation/seed",
+        "cases": "same-cluster fact subject+object, repeated action participants and correction corrected-vs-nested-replacement paths remain distinct without duplicate identities",
+        "tests": "occurrence omit/duplicate/reorder/collapse/cross-operation/cluster/path; one pending for two consumers; producer co-occurrence multiple seeds; recovery mutation and terminal pre-index zero-call; four roots memory/JSONL",
+        "current_evidence": "design-only; implementation absence remains a later obligation"
+      },
+      "canonical_producer_occurrence_v74": {
+        "status": "specified_and_derivable_only",
+        "ordering": "producer occurrences are strictly lexicographic by unique lowercase source_coordinate_digest; collision for structurally different occurrences is integrity failure with no secondary tie",
+        "selected": "seed_producer_source_coordinate_digest equals first ordered producer occurrence and is carried by new decision, new_first_use authority and entity seed at exact CTV ordinal",
+        "nonselected": "producer co-occurrences emit no seed but bind coordinate-specific new_first_use arms to same allocation/reservation/target; later occurrences use pending; exactly one allocation and seed",
+        "threading": "authority reload, checkpoint/replay, recovery and terminal pre-index validation recompute occurrence order and validate producer coordinate; coordinate-absent old bytes reject",
+        "tests": "swap/reorder, nonfirst substitution independently in decision/target/seed, duplicate/tie structural collision, nonselected seed, recovery/terminal mutation, pre-index zero calls, four roots/two backends",
+        "current_evidence": "design-only; implementation absence remains later"
+      },
+      "complete_planning_construction_authority_v75": {
+        "status": "specified_and_derivable_only",
+        "audit": "v74 retained input lacks complete governance/admission, temporal evidence/decision, predicate/action policy, codec, source authority and identity authority-record/verifier fields; no digest reconstruction/default is lawful",
+        "authority": "BootstrapNativePlanningConstructionAuthorityV3 persists exact same-generation governance/admission, policy/trust/action, codec entries, temporal/evidence construction rows and optional identity construction authority inside each native operation input",
+        "planning_map": "literal table maps every Planning* field family to operation member, target/identity decision, construction authority row, prefix state, reservation or PlannedCommitCoordinate; every schema field requires exactly one source",
+        "identity_map": "literal table maps accepted operation/artifact, trusted decision and verified authority operation/entities/evidence/assignments/reservations/alias/fence/readset/snapshot/record/verifier and all digests to exact native paths",
+        "owner": "BuiltInBootstrapPlanningConstructionProjectorV3 is pure over persisted native authorities/snapshot/readset/prefix, constructs seeds and identity triple, then admission calls plan_nonpublishing; generic/ambient/default/repository/clock paths forbidden",
+        "tests": "every Planning* kind and identity operation per-field oracle; remove/duplicate/substitute authority rows and joins; default/null and ambient spies zero; four roots memory/JSONL persisted reload and lost ack",
+        "current_evidence": "design-only; implementation remains later"
+      }
+    },
+    "authority": "BootstrapGraphSnapshotAuthorityV3",
+    "control_epoch": "BootstrapGraphControlEpochRepositoryV3.transition_or_find -> append-only BootstrapGraphControlEpochV3; epoch-zero request and epoch carry exact typed BootstrapGraphAuthorityPublicationReceiptV3 plus its successor authority-generation digest, typed replay/graph authority/current ingress/scopes/fence/lease/writer, and are persisted/found before final request digest; successor lookup uses core+current head and retains the exact receipt; renew/reclaim changes lease only under byte-identical writer",
+    "control_epoch_transition_digest": "transition CTV(schema_version,request_core_digest,expected_epoch_digest,transition,typed replay,typed graph authority,typed BootstrapGraphAuthorityPublicationReceiptV3,receipt.successor_generation.generation_digest,current ingress,current scopes,fence,lease,writer) under bootstrap-graph-control-epoch-transition.v3; epoch CTV inserts the same typed receipt and generation digest immediately after preparation_fingerprint while retaining all other existing field order; final request_digest and digest-only/post-epoch receipts are extra-field or type rejection",
+    "writer_failure_partition": "writer_changed means a different well-formed writer binding; writer_unavailable means the identical bound writer lacks current authority; both return closed unavailable with zero reads/writes/effects",
+    "coordinator": "BootstrapGraphDependentCoordinatorV3.coordinate",
+    "v3_producer_ports": {
+      "planning_construction_projector": "BuiltInBootstrapPlanningConstructionProjectorV3 consumes only the persisted/reloaded BootstrapNativePlanningConstructionAuthorityV3 plus the exact native operation, canonical identity, target, snapshot/read-set and prefix authorities; it applies the v75 literal per-field map to construct every Planning* payload and identity accepted/trusted/verified object, with no defaults, generic compiler, repository, clock or ambient lookup",
+      "canonical_identity_projector": "BootstrapCanonicalIdentityBindingAllocationProjectorV3 builds/persists/reloads one source-wide existing|new|absent snapshot/readset/scope/allocation-bound decision per referenced cluster; new includes complete reservation and canonical seed producer, source-local resolution alone has no canonical authority",
+      "target_resolution_projector": "BootstrapNativeTargetResolutionProjectorV3 consumes the reloaded source-wide canonical identity authority and builds complete authenticated mention-cluster and selector target authority from v58 input + sealed snapshot/readset + pending overlay; it creates five-arm seeds without legacy compiler or ambient lookup",
+      "target_materialization_planner": "BootstrapGraphTargetMaterializationPlannerV3.plan consumes exact v58 native operation authority + sealed snapshot/readset + current planning state + target resolution authority and returns request-bound fully planning-native target/seed/record/binding/evidence/identity plan or unavailable; pending authority precedes snapshot and the built-in production implementation is mandatory in all four roots",
+      "identity_admission": "BootstrapNativeIdentityAdmissionPortV3 derives fresh accepted/trusted/verified inputs and invokes plan_nonpublishing once for initial/replacement; reuse and absence are zero-call; target planner receives this V3 port rather than a generic identity bridge",
+      "compiler": "BootstrapGraphPlanCompilerPortV3.compile(request, semantic_reduction_authority reload, sealed graph snapshot, current planning state) -> BootstrapGraphPlanCompilationV3 containing complete group-member bytes, one reduction per authority operation, evidence, and attempt inputs; source semantic inputs come only from the same-generation store reload and persistence effects remain store-owned",
+      "authorizer": "BootstrapGraphPlanningAuthorizerPortV3.authorize(request,reloaded_plan,control_epoch,authenticated_ingress,required_outcome_scopes) -> canonical ordered tuple[BootstrapGroupPlanningAuthorizationV3, ...] | unavailable; tuple order and cardinality equal reloaded plan group-member order and no aggregate exists",
+      "group_executor": "BootstrapGraphGroupExecutorPortV3.execute_group_commit(...) calls BootstrapGraphGroupCommitRepositoryV3.commit_or_reload and returns only the exact group-keyed BootstrapGraphGroupCommitReloadV3; revocation and all current authority are rechecked inside the store immediately before its one linearization",
+      "terminal_preparer": "BootstrapGraphTerminalPreparationPortV3.prepare(...) consumes latest generation, final attempt/plan, byte-equal final PlanCompilation, complete pre-execution identity closure, lineage/group constructions, sealed store-reloaded BootstrapGraphFinalStageEvidenceV3, and expanded typed host manifest authority; it alone constructs BootstrapGraphExecutionManifestConstructionV3 after results, then derives IngestionExecutionManifest and the sealed publication request",
+      "implementation": "the shared provider root reaches the native coordinator through BootstrapGraphHostBundle.execute; the coordinator invokes all four host-injected ports and terminal preparation derives the sealed manifest/publication closure from reloaded typed state; partial or absent normal composition fails closed"
+    },
+    "generation_threading": "repository loads authenticated current snapshot; checkpoint result order is immutable BootstrapGraphPlanAtomicReloadCoreV3/core_digest excluding receipt/final digest -> BootstrapGraphCheckpointReceiptV3 binding predecessor+request/write+core+successor -> final reload wrapper digest; only receipt.successor threads forward; found retry returns byte-identical core/receipt/wrapper",
+    "v31_coordinator_status": {
+      "implementation": "typed generation snapshots and receipts are implemented and threaded by the runtime coordinator; terminal preparation derives the manifest construction and sealed publication request from final typed state and host authority",
+      "required_current_generation_authority": "BootstrapGraphCurrentGenerationV3 loaded from store and threaded only through BootstrapGraphCheckpointReceiptV3 successor snapshots",
+      "required_terminal_preparation_authority": "BootstrapGraphTerminalPreparationPortV3 plus expanded BootstrapGraphTerminalHostAuthorityV3 constructs the manifest construction and complete sealed publication request without opaque or ambient materialization; host authority owns execution graph/routes/governance/message/capability carriers, BootstrapGraphFinalStageEvidenceV3 owns source outcomes/validation attempts/blockers/proofs, and group/final-compilation projections are derived exactly once",
+      "production_callers": 1,
+      "binding_status": "reachable through the shared BootstrapGraphHostBundle.execute call used by direct, factory, filesystem, and Hermes roots when complete host authority is injected"
+    },
+    "request": "BootstrapGraphDependentCoordinatorRequestV3",
+    "attempt": "BootstrapGraphDependentAttemptV3",
+    "plan": "BootstrapTransactionGroupPlanV3",
+    "authorization": "BootstrapGroupPlanningAuthorizationV3",
+    "lineage": "BootstrapSourcePlanLineageV3",
+    "atomic_repository": "BootstrapGraphPlanRepositoryV3.publish_and_reload(request,authenticated_ingress,required_outcome_scopes,control_epoch)",
+    "atomic_repository_status": {
+      "canonical_owner": "SemanticIngestionAtomicStore.checkpoint_bootstrap_graph_transaction_v3",
+      "implementation": "dedicated V3 member/manifest/idempotency/control-CAS/reload records plus append-only control-epoch transition/find records",
+      "generation_authority": "BootstrapGraphCurrentGenerationV3 is loaded by the atomic-store repository; checkpoint requests carry the sealed predecessor snapshot and reloads return BootstrapGraphCheckpointReceiptV3 with the store-derived successor",
+      "production_callers": 1,
+      "binding_status": "called by BootstrapGraphDependentCoordinatorV3 on the shared provider-root path"
+    },
+    "terminal_port": "BootstrapGraphTerminalPersistencePortV3.persist_and_reload(request=BootstrapGraphTerminalPublicationRequestV3)",
+    "v40_coordinator_chain": "BootstrapGraphDependentCoordinatorV3 is invoked by the production BootstrapGraphHostBundle shared provider path; it derives pre-execution identities, sends one complete BootstrapGraphGroupCommitRequestV3 per group, threads only the returned BootstrapGraphGroupCommitReloadV3 into final evidence and terminal preparation, and group-key reloads the same bytes after unknown acknowledgement. Terminal publication acknowledgement failure found-first reloads the sealed terminal before returning.",
+    "terminal_handoff": "BootstrapGraphTerminalPersistenceHandoffV3",
+    "terminal_publication_request": "sealed request carries BootstrapGraphCanonicalSourceOutcomeCoreV3 plus complete CanonicalSourceTerminalOutcomeRecord; derive core_digest, then outcome_id from stable source/preparation/operations/fence/core, then source_result_digest over completed fields including ID, then record_digest over completed record; core and record fields are byte-equal and no ambient reconstruction is allowed",
+    "canonical_source_outcome_preimages": "core_digest=CTV(all core fields excluding core_digest); outcome_id=CTV(source_id,source_digest,preparation_fingerprint,operation_ids,fence_id,core_digest); source_result_digest=CTV(completed record incl outcome_id excluding source_result_digest,record_digest); record_digest=CTV(completed record incl outcome_id,source_result_digest excluding record_digest)",
+    "terminal_effect_equality": "plan member operation_ids equal the group commit request inputs and the one group-keyed reload's ordered operation results; reload core and atomic receipt are byte-equal to persisted semantic terminal/graph/event/observation records and every retry/final/manifest/source/terminal projection reverse-joins the same reload; committed and noncommitting are the only lawful reload dispositions",
+    "group_execution_result_closure": "GroupResultConstruction carries exactly one BootstrapGraphGroupCommitReloadV3 and no independent execution outcome, carrier, revision, receipt, or result field; group/request/operation-vector/core/receipt/result/generation indexes and plan/auth/lineage/fence/terminal joins are exact",
+    "execution_manifest_identity": "two-stage per-group: seal identity keyed by producing attempt/plan/lineage/group before CAS; operation record binds exact identity; reused predecessor results retain old identity bytes and replacements use successor identity; final IngestionExecutionManifest embeds the complete ordered BootstrapGraphPreExecutionManifestIdentityClosureV3 plus exact closure_digest equality, with source-wide authority equality but heterogeneous producer attempts/plans; digest-only final manifests reject",
+    "terminal_locator": "BootstrapGraphTerminalHandoffCoreV3 is sealed before the intent; BootstrapGraphTerminalPublicationIntentV3 is the acyclic prepublication locator and contains the closed nine-kind member-intent registry whose handoff descriptor binds only core_digest; the actual handoff embeds core plus completed intent/locator; BootstrapGraphPlanAtomicWriteIdentityV3 and BootstrapGraphTerminalControlV3 are constructed only after CAS from the realized write/generations/manifest/member vector and returned in BootstrapGraphTerminalReloadV3",
+    "terminal_locator_status": {
+      "found_reload": "request-index and recovery-index found reloads both converge on exact locator validation of terminal control, final write identity, ordered manifest cardinality/digests, and persisted member bytes without a generation scan; recovery is reached before graph re-execution on the shared provider path",
+      "absent_publication": "the sealed publication request materializes the nine-member closure and conditionally writes control, members, manifest, terminal control, identity, and locator in one CAS",
+      "binding_status": "implemented and reachable through the shared host-bundle coordinator path; race-selector evidence remains partial",
+      "production_callers": 1
+    },
+    "terminal_result": "succeeded and finalized_failure carry BootstrapGraphTerminalReloadV3; response digest binds reload_digest, current ingress/scope/fence, and either the absent branch's live lease or the found branch's exact terminal-control/completed-lease proof",
+    "exact_call_order": [
+      "derive strict BootstrapNormalizationRequestCoreV3 from complete pre-authority normalization inputs; forbid semantic/graph authority, member-dependent final digests, replay, found, write, and wrapper fields",
+      "construct semantic authority request/member from exact embedded core, then graph authority member, then publish normalization atomically and reload the exact core before either authority is consumed",
+      "reload and validate exact V3 normalization found generation",
+      "recompute typed normalization replay/atomic/Found/result closure and retain replay digest",
+      "reload exact same-generation BootstrapGraphNormalizationAuthorityMemberV3 policy and capability bytes; reject ambient or caller authority",
+      "reload and validate exact same-generation BootstrapSemanticReductionAuthorityReloadV3 complete typed per-operation source inputs; forbid pipeline rerun, caller authority, and ambient lookup",
+      "reload prepared-source terminal authority and acquire one trusted graph snapshot/read-set pair",
+      "publish and reload the dedicated pre-epoch BootstrapGraphTransactionAuthorityProjectionV3 generation; retain exact BootstrapGraphAuthorityPublicationReceiptV3 and its successor generation",
+      "validate the typed authority receipt recovery/projection/write/core/store/generation closure plus replay/ingress/scopes/fence/lease/writer before epoch-zero CAS",
+      "compute request core; construct or found-first reload control epoch zero carrying the exact typed pre-epoch receipt and successor-generation digest plus typed replay/graph/current authority; then compute final coordinator request digest",
+      "load authenticated current atomic generation snapshot from repository; reject caller generation scalars",
+      "seal base read set and tracked extensions",
+      "initialize GraphPlanningState from the one sealed snapshot and fold state-aware non-publishing planning results; reference authority remains the complete snapshot ledger plus typed frozen reference mutations",
+      "before identity decisions persist the normalized-order BootstrapSourceOperationMembershipV3 vector; project referenced clusters/decisions/reservations/dependencies from memberships and publish/reload complete authority; each operation proves its full preceding-membership state fold, producer emits first-use seed, consumers prove exact producer records in prefix and use pending target; compiled plans reverse-bind membership and all later carriers retain complete closure",
+      "coordinator converts PlanCompilation plus current generation into plan checkpoint; repository constructs reload core, then receipt/successor, then wrapper digest; coordinator threads only receipt.successor",
+      "invoke injected V3 authorizer only on reloaded plan and validate exact group authorization bijection",
+      "combine reloaded attempt inputs with initial/successor authority; seal/publish/reload attempt in exact order and thread its receipt; repeat receipt threading for lineage/group-result/retry checkpoints",
+      "append and reload initial lineage entries",
+      "before each producing attempt's CAS, reload its exact PlanCompilation and copy the matched complete pre-execution evidence tuples into each per-group pre-manifest identity keyed by attempt/plan/lineage/group; preserve predecessor identities for reused results and create successor identities only for replacements; never use post-CAS final-stage evidence or empty/default/ambient values",
+      "found-first resolve latest control epoch; renew/reclaim as needed; join each reloaded operation plan to its complete typed compilation/terminal/artifact-closure reduction, planning result, and reservation authority; invoke the built-in executor with one group-keyed BootstrapGraphGroupCommitRequestV3 whose ordered materialization inputs contain no caller persistence effects; the store derives all records and returns only BootstrapGraphGroupCommitReloadV3",
+      "on unknown acknowledgement call group-keyed reload_exact with source operation, transaction group, complete operation_ids, and request CTV; require one byte-identical reload across primary and per-operation fanout indexes before retry or terminal",
+      "append committed or noncommitting lineage entry",
+      "after the last required group-result/lineage reload, construct BootstrapGraphFinalStageEvidenceV3 from exact typed records; persist/reload it in its dedicated checkpoint and thread only the receipt successor; terminal-before-planning uses empty results plus exact blocked/proof projection",
+      "retain final PlanCompilation, complete pre-identity closure, final attempt/plan, complete lineage, ordered group constructions, and byte-identical reloaded final-stage evidence; do not construct or supply a manifest construction",
+      "invoke terminal preparation with those typed final-state values and expanded host manifest authority; port validates evidence request/attempt/lineage/group/epoch joins, derives every manifest-construction field from its sole assigned source, seals construction, and projects the complete closure plus equal digest into the final manifest",
+      "derive and validate byte-identical IngestionExecutionManifest embedding the complete typed pre-execution identity closure and equal recomputed closure digest, then outcome/handoff/nine-intent sealed request; reject ambient/digest-only/default construction",
+      "terminal port authenticates the sealed request's tenant/principal/scopes/fence before any index lookup; found reload reconstructs the existing manifest member and validates its nested closure, closure digest, terminal control, completed historical lease, and indexed bytes; when absent it requires live latest epoch/lease/writer and exact generations and constructs all nine members directly from supplied typed carriers, including the self-contained manifest closure, then manifest/write/control/identity and atomic locator index",
+      "persist and reload canonical terminal result"
+    ],
+    "replan_authority": {
+      "partition": "canonical disjoint final_group_ids and unfinished_group_ids covering predecessor groups; replanned_group_ids equals affected unfinished suffix",
+      "attempt_discriminator": "initial carries only complete initial planning-authorization bijection and no predecessor/successor fields; successor carries predecessor attempt/lineage, partition, and successor arm bijection",
+      "arms": ["reused_committed", "reused_final", "reused_unfinished", "replacement"],
+      "rule": "reused arms retain predecessor lineage/plan/authorization and applicable final-result bytes exactly; reused_unfinished is unfinished minus replanned and forbids compile/reauthorize; only replacement compiles and receives new authorization"
+    },
+    "failure_cut": {
+      "before_attempt_lineage_or_effect": "BootstrapGraphDependentPreGraphNonCommitV3 with zero effects",
+      "after_attempt_lineage_or_possible_effect": "publish and reload BootstrapGraphDurableRetryProgressV3 with every completed group construction, or found-first reload the sealed BootstrapGraphTerminalPersistenceHandoffV3 plus canonical source result after terminal CAS acknowledgement loss; zero orphaned or duplicated commits"
+    },
+    "atomic_member_order": [
+      "bootstrap_graph_coordinator_request",
+      "bootstrap_graph_snapshot_authority",
+      "bootstrap_graph_control_epoch",
+      "graph_base_read_set",
+      "graph_read_set_extension",
+      "graph_reconciliation",
+      "reference_closure",
+      "group_compilation_request",
+      "group_compilation_artifact",
+      "group_independence_certificate",
+      "bootstrap_graph_pre_execution_group_evidence",
+      "bootstrap_transaction_group_plan",
+      "bootstrap_group_planning_authorization",
+      "bootstrap_graph_dependent_attempt",
+      "bootstrap_source_plan_lineage_entry",
+      "bootstrap_graph_retry_progress",
+      "bootstrap_graph_final_stage_evidence",
+      "ingestion_execution_manifest",
+      "transaction_group_result",
+      "bootstrap_graph_terminal_handoff",
+      "bootstrap_graph_canonical_source_result"
+    ],
+    "roots": ["direct", "factory", "filesystem", "hermes"],
+    "absence": "closed V3 authority_unavailable noncommit before snapshot or terminal effects",
+    "forbidden": [
+      "SourceProposalAlignment",
+      "SourceDependencyGroup",
+      "GraphDependentCoordinatorRequest",
+      "generic TransactionSemanticGroupPlan bridge",
+      "generic graph_planning compiler/authorizer/CAS adapter",
+      "V1/V2 group producer or effect result",
+      "V1/V2 bootstrap decoder",
+      "legacy optional-plan terminal persistence",
+      "raw equality to immutable request lease or writer after control epoch advancement",
+      "stale or unlinked control epoch",
+      "different-writer epoch inside an active transaction",
+      "epoch-zero transition containing final request digest",
+      "digest-only authority",
+      "migration by inference"
+    ],
+    "recovery": "found-first reload uses the sealed publication request to authenticate before lookup and validate locator/indexed bytes against every supplied typed carrier; found lost ack may accept expired/released historical lease only through exact terminal-control/completed-lease joins, while absent requires live current authority and constructs directly from carriers; no repository search, opaque bytes, or materializer; crash before CAS leaves no generation/index and crash after CAS reloads exact bytes with zero duplicate effect",
+    "migration": "unreleased atomic V3 activation; mixed readers fail closed; rollback selects evidence-only and retains V3 normalization plus committed graph lineage/results",
+    "future_selector": "memorii/tests/ci/bootstrap-graph-transaction-boundary.json",
+    "future_selector_manifest": {
+      "schema": "BootstrapGraphTransactionSelectorManifestV1",
+      "row_schema": "BootstrapGraphTransactionSelectorRowV1",
+      "public_trigger": "ProviderMemoryService.sync_event",
+      "roots": ["direct", "factory", "filesystem", "hermes"],
+      "backends": ["memory", "jsonl_independent_process"],
+      "required_tuple_count": 352,
+      "required_coverage": {
+        "GTC-R09": ["unrelated_conflict"],
+        "GTC-R14": ["initial_attempt", "mixed_version", "reopen"],
+        "GTC-R15": ["epoch_zero", "lease_renewed", "lease_reclaimed", "writer_changed", "writer_unavailable", "pre_cas_scope_revoked"],
+        "GTC-R16": ["initial_attempt", "successor_attempt", "reused_committed", "reused_final", "reused_unfinished", "replacement", "related_conflict"],
+        "GTC-R17": ["successor_attempt", "reused_committed", "reused_final", "reused_unfinished", "replacement", "partial_commit"],
+        "GTC-R18": ["durable_retry", "partial_commit", "lost_ack", "reopen", "related_conflict"],
+        "GTC-R19": ["success_finalization", "finalized_failure", "terminal_locator", "lost_ack", "reopen"],
+        "GTC-R20": ["coordinator_removed", "authority_omitted", "writer_changed", "writer_unavailable", "mixed_version", "rollback"],
+        "GTC-R21": ["pre_cas_scope_revoked", "initial_attempt", "successor_attempt", "lost_ack", "reopen"]
+      },
+      "exclusion_schema": "BootstrapGraphTransactionSelectorExclusionV1(requirement_id,scenario,root,backend,rationale=architecture_proves_non_applicable,rationale_authority,architecture_anchor,non_applicability_proof_digest,exclusion_digest)",
+      "coverage_equation": "executed tuple projection and verified exclusions are disjoint; union equals exact 352 required tuples; each scenario row carries its full required requirement set",
+      "unrelated_conflict_oracle": "foreign write outside sealed key/partition set permits exactly one authorized CAS linearization plus one expected graph and event effect, with zero successor attempt/reconciliation/recompile/replan; removing or weakening GTC-R09/unrelated_conflict fails",
+      "required_scenarios": [
+        "initial_attempt", "successor_attempt", "reused_committed", "reused_final",
+        "reused_unfinished", "replacement", "epoch_zero", "lease_renewed",
+        "lease_reclaimed", "writer_changed", "writer_unavailable",
+        "pre_cas_scope_revoked", "unrelated_conflict", "related_conflict",
+        "partial_commit", "durable_retry", "finalized_failure", "terminal_locator",
+        "success_finalization", "lost_ack", "reopen", "mixed_version",
+        "rollback", "coordinator_removed", "authority_omitted"
+      ],
+      "pre_cas_revocation": "fresh public run for every executable group ordinal; revoke current tenant/scope at after_pre_cas_epoch_validation_before_compare_and_swap; one rejected CAS call, zero CAS linearization/graph/event effect, durable post-attempt retry/finalization, non-disclosing, reopen cannot reuse old epoch/scope",
+      "row_observables": [
+        "requirement_ids", "node_id", "pytest_selector", "root", "backend",
+        "public_trigger", "scenario", "injected_boundary", "expected_durable_state",
+        "expected_cas_calls", "expected_cas_effects", "expected_event_effects",
+        "expected_graph_effects", "expected_external_calls_digest",
+        "non_disclosure_oracle_digest", "row_digest"
+      ],
+      "validator_rejects": [
+        "missing combination", "orphan selector", "duplicate key or selector",
+        "helper-only trigger", "generic or terminal shard overlap", "memory alias for JSONL",
+        "unknown scenario boundary or state", "wrong requirement mapping",
+        "stale collection digest or count", "unowned node", "aggregate edge mutation",
+        "missing skipped failed cancelled stale or early receipt",
+        "duplicate missing extra mismatched stale-anchor unproved or convenience exclusion",
+        "row/exclusion overlap or required-union inequality",
+        "all rows mapped to one requirement or scenario requirement-set mutation"
+      ]
+    },
+    "terminal_locator_attacks": "partial-commit+related-conflict retained/replaced vectors; swap group identities, collapse closure to final attempt, mutate reused predecessor bytes, assign predecessor identity to replacement, reorder/mutate projection/digest, force producer attempt/plan/lineage equality; omit the complete final-manifest closure, retain digest only, alter a retained identity while preserving the old closure digest, or leave an identity unresolved; mutate operation record or nested final closure on found+absent; preserve exactly nine member kinds and all other attacks; memory and JSONL",
+    "manifest_construction_attacks": "omit/cross-wire execution graph, routes, governance, message, capability, scope, or fence host authority; pass prebuilt construction; mismatch final PlanCompilation/plan; omit/reorder closure, lineage, or group constructions; omit/duplicate/reorder/cross-link/digest-only final-stage evidence or mismatch request/attempt/lineage/group/epoch; normal/partial-replan/terminal-before-planning shapes; storage-search producer; independently inject evidence-owned fields; ambient/default/digest-only construction; all reject before publication",
+    "pre_execution_evidence_attacks": "omit/duplicate/reorder/cross-group substitute compiler evidence; mutate validation attempt/blocker/proof or snapshot/read-set/reconciliation/reference/plan-member/epoch join with retained digest; mismatch attempt evidence-digest projection; use empty/default/digest-only evidence, post-CAS FinalStageEvidence, or ambient search; all reject before identity seal and CAS",
+    "evidence_limit": "design only; no production, test, CI, or operational completion claim"
+  }
+}

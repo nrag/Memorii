@@ -9,6 +9,10 @@ from memorii.core.memory_evolution.admission import (
     SemanticIngestionOutcomeLookupRequest,
     SemanticIngestionOutcomeLookupResponse,
 )
+from memorii.core.memory_evolution.bootstrap_profile import (
+    HostBootstrapCapability,
+    HostBootstrapMaterialVerifier,
+)
 from memorii.core.memory_evolution.conflict_attention import (
     EMBEDDED_PAGE_SIZE,
     ConflictAttention,
@@ -28,6 +32,7 @@ from memorii.core.provider.models import (
     normalize_delivery_id,
 )
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
 from memorii.integrations.provider_interface import MemoryProviderInterface
 
 
@@ -35,8 +40,21 @@ class HermesMemoryProvider(MemoryProviderInterface):
     def __init__(
         self,
         service: ProviderMemoryService | None = None,
+        host_bootstrap_capability: HostBootstrapCapability | None = None,
+        host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
+        source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
     ) -> None:
-        self._service = service or build_provider_memory_service_from_env()
+        if service is not None and (
+            host_bootstrap_capability is not None
+            or host_bootstrap_material_verifier is not None
+            or source_normalization_host_bundle_builder is not None
+        ):
+            raise ValueError("service and host bootstrap capability are mutually exclusive")
+        self._service = service or build_provider_memory_service_from_env(
+            host_bootstrap_capability=host_bootstrap_capability,
+            host_bootstrap_material_verifier=host_bootstrap_material_verifier,
+            source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+        )
 
     def prefetch(
         self,

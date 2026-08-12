@@ -71,6 +71,15 @@ _KINDS = (
             "reference_integrity_ledger",
             "accepted_identity_operation",
             "graph_identity_reservation",
+            "bootstrap_graph_v3_member",
+            "bootstrap_graph_v3_manifest",
+            "bootstrap_graph_v3_idempotency",
+            "bootstrap_graph_v3_epoch",
+            "bootstrap_graph_v3_epoch_head",
+            "bootstrap_graph_v3_epoch_transition",
+            "bootstrap_graph_v3_terminal_locator",
+            "bootstrap_graph_v3_terminal_control",
+            "bootstrap_graph_v3_terminal_identity",
         }
     )
     | _SEMANTIC_PROJECTION_SOURCE_KINDS
@@ -81,6 +90,8 @@ _METHODS = frozenset(
         "checkpoint_source_progress",
         "persist_terminal_group",
         "finalize_source",
+        "checkpoint_bootstrap_graph_transaction_v3",
+        "transition_or_find_bootstrap_graph_control_epoch_v3",
         "conditionally_write_records",
         "apply_batch",
         "stage_record",
@@ -734,6 +745,11 @@ class SemanticGovernedWritePolicy:
             if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
         ]
         if len(controls) != 1:
+            if _is_atomic_admission_only_write(
+                governed,
+                self._admissions.commit_binding(current_admission),
+            ):
+                return
             # A clarification pointer closure is independently validated
             # above. Its replay aggregate is the only additional governed
             # member and must travel in that same write; it is not a free
@@ -776,6 +792,16 @@ class SemanticGovernedWritePolicy:
                 return
             if _is_accepted_identity_operation_write(governed):
                 return
+            if _is_prepared_source_publication_write(governed):
+                return
+            if _is_bootstrap_authority_terminal_write(governed):
+                return
+            if _is_bootstrap_v3_recovery_claim_write(governed, current):
+                return
+            if _is_bootstrap_graph_v3_authority_write(governed, current):
+                return
+            if _is_bootstrap_graph_v3_epoch_transition_write(governed, current):
+                return
             raise SemanticWriterAdmissionError("governed semantic write lacks one atomic control record")
         try:
             binding = SemanticWriterCommitBinding.model_validate(controls[0].content["control"]["writer_binding"])
@@ -783,6 +809,8 @@ class SemanticGovernedWritePolicy:
             raise SemanticWriterAdmissionError("governed semantic control binding is corrupt") from exc
         if binding != self._admissions.commit_binding(current_admission):
             raise SemanticWriterAdmissionError("governed semantic control binding is mismatched")
+        if _is_bootstrap_handoff_write(governed, controls[0], binding):
+            return
         control_body = controls[0].content["control"]
         operation_fence = OperationFenceBinding.model_validate(control_body["operation_fence"])
         operation_namespace = control_body.get("persistence_namespace_id") or operation_fence.operation_id
@@ -809,6 +837,16 @@ class SemanticGovernedWritePolicy:
             current_generation, prior_control, operation_fence, operation_namespace
         )
         if len(governed) == 1 and controls[0].memory_id == control_id:
+            return
+        if _is_bootstrap_v3_ready_claim_write(governed, current):
+            return
+        if _is_bootstrap_v3_publish_consume_write(governed, current):
+            return
+        if _is_bootstrap_graph_v3_group_commit_write(governed, current):
+            return
+        if _is_bootstrap_graph_v3_checkpoint_write(governed, current):
+            return
+        if _is_bootstrap_graph_v3_terminal_write(governed, current):
             return
         generation_records = [
             record
@@ -2342,6 +2380,300 @@ def _is_semantic_clean_recovery_write(
     )
 
 
+def _is_prepared_source_publication_write(
+    records: list[CanonicalMemoryRecord],
+) -> bool:
+    """Allow only the isolated Step-2 authority publication before learned work."""
+    if len(records) != 1:
+        return False
+    record = records[0]
+    if record.source_kind != "semantic_ingestion_prepared_source":
+        return False
+    content = record.content
+    source_id = content.get("source_id")
+    source_digest = content.get("source_digest")
+    if (
+        not isinstance(source_id, str)
+        or not isinstance(source_digest, str)
+        or record.memory_id
+        != "semantic_ingestion:prepared_source:" + sha256(source_id.encode("utf-8")).hexdigest()
+    ):
+        return False
+    # The atomic-store owner validates and encodes the complete closed
+    # PreparedSource before it builds this sealed record.
+    return isinstance(content.get("prepared_source_wire"), str) and isinstance(
+        content.get("preparation_fingerprint"), str
+    )
+
+
+def _is_bootstrap_authority_terminal_write(records: list[CanonicalMemoryRecord]) -> bool:
+    """Allow exactly one sealed bootstrap terminal, never a generic side write."""
+    if len(records) != 1:
+        return False
+    record = records[0]
+    if record.source_kind != "semantic_ingestion_bootstrap_authority_unavailable":
+        return False
+    terminal = record.content.get("terminal")
+    if not isinstance(terminal, dict):
+        return False
+    source_id = terminal.get("source_id")
+    source_digest = terminal.get("source_digest")
+    kind = terminal.get("kind")
+    if (
+        not isinstance(source_id, str)
+        or not isinstance(source_digest, str)
+        or kind not in {"retained_pending", "prepared_published"}
+        or record.memory_id
+        != "semantic_ingestion:bootstrap-authority-unavailable:"
+        + sha256(source_id.encode("utf-8")).hexdigest()
+    ):
+        return False
+    required = {
+        "kind", "source_id", "source_digest", "authority_pin_digest",
+        "release_evidence_digest", "bootstrap_language_evidence_digest",
+        "delivery_identity", "operation_fence_binding", "reason", "terminal_digest",
+    }
+    if kind == "prepared_published":
+        required |= {"prepared_generation", "prepared_source_digest"}
+    return set(terminal) == required
+
+
+def _is_bootstrap_v3_recovery_claim_write(
+    records: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...]
+) -> bool:
+    """Permit a live renewal or an expired ready-snapshot reclaim only."""
+    from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryClaimV3
+
+    if len(records) != 1:
+        return False
+    record = records[0]
+    if record.source_kind != "semantic_ingestion_bootstrap_v3_recovery_index":
+        return False
+    previous = next((item for item in current if item.memory_id == record.memory_id), None)
+    if previous is None or previous.source_kind != record.source_kind:
+        return False
+    before, after = previous.content, record.content
+    if before.get("state") != "claimed" or after.get("state") != "claimed":
+        return False
+    claim_names = set(BootstrapRecoveryClaimV3.model_fields)
+    if set(after) != set(before) or not claim_names.issubset(after):
+        return False
+    try:
+        old = BootstrapRecoveryClaimV3.model_validate_json(json.dumps({name: before[name] for name in claim_names}))
+        new = BootstrapRecoveryClaimV3.model_validate_json(json.dumps({name: after[name] for name in claim_names}))
+    except (KeyError, TypeError, ValueError):
+        return False
+    # A live renewal retains its nonce and advances exactly once.  An expired
+    # claim may mint a new nonce only against the same sealed ready snapshot;
+    # this is the bounded reclaim path after the predecessor has advanced.
+    changed = {
+        "issued_server_time", "expires_server_time", "issued_monotonic_tick",
+        "expires_monotonic_tick", "renewal_count", "claim_nonce", "claim_digest",
+    }
+    renewal = (
+        new.claim_nonce == old.claim_nonce
+        and new.renewal_count == old.renewal_count + 1
+    )
+    reclaim = (
+        new.claim_nonce != old.claim_nonce
+        and new.renewal_count == 0
+        and (
+            new.issued_server_time >= old.expires_server_time
+            or new.issued_monotonic_tick >= old.expires_monotonic_tick
+        )
+    )
+    return (
+        all(after[name] == before[name] for name in set(after) - changed)
+        and new.recovery_key_digest == old.recovery_key_digest
+        and new.control_snapshot == old.control_snapshot
+        and (renewal or reclaim)
+        and new.expires_server_time > new.issued_server_time
+        and new.expires_monotonic_tick > new.issued_monotonic_tick
+        and new.renewal_count <= new.max_claim_renewals
+    )
+
+
+def _is_bootstrap_v3_ready_claim_write(
+    records: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...]
+) -> bool:
+    """Recognize the V3 probe's one control-and-claim linearization.
+
+    Unlike a renewal, the first claim advances the preplanning control to the
+    snapshot carried by the claim.  It must therefore be authorized as one
+    atomic closure rather than treated as a cross-operation generation write.
+    """
+    from memorii.core.semantic_ingestion.contracts import BootstrapRecoveryClaimV3
+
+    if len(records) != 2:
+        return False
+    control = next(
+        (record for record in records if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"),
+        None,
+    )
+    index = next(
+        (record for record in records if record.source_kind == "semantic_ingestion_bootstrap_v3_recovery_index"),
+        None,
+    )
+    if control is None or index is None:
+        return False
+    previous = next((record for record in current if record.memory_id == index.memory_id), None)
+    if previous is None or previous.content.get("state") != "unclaimed":
+        return False
+    content = index.content
+    claim_names = set(BootstrapRecoveryClaimV3.model_fields)
+    if (
+        content.get("state") != "claimed" or content.get("schema_version") != 3
+        or not claim_names.issubset(content)
+        or set(content) != set(previous.content) | claim_names
+    ):
+        return False
+    try:
+        claim = BootstrapRecoveryClaimV3.model_validate_json(
+            json.dumps({name: content[name] for name in claim_names})
+        )
+        next_control = control.content["control"]
+        snapshot = claim.control_snapshot.control_record
+        return (
+            control.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
+            and snapshot.recovery_key_digest == previous.content["recovery_key_digest"]
+            and snapshot.handoff_marker_digest == previous.content["handoff_marker_digest"]
+            and snapshot.predecessor_operation_generation
+            == previous.content["predecessor_operation_generation"]
+            and snapshot.predecessor_artifact_generation
+            == previous.content["predecessor_artifact_generation"]
+            and snapshot.predecessor_control_digest == previous.content["predecessor_control_digest"]
+            and next_control["generation"] == snapshot.operation_generation
+            and next_control["operation_fence"]["binding_digest"] == snapshot.operation_fence_digest
+            and next_control["writer_binding"] == snapshot.writer_commit_binding.model_dump(mode="json")
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_v3_publish_consume_write(
+    records: list[CanonicalMemoryRecord], current: tuple[CanonicalMemoryRecord, ...]
+) -> bool:
+    """Admit only the claimed V3 snapshot's single generation-three consume CAS."""
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapRecoveryClaimV3,
+        BootstrapRecoveryControlSnapshotV3,
+    )
+
+    controls = [
+        record for record in records
+        if record.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
+    ]
+    indexes = [
+        record for record in records
+        if record.source_kind == "semantic_ingestion_bootstrap_v3_recovery_index"
+    ]
+    manifests = [
+        record for record in records
+        if record.content.get("semantic_ingestion_kind") == "generation_manifest"
+    ]
+    members = [
+        record for record in records
+        if record.content.get("semantic_ingestion_kind") == "generation_member"
+    ]
+    if len(controls) != 1 or len(indexes) != 1 or len(manifests) != 1 or not members:
+        return False
+    control, found = controls[0], indexes[0]
+    before = next((record for record in current if record.memory_id == found.memory_id), None)
+    if before is None or before.content.get("state") != "claimed":
+        return False
+    try:
+        claim_values = {
+            name: before.content[name]
+            for name in BootstrapRecoveryClaimV3.model_fields
+        }
+        claim = BootstrapRecoveryClaimV3.model_validate_json(json.dumps(claim_values))
+        snapshot = BootstrapRecoveryControlSnapshotV3.model_validate_json(
+            json.dumps(before.content["control_snapshot"])
+        )
+        next_control = control.content["control"]
+        manifest = manifests[0].content
+        expected_found = {
+            "schema_version", "kind", "state", "recovery_key_digest",
+            "consumed_claim_digest", "recovery_control_snapshot_digest",
+            "predecessor_operation_generation", "predecessor_artifact_generation",
+            "publication_operation_generation", "publication_artifact_generation",
+            "namespace_id", "atomic_request_digest", "result_digest",
+            "provenance_manifest_digest",
+        }
+        if (
+            set(found.content) != expected_found
+            or found.content["schema_version"] != 3
+            or found.content["kind"] != "found" or found.content["state"] != "found"
+            or found.content["recovery_key_digest"] != claim.recovery_key_digest
+            or found.content["consumed_claim_digest"] != claim.claim_digest
+            or found.content["recovery_control_snapshot_digest"] != snapshot.snapshot_digest
+            or found.content["predecessor_operation_generation"]
+            != snapshot.control_record.predecessor_operation_generation
+            or found.content["predecessor_artifact_generation"]
+            != snapshot.control_record.predecessor_artifact_generation
+            or next_control["generation"] != snapshot.control_record.operation_generation + 1
+            or found.content["publication_operation_generation"] != next_control["generation"]
+            or found.content["publication_artifact_generation"] != next_control["generation"]
+            or next_control["operation_fence"]["binding_digest"] != claim.operation_fence_digest
+            or manifest.get("generation") != next_control["generation"]
+        ):
+            return False
+        manifest_members = manifest.get("members")
+        member_ids = {record.content.get("member", {}).get("member_id") for record in members}
+        return (
+            isinstance(manifest_members, (list, tuple))
+            and {item.get("member_id") for item in manifest_members if isinstance(item, dict)} == member_ids
+            and len(member_ids) == len(members)
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+def _is_bootstrap_handoff_write(
+    records: list[CanonicalMemoryRecord],
+    control: CanonicalMemoryRecord,
+    binding: SemanticWriterCommitBinding,
+) -> bool:
+    """Recognize the one marker-plus-recovery bootstrap bridge atomically."""
+    markers = [record for record in records if record.source_kind == "semantic_ingestion_bootstrap_handoff_marker"]
+    recoveries = [
+        record
+        for record in records
+        if record.source_kind == "semantic_ingestion_bootstrap_v3_recovery_index"
+    ]
+    preplanning = [
+        record
+        for record in records
+        if record.source_kind.startswith("semantic_ingestion_preplanning")
+    ]
+    if len(markers) != 1 or len(recoveries) != 1 or len(preplanning) != 4 or len(records) != 6:
+        return False
+    marker = markers[0]
+    value = marker.content.get("marker")
+    if not isinstance(value, dict) or value.get("writer_commit_binding") != binding.model_dump(mode="json"):
+        return False
+    recovery = recoveries[0].content
+    if not isinstance(recovery, dict):
+        return False
+    pending = value.get("pending_operation_id")
+    control_value = control.content.get("control")
+    return (
+        isinstance(pending, str)
+        and isinstance(control_value, dict)
+        and pending == control_value.get("operation_fence", {}).get("operation_fence_id")
+        and marker.memory_id.startswith("semantic_ingestion:bootstrap-handoff:")
+        and recoveries[0].memory_id
+        == "semantic_ingestion:bootstrap-v3-recovery:" + str(value.get("recovery_key_digest"))
+        and recovery.get("schema_version") == 3
+        and recovery.get("state") == "unclaimed"
+        and recovery.get("recovery_key_digest") == value.get("recovery_key_digest")
+        and recovery.get("operation_fence_digest")
+        == control_value.get("operation_fence", {}).get("binding_digest")
+        and recovery.get("handoff_marker_digest") == value.get("marker_digest")
+        and recovery.get("predecessor_operation_generation") == control_value.get("generation")
+        and recovery.get("predecessor_artifact_generation") == control_value.get("generation")
+        and recovery.get("predecessor_control_digest") == value.get("expected_predecessor_control_digest")
+    )
+
+
 def _validate_initial_preplanning_generation(
     records: list[CanonicalMemoryRecord],
     control: CanonicalMemoryRecord,
@@ -2431,6 +2763,31 @@ def _validate_atomic_admission_records(
         or index.content.get("writer_admission_digest") != binding.admission_digest
     ):
         raise SemanticWriterAdmissionError("atomic admission index binding is mismatched")
+
+
+def _is_atomic_admission_only_write(
+    records: list[CanonicalMemoryRecord],
+    binding: SemanticWriterCommitBinding,
+) -> bool:
+    """Permit exactly the five retained Step-1 records before bootstrap handoff."""
+    index = next(
+        (
+            record
+            for record in records
+            if record.source_kind == "semantic_ingestion_admission_index"
+        ),
+        None,
+    )
+    if index is None:
+        return False
+    try:
+        fence = OperationFenceBinding.model_validate(
+            index.content["operation_fence_binding"]
+        )
+        _validate_atomic_admission_records(records, fence, binding)
+    except (KeyError, TypeError, ValueError, SemanticWriterAdmissionError):
+        return False
+    return True
 
 
 def _admission_digest(
@@ -2564,6 +2921,560 @@ def _migration_records(
         )
         for kind, digest, value in values
     )
+
+
+def _is_bootstrap_graph_v3_authority_write(
+    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+) -> bool:
+    """Admit only one exact pre-epoch authority record and its reverse index."""
+    expected = {
+        "semantic_ingestion_bootstrap_graph_v3_pre_epoch_authority",
+        "semantic_ingestion_bootstrap_graph_v3_authority_index",
+    }
+    if len(governed) != 2 or {item.source_kind for item in governed} != expected:
+        return False
+    try:
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphTransactionAuthorityReloadV3,
+            decode_semantic_contract,
+            encode_semantic_contract,
+        )
+
+        authority = next(
+            item for item in governed
+            if item.source_kind == "semantic_ingestion_bootstrap_graph_v3_pre_epoch_authority"
+        )
+        index = next(
+            item for item in governed
+            if item.source_kind == "semantic_ingestion_bootstrap_graph_v3_authority_index"
+        )
+        raw = bytes.fromhex(authority.content["canonical_hex"])
+        reload = decode_semantic_contract(raw, BootstrapGraphTransactionAuthorityReloadV3)
+        projection = reload.publication_core.authority_projection
+        projection_digest = projection.authority_projection_digest
+        recovery_key_digest = reload.publication_receipt.recovery_key_digest
+        authority_id = "semantic_ingestion:bootstrap-graph-v3:authority:" + projection_digest
+        index_id = (
+            "semantic_ingestion:bootstrap-graph-v3:authority-index:"
+            + recovery_key_digest + ":" + projection_digest
+        )
+        current_ids = {item.memory_id for item in current}
+        return (
+            encode_semantic_contract(reload) == raw
+            and authority.memory_id == authority_id
+            and authority.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_pre_epoch_authority"
+            and authority.content.get("projection_digest") == projection_digest
+            and index.memory_id == index_id
+            and index.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_pre_epoch_authority_index"
+            and index.content.get("recovery_key_digest") == recovery_key_digest
+            and index.content.get("projection_digest") == projection_digest
+            and index.content.get("authority_record_id") == authority_id
+            and authority_id not in current_ids
+            and index_id not in current_ids
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_graph_v3_epoch_transition_write(
+    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+) -> bool:
+    """Admit only the sealed epoch/head/transition append closure."""
+    expected = {
+        "semantic_ingestion_bootstrap_graph_v3_epoch",
+        "semantic_ingestion_bootstrap_graph_v3_epoch_head",
+        "semantic_ingestion_bootstrap_graph_v3_epoch_transition",
+    }
+    if len(governed) != 3 or {item.source_kind for item in governed} != expected:
+        return False
+    try:
+        epoch_record = next(item for item in governed if item.source_kind.endswith("_epoch"))
+        head = next(item for item in governed if item.source_kind.endswith("_epoch_head"))
+        transition = next(item for item in governed if item.source_kind.endswith("_epoch_transition"))
+        epoch = epoch_record.content["epoch"]
+        request = transition.content["transition"]
+        # The atomic owner validates the decoded request, current control,
+        # lease and writer before emitting these records. Admission checks the
+        # immutable three-record join without reinterpreting wire enums.
+        return (
+            epoch_record.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_epoch"
+            and head.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_epoch_head"
+            and transition.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_epoch_transition"
+            and transition.content.get("epoch") == epoch
+            and head.content.get("epoch_digest") == epoch.get("epoch_digest")
+            and head.content.get("request_core_digest") == epoch.get("request_core_digest")
+            and request.get("transition_digest") == transition.content.get("transition_digest")
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_graph_v3_checkpoint_write(
+    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+) -> bool:
+    """Admit the dedicated graph checkpoint closure before generic generations.
+
+    Its member and manifest grammar is intentionally distinct from the legacy
+    generation grammar, so it must not be interpreted as an ambient operation
+    generation write.
+    """
+    kinds = [item.content.get("semantic_ingestion_kind") for item in governed]
+    retry_count = kinds.count("bootstrap_graph_v3_retry_index")
+    if (
+        len(governed) < 4
+        or kinds.count("bootstrap_graph_v3_manifest") != 1
+        or kinds.count("bootstrap_graph_v3_idempotency") != 1
+        or retry_count not in {0, 1}
+        or kinds.count("bootstrap_graph_v3_member") != len(governed) - 3 - retry_count
+        or any(
+            kind not in {
+                "bootstrap_graph_v3_member", "bootstrap_graph_v3_manifest",
+                "bootstrap_graph_v3_idempotency", "bootstrap_graph_v3_retry_index",
+                "preplanning_operation_control",
+            }
+            for kind in kinds
+        )
+    ):
+        return False
+    try:
+        manifest = next(item for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_manifest")
+        index = next(item for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_idempotency")
+        control = next(item for item in governed if item.content.get("semantic_ingestion_kind") == "preplanning_operation_control")
+        request = manifest.content["request"]
+        retry = next(
+            (item for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_retry_index"),
+            None,
+        )
+        members = [item.content["member"] for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_member"]
+        expected_members = request["members"]
+        if (
+            members != expected_members
+            or index.content.get("request_write_digest") != request.get("write_digest")
+            or index.content.get("request_digest") != request.get("request_digest")
+            or index.content.get("publication_operation_generation")
+            != request["predecessor_generation"]["operation_generation"] + 1
+            or index.content.get("publication_artifact_generation")
+            != request["predecessor_generation"]["artifact_generation"] + 1
+            or control.content["control"].get("generation")
+            != request["predecessor_generation"]["operation_generation"] + 1
+            or (retry is not None) != (request.get("kind") == "bootstrap_graph_retry_checkpoint")
+            or (
+                retry is not None
+                and (
+                    retry.content.get("request_digest") != request.get("request_digest")
+                    or retry.content.get("write_digest") != request.get("write_digest")
+                )
+            )
+        ):
+            return False
+        prior = next((item.content.get("control") for item in current if item.memory_id == control.memory_id), None)
+        predecessor = request["predecessor_generation"]
+        return (
+            isinstance(prior, dict)
+            and predecessor.get("operation_generation") == prior.get("generation")
+            and predecessor.get("artifact_generation") == prior.get("generation")
+            and request["predecessor_generation"]["operation_generation"] == prior.get("generation")
+            and request["predecessor_generation"]["artifact_generation"] == prior.get("generation")
+            and request.get("operation_fence_binding", {}).get("binding_digest")
+            == prior.get("operation_fence", {}).get("binding_digest")
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_graph_v3_group_commit_write(
+    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+) -> bool:
+    """Admit only the complete native group-commit CAS closure."""
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphGroupCommitReloadV3,
+        BootstrapGraphGroupCommitRequestV3,
+        BootstrapGraphOperationCommitResultV3,
+        decode_semantic_contract,
+        encode_semantic_contract,
+    )
+    from memorii.core.semantic_ingestion.event_replay import (
+        SemanticMemoryEventBatch,
+        decode_semantic_replay_state,
+    )
+
+    kinds = [item.content.get("semantic_ingestion_kind") for item in governed]
+    if (
+        kinds.count("preplanning_operation_control") != 1
+        or kinds.count("bootstrap_graph_v3_group_commit_primary") != 1
+        or any(
+            kind not in {
+                "preplanning_operation_control",
+                "bootstrap_graph_v3_group_commit_primary",
+                "bootstrap_graph_v3_group_commit_fanout",
+                "bootstrap_graph_v3_group_commit_effect",
+                "semantic_event_batch",
+                "semantic_replay_state",
+                "reference_integrity_ledger",
+            }
+            for kind in kinds
+        )
+    ):
+        return False
+    try:
+        control_record = next(
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "preplanning_operation_control"
+        )
+        primary = next(
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_group_commit_primary"
+        )
+        request_raw = bytes.fromhex(primary.content["request_hex"])
+        reload_raw = bytes.fromhex(primary.content["reload_hex"])
+        request = decode_semantic_contract(
+            request_raw, BootstrapGraphGroupCommitRequestV3
+        )
+        reload = decode_semantic_contract(
+            reload_raw, BootstrapGraphGroupCommitReloadV3
+        )
+        if (
+            encode_semantic_contract(request) != request_raw
+            or encode_semantic_contract(reload) != reload_raw
+            or reload.source_operation_id != request.source_operation_id
+            or reload.transaction_group_id != request.transaction_group_id
+            or reload.operation_ids != request.operation_ids
+            or reload.request_ctv_digest != request.request_ctv_digest
+        ):
+            return False
+
+        operation_ids = request.operation_ids
+        fanouts = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_group_commit_fanout"
+        ]
+        effects = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "bootstrap_graph_v3_group_commit_effect"
+        ]
+        if len(fanouts) != len(operation_ids):
+            return False
+
+        primary_key = encode_typed_value(
+            (
+                request.source_operation_id,
+                request.transaction_group_id,
+                operation_ids,
+                request.request_ctv_digest,
+            )
+        )
+        expected_primary_id = (
+            "semantic_ingestion:bootstrap-graph-v3:group-commit:"
+            + sha256(primary_key).hexdigest()
+        )
+        if primary.memory_id != expected_primary_id:
+            return False
+
+        fanout_by_operation = {
+            item.content.get("member_operation_id"): item for item in fanouts
+        }
+        if (
+            tuple(fanout_by_operation) != operation_ids
+        ):
+            return False
+        effect_by_coordinate = {
+            (item.content.get("operation_id"), item.content.get("kind")): item
+            for item in effects
+        }
+        if len(effect_by_coordinate) != len(effects):
+            return False
+        result_by_operation = {
+            item.operation_id: item
+            for item in reload.persisted_result.core.ordered_operation_results
+        }
+        if tuple(result_by_operation) != operation_ids:
+            return False
+        canonical_event_records = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind") == "semantic_event_batch"
+        ]
+        canonical_replay_records = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind") == "semantic_replay_state"
+        ]
+        canonical_reference_records = [
+            item
+            for item in governed
+            if item.content.get("semantic_ingestion_kind")
+            == "reference_integrity_ledger"
+        ]
+        committed = reload.persisted_result.core.disposition == "committed"
+        if (
+            len(canonical_event_records) != (1 if committed else 0)
+            or len(canonical_replay_records) != (1 if committed else 0)
+            or len(canonical_reference_records) != (1 if committed else 0)
+        ):
+            return False
+        for operation_id in operation_ids:
+            fanout = fanout_by_operation[operation_id]
+            expected_fanout_key = encode_typed_value(
+                (
+                    request.source_operation_id,
+                    request.transaction_group_id,
+                    operation_id,
+                    request.request_ctv_digest,
+                )
+            )
+            if (
+                fanout.memory_id
+                != "semantic_ingestion:bootstrap-graph-v3:group-commit-fanout:"
+                + sha256(expected_fanout_key).hexdigest()
+                or fanout.content.get("source_operation_id")
+                != request.source_operation_id
+                or fanout.content.get("transaction_group_id")
+                != request.transaction_group_id
+                or tuple(fanout.content.get("operation_ids", ())) != operation_ids
+                or fanout.content.get("request_ctv_digest")
+                != request.request_ctv_digest
+                or fanout.content.get("primary_id") != expected_primary_id
+                or fanout.content.get("reload_digest") != reload.reload_digest
+            ):
+                return False
+            result_effect = effect_by_coordinate.get((operation_id, "result"))
+            observation_effect = effect_by_coordinate.get(
+                (operation_id, "observation_delta")
+            )
+            if result_effect is None or observation_effect is None:
+                return False
+            effect = result_effect
+            payload = bytes.fromhex(effect.content["payload_hex"])
+            result = decode_semantic_contract(
+                payload, BootstrapGraphOperationCommitResultV3
+            )
+            if (
+                encode_semantic_contract(result) != payload
+                or result != result_by_operation[operation_id]
+                or effect.content.get("primary_id") != expected_primary_id
+                or effect.content.get("kind") != "result"
+                or effect.content.get("payload_digest")
+                != sha256(payload).hexdigest()
+                or effect.content.get("carrier_digest") != result.result_digest
+            ):
+                return False
+            expected_effect_kinds = {"result", "observation_delta"}
+            if result.final_status == "accepted":
+                expected_effect_kinds.update({"graph_delta", "event_batch"})
+            actual_effect_kinds = {
+                kind
+                for candidate_operation_id, kind in effect_by_coordinate
+                if candidate_operation_id == operation_id
+            }
+            if actual_effect_kinds != expected_effect_kinds:
+                return False
+            expected_digests = {
+                "graph_delta": result.graph_delta_digest,
+                "event_batch": result.event_batch_digest,
+                "observation_delta": result.observation_delta_digest,
+            }
+            for kind in expected_effect_kinds - {"result"}:
+                carrier = effect_by_coordinate[(operation_id, kind)]
+                carrier_payload = bytes.fromhex(carrier.content["payload_hex"])
+                if (
+                    carrier.content.get("primary_id") != expected_primary_id
+                    or carrier.content.get("payload_digest")
+                    != sha256(carrier_payload).hexdigest()
+                    or carrier.content.get("carrier_digest")
+                    != expected_digests[kind]
+                ):
+                    return False
+
+        if committed:
+            batch_raw = bytes.fromhex(canonical_event_records[0].content["canonical_hex"])
+            state_raw = bytes.fromhex(canonical_replay_records[0].content["canonical_hex"])
+            batch_envelope = decode_typed_value(batch_raw)
+            if (
+                not isinstance(batch_envelope, dict)
+                or batch_envelope.get("schema")
+                != "memorii.semantic-memory-event-batch-envelope.v1"
+            ):
+                return False
+            batch = SemanticMemoryEventBatch.model_validate(
+                batch_envelope.get("payload")
+            )
+            state = decode_semantic_replay_state(state_raw)
+            from memorii.core.memory_evolution.reference_integrity import (
+                ReferenceEdgeLedgerSnapshot,
+                validate_reference_integrity_converse,
+            )
+
+            reference_snapshot = ReferenceEdgeLedgerSnapshot.model_validate(
+                decode_typed_value(bytes.fromhex(
+                    canonical_reference_records[0].content["canonical_hex"]
+                ))
+            )
+            validate_reference_integrity_converse(reference_snapshot, state)
+            expected_record_digests = tuple(sorted(
+                record["record_digest"]
+                for operation_id in operation_ids
+                for record in decode_typed_value(bytes.fromhex(
+                    effect_by_coordinate[(operation_id, "graph_delta")].content[
+                        "payload_hex"
+                    ]
+                ))
+            ))
+            batch_record_digests = tuple(sorted(
+                event.payload.record_digest for event in batch.events
+            ))
+            if (
+                batch.transaction_group_id != request.transaction_group_id
+                or batch.operation_fence_id
+                != request.operation_fence_binding.operation_fence_id
+                or batch.source_id != request.operation_fence_binding.source_id
+                or batch.writer_epoch
+                != request.writer_commit_binding.expected_writer_epoch
+                or batch_record_digests != expected_record_digests
+                or state.last_event_batch_digest != batch.event_batch_digest
+                or state.graph_revision
+                != reload.persisted_result.core.graph_revision_after
+                or canonical_event_records[0].content.get("event_batch_digest")
+                != batch.event_batch_digest
+                or canonical_replay_records[0].content.get("state_digest")
+                != state.state_digest
+                or canonical_reference_records[0].content.get("ledger_digest")
+                != reference_snapshot.ledger_digest
+            ):
+                return False
+
+        proposed_control = control_record.content["control"]
+        prior = next(
+            (
+                item.content.get("control")
+                for item in current
+                if item.memory_id == control_record.memory_id
+            ),
+            None,
+        )
+        successor = reload.successor_generation
+        return (
+            isinstance(prior, dict)
+            and request.expected_generation.operation_generation
+            == prior.get("generation")
+            and request.expected_generation.artifact_generation
+            == prior.get("generation")
+            and proposed_control.get("generation") == prior.get("generation") + 1
+            and successor.operation_generation == proposed_control.get("generation")
+            and successor.artifact_generation == proposed_control.get("generation")
+            and proposed_control.get("last_request_digest")
+            == request.request_ctv_digest
+            and proposed_control.get("graph_revision")
+            == reload.persisted_result.core.graph_revision_after
+            and proposed_control.get("observation_revision")
+            == reload.persisted_result.core.observation_revision_after
+            and tuple(proposed_control.get("group_result_digests", ()))
+            == (*tuple(prior.get("group_result_digests", ())), reload.persisted_result.result_digest)
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def _is_bootstrap_graph_v3_terminal_write(
+    governed: list[CanonicalMemoryRecord], current: list[CanonicalMemoryRecord],
+) -> bool:
+    """Admit only the complete V3 terminal publication closure."""
+    kinds = [item.content.get("semantic_ingestion_kind") for item in governed]
+    fixed = {
+        "preplanning_operation_control",
+        "bootstrap_graph_v3_terminal_manifest",
+        "bootstrap_graph_v3_terminal_control",
+        "bootstrap_graph_v3_terminal_identity",
+    }
+    if (
+        len(governed) < 8
+        or any(kinds.count(kind) != 1 for kind in fixed)
+        or kinds.count("bootstrap_graph_v3_terminal_locator") != 3
+        or kinds.count("bootstrap_graph_v3_member") != len(governed) - len(fixed) - 3
+        or any(
+            kind not in fixed | {
+                "bootstrap_graph_v3_member", "bootstrap_graph_v3_terminal_locator",
+            }
+            for kind in kinds
+        )
+    ):
+        return False
+    try:
+        control_record = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "preplanning_operation_control"
+        )
+        manifest = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_manifest"
+        ).content
+        terminal = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_control"
+        ).content["terminal_control"]
+        identity = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_identity"
+        ).content["identity"]
+        locator = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_locator"
+            and "handoff_digest" in item.content
+        ).content
+        request_index = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_locator"
+            and "coordinator_request_digest" in item.content
+        ).content
+        recovery_index = next(
+            item for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_terminal_locator"
+            and "normalization_recovery_key_digest" in item.content
+        ).content
+        members = tuple(
+            item.content["member"] for item in governed
+            if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_member"
+        )
+        control = control_record.content["control"]
+        prior = next(
+            (item.content.get("control") for item in current if item.memory_id == control_record.memory_id),
+            None,
+        )
+        return (
+            isinstance(prior, dict)
+            and control.get("generation") == prior.get("generation", -1) + 1
+            and control.get("state") == "terminal"
+            and control.get("lease") is None
+            and manifest.get("members") == members
+            and terminal.get("state") == "terminal_published"
+            and terminal.get("publication_operation_generation") == control.get("generation")
+            and terminal.get("publication_artifact_generation") == control.get("generation")
+            and identity.get("member_manifest_digest") == manifest.get("manifest_digest")
+            and identity.get("terminal_control_digest") == terminal.get("terminal_control_digest")
+            and identity.get("locator_digest") == terminal.get("locator_digest")
+            and locator.get("locator_digest") == terminal.get("locator_digest")
+            and locator.get("reload", {}).get("final_write_identity") == identity
+            and locator.get("reload", {}).get("terminal_control") == terminal
+            and request_index.get("locator_digest") == terminal.get("locator_digest")
+            and request_index.get("reload") == locator.get("reload")
+            and request_index.get("coordinator_request_digest")
+            == terminal.get("request_digest")
+            and recovery_index.get("locator_digest") == terminal.get("locator_digest")
+            and recovery_index.get("reload") == locator.get("reload")
+            and recovery_index.get("normalization_replay_digest")
+            == identity.get("normalization_replay_digest")
+        )
+    except (KeyError, StopIteration, TypeError, ValueError):
+        return False
 
 
 def _from_record(record: CanonicalMemoryRecord) -> tuple[SemanticWriterAdmission, SemanticRecordOwnershipManifest]:

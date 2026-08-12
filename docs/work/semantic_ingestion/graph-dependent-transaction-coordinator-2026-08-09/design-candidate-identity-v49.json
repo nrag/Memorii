@@ -1,0 +1,29 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_group_index_binding_surgical_correction",
+  "semantic_predecessor": "design-candidate-identity-v48.json",
+  "semantic_change_from_predecessor": "binding-only replacement of the stale scalar operation-keyed store index sentence with the v48 group primary and complete operation-vector fanout rule",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "bb1099a6a89ed650c8c2c6c570659a7f343324af1a23d55860beeeeb6a2bb176",
+  "review_scope": [
+    "active V3 binding group-key and operation_ids fanout consistency",
+    "binding mutation rejects restoration of scalar operation-key rule",
+    "unchanged v48 architecture semantics"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "1130b2e6e83fa5a7c401d4cacb3ee73702db63a7b4fe3230591175b406030953",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "28547184b184705bc9a342003b3c06c394a166b505bda5983105f38cedc4fec6",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "09bce26c2c1a1390ccfa1d06a346891bd8f4c9dc78ddcf4dce23b44072d57944"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "active store index equals group primary and operation vector fanout",
+    "scalar rule appears only as explicit rejected mutation",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

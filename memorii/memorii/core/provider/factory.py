@@ -8,6 +8,10 @@ from pathlib import Path
 
 from memorii.core.decision_state.service import DecisionStateService
 from memorii.core.memory_evolution.atomic_store import SemanticIngestionAtomicStore
+from memorii.core.memory_evolution.bootstrap_profile import (
+    HostBootstrapCapability,
+    HostBootstrapMaterialVerifier,
+)
 from memorii.core.memory_evolution.conflict_integrity import (
     PrivilegedSemanticIntegrityLifecycle,
 )
@@ -21,6 +25,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
 from memorii.core.work_state.service import WorkStateService
 
 _DEFAULT_DECISION_STATE_SERVICE = object()
@@ -40,6 +45,9 @@ def build_provider_memory_service_from_env(
         Callable[[str], IdentityLineageAuditGrant | None] | None
     ) = None,
     authenticated_ingress_resolver: AuthenticatedIngressContextResolver | None = None,
+    host_bootstrap_capability: HostBootstrapCapability | None = None,
+    host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
+    source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
     now_provider: Callable[[], datetime] | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
@@ -79,6 +87,9 @@ def build_provider_memory_service_from_env(
         semantic_integrity_lifecycle=semantic_integrity_lifecycle,
         semantic_integrity_root=semantic_integrity_root,
         authenticated_ingress_resolver=authenticated_ingress_resolver,
+        host_bootstrap_capability=host_bootstrap_capability,
+        host_bootstrap_material_verifier=host_bootstrap_material_verifier,
+        source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
         identity_lineage_audit_reader=audit_reader,
         identity_lineage_audit_authorizer=audit_authorizer,
         now_provider=now_provider,

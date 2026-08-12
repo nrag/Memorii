@@ -21,6 +21,7 @@ from memorii.core.semantic_ingestion.contracts import (
     IngestionExecutionManifest,
     IngestionStageInstanceRef,
     IngestionStageOutcome,
+    LanguageCandidate,
     MessageAdmissionCarrierSet,
     MessageAdmissionIdentity,
     OperationCapabilityExecutionBinding,
@@ -81,8 +82,11 @@ def _route() -> SegmentLanguageRoute:
     )
     return SegmentLanguageRoute.create(
         source_id="source-1", source_digest=_hash("source"), segment_id="segment-1",
+        parent_projection_segment_id="segment-1",
         segment_text_artifact_id="segment-artifact-1", segment_text_artifact_digest=_hash("segment-artifact"),
-        segment_text_content_digest=_hash("segment-content"), declared_language=None, candidates=(), code_switch_spans=(),
+        segment_text_content_digest=_hash("segment-content"), declared_language=None,
+        candidates=(LanguageCandidate(language="en", probability_ppm=1_000_000, model_fingerprint=_hash("router")),),
+        code_switch_spans=(),
         selected_language="en", decision="selected", minimum_probability_ppm=1, minimum_margin_ppm=1,
         routing_policy_fingerprint=_hash("routing-policy"), router_manifest_fingerprint=_hash("router"), resource_binding=resources,
     )

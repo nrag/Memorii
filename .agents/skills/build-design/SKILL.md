@@ -58,6 +58,10 @@ Before drafting algorithms or schemas, define every applicable boundary:
 - public, persisted, transaction, trust, provider, prompt, artifact, adapter,
   integration, and command-line boundaries
 - authority chain from source bytes to derived artifacts and gates
+- for each runtime, persistence, transaction, lifecycle, replay, recovery, or
+  integration behavior: canonical trigger, composition root, exact
+  owner-to-owner arguments and authority, durable read/write or outcome, and
+  fail-closed absence behavior
 - unsupported inputs and fail-closed behavior
 
 Treat requirement and milestone coordinates as planning metadata, never as a
@@ -141,6 +145,8 @@ The design is not review-ready when:
 - independent evidence is required but independence is undefined
 - a requirement depends on CI or operational evidence without an owner
 - implementation would need hidden conversation context
+- a runtime or persistence requirement has no production-entrypoint binding plan
+  that a later Spark mapper can verify without inventing authority
 
 ## Phase 5: Draft The Design
 

@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from memorii.core.memory_evolution.bootstrap_profile import BootstrapAuthenticatedLanguageEvidence
 from memorii.domain.enums import (
     ExtractionFailureCode,
     ExtractionRunStatus,
@@ -221,6 +222,14 @@ class MemoryGraphEdgeType(StrEnum):
 
 
 class SourceObservation(BaseModel):
+    """Immutable source handoff used by both legacy evolution and ingestion.
+
+    Older evolution records predate governed admission and therefore have no
+    delivery or source-digest coordinates.  They remain readable as legacy
+    observations, but only an observation carrying ``source_digest`` is a
+    valid input to the semantic-ingestion preparation boundary.
+    """
+
     source_id: str
     text: str
     source_type: SourceType
@@ -233,8 +242,48 @@ class SourceObservation(BaseModel):
     speaker_id: str | None = None
     modality: SourceModality = SourceModality.ASSERTION
     trigger_mode: ExtractionTriggerMode = ExtractionTriggerMode.IMMEDIATE
+    source_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    delivery_key_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    # Bootstrap Step-1 retains this exact derived evidence.  Legacy records
+    # have no bootstrap route and therefore retain the explicit null value.
+    bootstrap_language_evidence: BootstrapAuthenticatedLanguageEvidence | None = None
+    # Step-1 fields are nullable solely for decoding pre-admission transcript
+    # records.  A record carrying a source digest alone is legacy evidence and
+    # must not be mistaken for the complete retained-source authority.
+    retained_text_artifact: object | None = None
+    required_outcome_scopes: object | None = None
+    semantic_context: object | None = None
+    semantic_text_projection: object | None = None
+    segment_governance_carriers: object | None = None
+    message_admission_carriers: object | None = None
+    governance_carrier_artifact: object | None = None
+    admission_scope_authorization_proof: object | None = None
 
     model_config = ConfigDict(extra="forbid")
+
+    @property
+    def is_governed_admission(self) -> bool:
+        """Whether this record can cross into semantic preparation."""
+
+        return self.source_digest is not None and self.delivery_key_digest is not None
+
+    @property
+    def is_step_one_admitted(self) -> bool:
+        """Whether this observation carries the complete Step-1 authority."""
+
+        return self.is_governed_admission and all(
+            value is not None
+            for value in (
+                self.retained_text_artifact,
+                self.required_outcome_scopes,
+                self.semantic_context,
+                self.semantic_text_projection,
+                self.segment_governance_carriers,
+                self.message_admission_carriers,
+                self.governance_carrier_artifact,
+                self.admission_scope_authorization_proof,
+            )
+        )
 
 
 class MemoryScope(BaseModel):

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "porcelain_status_digest": "6ac4c586e15bb65f1f0bc3423d11ef7a57e8decc5ac9acf465035445a23371d1",
+  "selector_manifest_sha256": "53b5788ca728f9917f568875d42035cffed86b15d184e2acef5d28bb2f8a3d12",
+  "selector_generator_sha256": "6710fe4099f864cd1dfbe26b439d9ea9549dbd15399619f11528e271f7d3b05e",
+  "workflow_sha256": "6741c9672a4e8e5551d549f258a9c6e0f28fa62581faa22d9dcd454a4fd6bf61",
+  "testing_workplan_sha256": "d465edd3f8825ec498675652687d095ca4bd75207fb1f8745002e59447f835ad",
+  "public_selector_count": 200,
+  "required_tuple_count": 352,
+  "exclusion_count": 0,
+  "runtime_result": "200 passed"
+}

@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from threading import Barrier
@@ -21,10 +22,12 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     BOOTSTRAP_COORDINATE,
     BootstrapGrammarCorpusCase,
     BootstrapProfileReleaseMetadata,
+    CurrentBootstrapReleaseAssertion,
     HostVerifiedBootstrapMaterial,
     build_bootstrap_profile_artifacts,
     build_bootstrap_trust_anchor,
     serialize_bootstrap_profile_artifacts,
+    verify_bootstrap_profile,
     verify_bootstrap_release,
 )
 from memorii.core.memory_evolution.conflict_attention import (
@@ -73,21 +76,32 @@ from memorii.core.memory_plane.store import (
     JsonlMemoryPlaneStore,
     _PersistedBatch,
 )
+from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.models import ProviderOperation
 from memorii.core.provider.service import ProviderMemoryService
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
+    BuiltInLocalHostSemanticIngestionCapability,
     SemanticIngestionRuntimeAuthorization,
     build_authorized_local_semantic_runtime,
 )
 from memorii.core.semantic_ingestion.contracts import (
+    BootstrapPredicateLanePayloadV3,
+    BootstrapRecoveryKeyV3,
+    BootstrapRecoveryProbeV3,
+    BootstrapTemporalLanePayloadV3,
+    DependencyArc,
+    LinguisticAnalysis,
+    LinguisticToken,
     PredicateTemporalRule,
     PredicateTrustRule,
+    ProviderSemanticProposal,
     SemanticArbitrationPolicyBundle,
     SemanticCandidate,
     SemanticPipelinePolicy,
     SemanticTerminalOutcome,
     TemporalPolicySnapshot,
+    TextPreparationPolicy,
     TimeInterval,
     TrustPolicySnapshot,
     contract_digest,
@@ -105,9 +119,38 @@ from memorii.core.semantic_ingestion.local_analyzer import (
     ProductionLocalSemanticAnalyzer,
 )
 from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
+from memorii.core.semantic_ingestion.sealed_proposal_producer import ProposalRetryPolicy
+from memorii.core.semantic_ingestion.sealed_source_normalization_evidence_producer import (
+    TypedSourceInterpretationEvidenceProducer,
+)
+from memorii.core.semantic_ingestion.source_normalization_execution import (
+    SourceNormalizationExecutionOwner,
+    StaticSourceNormalizationAuthorityProvider,
+)
+from memorii.core.semantic_ingestion.source_normalization_host import (
+    SourceNormalizationHostBundle,
+    SourceNormalizationHostBundleBuilder,
+)
+from memorii.core.semantic_ingestion.source_preparation import (
+    AtomicStorePreparedSourceRepository,
+    InMemoryPreparedSourceRepository,
+    TextPreparationService,
+)
 from memorii.integrations.hermes_provider import HermesMemoryProvider
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    DeterministicTestHostBootstrapMaterialVerifier,
+    build_test_host_verified_bootstrap_release_evidence,
+    present_authenticated_host_bootstrap_material,
+)
+from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
+    build_scenario_test_host_capability,
+)
+from tests.fixtures.semantic_ingestion.source_normalization_fixture_builder import (
+    DynamicSourceNormalizationAuthorityProvider,
+)
 from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
     build_prepared_independent_source_analysis,
+    build_prepared_source_authority,
 )
 
 TEST_NOW = datetime(2026, 3, 1, tzinfo=UTC)
@@ -258,16 +301,18 @@ class _TrustRoot:
 
 
 class _TestHostBootstrapCapability:
-    def __init__(self, *, resolver=None) -> None:
+    def __init__(self, *, resolver=None, trust_domain="production") -> None:
         artifacts = build_bootstrap_profile_artifacts(_bootstrap_cases())
         self._anchor = build_bootstrap_trust_anchor(artifacts)
         self._metadata = BootstrapProfileReleaseMetadata(
             coordinate=BOOTSTRAP_COORDINATE,
             bootstrap_profile_trust_anchor_digest=self._anchor.trust_anchor_digest,
+            signed_release_digest="1" * 64,
         )
         self._payloads = serialize_bootstrap_profile_artifacts(artifacts)
         self._resolver = resolver or _Resolver()
         self._root = _TrustRoot(self._anchor.trust_anchor_digest)
+        self._trust_domain = trust_domain
 
     def load_verified_bootstrap_material(self):
         if not verify_bootstrap_release(provider=self._root, metadata=self._metadata, anchor=self._anchor):
@@ -276,9 +321,31 @@ class _TestHostBootstrapCapability:
             release_metadata=self._metadata,
             trust_anchor=self._anchor,
             artifact_payloads=self._payloads,
+            release_evidence=build_test_host_verified_bootstrap_release_evidence(
+                metadata=self._metadata,
+                external_root_digest="2" * 64,
+                active_lifecycle_snapshot_digest="3" * 64,
+                verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+                trust_domain=self._trust_domain,
+            ),
             authenticated_ingress_resolver=self._resolver,
             profile_enabled=True,
+            trust_domain=self._trust_domain,
         )
+
+    def load_bootstrap_material_presentation(self):
+        material = self.load_verified_bootstrap_material()
+        return (
+            present_authenticated_host_bootstrap_material(material)
+            if material is not None
+            else None
+        )
+
+
+def _verified_profile():
+    material = _TestHostBootstrapCapability().load_verified_bootstrap_material()
+    assert material is not None
+    return verify_bootstrap_profile(material)
 
 
 class _CapabilityLoader:
@@ -295,6 +362,28 @@ class _InstalledCapabilityEntryPoint:
 
     def load(self):
         return _CapabilityLoader(self.capability)
+
+
+class _CurrentBootstrapReleaseVerifier:
+    """Host fixture authority for the three bootstrap CAS use points."""
+
+    def assert_current(self, *, authorization, release_evidence, assertion_phase):
+        body = {
+            "coordinate": release_evidence.coordinate.model_dump(mode="python"),
+            "signed_release_digest": release_evidence.signed_release_digest,
+            "bootstrap_anchor_digest": release_evidence.bootstrap_anchor_digest,
+            "active_lifecycle_snapshot_digest": release_evidence.active_lifecycle_snapshot_digest,
+            "assertion_phase": assertion_phase,
+            "assertion_nonce": f"host-current:{assertion_phase}",
+        }
+        del authorization
+        return CurrentBootstrapReleaseAssertion(
+            **body,
+            assertion_digest=sha256(
+                b"memorii.semantic_ingestion.current_bootstrap_release_assertion.v1\0"
+                + encode_typed_value(body)
+            ).hexdigest(),
+        )
 
 
 def _verified_runtime_store(
@@ -325,6 +414,7 @@ def _verified_runtime_store(
                 semantic_integrity_linearization=(
                     semantic_integrity_lifecycle.linearization if semantic_integrity_lifecycle is not None else None
                 ),
+                current_bootstrap_release_verifier=_CurrentBootstrapReleaseVerifier(),
             )
 
     try:
@@ -413,6 +503,7 @@ def _analysis(
     source_text: str,
     source_authority_evidence,
     source_interval_evidence,
+    preparation_fingerprint: str | None = None,
 ):
     if source_authority_evidence is None:
         return None
@@ -424,6 +515,8 @@ def _analysis(
         source_text=source_text,
         source_authority_evidence=source_authority_evidence,
         source_interval_evidence=source_interval_evidence,
+        require_text_digest=False,
+        preparation_fingerprint=preparation_fingerprint,
     )
 
 class _Resolver:
@@ -461,8 +554,71 @@ class _AuthorizedCapability(_TestHostBootstrapCapability):
         super().__init__(resolver=_Resolver())
         self._runtime = runtime
 
-    def build_semantic_ingestion_runtime(self, *, memory_plane, now_provider):
+    def build_semantic_ingestion_runtime(
+        self, *, memory_plane, now_provider, bootstrap_profile
+    ):
+        del memory_plane, now_provider, bootstrap_profile
         return self._runtime
+
+
+class _LocalRuntimeCapability(_TestHostBootstrapCapability):
+    """Host capability whose only semantic construction is the production root."""
+
+    def __init__(self, *, source_normalization_authority_provider=None, source_normalization_execution_owner=None) -> None:
+        super().__init__(resolver=_Resolver())
+        self.stores: list[SemanticIngestionAtomicStore] = []
+        self._source_normalization_authority_provider = source_normalization_authority_provider
+        self._source_normalization_execution_owner = source_normalization_execution_owner
+
+    def build_semantic_ingestion_runtime(
+        self, *, memory_plane, now_provider, bootstrap_profile
+    ):
+        del now_provider
+        _, writers, store = _verified_runtime_store(memory_plane)
+        self.stores.append(store)
+        runtime = build_authorized_local_semantic_runtime(
+            authorization_bytes=b"signed-test-authorization",
+            authorization_verifier=_AuthorizationVerifier(),
+            policy_provider=_PolicyProvider("owner_is"),
+            writer_admission=writers,
+            atomic_store=store,
+            bootstrap_profile=bootstrap_profile,
+        )
+        return replace(
+            runtime,
+            source_normalization_host_bundle=(
+                None
+                if self._source_normalization_authority_provider is None
+                else SourceNormalizationHostBundle(
+                    authority_provider=self._source_normalization_authority_provider,
+                    execution_owner=self._source_normalization_execution_owner,
+                )
+            ),
+        )
+
+
+class _RecordingSourceNormalizationAuthorityProvider:
+    """Explicit host authority provider used to prove the coordinator boundary."""
+
+    def __init__(self, *, available: bool = True) -> None:
+        self.invocations = []
+        self._available = available
+
+    def build(self, *, invocation, handoff):
+        self.invocations.append((invocation, handoff))
+        return object() if self._available else None
+
+
+class _RecordingSourceNormalizationExecutionOwner:
+    """Real coordinator boundary spy; execution-owner internals have dedicated tests."""
+
+    def __init__(self, *, result=None) -> None:
+        self.calls = []
+        self._result = result
+
+    def normalize_after_bootstrap_handoff(self, *, invocation, handoff, authority):
+        self.calls.append((invocation, handoff, authority))
+        return self._result
 
 
 class _PolicyProvider:
@@ -605,6 +761,7 @@ class _Assessor:
         source_id: str,
         source_digest: str,
         source_text: str,
+        prepared_source,
         source_authority_evidence,
         source_interval_evidence,
     ):
@@ -615,6 +772,7 @@ class _Assessor:
             source_text=source_text,
             source_authority_evidence=source_authority_evidence,
             source_interval_evidence=source_interval_evidence,
+            preparation_fingerprint=prepared_source.preparation_fingerprint,
         )
 
 
@@ -681,6 +839,20 @@ def _dependencies(
     assessor=None,
 ):
     transport = _CaptureTransport()
+    prepared_sources = (
+        AtomicStorePreparedSourceRepository(
+            atomic_store=atomic_store,
+            writer_binding=lambda: writer_admission.commit_binding(writer_admission.current()),
+        )
+        if atomic_store is not None and writer_admission is not None
+        else InMemoryPreparedSourceRepository()
+    )
+    preparation_policy = TextPreparationPolicy.create(
+        max_segment_characters=4096,
+        supported_languages=("en",),
+        segmentation_algorithm="memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1",
+        context_window_algorithm="memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1",
+    )
     runtime = AuthorizedSemanticIngestionRuntime(
         authorization_bytes=b"signed-test-authorization",
         authorization_verifier=_AuthorizationVerifier(authorization_mode),
@@ -690,6 +862,17 @@ def _dependencies(
         candidate_assessor=(
             assessor if assessor is not None else (_Assessor() if writer_admission is not None else _AbstainAssessor())
         ),
+        text_preparation_service=TextPreparationService(
+            producer=lambda request: build_prepared_source_authority(
+                source_id=request.observation.source_id,
+                source_digest=request.observation.source_digest or "",
+                source_text=request.observation.text,
+                preparation_policy=request.policy,
+            ),
+            repository=prepared_sources,
+        ),
+        prepared_source_repository=prepared_sources,
+        text_preparation_policy=preparation_policy,
         writer_admission=writer_admission,
         atomic_store=atomic_store,
     )
@@ -710,13 +893,13 @@ def _runtime_for_outage(*, writers, store, stage: str) -> AuthorizedSemanticInge
     )
 
 
-def test_normal_provider_root_reaches_allowed_transport_once_and_terminalizes() -> None:
-    transport, capability = _dependencies()
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(capability),),
-    ):
-        service = ProviderMemoryService(memory_plane=MemoryPlaneService())
+def test_normal_provider_root_without_normalization_authority_is_source_only() -> None:
+    capability = _LocalRuntimeCapability()
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        host_bootstrap_capability=capability,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
     result = service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -725,15 +908,623 @@ def test_normal_provider_root_reaches_allowed_transport_once_and_terminalizes() 
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
-    assert len(transport.requests) == 1
+    assert result.blocked_reasons["semantic_ingestion"] == "source_alignment_authority_unavailable"
+    assert len(capability.stores) == 1
     terminal_controls = [
         value
         for value in service._memory_plane.list_records()
         if value.source_kind == "semantic_ingestion_preplanning_control"
         and value.content["control"]["state"] == "terminal"
     ]
-    assert len(terminal_controls) == 1
+    assert terminal_controls == []
+
+
+@pytest.mark.parametrize("result", (None, object()))
+def test_normal_provider_root_rejects_untyped_or_missing_normalization_result_before_terminal(result) -> None:
+    authority_provider = _RecordingSourceNormalizationAuthorityProvider()
+    execution_owner = _RecordingSourceNormalizationExecutionOwner(result=result)
+    capability = _LocalRuntimeCapability(
+        source_normalization_authority_provider=authority_provider,
+        source_normalization_execution_owner=execution_owner,
+    )
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        host_bootstrap_capability=capability,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="semantic-ingestion-normalized",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "source_alignment_authority_unavailable"
+    assert len(authority_provider.invocations) == 1
+    assert len(execution_owner.calls) == 1
+    invocation, handoff = authority_provider.invocations[0]
+    owner_invocation, owner_handoff, owner_authority = execution_owner.calls[0]
+    assert invocation.operation_id == "semantic-ingestion-normalized"
+    assert owner_invocation == invocation
+    assert owner_handoff == handoff
+    assert owner_authority is not None
+    terminal_controls = [
+        value
+        for value in service._memory_plane.list_records()
+        if value.source_kind == "semantic_ingestion_preplanning_control"
+        and value.content["control"]["state"] == "terminal"
+    ]
+    assert terminal_controls == []
+
+
+def test_normal_provider_root_stops_before_owner_and_terminal_when_authority_is_unavailable() -> None:
+    authority_provider = _RecordingSourceNormalizationAuthorityProvider(available=False)
+    execution_owner = _RecordingSourceNormalizationExecutionOwner()
+    capability = _LocalRuntimeCapability(
+        source_normalization_authority_provider=authority_provider,
+        source_normalization_execution_owner=execution_owner,
+    )
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        host_bootstrap_capability=capability,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="semantic-ingestion-normalized-authority-unavailable",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert result.blocked_reasons["semantic_ingestion"] == "source_alignment_authority_unavailable"
+    assert len(authority_provider.invocations) == 1
+    assert execution_owner.calls == []
+    assert [
+        value
+        for value in service._memory_plane.list_records()
+        if value.source_kind == "semantic_ingestion_preplanning_control"
+        and value.content["control"]["state"] == "terminal"
+    ] == []
+
+
+class _UnusedNormalizationLane:
+    """Configured only to prove public-root construction reaches the host builder."""
+
+    def analyze(self, request):
+        raise AssertionError("construction proof must not invoke parser lanes")
+
+    def detect(self, request):
+        raise AssertionError("construction proof must not invoke predicate lanes")
+
+    def resolve(self, request, *, locale, timezone):
+        raise AssertionError("construction proof must not invoke temporal lanes")
+
+
+class _UnusedNormalizationTransport:
+    def propose(self, *, request, attempt_number):
+        raise AssertionError("construction proof must not invoke proposal transport")
+
+
+class _UnusedNormalizationMaterializer:
+    def build_request(self, **kwargs):
+        raise AssertionError("construction proof must not materialize a proposal")
+
+
+class _UnusedNormalizationQuoteAuthority:
+    def resolve(self, quote, context, owned):
+        raise AssertionError("construction proof must not resolve quotes")
+
+    def verify_quote(self, **kwargs):
+        raise AssertionError("construction proof must not verify quotes")
+
+
+class _SingleTextQuoteAuthority:
+    def resolve(self, quote, context, owned):
+        del owned
+        text = "Atlas owner is Bob."
+        start = text.find(quote, context.projection_span.start, context.projection_span.end)
+        if start < 0 or text.find(quote, start + 1, context.projection_span.end) >= 0:
+            raise ValueError("fixture quote must resolve exactly once")
+        projection, local = context.projection_span, context.segment_local_span
+        return type(context).create(
+            source_id=context.source_id, projection_digest=context.projection_digest,
+            projection_segment_id=context.projection_segment_id,
+            retained_text_artifact=context.retained_text_artifact,
+            projection_span=type(projection).create(artifact=projection.artifact, start=start, end=start + len(quote), substring_digest=sha256(quote.encode()).hexdigest()),
+            segment_local_span=type(local).create(artifact=local.artifact, start=start, end=start + len(quote), substring_digest=sha256(quote.encode()).hexdigest()),
+            text_mapping_proof=context.text_mapping_proof, source_reference=quote,
+        )
+
+    def verify_quote(self, *, projection_digest, quote, span):
+        if projection_digest != span.projection_digest or "Atlas owner is Bob."[span.projection_span.start:span.projection_span.end] != quote:
+            raise ValueError("fixture quote is not exact")
+
+
+def _normalization_host_builder() -> SourceNormalizationHostBundleBuilder:
+    lane = _UnusedNormalizationLane()
+    quotes = _UnusedNormalizationQuoteAuthority()
+    return SourceNormalizationHostBundleBuilder(
+        authority_provider=StaticSourceNormalizationAuthorityProvider(bundles=()),
+        proposal_transport=_UnusedNormalizationTransport(),
+        proposal_request_materializer=_UnusedNormalizationMaterializer(),
+        proposal_retry_policy=ProposalRetryPolicy(
+            maximum_attempts=1, retry_policy_fingerprint="a" * 64
+        ),
+        resolve_quote=quotes.resolve,
+        projection_quote_verifier=quotes,
+        stanza=lane,
+        spacy=lane,
+        predicate_detector=lane,
+        duckling=lane,
+        interpretation_producer=TypedSourceInterpretationEvidenceProducer(),
+        locale_by_language={"en": "en_US"},
+        timezone="UTC",
+        server_time=lambda: TEST_NOW,
+        monotonic_tick=lambda: 1,
+        reservation_capacity=1,
+        reservation_ttl_ticks=1,
+    )
+
+
+def _v3_normalization_host_builder(*, proposal: ProviderSemanticProposal | None = None) -> tuple[SourceNormalizationHostBundleBuilder, dict[str, int]]:
+    """Build a complete V3-only host bundle for the ordinary provider root."""
+    lane = _UnusedNormalizationLane()
+    proposal_value = proposal or ProviderSemanticProposal(abstained=True)
+    quotes = _UnusedNormalizationQuoteAuthority() if proposal is None else _SingleTextQuoteAuthority()
+    calls = {"proposal": 0, "stanza": 0, "spacy": 0, "predicate": 0, "temporal": 0}
+    authority_provider = DynamicSourceNormalizationAuthorityProvider(
+        proposal_factory=lambda _source, _request: proposal_value,
+        retry_policy_fingerprint="a" * 64,
+    )
+
+    def proposal(_request):
+        calls["proposal"] += 1
+        value = proposal_value
+        return value, encode_typed_value(value.model_dump(mode="python"))
+
+    def linguistic(request, name: str) -> LinguisticAnalysis:
+        calls[name] += 1
+        token = LinguisticToken.create(
+            source_span=request.segment.context_text,
+            surface_text="fixture",
+            lemma="fixture",
+            upos="NOUN",
+            xpos=None,
+            morphological_features=(),
+            sentence_index=0,
+            word_index=0,
+            syntactic_word_index=0,
+            multi_word_token_span=None,
+        )
+        dependency = DependencyArc.create(
+            dependent_token_id=token.token_id,
+            governor_token_id=None,
+            relation="root",
+            enhanced=False,
+        )
+        return LinguisticAnalysis.create(
+            source_id=request.segment.source_id,
+            source_digest=request.segment.source_digest,
+            preparation_fingerprint=request.segment.preparation_fingerprint,
+            segment_id=request.segment.segment_id,
+            segment_language_route_digest=request.segment.bootstrap_projection.bootstrap_route.route_digest,
+            analyzer_manifest_digest=request.analyzer_manifest.manifest_digest,
+            analyzer_fingerprint=request.analyzer_manifest.analyzer_fingerprint,
+            language="en",
+            tokens=(token,), mentions=(), clauses=(), dependencies=(dependency,), status="complete", diagnostics=(),
+        )
+
+    def predicate(request):
+        calls["predicate"] += 1
+        segment, provenance = request.segment, request.bootstrap_analysis_provenance
+        return BootstrapPredicateLanePayloadV3.create(
+            source_id=segment.source_id, source_digest=segment.source_digest,
+            preparation_fingerprint=segment.preparation_fingerprint, segment_id=segment.segment_id,
+            bootstrap_analysis_provenance=provenance,
+            detector_manifest_digest=request.predicate_event_manifest.manifest_digest,
+            detector_fingerprint=request.predicate_event_manifest.manifest_digest,
+            candidates=(), status="complete", reason_codes=(),
+        )
+
+    def temporal(request):
+        calls["temporal"] += 1
+        segment, provenance = request.segment, request.bootstrap_analysis_provenance
+        return BootstrapTemporalLanePayloadV3.create(
+            source_id=segment.source_id, source_digest=segment.source_digest,
+            preparation_fingerprint=segment.preparation_fingerprint, segment_id=segment.segment_id,
+            bootstrap_analysis_provenance=provenance,
+            resolver_manifest_digest=request.resolver_manifest.manifest_digest,
+            resolver_fingerprint=request.resolver_manifest.manifest_digest,
+            candidates=(), ambiguities=(), status="complete", reason_codes=(),
+        )
+
+    return SourceNormalizationHostBundleBuilder(
+        authority_provider=authority_provider,
+        proposal_transport=_UnusedNormalizationTransport(),
+        proposal_request_materializer=_UnusedNormalizationMaterializer(),
+        proposal_retry_policy=ProposalRetryPolicy(maximum_attempts=1, retry_policy_fingerprint="a" * 64),
+        resolve_quote=quotes.resolve, projection_quote_verifier=quotes,
+        stanza=lane, spacy=lane, predicate_detector=lane, duckling=lane,
+        interpretation_producer=TypedSourceInterpretationEvidenceProducer(),
+        locale_by_language={"en": "en_US"}, timezone="UTC",
+        server_time=lambda: TEST_NOW, monotonic_tick=lambda: 1,
+        reservation_capacity=1, reservation_ttl_ticks=10,
+        bootstrap_v3_proposal_transport=proposal,
+        bootstrap_v3_stanza=lambda request: linguistic(request, "stanza"),
+        bootstrap_v3_spacy=lambda request: linguistic(request, "spacy"),
+        bootstrap_v3_predicate_event_detection=predicate,
+        bootstrap_v3_temporal_resolution=temporal,
+        bootstrap_v3_linguistic_request=lambda request, lane_name: authority_provider
+        .bootstrap_v3_authority_for(request).linguistic_request(request, lane_name),
+        bootstrap_v3_predicate_request=lambda request: authority_provider
+        .bootstrap_v3_authority_for(request).predicate_request(request),
+        bootstrap_v3_temporal_request=lambda request: authority_provider
+        .bootstrap_v3_authority_for(request).temporal_request(request),
+    ), calls
+
+
+def _built_in_local_capability(
+    *, verifier=None, normalization_builder=None, scenario_test=False,
+):
+    material = _TestHostBootstrapCapability(
+        resolver=_Resolver(),
+        trust_domain="scenario_test" if scenario_test else "production",
+    ).load_verified_bootstrap_material()
+    assert material is not None
+    return BuiltInLocalHostSemanticIngestionCapability(
+        bootstrap_material_presentation=present_authenticated_host_bootstrap_material(material),
+        authorization_bytes=b"signed-test-authorization",
+        authorization_verifier=_AuthorizationVerifier(),
+        policy_provider=_PolicyProvider("owner_is"),
+        current_bootstrap_release_verifier=(
+            _CurrentBootstrapReleaseVerifier() if verifier is None else verifier
+        ),
+        source_normalization_host_bundle_builder=normalization_builder,
+    )
+
+
+def test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_entrypoint_patch(
+    tmp_path,
+) -> None:
+    provider = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+    hermes = HermesMemoryProvider(
+        ProviderMemoryService(
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
+    )
+    filesystem = build_filesystem_provider(
+        tmp_path / "builtin-local",
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+
+    for service in (provider, hermes._service, filesystem):
+        assert service._bootstrap_profile is not None
+        assert service._provider_ingestion._semantic_runtime is not None
+        runtime = service._provider_ingestion._semantic_runtime
+        assert runtime.atomic_store is service._semantic_atomic_store
+        assert runtime.writer_admission is service._semantic_writer_admission
+        assert isinstance(runtime.prepared_source_repository, AtomicStorePreparedSourceRepository)
+        assert runtime.text_preparation_service is not None
+        assert runtime.local_proposal_producer is not None
+        assert service._semantic_atomic_store._current_bootstrap_release_verifier is not None
+
+
+def test_configured_public_roots_construct_the_real_normalization_execution_owner(tmp_path) -> None:
+    """Every public root reaches the one concrete host-bundle construction call."""
+    builder = _normalization_host_builder()
+    verifier = DeterministicTestHostBootstrapMaterialVerifier()
+    direct = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=verifier,
+        source_normalization_host_bundle_builder=builder,
+    )
+    factory = build_provider_memory_service_from_env(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=verifier,
+        source_normalization_host_bundle_builder=builder,
+    )
+    filesystem = build_filesystem_provider(
+        tmp_path / "configured-normalization-root",
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=verifier,
+        source_normalization_host_bundle_builder=builder,
+    )
+    hermes = HermesMemoryProvider(
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=verifier,
+        source_normalization_host_bundle_builder=builder,
+    )
+
+    for service in (direct, factory, filesystem, hermes._service):
+        runtime = service._provider_ingestion._semantic_runtime
+        assert runtime is not None
+        assert runtime.source_normalization_host_bundle is not None
+        assert isinstance(
+            runtime.source_normalization_host_bundle.execution_owner,
+            SourceNormalizationExecutionOwner,
+        )
+
+
+def _direct_v3_recovery_probe(service: ProviderMemoryService) -> object:
+    marker_record = service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_handoff_marker"
+    )[0]
+    marker = marker_record.content["marker"]
+    runtime = service._provider_ingestion._semantic_runtime
+    assert runtime is not None and runtime.prepared_source_repository is not None
+    prepared = runtime.prepared_source_repository.load(
+        source_id=marker["source_id"], source_digest=marker["source_digest"]
+    )
+    assert prepared is not None
+    key_body = {
+        "source_id": prepared.source_id,
+        "source_digest": prepared.source_digest,
+        "preparation_fingerprint": prepared.preparation_fingerprint,
+        "operation_id": marker["operation_fence_binding"]["operation_id"],
+        "operation_fence_digest": marker["operation_fence_binding"]["binding_digest"],
+        "bootstrap_profile_manifest_digest": marker["release_evidence_digest"],
+        "handoff_request_digest": marker["handoff_request_digest"],
+    }
+    key = BootstrapRecoveryKeyV3(
+        **key_body,
+        recovery_key_digest=contract_digest(
+            b"memorii.semantic-ingestion.bootstrap-recovery-key.v3", key_body
+        ),
+    )
+    probe_body = {
+        "recovery_key": key,
+        "handoff_marker_digest": marker["marker_digest"],
+        "expected_predecessor_operation_generation": marker["expected_predecessor_operation_generation"],
+        "expected_predecessor_artifact_generation": marker["expected_predecessor_artifact_generation"],
+        "expected_predecessor_control_digest": marker["expected_predecessor_control_digest"],
+    }
+    probe = BootstrapRecoveryProbeV3(
+        **probe_body,
+        probe_digest=contract_digest(
+            b"memorii.semantic-ingestion.bootstrap-recovery-probe.v3", probe_body
+        ),
+    )
+    assert runtime.source_normalization_host_bundle is not None
+    bundle = runtime.source_normalization_host_bundle
+    result = bundle.recovery_repository.probe(
+        probe=probe, server_time=TEST_NOW, monotonic_tick=1
+    )
+    return type(result).__name__, getattr(result, "reason", None)
+
+
+def test_direct_provider_root_publishes_and_reloads_bootstrap_v3_normalization() -> None:
+    """The public provider root reaches the V3 owner and its atomic reload."""
+    builder, calls = _v3_normalization_host_builder()
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        source_normalization_host_bundle_builder=builder,
+    )
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="provider-v3-normalization",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert result.blocked_reasons.get("semantic_ingestion") != "source_alignment_authority_unavailable", (
+        _direct_v3_recovery_probe(service),
+        calls,
+        tuple(
+            record.source_kind
+            for record in service._memory_plane.list_records()
+            if "bootstrap" in record.source_kind or "prepared" in record.source_kind
+        ),
+        tuple(
+            (
+                record.content["state"], record.content.get("claim_digest"),
+                record.content.get("claim_nonce"), record.content.get("renewal_count"),
+                record.content.get("expires_monotonic_tick"),
+            )
+            for record in service._memory_plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_v3_recovery_index"
+            )
+        ),
+        tuple(
+            (
+                record.content["marker"]["recovery_key_digest"],
+                    record.content["marker"]["expected_predecessor_operation_generation"],
+                    record.content["marker"]["expected_predecessor_artifact_generation"],
+            )
+            for record in service._memory_plane.list_records(
+                source_kind="semantic_ingestion_bootstrap_handoff_marker"
+            )
+        ),
+    )
+    assert calls == {"proposal": 1, "stanza": 1, "spacy": 1, "predicate": 1, "temporal": 1}
+    store = service._semantic_atomic_store
+    assert store.bootstrap_v3_recovery_snapshot()
+    # A lost acknowledgement retries the same public operation.  Found must
+    # reload the V3 closure before authority or any of the five learned lanes.
+    retry = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id="provider-v3-normalization",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert retry.blocked_reasons.get("semantic_ingestion") != "source_alignment_authority_unavailable"
+    assert calls == {"proposal": 1, "stanza": 1, "spacy": 1, "predicate": 1, "temporal": 1}
+
+
+def test_builtin_local_capability_missing_current_release_verifier_is_evidence_only() -> None:
+    service = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=BuiltInLocalHostSemanticIngestionCapability(
+            bootstrap_material_presentation=(
+                _built_in_local_capability().bootstrap_material_presentation
+            ),
+            authorization_bytes=b"signed-test-authorization",
+            authorization_verifier=_AuthorizationVerifier(),
+            policy_provider=_PolicyProvider("owner_is"),
+            current_bootstrap_release_verifier=None,
+        ),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+
+    assert service._bootstrap_profile is not None
+    assert service._provider_ingestion._semantic_runtime is None
+    assert service._semantic_atomic_store._current_bootstrap_release_verifier is None
+
+
+def test_builtin_local_capability_has_no_caller_controlled_trust_domain() -> None:
+    """The verifier result, not a runtime constructor label, selects the domain."""
+    capability = _built_in_local_capability()
+    assert "trust_domain" not in capability.__dataclass_fields__
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'trust_domain'"):
+        BuiltInLocalHostSemanticIngestionCapability(
+            bootstrap_material_presentation=capability.bootstrap_material_presentation,
+            authorization_bytes=capability.authorization_bytes,
+            authorization_verifier=capability.authorization_verifier,
+            policy_provider=capability.policy_provider,
+            current_bootstrap_release_verifier=capability.current_bootstrap_release_verifier,
+            trust_domain="scenario_test",
+        )
+
+
+def test_builtin_capability_cannot_authenticate_its_own_rebuilt_material() -> None:
+    """A capability presentation without host verification never builds a runtime."""
+    plane = MemoryPlaneService()
+    service = ProviderMemoryService(
+        memory_plane=plane,
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+    )
+
+    assert service._bootstrap_profile is None
+    assert service._provider_ingestion._semantic_runtime is None
+    assert service._semantic_atomic_store._current_bootstrap_release_verifier is None
+    assert tuple(plane.list_records()) == ()
+
+
+def test_builtin_capability_trust_domains_cannot_cross_any_default_root(tmp_path) -> None:
+    """A validly rebuilt scenario release is still never production authority."""
+
+    scenario = build_scenario_test_host_capability()
+    original = scenario.bootstrap_material_presentation.material.release_evidence
+    rebuilt_evidence = build_test_host_verified_bootstrap_release_evidence(
+        metadata=scenario.bootstrap_material_presentation.material.release_metadata,
+        external_root_digest=original.external_root_digest,
+        active_lifecycle_snapshot_digest=original.active_lifecycle_snapshot_digest,
+        verified_at=original.verified_at + timedelta(seconds=1),
+        trust_domain="scenario_test",
+    )
+    scenario = replace(
+        scenario,
+        bootstrap_material_presentation=present_authenticated_host_bootstrap_material(
+            replace(
+                scenario.bootstrap_material_presentation.material,
+                release_evidence=rebuilt_evidence,
+            )
+        ),
+    )
+    assert verify_bootstrap_profile(
+        scenario.bootstrap_material_presentation.material
+    ).release_evidence == rebuilt_evidence
+
+    roots = (
+        ProviderMemoryService(
+            memory_plane=MemoryPlaneService(), host_bootstrap_capability=scenario
+        ),
+        HermesMemoryProvider(host_bootstrap_capability=scenario)._service,
+        build_filesystem_provider(
+            tmp_path / "scenario-domain-default-filesystem",
+            host_bootstrap_capability=scenario,
+        ),
+    )
+    for root in roots:
+        assert root._bootstrap_profile is None
+        assert root._provider_ingestion._semantic_runtime is None
+
+    # A supplied verifier does not turn a scenario proof into production
+    # authority, nor production authority into a scenario fixture authority.
+    cross_production = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(),
+        host_bootstrap_capability=scenario,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+    assert cross_production._bootstrap_profile is None
+    assert cross_production._provider_ingestion._semantic_runtime is None
+    cross_scenario = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+    assert cross_scenario._bootstrap_profile is None
+    assert cross_scenario._provider_ingestion._semantic_runtime is None
+
+    # The sole fixture-private construction root is intentionally the only
+    # caller allowed to consume this valid scenario-domain material.
+    scenario_root = ProviderMemoryService._from_scenario_test_host(
+        memory_plane=MemoryPlaneService(),
+        host_bootstrap_capability=scenario,
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+    assert scenario_root._bootstrap_profile is not None
+    assert scenario_root._provider_ingestion._semantic_runtime is not None
+
+
+@pytest.mark.parametrize("failure", ["missing_profile", "swapped_root", "missing_ingress"])
+def test_normal_provider_root_missing_bootstrap_authority_is_evidence_only(
+    failure: str,
+) -> None:
+    capability = _LocalRuntimeCapability()
+    entry_points = ()
+    ingress = _host_ingress()
+    if failure == "swapped_root":
+        capability._root = _TrustRoot("0" * 64)
+        entry_points = (_InstalledCapabilityEntryPoint(capability),)
+    elif failure == "missing_ingress":
+        entry_points = (_InstalledCapabilityEntryPoint(capability),)
+        ingress = None
+    with patch(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        return_value=entry_points,
+    ):
+        service = ProviderMemoryService(memory_plane=MemoryPlaneService())
+    result = service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.",
+        operation_id=f"semantic-ingestion-bootstrap-authority-{failure}",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=ingress,
+    )
+    assert result.blocked_reasons["semantic_ingestion"] == "ingress_unavailable"
+    if failure != "missing_ingress":
+        assert capability.stores == []
+    assert not any(
+        record.source_kind.startswith("semantic_ingestion_generation")
+        for record in service._memory_plane.list_records()
+    )
 
 
 @pytest.mark.parametrize("mode", ["expired", "revoked", "outage", "mutated"])
@@ -845,12 +1636,13 @@ def test_public_coordinator_rejects_every_egress_authority_mutation_without_wire
 
 
 def test_hermes_and_filesystem_roots_use_the_same_semantic_pipeline(tmp_path) -> None:
-    direct_transport, capability = _dependencies()
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(capability),),
-    ):
-        hermes = HermesMemoryProvider(ProviderMemoryService())
+    hermes = HermesMemoryProvider(
+        ProviderMemoryService(
+            now_provider=lambda: TEST_NOW,
+            host_bootstrap_capability=_built_in_local_capability(),
+            host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        )
+    )
     hermes.sync_turn(
         "Atlas owner is Bob.",
         "Receipt is confirmed.",
@@ -859,14 +1651,14 @@ def test_hermes_and_filesystem_roots_use_the_same_semantic_pipeline(tmp_path) ->
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    assert len(direct_transport.requests) == 2
+    assert len(hermes._service._semantic_atomic_store.semantic_event_batches()) == 2
 
-    fs_transport, fs_capability = _dependencies()
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(fs_capability),),
-    ):
-        filesystem = build_filesystem_provider(tmp_path / "semantic-ingestion-filesystem")
+    filesystem = build_filesystem_provider(
+        tmp_path / "semantic-ingestion-filesystem",
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+        now_provider=lambda: TEST_NOW,
+    )
     filesystem.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -875,7 +1667,46 @@ def test_hermes_and_filesystem_roots_use_the_same_semantic_pipeline(tmp_path) ->
         user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    assert len(fs_transport.requests) == 1
+    assert len(filesystem._semantic_atomic_store.semantic_event_batches()) == 1
+
+
+@pytest.mark.parametrize(
+    ("user_content", "assistant_content", "expected_source_texts"),
+    [
+        ("Atlas owner is Bob.", "", ("Atlas owner is Bob.",)),
+        ("", "Receipt is confirmed.", ("Receipt is confirmed.",)),
+        ("", "", ()),
+    ],
+)
+def test_hermes_empty_turn_content_is_evidence_only_without_semantic_preparation(
+    user_content: str,
+    assistant_content: str,
+    expected_source_texts: tuple[str, ...],
+) -> None:
+    capability = _LocalRuntimeCapability()
+    plane = MemoryPlaneService()
+    with patch(
+        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
+        return_value=(_InstalledCapabilityEntryPoint(capability),),
+    ):
+        hermes = HermesMemoryProvider(ProviderMemoryService(memory_plane=plane))
+
+    result = hermes.sync_turn(
+        user_content,
+        assistant_content,
+        operation_id=f"empty-turn:{len(user_content)}:{len(assistant_content)}",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+
+    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    source_texts = tuple(
+        record.text
+        for record in plane.list_records(source_kind="semantic_ingestion_source")
+    )
+    assert source_texts == expected_source_texts
+    assert all(source_texts)
 
 
 class _FilesystemIntegrityCapability(_TestHostBootstrapCapability):
@@ -890,25 +1721,24 @@ class _FilesystemIntegrityCapability(_TestHostBootstrapCapability):
         self._holder = holder
         self.transports: list[_CaptureTransport] = []
 
-    def build_semantic_ingestion_runtime(self, *, memory_plane, now_provider):
+    def build_semantic_ingestion_runtime(
+        self, *, memory_plane, now_provider, bootstrap_profile
+    ):
         del now_provider
         _, writers, store = _verified_runtime_store(
             memory_plane,
             semantic_integrity_lifecycle=self._lifecycle,
         )
         self._holder.append(store)
-        transport = _CaptureTransport()
-        runtime = AuthorizedSemanticIngestionRuntime(
+        runtime = build_authorized_local_semantic_runtime(
             authorization_bytes=b"signed-test-authorization",
             authorization_verifier=_AuthorizationVerifier(),
-            pipeline=SemanticIngestionPipeline(transport=transport),
-            policy_provider=_PolicyProvider(),
-            egress_policy_provider=_StableEgressProvider(),
-            candidate_assessor=_Assessor(),
+            policy_provider=_PolicyProvider("owner_is"),
             writer_admission=writers,
             atomic_store=store,
+            bootstrap_profile=bootstrap_profile,
         )
-        self.transports.append(transport)
+        self.transports.append(_CaptureTransport())
         return runtime
 
 
@@ -1017,7 +1847,10 @@ def test_real_filesystem_hermes_corruption_recovery_restart_and_racing_write(
     )
     assert initial.blocked_reasons["semantic_ingestion"] == "source_only"
     assert len(store.semantic_event_batches()) == 1
-    assert len(transport.requests) == 1
+    # This filesystem composition uses the deterministic local runtime.  Its
+    # retained capture transport is intentionally unattached; remote transport
+    # behavior is covered by the explicit-remote composition tests.
+    assert transport.requests == []
     authority_batches = _retained_clean_authority_batches(plane, store)
     assert len(authority_batches) == 1
 
@@ -1110,7 +1943,15 @@ def test_real_filesystem_hermes_corruption_recovery_restart_and_racing_write(
 def test_normal_provider_accepted_control_commits_complete_effect_group() -> None:
     plane, writers, store = _verified_runtime_store()
     delivery_id = "semantic-ingestion-accepted"
-    transport, capability = _dependencies(writer_admission=writers, atomic_store=store)
+    runtime = build_authorized_local_semantic_runtime(
+        authorization_bytes=b"signed-test-authorization",
+        authorization_verifier=_AuthorizationVerifier(),
+        policy_provider=_PolicyProvider("owner_is"),
+        writer_admission=writers,
+        atomic_store=store,
+        bootstrap_profile=_verified_profile(),
+    )
+    capability = _AuthorizedCapability(runtime=runtime)
     with patch(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
@@ -1129,7 +1970,26 @@ def test_normal_provider_accepted_control_commits_complete_effect_group() -> Non
         for value in plane.list_records()
         if value.source_kind == "semantic_ingestion_generation_member"
     }
+    terminals = [
+        decode_semantic_contract(value.content["member"]["canonical_payload"].encode("utf-8"), SemanticTerminalOutcome)
+        for value in plane.list_records()
+        if value.source_kind == "semantic_ingestion_generation_member"
+        and value.content["member"]["kind"] == "source_result"
+    ]
+    assert terminals and terminals[-1].status == "accepted", [
+        (terminal.status, terminal.reason_codes) for terminal in terminals
+    ]
     assert {"graph_delta", "event_batch", "group_result", "observation_delta"}.issubset(effect_kinds)
+    kinds = {
+        value.source_kind
+        for value in plane.list_records()
+        if value.source_kind.startswith("semantic_ingestion")
+    }
+    assert {
+        "semantic_ingestion_prepared_source",
+        "semantic_ingestion_bootstrap_handoff_marker",
+        "semantic_ingestion_preplanning_control",
+    }.issubset(kinds)
 
 
 def test_ordinary_provider_root_uses_production_local_analyzer_without_wire() -> None:
@@ -1140,6 +2000,7 @@ def test_ordinary_provider_root_uses_production_local_analyzer_without_wire() ->
         policy_provider=_PolicyProvider("owner_is"),
         writer_admission=writers,
         atomic_store=store,
+        bootstrap_profile=_verified_profile(),
     )
     capability = _AuthorizedCapability(runtime=runtime)
     with patch(
@@ -1189,6 +2050,7 @@ def test_normal_hermes_clarification_uses_retained_event_and_local_pipeline(
                 source_id: str,
                 source_digest: str,
                 source_text: str,
+                prepared_source,
                 source_authority_evidence,
                 source_interval_evidence,
             ):
@@ -1196,6 +2058,7 @@ def test_normal_hermes_clarification_uses_retained_event_and_local_pipeline(
                     source_id=source_id,
                     source_digest=source_digest,
                     source_text=source_text,
+                    preparation_fingerprint=prepared_source.preparation_fingerprint,
                 ) == (proposal,)
                 assert analyzer.analyze(
                     proposal=proposal,
@@ -1234,6 +2097,7 @@ def test_normal_hermes_clarification_uses_retained_event_and_local_pipeline(
             policy_provider=_PolicyProvider("owner_is"),
             writer_admission=writers,
             atomic_store=store,
+            bootstrap_profile=_verified_profile(),
         )
     repository = FileConflictAttentionRepository(
         tmp_path / "clarification.jsonl",

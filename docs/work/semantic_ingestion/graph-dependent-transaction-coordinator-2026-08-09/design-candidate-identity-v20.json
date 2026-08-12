@@ -1,0 +1,25 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_acyclic_terminal_publication_intent",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "9865f6c2db395e9a3b4a173dd9f48726d7f9ba173efe9f9ba6284a50aa53a9aa",
+  "review_scope": [
+    "acyclic prepublication terminal intent and locator",
+    "postpublication sealed-write identity and atomic locator index",
+    "found-first intent-realization recovery and GTC-R19 attacks"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "fe896ed1573799fbd5ade29f748ef22ca5c6718f3ca84c2625e4bbb98f79716e",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "26f999e860b7d765a548ca67577cc86f070ef4cda4428422e8b8bd138580879c",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "a839f8573995da9a8858a7e33f78bc0bd45b07920e0cf18b4107eddf94423a1c"
+  },
+  "checks": [
+    "git diff --check",
+    "binding JSON parse",
+    "44x4x2 coverage assertion",
+    "stale prewrite final-identity search"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

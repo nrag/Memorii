@@ -3,6 +3,7 @@ from hashlib import sha256
 
 import pytest
 from memorii.core.memory_evolution.ingestion_contracts import encode_typed_value
+from memorii.core.memory_evolution.models import SourceObservation, SourceType
 from memorii.core.memory_evolution.semantic_state import (
     CompiledIdentityLineageTransition,
     LineageEvidenceReference,
@@ -23,6 +24,8 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceAuthorityEvidence,
     TemporalEvidenceCandidate,
     TemporalPolicySnapshot,
+    TextPreparationPolicy,
+    TextPreparationRequest,
     TimeInterval,
     TrustPolicySnapshot,
     contract_digest,
@@ -33,6 +36,14 @@ from memorii.core.semantic_ingestion.egress import ProviderEgressBinding, Provid
 from memorii.core.semantic_ingestion.local_analyzer import ProductionLocalSemanticAnalyzer
 from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
 from memorii.core.semantic_ingestion.prompt_authority import SemanticPromptAuthority
+from memorii.core.semantic_ingestion.source_preparation import (
+    InMemoryPreparedSourceRepository,
+    TextPreparationService,
+)
+from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
+    build_prepared_independent_source_analysis,
+    build_prepared_source_authority,
+)
 
 SOURCE = "Atlas works for Memorii."
 SOURCE_ID = "source"
@@ -56,7 +67,7 @@ class Assessor:
 
     def analyze(
         self, *, proposal, source_id: str, source_digest: str, source_text: str,
-        source_authority_evidence, source_interval_evidence,
+        prepared_source, source_authority_evidence, source_interval_evidence,
     ):
         return self.analyses.get(proposal.candidate_id)
 
@@ -150,6 +161,38 @@ def _bundle() -> SemanticArbitrationPolicyBundle:
     )
 
 
+def _prepared_source_repository() -> InMemoryPreparedSourceRepository:
+    """Publish the exact Step-2 authority before exercising downstream stages."""
+    repository = InMemoryPreparedSourceRepository()
+    policy = TextPreparationPolicy.create(
+        max_segment_characters=4096,
+        supported_languages=("en",),
+        segmentation_algorithm=(
+            "memorii.semantic-ingestion.safe-sentence-first-paragraph-bounded.v1"
+        ),
+        context_window_algorithm=(
+            "memorii.semantic-ingestion.owned-partition-whole-boundary-context.v1"
+        ),
+    )
+    observation = SourceObservation(
+        source_id=SOURCE_ID,
+        text=SOURCE,
+        source_type=SourceType.USER,
+        source_digest=SOURCE_DIGEST,
+        delivery_key_digest=_hex("pipeline-test-delivery"),
+    )
+    TextPreparationService(
+        producer=lambda request: build_prepared_source_authority(
+            source_id=request.observation.source_id,
+            source_digest=request.observation.source_digest or "",
+            source_text=request.observation.text,
+            preparation_policy=request.policy,
+        ),
+        repository=repository,
+    ).prepare_and_publish(TextPreparationRequest(observation=observation, policy=policy))
+    return repository
+
+
 def test_policy_snapshot_preimages_match_declared_no_decay_rule_fields() -> None:
     bundle = _bundle()
     assert TrustPolicySnapshot.model_validate(bundle.trust_policy.model_dump(mode="python")) == bundle.trust_policy
@@ -200,6 +243,7 @@ def _accepted(
     ).run(
         operation_id=operation_id, source_id=SOURCE_ID, source_digest=SOURCE_DIGEST,
         source_text=SOURCE, policy_bundle=_bundle(), local_proposals=(proposal,),
+        prepared_source_repository=_prepared_source_repository(),
         independent_assessor=Assessor({proposal.candidate_id: _analysis(proposal)}),
         source_authority_evidence=_authority(),
         source_interval_evidence=_temporal("source-interval").authenticated_source_interval_evidence,
@@ -230,6 +274,7 @@ def test_remote_path_without_registered_prompt_has_zero_wire_calls() -> None:
     outcome = SemanticIngestionPipeline(transport=transport).run(
         operation_id="operation-1", source_id=SOURCE_ID, source_digest=SOURCE_DIGEST,
         source_text=SOURCE, policy_bundle=_bundle(), source_authority_evidence=_authority(),
+        prepared_source_repository=_prepared_source_repository(),
     )
     assert outcome.status == "evidence_only"
     assert outcome.reason_codes == ("remote_proposal_authority_unavailable",)
@@ -242,6 +287,7 @@ def test_transport_validation_allows_one_registered_repair_only() -> None:
     outcome = SemanticIngestionPipeline(transport=transport).run(
         operation_id="operation-1", source_id=SOURCE_ID, source_digest=SOURCE_DIGEST,
         source_text=SOURCE, policy_bundle=_bundle(), registered_prompt=prompt,
+        prepared_source_repository=_prepared_source_repository(),
         egress_binding=binding, egress_policy_provider=AllowEgress(),
         current_time_provider=lambda: ARBITRATION,
         source_authority_evidence=_authority(), authorization_read_set_provider=Authorization(),
@@ -256,6 +302,7 @@ def test_missing_policy_is_evidence_only_before_wire() -> None:
     outcome = SemanticIngestionPipeline(transport=transport).run(
         operation_id="operation-1", source_id=SOURCE_ID, source_digest=SOURCE_DIGEST,
         source_text=SOURCE, policy_bundle=None, registered_prompt=prompt,
+        prepared_source_repository=_prepared_source_repository(),
         egress_binding=binding, egress_policy_provider=AllowEgress(),
         current_time_provider=lambda: ARBITRATION,
     )
@@ -330,6 +377,7 @@ def test_proposer_cannot_supply_source_analysis_fields() -> None:
     outcome = SemanticIngestionPipeline(transport=transport).run(
         operation_id="operation", source_id=SOURCE_ID, source_digest=SOURCE_DIGEST,
         source_text=SOURCE, policy_bundle=_bundle(), registered_prompt=prompt,
+        prepared_source_repository=_prepared_source_repository(),
         egress_binding=binding, egress_policy_provider=AllowEgress(),
         current_time_provider=lambda: ARBITRATION,
         source_authority_evidence=_authority(), authorization_read_set_provider=Authorization(),
@@ -350,7 +398,7 @@ def test_closed_codec_round_trip_rejects_legacy_and_wrong_contract_kind() -> Non
         )
 
 
-def test_production_local_analyzer_preserves_proposals_and_abstains_without_preparation() -> None:
+def test_production_local_analyzer_requires_and_consumes_prepared_source_authority() -> None:
     analyzer = ProductionLocalSemanticAnalyzer()
     proposals = analyzer.propose(
         source_id=SOURCE_ID, source_digest=SOURCE_DIGEST, source_text=SOURCE
@@ -366,6 +414,99 @@ def test_production_local_analyzer_preserves_proposals_and_abstains_without_prep
         source_authority_evidence=_authority(),
         source_interval_evidence=interval,
     ) is None
+    prepared_source = _prepared_source_repository().load(
+        source_id=SOURCE_ID, source_digest=SOURCE_DIGEST
+    )
+    assert prepared_source is not None
+    analysis = analyzer.analyze(
+        proposal=proposals[0],
+        source_id=SOURCE_ID,
+        source_digest=SOURCE_DIGEST,
+        source_text=SOURCE,
+        prepared_source=prepared_source,
+        source_authority_evidence=_authority(),
+        source_interval_evidence=interval,
+    )
+    assert analysis is not None
+    assert analysis.parser_consensus.preparation_fingerprint == prepared_source.preparation_fingerprint
+    assert (
+        analysis.parser_consensus.segment_language_route_digest
+        == prepared_source.segment_language_routes.routes[0].route_digest
+    )
+    assert analysis.temporal_evidence[0].candidates[0].authenticated_source_interval_evidence == interval
+    assert analyzer.analyze(
+        proposal=proposals[0],
+        source_id=SOURCE_ID,
+        source_digest=SOURCE_DIGEST,
+        source_text=SOURCE + " ",
+        prepared_source=prepared_source,
+        source_authority_evidence=_authority(),
+        source_interval_evidence=interval,
+    ) is None
+
+
+def test_local_rejected_terminal_canonicalizes_noncanonical_candidate_order() -> None:
+    rejected = SemanticCandidate(
+        candidate_id="candidate-z",
+        operation_kind="fact",
+        predicate_id="works_for",
+        assertion_quote=SOURCE,
+        alignment_refs=(),
+    )
+    canonical = SemanticCandidate(
+        candidate_id="candidate-a",
+        operation_kind="fact",
+        predicate_id="works_for",
+        assertion_quote=SOURCE,
+        alignment_refs=(),
+    )
+    interval = _temporal("source-interval").authenticated_source_interval_evidence
+    assert interval is not None
+
+    class RejectingAssessor:
+        def analyze(
+            self,
+            *,
+            proposal,
+            source_id: str,
+            source_digest: str,
+            source_text: str,
+            prepared_source,
+            source_authority_evidence,
+            source_interval_evidence,
+        ):
+            del proposal
+            return build_prepared_independent_source_analysis(
+                proposal=canonical,
+                operation_id="operation-1",
+                source_id=source_id,
+                source_digest=source_digest,
+                source_text=source_text,
+                source_authority_evidence=source_authority_evidence,
+                source_interval_evidence=source_interval_evidence,
+                preparation_fingerprint=prepared_source.preparation_fingerprint,
+            )
+
+    outcome = SemanticIngestionPipeline(transport=None).run(
+        operation_id="operation-1",
+        source_id=SOURCE_ID,
+        source_digest=SOURCE_DIGEST,
+        source_text=SOURCE,
+        policy_bundle=_bundle(),
+        local_proposals=(rejected, canonical),
+        prepared_source_repository=_prepared_source_repository(),
+        independent_assessor=RejectingAssessor(),
+        source_authority_evidence=_authority(),
+        source_interval_evidence=interval,
+        authorization_read_set_provider=Authorization(),
+    )
+
+    assert outcome.status == "rejected"
+    assert outcome.reason_codes == ("independent_source_analysis_substitution",)
+    assert tuple(candidate.candidate_id for candidate in outcome.candidates) == (
+        "candidate-a",
+        "candidate-z",
+    )
 
 
 def test_authorization_rotation_before_seal_discards_candidate_without_commit_artifacts() -> None:
@@ -376,6 +517,7 @@ def test_authorization_rotation_before_seal_discards_candidate_without_commit_ar
         source_digest=SOURCE_DIGEST,
         source_text=SOURCE,
         policy_bundle=_bundle(),
+        prepared_source_repository=_prepared_source_repository(),
         local_proposals=(proposal,),
         independent_assessor=Assessor({proposal.candidate_id: _analysis(proposal)}),
         source_authority_evidence=_authority(),

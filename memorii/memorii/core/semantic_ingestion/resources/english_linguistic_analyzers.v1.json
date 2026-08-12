@@ -1,0 +1,60 @@
+{
+  "schema": "memorii.semantic-ingestion.local-analyzer-assets.v1",
+  "analyzers": [
+    {
+      "analyzer_id": "spacy-en-trf-3.8.0",
+      "analyzer_kind": "spacy",
+      "library_version": "3.8.0",
+      "adapter_version": "1",
+      "supported_languages": ["en"],
+      "processor_configuration": ["transformer", "tagger", "parser", "lemmatizer"],
+      "distribution_wheel_sha256": "272a31e9d8530d1e075351d30a462d7e80e31da23574f1b274e200f3fff35bf5",
+      "files": [
+        {"path":"LICENSE","sha256":"3933c176979b68bc6d0bcc902c7d6c130f1d127f476f17ba5cdba8d99cfd0012"},
+        {"path":"LICENSES_SOURCES","sha256":"e94b3033acaecc8b3515a9b8d59917ef0d0ded835a281dbe7185afaf2953122a"},
+        {"path":"README.md","sha256":"81f5fad856ee95bc7c408bb475d3a8c9221700920756f670680385e575c63e38"},
+        {"path":"accuracy.json","sha256":"bb710b7b01ad90644956f02850ec07ab5fc9a4f5f63edc8ed63c85c8c8458d95"},
+        {"path":"attribute_ruler/patterns","sha256":"f8b97f7ebef9b8536bba5f0fc1e73af6183563e96e2325bcbb021b8c6dbc6683"},
+        {"path":"config.cfg","sha256":"ec6d73663a9a137377402267eaff233e24aa06ed5079af80caf01566e56e858e"},
+        {"path":"lemmatizer/lookups/lookups.bin","sha256":"eb64f40c0f8396d1762730c0ddf4dad2a52d138f5a389f71a1a1d088173b7737"},
+        {"path":"meta.json","sha256":"8f77a2124b659dc1285516a6400c50dfb159d0b93242d3945eecaedf5429c9a0"},
+        {"path":"ner/cfg","sha256":"a7172edadafba9f472e9ac0f2660eec04b6405e471be9e20267b79c67288d22d"},
+        {"path":"ner/model","sha256":"3ba4661fd057a26bd1c765ab778a318a7f3a9141062cc49663a487447e12bb30"},
+        {"path":"ner/moves","sha256":"0517fdd4073fb9077de11a1fb003b1020e38994051a22e0857825218cc1cb01e"},
+        {"path":"parser/cfg","sha256":"e2a240ef01f95e58f5dd4c9d6e90d61f597b8d998966570d3009dd81e8879780"},
+        {"path":"parser/model","sha256":"aab8d7722a0c422d3a1452a2e6c3d6b8f9166f9d6844f6d5b2bfbd495b1f7cf9"},
+        {"path":"parser/moves","sha256":"aef3064f71b0a0166b629301548ceb80dcde38db1a3917114602bea01dfbf878"},
+        {"path":"tagger/cfg","sha256":"e19ed3035f1b1d645b7ddd338120ec88c88d9f9c37bb33fd5ccd67deb044ed25"},
+        {"path":"tagger/model","sha256":"a489a41d998a6c042eaa279b6b823cd24b40854faf602e696d280788ed62f84c"},
+        {"path":"tokenizer","sha256":"b014e8bba4958b120af2d0c1c63eabb7c00379f2bacaf10df7c5325efd2ea467"},
+        {"path":"transformer/cfg","sha256":"f8a5a26e3056eb6fb06deeb3dbccfd88ae74900200c98c70b5966bbb7ec9d4de"},
+        {"path":"transformer/model","sha256":"2b7061c623f424486e5dddcff79276927127cee339cc6a9d26d87837c3e6074a"},
+        {"path":"vocab/key2row","sha256":"76be8b528d0075f7aae98d6fa57a6d3c83ae480a8469e668d7b0af968995ac71"},
+        {"path":"vocab/lookups.bin","sha256":"fce9c883c56165f29573cc938c2a1c9d417ac61bd8f56b671dd5f7996de70682"},
+        {"path":"vocab/strings.json","sha256":"c7728f12b29cdb3908bd5d2b5ef0efac558033e58c30246e0d2ce86fd781ed67"},
+        {"path":"vocab/vectors","sha256":"14772b683e726436d5948ad3fff2b43d036ef2ebbe3458aafed6004e05a40706"},
+        {"path":"vocab/vectors.cfg","sha256":"ff4359091952c8cd16f1f0482f5770fb82d1707368d5cca3c46aa501f552e3c5"}
+      ]
+    },
+    {
+      "analyzer_id": "stanza-en-1.14.0",
+      "analyzer_kind": "stanza",
+      "library_version": "1.14.0",
+      "adapter_version": "1",
+      "supported_languages": ["en"],
+      "processor_configuration": ["tokenize", "mwt", "pos", "lemma", "depparse"],
+      "distribution_wheel_sha256": "b5e81d742e39671de146e69f3c6ca7ff76cc4201ed07cab3083d815b2cbab544",
+      "files": [
+        {"path":"en/backward_charlm/1billion.pt","sha256":"5d8cb2306650e4fc2b4f7517cc0fb33b38269e05bbf8d05e712e481471052225"},
+        {"path":"en/depparse/combined_charlm.pt","sha256":"862b1edda8fc9c371164650d4fbeb222f27b8da86ebfce696a87d478ea036fae"},
+        {"path":"en/forward_charlm/1billion.pt","sha256":"8a32ac2226dda8ea5d30f2a15fe3f835639977f299cfda315ce1b8a656596fd2"},
+        {"path":"en/lemma/combined_nocharlm.pt","sha256":"775d42962ae209d4ff2fc3a799a9438333a44aa6ede3a7368dc07afd573d79d3"},
+        {"path":"en/mwt/combined.pt","sha256":"5f7579111def1f6212c98fa8154ff964bf0eafb9218845ecfa3a1d5a931be237"},
+        {"path":"en/pos/combined_charlm.pt","sha256":"e9952f2e2943a583cb7af7150140ec66197bbe046b671fe020324b0f877190eb"},
+        {"path":"en/pretrain/conll17.pt","sha256":"edde4c195f91ba45aab3f3a6254202011f284559da8a5ead5e62ce522f819c5e"},
+        {"path":"en/tokenize/combined_nocharlm.pt","sha256":"0b67d0cc24bf9461176d854ca891706616a6eea3a7f698ccf085fcf559fa87ec"},
+        {"path":"resources.json","sha256":"4e41c1df152146fa26ed0c006a08feea7a60bb3414bb6d57dbda24ad2e3cb99c"}
+      ]
+    }
+  ]
+}

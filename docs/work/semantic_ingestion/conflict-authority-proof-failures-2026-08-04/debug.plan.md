@@ -64,7 +64,7 @@ hypothesis/experiment IDs are evidence coordinates and may appear only here.
 | projection history and policy migration mapped nodes | generic/special publisher -> shared authority closure | two mapped projection nodes | passing |
 | production authority/replay transaction path | resolver/provenance -> prepare -> one CAS | focused siblings and exact reproducer | under investigation |
 
-## Current Exact Next Action
+## Historical Next Action (Superseded)
 
 Add same-plane canonical clarification submission, claim, completion, and
 supersession records to the semantic-conflict authority, then prove both

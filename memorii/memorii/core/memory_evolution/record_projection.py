@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+from hashlib import sha256
+
+from memorii.core.memory_evolution.admission import source_admission_source_digest
+from memorii.core.memory_evolution.ingestion_contracts import decode_typed_value
 from memorii.core.memory_evolution.models import (
     ClaimLifecycleState,
     ClaimState,
@@ -16,6 +21,16 @@ from memorii.domain.enums import CommitStatus, MemoryDomain, SourceType, Tempora
 
 
 def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObservation:
+    governed = record.source_kind in {
+        "semantic_ingestion_source",
+        "semantic_ingestion_metadata_poor_snapshot",
+    }
+    delivery_key_digest = (
+        record.memory_id.removeprefix("semantic_ingestion:source:")
+        if governed and record.memory_id.startswith("semantic_ingestion:source:")
+        else None
+    )
+    step_one = _step_one_observation_fields(record) if governed else {}
     return SourceObservation(
         source_id=record.memory_id,
         text=record.text,
@@ -27,7 +42,82 @@ def source_observation_from_record(record: CanonicalMemoryRecord) -> SourceObser
         user_id=record.user_id,
         language=record.language,
         speaker_id=_declared_source_speaker_from_record(record),
+        source_digest=source_admission_source_digest(record) if governed else None,
+        delivery_key_digest=delivery_key_digest,
+        **step_one,
     )
+
+
+def _step_one_observation_fields(record: CanonicalMemoryRecord) -> dict[str, object]:
+    """Reload the sealed Step-1 payload; older source records remain legacy."""
+
+    admission = record.content.get("source_admission")
+    if not isinstance(admission, dict):
+        return {}
+    encoded_material = admission.get("step_one_material_ctv")
+    if not isinstance(encoded_material, str):
+        return {}
+    try:
+        material = decode_typed_value(base64.b64decode(encoded_material, validate=True))
+    except (ValueError, TypeError) as exc:
+        raise ValueError("persisted Step-1 source observation payload is invalid") from exc
+    if not isinstance(material, dict):
+        raise ValueError("persisted Step-1 source observation payload is invalid")
+    from memorii.core.memory_evolution.bootstrap_profile import (
+        BootstrapAuthenticatedLanguageEvidence,
+    )
+    from memorii.core.memory_evolution.source_governance import AdmissionScopeAuthorizationProof
+    from memorii.core.semantic_ingestion.contracts import (
+        GovernanceCarrierArtifact,
+        MessageAdmissionCarrierSet,
+        RequiredOutcomeScopeSet,
+        SegmentGovernanceCarrierSet,
+        SourceSemanticContext,
+        SourceSemanticTextProjection,
+        _restore_closed_wire_enums,
+    )
+
+    material = _restore_closed_wire_enums(material)
+
+    try:
+        values = {
+            "required_outcome_scopes": RequiredOutcomeScopeSet.model_validate(material["required_outcome_scopes"]),
+            "semantic_context": SourceSemanticContext.model_validate(material["semantic_context"]),
+            "semantic_text_projection": SourceSemanticTextProjection.model_validate(material["semantic_text_projection"]),
+            "segment_governance_carriers": SegmentGovernanceCarrierSet.model_validate(material["segment_governance_carriers"]),
+            "message_admission_carriers": MessageAdmissionCarrierSet.model_validate(material["message_admission_carriers"]),
+            "governance_carrier_artifact": GovernanceCarrierArtifact.model_validate(material["governance_carrier_artifact"]),
+            "admission_scope_authorization_proof": AdmissionScopeAuthorizationProof.model_validate(
+                material["admission_scope_authorization_proof"]
+            ),
+            "bootstrap_language_evidence": (
+                None
+                if admission.get("bootstrap_language_evidence") is None
+                else BootstrapAuthenticatedLanguageEvidence.model_validate(admission["bootstrap_language_evidence"])
+            ),
+        }
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("persisted Step-1 source observation is invalid") from exc
+    source_digest = source_admission_source_digest(record)
+    context = values["semantic_context"]
+    projection = values["semantic_text_projection"]
+    if (
+        context.source_id != record.memory_id
+        or context.source_digest != source_digest
+        or projection.retained_source_digest != source_digest
+        or projection.retained_text_artifact.content_digest
+        != sha256(record.text.encode("utf-8")).hexdigest()
+        or (
+            values["bootstrap_language_evidence"] is not None
+            and (
+                values["bootstrap_language_evidence"].source_id != record.memory_id
+                or values["bootstrap_language_evidence"].source_digest != source_digest
+            )
+        )
+    ):
+        raise ValueError("persisted Step-1 source observation is substituted")
+    values["retained_text_artifact"] = projection.retained_text_artifact
+    return values
 
 
 def declared_source_modality_from_record(

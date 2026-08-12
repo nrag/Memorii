@@ -1,0 +1,20 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_strict_attempt_reuse_terminal_reload",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "d36afb1bdbefd3e55387371e638e0709d8c0d36d10e82027b8323785c63c7850",
+  "review_scope": [
+    "strict initial versus successor attempt authority",
+    "reused unfinished group authority",
+    "terminal reload in success and finalized failure"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "912b5e3084a8bbf88d76f9e8b01e310cb891d70e14d04c60ca720361e807c91a",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "f6f52da7c79a4688325a60652501f6dcdbe3bd38cf39563a7f24b178d32f7773",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "cb14608ba54cb8c132fb2128af7f11891f65333de5deac167b7596aa3935a2d1"
+  },
+  "checks": ["git diff --check", "binding JSON parse", "stale-shape scan"],
+  "evidence_maturity": "specified_and_derivable_only"
+}

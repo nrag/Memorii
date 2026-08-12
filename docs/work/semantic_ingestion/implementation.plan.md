@@ -5,15 +5,15 @@
 - Status: active
 - Coordinator: Codex main thread
 - Created: 2026-07-27
-- Last updated: 2026-08-04
+- Last updated: 2026-08-09
 - Parent WorkPlan: None
-- Related WorkPlans: `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`; `docs/work/semantic_ingestion/testing.plan.md`; milestone-linked design, testing, and debugging plans
+- Related WorkPlans: `docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md`; `docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md`; `docs/work/semantic_ingestion/testing.plan.md`; `docs/work/semantic_ingestion/terminal-persistence-performance-2026-08-09/testing.plan.md`; `docs/work/semantic_ingestion/scenario-v1-runtime-closure-2026-08-09/design.plan.md`; milestone-linked design, testing, and debugging plans
 - Canonical inputs: `docs/design/semantic_ingestion_architecture.md`; `docs/design/event_model.md`; `docs/design/conflict_attention.md`; `docs/design/equal_version_replay_decision-v1.json`
 - Expected outputs: production implementation, deterministic verification, current-state documentation, and immutable reports under `docs/reviews/semantic_ingestion/`
 - Current resume packet: `docs/work/semantic_ingestion/resume.md`
 - Preserved historical WorkPlan: `docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md`
 - Migration manifest: `docs/work/semantic_ingestion/history/implementation-split-manifest.json`
-- Current coordination candidate identity: `docs/work/semantic_ingestion/history/implementation-split-review-identity.json`
+- Current coordination candidate identity: `docs/work/semantic_ingestion/history/m3-lineage-remediation-candidate-identity.json`
 
 ## Objective
 
@@ -87,15 +87,31 @@ The index and milestone packets own current navigation and status.
   authority is not approved for consumption.
 - M1: complete.
 - M2: complete.
-- M3: explicitly reopened for the source/group plan-lineage contract that its
-  approved scope required but production and closure evidence omitted.
+- M3: graph-dependent production closure is implemented and in final M3.1
+  verification.
+- M3.1: the active implementation operation is
+  `docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md`.
+  Frozen candidate v81 contains the v78 runtime/persistence/composition closure
+  plus the governance-only active-state and exact-next-action corrections.  No product-code action is
+  pending unless final review confirms a P1/P2 or contract-conformance defect.
+- Terminal-persistence performance, timing inventory, seven-shard topology, and
+  PR-gate ownership are owned by the linked testing WorkPlan. They are evidence
+  gaps, not an M3 product-correctness blocker.
+- The linked bootstrap Step-1/Step-2 route design is complete and approved at
+  canonical SHA-256 `43550572621383259ed31c3dd7942c2e5cf43e0acd4692cd50abefede6afd1bd`:
+  `docs/work/semantic_ingestion/bootstrap-step12-route-2026-08-08/design.plan.md`.
 - M4: dependency-blocked on that correction. Core conflict authority passes
   its exact reproducer; clarification-winner replan requires append-only plan
   lineage.
 - M5: pending.
 
-Current Git HEAD is `2a7a55e2f1ea265a5c7f824db1a38ce07cd9fb93` with a
-dirty working tree. Record a fresh candidate identity before review.
+Current Git HEAD is `4691c03` with a dirty working tree. The M3 remediation
+removed fabricated terminal lineage/manifest state and restored the preexisting
+terminal wire. The approved graph-plan repository now exists as an atomic-store
+read/publication boundary. The graph-dependent coordinator still has no sealed
+graph snapshot, expansion, planning artifact, or authorization from which it
+could truthfully construct a complete plan; legacy paths therefore continue to
+omit a plan rather than fabricate lineage.
 
 ## Assumptions And Open Questions
 
@@ -111,7 +127,7 @@ activation artifacts remain governed by their registered SIA-ED gates.
 | M0 | SIA-R03, SIA-R13, SIA-R22 | blocked | `docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md` | Layer1 and external trust authority |
 | M1 | SIA-R01, SIA-R04, SIA-R08, SIA-R12, SIA-R19, SIA-R22, SIA-R23 | complete | `docs/work/semantic_ingestion/milestones/m1-source-admission.plan.md` | M0 compatibility foundation |
 | M2 | SIA-R10, SIA-R11, SIA-R20, SIA-R21 | complete | `docs/work/semantic_ingestion/milestones/m2-writer-atomicity.plan.md` | M1 admitted source |
-| M3 | SIA-R02, SIA-R04 through SIA-R07, SIA-R09, SIA-R12 | active | `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md` | reopened correction for approved source/group plan lineage |
+| M3 | SIA-R02, SIA-R04 through SIA-R07, SIA-R09, SIA-R12 | active | `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md` | reopened correction plus approved bootstrap Step-1/Step-2 V1 authority design |
 | M4 | SIA-R10, SIA-R18 | blocked | `docs/work/semantic_ingestion/milestones/m4-event-history.plan.md` | corrected M3 plan lineage and linked debug closure |
 | M5 | SIA-R03, SIA-R08, SIA-R13 through SIA-R17, SIA-R19 | pending | `docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md` | M4 and external activation authority |
 
@@ -138,6 +154,19 @@ bounded completion.
   source dependency groups, transaction group plans, append-only plan lineage,
   and exact attempt/plan/authorization result binding were absent from both
   production and the closure matrix.
+- 2026-08-08: Removed the unsafe follow-up that fabricated all missing lineage
+  inputs in the legacy pipeline. The terminal summary schema and its
+  established persistence closure were restored unchanged.
+- 2026-08-09: The coordinator implementation audit confirmed that the remaining
+  M3 contract is a complete Step 5--8 graph-dependent vertical, not a missing
+  repository hook. The existing atomic plan repository is present, but the
+  accepted provider path has no sealed `SourceProposalAlignment`, graph snapshot
+  bundle/read-set extensions, graph-dependent reconciliation and closure,
+  planning-artifact repository, pure group compiler, or graph CAS owner. The
+  legacy terminal pipeline may not synthesize these values. This conclusion is
+  directly required by the approved coordinator sequence at
+  `docs/design/semantic_ingestion_architecture.md` lines 17680--17725 and its
+  loadable artifact/authorization rules at lines 17145--17210.
 
 ## Evidence Log
 
@@ -178,13 +207,170 @@ semantic-conflict debugging operation close and pass frozen review. M5 claims
 remain limited by externally owned authority and exact revision-bound evidence.
 M0's rejected historical C2 baselines must not be consumed.
 
+The approved `TransactionSemanticGroupPlanRepository` is implemented as an
+atomic-store read/publication boundary. The legacy pipeline still cannot supply
+the sealed source alignment, graph snapshot bundle and read-set extensions,
+graph-dependent reconciliation/closure, planning artifacts, compiler output,
+or authorization inputs. This is an explicit non-fabrication limit on legacy
+lineage wiring, not an absence of the canonical plan repository.
+
+The user must choose one scoped path before M3 can make another production
+change:
+
+1. Expand M3 into separately bounded Step 5--8 implementation milestones that
+   deliver the missing source-alignment producer, snapshot/read-set repository
+   interfaces, graph expansion/reconciliation/closure, planning-artifact
+   repository and pure compiler, graph CAS/retry owner, and append-only
+   attempt/lineage/result persistence with the design's restart matrix.
+2. Move graph-dependent coordinator acceptance to a later milestone through a
+   linked design review that revises the M3 completion contract. M3 would retain
+   its current non-fabricating terminal behavior and make no claim that its
+   accepted terminal is graph-plan-authorized.
+
+Production still lacks the approved prepared-source implementation: the
+admitted-record producer, source-owned atomic publication/read boundary, and
+composition-root dependency that map retained text, projection segments,
+governance carriers, routes, and admission identities. The approved V1 design
+now names those contracts; implementing them is the next bounded operation.
+
 ## Next Action
 
-Remediate the eight confirmed frozen-review findings for the M3 strict
-preparation/catalog/request/Step-4 contract slice and run bounded delta reviews
-under `docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md`.
+Validate `implementation-candidate-identity-v81.json`, obtain targeted test and
+correctness review of the measured graph-gate budget and exact traceability
+field rule, and record the final deterministic branch-gate disposition.  Do not
+resume M4 replan integration until M3.1 records empty validated P1/P2,
+blocks-approval, and changes-required arrays at the same candidate.
+
+## 2026-08-10 Bootstrap V3 Atomic Slice
+
+The bounded atomic-schema writer added the strict scalar
+`BootstrapAnalysisProvenanceV1`, a V3 atomic checkpoint decoder carrying the
+immutable recovery key and live claim, and a V3 handoff marker minted by the
+canonical bootstrap writer. The deterministic claim adapter now has one
+consume-and-found linearization method, so a lost acknowledgement cannot leave
+a consumed claim without a discoverable result. Focused repository and normal
+vector tests passed (6 tests), as did scoped Ruff and Python compilation.
+
+This is partial evidence only: the atomic store now persists unclaimed,
+claimed, and Found recovery state and atomically renews or consumes an exact
+claim; graph-free staging selects the V3 checkpoint
+only when its caller supplies the complete V3 authority, and the durable CAS
+now writes the keyed Found index with that generation but does not yet own the
+claim lease state used by the coordinator. The actual public coordinator,
+V3 memory/JSONL restart, and normal-root proof therefore remain pending. The
+one next action remains the active linked design/implementation coordination
+above.
+
+### 2026-08-10 V3 self-contained carrier partial
+
+The bounded contract slice now adds the strict V3 payload-limit policy and
+source authority, closed proposal transport/attempt/normalized-operation
+algebra (including all five operation discriminators), and a source-wide
+self-contained proposal payload with exact attempt closure. These codecs are
+registered and round-trip through the canonical semantic envelope. The V3
+proposal run now retains that payload rather than relying on proposal payload
+digests for external read-back; normalization request/manifest/result retain
+the matching limit authority digests. Focused payload/route tests (`7 passed`),
+Ruff, compilation, and diff checks pass.
+
+This remains partial: V3-native lane payloads, the complete graph-free V3
+algebra, atomic member decoder/reload migration, and memory/JSONL reopen proof
+are not implemented by this bounded contract slice. It does not establish a
+production-entrypoint binding or normal-root activation.
+
+### 2026-08-10 V3 retained-byte decoder progress
+
+The atomic persistence slice now registers the V3 retained member kinds and
+decodes the persisted provenance, payload-limit authority, proposal payload,
+ordered four-lane receipts, graph-free bundle, and source alignment directly
+from the committed generation. Bootstrap Found recovery invokes this decoder
+before returning a generation, so malformed, reordered, missing, or
+type-swapped retained bytes cannot be rehydrated through a generic/V2 path.
+Focused repository mutation tests, Python compilation, and scoped Ruff pass.
+
+This is still partial. A direct complete V3 fixture must be constructed through
+the atomic store for memory and independent JSONL lost-ack/reopen evidence; the
+legacy stage is deliberately not used for that proof. No production-entrypoint
+binding changes in this slice.
+
+The follow-on contract delta introduces typed discriminated Stanza, spaCy,
+predicate-event, and temporal lane payload carriers; source/segment-bound lane
+results; V3 subject, dependency, interpretation, and alignment closure
+carriers; and an atomic request closure that requires one proposal payload and
+the exact four lanes per provenance. These contracts are registered and locally
+validated, but the exhaustive native observation/consensus/identity/coverage
+subtree and atomic-store memory/JSONL reload decoder are still pending.
+
+### 2026-08-10 V3 configured-host fixture progress
+
+The test fixture now constructs an immutable `PreparedSource` with the real
+`BootstrapDeclaredSegmentLanguageRoute` shape, then issues the matching
+`BootstrapAnalysisRouteBindingSet`, flattened provenance, complete V3 proposal
+request, payload-limit authority, and the exact Stanza/spaCy/predicate/temporal
+request factories. Focused fixture proof passes (`2 passed`), with scoped Ruff,
+Python compilation, and diff checks clean. This proves only transient
+authority/request closure; it does not yet publish through a configured host,
+reload a V3 result, or bind a production caller. The stale V2 normal vector
+still invokes removed `_recovery_request`/`normalize_after_bootstrap_handoff`
+methods and must be replaced by this V3 fixture before normal-root evidence can
+be claimed.
+
+### 2026-08-10 V3 live-publication generation blocker
+
+The configured host now injects a narrow atomic-store lease lookup into the
+test authority issuer. The lookup joins the exact operation fence, current
+operation/artifact generation, writer binding, and live lease; it rejects a
+fabricated, stale, or foreign lease before authority issuance. This preserves
+the CAS lease check rather than weakening it.
+
+Direct public-root execution exposed a sequencing contradiction: the bootstrap
+handoff marker and recovery claim are minted for generation `1`, while the live
+preplanning control is generation `2` when the coordinator reaches authority
+construction. The live lookup therefore correctly rejects the marker-derived
+generation. Substituting generation `2` only in publication authority is also
+invalid because the claimed recovery record remains generation `1` and the
+owner requires those values to agree. The generation advances between handoff
+minting and authority build. No override or compatibility fallback is valid;
+the linked design correction must define one canonical marker/probe/claim
+generation sequencing rule before V3 publication, reload, or JSONL evidence can
+continue.
 
 ## Outcome And Retrospective
+
+### 2026-08-11 V3 recovery schedule evidence (partial)
+
+Focused JSONL-backed recovery proof now exercises one live claimant denying a
+second probe, stale renewal and marker rejection, exact dual-clock expiry
+reclaim against the unchanged ready snapshot, a pre-publication claimed-only
+state with no Found record, and consumed-claim renewal rejection after Found.
+The local recovery selector is still partial: memory contention, independent
+process scheduling, and the complete canonical 20-node inventory remain
+unimplemented. The selector manifest is deliberately not generated until every
+specified node exists.
+
+### 2026-08-10 V3 generation-causality store slice (partial)
+
+The recovery contracts now use a strict V3 predecessor-authenticated probe,
+store-owned normalization-ready control snapshot, snapshot-derived claim, and
+generation-three found shape. Bootstrap handoff writes only the V3 predecessor
+record. The atomic probe performs the generation-one-to-two control advance,
+mints its lease and snapshot with the claim in the same compare-and-swap, and
+the publication write records the consumed claim/snapshot and generation-three
+found state. Focused repository and direct-provider regression checks pass.
+This is partial implementation evidence only: the dedicated memory/JSONL race,
+reclaim, restart, and exhaustive old-wire rejection suite remains to be added,
+and the retired in-memory adapter must be removed rather than used as a V3
+serialization path.
+
+### 2026-08-10 V3 Found retry evidence
+
+The writer-admission gate now decodes and compares the complete V3
+normalization-ready snapshot, renewal claim, and Found consume closure rather
+than accepting their record shapes. The direct public-root test publishes once,
+then repeats the same operation and proves the Found branch performs zero new
+proposal, Stanza, spaCy, predicate, or temporal calls. This establishes
+same-process lost-ack recovery only; independent JSONL reopen, contention, and
+expiry/reclaim remain pending.
 
 Operation remains active. The plan split reduced routine context while retaining
 all historical bytes and giving each milestone one explicit completion owner.

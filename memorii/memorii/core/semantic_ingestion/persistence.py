@@ -1,4 +1,4 @@
-﻿"""Fenced semantic ingestion terminal publication through the canonical writer-safe preplanning atomic store."""
+"""Fenced semantic ingestion terminal publication through the canonical writer-safe preplanning atomic store."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticRecoveryAuthorityBinding,
     SemanticRetryableProgress,
     SemanticTerminalOutcome,
+    TransactionSemanticGroupPlan,
     decode_semantic_contract,
     encode_semantic_contract,
 )
@@ -43,6 +44,9 @@ from memorii.core.semantic_ingestion.event_replay import (
     SemanticMemoryEventBatch,
     encode_semantic_memory_event_batch,
     semantic_replay_dependency_digests,
+)
+from memorii.core.semantic_ingestion.transaction_group_plan_repository import (
+    AtomicStoreTransactionSemanticGroupPlanRepository,
 )
 
 _SemanticMemberKind = Literal[
@@ -109,15 +113,22 @@ class SemanticTerminalPersistenceService:
         *,
         fence: OperationFenceBinding,
     ) -> SemanticTerminalOutcome | None:
-        """Reload the newest complete terminal artifact without learned-stage replay."""
+        """Reload the newest complete terminal result without learned-stage replay."""
         control = self._store.get_operation(fence)
         for generation in range(control.generation, 1, -1):
             members = self._store.generation_members(fence, generation)
-            artifacts = tuple(member for member in members if member.kind == "terminal_artifact")
+            # The planned checkpoint retains ``terminal_artifact`` while the
+            # final generation carries the authoritative ``source_result``.
+            # Either is a sealed result; recovery must prefer the newest one.
+            artifacts = tuple(
+                member
+                for member in members
+                if member.kind in {"terminal_artifact", "source_result"}
+            )
             if not artifacts:
                 continue
             if len(artifacts) != 1:
-                raise ValueError("semantic ingestion generation has duplicate terminal artifacts")
+                raise ValueError("semantic ingestion generation has duplicate terminal results")
             terminal = decode_semantic_contract(
                 artifacts[0].canonical_payload,
                 SemanticTerminalOutcome,
@@ -178,10 +189,17 @@ class SemanticTerminalPersistenceService:
         fence: OperationFenceBinding,
         terminal: SemanticTerminalOutcome,
         authorization_verifier: SemanticAuthorizationReadSetVerifier | None = None,
+        transaction_group_plan: TransactionSemanticGroupPlan | None = None,
     ) -> None:
         SemanticTerminalOutcome.model_validate(terminal.model_dump(mode="python"))
         if terminal.operation_id != fence.operation_id:
             raise ValueError("semantic ingestion terminal does not bind the admitted source operation")
+        if transaction_group_plan is not None:
+            transaction_group_plan = TransactionSemanticGroupPlan.model_validate(
+                transaction_group_plan.model_dump(mode="python")
+            )
+            if transaction_group_plan.source_id != fence.source_id:
+                raise ValueError("transaction group plan does not bind the admitted source")
         if any(
             analysis.source_id != fence.source_id or analysis.source_digest != fence.source_digest
             for analysis in terminal.source_analyses
@@ -284,7 +302,12 @@ class SemanticTerminalPersistenceService:
                     writer_commit_binding=writer,
                     expected_operation_generation=control.generation,
                     expected_artifact_generation=control.generation,
-                    members=self._checkpoint_members(terminal, artifact_closure, writer),
+                    members=self._checkpoint_members(
+                        terminal,
+                        artifact_closure,
+                        writer,
+                        transaction_group_plan=transaction_group_plan,
+                    ),
                     required_artifact_digests=(),
                     request_digest="0" * 64,
                     progress_state="planned",
@@ -610,6 +633,8 @@ class SemanticTerminalPersistenceService:
         terminal: SemanticTerminalOutcome,
         closure: SemanticArtifactClosure,
         writer: SemanticWriterCommitBinding,
+        *,
+        transaction_group_plan: TransactionSemanticGroupPlan | None = None,
     ) -> tuple[AtomicGenerationMember, ...]:
         lifecycle = (
             SemanticLifecycleTransition.accepted_candidate(
@@ -641,12 +666,18 @@ class SemanticTerminalPersistenceService:
             ),
             (
                 "plan",
-                encode_typed_value(
-                    {
-                        "kind": "semantic_terminal_committed"
-                        if terminal.status == "accepted"
-                        else "semantic_terminal_non_committing"
-                    }
+                (
+                    AtomicStoreTransactionSemanticGroupPlanRepository
+                    .checkpoint_member(transaction_group_plan)
+                    .canonical_payload
+                    if transaction_group_plan is not None
+                    else encode_typed_value(
+                        {
+                            "kind": "semantic_terminal_committed"
+                            if terminal.status == "accepted"
+                            else "semantic_terminal_non_committing"
+                        }
+                    )
                 ),
             ),
             (
@@ -681,22 +712,6 @@ class SemanticTerminalPersistenceService:
                     }
                 ),
             ),
-            (
-                "plan_lineage",
-                (
-                    encode_semantic_contract(terminal.plan_lineage)
-                    if terminal.plan_lineage is not None
-                    else encode_typed_value(None)
-                ),
-            ),
-            (
-                "execution_manifest",
-                (
-                    encode_semantic_contract(terminal.execution_manifest)
-                    if terminal.execution_manifest is not None
-                    else encode_typed_value(None)
-                ),
-            ),
             ("progress", encode_typed_value({"state": "planned", "terminal_digest": terminal.terminal_digest})),
             ("terminal_artifact", encode_semantic_contract(terminal)),
         ]
@@ -722,23 +737,7 @@ class SemanticTerminalPersistenceService:
             ("event_batch", encode_semantic_memory_event_batch(event_batch)),
             ("graph_delta", encode_semantic_contract(graph_delta)),
             ("group_result", encode_semantic_contract(result)),
-            (
-                "plan_lineage",
-                (
-                    encode_semantic_contract(terminal.plan_lineage)
-                    if terminal.plan_lineage is not None
-                    else encode_typed_value(None)
-                ),
-            ),
             ("observation_delta", encode_semantic_contract(observation)),
-            (
-                "execution_manifest",
-                (
-                    encode_semantic_contract(terminal.execution_manifest)
-                    if terminal.execution_manifest is not None
-                    else encode_typed_value(None)
-                ),
-            ),
         )
 
     @staticmethod
@@ -755,22 +754,6 @@ class SemanticTerminalPersistenceService:
                 encode_typed_value({"terminal": terminal.terminal_digest, "closure": closure.closure_digest}),
             ),
             ("group_result", encode_semantic_contract(result)),
-            (
-                "plan_lineage",
-                (
-                    encode_semantic_contract(terminal.plan_lineage)
-                    if terminal.plan_lineage is not None
-                    else encode_typed_value(None)
-                ),
-            ),
-            (
-                "execution_manifest",
-                (
-                    encode_semantic_contract(terminal.execution_manifest)
-                    if terminal.execution_manifest is not None
-                    else encode_typed_value(None)
-                ),
-            ),
             ("observation_delta", encode_semantic_contract(observation)),
         )
 
@@ -833,14 +816,6 @@ class SemanticTerminalPersistenceService:
         return SemanticTerminalPersistenceService._members(
             ("artifact_closure", encode_semantic_contract(closure)),
             ("lifecycle", encode_semantic_contract(terminal_transition)),
-            (
-                "plan_lineage",
-                (
-                    encode_semantic_contract(terminal.plan_lineage)
-                    if terminal.plan_lineage is not None
-                    else encode_typed_value(None)
-                ),
-            ),
             ("observation_delta", encode_semantic_contract(observation)),
             ("source_result", encode_semantic_contract(terminal)),
             (

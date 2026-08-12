@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from hashlib import sha256
 from typing import Literal
@@ -30,11 +31,13 @@ def _canonical_ctv_value(value: object) -> object:
 
 def _coordinate_digest(
     operation_fence_binding: OperationFenceBinding,
+    preparation_fingerprint: str,
     expected_current_artifact_generation: int,
     next_publication_generation: int,
 ) -> str:
     body = {
         "operation_fence_binding": operation_fence_binding,
+        "preparation_fingerprint": preparation_fingerprint,
         "expected_current_artifact_generation": expected_current_artifact_generation,
         "next_publication_generation": next_publication_generation,
     }
@@ -49,6 +52,7 @@ class SourceNormalizationPublicationCoordinate(BaseModel):
     """Exact fence and generation pair required before source normalization publishes."""
 
     operation_fence_binding: OperationFenceBinding
+    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_current_artifact_generation: int = Field(ge=0)
     next_publication_generation: int = Field(ge=1)
     coordinate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -65,6 +69,7 @@ class SourceNormalizationPublicationCoordinate(BaseModel):
             raise ValueError("next publication generation must equal expected current generation plus one")
         if self.coordinate_digest != _coordinate_digest(
             self.operation_fence_binding,
+            self.preparation_fingerprint,
             self.expected_current_artifact_generation,
             self.next_publication_generation,
         ):
@@ -76,6 +81,7 @@ class SourceNormalizationPublicationCoordinate(BaseModel):
         cls,
         *,
         operation_fence_binding: OperationFenceBinding,
+        preparation_fingerprint: str,
         expected_current_artifact_generation: int,
     ) -> SourceNormalizationPublicationCoordinate:
         """Create the only valid successor coordinate for a current generation."""
@@ -83,14 +89,20 @@ class SourceNormalizationPublicationCoordinate(BaseModel):
             raise ValueError("expected current artifact generation must be a non-negative integer")
         if not isinstance(operation_fence_binding, OperationFenceBinding):
             raise ValueError("operation fence binding must be an OperationFenceBinding")
+        if not isinstance(preparation_fingerprint, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", preparation_fingerprint
+        ):
+            raise ValueError("preparation fingerprint must be a lowercase SHA-256 digest")
         validated_fence = OperationFenceBinding.model_validate(operation_fence_binding.model_dump(mode="python"))
         next_publication_generation = expected_current_artifact_generation + 1
         return cls(
             operation_fence_binding=validated_fence,
+            preparation_fingerprint=preparation_fingerprint,
             expected_current_artifact_generation=expected_current_artifact_generation,
             next_publication_generation=next_publication_generation,
             coordinate_digest=_coordinate_digest(
                 validated_fence,
+                preparation_fingerprint,
                 expected_current_artifact_generation,
                 next_publication_generation,
             ),

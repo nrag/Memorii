@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_native_group_commit_terminal_closure",
+  "semantic_predecessor": "design-candidate-identity-v75.json",
+  "semantic_change_from_predecessor": "replace the retired CAS-shaped group execution and construction contracts with one exact reload-derived native terminal result and thread that complete result through checkpoints, retry, final evidence, manifest, source result, terminal publication, and found reload",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "287502387b5cae5de3e554558605cf8a53d9fa78138b8200f0600abef4c1e2da",
+  "review_scope": [
+    "ordinary accepted native fact reaches terminal publication through the group-commit reload",
+    "one BootstrapNativeGroupCommitTerminalConstructionV3 exact wrapper and all authority joins",
+    "native V3 withdrawal of CAS request/outcome/carrier/per-effect-receipt and execution/construction shapes",
+    "complete result closure through checkpoints, retry, final evidence, manifest, canonical source result, terminal publication, and found reload",
+    "memory and independent JSONL lost acknowledgement with one effect and byte-identical recovered terminal result",
+    "direct factory filesystem and Hermes root composition without fixture or CAS adapter"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "83a9fe92adde7cb45072c8d2b8aa43c0eaa68df456df0c4aab35f9002af14364",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "dc2d88c9123150198639d5022f5cb4a19275f2b9b3f11b9e838fbe875f4798af",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "80dcf4d44f36fee163946561d98f1e37e46a856ff067d0e15b5045c6d38ffd6e"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "native wrapper field and withdrawal anchors",
+    "downstream complete-result closure anchors",
+    "ordinary-root and memory/independent-JSONL attack anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

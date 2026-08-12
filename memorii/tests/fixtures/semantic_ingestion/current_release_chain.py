@@ -27,13 +27,18 @@ from memorii.tools.semantic_ingestion_traceability_release import (
 AUTHORITY = "authority-a"
 ROOT_DIGEST = "a" * 64
 RECORD_DIGEST = "b" * 64
+BOOTSTRAP_PROFILE_COORDINATE = {
+    "profile_id": "memorii.bootstrap_local_english_rule",
+    "profile_version": 1,
+}
+BOOTSTRAP_PROFILE_TRUST_ANCHOR_DIGEST = "d" * 64
 PROFILE = ("semantic_ingestion_typed_value", 2, "9dc8b3d01e3f78ed6a11c7668cbb576b09f48ddf107c5efe441bb8bad234fd7f")
 BINDINGS = {
     "bootstrap": ("TraceabilityBootstrapTrustAnchorBody.v1", "b3afc00594f4ba871e64a1a1d649a1d32e1b7bb77e7eb2ff14d550e897f19c77"),
     "recovery": ("TraceabilityRecoveryTrustRootBody.v1", "b8e2679794f444955932cd204dee8312e6c0077346c9f5570e1c28770c09abf3"),
     "recovery_policy": ("TraceabilityRecoveryTrustPolicyBody.v1", "4cf90609b1ab78610816b1316082f40f749052f33fe3ad5a2b85b65820cffd75"),
     "lifecycle": ("TraceabilityTrustLifecycleRootBody.v1", "82cee87c03a941f2dc58489f9f358d18eb505bf956a72bc23b9f4f2abd0d214e"),
-    "release": ("SemanticIngestionTraceabilityReleaseBody.v1", "2e1ba193b6fac94c03598d7c27489f5fa69e48c5a052072124acb398adfd8ce2"),
+    "release": ("SemanticIngestionTraceabilityReleaseBody.v1", "6481447738cc6cacc82564f5506181aa9c494c7bec1ae8d9f6fd0e5aeaec1b5c"),
     "active_pointer": ("TraceabilityActiveReleasePointerBody.v1", "fd5f73aadb565cdaf53afa7aa3acb2218af5e0cac5f0dfaff7032aaa9a982d7d"),
     "release_history": ("TraceabilityReleaseHistoryBody.v1", "398f87e800eba421e3e657af5c6b34e1887c5c93e7038c981d6e6ce3d38d87e3"),
 }
@@ -692,7 +697,7 @@ def _current_chain(
     release_body = {"release_id": "release-1", "issuance_purpose": "semantic_ingestion_traceability_release", **roots,
                     "grammar_revision": registry.source["grammar_revision"], "canonical_profile_binding": _binding_for("release"),
                     "artifact_dag_digest": "9" * 64, "requirement_binding_registry_digest": "a" * 64, "assertion_registry_digest": "b" * 64, "test_evidence_group_registry_digest": "c" * 64, "golden_vector_manifest_digest": "d" * 64, "section_default_registry_digest": "e" * 64, "structural_mapping_rule_registry_digest": "f" * 64, "override_registry_digest": "0" * 64, "anchor_binding_registry_digest": "1" * 64,
-                    "bootstrap_anchor_id": active_anchor_id, "bootstrap_anchor_digest": active_anchor_digest, "bootstrap_anchor_history_digest": "e" * 64, "bootstrap_rotation_sequence": 3 if threshold_recovery else 2, "recovery_trust_policy_digest": policy_digest, "recovery_policy_history_digest": "0" * 64, "recovery_trust_root_digests": [_root_coordinate(item)[2] for item in recoveries], "recovery_root_history_digest": "f" * 64, "trust_lifecycle_root_digest": lifecycle_digest, "epoch": 1, "sequence": 1, "issued_state": "active", "predecessor_release_id": None, "supersedes_release_id": None, "issued_at": selected_release_issued_at, "expires_at": "2026-01-03T00:00:00Z", "signer_coordinate": signer}
+                    "bootstrap_anchor_id": active_anchor_id, "bootstrap_anchor_digest": active_anchor_digest, "bootstrap_profile_coordinate": BOOTSTRAP_PROFILE_COORDINATE, "bootstrap_profile_trust_anchor_digest": BOOTSTRAP_PROFILE_TRUST_ANCHOR_DIGEST, "bootstrap_anchor_history_digest": "e" * 64, "bootstrap_rotation_sequence": 3 if threshold_recovery else 2, "recovery_trust_policy_digest": policy_digest, "recovery_policy_history_digest": "0" * 64, "recovery_trust_root_digests": [_root_coordinate(item)[2] for item in recoveries], "recovery_root_history_digest": "f" * 64, "trust_lifecycle_root_digest": lifecycle_digest, "epoch": 1, "sequence": 1, "issued_state": "active", "predecessor_release_id": None, "supersedes_release_id": None, "issued_at": selected_release_issued_at, "expires_at": "2026-01-03T00:00:00Z", "signer_coordinate": signer}
     release_body.update({
         name: roots[name]
         for name in (
@@ -714,7 +719,7 @@ def _current_chain(
     pointer_body = {"pointer_id": "pointer-1", "issuance_purpose": "semantic_ingestion_traceability_active_release_pointer", "target_authority_id": AUTHORITY, "canonical_profile_binding": _binding_for("active_pointer"), "generation_id": "generation-1", "generation_manifest_digest": "9" * 64, "release_id": "release-1", "release_digest": release_digest, "release_epoch": 1, "release_sequence": 1, "release_history_digest": history_digest, "predecessor_pointer_history_digest": None, "predecessor_active_pointer_digest": None, "pointer_sequence": 1, "published_at": release_body["issued_at"], "signer_coordinate": pointer_signer}
     pointer_digest = _typed_digest(b"memorii:sia-traceability-active-release-pointer:v1", pointer_body)
     pointer = {**pointer_body, "active_pointer_digest": pointer_digest, "signature": signed(release_signer_profile, release_signer_key, encode_typed_value({"issuance_purpose": pointer_body["issuance_purpose"], "body_binding": pointer_body["canonical_profile_binding"], "active_pointer_digest": pointer_digest, "signer_coordinate": pointer_signer}))}
-    return {"registry": registry, "bootstrap": artifact("bootstrap", bootstrap), "recovery": artifact("recovery", recovery), "recoveries": tuple(artifact("recovery", item) for item in recoveries), "policy": artifact("recovery_policy", policy), "lifecycle": artifact("lifecycle", lifecycle), "prior_lifecycle": artifact("lifecycle", genesis), "release": artifact("release", release), "history": artifact("release_history", history), "pointer": artifact("active_pointer", pointer), "material": VerifierHeldTrustMaterial(artifact("bootstrap", bootstrap), tuple(artifact("recovery", item) for item in recoveries), lambda p, k, payload, value: value == signature(p, k, payload), artifact("recovery_policy", policy), tuple(artifact("bootstrap", item) for item in successor_documents), tuple(artifact("lifecycle", item) for item in prior_lifecycle_documents)), "roots": external, "release_roots": roots, "now": now, "release_digest": release_digest, "sign": signature}
+    return {"registry": registry, "bootstrap": artifact("bootstrap", bootstrap), "recovery": artifact("recovery", recovery), "recoveries": tuple(artifact("recovery", item) for item in recoveries), "policy": artifact("recovery_policy", policy), "lifecycle": artifact("lifecycle", lifecycle), "prior_lifecycle": artifact("lifecycle", genesis), "release": artifact("release", release), "history": artifact("release_history", history), "pointer": artifact("active_pointer", pointer), "material": VerifierHeldTrustMaterial(artifact("bootstrap", bootstrap), tuple(artifact("recovery", item) for item in recoveries), lambda p, k, payload, value: value == signature(p, k, payload), artifact("recovery_policy", policy), tuple(artifact("bootstrap", item) for item in successor_documents), tuple(artifact("lifecycle", item) for item in prior_lifecycle_documents), BOOTSTRAP_PROFILE_COORDINATE, BOOTSTRAP_PROFILE_TRUST_ANCHOR_DIGEST), "roots": external, "release_roots": roots, "now": now, "release_digest": release_digest, "sign": signature}
 
 
 def bind_chain_to_generation(

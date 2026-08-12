@@ -1,0 +1,21 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_acyclic_same_writer_epoch",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "d36afb1bdbefd3e55387371e638e0709d8c0d36d10e82027b8323785c63c7850",
+  "review_scope": [
+    "acyclic epoch-zero construction",
+    "request-core and current-head transition lookup",
+    "same-writer lease reclaim",
+    "different-writer global cutover boundary"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "2680e5f562f4952ce6e6803054454bfe6cfbf6ffb869bb2f71a6d17a093b670c",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "c270f651cd6d4862551d4efcc8699cab6a3aa8741820046b845e0ba5529ed6d4",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "4166adeb887615ec30a4a48db0cb580f78ce6a108bc1c42ca0cf6d08b769e023"
+  },
+  "checks": ["git diff --check", "binding JSON parse", "stale writer/cycle scan"],
+  "evidence_maturity": "specified_and_derivable_only"
+}

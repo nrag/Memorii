@@ -159,7 +159,7 @@ def _prepared(
         prepared.append(PreparedSegment(segment_id=child, parent_projection_segment_id=parent, owned_projection_span=owned_projection, context_projection_span=parent_projection, owned_segment_span=owned_local, context_segment_span=_lspan, text_mapping_proof=proof, segment_governance=binding, message_admission_identity=admission, language_route=route, code_switch_spans=(), boundary_flags=frozenset()))
     context = SourceSemanticContext.create(source_id=_SOURCE, source_digest=source_digest, trigger_mode=ExtractionTriggerMode.IMMEDIATE, provenance_digest=_hex("provenance"), temporal_references=(), received_at=datetime(2026, 8, 5, tzinfo=UTC), retained_at=datetime(2026, 8, 5, tzinfo=UTC), source_effective_interval_evidence=None, provider_egress_policy_fingerprint=_hex("egress policy"), governance_policy_fingerprint=_hex("governance policy"), trust_policy_fingerprint=_hex("trust policy"))
     policy = _policy()
-    body = dict(source_id=_SOURCE, semantic_text=semantic_text, semantic_text_projection=projection, source_digest=source_digest, semantic_context=context, segment_language_routes=SegmentLanguageRouteSet.create(source_id=_SOURCE, source_digest=source_digest, routes=tuple(routes)), segment_governance_carriers=carriers, message_admission_carriers=admissions, governance_carrier_artifact=artifact, sentence_spans=(), segments=tuple(prepared), token_spans=(), preparation_policy=policy, status="complete", diagnostics=())
+    body = dict(source_id=_SOURCE, semantic_text=semantic_text, semantic_text_projection=projection, source_digest=source_digest, semantic_context=context, segment_language_routes=SegmentLanguageRouteSet.create(source_id=_SOURCE, source_digest=source_digest, routes=tuple(routes)), segment_governance_carriers=carriers, message_admission_carriers=admissions, governance_carrier_artifact=artifact, sentence_spans=(), segments=tuple(prepared), token_spans=(), grammar_proofs=(), preparation_policy=policy, status="complete", diagnostics=())
     return PreparedSource(**body, preparation_fingerprint=contract_digest(b"memorii.semantic-ingestion.prepared-source.v1", body))
 
 
@@ -270,23 +270,23 @@ def test_unicode_scalar_parent_child_vector_preserves_exact_offsets_and_rejects_
     assert source.semantic_text == expected_text
     assert len(source.semantic_text) == 11
     children = {child.segment_id: child for child in source.segments}
-    c0, c1, c2 = children["C0"], children["C1"], children["C2"]
+    c0, c1, child_p1 = children["C0"], children["C1"], children["C2"]
     assert source.semantic_text[c0.owned_projection_span.start:c0.owned_projection_span.end] == "e\u0301🙂"
     assert source.semantic_text[c1.owned_projection_span.start:c1.owned_projection_span.end] == "e\u0301🙂"
-    assert source.semantic_text[c2.owned_projection_span.start:c2.owned_projection_span.end] == "🙂e\u0301🙂"
+    assert source.semantic_text[child_p1.owned_projection_span.start:child_p1.owned_projection_span.end] == "🙂e\u0301🙂"
     assert sha256(_PREPARED_DOMAIN + _ctv({name: getattr(source, name) for name in PreparedSource.model_fields if name != "preparation_fingerprint"})).hexdigest() == source.preparation_fingerprint
     p0_start = next(parent.projection_span.start for parent in source.semantic_text_projection.segments if parent.segment_id == "P0")
     p1_start = next(parent.projection_span.start for parent in source.semantic_text_projection.segments if parent.segment_id == "P1")
     assert (c0.owned_projection_span.start, c0.owned_projection_span.end) == (p0_start, p0_start + 3)
     assert (c1.owned_projection_span.start, c1.owned_projection_span.end) == (p0_start + 3, p0_start + 6)
-    assert (c2.owned_projection_span.start, c2.owned_projection_span.end) == (p1_start, p1_start + 4)
+    assert (child_p1.owned_projection_span.start, child_p1.owned_projection_span.end) == (p1_start, p1_start + 4)
     assert c0.text_mapping_proof.projection_span.start == p0_start
     assert c1.text_mapping_proof.projection_span.start == p0_start
     with pytest.raises(ValueError):
         _rebuild(source, segments=(
             c0.model_copy(update={"owned_projection_span": c1.owned_projection_span, "owned_segment_span": c1.owned_segment_span}),
             c1.model_copy(update={"owned_projection_span": c0.owned_projection_span, "owned_segment_span": c0.owned_segment_span}),
-            c2,
+            child_p1,
         ))
     shortened = "e\u0301"
     shortened_digest = sha256(shortened.encode("utf-8")).hexdigest()
@@ -300,7 +300,7 @@ def test_unicode_scalar_parent_child_vector_preserves_exact_offsets_and_rejects_
         _rebuild(source, segments=(
             c0.model_copy(update={"owned_projection_span": shortened_projection, "owned_segment_span": shortened_local}),
             c1,
-            c2,
+            child_p1,
         ))
 
 

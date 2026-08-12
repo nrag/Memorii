@@ -49,6 +49,8 @@ from memorii.core.semantic_ingestion.contracts import (
 if TYPE_CHECKING:
     from memorii.core.memory_evolution.graph_planning import (
         FrozenIdentityGraphPlanningArtifact,
+        GraphPlanningState,
+        NonPublishingIdentityPlanningResultV3,
     )
 
 _GENESIS_DOMAIN = b"memorii.identity-lineage.genesis.v1\0"
@@ -350,6 +352,24 @@ class TrustedIdentityDecisionAuthorityVerifier(Protocol):
     ) -> VerifiedIdentityDecisionAuthority | None: ...
 
 
+class IdentityOperationPlanner(Protocol):
+    """Pure planning boundary used by graph-bound composition."""
+
+    def plan_nonpublishing(
+        self,
+        *,
+        sealed_graph_snapshot: SealedGraphStateSnapshot,
+        transaction_group_id: str,
+        current_planning_state: GraphPlanningState,
+        accepted_operation_artifact: AcceptedIdentityOperationArtifact,
+        operation: SealedSemanticOperation,
+        candidate: SemanticCandidate,
+        compiled_transition: CompiledIdentityLineageTransition,
+        trusted_decision: TrustedAcceptedIdentityOperationDecision,
+        authority_verification: VerifiedIdentityDecisionAuthority,
+    ) -> NonPublishingIdentityPlanningResultV3: ...
+
+
 class AtomicStoreAcceptedIdentityOperationPlanner:
     """Sole terminal owner that validates, reserves, and publishes accepted IR."""
 
@@ -529,18 +549,30 @@ class AtomicStoreAcceptedIdentityOperationPlanner:
             )
             transition = compile_accepted_identity_transition(snapshot, accepted)
             from memorii.core.memory_evolution.graph_planning import (
-                build_frozen_identity_graph_planning_artifact,
+                DurablePlanningStateRecord,
+                GraphPlanningState,
+                build_frozen_identity_graph_planning_artifact_from_state,
             )
 
-            return build_frozen_identity_graph_planning_artifact(
-                graph_snapshot=snapshot,
+            initial_state = GraphPlanningState.create(
+                base_snapshot_digest=snapshot.canonical_graph.snapshot_digest,
+                records=tuple(
+                    DurablePlanningStateRecord(record=item)
+                    for item in snapshot.canonical_graph.records
+                ),
+                codec_manifest_fingerprint=canonical_graph_codec_manifest().manifest_fingerprint,
+                applied_planned_delta_digests=(),
+            )
+            return build_frozen_identity_graph_planning_artifact_from_state(
+                sealed_graph_snapshot=snapshot,
+                transaction_group_id=operation_fence.operation_id,
+                current_planning_state=initial_state,
                 accepted_operation_artifact=accepted_artifact,
                 compiled_transition=transition,
                 operation=operation,
                 candidate=candidate,
                 trusted_decision=decision,
                 authority_verification=verification,
-                producer_transaction_group_id=operation_fence.operation_id,
             )
 
         binding = self._writers.commit_binding(self._writers.current())
@@ -560,6 +592,51 @@ class AtomicStoreAcceptedIdentityOperationPlanner:
                 if attempt == 1:
                     raise
         raise AssertionError("unreachable bounded identity publication retry")
+
+    def plan_nonpublishing(
+        self,
+        *,
+        sealed_graph_snapshot: SealedGraphStateSnapshot,
+        transaction_group_id: str,
+        current_planning_state: GraphPlanningState,
+        accepted_operation_artifact: AcceptedIdentityOperationArtifact,
+        operation: SealedSemanticOperation,
+        candidate: SemanticCandidate,
+        compiled_transition: CompiledIdentityLineageTransition,
+        trusted_decision: TrustedAcceptedIdentityOperationDecision,
+        authority_verification: VerifiedIdentityDecisionAuthority,
+    ) -> NonPublishingIdentityPlanningResultV3:
+        """Plan against the supplied snapshot/state without touching this store.
+
+        The class also owns legacy publication, but the graph coordinator may
+        call only this method; it deliberately does not consult that legacy
+        path, the repository, writer admission, resolver, or a clock.
+        """
+
+        from memorii.core.memory_evolution.graph_planning import (
+            NonPublishingIdentityPlanningResultV3,
+            build_frozen_identity_graph_planning_artifact_from_state,
+        )
+
+        artifact = build_frozen_identity_graph_planning_artifact_from_state(
+            sealed_graph_snapshot=sealed_graph_snapshot,
+            transaction_group_id=transaction_group_id,
+            current_planning_state=current_planning_state,
+            accepted_operation_artifact=accepted_operation_artifact,
+            operation=operation,
+            candidate=candidate,
+            compiled_transition=compiled_transition,
+            trusted_decision=trusted_decision,
+            authority_verification=authority_verification,
+        )
+        return NonPublishingIdentityPlanningResultV3.create(
+            transaction_group_id=transaction_group_id,
+            sealed_graph_snapshot_digest=sealed_graph_snapshot.snapshot_digest,
+            graph_read_set_digest=sealed_graph_snapshot.read_set.read_set_digest,
+            planning_state_before_digest=current_planning_state.state_digest,
+            frozen_artifact=artifact,
+            planning_state_after=artifact.planning_state_after,
+        )
 
     @staticmethod
     def _reservation(
@@ -1310,6 +1387,7 @@ __all__ = [
     "IdentityLineageAuditScopeSnapshot",
     "IdentityLineageAuditView",
     "IdentityLineageError",
+    "IdentityOperationPlanner",
     "ProductionIdentityLineageCompiler",
     "ReplayedIdentityLineage",
     "ResolvedClaimLineage",

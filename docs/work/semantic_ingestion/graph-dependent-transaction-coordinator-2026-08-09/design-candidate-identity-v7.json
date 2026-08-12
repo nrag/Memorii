@@ -1,0 +1,23 @@
+{
+  "artifact_kind": "graph_dependent_transaction_coordinator_design_candidate_identity",
+  "schema_version": 1,
+  "created_at": "2026-08-09",
+  "review_mode": "full",
+  "git_head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "pre_identity_dirty_tree_status_sha256": "7b3eafd0355145a828a418cbeb5a0f3c55ddd5c20a538088b7f4bb111cdddd74",
+  "pre_identity_dirty_tree_binary_diff_sha256": "6954b8bc6db95216f9731d6b4a16187b0d0073016a5b4dce007c2d031cecc284",
+  "reviewed_artifacts": [
+    {"path": "docs/design/semantic_ingestion_architecture.md", "sha256": "29ca46beb90491c9f728e726b6cc4293f81ceb09b4ce601aa53aab306fb7d53f"},
+    {"path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md", "sha256": "657d15fcfaacd31b686027f871171b4339e36c065d3f39f6f5d43393c8c8d284"},
+    {"path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json", "sha256": "3cba90adbcf1e694465bef18ecddd8536070fa42b0e56c6a177ee13087bc53c5"},
+    {"path": "docs/work/semantic_ingestion/terminal-persistence-performance-2026-08-09/testing.plan.md", "sha256": "cd031d4e89ee2c1936cb7193baeddaed76a7b0a67de9f1497f0165d01319bce9"}
+  ],
+  "parent_review_outcome": "changes_required",
+  "remediated_findings": ["DREV-001", "DREV-002", "DREV-003", "DREV-004", "DREV-005", "DREV-006", "DREV-007", "DREV-008", "DREV-009", "DREV-010", "DREV-011", "DREV-012", "DREV-013", "DREV-014", "DREV-015", "DREV-016", "DREV-017", "DREV-018", "DREV-019", "DREV-020", "DREV-021", "DREV-022", "DREV-023", "DREV-024"],
+  "scope": "M3.1 Steps 5-8 graph-dependent transaction coordinator design plus paired test-ownership handoff only",
+  "exclusions": ["production implementation", "M4 conflict presentation and clarification semantics", "terminal persistence performance execution", "externally signed production activation", "unrelated dirty-tree artifacts"],
+  "production_mapping_expected_counts": [1, 1, 4, 0, 0, 0, 0, 0, 1, 4, 1],
+  "production_mapping_status": "reproduced",
+  "candidate_status": "frozen_for_full_review"
+}

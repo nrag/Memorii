@@ -67,11 +67,11 @@ _CTV_BODY_BINDINGS = {
     ),
     "release": (
         "SemanticIngestionTraceabilityReleaseBody.v1",
-        "2e1ba193b6fac94c03598d7c27489f5fa69e48c5a052072124acb398adfd8ce2",
+        "6481447738cc6cacc82564f5506181aa9c494c7bec1ae8d9f6fd0e5aeaec1b5c",
     ),
     "historical_release": (
         "SemanticIngestionTraceabilityReleaseBody.v1",
-        "2e1ba193b6fac94c03598d7c27489f5fa69e48c5a052072124acb398adfd8ce2",
+        "6481447738cc6cacc82564f5506181aa9c494c7bec1ae8d9f6fd0e5aeaec1b5c",
     ),
     "active_pointer": (
         "TraceabilityActiveReleasePointerBody.v1",
@@ -161,6 +161,10 @@ class VerifierHeldTrustMaterial:
     # Historical lifecycle views are independently provisioned composition
     # material.  A successor may name one of these roots but never supply it.
     prior_verified_lifecycle_root_bytes: tuple[bytes, ...] = ()
+    # The bootstrap profile authority is provisioned independently of the
+    # traceability release.  A release may name it, but cannot select it.
+    bootstrap_profile_coordinate: dict[str, object] | None = None
+    bootstrap_profile_trust_anchor_digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -1664,6 +1668,35 @@ def _expected_release_roots_available(expected_release_roots: object) -> bool:
     )
 
 
+def _validate_bootstrap_profile_release_binding(
+    release: dict[str, Any],
+    verifier_material: VerifierHeldTrustMaterial,
+) -> None:
+    """Require the signed V1 profile coordinate to match held authority.
+
+    This check intentionally runs before any bootstrap-profile artifact is
+    decoded.  The release is not an authority-installation channel.
+    """
+    expected_coordinate = verifier_material.bootstrap_profile_coordinate
+    expected_anchor = verifier_material.bootstrap_profile_trust_anchor_digest
+    if (
+        not isinstance(expected_coordinate, dict)
+        or set(expected_coordinate) != {"profile_id", "profile_version"}
+        or expected_coordinate.get("profile_id")
+        != "memorii.bootstrap_local_english_rule"
+        or type(expected_coordinate.get("profile_version")) is not int
+        or expected_coordinate["profile_version"] != 1
+        or not isinstance(expected_anchor, str)
+        or _LOWERCASE_SHA256.fullmatch(expected_anchor) is None
+    ):
+        raise ValueError("bootstrap_profile_authority_unavailable")
+    if (
+        release.get("bootstrap_profile_coordinate") != expected_coordinate
+        or release.get("bootstrap_profile_trust_anchor_digest") != expected_anchor
+    ):
+        raise ValueError("bootstrap_profile_release_binding_invalid")
+
+
 def _release_digest(release: dict[str, Any]) -> str:
     return _typed_digest(
         b"memorii:sia-traceability-release:v1",
@@ -2272,6 +2305,7 @@ def _validate_release_candidate(
             "section_default_registry_digest", "structural_mapping_rule_registry_digest",
             "override_registry_digest", "anchor_binding_registry_digest", "coverage_root_digest",
             "execution_root_digest", "bootstrap_anchor_id", "bootstrap_anchor_digest",
+            "bootstrap_profile_coordinate", "bootstrap_profile_trust_anchor_digest",
             "bootstrap_anchor_history_digest", "bootstrap_rotation_sequence",
             "recovery_trust_policy_digest", "recovery_policy_history_digest",
             "recovery_trust_root_digests", "recovery_root_history_digest", "trust_lifecycle_root_digest",
@@ -2286,6 +2320,7 @@ def _validate_release_candidate(
             or release.get("issued_state") != "active"
         ):
             raise ValueError("release_purpose_or_lifecycle_invalid")
+        _validate_bootstrap_profile_release_binding(release, verifier_material)
         required = _required_roots(registry, expected_release_roots)
         history_document = _load(release_history_artifact, "release_history")
         history_keys = {"history_id", "issuance_purpose", "canonical_profile_binding", "entries", "signer_coordinate", "release_history_digest", "signature"}
@@ -2643,7 +2678,7 @@ def verify_release_gate(
     )
     public_body_fields = {
         "release": frozenset({
-            "release_id", "issuance_purpose", "registry_source_identity", "design_document_digest", "structural_manifest_digest", "grammar_revision", "canonical_profile_binding", "artifact_dag_digest", "requirement_binding_registry_digest", "assertion_registry_digest", "test_evidence_group_registry_digest", "report_schema_registry_digest", "runner_environment_profile_registry_digest", "golden_vector_manifest_digest", "section_default_registry_digest", "structural_mapping_rule_registry_digest", "override_registry_digest", "anchor_binding_registry_digest", "coverage_root_digest", "execution_root_digest", "bootstrap_anchor_id", "bootstrap_anchor_digest", "bootstrap_anchor_history_digest", "bootstrap_rotation_sequence", "recovery_trust_policy_digest", "recovery_policy_history_digest", "recovery_trust_root_digests", "recovery_root_history_digest", "trust_lifecycle_root_digest", "trust_snapshot_digest", "epoch", "sequence", "issued_state", "predecessor_release_id", "supersedes_release_id", "issued_at", "expires_at", "signer_coordinate", "signature", "release_digest",
+            "release_id", "issuance_purpose", "registry_source_identity", "design_document_digest", "structural_manifest_digest", "grammar_revision", "canonical_profile_binding", "artifact_dag_digest", "requirement_binding_registry_digest", "assertion_registry_digest", "test_evidence_group_registry_digest", "report_schema_registry_digest", "runner_environment_profile_registry_digest", "golden_vector_manifest_digest", "section_default_registry_digest", "structural_mapping_rule_registry_digest", "override_registry_digest", "anchor_binding_registry_digest", "coverage_root_digest", "execution_root_digest", "bootstrap_anchor_id", "bootstrap_anchor_digest", "bootstrap_profile_coordinate", "bootstrap_profile_trust_anchor_digest", "bootstrap_anchor_history_digest", "bootstrap_rotation_sequence", "recovery_trust_policy_digest", "recovery_policy_history_digest", "recovery_trust_root_digests", "recovery_root_history_digest", "trust_lifecycle_root_digest", "trust_snapshot_digest", "epoch", "sequence", "issued_state", "predecessor_release_id", "supersedes_release_id", "issued_at", "expires_at", "signer_coordinate", "signature", "release_digest",
         }),
         "release_history": frozenset({"history_id", "issuance_purpose", "canonical_profile_binding", "entries", "signer_coordinate", "signature", "release_history_digest"}),
         "active_pointer": frozenset({"pointer_id", "issuance_purpose", "target_authority_id", "canonical_profile_binding", "generation_id", "generation_manifest_digest", "release_id", "release_digest", "release_epoch", "release_sequence", "release_history_digest", "predecessor_pointer_history_digest", "predecessor_active_pointer_digest", "pointer_sequence", "published_at", "signer_coordinate", "signature", "active_pointer_digest"}),

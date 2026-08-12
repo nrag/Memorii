@@ -1,0 +1,18 @@
+{
+  "artifact_kind": "source_alignment_producer_design_candidate_identity",
+  "schema_version": 1,
+  "created_at": "2026-08-10",
+  "git_head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "branch": "semantic-indexing-m4",
+  "dirty_tree_status_sha256": "e82230e360a43a12649fbe9faca94777790f746163d047ce7509eacf6a7fb555",
+  "dirty_tree_binary_diff_sha256": "91b534ae0bfe1fbb7e11fd1df2fee8413597f5383e1b45ba8d4f1d9d8993f0e7",
+  "parent_candidate": "design-candidate-identity-v2.json",
+  "remediated_findings": ["DREV-006", "DREV-007", "DREV-008", "DREV-009"],
+  "reviewed_artifacts": [
+    {"path": "docs/design/semantic_ingestion_architecture.md", "sha256": "778994d1805f1f9d2fbfac6ec3122335f0cd2a6c2f5aaf5ff38a84b3826b36fd"},
+    {"path": "docs/work/semantic_ingestion/source-alignment-producer-2026-08-10/design.plan.md", "sha256": "31e29020f4bcf1f98eb16533ab711ccba476df2350791c1d4abdd7c540e38518"},
+    {"path": "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/implementation.plan.md", "sha256": "df985ba43e4c52fc54b18e00cb428a85bcd3af48422261fba443963194debde3"}
+  ],
+  "scope": "Delta review of explicit replacement scope, temporal and identity wire contracts plus executable production-trigger and measured-gate topology",
+  "candidate_status": "frozen_for_delta_review"
+}

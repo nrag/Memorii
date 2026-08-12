@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_complete_planning_construction_authority",
+  "semantic_predecessor": "design-candidate-identity-v74.json",
+  "semantic_change_from_predecessor": "persist complete same-generation native planning-construction authority and map every Planning and identity constructor field to an exact retained V3 path with no fabricated defaults",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "64be56bfae0caaeef1d85b4d9ff1e9d0a5f67ff1f47504c888cfefba080eb324",
+  "review_scope": [
+    "negative completeness audit of BootstrapNativeOperationReductionInputV3",
+    "same-generation planning construction authority persistence and reload",
+    "literal field paths for every Planning payload snapshot mutation and ledger constructor",
+    "literal accepted operation artifact trusted decision and verified authority construction",
+    "forbidden defaults nulls generic compiler ambient repository and clock",
+    "four roots memory and independent JSONL reload lost acknowledgement and mutation tests"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "2809a25890c11a06714436cd8160f632117637d2e1fcfb7912f48af04e6ac736",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "f0a56e2b821f95768cc00e5e91d655f3a3140509d56d58705c21a8e0e9305918",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "9523e588be469bee0abfeb6084be7f792da923decee64ef212d8e749296ef09b"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "authority schema and retained-input field anchor",
+    "literal Planning and identity field-map anchors",
+    "missing duplicate substituted default ambient and generic mutation anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

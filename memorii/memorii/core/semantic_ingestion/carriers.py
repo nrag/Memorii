@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from hashlib import sha256
+from typing import Any
 
 from memorii.core.memory_evolution.semantic_state import CompiledIdentityLineageTransition
 from memorii.core.memory_evolution.time_contracts import TimeInterval
@@ -21,6 +22,15 @@ from memorii.core.semantic_ingestion.contracts import (
 )
 
 SEMANTIC_INGESTION_CODEC_FINGERPRINT = sha256(b"memorii.semantic-ingestion.closed-codec.v1").hexdigest()
+
+
+def _record_digest(record_type: type[Any], body: dict[str, object]) -> str:
+    """Hash the exact persisted carrier shape, including subclass serialization."""
+    record = record_type.model_construct(**body, record_digest="0" * 64)
+    return contract_digest(
+        b"memorii.semantic-ingestion.temporal-carrier.v1",
+        record.model_dump(mode="python", exclude={"record_digest"}),
+    )
 
 
 def _binding(operation: SealedSemanticOperation, role: str):
@@ -69,7 +79,7 @@ def _claim(
             }
         )
     return ClaimAssertion.model_validate(
-        body | {"record_digest": contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", body)}
+        body | {"record_digest": _record_digest(ClaimAssertion, body)}
     )
 
 
@@ -98,7 +108,7 @@ def compile_accepted_carriers(
         }
         carriers = (
             ActionRevision.model_validate(
-                body | {"record_digest": contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", body)}
+                body | {"record_digest": _record_digest(ActionRevision, body)}
             ),
         )
     elif operation.kind == "correction":
@@ -119,7 +129,7 @@ def compile_accepted_carriers(
             _claim(operation, candidate, "replacement", predicate_trust_rule),
             TemporalTransitionRecord.model_validate(
                 transition_body
-                | {"record_digest": contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", transition_body)}
+                | {"record_digest": _record_digest(TemporalTransitionRecord, transition_body)}
             ),
         )
     elif operation.kind == "retraction":
@@ -138,7 +148,7 @@ def compile_accepted_carriers(
         }
         carriers = (
             TemporalTransitionRecord.model_validate(
-                body | {"record_digest": contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", body)}
+                body | {"record_digest": _record_digest(TemporalTransitionRecord, body)}
             ),
         )
     else:
@@ -157,7 +167,7 @@ def compile_accepted_carriers(
         }
         carriers = (
             IdentityLineageRecord.model_validate(
-                body | {"record_digest": contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", body)}
+                body | {"record_digest": _record_digest(IdentityLineageRecord, body)}
             ),
         )
     return tuple(sorted(carriers, key=lambda value: (value.operation_id, value.record_kind, value.record_digest)))

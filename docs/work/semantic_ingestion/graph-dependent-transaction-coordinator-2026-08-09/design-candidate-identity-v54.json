@@ -1,0 +1,31 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_normalization_v3_semantic_authority_outer_member_identity_stage",
+  "semantic_predecessor": "design-candidate-identity-v53.json",
+  "semantic_change_from_predecessor": "exhaustively add the acyclic semantic-reduction authority request/member to normalization outer publication at a fixed ordinal and correct graph-free versus snapshot-bound identity staging",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "809f3d8cc9fb1f022b2c3c6e653db2cb243a790c01eebb08a28ec6c0f32366b5",
+  "review_scope": [
+    "complete BootstrapSourceNormalizationAtomicWriteRequestV3 outer schema and CTV",
+    "semantic authority request member full registry and semantic-before-graph ordinal",
+    "SourceNormalizationExecutionOwner complete input and atomic store reload algorithm",
+    "expected publication generation fence writer and found-reload joins",
+    "DREV-050 graph-free identity input versus fresh snapshot-bound initial replacement triple and lawful reuse"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "b4939145fda69a18481ab002cfb9b48dbd9c14f15f6f47b083e40c5dc0a15bd4",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "120933efcaa1c781d741b881b1fda5beafd6262e79ffa05086e1d438419a1725",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "9ea0c41d4a4f020f3f41714ba62cd0e51d6c0109fcaac6f3a3e7938d103b7cfa"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "outer schema registry ordinal CTV generation and reload anchors",
+    "identity stage partition and initial replacement reuse mutation anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

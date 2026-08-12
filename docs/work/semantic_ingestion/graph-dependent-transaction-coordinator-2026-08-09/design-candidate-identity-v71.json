@@ -1,0 +1,33 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_v3_first_use_dependency_prefix_authority_closure",
+  "semantic_predecessor": "design-candidate-identity-v70.json",
+  "semantic_change_from_predecessor": "define exact target and absent wire semantics, persist first-use dependency and per-operation prefix proofs, and thread the complete typed canonical authority through compilation checkpoint and replay",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree_stable",
+  "status_list_sha256": "64be56bfae0caaeef1d85b4d9ff1e9d0a5f67ff1f47504c888cfefba080eb324",
+  "review_scope": [
+    "snapshot pending new-first-use and absent exact CTV discriminator cardinality",
+    "persisted cluster-proof first-use producer and consumer dependency vector",
+    "immutable authority base planning state and exact per-operation prefix proof",
+    "producer base and consumer producer-record joins under reverse scheduling",
+    "complete typed authority closure through admission materialization compilation reduction checkpoint replay terminal",
+    "21-kind atomic registry preservation and root/backend recovery mutations"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "4d8db01acabf529492747832da55515481bab443a8e0ae36a16d236182deb6de",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "bc9c04987e0cb96bf297dca827fa44b18ef751594f50e51d40ed60e418e0dbfd",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "04267e5d6707ed4b7bb549e3373b3c011707a494b93e38cc317049f33c20bd17"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and candidate JSON parse",
+    "single first-use dependency and planning prefix proof declarations",
+    "target and absent CTV plus base-prefix scheduling anchors",
+    "complete authority carrier and atomic-table mutation anchors",
+    "stable status and artifact identity pass one",
+    "stable status and artifact identity pass two"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

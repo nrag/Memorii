@@ -1,6 +1,6 @@
 {
   "format": "memorii.workplan-split-manifest.v2",
-  "bundle_sha256": "2b83f1cdf7bd82e74daef6dd5bf1fc636c10468634befe8f184c94be87726860",
+  "bundle_sha256": "3bb2771a88cab2285c43d787fd107fc60a1f74108f2f55a147dd5fbffdcc0441",
   "candidate_identity": "docs/work/semantic_ingestion/history/implementation-split-review-identity.json",
   "canonical_path": "docs/work/semantic_ingestion/implementation.plan.md",
   "archive": {
@@ -24,15 +24,15 @@
     {"path": ".agents/skills/debug-problem/SKILL.md", "sha256": "d3aa5daf1fc93eaa982a0e3b145b1a447d3fcbdc97bfbd26a1fe2e5e30990eb3"},
     {"path": ".agents/skills/design-tests/SKILL.md", "sha256": "4527231afa54527f70f6e283290f3c09872a67cb49319a5f3f2e595182e1c5fb"},
     {"path": ".agents/skills/build-design/SKILL.md", "sha256": "753ed70dfadb79ddae80d215c15a142e16ed2bce684de341bb448f53f065f39f"},
-    {"path": "docs/work/semantic_ingestion/implementation.plan.md", "sha256": "4c4303b16ae59b0d704bd059eea0a899e28f5ce6ba191c0ca3ccee039ed3f1df"},
-    {"path": "docs/work/semantic_ingestion/resume.md", "sha256": "020b04a1e0c406411965d7c6d4898c2fcbbab5df5cecd54ab7aa0056ae742e83"},
+    {"path": "docs/work/semantic_ingestion/implementation.plan.md", "sha256": "3cb5085ffd02f20d917f17920e57e5047ae6c6c946b879354bb567a92dca9e01"},
+    {"path": "docs/work/semantic_ingestion/resume.md", "sha256": "18f02e746c00bb84f35fca0e4faaa22ef179e040c6ac6b1f613a90690f707fae"},
     {"path": "docs/work/semantic_ingestion/conflict-authority-proof-failures-2026-08-04/debug.plan.md", "sha256": "5a1986ede7d5d324dda0f95bab2d397b5d18c01d059b0c534f1585e0e1c7b5ad"},
     {"path": "docs/work/semantic_ingestion/history/implementation-through-2026-08-04.md", "sha256": "eace351ffa26f42b707328e8a0a0a38206c8ba62d8f2603b90853116054a4a20"},
     {"path": "docs/work/semantic_ingestion/milestones/layer1-independent-authority.plan.md", "sha256": "497eef50b52ebd8511e6aff59fd7d999b7b4f664114d2f76dcffe3c68a13d571"},
     {"path": "docs/work/semantic_ingestion/milestones/m0-proof-compatibility.plan.md", "sha256": "2fb5bf32c3ee3115f305c85d3e1f0a3816e32054b44f838846e07abf50b92d6b"},
     {"path": "docs/work/semantic_ingestion/milestones/m1-source-admission.plan.md", "sha256": "cb82c597b647158357fa78a59c4c6ce28979d4148f9fbefcef02e24e334dedfe"},
     {"path": "docs/work/semantic_ingestion/milestones/m2-writer-atomicity.plan.md", "sha256": "5fac8b0d0f609ae4a6166ae02a14481764afc883414a9884ab030486ee398d3b"},
-    {"path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md", "sha256": "9e1f9bdd94f1550d91feb1b19fa7457d8d2e9e7bac19644b180f55950870bda6"},
+    {"path": "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md", "sha256": "029983240d86e290e331b6c3dfa77c946357906a1151132570bc4cf0677be6ba"},
     {"path": "docs/work/semantic_ingestion/milestones/m4-event-history.plan.md", "sha256": "f06529f2a236fe8017c1439318bb049dbaec5e6087d94bba6aecd7080d87bca2"},
     {"path": "docs/work/semantic_ingestion/milestones/m5-deployment-acceptance.plan.md", "sha256": "6882283e9e6102f0a28d8d0d10f0ef2242bec18b6dbe10b3524a663825874e21"},
     {"path": "docs/work/semantic_ingestion/history/implementation-split-manifest.json", "sha256": "self"}

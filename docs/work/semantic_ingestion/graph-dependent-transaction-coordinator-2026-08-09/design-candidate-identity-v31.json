@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_attempt_construction_inputs",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "fdd67de363d9d1ccf0719bacb3ddc07d0807a5a10daea318cbeacc65058b2c13",
+  "review_scope": [
+    "complete immutable graph-derived attempt inputs",
+    "plan reload then authorization then attempt sealing",
+    "plan and attempt checkpoint membership and generations"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "1a8b6182c612295727a1b95423955defad799ddb12f4679932fa1ae9c53b7dc9",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "3d6e68c5352fe6f9de2d64e7696d73323ec18bde6dfabacf8cd2946896bf0ace",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "8b6051216a55f1b16f13529c36bc816c9cd1946c812d7d1224b0f2d29cac0e57"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "attempt-input checkpoint inventory search",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

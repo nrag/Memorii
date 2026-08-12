@@ -61,6 +61,9 @@ Record:
   planning-derived sibling names and generated or persisted occurrences
 - the changed-surface, authority-chain, gate, and known-failure ledgers from
   `.agents/PLANS.md`, initialized from the live diff and current workflows
+- the `production_entrypoint_bindings` ledger for every in-scope runtime,
+  persistence, transaction, lifecycle, replay, recovery, or integration
+  requirement, initialized by one Spark `code-mapper` preflight artifact
 
 Reconstruct requirements independently from the design. Do not rely only on an
 existing requirements table.
@@ -111,6 +114,11 @@ Each milestone must identify:
 - evidence maturity delivered
 - explicit non-goals and completion criteria
 - base/head revision identity for closure evidence
+
+A slice may close only its own bounded acceptance criteria. It must map each
+parent requirement as partial, blocked, or not applicable until the parent
+milestone records complete requirement evidence; never promote a slice approval
+to parent-milestone completion.
 
 Milestones organize work only. Their number, phase, requirement set, WorkPlan
 ID, or review coordinate must not name any output. Resolve filenames, symbols,
@@ -180,6 +188,9 @@ Spawn exactly one worker for overlapping changes. Require the worker to:
     enter code, serialized bytes, tests, fixtures, generators, or workflows
 12. after each material edit, reconcile the live diff and refresh every
     affected downstream artifact, checksum, workflow pin, validator, and gate
+13. update the binding ledger with the exact composition-root callsite,
+    arguments/authority, production caller count, validation, write/read, and
+    outcome proof; reject optional fallbacks and zero-caller owners
 
 Do not hard-code fixtures, add test-only production branches, bypass canonical
 owners, introduce parallel truth, hide invalid state with casts or defaults, or
@@ -265,6 +276,11 @@ After a coherent milestone, run concurrently:
 
 Require reviewers to inspect the complete current state and classify findings
 under `AGENTS.md`.
+
+For runtime, persistence, transaction, lifecycle, replay, recovery, or
+integration scope, give reviewers the frozen Spark preflight binding ledger.
+They must challenge its coverage and exact path proof rather than repeat general
+repository mapping.
 
 Run these full reviewers once for the coherent milestone. After a bounded
 remediation, use targeted delta review by the affected reviewer roles; do not

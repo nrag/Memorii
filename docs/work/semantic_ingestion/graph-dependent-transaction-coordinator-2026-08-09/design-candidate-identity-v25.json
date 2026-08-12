@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_typed_terminal_effect_carriers",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "9865f6c2db395e9a3b4a173dd9f48726d7f9ba173efe9f9ba6284a50aa53a9aa",
+  "review_scope": [
+    "DREV-038 closed typed terminal effect-carrier union",
+    "CAS outcome receipt construction and canonical-result joins",
+    "found and absent effect mutation coverage"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "1ba3724f16ba16d6ba70e3e51f8a82e6379f1fc8d89baa1ae023996358d8675a",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "2e76a85e3ae58801daedf8224642d1f32734a6a08323061b4ae39cb0f4ff4d7b",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "28b04ca168d6a2cabc5bf2553a7abdcbcb43c60958d756a2a0bbbf9d17ba93d1"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "detached terminal effect-field search",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

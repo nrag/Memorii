@@ -1,0 +1,26 @@
+{
+  "artifact_kind": "design_candidate_identity",
+  "schema_version": 1,
+  "candidate": "bootstrap_graph_transaction_v3_execution_manifest_construction",
+  "base_revision": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "tree_state": "dirty_shared_worktree",
+  "status_list_sha256": "1b75f3a810e43ff85f51342c6e53403eb28d090b30d082df7e2f912873686ee7",
+  "review_scope": [
+    "complete typed execution manifest construction",
+    "deterministic manifest projection and joins",
+    "terminal preparation and current generation signatures"
+  ],
+  "artifacts": {
+    "docs/design/semantic_ingestion_architecture.md": "e3852db7ed7e3c5e533e466fa88bd3e82dbd0690451176684a05886a9924a894",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/design.plan.md": "941ed75557849bd5ef326169df8c9986423aa68dc337170ef7faf7ed50195855",
+    "docs/work/semantic_ingestion/graph-dependent-transaction-coordinator-2026-08-09/production-entrypoint-bindings.json": "dbe6725133f87ab82023c70b24519b1a2677b3b97438ae7ad4e1db862bf92f8c"
+  },
+  "checks": [
+    "git diff --check",
+    "binding and identity JSON parse",
+    "44x4x2 coverage assertion",
+    "terminal preparation and generation signature search",
+    "two exact artifact and status identity passes"
+  ],
+  "evidence_maturity": "specified_and_derivable_only"
+}

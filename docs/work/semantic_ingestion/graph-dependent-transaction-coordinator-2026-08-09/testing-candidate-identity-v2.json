@@ -1,0 +1,18 @@
+{
+  "schema_version": 2,
+  "head": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+  "porcelain_status_digest": "6ac4c586e15bb65f1f0bc3423d11ef7a57e8decc5ac9acf465035445a23371d1",
+  "binary_diff_sha256": "0f034c2f4c774d78e3b1127979ec5b8d19ef3e2210464a26e9ffaf7441263176",
+  "architecture_sha256": "a66e3f965b9f1b4c615ae2904665e79c62f8b8e85a4a6847b189c0df357e1988",
+  "implementation_workplan_sha256": "7cd1f8364094194f4f6c0c11e1890617ad2b4488439eda2b8dd66c8d3f04128c",
+  "testing_workplan_sha256": "d465edd3f8825ec498675652687d095ca4bd75207fb1f8745002e59447f835ad",
+  "binding_ledger_sha256": "c8a1c52a11e7d88acdd5b4d7b6675003f722ab61d76042f5eb162e5e533f69b7",
+  "selector_manifest_sha256": "53b5788ca728f9917f568875d42035cffed86b15d184e2acef5d28bb2f8a3d12",
+  "selector_generator_sha256": "6710fe4099f864cd1dfbe26b439d9ea9549dbd15399619f11528e271f7d3b05e",
+  "workflow_sha256": "6741c9672a4e8e5551d549f258a9c6e0f28fa62581faa22d9dcd454a4fd6bf61",
+  "public_selector_count": 200,
+  "required_tuple_count": 352,
+  "exclusion_count": 0,
+  "runtime_result": "200 passed",
+  "focused_result": "21 passed"
+}

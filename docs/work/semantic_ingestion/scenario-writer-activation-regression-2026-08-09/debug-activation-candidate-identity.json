@@ -1,0 +1,45 @@
+{
+  "format": "memorii.debug-candidate-identity.v1",
+  "created": "2026-08-09",
+  "revision": {
+    "head_commit": "4691c0374b3b01617a6a50fd83d4e3ff8a61aa84",
+    "tree_state": "dirty-local",
+    "status_porcelain_v1_sha256": "869f5bdfde96a5e2b42b64c7a6910325fbca717ea81b3f9f3e09eb845ab1f36f",
+    "status_entry_count": 73,
+    "changed_paths_sha256": "20317d90b7e6a96297639d14ae20264164336bb529d89aa8e347a04c085af06f",
+    "changed_path_entry_count": 57,
+    "identity_self_exclusion": "The containing untracked WorkPlan directory is already represented by one porcelain entry; this identity does not alter the recorded status context."
+  },
+  "scope": {
+    "statement": "This pin records only the scenario writer-activation debug correction and its direct scenario ingress evidence. It neither freezes nor approves unrelated dirty-tree changes, CTV authority, release issuance, deployment, M3 closure, or M4.",
+    "path_sha256": {
+      "memorii/memorii/core/semantic_ingestion/capability.py": "e79847e74bc09f1c13dc0208fe9c831dc12c12fe1da341055f1260a09effd0d5",
+      "memorii/memorii/core/semantic_ingestion/local_analyzer.py": "f5badefd283fc89ac1b21788b761b11e071a399bfb5f0b2f2c8b5bcb14a1770e",
+      "memorii/memorii/core/semantic_ingestion/pipeline.py": "e2c5bb02ce1a1c7207b6e24f82bf151b6830b82a8ae651c0b4c93d9ecb7214f2",
+      "memorii/tests/fixtures/semantic_ingestion/scenario_fixture_authority.py": "63d0f770ca5a432597272ecae217266863fa024bbc52ff6e8dee73b5d77094ca",
+      "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py": "368c49a962a1cf52c8a7edd0e0fb46c3245cb52c5ff1ae1887449c8604c0c8f9",
+      "memorii/tests/unit/core/semantic_ingestion/test_semantic_pipeline.py": "15f279fa2dfcd31823bfeda194932d5a9f66604decd8fd2c140369f2ae0395d0",
+      "memorii/tests/unit/tools/test_scenario_public_ingress_runner.py": "ccb34612abec2a44ed20883e4f5e489ea72ddb7c79c645c0f136d43ea475a4a5",
+      "docs/design/semantic_ingestion/traceability_golden_vectors/run_scenario_ingress.py": "e81d290d2af3f96e558c0b98caf1322f52591014495755d69b6979395d8ba6f0",
+      "docs/work/semantic_ingestion/scenario-writer-activation-regression-2026-08-09/debug.plan.md": "ad8f8c769a71d78de7e17bac0a9393a0712143eb5deb51e77d5851b06e8296cc",
+      "docs/work/semantic_ingestion/milestones/m3-semantic-pipeline.plan.md": "8bf9f35d34665ed6a5ce507b10deafd3c56cbd6fa9ab4b1e7e1064745e995f90"
+    }
+  },
+  "focused_evidence": {
+    "test_command": "PYTHONPATH=memorii .venv/bin/pytest -q memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py::test_local_analyzer_binds_assertion_span_to_matched_quote_within_second_segment memorii/tests/unit/core/semantic_ingestion/test_bootstrap_text_preparation_producer.py::test_protected_owner_pair_uses_source_order_not_candidate_id_order memorii/tests/unit/core/semantic_ingestion/test_semantic_pipeline.py::test_local_rejected_terminal_canonicalizes_noncanonical_candidate_order -p no:cacheprovider -x",
+    "test_result": "Focused span/classifier/canonicality proof passed 3 tests in 12.68s. The live scenario-runner ambiguity selector remains slow: after the protected classifier correction the direct public event reaches semantic terminal persistence, then stalls in replay-authority dependency reconstruction while decoding the persisted terminal contract.",
+    "static_result": "Scoped py_compile for local_analyzer.py, pipeline.py, test_bootstrap_text_preparation_producer.py, and test_semantic_pipeline.py passed.",
+    "temporary_artifact_result": "Before the source-order correction the live public ambiguity event incorrectly persisted an accepted terminal with 2 candidates, 2 analyses, 2 sealed operations, and 2 accepted carriers. After the correction, the direct event no longer resolves accepted; it reaches protected terminal persistence and blocks only in replay-authority decode."
+  },
+  "closure_record": {
+    "status": "review_pending",
+    "revision_bound": true,
+    "root_cause": "Writer activation was absent; domain selection was caller-controlled and unsigned; opaque IDs were noncanonical; multi-segment route validation bound analyses to the wrong child; the second child assertion span included its leading separator; canonical local-candidate ordering diverged from source order; and the protected ambiguity classifier therefore missed the live two-segment owner event.",
+    "correction": "Scenario-only host activation is gated by signed scenario_test release evidence; caller domain selection is removed; IDs use the specified CTV preimage; multi-segment analyses bind the exact selected child route; assertion spans bind the matched quote rather than the whole child segment; terminal candidates are canonicalized before emission; and the protected ambiguity classifier now derives semantic order from authenticated source spans instead of candidate-id order.",
+    "remaining_preconditions": [
+      "Independent debug review of this revision-bound evidence.",
+      "Replay-authority decode performance remains parked under the linked testing WorkPlan before any full live scenario-runner pass is claimed.",
+      "A coordinator-owned frozen candidate before any authority, CTV, checked-in manifest, or spool regeneration."
+    ]
+  }
+}
