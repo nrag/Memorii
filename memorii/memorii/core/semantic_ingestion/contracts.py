@@ -10308,10 +10308,10 @@ class BootstrapSemanticReductionAuthorityMemberV3(_BootstrapV3Contract):
     @model_validator(mode="after")
     def validate_reduction_bytes(self) -> BootstrapSemanticReductionAuthorityMemberV3:
         core_bytes = encode_typed_value(
-            self.normalization_request_core.model_dump(mode="python")
+            canonical_contract_value(self.normalization_request_core)
         )
-        policy_bytes = encode_typed_value(self.execution_policy.model_dump(mode="python"))
-        registry_bytes = encode_typed_value(self.capability_registry.model_dump(mode="python"))
+        policy_bytes = encode_typed_value(canonical_contract_value(self.execution_policy))
+        registry_bytes = encode_typed_value(canonical_contract_value(self.capability_registry))
         core = self.normalization_request_core
         if (
             not self.operation_inputs
@@ -10337,12 +10337,6 @@ class BootstrapSemanticReductionAuthorityMemberV3(_BootstrapV3Contract):
             or self.normalization_request_core_canonical_bytes != core_bytes
             or self.execution_policy_canonical_bytes != policy_bytes
             or self.capability_registry_canonical_bytes != registry_bytes
-            or decode_typed_value(self.normalization_request_core_canonical_bytes)
-            != self.normalization_request_core.model_dump(mode="python")
-            or decode_typed_value(self.execution_policy_canonical_bytes)
-            != self.execution_policy.model_dump(mode="python")
-            or decode_typed_value(self.capability_registry_canonical_bytes)
-            != self.capability_registry.model_dump(mode="python")
         ):
             raise ValueError("bootstrap semantic reduction authority bytes are not canonical")
         return self
@@ -10477,15 +10471,11 @@ class BootstrapGraphNormalizationAuthorityMemberV3(_BootstrapV3Contract):
 
     @model_validator(mode="after")
     def validate_canonical_bytes(self) -> BootstrapGraphNormalizationAuthorityMemberV3:
-        policy = encode_typed_value(self.execution_policy.model_dump(mode="python"))
-        registry = encode_typed_value(self.capability_registry.model_dump(mode="python"))
+        policy = encode_typed_value(canonical_contract_value(self.execution_policy))
+        registry = encode_typed_value(canonical_contract_value(self.capability_registry))
         if (
             self.execution_policy_canonical_bytes != policy
             or self.capability_registry_canonical_bytes != registry
-            or decode_typed_value(self.execution_policy_canonical_bytes)
-            != self.execution_policy.model_dump(mode="python")
-            or decode_typed_value(self.capability_registry_canonical_bytes)
-            != self.capability_registry.model_dump(mode="python")
         ):
             raise ValueError("bootstrap graph normalization authority bytes are not canonical")
         return self

@@ -672,28 +672,28 @@ class BootstrapV3SourceNormalizationStage:
             normalization_result_digest=result.result_digest,
             execution_policy=inputs.graph_dependent_execution_policy,
             execution_policy_canonical_bytes=encode_typed_value(
-                inputs.graph_dependent_execution_policy.model_dump(mode="python")
+                canonical_contract_value(inputs.graph_dependent_execution_policy)
             ),
             capability_registry=inputs.capability_registry,
             capability_registry_canonical_bytes=encode_typed_value(
-                inputs.capability_registry.model_dump(mode="python")
+                canonical_contract_value(inputs.capability_registry)
             ),
         )
         semantic_reduction_authority = BootstrapSemanticReductionAuthorityMemberV3.create(
             normalization_request_core=core,
             normalization_request_core_canonical_bytes=encode_typed_value(
-                core.model_dump(mode="python")
+                canonical_contract_value(core)
             ),
             operation_inputs=_native_reduction_inputs(
                 core=core, operation_fence_binding=inputs.operation_fence_binding,
             ),
             execution_policy=inputs.graph_dependent_execution_policy,
             execution_policy_canonical_bytes=encode_typed_value(
-                inputs.graph_dependent_execution_policy.model_dump(mode="python")
+                canonical_contract_value(inputs.graph_dependent_execution_policy)
             ),
             capability_registry=inputs.capability_registry,
             capability_registry_canonical_bytes=encode_typed_value(
-                inputs.capability_registry.model_dump(mode="python")
+                canonical_contract_value(inputs.capability_registry)
             ),
         )
         artifacts: tuple[tuple[str, object], ...] = (

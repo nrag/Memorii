@@ -132,6 +132,7 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
     conflict_calls: list[str] = []
     partial_conflict_calls: list[str] = []
     exhausted_conflict_calls: list[str] = []
+    acquire_errors: list[str] = []
     current_scope = [""]
     clock = [TEST_NOW]
     service_holder: list[object] = []
@@ -221,6 +222,7 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
 
     provider = DeterministicBootstrapGraphAuthorityProviderV3(
         successful_calls=successful_calls,
+        acquire_errors=acquire_errors,
         cas_attempts=cas_attempts,
         unavailable_calls=unavailable_calls if behavior == "durable_retry" else None,
         conflict_calls=conflict_calls if behavior == "resolved_conflict" else None,
@@ -364,6 +366,7 @@ def run(*, storage_root: Path, root: str, scenario: str, phase: str) -> dict[str
         "conflict_calls": len(conflict_calls),
         "partial_conflict_calls": len(partial_conflict_calls),
         "exhausted_conflict_calls": len(exhausted_conflict_calls),
+        "acquire_errors": acquire_errors,
         "lane_calls": lane_calls,
         "lost_ack_injected": lost_ack_injected,
         "scan_calls": scan_calls,

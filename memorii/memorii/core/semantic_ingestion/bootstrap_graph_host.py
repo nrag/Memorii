@@ -18,6 +18,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphControlEpochTransitionRequestV3,
     BootstrapGraphDependentCoordinatorRequestV3,
     BootstrapGraphDependentCoordinatorResultV3,
+    BootstrapGraphDependentPreGraphNonCommitV3,
     BootstrapRecoveryReplayRecordV3,
     PreparedSource,
     RequiredOutcomeScopeSet,
@@ -39,7 +40,7 @@ class BootstrapGraphAuthorityRequestV3:
 class BootstrapGraphExecutionV3:
     coordinator: BootstrapGraphDependentCoordinatorV3
     request: BootstrapGraphDependentCoordinatorRequestV3
-    transition: BootstrapGraphControlEpochTransitionRequestV3
+    transition: BootstrapGraphControlEpochTransitionRequestV3 | None
 
 
 class BootstrapGraphDependentAuthorityProviderV3(Protocol):
@@ -119,9 +120,20 @@ class ScenarioBootstrapGraphHostBundle(BootstrapGraphHostBundle):
         )
         if execution is None:
             return None
-        return execution.coordinator.coordinate(
+        result = execution.coordinator.coordinate(
             request=execution.request, transition=execution.transition,
         )
+        if hasattr(self.authority_provider, "acquire_errors"):
+            errors = getattr(self.authority_provider, "acquire_errors")
+            if errors is not None and result is not None:
+                if isinstance(result, BootstrapGraphDependentPreGraphNonCommitV3):
+                    errors.append(f"coordinator unavailable: reason={result.reason}")
+                    errors.append(f"coordinator reason_digest={result.reason_digest}")
+                else:
+                    errors.append(
+                        f"coordinator result kind: {result.__class__.__name__}"
+                    )
+        return result
 
 
 __all__ = [

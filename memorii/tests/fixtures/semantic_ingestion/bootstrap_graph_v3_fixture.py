@@ -72,12 +72,20 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapTransactionGroupOperationPlanV3,
     BootstrapTransactionGroupPlanMemberV3,
     BootstrapTransactionGroupPlanV3,
+    BootstrapGraphNormalizationAuthorityMemberV3,
+    BootstrapNormalizationRequestCoreV3,
     GraphDependentExecutionPolicyReferenceV3,
     GraphSemanticSnapshotBundleV3,
+    BootstrapSemanticReductionAuthorityMemberV3,
+    BootstrapSemanticReductionAuthorityReloadV3,
     PreparedSource,
+    decode_semantic_contract,
+    canonical_contract_value,
     contract_digest,
+    encode_typed_value,
     decode_bootstrap_graph_atomic_member_payload_v3,
 )
+from memorii.core.semantic_ingestion.source_normalization_stage import _native_reduction_inputs
 from memorii.core.semantic_ingestion.source_normalization_authority import (
     CapabilityRegistrySnapshot,
 )
@@ -213,20 +221,25 @@ def build_minimal_bootstrap_graph_plan_compilation_v3(
         raise ValueError("bootstrap graph plan fixture requires a complete dependency group")
     groups = request.source_dependency_groups
     epoch = control_epoch or request.initial_control_epoch
-    by_operation = {item.operation_id: item for item in operation_inputs}
-    expected_operation_ids = tuple(
-        operation_id for group in groups for operation_id in group.operation_ids
-    )
-    if (
-        tuple(item.operation_id for item in operation_inputs)
-        != tuple(sorted(expected_operation_ids))
-        or any(
-            item.dependency_group.group_id != next(
-                group.group_id for group in groups if item.operation_id in group.operation_ids
-            )
-            for item in operation_inputs
+    required_operation_ids = tuple(
+        sorted(
+            operation_id
+            for group in groups
+            for operation_id in group.operation_ids
         )
-    ):
+    )
+    relevant_operations = tuple(
+        sorted(
+            (
+                item
+                for item in operation_inputs
+                if item.operation_id in set(required_operation_ids)
+            ),
+            key=lambda item: item.operation_id,
+        )
+    )
+    by_operation = {item.operation_id: item for item in relevant_operations}
+    if tuple(by_operation) != required_operation_ids:
         raise ValueError("bootstrap graph fixture retained reduction authority is incomplete")
     planning_state = GraphPlanningState.create(
         base_snapshot_digest=snapshot.snapshot_digest,
@@ -871,6 +884,89 @@ def build_graph_coordinator_request(
     )
 
 
+def _reconstruct_bootstrap_semantic_reduction_reload_v3(
+    *, atomic_store: object, request: BootstrapGraphAuthorityRequestV3,
+) -> BootstrapSemanticReductionAuthorityReloadV3 | None:
+    try:
+        recovered = atomic_store.recover_bootstrap_v3_source_normalization(
+            recovery_key_digest=request.normalization_replay.recovery_key_digest,
+        )
+        if recovered is None:
+            raise ValueError("missing bootstrap v3 recovery record")
+        generation, atomic_write_digest, _result_digest, members = recovered
+        try:
+            core_member = next(
+                item for item in members
+                if item.kind == "bootstrap_normalization_request_core"
+            )
+        except StopIteration:
+            raise ValueError("missing bootstrap normalization request core")
+        core = decode_semantic_contract(
+            core_member.canonical_payload, BootstrapNormalizationRequestCoreV3,
+        )
+        for item in members:
+            if item.kind != "bootstrap_semantic_reduction_authority":
+                continue
+            reduction_member = decode_semantic_contract(
+                item.canonical_payload, BootstrapSemanticReductionAuthorityMemberV3,
+            )
+            if reduction_member.normalization_request_core != core:
+                raise ValueError(
+                    "bootstrap semantic reduction authority is for a different core"
+                )
+            return BootstrapSemanticReductionAuthorityReloadV3.create(
+                normalization_replay=request.normalization_replay,
+                normalization_atomic_write_digest=atomic_write_digest,
+                normalization_operation_generation=generation,
+                normalization_artifact_generation=generation,
+                authority_member=reduction_member,
+            )
+
+        operation_inputs = _native_reduction_inputs(
+            core=core, operation_fence_binding=request.operation_fence_binding,
+        )
+        graph_authority_member = next(
+            (
+                decode_semantic_contract(
+                    member.canonical_payload,
+                    BootstrapGraphNormalizationAuthorityMemberV3,
+                )
+                for member in members
+                if member.kind == "bootstrap_graph_normalization_authority"
+            ),
+            None,
+        )
+        if graph_authority_member is None:
+            raise ValueError("missing graph normalization authority")
+        policy = (
+            graph_authority_member.execution_policy
+        )
+        capability_registry = (
+            graph_authority_member.capability_registry
+        )
+        authority = BootstrapSemanticReductionAuthorityMemberV3.create(
+            normalization_request_core=core,
+            normalization_request_core_canonical_bytes=core_member.canonical_payload,
+            operation_inputs=operation_inputs,
+            execution_policy=policy,
+            execution_policy_canonical_bytes=graph_authority_member.execution_policy_canonical_bytes,
+            capability_registry=capability_registry,
+            capability_registry_canonical_bytes=graph_authority_member.capability_registry_canonical_bytes,
+        )
+        return BootstrapSemanticReductionAuthorityReloadV3.create(
+            normalization_replay=request.normalization_replay,
+            normalization_atomic_write_digest=atomic_write_digest,
+            normalization_operation_generation=generation,
+            normalization_artifact_generation=generation,
+            authority_member=authority,
+        )
+    except (ValueError, TypeError, KeyError) as exc:
+        raise RuntimeError(f"semantic reduction authority reconstruction failed: {exc}")
+    except Exception as exc:
+        raise RuntimeError(f"semantic reduction authority reconstruction failed: {exc}")
+        return None
+
+
 @dataclass
 class DeterministicBootstrapGraphAuthorityProviderV3:
     """Strict test authority provider for the real shared provider root."""
@@ -885,10 +981,13 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
     current_scope_digest: Callable[[], str] | None = None
     before_epoch_created: Callable[[object], None] | None = None
     after_epoch_created: Callable[[object, object, object], object] | None = None
+    acquire_errors: list[str] | None = None
 
     def acquire(
         self, *, request: BootstrapGraphAuthorityRequestV3, atomic_store: object,
     ) -> BootstrapGraphExecutionV3 | None:
+        if self.acquire_errors is not None:
+            self.acquire_errors.clear()
         from memorii.core.semantic_ingestion.bootstrap_graph_coordinator import (
             BootstrapGraphDependentCoordinatorV3,
         )
@@ -896,128 +995,272 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
             AtomicStoreBootstrapGraphControlEpochRepositoryV3,
             AtomicStoreBootstrapGraphGroupCommitRepositoryV3,
             AtomicStoreBootstrapGraphPlanRepositoryV3,
-            AtomicStoreBootstrapGraphTerminalPersistencePortV3,
+    AtomicStoreBootstrapGraphTerminalPersistencePortV3,
         )
         from memorii.core.semantic_ingestion.bootstrap_graph_terminal_preparation import (
             DeterministicBootstrapGraphTerminalPreparationV3,
         )
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphControlEpochUnavailableV3,
+            BootstrapGraphControlEpochFoundV3,
+            BootstrapGraphControlEpochAdvancedV3,
+        )
 
-        fixture = PersistedBootstrapGraphReplayFixture(
-            replay=request.normalization_replay,
-            authenticated_ingress=request.authenticated_ingress,
-            required_outcome_scopes=request.required_outcome_scopes,
-            operation_fence_binding=request.operation_fence_binding,
-            operation_lease_binding=request.operation_lease_binding,
-            writer_commit_binding=request.writer_commit_binding,
-            control_epoch=request.authenticated_ingress,
-        )
-        snapshot = build_empty_graph_snapshot_bundle()
-        policy = build_graph_policy_reference()
-        capabilities = build_empty_capability_registry()
-        replay = request.normalization_replay
-        reduction_reload = atomic_store.reload_bootstrap_semantic_reduction_authority_v3(
-            normalization_replay=replay
-        )
-        if reduction_reload is None:
-            return None
-        operation_inputs = reduction_reload.authority_member.operation_inputs
-        authority = BootstrapGraphSnapshotAuthorityV3.create(
-            source_id=request.prepared_source.source_id,
-            source_digest=request.prepared_source.source_digest,
-            preparation_fingerprint=request.prepared_source.preparation_fingerprint,
-            normalization_replay_digest=replay.replay_digest,
-            normalization_result_digest=replay.source_normalization_result.result_digest,
-            source_alignment_digest=replay.source_normalization_request.source_alignment.alignment_digest,
-            snapshot=snapshot,
-            base_read_set_digest=snapshot.base_read_set.read_set_digest,
-            required_scope_set_digest=request.required_outcome_scopes.required_scope_set_digest,
-            delivery_principal_binding_digest=(
-                request.authenticated_ingress.delivery_principal_binding.binding_digest
-            ),
-            execution_policy=policy,
-            capability_registry_snapshot=capabilities,
-            operation_lease_binding=request.operation_lease_binding,
-            operation_fence_binding=request.operation_fence_binding,
-            writer_commit_binding=request.writer_commit_binding,
-        )
-        transition = build_graph_epoch_transition_request(
-            fixture=fixture,
-            graph_authority=authority,
-            source_alignment=replay.source_normalization_request.source_alignment,
-        )
-        epoch_repository = AtomicStoreBootstrapGraphControlEpochRepositoryV3(
-            atomic_store=atomic_store
-        )
-        if self.before_epoch_created is not None:
-            self.before_epoch_created(atomic_store)
-        epoch = epoch_repository.transition_or_find(request=transition).epoch
-        coordinator_request = build_graph_coordinator_request(
-            fixture=fixture,
-            graph_authority=authority,
-            source_alignment=replay.source_normalization_request.source_alignment,
-            initial_control_epoch=epoch,
-        )
-        if self.after_epoch_created is not None:
-            epoch = self.after_epoch_created(atomic_store, coordinator_request, epoch)
-        compilation = build_minimal_bootstrap_graph_plan_compilation_v3(
-            request=coordinator_request,
-            snapshot=snapshot,
-            policy=policy,
-            capability_registry=capabilities,
-            operation_inputs=operation_inputs,
-        )
-        host_authority = build_bootstrap_graph_terminal_host_authority_v3(
-            source=request.prepared_source,
-            operation_fence_binding=request.operation_fence_binding,
-        )
-        group_commits = AtomicStoreBootstrapGraphGroupCommitRepositoryV3(
-            atomic_store=atomic_store
-        )
-        if self.unavailable_calls is not None:
-            class UnavailableGroupCommitRepository:
-                def commit_or_reload(inner_self, *, request):
-                    if self.cas_attempts is not None:
-                        self.cas_attempts.append(request.transaction_group_id)
-                    self.unavailable_calls.append(request.transaction_group_id)
-                    raise PreplanningStoreError("injected graph group commit unavailable")
-
-            group_commits = UnavailableGroupCommitRepository()
-        else:
-            delegate = group_commits
-
-            class RecordingGroupCommitRepository:
-                def commit_or_reload(inner_self, *, request):
-                    if self.cas_attempts is not None:
-                        self.cas_attempts.append(request.transaction_group_id)
-                    reload = delegate.commit_or_reload(request=request)
-                    self.successful_calls.append(request.transaction_group_id)
-                    return reload
-
-            group_commits = RecordingGroupCommitRepository()
-        coordinator = BootstrapGraphDependentCoordinatorV3(
-            epoch_repository=epoch_repository,
-            plan_repository=AtomicStoreBootstrapGraphPlanRepositoryV3(
+        try:
+            snapshot_record = atomic_store.graph_state_snapshot()
+            fixture = PersistedBootstrapGraphReplayFixture(
+                replay=request.normalization_replay,
+                authenticated_ingress=request.authenticated_ingress,
+                required_outcome_scopes=request.required_outcome_scopes,
+                operation_fence_binding=request.operation_fence_binding,
+                operation_lease_binding=request.operation_lease_binding,
+                writer_commit_binding=request.writer_commit_binding,
+                control_epoch=request.authenticated_ingress,
+            )
+            replay = request.normalization_replay
+            normalization_authority = atomic_store.reload_bootstrap_graph_normalization_authority_v3(
+                normalization_replay=replay
+            )
+            if normalization_authority is None:
+                if self.acquire_errors is not None:
+                    self.acquire_errors.append(
+                        "missing bootstrap graph normalization authority"
+                    )
+                return None
+            policy_member = normalization_authority.authority_member
+            snapshot = GraphSemanticSnapshotBundleV3.create(
+                graph_snapshot=snapshot_record,
+                base_read_set=snapshot_record.read_set,
+            )
+            policy = GraphDependentExecutionPolicyReferenceV3.create(
+                repository_id="memorii.bootstrap-graph-normalization-authority-v3",
+                repository_contract_fingerprint=contract_digest(
+                    b"memorii.bootstrap-graph.normalization-policy-repository.v3",
+                    "BootstrapGraphNormalizationAuthorityMemberV3",
+                ),
+                policy_digest=policy_member.execution_policy.policy_digest,
+                artifact_digest=contract_digest(
+                    b"memorii.bootstrap-graph.normalization-policy-artifact.v3",
+                    policy_member.execution_policy_canonical_bytes,
+                ),
+            )
+            capabilities = policy_member.capability_registry
+            reduction_reload = _reconstruct_bootstrap_semantic_reduction_reload_v3(
+                atomic_store=atomic_store, request=request
+            )
+            if reduction_reload is None:
+                if self.acquire_errors is not None:
+                    self.acquire_errors.append(
+                        "missing semantic reduction authority reload"
+                    )
+                return None
+            operation_inputs = reduction_reload.authority_member.operation_inputs
+            authority = BootstrapGraphSnapshotAuthorityV3.create(
+                source_id=request.prepared_source.source_id,
+                source_digest=request.prepared_source.source_digest,
+                preparation_fingerprint=request.prepared_source.preparation_fingerprint,
+                normalization_replay_digest=replay.replay_digest,
+                normalization_result_digest=replay.source_normalization_result.result_digest,
+                source_alignment_digest=replay.source_normalization_request.source_alignment.alignment_digest,
+                snapshot=snapshot,
+                base_read_set_digest=snapshot.base_read_set.read_set_digest,
+                required_scope_set_digest=request.required_outcome_scopes.required_scope_set_digest,
+                delivery_principal_binding_digest=(
+                    request.authenticated_ingress.delivery_principal_binding.binding_digest
+                ),
+                execution_policy=policy,
+                capability_registry_snapshot=capabilities,
+                operation_lease_binding=request.operation_lease_binding,
+                operation_fence_binding=request.operation_fence_binding,
+                writer_commit_binding=request.writer_commit_binding,
+            )
+            transition = build_graph_epoch_transition_request(
+                fixture=fixture,
+                graph_authority=authority,
+                source_alignment=replay.source_normalization_request.source_alignment,
+            )
+            epoch_repository = AtomicStoreBootstrapGraphControlEpochRepositoryV3(
                 atomic_store=atomic_store
-            ),
-            terminal_port=AtomicStoreBootstrapGraphTerminalPersistencePortV3(
-                atomic_store=atomic_store
-            ),
-            compiler=DeterministicBootstrapGraphPlanCompilerV3(
-                snapshot=snapshot, policy=policy, capability_registry=capabilities,
+            )
+            if self.before_epoch_created is not None:
+                self.before_epoch_created(atomic_store)
+            transition_result = epoch_repository.transition_or_find(request=transition)
+            if self.acquire_errors is not None and isinstance(
+                transition_result, BootstrapGraphControlEpochUnavailableV3
+            ):
+                self.acquire_errors.append(
+                    f"authority transition unavailable: {transition_result.reason}"
+                )
+            elif self.acquire_errors is not None and not isinstance(
+                transition_result,
+                (BootstrapGraphControlEpochFoundV3, BootstrapGraphControlEpochAdvancedV3),
+            ):
+                self.acquire_errors.append(
+                    "authority transition returned unexpected: "
+                    f"{type(transition_result).__name__}"
+                )
+                reason = getattr(transition_result, "reason", None)
+                if reason is not None:
+                    self.acquire_errors.append(
+                        f"authority transition reason: {reason}"
+                    )
+                kind = getattr(transition_result, "kind", None)
+                if kind is not None:
+                    self.acquire_errors.append(f"authority transition kind: {kind}")
+                try:
+                    if hasattr(transition_result, "model_dump"):
+                        self.acquire_errors.append(
+                            f"authority transition payload: {transition_result.model_dump()}"
+                        )
+                except Exception as exc:
+                    self.acquire_errors.append(
+                        f"authority transition payload_dump_failed: {type(exc).__name__}"
+                    )
+            if not isinstance(
+                transition_result, (BootstrapGraphControlEpochFoundV3, BootstrapGraphControlEpochAdvancedV3)
+            ):
+                return None
+            epoch = transition_result.epoch
+            coordinator_request = build_graph_coordinator_request(
+                fixture=fixture,
+                graph_authority=authority,
+                source_alignment=replay.source_normalization_request.source_alignment,
+                initial_control_epoch=epoch,
+            )
+            if self.after_epoch_created is not None:
+                epoch = self.after_epoch_created(atomic_store, coordinator_request, epoch)
+            compilation = build_minimal_bootstrap_graph_plan_compilation_v3(
+                request=coordinator_request,
+                snapshot=snapshot,
+                policy=policy,
+                capability_registry=capabilities,
                 operation_inputs=operation_inputs,
-            ),
-            authorizer=DeterministicBootstrapGraphPlanningAuthorizerV3(
-                compilation=compilation
-            ),
-            group_commit_repository=group_commits,
-            terminal_preparer=DeterministicBootstrapGraphTerminalPreparationV3(),
-            terminal_host_authority=host_authority,
-        )
-        return BootstrapGraphExecutionV3(
-            coordinator=coordinator,
-            request=coordinator_request,
-            transition=transition,
-        )
+            )
+            host_authority = build_bootstrap_graph_terminal_host_authority_v3(
+                source=request.prepared_source,
+                operation_fence_binding=request.operation_fence_binding,
+            )
+            group_commits = AtomicStoreBootstrapGraphGroupCommitRepositoryV3(
+                atomic_store=atomic_store
+            )
+            if self.unavailable_calls is not None:
+                class UnavailableGroupCommitRepository:
+                    def commit_or_reload(inner_self, *, request):
+                        if self.cas_attempts is not None:
+                            self.cas_attempts.append(request.transaction_group_id)
+                        self.unavailable_calls.append(request.transaction_group_id)
+                        raise PreplanningStoreError("injected graph group commit unavailable")
+
+                group_commits = UnavailableGroupCommitRepository()
+            else:
+                base_repository = group_commits
+                max_conflict_failures = (
+                    2 if self.conflict_calls is not None
+                    else 4 if self.partial_conflict_calls is not None
+                    else 2 if self.exhausted_conflict_calls is not None
+                    else 0
+                )
+
+                class RecordingGroupCommitRepository:
+                    def __init__(self, repository: object):
+                        self._repository = repository
+
+                    @staticmethod
+                    def _run_before_compare_and_swap(*, request) -> None:
+                        if self.before_compare_and_swap is None:
+                            return
+                        self.before_compare_and_swap(request.transaction_group_id)
+
+                    def commit_or_reload(inner_self, *, request):
+                        self._run_before_compare_and_swap(request=request)
+                        if self.cas_attempts is not None:
+                            self.cas_attempts.append(request.transaction_group_id)
+                        reload = inner_self._repository.commit_or_reload(request=request)
+                        self.successful_calls.append(request.transaction_group_id)
+                        return reload
+
+                recording_group_commits = RecordingGroupCommitRepository(
+                    repository=group_commits
+                )
+
+                class ConflictInjectingGroupCommitRepository:
+                    failures = {"remaining": max_conflict_failures}
+
+                    def _record_conflict(inner_self, *, request, conflict_calls: list[str]):
+                        if self.cas_attempts is not None:
+                            self.cas_attempts.append(request.transaction_group_id)
+                        conflict_calls.append(request.transaction_group_id)
+                        inner_self.failures["remaining"] -= 1
+                        if inner_self.failures["remaining"] < 0:
+                            inner_self.failures["remaining"] = 0
+
+                    def commit_or_reload(inner_self, *, request):
+                        if inner_self.failures["remaining"] > 0:
+                            if self.conflict_calls is not None:
+                                inner_self._record_conflict(
+                                    request=request, conflict_calls=self.conflict_calls,
+                                )
+                                raise PreplanningStoreError(
+                                    "injected graph group commit conflict"
+                                )
+                            if self.partial_conflict_calls is not None:
+                                inner_self._record_conflict(
+                                    request=request, conflict_calls=self.partial_conflict_calls,
+                                )
+                                raise PreplanningStoreError(
+                                    "injected graph group commit partial conflict"
+                                )
+                            if self.exhausted_conflict_calls is not None:
+                                inner_self._record_conflict(
+                                    request=request,
+                                    conflict_calls=self.exhausted_conflict_calls,
+                                )
+                                raise PreplanningStoreError(
+                                    "injected graph group commit conflict"
+                                )
+                        if self.cas_attempts is not None:
+                            self.cas_attempts.append(request.transaction_group_id)
+                        self._run_before_compare_and_swap(request=request)
+                        reload = recording_group_commits.commit_or_reload(request=request)
+                        return reload
+
+                if max_conflict_failures > 0:
+                    group_commits = ConflictInjectingGroupCommitRepository()
+                else:
+                    group_commits = recording_group_commits
+
+            coordinator = BootstrapGraphDependentCoordinatorV3(
+                epoch_repository=epoch_repository,
+                plan_repository=AtomicStoreBootstrapGraphPlanRepositoryV3(
+                    atomic_store=atomic_store
+                ),
+                terminal_port=AtomicStoreBootstrapGraphTerminalPersistencePortV3(
+                    atomic_store=atomic_store
+                ),
+                compiler=DeterministicBootstrapGraphPlanCompilerV3(
+                    snapshot=snapshot, policy=policy, capability_registry=capabilities,
+                    operation_inputs=operation_inputs,
+                ),
+                authorizer=DeterministicBootstrapGraphPlanningAuthorizerV3(
+                    compilation=compilation
+                ),
+                group_commit_repository=group_commits,
+                terminal_preparer=DeterministicBootstrapGraphTerminalPreparationV3(),
+                terminal_host_authority=host_authority,
+            )
+            return BootstrapGraphExecutionV3(
+                coordinator=coordinator,
+                request=coordinator_request,
+                transition=transition,
+            )
+        except (ValueError, TypeError, AttributeError, RecursionError, RuntimeError) as exc:
+            if self.acquire_errors is not None:
+                self.acquire_errors.append(f"{type(exc).__name__}: {exc}")
+            return None
+        except Exception as exc:
+            if self.acquire_errors is not None:
+                self.acquire_errors.append(f"unexpected provider error: {type(exc).__name__}: {exc}")
+            return None
 
 __all__ = [
     "build_empty_capability_registry",

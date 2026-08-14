@@ -32,6 +32,7 @@ from memorii.core.semantic_ingestion.bootstrap_graph_terminal_preparation import
 from memorii.core.semantic_ingestion.contracts import (
     CANONICAL_INGESTION_EXECUTION_GRAPH,
     BootstrapGraphAttemptConstructionInputsV3,
+    BootstrapGraphControlEpochUnavailableV3,
     BootstrapGraphControlEpochTransitionRequestV3,
     BootstrapGraphDependentCoordinatorRequestV3,
     BootstrapGraphExecutionManifestGroupInputV3,
@@ -113,9 +114,22 @@ def _compile(*, request: object, epoch: object, operation_inputs: tuple[object, 
     policy = request.graph_authority.execution_policy
     groups = request.source_dependency_groups
     expected_ids = tuple(operation_id for group in groups for operation_id in group.operation_ids)
-    if not groups or tuple(item.operation_id for item in operation_inputs) != tuple(sorted(expected_ids)):
+    if not groups:
         raise ValueError("retained bootstrap graph reduction authority is incomplete")
-    by_operation = {item.operation_id: item for item in operation_inputs}
+    relevant_operations = tuple(
+        sorted(
+            (
+                item
+                for item in operation_inputs
+                if item.operation_id in set(expected_ids)
+            ),
+            key=lambda item: item.operation_id,
+        )
+    )
+    required_ids = tuple(sorted(expected_ids))
+    if tuple(item.operation_id for item in relevant_operations) != required_ids:
+        raise ValueError("retained bootstrap graph reduction authority is incomplete")
+    by_operation = {item.operation_id: item for item in relevant_operations}
     state = GraphPlanningState.create(
         base_snapshot_digest=snapshot.snapshot_digest, records=(),
         codec_manifest_fingerprint=snapshot.graph_snapshot.codec_manifest_fingerprint,
@@ -349,20 +363,39 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
                 "graph_authority": authority, "authenticated_ingress": request.authenticated_ingress,
                 "required_outcome_scopes": request.required_outcome_scopes}
         request_core_digest = contract_digest(b"memorii.semantic-ingestion.bootstrap-graph-request-core.v3", core)
-        transition = BootstrapGraphControlEpochTransitionRequestV3.create(
-            request_core_digest=request_core_digest, expected_epoch_digest=None, transition="initial",
-            normalization_replay=request.normalization_replay, graph_authority=authority,
-            authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes,
-            operation_fence=authority.operation_fence_binding,
-            operation_lease=authority.operation_lease_binding,
-            writer_commit=authority.writer_commit_binding,
-        )
         epochs = AtomicStoreBootstrapGraphControlEpochRepositoryV3(atomic_store=atomic_store)
-        epoch = epochs.transition_or_find(request=transition).epoch
+        source_alignment = request.normalization_replay.source_normalization_request.source_alignment
+        groups = source_alignment.source_dependency_groups
+        transition = None
+        current_epoch = epochs.load_current(request_core_digest=request_core_digest)
+        if current_epoch is None:
+            transition = BootstrapGraphControlEpochTransitionRequestV3.create(
+                request_core_digest=request_core_digest, expected_epoch_digest=None, transition="initial",
+                normalization_replay=request.normalization_replay, graph_authority=authority,
+                authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes,
+                operation_fence=authority.operation_fence_binding,
+                operation_lease=authority.operation_lease_binding,
+                writer_commit=authority.writer_commit_binding,
+            )
+            epoch = epochs.transition_or_find(request=transition).epoch
+        else:
+            coordinator_request = BootstrapGraphDependentCoordinatorRequestV3.create(
+                normalization_replay=request.normalization_replay,
+                source_alignment=source_alignment, source_dependency_groups=groups,
+                authenticated_ingress=request.authenticated_ingress,
+                required_outcome_scopes=request.required_outcome_scopes,
+                graph_authority=authority, request_core_digest=request_core_digest,
+                initial_control_epoch=current_epoch,
+            )
+            refreshed = epochs.refresh_current(
+                request=coordinator_request, current_epoch=current_epoch
+            )
+            if isinstance(refreshed, BootstrapGraphControlEpochUnavailableV3):
+                return None
+            epoch = refreshed.epoch
         coordinator_request = BootstrapGraphDependentCoordinatorRequestV3.create(
             normalization_replay=request.normalization_replay,
-            source_alignment=request.normalization_replay.source_normalization_request.source_alignment,
-            source_dependency_groups=request.normalization_replay.source_normalization_request.source_alignment.source_dependency_groups,
+            source_alignment=source_alignment, source_dependency_groups=groups,
             authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes,
             graph_authority=authority, request_core_digest=request_core_digest, initial_control_epoch=epoch,
         )

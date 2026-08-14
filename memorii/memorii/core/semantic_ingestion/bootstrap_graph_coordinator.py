@@ -60,8 +60,8 @@ class BootstrapGraphDependentCoordinatorV3:
         self._preparer, self._host = terminal_preparer, terminal_host_authority
 
     def coordinate(self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
-                   transition: BootstrapGraphControlEpochTransitionRequestV3) -> BootstrapGraphDependentCoordinatorResultV3:
-        if transition.request_core_digest != request.request_core_digest:
+                   transition: BootstrapGraphControlEpochTransitionRequestV3 | None) -> BootstrapGraphDependentCoordinatorResultV3:
+        if transition is not None and transition.request_core_digest != request.request_core_digest:
             return self._unavailable(request, "authority_unavailable")
         terminal = self._terminal.reload_by_request(request=request)
         if terminal is not None:
@@ -77,10 +77,27 @@ class BootstrapGraphDependentCoordinatorV3:
                 terminal_reload=terminal,
                 control_epoch_digest=terminal.control_epoch_digest,
             )
-        found = self._epochs.transition_or_find(request=transition)
-        if not isinstance(found, (BootstrapGraphControlEpochFoundV3, BootstrapGraphControlEpochAdvancedV3)):
-            return self._unavailable(request, "authority_unavailable")
-        epoch = found.epoch
+        if transition is None:
+            epoch = request.initial_control_epoch
+            if (
+                epoch.request_core_digest != request.request_core_digest
+                or epoch.operation_fence_binding != request.initial_control_epoch.operation_fence_binding
+                or epoch.writer_commit_binding != request.initial_control_epoch.writer_commit_binding
+                or epoch.delivery_principal_binding_digest != request.initial_control_epoch.delivery_principal_binding_digest
+                or epoch.required_scope_set_digest != request.initial_control_epoch.required_scope_set_digest
+            ):
+                return self._unavailable(request, "authority_unavailable")
+            refreshed = self._epochs.refresh_current(
+                request=request, current_epoch=epoch
+            )
+            if isinstance(refreshed, BootstrapGraphControlEpochUnavailableV3):
+                return self._unavailable(request, "authority_unavailable")
+            epoch = refreshed.epoch
+        else:
+            found = self._epochs.transition_or_find(request=transition)
+            if not isinstance(found, (BootstrapGraphControlEpochFoundV3, BootstrapGraphControlEpochAdvancedV3)):
+                return self._unavailable(request, "authority_unavailable")
+            epoch = found.epoch
         if (
             epoch.request_core_digest != request.request_core_digest
             or epoch.operation_fence_binding
@@ -93,12 +110,13 @@ class BootstrapGraphDependentCoordinatorV3:
             != request.initial_control_epoch.required_scope_set_digest
         ):
             return self._unavailable(request, "authority_unavailable")
-        refreshed = self._epochs.refresh_current(
-            request=request, current_epoch=epoch
-        )
-        if isinstance(refreshed, BootstrapGraphControlEpochUnavailableV3):
-            return self._unavailable(request, "authority_unavailable")
-        epoch = refreshed.epoch
+        if transition is not None:
+            refreshed = self._epochs.refresh_current(
+                request=request, current_epoch=epoch
+            )
+            if isinstance(refreshed, BootstrapGraphControlEpochUnavailableV3):
+                return self._unavailable(request, "authority_unavailable")
+            epoch = refreshed.epoch
         retry_reload = self._plans.reload_retry_by_request(
             request=request,
             authenticated_ingress=request.authenticated_ingress,
@@ -214,12 +232,30 @@ class BootstrapGraphDependentCoordinatorV3:
                 group_commit_reload = self._group_commits.commit_or_reload(
                     request=group_commit_request,
                 )
-            except (PreplanningStoreError, ValueError):
+            except (PreplanningStoreError, ValueError) as error:
+                reason = (
+                    "related_conflict"
+                    if self._is_related_group_conflict(error)
+                    else "storage_retry"
+                )
+                if reason == "related_conflict":
+                    return self._related_conflict_successor(
+                        request=request,
+                        epoch=epoch,
+                        predecessor_attempt=attempt,
+                        predecessor_lineage=lineage,
+                        predecessor_plan=compilation.plan,
+                        predecessor_authorizations=authorizations,
+                        predecessor_pre_execution=pre_execution,
+                        completed_group_results=tuple(constructions),
+                        current_generation=current_generation,
+                        conflicted_group_id=member.transaction_group_id,
+                    )
                 return self._post_effect_retry(
                     request=request, epoch=epoch, attempt=attempt,
                     plan=compilation.plan, authorizations=authorizations, lineage=lineage,
                     constructions=constructions, groups=compilation.plan.canonical_group_order,
-                    generation=current_generation,
+                    generation=current_generation, reason=reason,
                 )
             construction = BootstrapGraphArtifactAssemblerV3.group_construction(
                 request_digest=request.request_digest,
@@ -251,6 +287,8 @@ class BootstrapGraphDependentCoordinatorV3:
                 # exact result before reporting a retry so recovery cannot repeat
                 # an effect merely because its checkpoint acknowledgement failed.
                 constructions.append(construction)
+                # A pre-checkpoint CAS cannot determine conflict provenance.
+                # Preserve storage semantics for safe, idempotent recovery.
                 return self._post_effect_retry(
                     request=request,
                     epoch=epoch,
@@ -290,6 +328,7 @@ class BootstrapGraphDependentCoordinatorV3:
                 predecessor_authorizations, predecessor_lineage, [],
                 tuple(item.group_id for item in request.source_dependency_groups),
                 compilation, current_generation,
+                reason="related_conflict",
             )
         bindings = (
             epoch.operation_lease_binding,
@@ -316,7 +355,9 @@ class BootstrapGraphDependentCoordinatorV3:
                 request, epoch, predecessor_attempt, predecessor_plan,
                 predecessor_authorizations, predecessor_lineage, [],
                 tuple(item.group_id for item in request.source_dependency_groups),
-                authorizations, plan_reload.checkpoint_receipt.successor_generation,
+                authorizations,
+                plan_reload.checkpoint_receipt.successor_generation,
+                reason="related_conflict",
             )
         authority = BootstrapGraphArtifactAssemblerV3.replacement_successor_authority(
             predecessor_attempt=predecessor_attempt,
@@ -537,7 +578,7 @@ class BootstrapGraphDependentCoordinatorV3:
     def _post_effect_retry(
         self, *, request: object, epoch: object, attempt: object, plan: object,
         authorizations: object, lineage: object, constructions: list[object],
-        groups: tuple[str, ...], generation: object,
+        groups: tuple[str, ...], generation: object, reason: str = "storage_retry",
     ) -> BootstrapGraphDurableRetryProgressV3:
         unavailable = BootstrapGraphV3ProducerUnavailable.create(
             phase="group_execute",
@@ -547,11 +588,34 @@ class BootstrapGraphDependentCoordinatorV3:
         )
         return self._retry(
             request, epoch, attempt, plan, authorizations, lineage, constructions,
-            groups, unavailable, generation,
+            groups, unavailable, generation, reason=reason,
         )
 
-    def _retry(self, request: object, epoch: object, attempt: object, plan: object, authorizations: object, lineage: object, constructions: list[object], groups: tuple[str, ...], unavailable: object, generation: object):
-        progress = BootstrapGraphArtifactAssemblerV3.durable_retry(unavailable=unavailable, attempt=attempt, source_plan_lineage_digest=lineage.lineage_digest, completed_group_result_digests=tuple(item.result_digest for item in constructions), retry_group_ids=tuple(item for item in groups if item not in {value.transaction_group_id for value in constructions}), reason="storage_retry")
+    @staticmethod
+    def _is_related_group_conflict(error: Exception) -> bool:
+        return (
+            isinstance(error, PreplanningStoreError)
+            and "conflict" in str(error)
+        )
+
+    def _retry(
+        self, request: object, epoch: object, attempt: object, plan: object,
+        authorizations: object, lineage: object, constructions: list[object],
+        groups: tuple[str, ...], unavailable: object, generation: object,
+        *, reason: str = "storage_retry",
+    ):
+        progress = BootstrapGraphArtifactAssemblerV3.durable_retry(
+            unavailable=unavailable,
+            attempt=attempt,
+            source_plan_lineage_digest=lineage.lineage_digest,
+            completed_group_result_digests=tuple(item.result_digest for item in constructions),
+            retry_group_ids=tuple(
+                item for item in groups if item not in {
+                    value.transaction_group_id for value in constructions
+                }
+            ),
+            reason=reason,
+        )
         reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_retry_checkpoint(progress=progress, attempt=attempt, plan=plan, authorizations=authorizations, lineage=lineage, completed_group_results=tuple(constructions), operation_lease_binding=epoch.operation_lease_binding, operation_fence_binding=epoch.operation_fence_binding, writer_commit_binding=epoch.writer_commit_binding, predecessor_generation=generation), authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
         progress_member = next(
             (

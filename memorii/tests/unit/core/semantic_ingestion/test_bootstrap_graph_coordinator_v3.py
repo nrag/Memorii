@@ -33,7 +33,6 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphDependentCoordinatorRequestV3,
     BootstrapGraphSnapshotAuthorityV3,
     BootstrapGraphTerminalReloadV3,
-    BootstrapGraphV3ProducerUnavailable,
     ProviderEntityObject,
     ProviderFact,
     ProviderMention,
@@ -44,7 +43,6 @@ from tests.fixtures.semantic_ingestion.bootstrap_graph_v3_fixture import (
     DeterministicBootstrapGraphAuthorityProviderV3,
     DeterministicBootstrapGraphPlanCompilerV3,
     DeterministicBootstrapGraphPlanningAuthorizerV3,
-    DeterministicBootstrapGraphSuccessfulExecutorV3,
     build_bootstrap_graph_terminal_host_authority_v3,
     build_empty_capability_registry,
     build_empty_graph_snapshot_bundle,
@@ -253,44 +251,24 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
         control_epoch=epoch,
         accepted_materialization=outcome_kind == "success",
     )
-    successful_calls: list[str] = []
-    unavailable_calls: list[str] = []
+    commit_calls: list[tuple[str, str]] = []
     host_authority = build_bootstrap_graph_terminal_host_authority_v3(
         source=source,
         operation_fence_binding=marker.operation_fence_binding,
     )
-    successful_executor = DeterministicBootstrapGraphSuccessfulExecutorV3(
-        host_authority=host_authority,
-        calls=successful_calls,
-    )
 
-    class ConflictThenSuccessExecutor:
-        def __init__(self, delegate) -> None:
-            self.calls = 0
-            self.delegate = delegate
+    original_commit_or_reload = atomic.commit_or_reload_bootstrap_graph_group_v3
 
-        def execute_cas(self, **kwargs):
-            self.calls += 1
-            if self.calls == 1:
-                cas_request = kwargs["request"]
-                return BootstrapGraphV3ProducerUnavailable.create(
-                    phase="group_execute",
-                    reason="read_conflict",
-                    request_digest=cas_request.request_digest,
-                    control_epoch_digest=kwargs["control_epoch"].epoch_digest,
-                )
-            return self.delegate.execute_cas(**kwargs)
+    def flaky_group_commit(*, request):
+        commit_calls.append((request.transaction_group_id, request.request_ctv_digest))
+        if outcome_kind == "related_conflict" and len(commit_calls) == 1:
+            raise PreplanningStoreError("bootstrap graph group commit CAS conflicted")
+        return original_commit_or_reload(request=request)
 
-    conflict_executor = ConflictThenSuccessExecutor(successful_executor)
-    exhausted_executor = ConflictThenSuccessExecutor(
-        DeterministicBootstrapGraphSuccessfulExecutorV3(
-            host_authority=host_authority,
-            calls=successful_calls,
-            disposition="failed",
-            terminal_status="failed",
-            final_status="failed",
-            not_applicable_reason="failed",
-        )
+    monkeypatch.setattr(
+        atomic,
+        "commit_or_reload_bootstrap_graph_group_v3",
+        flaky_group_commit,
     )
     coordinator = BootstrapGraphDependentCoordinatorV3(
         epoch_repository=AtomicStoreBootstrapGraphControlEpochRepositoryV3(
@@ -338,32 +316,31 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
     if outcome_kind in {"writer_changed", "writer_unavailable"}:
         assert result.kind == "pre_graph_noncommit"
         assert result.reason == "authority_unavailable"
-        assert successful_calls == []
-        assert unavailable_calls == []
+        assert commit_calls == []
         return
     if outcome_kind == "retry":
         assert result.kind == "durable_retry"
         repeat = coordinator.coordinate(request=request, transition=transition)
         assert repeat == result
-        assert len(unavailable_calls) == 1
+        assert commit_calls == []
         return
-    assert result.kind == (
-        "finalized_failure" if outcome_kind == "exhausted_conflict" else "succeeded"
-    )
-    assert len(successful_calls) == (0 if outcome_kind == "success" else 1)
+    if outcome_kind == "related_conflict":
+        assert len(commit_calls) == 2
+        assert result.kind == "succeeded"
+    else:
+        assert result.kind == "succeeded"
     if outcome_kind == "success":
         snapshot_after_commit = atomic.graph_state_snapshot()
         assert tuple(
             item.payload_record_kind for item in snapshot_after_commit.records
         ) == ("provenance",)
         assert snapshot_after_commit.graph_revision != "genesis"
-    if outcome_kind == "related_conflict":
-        assert conflict_executor.calls == 2
-    if outcome_kind == "exhausted_conflict":
-        assert exhausted_executor.calls == 2
     repeat = coordinator.coordinate(request=request, transition=transition)
     assert repeat == result
-    assert len(successful_calls) == (0 if outcome_kind == "success" else 1)
+    if outcome_kind == "success":
+        assert len(commit_calls) == 1
+    if outcome_kind == "related_conflict":
+        assert len(commit_calls) == 2
 
 
 def test_direct_provider_root_reaches_bootstrap_graph_terminal() -> None:

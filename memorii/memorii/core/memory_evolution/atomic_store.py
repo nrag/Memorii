@@ -4203,6 +4203,7 @@ class SemanticIngestionAtomicStore:
             BootstrapGraphNormalizationAuthorityMemberV3,
             BootstrapGraphNormalizationAuthorityReloadV3,
             BootstrapRecoveryReplayRecordV3,
+            canonical_contract_value,
             decode_semantic_contract,
             encode_semantic_contract,
         )
@@ -4223,8 +4224,10 @@ class SemanticIngestionAtomicStore:
             authority = decode_semantic_contract(
                 member.canonical_payload, BootstrapGraphNormalizationAuthorityMemberV3,
             )
+            authority_payload = encode_semantic_contract(authority)
             if (
-                encode_semantic_contract(authority) != member.canonical_payload
+                authority_payload != member.canonical_payload
+                and encode_typed_value(canonical_contract_value(authority)) != member.canonical_payload
                 or member.payload_digest != sha256(member.canonical_payload).hexdigest()
                 or authority.recovery_key_digest != normalization_replay.recovery_key_digest
                 or authority.normalization_request_digest
@@ -4255,6 +4258,7 @@ class SemanticIngestionAtomicStore:
             BootstrapRecoveryReplayRecordV3,
             BootstrapSemanticReductionAuthorityMemberV3,
             BootstrapSemanticReductionAuthorityReloadV3,
+            canonical_contract_value,
             decode_semantic_contract,
             encode_semantic_contract,
         )
@@ -4283,10 +4287,20 @@ class SemanticIngestionAtomicStore:
                 authority_member.canonical_payload,
                 BootstrapSemanticReductionAuthorityMemberV3,
             )
+            core_payload = encode_semantic_contract(core)
             if (
-                encode_semantic_contract(core) != core_member.canonical_payload
-                or encode_semantic_contract(authority) != authority_member.canonical_payload
-                or core_member.payload_digest != sha256(core_member.canonical_payload).hexdigest()
+                core_payload != core_member.canonical_payload
+                and encode_typed_value(canonical_contract_value(core)) != core_member.canonical_payload
+            ):
+                return None
+            authority_payload = encode_semantic_contract(authority)
+            if (
+                authority_payload != authority_member.canonical_payload
+                and encode_typed_value(canonical_contract_value(authority)) != authority_member.canonical_payload
+            ):
+                return None
+            if (
+                core_member.payload_digest != sha256(core_member.canonical_payload).hexdigest()
                 or authority_member.payload_digest
                 != sha256(authority_member.canonical_payload).hexdigest()
                 or authority.normalization_request_core != core
@@ -8329,6 +8343,38 @@ class SemanticIngestionAtomicStore:
                 found_type=BootstrapGraphControlEpochFoundV3,
                 advanced_type=BootstrapGraphControlEpochAdvancedV3,
             )
+
+    def load_bootstrap_graph_control_epoch_v3(
+        self, *, request_core_digest: str
+    ) -> object | None:
+        """Return the current control epoch for a request core if one is present."""
+        if not request_core_digest:
+            return None
+
+        head = self._memory_plane.get_record(
+            _bootstrap_graph_v3_epoch_head_id(request_core_digest)
+        )
+        if head is None:
+            return None
+        if (
+            head.source_kind != "semantic_ingestion_bootstrap_graph_v3_epoch_head"
+            or head.content.get("semantic_ingestion_kind")
+            != "bootstrap_graph_v3_epoch_head"
+            or head.content.get("request_core_digest") != request_core_digest
+        ):
+            return None
+
+        epoch_id = _bootstrap_graph_v3_epoch_id(
+            request_core_digest,
+            int(head.content.get("epoch", -1)),
+        )
+        epoch_record = self._memory_plane.get_record(epoch_id)
+        if epoch_record is None:
+            return None
+        try:
+            return _bootstrap_graph_v3_epoch_from_record(epoch_record)
+        except (TypeError, ValueError, KeyError):
+            return None
         with linearization.exclusive():
             return self._transition_or_find_bootstrap_graph_control_epoch_v3_linearized(
                 request=request,

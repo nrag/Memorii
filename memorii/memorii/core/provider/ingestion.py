@@ -61,6 +61,8 @@ from memorii.core.semantic_ingestion.contracts import (
     AuthorizationStageSnapshot,
     AuthorizationUsePoint,
     BootstrapGraphDependentCoordinatorSucceededV3,
+    BootstrapGraphDurableRetryProgressV3,
+    BootstrapGraphDependentPreGraphNonCommitV3,
     BootstrapGraphFinalizedFailureV3,
     BootstrapRecoveryClaimedV3,
     BootstrapRecoveryFoundV3,
@@ -1554,6 +1556,40 @@ class ProviderIngestionCoordinator:
                         ),
                         candidates=(), temporal_closures=(), attempt_count=0,
                     ), authorization_guard
+                if isinstance(graph_result, BootstrapGraphDurableRetryProgressV3):
+                    if graph_result.reason in {
+                        "related_conflict",
+                        "lease_renewal_required",
+                        "lease_reclaim_required",
+                        "publication_retry",
+                        "storage_retry",
+                    }:
+                        return SemanticTerminalOutcome.create(
+                            operation_id=operation_id,
+                            status="evidence_only",
+                            reason_codes=("source_only",),
+                            candidates=(), temporal_closures=(), attempt_count=0,
+                        ), None
+                    return SemanticTerminalOutcome.create(
+                        operation_id=operation_id,
+                        status="evidence_only",
+                        reason_codes=("graph_transaction_authority_unavailable",),
+                        candidates=(), temporal_closures=(), attempt_count=0,
+                    ), None
+                if isinstance(graph_result, BootstrapGraphDependentPreGraphNonCommitV3):
+                    if graph_result.reason == "authority_unavailable":
+                        return SemanticTerminalOutcome.create(
+                            operation_id=operation_id,
+                            status="evidence_only",
+                            reason_codes=("graph_transaction_authority_unavailable",),
+                            candidates=(), temporal_closures=(), attempt_count=0,
+                        ), None
+                    return SemanticTerminalOutcome.create(
+                        operation_id=operation_id,
+                        status="evidence_only",
+                        reason_codes=("source_only",),
+                        candidates=(), temporal_closures=(), attempt_count=0,
+                    ), None
                 return SemanticTerminalOutcome.create(
                     operation_id=operation_id, status="evidence_only",
                     reason_codes=("graph_transaction_authority_unavailable",),

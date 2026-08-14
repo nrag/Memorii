@@ -49,6 +49,10 @@ class _BootstrapGraphAtomicStoreV3(Protocol):
         self, *, request: BootstrapGraphControlEpochTransitionRequestV3
     ) -> BootstrapGraphControlEpochTransitionResultV3: ...
 
+    def load_bootstrap_graph_control_epoch_v3(
+        self, *, request_core_digest: str
+    ) -> BootstrapGraphControlEpochV3 | None: ...
+
     def checkpoint_bootstrap_graph_transaction_v3(
         self,
         *,
@@ -114,6 +118,11 @@ class AtomicStoreBootstrapGraphControlEpochRepositoryV3:
         )
         return self._atomic_store.transition_or_find_bootstrap_graph_control_epoch_v3(
             request=validated
+        )
+
+    def load_current(self, *, request_core_digest: str) -> BootstrapGraphControlEpochV3 | None:
+        return self._atomic_store.load_bootstrap_graph_control_epoch_v3(
+            request_core_digest=request_core_digest
         )
 
     def refresh_current(
