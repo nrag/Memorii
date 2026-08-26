@@ -10,6 +10,30 @@
   service; no production invoker of `reconcile_memory_evolution` exists
   today). The redelivery proofs remain the redelivery-safety leg of the
   contract per SIA-R23.
+
+## Design Direction For The Repair Round (user answers, 2026-08-26)
+
+The user answered the two open design questions:
+
+1. Trust model, do-not-overdesign: the Memorii/harness interface is not
+   authenticated and Memorii likely runs as a separate process; the only
+   enforceable guarantee is that write locations are locked down so only the
+   Memorii process can write (reads allowed). Recovery provenance must
+   therefore derive from retained durable records under process write
+   exclusivity, not from reconstructed authenticated ingress or new
+   capability machinery.
+2. Trigger: the product requires automatic periodic curation and
+   organization of memories across planes (see the product document's
+   Learning & Consolidation Plane); the recovery sweep must be a phase of
+   that periodic process rather than a new mechanism.
+
+Shape agreed for the design round: marker-keyed reconcile admission from
+retained state (no new persisted records, no V3 execution-plan
+persistence), recovery scope derived from retained records, a bounded
+maintenance tick owned by Memorii (piggybacked rate-limited sweep on public
+calls plus an explicit maintenance entry point), attempts counted against
+the existing lease-recovery budget, and a documented process-exclusive
+write-permission deployment premise.
 - Linked debugging WorkPlan (complete):
   `../../semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md`
 - Base revision: `5bd516bf4b576d927f1a32edb01531b6f18419e6` (closure commit of
