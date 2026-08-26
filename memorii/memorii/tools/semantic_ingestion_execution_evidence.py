@@ -921,7 +921,7 @@ _CURRENT_GENERATION_NONCYCLIC_BODY_FIELDS = {
             "runner_environment_profile_registry_digest", "golden_vector_manifest_digest",
             "section_default_registry_digest", "structural_mapping_rule_registry_digest",
             "override_registry_digest", "anchor_binding_registry_digest", "coverage_root_digest",
-            "execution_root_digest", "bootstrap_anchor_id", "bootstrap_anchor_digest",
+            "execution_root_digest", "bootstrap_anchor_id", "bootstrap_profile_coordinate", "bootstrap_profile_trust_anchor_digest", "bootstrap_anchor_digest",
             "bootstrap_anchor_history_digest", "bootstrap_rotation_sequence",
             "recovery_trust_policy_digest", "recovery_policy_history_digest",
             "recovery_trust_root_digests", "recovery_root_history_digest",

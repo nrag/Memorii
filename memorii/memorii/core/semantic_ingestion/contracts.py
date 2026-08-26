@@ -38,6 +38,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     SemanticWriterCommitBinding,
     decode_typed_value,
     encode_typed_value,
+    encode_typed_value_with_spans,
 )
 from memorii.core.memory_evolution.models import ClaimValueType, ExtractionTriggerMode, MemoryScope, SourceObservation
 from memorii.core.memory_evolution.semantic_analysis.decision_contracts import (
@@ -77,9 +78,8 @@ if TYPE_CHECKING:
         PlanningClaimProjection,
         PlanningEntityRevision,
         PlanningProvenance,
-        PlanningReferenceDisposition,
-        PlanningRelationRevision,
         PlanningRecordPrecondition,
+        PlanningRelationRevision,
         PlanningTemporalTransition,
         PlanningTypeEvidence,
     )
@@ -93,7 +93,16 @@ if TYPE_CHECKING:
         GraphReadSetToken,
         SealedGraphStateSnapshot,
     )
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import CanonicalEvidenceArena
     from memorii.core.semantic_ingestion.event_replay import SemanticMemoryEventBatch
+
+from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+    CANONICAL_CODEC_REVISION,
+    CANONICAL_PROFILE_REVISION,
+    CanonicalMemberEvidence,
+    CanonicalMemberIndex,
+    ValidatedCanonicalEvidenceResult,
+)
 
 Commitment = Literal[
     "asserted",
@@ -128,6 +137,50 @@ def canonical_contract_value(value: object) -> object:
     if isinstance(value, frozenset):
         return frozenset(canonical_contract_value(item) for item in value)
     return value
+
+
+def _build_validated_semantic_contract_result(
+    *,
+    value: BaseModel,
+    canonical_contract_bytes: bytes,
+    canonical_payload: object,
+    member_spans: tuple[object, ...],
+    domain: bytes,
+) -> ValidatedCanonicalEvidenceResult:
+    try:
+        validated = type(value).model_validate(
+            _restore_closed_wire_enums(canonical_payload),
+            context=None,
+        )
+    except (TypeError, ValueError) as exc:
+        raise SemanticContractCodecError("semantic ingestion contract validation failed") from exc
+
+    return ValidatedCanonicalEvidenceResult(
+        contract=validated,
+        canonical_contract_bytes=canonical_contract_bytes,
+        canonical_member_index=CanonicalMemberIndex(
+            contract_type=f"{type(validated).__module__}.{type(validated).__qualname__}",
+            member_paths=len(member_spans),
+            canonical_digest=sha256(canonical_contract_bytes).hexdigest(),
+        ),
+        validation_provenance=("transport", "domain", "content_digest"),
+        member_evidence=tuple(
+            CanonicalMemberEvidence(
+                path=span.path,
+                begin=span.begin,
+                end=span.end,
+                member_digest=sha256(canonical_contract_bytes[span.begin : span.end]).hexdigest(),
+                member_type=span.value_type,
+                domain=_CANONICAL_CONTRACT_ENVELOPE.encode("ascii"),
+                profile_revision=CANONICAL_PROFILE_REVISION,
+                codec_revision=CANONICAL_CODEC_REVISION,
+                schema=_CANONICAL_CONTRACT_ENVELOPE,
+                provenance=("transport", "domain", "content_digest"),
+            )
+            for span in member_spans
+        ),
+        domain=domain,
+    )
 
 
 def contract_digest(domain: bytes, value: object) -> str:
@@ -10812,7 +10865,7 @@ class BootstrapIdentityReservationUseSetV3(_BootstrapV3Contract):
     _digest_field = "authority_digest"
 
     @model_validator(mode="after")
-    def validate_reservation_set(self) -> "BootstrapIdentityReservationUseSetV3":
+    def validate_reservation_set(self) -> BootstrapIdentityReservationUseSetV3:
         values = self.reservation_use_authorizations
         if not values or any(item.transaction_group_id != self.transaction_group_id for item in values):
             raise ValueError("bootstrap graph reservation use set is invalid")
@@ -10841,7 +10894,7 @@ class BootstrapTransactionGroupOperationPlanV3(_BootstrapV3Contract):
     _digest_field = "operation_plan_digest"
 
     @model_validator(mode="after")
-    def validate_operation_plan(self) -> "BootstrapTransactionGroupOperationPlanV3":
+    def validate_operation_plan(self) -> BootstrapTransactionGroupOperationPlanV3:
         for values in (self.member_digests, self.segment_ids, self.dependency_group_ids):
             if not values or values != tuple(sorted(set(values))) or len(values) > 4096:
                 raise ValueError("bootstrap graph operation plan vectors are invalid")
@@ -10869,7 +10922,7 @@ class BootstrapTransactionGroupPlanMemberV3(_BootstrapV3Contract):
         return tuple(item.operation_id for item in self.operation_plans)
 
     @model_validator(mode="after")
-    def validate_member_vectors(self) -> "BootstrapTransactionGroupPlanMemberV3":
+    def validate_member_vectors(self) -> BootstrapTransactionGroupPlanMemberV3:
         if not 1 <= len(self.operation_plans) <= 256:
             raise ValueError("bootstrap graph plan member operation cardinality is invalid")
         if self.operation_ids != tuple(sorted(set(self.operation_ids))):
@@ -11247,7 +11300,7 @@ class BootstrapCanonicalFirstUseDependencyV3(_BootstrapV3Contract):
     _digest_field = "dependency_digest"
 
     @model_validator(mode="after")
-    def validate_occurrences(self) -> "BootstrapCanonicalFirstUseDependencyV3":
+    def validate_occurrences(self) -> BootstrapCanonicalFirstUseDependencyV3:
         producer_keys = tuple(item.source_coordinate_digest for item in self.producer_occurrences)
         consumer_keys = tuple(item.occurrence.source_coordinate_digest for item in self.consumers)
         if (
@@ -11288,16 +11341,16 @@ class BootstrapNativeTargetPlanningRequestV3(_BootstrapV3Contract):
 
     transaction_group_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     operation_input: BootstrapNativeOperationReductionInputV3
-    sealed_snapshot: "SealedGraphStateSnapshot"
+    sealed_snapshot: SealedGraphStateSnapshot
     effective_read_set: GraphReadSet
-    current_planning_state: "GraphPlanningState"
-    target_resolution_authority: "BootstrapNativeTargetResolutionAuthorityV3"
+    current_planning_state: GraphPlanningState
+    target_resolution_authority: BootstrapNativeTargetResolutionAuthorityV3
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-target-planning-request.v3"
     _digest_field = "request_digest"
 
     @model_validator(mode="after")
-    def validate_request(self) -> "BootstrapNativeTargetPlanningRequestV3":
+    def validate_request(self) -> BootstrapNativeTargetPlanningRequestV3:
         if (
             self.effective_read_set.read_set_digest != self.sealed_snapshot.read_set.read_set_digest
             or self.current_planning_state.base_snapshot_digest != self.sealed_snapshot.snapshot_digest
@@ -11317,7 +11370,7 @@ class BootstrapSnapshotTargetAuthorityV3(_BootstrapV3Contract):
     _digest_field = "authority_digest"
 
     @model_validator(mode="after")
-    def validate_snapshot_target(self) -> "BootstrapSnapshotTargetAuthorityV3":
+    def validate_snapshot_target(self) -> BootstrapSnapshotTargetAuthorityV3:
         if self.target.record_digest != self.snapshot_record_digest:
             raise ValueError("native snapshot target record is substituted")
         return self
@@ -11338,7 +11391,7 @@ class BootstrapPendingTargetAuthorityV3(_BootstrapV3Contract):
     _digest_field = "authority_digest"
 
     @model_validator(mode="after")
-    def validate_pending_target(self) -> "BootstrapPendingTargetAuthorityV3":
+    def validate_pending_target(self) -> BootstrapPendingTargetAuthorityV3:
         if self.target.record_digest != self.planning_record_digest:
             raise ValueError("native pending target record is substituted")
         return self
@@ -11361,7 +11414,7 @@ class BootstrapNewFirstUseTargetAuthorityV3(_BootstrapV3Contract):
     _digest_field = "authority_digest"
 
     @model_validator(mode="after")
-    def validate_seed_coordinate(self) -> "BootstrapNewFirstUseTargetAuthorityV3":
+    def validate_seed_coordinate(self) -> BootstrapNewFirstUseTargetAuthorityV3:
         if self.source_coordinate_digest != self.seed_producer_source_coordinate_digest:
             raise ValueError("new first-use target coordinate is substituted")
         return self
@@ -11430,7 +11483,7 @@ class BootstrapNewCanonicalIdentityAllocationV3(_BootstrapV3Contract):
     entity_revision_id: str = Field(min_length=1)
     alias_proofs: tuple[BootstrapProposalEvidenceItemV3, ...]
     type_proofs: tuple[BootstrapProposalEvidenceItemV3, ...]
-    planned_identity_reservation: "PlannedIdentityReservation"
+    planned_identity_reservation: PlannedIdentityReservation
     seed_producer_operation_execution_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     seed_producer_source_coordinate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     allocation_proof_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -11502,7 +11555,7 @@ class BootstrapCanonicalIdentityAuthorityWriteRequestV3(_BootstrapV3Contract):
     _digest_field = "write_digest"
 
     @model_validator(mode="after")
-    def validate_write(self) -> "BootstrapCanonicalIdentityAuthorityWriteRequestV3":
+    def validate_write(self) -> BootstrapCanonicalIdentityAuthorityWriteRequestV3:
         authority = self.authority_reload.authority
         if (
             authority.required_scope_set_digest != self.required_outcome_scopes.required_scope_set_digest
@@ -11560,15 +11613,15 @@ class BootstrapNativePlanningRecordV3(_BootstrapV3Contract):
     operation_execution_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     record_kind: GraphRecordKind
     record_id: str = Field(min_length=1)
-    precondition: "PlanningRecordPrecondition"
-    planning_payload: "CanonicalPlanningRecordPayload"
+    precondition: PlanningRecordPrecondition
+    planning_payload: CanonicalPlanningRecordPayload
     source_member_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     record_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-planning-record.v3"
     _digest_field = "record_digest"
 
     @model_validator(mode="after")
-    def validate_planning_record(self) -> "BootstrapNativePlanningRecordV3":
+    def validate_planning_record(self) -> BootstrapNativePlanningRecordV3:
         if self.planning_payload.record_kind != self.record_kind:
             raise ValueError("native planning record kind is substituted")
         return self
@@ -11607,9 +11660,9 @@ class BootstrapNativeEntitySeedV3(_BootstrapV3Contract):
     seed_producer_source_coordinate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     logical_entity_id: str = Field(min_length=1)
     entity_revision_id: str = Field(min_length=1)
-    entity_revision: "PlanningEntityRevision"
-    aliases: tuple["PlanningAliasRevision", ...]
-    type_evidence: tuple["PlanningTypeEvidence", ...]
+    entity_revision: PlanningEntityRevision
+    aliases: tuple[PlanningAliasRevision, ...]
+    type_evidence: tuple[PlanningTypeEvidence, ...]
     alias_type_proof_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     seed_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-entity-seed.v3"
@@ -11622,11 +11675,11 @@ class BootstrapNativeFactPlanningSeedV3(_BootstrapV3Contract):
     subject_target: BootstrapNativeTargetBindingV3
     object_target: BootstrapNativeTargetBindingV3 | None
     created_entities: tuple[BootstrapNativeEntitySeedV3, ...]
-    claim_assertion: "PlanningClaimAssertion"
-    claim_projection: "PlanningClaimProjection"
-    relation_revision: "PlanningRelationRevision | None"
-    citations: tuple["PlanningCitation", ...]
-    provenances: tuple["PlanningProvenance", ...]
+    claim_assertion: PlanningClaimAssertion
+    claim_projection: PlanningClaimProjection
+    relation_revision: PlanningRelationRevision | None
+    citations: tuple[PlanningCitation, ...]
+    provenances: tuple[PlanningProvenance, ...]
     terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
     seed_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-fact-planning-seed.v3"
@@ -11636,7 +11689,7 @@ class BootstrapNativeFactPlanningSeedV3(_BootstrapV3Contract):
 class BootstrapNativeCorrectionPlanningSeedV3(_BootstrapV3Contract):
     kind: Literal["correction"]
     selector_targets: tuple[BootstrapNativeSelectorTargetV3, ...]
-    transitions: tuple["PlanningTemporalTransition", ...]
+    transitions: tuple[PlanningTemporalTransition, ...]
     replacement_fact: BootstrapNativeFactPlanningSeedV3
     seed_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-correction-planning-seed.v3"
@@ -11646,9 +11699,9 @@ class BootstrapNativeCorrectionPlanningSeedV3(_BootstrapV3Contract):
 class BootstrapNativeRetractionPlanningSeedV3(_BootstrapV3Contract):
     kind: Literal["retraction"]
     selector_targets: tuple[BootstrapNativeSelectorTargetV3, ...]
-    transitions: tuple["PlanningTemporalTransition", ...]
-    citations: tuple["PlanningCitation", ...]
-    provenances: tuple["PlanningProvenance", ...]
+    transitions: tuple[PlanningTemporalTransition, ...]
+    citations: tuple[PlanningCitation, ...]
+    provenances: tuple[PlanningProvenance, ...]
     seed_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-retraction-planning-seed.v3"
     _digest_field = "seed_digest"
@@ -11658,9 +11711,9 @@ class BootstrapNativeActionPlanningSeedV3(_BootstrapV3Contract):
     kind: Literal["action_state"]
     participant_targets: tuple[BootstrapNativeTargetBindingV3, ...]
     created_entities: tuple[BootstrapNativeEntitySeedV3, ...]
-    action_revision: "PlanningActionRevision"
-    citations: tuple["PlanningCitation", ...]
-    provenances: tuple["PlanningProvenance", ...]
+    action_revision: PlanningActionRevision
+    citations: tuple[PlanningCitation, ...]
+    provenances: tuple[PlanningProvenance, ...]
     terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
     seed_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-action-planning-seed.v3"
@@ -11670,7 +11723,7 @@ class BootstrapNativeActionPlanningSeedV3(_BootstrapV3Contract):
 class BootstrapNativeIdentityMaterializationV3(_BootstrapV3Contract):
     canonical_identity_authority: BootstrapCanonicalIdentityBindingAllocationReloadV3
     graph_free_identity_input_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    fresh_planning_result: "NonPublishingIdentityPlanningResultV3"
+    fresh_planning_result: NonPublishingIdentityPlanningResultV3
     revision_and_alias_records: tuple[BootstrapNativePlanningRecordV3, ...]
     lineage_record: BootstrapNativePlanningRecordV3
     reference_disposition_records: tuple[BootstrapNativePlanningRecordV3, ...]
@@ -11684,10 +11737,10 @@ class BootstrapNativeIdentityPlanningSeedV3(_BootstrapV3Contract):
     predecessor_targets: tuple[BootstrapNativeTargetBindingV3, ...]
     successor_targets: tuple[BootstrapNativeTargetBindingV3, ...]
     selector_targets: tuple[BootstrapNativeSelectorTargetV3, ...]
-    admission: "BootstrapNativeIdentityAdmissionV3"
+    admission: BootstrapNativeIdentityAdmissionV3
     materialization: BootstrapNativeIdentityMaterializationV3
-    citations: tuple["PlanningCitation", ...]
-    provenances: tuple["PlanningProvenance", ...]
+    citations: tuple[PlanningCitation, ...]
+    provenances: tuple[PlanningProvenance, ...]
     seed_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-identity-planning-seed.v3"
     _digest_field = "seed_digest"
@@ -11719,13 +11772,13 @@ class BootstrapGraphTargetMaterializationPlanV3(_BootstrapV3Contract):
     terminal_bindings: tuple[BootstrapNativeTemporalTerminalBindingV3, ...]
     evidence_projections: tuple[BootstrapNativeEvidenceProjectionV3, ...]
     identity_materialization: BootstrapNativeIdentityMaterializationV3 | None
-    planning_state_after: "GraphPlanningState"
+    planning_state_after: GraphPlanningState
     plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.target-materialization-plan.v3"
     _digest_field = "plan_digest"
 
     @model_validator(mode="after")
-    def validate_plan_order(self) -> "BootstrapGraphTargetMaterializationPlanV3":
+    def validate_plan_order(self) -> BootstrapGraphTargetMaterializationPlanV3:
         record_keys = tuple((item.record_kind, item.record_id, item.record_digest) for item in self.planning_records)
         if record_keys != tuple(sorted(set(record_keys))):
             raise ValueError("native target plan records are not canonical")
@@ -11741,7 +11794,7 @@ class BootstrapNativePlanningUnavailableV3(_BootstrapV3Contract):
     operation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     proposal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     status: Literal["unresolved", "rejected", "evidence_only"]
-    reason_codes: tuple["BootstrapNativeTerminalReasonV3", ...]
+    reason_codes: tuple[BootstrapNativeTerminalReasonV3, ...]
     sealed_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     effective_read_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     planning_state_before_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -11750,7 +11803,7 @@ class BootstrapNativePlanningUnavailableV3(_BootstrapV3Contract):
     _digest_field = "unavailable_digest"
 
     @model_validator(mode="after")
-    def validate_unavailable(self) -> "BootstrapNativePlanningUnavailableV3":
+    def validate_unavailable(self) -> BootstrapNativePlanningUnavailableV3:
         if not self.reason_codes or self.reason_codes != tuple(sorted(set(self.reason_codes))):
             raise ValueError("native planning unavailable reasons are invalid")
         return self
@@ -11762,14 +11815,14 @@ class BootstrapNativeRecordMaterializationIntentV3(_BootstrapV3Contract):
     record_id: str = Field(min_length=1)
     mutation_kind: Literal["create", "update"]
     expected_prior_record_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    canonical_after_record: "CanonicalPlanningRecordPayload"
+    canonical_after_record: CanonicalPlanningRecordPayload
     source_member_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     intent_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-record-intent.v3"
     _digest_field = "intent_digest"
 
     @model_validator(mode="after")
-    def validate_intent(self) -> "BootstrapNativeRecordMaterializationIntentV3":
+    def validate_intent(self) -> BootstrapNativeRecordMaterializationIntentV3:
         if self.canonical_after_record.record_kind != self.record_kind:
             raise ValueError("native record intent kind is substituted")
         return self
@@ -11798,7 +11851,7 @@ class BootstrapNativeCorrectionEffectV3(_BootstrapV3Contract):
     _digest_field = "effect_digest"
 
     @model_validator(mode="after")
-    def validate_replacement(self) -> "BootstrapNativeCorrectionEffectV3":
+    def validate_replacement(self) -> BootstrapNativeCorrectionEffectV3:
         if self.replacement_effect.fact != self.correction.replacement_fact:
             raise ValueError("native correction replacement fact is substituted")
         return self
@@ -11863,9 +11916,9 @@ class BootstrapNativeIdentityAdmissionRequestV3(_BootstrapV3Contract):
     transaction_group_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     operation_execution_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     graph_free_input: BootstrapGraphFreeIdentityPlanningInputV3
-    sealed_snapshot: "SealedGraphStateSnapshot"
+    sealed_snapshot: SealedGraphStateSnapshot
     effective_read_set: GraphReadSet
-    current_planning_state: "GraphPlanningState"
+    current_planning_state: GraphPlanningState
     predecessor_identity_materialization: BootstrapNativeIdentityMaterializationV3 | None
     mode: Literal["initial", "replacement", "reuse"]
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -11873,7 +11926,7 @@ class BootstrapNativeIdentityAdmissionRequestV3(_BootstrapV3Contract):
     _digest_field = "request_digest"
 
     @model_validator(mode="after")
-    def validate_admission_request(self) -> "BootstrapNativeIdentityAdmissionRequestV3":
+    def validate_admission_request(self) -> BootstrapNativeIdentityAdmissionRequestV3:
         predecessor = self.predecessor_identity_materialization
         if self.effective_read_set.read_set_digest != self.sealed_snapshot.read_set.read_set_digest:
             raise ValueError("native identity admission read set is substituted")
@@ -11897,10 +11950,10 @@ class BootstrapNativeIdentityAdmissionRequestV3(_BootstrapV3Contract):
 
 class BootstrapNativeIdentityAdmissionV3(_BootstrapV3Contract):
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    accepted_operation_artifact: "AcceptedIdentityOperationArtifact"
-    trusted_decision: "TrustedAcceptedIdentityOperationDecision"
-    authority_verification: "VerifiedIdentityDecisionAuthority"
-    planning_result: "NonPublishingIdentityPlanningResultV3"
+    accepted_operation_artifact: AcceptedIdentityOperationArtifact
+    trusted_decision: TrustedAcceptedIdentityOperationDecision
+    authority_verification: VerifiedIdentityDecisionAuthority
+    planning_result: NonPublishingIdentityPlanningResultV3
     admission_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.native-identity-admission.v3"
     _digest_field = "admission_digest"
@@ -11949,7 +12002,7 @@ class BootstrapNativeOperationCompilationV3(_BootstrapV3Contract):
     _digest_field = "compilation_digest"
 
     @model_validator(mode="after")
-    def validate_native_compilation(self) -> "BootstrapNativeOperationCompilationV3":
+    def validate_native_compilation(self) -> BootstrapNativeOperationCompilationV3:
         if self.reason_codes != tuple(sorted(set(self.reason_codes))):
             raise ValueError("native compilation reasons are not canonical")
         if (
@@ -11977,7 +12030,7 @@ class BootstrapNativeOperationEffectMaterializationV3(_BootstrapV3Contract):
     _digest_field = "materialization_digest"
 
     @model_validator(mode="after")
-    def validate_materialization(self) -> "BootstrapNativeOperationEffectMaterializationV3":
+    def validate_materialization(self) -> BootstrapNativeOperationEffectMaterializationV3:
         if self.observation_reason_codes != tuple(sorted(set(self.observation_reason_codes))):
             raise ValueError("native observation reasons are not canonical")
         if self.terminal_status == "accepted":
@@ -12037,7 +12090,7 @@ class BootstrapGraphOperationReductionV3(_BootstrapV3Contract):
     _digest_field = "reduction_digest"
 
     @model_validator(mode="after")
-    def validate_reduction(self) -> "BootstrapGraphOperationReductionV3":
+    def validate_reduction(self) -> BootstrapGraphOperationReductionV3:
         terminal = self.native_terminal
         materialization = self.effect_materialization
         if (
@@ -12098,7 +12151,7 @@ class BootstrapGraphOperationStoreMaterializationInputV3(_BootstrapV3Contract):
     _digest_field = "input_digest"
 
     @model_validator(mode="after")
-    def validate_materialization_input(self) -> "BootstrapGraphOperationStoreMaterializationInputV3":
+    def validate_materialization_input(self) -> BootstrapGraphOperationStoreMaterializationInputV3:
         if (
             self.operation_plan.operation_id != self.operation_id
             or self.reduction.transaction_group_id != self.transaction_group_id
@@ -12127,7 +12180,7 @@ class BootstrapGraphOperationCommitResultV3(_BootstrapV3Contract):
     _digest_field = "result_digest"
 
     @model_validator(mode="after")
-    def validate_operation_result(self) -> "BootstrapGraphOperationCommitResultV3":
+    def validate_operation_result(self) -> BootstrapGraphOperationCommitResultV3:
         accepted = self.final_status == "accepted"
         if (
             self.reduction.transaction_group_id != self.transaction_group_id
@@ -12158,7 +12211,7 @@ class BootstrapGraphGroupCommitResultCoreV3(_BootstrapV3Contract):
     _digest_field = "core_digest"
 
     @model_validator(mode="after")
-    def validate_core(self) -> "BootstrapGraphGroupCommitResultCoreV3":
+    def validate_core(self) -> BootstrapGraphGroupCommitResultCoreV3:
         ids = tuple(item.operation_id for item in self.ordered_operation_results)
         committed = any(item.final_status == "accepted" for item in self.ordered_operation_results)
         if not ids or ids != tuple(sorted(set(ids))) or (self.disposition == "committed") != committed:
@@ -12191,7 +12244,7 @@ class BootstrapGraphGroupCommitResultV3(_BootstrapV3Contract):
     _digest_field = "result_digest"
 
     @model_validator(mode="after")
-    def validate_result(self) -> "BootstrapGraphGroupCommitResultV3":
+    def validate_result(self) -> BootstrapGraphGroupCommitResultV3:
         core, receipt = self.core, self.receipt
         if (
             receipt.request_ctv_digest != core.request_ctv_digest
@@ -12607,7 +12660,7 @@ class BootstrapGraphCanonicalSourceResultInputV3(_BootstrapV3Contract):
     request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     normalization_replay_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_plan_lineage_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    ordered_group_result_constructions: tuple["BootstrapNativeGroupCommitTerminalConstructionV3", ...]
+    ordered_group_result_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...]
     ordered_group_commit_reload_digests: tuple[str, ...]
     source_status: Literal["fully_committed", "partially_committed", "evidence_only", "rejected", "unresolved", "failed"]
     canonical_outcome_core: CanonicalSourceTerminalOutcomeCore
@@ -12642,7 +12695,7 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
     final_plan: BootstrapTransactionGroupPlanV3
     complete_lineage: BootstrapSourcePlanLineageV3
     execution_manifest: IngestionExecutionManifest
-    ordered_group_result_constructions: tuple["BootstrapNativeGroupCommitTerminalConstructionV3", ...]
+    ordered_group_result_constructions: tuple[BootstrapNativeGroupCommitTerminalConstructionV3, ...]
     ordered_group_commit_reload_digests: tuple[str, ...]
     canonical_source_result_input: BootstrapGraphCanonicalSourceResultInputV3
     handoff_core: BootstrapGraphTerminalHandoffCoreV3
@@ -12860,7 +12913,7 @@ def decode_bootstrap_graph_atomic_member_payload_v3(
 
 
 def validate_bootstrap_graph_plan_atomic_members_v3(
-    members: tuple["BootstrapGraphPlanAtomicMemberV3", ...],
+    members: tuple[BootstrapGraphPlanAtomicMemberV3, ...],
 ) -> None:
     """Validate every member by its literal codec before persistence or reload."""
     for member in members:
@@ -12937,7 +12990,7 @@ class BootstrapGraphGroupCommitRequestV3(_BootstrapV3Contract):
         return self.request_ctv_digest
 
     @model_validator(mode="after")
-    def validate_group_commit_request(self) -> "BootstrapGraphGroupCommitRequestV3":
+    def validate_group_commit_request(self) -> BootstrapGraphGroupCommitRequestV3:
         inputs = self.ordered_operation_inputs
         if (
             not self.operation_ids
@@ -12972,7 +13025,7 @@ class BootstrapGraphGroupCommitReloadV3(_BootstrapV3Contract):
     _digest_field = "reload_digest"
 
     @model_validator(mode="after")
-    def validate_reload(self) -> "BootstrapGraphGroupCommitReloadV3":
+    def validate_reload(self) -> BootstrapGraphGroupCommitReloadV3:
         if (
             not self.operation_ids
             or self.operation_ids != tuple(sorted(set(self.operation_ids)))
@@ -13028,7 +13081,7 @@ class BootstrapNativeGroupCommitTerminalConstructionV3(_BootstrapV3Contract):
         return "evidence_only"
 
     @model_validator(mode="after")
-    def validate_terminal_construction(self) -> "BootstrapNativeGroupCommitTerminalConstructionV3":
+    def validate_terminal_construction(self) -> BootstrapNativeGroupCommitTerminalConstructionV3:
         reload = self.group_commit_reload
         if (
             self.request_digest != self.attempt.request_digest
@@ -13281,7 +13334,7 @@ class BootstrapGraphPlanCompilationV3(_BootstrapV3Contract):
     _digest_field = "compilation_digest"
 
     @model_validator(mode="after")
-    def validate_compilation(self) -> "BootstrapGraphPlanCompilationV3":
+    def validate_compilation(self) -> BootstrapGraphPlanCompilationV3:
         groups = self.transaction_group_plan.group_members
         operations = tuple(
             (operation.operation_id, operation.operation_execution_id)
@@ -13386,6 +13439,59 @@ class BootstrapGraphDurableRetryProgressV3(_BootstrapV3Contract):
     response_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-durable-retry-progress.v3"
     _digest_field = "response_digest"
+
+
+class BootstrapGraphRetryRecoveryLocatorV3(_BootstrapV3Contract):
+    kind: Literal["bootstrap_graph_retry_recovery_locator"]
+    operation_fence_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    normalization_replay_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    normalization_result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delivery_principal_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    required_scope_set_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    checkpoint_write_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    checkpoint_manifest_id: str = Field(min_length=1)
+    checkpoint_request: BootstrapGraphPlanAtomicWriteRequestV3
+    progress: BootstrapGraphDurableRetryProgressV3
+    locator_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.bootstrap-graph-retry-recovery-locator.v3"
+    _digest_field = "locator_digest"
+
+    @model_validator(mode="after")
+    def validate_retry_recovery_locator(self) -> BootstrapGraphRetryRecoveryLocatorV3:
+        request = self.checkpoint_request
+        if (
+            request.kind != "bootstrap_graph_retry_checkpoint"
+            or request.request_digest != self.request_digest
+            or request.write_digest != self.checkpoint_write_digest
+            or request.normalization_replay_digest != self.normalization_replay_digest
+            or request.normalization_result_digest != self.normalization_result_digest
+            or request.operation_fence_binding.binding_digest
+            != self.operation_fence_binding_digest
+            or self.progress.request_digest != self.request_digest
+            or self.progress.normalization_replay_digest
+            != self.normalization_replay_digest
+            or self.progress.operation_fence_binding_digest
+            != self.operation_fence_binding_digest
+            or self.progress.writer_commit_binding_digest
+            != request.writer_commit_binding.binding_digest
+            or self.progress.control_epoch_digest != request.control_epoch_digest
+        ):
+            raise ValueError("bootstrap graph retry recovery locator is substituted")
+        progress_members = tuple(
+            member
+            for member in request.members
+            if member.kind == "bootstrap_graph_retry_progress"
+        )
+        if len(progress_members) != 1:
+            raise ValueError("bootstrap graph retry recovery progress is ambiguous")
+        decoded = decode_bootstrap_graph_atomic_member_payload_v3(
+            kind=progress_members[0].kind,
+            raw=progress_members[0].canonical_payload,
+        )
+        if BootstrapGraphDurableRetryProgressV3.model_validate(decoded) != self.progress:
+            raise ValueError("bootstrap graph retry recovery progress is substituted")
+        return self
 
 
 class BootstrapGraphFinalizedFailureV3(_BootstrapV3Contract):
@@ -13695,9 +13801,9 @@ def rebuild_bootstrap_graph_effect_contracts() -> None:
         PlanningClaimProjection,
         PlanningEntityRevision,
         PlanningProvenance,
+        PlanningRecordPrecondition,
         PlanningReferenceDisposition,
         PlanningRelationRevision,
-        PlanningRecordPrecondition,
         PlanningTemporalTransition,
         PlanningTypeEvidence,
     )
@@ -14224,32 +14330,69 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
 }
 
 
-def encode_semantic_contract(value: BaseModel) -> bytes:
+_CANONICAL_CONTRACT_ENVELOPE = "memorii.semantic-ingestion.contract-envelope.v1"
+
+
+def encode_semantic_contract_result(
+    value: BaseModel,
+    *,
+    canonical_staging: CanonicalEvidenceArena | None = None,
+) -> ValidatedCanonicalEvidenceResult:
+    """Build a validated result and stage it only through an explicit owner."""
     """Encode one active semantic ingestion contract with no legacy/upcast fallback."""
     kind = _CONTRACT_KINDS.get(type(value))
     if kind is None:
         raise SemanticContractCodecError(f"unsupported semantic ingestion contract type: {type(value).__name__}")
-    # Revalidation makes forged model_copy/model_construct instances fail closed.
-    try:
-        validated = type(value).model_validate(_restore_closed_wire_enums(canonical_contract_value(value)))
-    except (TypeError, ValueError) as exc:
-        raise SemanticContractCodecError("semantic ingestion contract validation failed") from exc
-    payload = canonical_contract_value(validated)
-    return encode_typed_value(
-        {"schema": "memorii.semantic-ingestion.contract-envelope.v1", "kind": kind, "payload": payload}
+    payload = canonical_contract_value(value)
+    domain = _CANONICAL_CONTRACT_ENVELOPE.encode("ascii") + b"\0" + kind.encode("ascii")
+    canonical_bytes, member_spans = encode_typed_value_with_spans(
+        {
+            "schema": _CANONICAL_CONTRACT_ENVELOPE,
+            "kind": kind,
+            "payload": payload,
+        }
     )
+    # Revalidation makes forged model_copy/model_construct instances fail closed.
+    result = _build_validated_semantic_contract_result(
+        value=value,
+        canonical_contract_bytes=canonical_bytes,
+        canonical_payload=payload,
+        member_spans=member_spans,
+        domain=domain,
+    )
+    if canonical_staging is not None:
+        canonical_staging.admit_success(
+            canonical_contract_bytes=canonical_bytes,
+            concrete_contract_type=type(value),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=domain,
+            result=result,
+        )
+    return result
 
 
-def decode_semantic_contract(raw: bytes, expected_type: type[_ContractModel]) -> _ContractModel:
+def encode_semantic_contract(value: BaseModel) -> bytes:
+    """Encode with full validation; ordinary callers receive no cache authority."""
+    return encode_semantic_contract_result(value).canonical_contract_bytes
+
+
+def decode_semantic_contract(
+    raw: bytes,
+    expected_type: type[_ContractModel],
+    *,
+    max_nodes: int | None = None,
+    max_depth: int | None = None,
+) -> _ContractModel:
     """Decode only exact active bytes; pre-closure and unknown variants reject."""
     expected_kind = _CONTRACT_KINDS.get(expected_type)
     if expected_kind is None:
         raise SemanticContractCodecError(f"unsupported semantic ingestion contract type: {expected_type.__name__}")
     try:
-        decoded = decode_typed_value(raw)
+        decoded = decode_typed_value(raw, max_nodes=max_nodes, max_depth=max_depth)
         if not isinstance(decoded, dict) or set(decoded) != {"schema", "kind", "payload"}:
             raise SemanticContractCodecError("semantic ingestion contract envelope is not closed")
-        if decoded["schema"] != "memorii.semantic-ingestion.contract-envelope.v1" or decoded["kind"] != expected_kind:
+        if decoded["schema"] != _CANONICAL_CONTRACT_ENVELOPE or decoded["kind"] != expected_kind:
             raise SemanticContractCodecError("legacy or mismatched semantic ingestion contract variant")
         return expected_type.model_validate(_restore_closed_wire_enums(decoded["payload"]))
     except (TypeError, ValueError) as exc:

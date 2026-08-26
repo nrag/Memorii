@@ -1,0 +1,42 @@
+{
+  "schema": "memorii.semantic-ingestion.canonical-evidence.safe-byte-reuse-feasibility.v1",
+  "decision": "NO-GO",
+  "certifies_m3_1": false,
+  "candidate_lock_sha256": "24da95523b9a050266034cd6f3b923d52a4d8cc97cf83d32d83c1285bb2d99c3",
+  "same_mode_feasibility_measurement": {
+    "arena_enabled_seconds": 2.483143088000361,
+    "process_saturation_legacy_fallback_seconds": 2.6378558990036254,
+    "observed_improvement": 0.05865097144302034,
+    "required_improvement": 0.75,
+    "certification_status": "not_certification_same_revision_fallback_comparison"
+  },
+  "digest_identity_counts": {
+    "arena_enabled": {
+      "total": 1523,
+      "unique": 53,
+      "redundant": 1470,
+      "maximum_repetition": 167
+    },
+    "legacy_fallback": {
+      "total": 1898,
+      "unique": 53,
+      "redundant": 1845,
+      "maximum_repetition": 215
+    }
+  },
+  "ownership_finding": {
+    "canonical_owner": "memorii.core.memory_evolution.ingestion_contracts.encode_typed_value",
+    "current_output": "whole_value_canonical_bytes_only",
+    "trusted_subtree_output": false,
+    "validator_attestation_output": false
+  },
+  "rejected_shortcuts": [
+    "caller_claimed_digest",
+    "python_object_identity",
+    "shallow_frozen_model_assumption",
+    "secondary_structural_fingerprint",
+    "cross_operation_validated_value_sharing"
+  ],
+  "reason": "The current canonical codec exposes no trusted subtree bytes. Reusing nested content-addressed validation without reconstructing canonical bytes requires a new codec-owned subtree attestation contract; implementing a shortcut under the current design would violate coherence or duplicate the canonical codec.",
+  "required_next_operation": "linked_build_design_for_codec_owned_subtree_attestation_or_revised_performance_contract"
+}

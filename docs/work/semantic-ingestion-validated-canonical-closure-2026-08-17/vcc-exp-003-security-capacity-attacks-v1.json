@@ -1,0 +1,298 @@
+{
+  "authority_and_scope_cells": [
+    {
+      "accepted": true,
+      "expected_accepted": true,
+      "expected_reason": "accepted",
+      "name": "valid_control",
+      "passed": true,
+      "reason": "accepted"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "root_bytes_mismatch",
+      "name": "substituted_root_bytes",
+      "passed": true,
+      "reason": "root_bytes_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "root_digest_mismatch",
+      "name": "stale_claimed_root_digest",
+      "passed": true,
+      "reason": "root_digest_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "type_mismatch",
+      "name": "wrong_type",
+      "passed": true,
+      "reason": "type_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "domain_mismatch",
+      "name": "wrong_domain",
+      "passed": true,
+      "reason": "domain_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "profile_mismatch",
+      "name": "wrong_profile",
+      "passed": true,
+      "reason": "profile_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "codec_mismatch",
+      "name": "wrong_codec",
+      "passed": true,
+      "reason": "codec_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "path_mismatch",
+      "name": "wrong_path",
+      "passed": true,
+      "reason": "path_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "requested_member_mismatch",
+      "name": "wrong_member_bytes",
+      "passed": true,
+      "reason": "requested_member_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "foreign_capability",
+      "name": "foreign_operation",
+      "passed": true,
+      "reason": "foreign_capability"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "foreign_capability",
+      "name": "forged_capability",
+      "passed": true,
+      "reason": "foreign_capability"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "stale_scope_binding",
+      "name": "stale_generation",
+      "passed": true,
+      "reason": "stale_scope_binding"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "stale_scope_binding",
+      "name": "wrong_fence",
+      "passed": true,
+      "reason": "stale_scope_binding"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "scope_closed",
+      "name": "closed_scope",
+      "passed": true,
+      "reason": "scope_closed"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "stage_missing",
+      "name": "missing_stage",
+      "passed": true,
+      "reason": "stage_missing"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "span_bounds",
+      "name": "malformed_span",
+      "passed": true,
+      "reason": "span_bounds"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "span_not_canonical_subtree",
+      "name": "non_subtree_span",
+      "passed": true,
+      "reason": "span_not_canonical_subtree"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "member_bytes_mismatch",
+      "name": "member_slice_substitution",
+      "passed": true,
+      "reason": "member_bytes_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "duplicate_path",
+      "name": "duplicate_path",
+      "passed": true,
+      "reason": "duplicate_path"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "unrelated_span_overlap",
+      "name": "unrelated_overlap",
+      "passed": true,
+      "reason": "unrelated_span_overlap"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "writer_scope_mismatch",
+      "name": "writer_scope_required",
+      "passed": true,
+      "reason": "writer_scope_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "writer_scope_mismatch",
+      "name": "cross_writer_reuse",
+      "passed": true,
+      "reason": "writer_scope_mismatch"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "foreign_capability",
+      "name": "concurrent_operation_isolation",
+      "passed": true,
+      "reason": "foreign_capability"
+    }
+  ],
+  "capacity_cells": [
+    {
+      "accepted": false,
+      "expected_accepted": true,
+      "expected_reason": "admitted",
+      "name": "measured_corpus_fit",
+      "passed": false,
+      "reason": "operation_bytes_fallback"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "root_limit_fallback",
+      "name": "root_byte_limit",
+      "passed": true,
+      "reason": "root_limit_fallback"
+    },
+    {
+      "accepted": true,
+      "expected_accepted": true,
+      "expected_reason": "unchanged",
+      "name": "root_limit_no_eviction",
+      "passed": true,
+      "reason": "unchanged"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "root_count_fallback",
+      "name": "root_count_limit",
+      "passed": true,
+      "reason": "root_count_fallback"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "path_count_fallback",
+      "name": "path_count_limit",
+      "passed": true,
+      "reason": "path_count_fallback"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "operation_bytes_fallback",
+      "name": "operation_byte_limit",
+      "passed": true,
+      "reason": "operation_bytes_fallback"
+    },
+    {
+      "accepted": true,
+      "expected_accepted": true,
+      "expected_reason": "bounded",
+      "name": "process_four_operation_limit",
+      "passed": true,
+      "reason": "bounded"
+    },
+    {
+      "accepted": true,
+      "expected_accepted": true,
+      "expected_reason": "released",
+      "name": "process_reservations_released",
+      "passed": true,
+      "reason": "released"
+    },
+    {
+      "accepted": true,
+      "expected_accepted": true,
+      "expected_reason": "cleared",
+      "name": "scope_close_clears_entries",
+      "passed": true,
+      "reason": "cleared"
+    },
+    {
+      "accepted": false,
+      "expected_accepted": false,
+      "expected_reason": "closed_fallback",
+      "name": "closed_scope_fallback",
+      "passed": true,
+      "reason": "closed_fallback"
+    }
+  ],
+  "certifies_m3_1": false,
+  "decision": "security or capacity attack matrix has a failing cell",
+  "evidence_stage": "reference_only_security_capacity_attacks",
+  "experiment": "VCC-EXP-003",
+  "limits": {
+    "maximum_member_paths": 32768,
+    "maximum_operation_charged_bytes": 16777216,
+    "maximum_process_reserved_bytes": 67108864,
+    "maximum_root_bytes": 2097152,
+    "maximum_roots": 512,
+    "path_base_charge": 96
+  },
+  "measured_corpus": {
+    "maximum_root_bytes": 914013,
+    "member_paths": 18786,
+    "metadata_charge": 7240723,
+    "operation_charge": 18890284,
+    "operation_headroom_bytes": -2113068,
+    "root_bytes": 11649561,
+    "roots": 238
+  },
+  "passed": false,
+  "passed_cells": 32,
+  "path_proof_sha256": "5dddd53d0c39beb677178f451df7cbbbf8321def3e83c99098914a65e9eae6ed",
+  "production_implementation_changed": false,
+  "schema": "memorii.semantic-ingestion.vcc-exp-003.v1",
+  "tests_changed": false,
+  "total_cells": 33
+}

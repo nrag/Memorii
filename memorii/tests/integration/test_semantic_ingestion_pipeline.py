@@ -35,11 +35,13 @@ from memorii.core.semantic_ingestion.contracts import (
     decode_semantic_contract,
     encode_semantic_contract,
 )
+from memorii.core.semantic_ingestion.source_preparation import InMemoryPreparedSourceRepository
 from memorii.core.semantic_ingestion.pipeline import (
     SemanticIngestionPipeline,
     TemporalEvidenceResolver,
 )
 from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
+    build_prepared_source_authority,
     build_prepared_independent_source_analysis,
 )
 
@@ -171,6 +173,7 @@ def _analysis(
     *,
     candidates: tuple[TemporalEvidenceCandidate, ...] | None = None,
     stable: bool = True,
+    preparation_fingerprint: str | None = None,
 ) -> IndependentSourceAnalysis:
     return build_prepared_independent_source_analysis(
         proposal=proposal,
@@ -181,7 +184,27 @@ def _analysis(
         source_authority_evidence=_authority(),
         temporal_candidates=candidates or (_candidate("time:official"),),
         stable=stable,
+        preparation_fingerprint=preparation_fingerprint,
     )
+
+
+def _prepared_source_repository() -> InMemoryPreparedSourceRepository:
+    repository = InMemoryPreparedSourceRepository()
+    prepared_source = build_prepared_source_authority(
+        source_id=SOURCE_ID,
+        source_digest=SOURCE_DIGEST,
+        source_text=SOURCE,
+    )
+    repository.publish(prepared_source)
+    return repository
+
+
+def _prepared_source_context() -> tuple[InMemoryPreparedSourceRepository, str]:
+    repository = _prepared_source_repository()
+    prepared_source = repository.load(source_id=SOURCE_ID, source_digest=SOURCE_DIGEST)
+    if prepared_source is None:
+        raise AssertionError("prepared source repository did not publish a source")
+    return repository, prepared_source.preparation_fingerprint
 
 class _Assessor:
     def __init__(self, analysis: IndependentSourceAnalysis) -> None:
@@ -196,7 +219,13 @@ def _outcome(
     stable: bool = True,
 ):
     proposal = _proposal(kind)
-    analysis = _analysis(proposal, candidates=candidates, stable=stable)
+    prepared_source_repository, preparation_fingerprint = _prepared_source_context()
+    analysis = _analysis(
+        proposal,
+        candidates=candidates,
+        stable=stable,
+        preparation_fingerprint=preparation_fingerprint,
+    )
     source_interval = next(
         (
             candidate.authenticated_source_interval_evidence
@@ -217,6 +246,7 @@ def _outcome(
         source_authority_evidence=analysis.source_authority_evidence,
         source_interval_evidence=source_interval,
         authorization_read_set_provider=_Authorization(),
+        prepared_source_repository=prepared_source_repository,
     )
 
 
@@ -382,7 +412,11 @@ def test_temporal_preimage_rejects_binding_digest_mutation() -> None:
 
 def test_temporal_consensus_source_substitution_is_rejected() -> None:
     proposal = _proposal()
-    analysis = _analysis(proposal).model_copy(update={"source_digest": "0" * 64})
+    prepared_source_repository, preparation_fingerprint = _prepared_source_context()
+    analysis = _analysis(
+        proposal,
+        preparation_fingerprint=preparation_fingerprint,
+    ).model_copy(update={"source_digest": "0" * 64})
     outcome = SemanticIngestionPipeline(transport=None).run(
         operation_id="operation:integration", source_id=SOURCE_ID,
         source_digest=SOURCE_DIGEST, source_text=SOURCE, policy_bundle=_policies(),
@@ -390,6 +424,7 @@ def test_temporal_consensus_source_substitution_is_rejected() -> None:
         source_authority_evidence=_authority(),
         source_interval_evidence=_candidate("time:official").authenticated_source_interval_evidence,
         authorization_read_set_provider=_Authorization(),
+        prepared_source_repository=prepared_source_repository,
     )
     assert outcome.status == "rejected" and outcome.accepted_carriers == ()
 
@@ -446,6 +481,7 @@ def test_egress_missing_current_policy_is_zero_wire() -> None:
         operation_id="operation:integration", source_id=SOURCE_ID,
         source_digest=SOURCE_DIGEST, source_text=SOURCE, policy_bundle=_policies(),
         source_authority_evidence=_authority(),
+        prepared_source_repository=_prepared_source_repository(),
     )
     assert outcome.reason_codes == ("remote_proposal_authority_unavailable",)
 
@@ -459,7 +495,8 @@ def test_pipeline_closed_codec_rejects_wrong_contract_kind() -> None:
 
 def test_pipeline_slow_stage_renews_lease_heartbeat() -> None:
     proposal = _proposal()
-    analysis = _analysis(proposal)
+    prepared_source_repository, preparation_fingerprint = _prepared_source_context()
+    analysis = _analysis(proposal, preparation_fingerprint=preparation_fingerprint)
     heartbeats: list[int] = []
 
     class DeterministicRenewalScheduler:
@@ -497,6 +534,7 @@ def test_pipeline_slow_stage_renews_lease_heartbeat() -> None:
         source_interval_evidence=_candidate("time:official").authenticated_source_interval_evidence,
         authorization_read_set_provider=_Authorization(),
         lease_heartbeat=heartbeat,
+        prepared_source_repository=prepared_source_repository,
     )
     assert outcome.status == "accepted"
     assert scheduler.calls == 1

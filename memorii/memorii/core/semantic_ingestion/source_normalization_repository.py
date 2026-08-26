@@ -42,6 +42,9 @@ from memorii.core.semantic_ingestion.contracts import (
     encode_semantic_contract,
 )
 
+_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_NODES = 20_000
+_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_DEPTH = 128
+
 
 class _AtomicSourceNormalizationStore(Protocol):
     def checkpoint_source_progress(
@@ -164,7 +167,12 @@ class AtomicStoreSourceNormalizationRepository:
         def decode_one(kind: str, model: type):
             member = one(kind)
             try:
-                value = decode_semantic_contract(member.canonical_payload, model)
+                value = decode_semantic_contract(
+                    member.canonical_payload,
+                    model,
+                    max_nodes=_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_NODES,
+                    max_depth=_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_DEPTH,
+                )
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"bootstrap V3 {kind} bytes are invalid") from exc
             if encode_semantic_contract(value) != member.canonical_payload:
@@ -177,7 +185,12 @@ class AtomicStoreSourceNormalizationRepository:
             raise ValueError("bootstrap V3 lane cardinality is incomplete")
         try:
             lanes = tuple(
-                decode_semantic_contract(member.canonical_payload, BootstrapAnalysisLaneResultV3)
+                decode_semantic_contract(
+                    member.canonical_payload,
+                    BootstrapAnalysisLaneResultV3,
+                    max_nodes=_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_NODES,
+                    max_depth=_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_DEPTH,
+                )
                 for member in lane_members
             )
         except (TypeError, ValueError) as exc:
@@ -235,40 +248,51 @@ class AtomicStoreSourceNormalizationRepository:
                 raise ValueError(f"bootstrap V3 requires exactly one {kind}")
             return found[0]
 
-        try:
-            proposal = decode_semantic_contract(
-                one("bootstrap_proposal_run_payload").canonical_payload, BootstrapProposalRunPayloadV3
+        def decode_bounded(kind: str, model: type) -> object:
+            return decode_semantic_contract(
+                one(kind).canonical_payload,
+                model,
+                max_nodes=_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_NODES,
+                max_depth=_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_DEPTH,
             )
-            bundle = decode_semantic_contract(
-                one("bootstrap_graph_free_interpretation_bundle").canonical_payload,
+
+        try:
+            proposal = decode_bounded(
+                "bootstrap_proposal_run_payload", BootstrapProposalRunPayloadV3
+            )
+            bundle = decode_bounded(
+                "bootstrap_graph_free_interpretation_bundle",
                 BootstrapGraphFreeInterpretationBundleV3,
             )
-            alignment = decode_semantic_contract(
-                one("bootstrap_source_proposal_alignment").canonical_payload,
+            alignment = decode_bounded(
+                "bootstrap_source_proposal_alignment",
                 BootstrapSourceProposalAlignmentV3,
             )
-            result = decode_semantic_contract(
-                one("bootstrap_source_normalization_result").canonical_payload,
-                BootstrapSourceNormalizationResultV3,
+            result = decode_bounded(
+                "bootstrap_source_normalization_result", BootstrapSourceNormalizationResultV3
             )
-            request = decode_semantic_contract(
-                one("bootstrap_source_normalization_request").canonical_payload,
+            request = decode_bounded(
+                "bootstrap_source_normalization_request",
                 BootstrapSourceNormalizationRequestV3,
             )
-            manifest = decode_semantic_contract(
-                one("bootstrap_source_normalization_evidence_manifest").canonical_payload,
+            manifest = decode_bounded(
+                "bootstrap_source_normalization_evidence_manifest",
                 BootstrapSourceNormalizationEvidenceManifestV3,
             )
             lanes = tuple(
-                decode_semantic_contract(member.canonical_payload, BootstrapAnalysisLaneResultV3)
+                decode_semantic_contract(
+                    member.canonical_payload,
+                    BootstrapAnalysisLaneResultV3,
+                    max_nodes=_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_NODES,
+                    max_depth=_BOOTSTRAP_V3_RECOVERY_MAX_TYPED_DEPTH,
+                )
                 for member in members if member.kind == "bootstrap_analysis_lane_result"
             )
-            core = decode_semantic_contract(
-                one("bootstrap_normalization_request_core").canonical_payload,
-                BootstrapNormalizationRequestCoreV3,
+            core = decode_bounded(
+                "bootstrap_normalization_request_core", BootstrapNormalizationRequestCoreV3
             )
-            reduction = decode_semantic_contract(
-                one("bootstrap_semantic_reduction_authority").canonical_payload,
+            reduction = decode_bounded(
+                "bootstrap_semantic_reduction_authority",
                 BootstrapSemanticReductionAuthorityMemberV3,
             )
         except (TypeError, ValueError) as exc:

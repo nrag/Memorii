@@ -1,0 +1,38 @@
+{
+  "schema": "memorii.semantic-ingestion.canonical-evidence.candidate-diagnostic.v1",
+  "evidence_stage": "diagnostic_profiled_non_latency",
+  "certifies_m3_1": false,
+  "candidate_lock_sha256": "24da95523b9a050266034cd6f3b923d52a4d8cc97cf83d32d83c1285bb2d99c3",
+  "uncached_diagnostic_manifest_sha256": "8ad48951e303263807b9a5187a257aa0c6fd27e0c8844668e576a9faafda5191",
+  "baseline_elapsed_seconds": 10.204397443,
+  "candidate_elapsed_seconds": 6.9347117580036866,
+  "observed_reduction": 0.3204192803406778,
+  "required_reduction": 0.75,
+  "threshold_met": false,
+  "profile": {
+    "path": "docs/work/semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/candidate-sync-event.prof",
+    "sha256": "5c75040bc149b7e22cd2cd998e71ab6afe0b51e3e3077b0d2ccac10df1f9739f"
+  },
+  "profile_counts": {
+    "baseline": {
+      "function_calls": 4688592,
+      "encode_typed_value": 2279,
+      "contract_digest": 1901,
+      "validate_content_digest": 1303,
+      "encode_semantic_contract": 4
+    },
+    "candidate": {
+      "function_calls": 4028123,
+      "encode_typed_value": 1863,
+      "contract_digest": 1526,
+      "validate_content_digest": 1021,
+      "encode_semantic_contract": 4
+    }
+  },
+  "targeted_proof": {
+    "tests": 9,
+    "result": "passed",
+    "elapsed_seconds": 8.44
+  },
+  "interpretation": "The safe exact-canonical-identity arena is active and improves the measured operation, but canonical-byte construction remains dominant and the M3.1 reduction threshold is not met."
+}

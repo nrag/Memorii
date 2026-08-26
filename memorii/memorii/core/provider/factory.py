@@ -25,6 +25,9 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 )
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedProductionHostAuthority,
+)
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
 from memorii.core.work_state.service import WorkStateService
 
@@ -48,6 +51,7 @@ def build_provider_memory_service_from_env(
     host_bootstrap_capability: HostBootstrapCapability | None = None,
     host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
     source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+    verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
     now_provider: Callable[[], datetime] | None = None,
 ) -> ProviderMemoryService:
     """Build the source-only governed-source admission provider composition without ambient model dependencies."""
@@ -58,6 +62,16 @@ def build_provider_memory_service_from_env(
         identity_lineage_grant_provider,
         authenticated_ingress_resolver,
     )
+    if verified_production_host_authority is not None and any(
+        value is not None
+        for value in (
+            authenticated_ingress_resolver,
+            host_bootstrap_capability,
+            host_bootstrap_material_verifier,
+            source_normalization_host_bundle_builder,
+        )
+    ):
+        raise ValueError("verified production host authority rejects legacy authority injection")
     if any(value is not None for value in audit_values) and not all(
         value is not None for value in audit_values
     ):
@@ -90,6 +104,7 @@ def build_provider_memory_service_from_env(
         host_bootstrap_capability=host_bootstrap_capability,
         host_bootstrap_material_verifier=host_bootstrap_material_verifier,
         source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+        verified_production_host_authority=verified_production_host_authority,
         identity_lineage_audit_reader=audit_reader,
         identity_lineage_audit_authorizer=audit_authorizer,
         now_provider=now_provider,

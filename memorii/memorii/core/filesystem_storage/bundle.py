@@ -25,6 +25,9 @@ from memorii.core.memory_evolution.conflict_integrity import (
 from memorii.core.memory_plane import JsonlMemoryPlaneStore, MemoryPlaneService
 from memorii.core.provider.factory import build_provider_memory_service_from_env
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedProductionHostAuthority,
+)
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
 from memorii.core.work_state import JsonlWorkStateStore, WorkStateService
 
@@ -83,6 +86,7 @@ class FilesystemStorageBundle:
         host_bootstrap_capability: HostBootstrapCapability | None = None,
         host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
         source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+        verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
         now_provider: Callable[[], datetime] | None = None,
     ) -> ProviderMemoryService:
         return build_provider_memory_service_from_env(
@@ -98,6 +102,7 @@ class FilesystemStorageBundle:
             host_bootstrap_capability=host_bootstrap_capability,
             host_bootstrap_material_verifier=host_bootstrap_material_verifier,
             source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+            verified_production_host_authority=verified_production_host_authority,
             now_provider=now_provider,
         )
 
@@ -115,6 +120,7 @@ def build_filesystem_provider(
     host_bootstrap_capability: HostBootstrapCapability | None = None,
     host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
     source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+    verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
     now_provider: Callable[[], datetime] | None = None,
 ) -> ProviderMemoryService:
     return FilesystemStorageBundle.from_root(
@@ -125,5 +131,6 @@ def build_filesystem_provider(
         host_bootstrap_capability=host_bootstrap_capability,
         host_bootstrap_material_verifier=host_bootstrap_material_verifier,
         source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+        verified_production_host_authority=verified_production_host_authority,
         now_provider=now_provider,
     )

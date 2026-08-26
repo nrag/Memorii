@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "memorii.semantic-ingestion.canonical-evidence.performance-run.v5",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "evidence_stage", "kind", "mode", "fixture_hash", "candidate_lock_hash", "implementation_identity", "production_source_manifest", "environment_identity", "algorithm_identity", "comparison_schedule_authority_hash", "execution_order", "retained_ordinals", "cells", "rss", "aggregate_global"],
+  "properties": {
+    "schema": {"const": "memorii.semantic-ingestion.canonical-evidence.performance-run.v5"},
+    "evidence_stage": {"enum": ["design_time_vector", "implementation_capture"]},
+    "kind": {"enum": ["baseline", "candidate"]},
+    "mode": {"enum": ["diagnostic_profiled_non_latency", "latency_unprofiled"]},
+    "fixture_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "candidate_lock_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "implementation_identity": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "production_source_manifest": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"const": "docs/design/semantic_ingestion_canonical_evidence/production-source-manifest-v1.json"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "environment_identity": {"const": "canonical-evidence-design-vector-environment-v1"},
+    "comparison_schedule_authority_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "execution_order": {"type": "array", "minItems": 8, "maxItems": 8, "uniqueItems": true, "items": {"type": "string"}},
+    "retained_ordinals": {"const": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]},
+    "execution_lock_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "result_lock_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "algorithm_identity": {"const": "canonical-evidence-v4"},
+    "diagnostic_run_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "baseline_run_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "cells": {"type": "array", "minItems": 8, "maxItems": 8, "items": {"type": "object", "additionalProperties": false, "required": ["ordinal", "root", "backend", "trigger_receipt", "operation_identity", "source_revision", "eligible", "unique", "repeated", "per_identity", "direct_non_eligible", "global", "diagnostic_cell_hash", "production_receipt", "production_trace", "terminal_durable_effect_receipt", "wall_ns_samples", "retained_ordinals"], "properties": {"ordinal": {"type": "integer", "minimum": 0, "maximum": 7}, "root": {"enum": ["direct", "factory", "filesystem", "hermes"]}, "backend": {"enum": ["memory", "jsonl"]}, "trigger_receipt": {"type": "string", "minLength": 1}, "operation_identity": {"type": "string", "minLength": 1}, "source_revision": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "eligible": {"type": "integer", "minimum": 0}, "unique": {"type": "integer", "minimum": 0}, "repeated": {"type": "integer", "minimum": 0}, "per_identity": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}, "direct_non_eligible": {"type": "integer", "minimum": 0}, "global": {"type": "integer", "minimum": 0, "maximum": 1000}, "arena_nonce": {"type": "string", "minLength": 1}, "profiled_code_identity": {"type": "string", "minLength": 1}, "wall_ns_samples": {"type": "array", "minItems": 20, "maxItems": 20, "items": {"type": "integer", "minimum": 1}}, "retained_ordinals": {"const": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]}, "diagnostic_cell_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "production_receipt": {"type": "object"}, "production_trace": {"type": "array", "minItems": 7, "maxItems": 7, "items": {"type": "object"}}, "terminal_durable_effect_receipt": {"type": "object"}}}},
+    "rss": {"type": "object", "additionalProperties": false, "required": ["source", "platform_units", "delta_bytes"], "properties": {"source": {"const": "child:RUSAGE_SELF"}, "platform_units": {"enum": ["darwin_bytes", "linux_kib"]}, "delta_bytes": {"type": "integer", "minimum": 0}}},
+    "aggregate_global": {"type": "integer", "minimum": 0, "maximum": 8000}
+  }
+}

@@ -16,6 +16,7 @@ from memorii.core.memory_evolution.ingestion_contracts import (
 from memorii.core.memory_evolution.models import MemoryScope
 from memorii.core.semantic_ingestion.contracts import (
     CANONICAL_INGESTION_EXECUTION_GRAPH,
+    BootstrapGraphPreExecutionManifestIdentityClosureV3,
     GovernanceCarrierArtifact,
     IngestionExecutionGraph,
     IngestionExecutionManifest,
@@ -122,6 +123,16 @@ def _manifest() -> IngestionExecutionManifest:
     artifact = _carrier_artifact()
     route = _route()
     routes = SegmentLanguageRouteSet.create(source_id="source-1", source_digest=_hash("source"), routes=(route,))
+    pre_execution = BootstrapGraphPreExecutionManifestIdentityClosureV3.create(
+        request_digest=_hash("pre-execution-request"),
+        normalization_replay_digest=_hash("pre-execution-replay"),
+        source_id="source-1", source_digest=_hash("source"),
+        preparation_fingerprint=_hash("prep"),
+        identities=(),
+        identity_by_group=(),
+        operation_fence_binding_digest=_hash("pre-execution-fence"),
+        writer_commit_binding_digest=_hash("pre-execution-writer"),
+    )
     outcomes = []
     for spec in CANONICAL_INGESTION_EXECUTION_GRAPH.stages:
         if "source" in spec.allowed_scopes:
@@ -133,10 +144,13 @@ def _manifest() -> IngestionExecutionManifest:
             )))
     canonical_outcomes = tuple(sorted(outcomes, key=lambda outcome: encode_typed_value(outcome.model_dump(mode="python"))))
     return IngestionExecutionManifest.create(
+        pre_execution_manifests=pre_execution,
+        pre_execution_manifest_identity_closure_digest=pre_execution.closure_digest,
         execution_graph_fingerprint=CANONICAL_INGESTION_EXECUTION_GRAPH.graph_fingerprint, segment_language_routes=routes,
         segment_governance_carriers=artifact.segment_governance, message_admission_carriers=artifact.message_admissions,
         governance_carrier_artifact=artifact, capability_bindings=(_binding(route_digest=route.route_digest),),
         source_outcomes=canonical_outcomes, graph_validation_attempts=(), transaction_group_outcomes=(), causal_blockers=(),
+        terminal_before_planning_proof_digests=(),
     )
 
 

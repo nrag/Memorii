@@ -1,0 +1,367 @@
+{
+  "allowed_trigger_ids": [
+    "direct_composite_sync",
+    "direct_memory_write",
+    "direct_sync",
+    "hermes_delegation",
+    "hermes_memory_write",
+    "hermes_pre_compress",
+    "hermes_session_end",
+    "hermes_sync",
+    "hermes_turn"
+  ],
+  "closed_dynamic_dispatch_policy": "dynamic_import_or_getattr_durable_dispatch_forbidden",
+  "composition_branches": {
+    "hermes_filesystem_factory": {
+      "field": "_service",
+      "kind": "factory_call",
+      "owner": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.__init__",
+      "required_keywords": {
+        "storage_root": "storage_root",
+        "verified_production_host_authority": "verified_production_host_authority"
+      },
+      "root_id": "hermes_constructor",
+      "source_expression": "build_filesystem_provider",
+      "target_owner": "memorii/memorii/core/provider/service.py::ProviderMemoryService"
+    },
+    "hermes_injected_service": {
+      "field": "_service",
+      "kind": "typed_parameter",
+      "owner": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.__init__",
+      "root_id": "hermes_constructor",
+      "source_expression": "service",
+      "target_owner": "memorii/memorii/core/provider/service.py::ProviderMemoryService"
+    },
+    "hermes_provider_factory": {
+      "field": "_service",
+      "kind": "factory_call",
+      "owner": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.__init__",
+      "required_keywords": {
+        "verified_production_host_authority": "verified_production_host_authority"
+      },
+      "root_id": "hermes_constructor",
+      "source_expression": "build_provider_memory_service_from_env",
+      "target_owner": "memorii/memorii/core/provider/service.py::ProviderMemoryService"
+    }
+  },
+  "composition_root_anchors": {
+    "filesystem_bundle": [
+      "edge:bundle_factory"
+    ],
+    "filesystem_factory": [
+      "edge:filesystem_bundle"
+    ],
+    "hermes_constructor": [
+      "branch:hermes_injected_service",
+      "branch:hermes_filesystem_factory",
+      "branch:hermes_provider_factory"
+    ],
+    "provider_factory": [
+      "edge:factory_service"
+    ]
+  },
+  "composition_root_ids": [
+    "provider_factory",
+    "filesystem_bundle",
+    "filesystem_factory",
+    "hermes_constructor"
+  ],
+  "composition_root_mappings": {
+    "filesystem_bundle": "memorii/memorii/core/filesystem_storage/bundle.py::FilesystemStorageBundle.build_provider_memory_service",
+    "filesystem_factory": "memorii/memorii/core/filesystem_storage/bundle.py::build_filesystem_provider",
+    "hermes_constructor": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.__init__",
+    "provider_factory": "memorii/memorii/core/provider/factory.py::build_provider_memory_service_from_env"
+  },
+  "composition_root_trigger_bridges": {
+    "filesystem_bundle": [
+      "direct_sync",
+      "direct_composite_sync",
+      "direct_memory_write"
+    ],
+    "filesystem_factory": [
+      "direct_sync",
+      "direct_composite_sync",
+      "direct_memory_write"
+    ],
+    "hermes_constructor": [
+      "hermes_sync",
+      "hermes_turn",
+      "hermes_session_end",
+      "hermes_pre_compress",
+      "hermes_delegation",
+      "hermes_memory_write"
+    ],
+    "provider_factory": [
+      "direct_sync",
+      "direct_composite_sync",
+      "direct_memory_write"
+    ]
+  },
+  "composition_root_trigger_paths": {
+    "filesystem_bundle": [
+      [
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_sync"
+      ],
+      [
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_composite_sync"
+      ],
+      [
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_memory_write"
+      ]
+    ],
+    "filesystem_factory": [
+      [
+        "edge:filesystem_bundle",
+        "bridge:filesystem_bundle_instance",
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_sync"
+      ],
+      [
+        "edge:filesystem_bundle",
+        "bridge:filesystem_bundle_instance",
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_composite_sync"
+      ],
+      [
+        "edge:filesystem_bundle",
+        "bridge:filesystem_bundle_instance",
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_memory_write"
+      ]
+    ],
+    "hermes_constructor": [
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_sync"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_turn"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_session_end"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_pre_compress"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_delegation"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_memory_write"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_sync"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_turn"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_session_end"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_pre_compress"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_delegation"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_memory_write"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_sync"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_turn"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_session_end"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_pre_compress"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_delegation"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_memory_write"
+      ]
+    ],
+    "provider_factory": [
+      [
+        "edge:factory_service",
+        "trigger:direct_sync"
+      ],
+      [
+        "edge:factory_service",
+        "trigger:direct_composite_sync"
+      ],
+      [
+        "edge:factory_service",
+        "trigger:direct_memory_write"
+      ]
+    ]
+  },
+  "durable_modules": [
+    "memorii.core.semantic_ingestion.persistence",
+    "memorii.core.memory_evolution.atomic_store"
+  ],
+  "excluded_roots": {
+    "capture_child": "evidence_harness_only_uncalled_in_tree"
+  },
+  "required_rows": [
+    "VCC-R01",
+    "VCC-R02",
+    "VCC-R03",
+    "VCC-R04",
+    "VCC-R05",
+    "VCC-R06",
+    "VCC-R07",
+    "VCC-R08",
+    "VCC-R09",
+    "VCC-R10",
+    "VCC-R11",
+    "VCC-R12"
+  ],
+  "schema": "memorii.production-owner-oracle.v5",
+  "source_hashes": {
+    "memorii/memorii/core/filesystem_storage/bundle.py": "91c7676ede308ad1f33d27504a7cf328f0a6ed55194b6aeab701503207fa989d",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "f09b5d2551234deef12a1bbac801c2aa62d937aff83bfd2f21a3970d6518e9da",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "af1c7312f4f970e66bfe1bf06e151837a34656bad102f1ee2f4ec2ef63451bcc",
+    "memorii/memorii/core/provider/factory.py": "1987d2d6b78e52ef46ab4294394f3d6421dbe6bcbd54fd8cb0c8f9d5842b605d",
+    "memorii/memorii/core/provider/ingestion.py": "f02eb0a26028a551cfd88585b82f21ff48598bc9521a18f92182c486022d0885",
+    "memorii/memorii/core/provider/service.py": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831",
+    "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py": "379fe056ad6d9b171851a6e596f4c9ca879920c8fa337239a9fee406baddabb9",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "c86451330398f3649243dd928a31cc6f7ba01985b9387a146315c8a6f681cfcb",
+    "memorii/memorii/core/semantic_ingestion/persistence.py": "ce9bafa874b9cf3a00650821680ab73dcf35fd4174b6ab8e7f48fedd138247fd",
+    "memorii/memorii/core/semantic_ingestion/production_capture.py": "ba4ac049e526d96dc561a564e3c11ca15f2a4f1c1f922d4607594bea9d751338",
+    "memorii/memorii/core/semantic_ingestion/source_normalization_execution.py": "f0d0f926277f1a65f57a126b0c69f816243b1bd2a21625a39508a4c77bffe6f6",
+    "memorii/memorii/integrations/hermes_provider.py": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648"
+  },
+  "trigger_edge_anchors": {
+    "direct_composite_sync": [
+      "composite_arena",
+      "composite_ingest"
+    ],
+    "direct_memory_write": [
+      "write_arena",
+      "write_ingest"
+    ],
+    "direct_sync": [
+      "sync_arena",
+      "sync_ingest"
+    ],
+    "hermes_delegation": [
+      "hermes_delegation_edge"
+    ],
+    "hermes_memory_write": [
+      "hermes_memory_edge"
+    ],
+    "hermes_pre_compress": [
+      "hermes_pre_edge"
+    ],
+    "hermes_session_end": [
+      "hermes_session_edge"
+    ],
+    "hermes_sync": [
+      "hermes_sync_edge"
+    ],
+    "hermes_turn": [
+      "hermes_turn_edge"
+    ]
+  },
+  "trigger_ids": [
+    "direct_sync",
+    "direct_composite_sync",
+    "direct_memory_write",
+    "hermes_sync",
+    "hermes_turn",
+    "hermes_session_end",
+    "hermes_pre_compress",
+    "hermes_delegation",
+    "hermes_memory_write"
+  ],
+  "trigger_mappings": {
+    "direct_composite_sync": "memorii/memorii/core/provider/service.py::ProviderMemoryService._sync_composite_event",
+    "direct_memory_write": "memorii/memorii/core/provider/service.py::ProviderMemoryService.apply_memory_write",
+    "direct_sync": "memorii/memorii/core/provider/service.py::ProviderMemoryService.sync_event",
+    "hermes_delegation": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_delegation",
+    "hermes_memory_write": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_memory_write",
+    "hermes_pre_compress": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_pre_compress",
+    "hermes_session_end": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_session_end",
+    "hermes_sync": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.sync_event",
+    "hermes_turn": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.sync_turn"
+  },
+  "trigger_required_rows": {
+    "direct_composite_sync": [
+      "VCC-R01"
+    ],
+    "direct_memory_write": [
+      "VCC-R01"
+    ],
+    "direct_sync": [
+      "VCC-R01"
+    ],
+    "hermes_delegation": [
+      "VCC-R01"
+    ],
+    "hermes_memory_write": [
+      "VCC-R01"
+    ],
+    "hermes_pre_compress": [
+      "VCC-R01"
+    ],
+    "hermes_session_end": [
+      "VCC-R01"
+    ],
+    "hermes_sync": [
+      "VCC-R01"
+    ],
+    "hermes_turn": [
+      "VCC-R01"
+    ]
+  }
+}

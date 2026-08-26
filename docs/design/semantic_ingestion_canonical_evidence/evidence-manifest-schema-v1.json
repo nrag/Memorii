@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "memorii.semantic-ingestion.canonical-evidence.execution-lock.v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "kind", "candidate_lock_hash", "comparison_schedule_authority_hash", "artifacts"],
+  "properties": {
+    "schema": {"const": "memorii.semantic-ingestion.canonical-evidence.execution-lock.v2"},
+    "kind": {"enum": ["baseline", "candidate"]},
+    "candidate_lock_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "comparison_schedule_authority_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifacts": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "object", "additionalProperties": false, "required": ["role", "path"], "properties": {"role": {"enum": ["diagnostic", "latency"]}, "path": {"type": "string", "pattern": "^/"}}}}
+  }
+}

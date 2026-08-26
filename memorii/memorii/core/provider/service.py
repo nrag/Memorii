@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -97,6 +96,7 @@ from memorii.core.memory_evolution.operation_store import (
 from memorii.core.memory_evolution.writer_admission import (
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
+    writer_admission_memory_id,
 )
 from memorii.core.memory_plane import MemoryPlaneService
 from memorii.core.next_step import NextStepEngine
@@ -132,11 +132,19 @@ from memorii.core.provider.tools import ProviderToolCallResult
 from memorii.core.provider.work_state_projection import WorkStateMemoryProjector
 from memorii.core.recall import RecallStateBundle, WorkStateSummary, summarize_work_states
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphHostBundleBuilder
+from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+    CanonicalEvidenceArena,
+    RetainingCanonicalClosureObservabilityDispatcher,
+)
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
     BuiltInLocalHostSemanticIngestionCapability,
     ConflictClarificationSemanticPipelineAdapter,
     HostSemanticIngestionRuntimeBuilder,
+)
+from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedProductionHostAuthority,
+    verified_production_authority_inputs,
 )
 from memorii.core.semantic_ingestion.source_normalization_host import (
     SourceNormalizationHostBundleBuilder,
@@ -238,10 +246,33 @@ class ProviderMemoryService:
         host_bootstrap_capability: HostBootstrapCapability | None = None,
         host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
         source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+        verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
-        if host_bootstrap_capability is None:
+        verified_material = None
+        verified_ingress_resolver = None
+        if verified_production_host_authority is not None:
+            if any(
+                value is not None
+                for value in (
+                    authenticated_ingress_resolver,
+                    host_bootstrap_capability,
+                    host_bootstrap_material_verifier,
+                    source_normalization_host_bundle_builder,
+                )
+            ) or _host_construction is not None:
+                raise ValueError(
+                    "verified production host authority rejects legacy authority injection"
+                )
+            (
+                host_bootstrap_capability,
+                verified_material,
+                verified_ingress_resolver,
+            ) = verified_production_authority_inputs(
+                verified_production_host_authority
+            )
+        elif host_bootstrap_capability is None:
             capability_provider = InstalledHostBootstrapCapabilityProvider()
             try:
                 host_bootstrap_capability = capability_provider.load()
@@ -268,10 +299,12 @@ class ProviderMemoryService:
             raise ValueError(
                 "bootstrap graph host injection is restricted to the scenario-test harness"
             )
-        verified_material = None
         if (
+            verified_production_host_authority is None
+            and (
             host_bootstrap_capability is not None
             and host_bootstrap_material_verifier is not None
+            )
         ):
             try:
                 presentation = host_bootstrap_capability.load_bootstrap_material_presentation()
@@ -303,16 +336,23 @@ class ProviderMemoryService:
             )
         ):
             verified_material = None
+        self._canonical_evidence_enabled = False
+        self._canonical_closure_dispatcher = RetainingCanonicalClosureObservabilityDispatcher()
         self._authenticated_ingress_resolver = None
         self._bootstrap_profile: VerifiedBootstrapProfile | None = None
         self._bootstrap_unavailable_reason = "invalid_config"
         if verified_material is not None:
-            self._authenticated_ingress_resolver = cast(
-                AuthenticatedIngressContextResolver,
-                verified_material.authenticated_ingress_resolver,
+            self._authenticated_ingress_resolver = (
+                verified_ingress_resolver
+                if verified_ingress_resolver is not None
+                else cast(
+                    AuthenticatedIngressContextResolver,
+                    verified_material.authenticated_ingress_resolver,
+                )
             )
             try:
                 self._bootstrap_profile = verify_bootstrap_profile(verified_material)
+                self._canonical_evidence_enabled = required_domain == "production"
             except BootstrapProfileVerificationError as exc:
                 self._bootstrap_profile = None
                 self._bootstrap_unavailable_reason = exc.reason.value
@@ -374,18 +414,27 @@ class ProviderMemoryService:
                 ),
             )
         semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None
-        runtime_builder = cast(HostSemanticIngestionRuntimeBuilder | None, host_bootstrap_capability)
-        if self._bootstrap_profile is not None and runtime_builder is not None and hasattr(
-            runtime_builder, "build_semantic_ingestion_runtime"
+        runtime_builder = cast(
+            HostSemanticIngestionRuntimeBuilder | None, host_bootstrap_capability
+        )
+        if (
+            self._bootstrap_profile is not None
+            and runtime_builder is not None
+            and hasattr(runtime_builder, "build_semantic_ingestion_runtime")
         ):
             try:
-                if isinstance(runtime_builder, BuiltInLocalHostSemanticIngestionCapability):
-                    semantic_runtime = runtime_builder.build_semantic_ingestion_runtime(
+                if isinstance(
+                    host_bootstrap_capability,
+                    BuiltInLocalHostSemanticIngestionCapability,
+                ) and verified_material is not None:
+                    semantic_runtime = (
+                        host_bootstrap_capability.build_semantic_ingestion_runtime(
                         memory_plane=self._memory_plane,
                         now_provider=self._now_provider,
                         bootstrap_profile=self._bootstrap_profile,
                         verified_material=verified_material,
                         semantic_integrity_lifecycle=semantic_integrity_lifecycle,
+                        )
                     )
                 else:
                     semantic_runtime = runtime_builder.build_semantic_ingestion_runtime(
@@ -393,12 +442,6 @@ class ProviderMemoryService:
                         now_provider=self._now_provider,
                         bootstrap_profile=self._bootstrap_profile,
                     )
-                if semantic_runtime is not None:
-                    with suppress(OSError):
-                        semantic_runtime.validate(
-                            profile=self._bootstrap_profile,
-                            server_time=self._now_provider(),
-                        )
             except (ImportError, OSError, RuntimeError, TypeError, ValueError):
                 semantic_runtime = None
         self._work_state_service = work_state_service
@@ -429,23 +472,18 @@ class ProviderMemoryService:
         self._semantic_ingestion_admission = GovernedSourceAdmissionService(self._memory_plane)
         runtime_writer = semantic_runtime.writer_admission if semantic_runtime is not None else None
         runtime_store = semantic_runtime.atomic_store if semantic_runtime is not None else None
+        # Runtime composition may provide the canonical store, but durable
+        # admission initialization is always deferred to resolved ingress.
+        self._owns_writer_admission_record = True
+        self._writer_admission_record_initialized = False
         if runtime_writer is None:
             self._semantic_writer_admission = SemanticWriterAdmissionStore(
                 self._memory_plane, bounded_preplanning_ownership_manifest(), now_provider=self._now_provider
             )
-            # An unauthenticated host presentation must not cause a persistent
-            # semantic control write merely by constructing a provider root.
-            if self._bootstrap_profile is not None:
-                self._semantic_writer_admission.create_initial_evidence_only(
-                    admission_id="memorii-provider-semantic-writer-v1",
-                    writer_implementation_fingerprint="memorii-provider-semantic-evidence-only-v1",
-                    graph_schema_fingerprint="memorii-semantic-graph-preactivation-v1",
-                )
         else:
             # Active semantic composition is explicit: the host supplies the
-            # already migrated/certified writer owner instead of a boolean
-            # bypass that could silently activate graph writes.
-            runtime_writer.current()
+            # canonical writer owner. Its durable admission is validated only
+            # after authenticated ingress, never during construction.
             self._semantic_writer_admission = runtime_writer
         self._semantic_integrity_lifecycle = semantic_integrity_lifecycle
         integrity_attention_publisher: Callable[[str, datetime], None] | None = None
@@ -508,7 +546,9 @@ class ProviderMemoryService:
             ),
             semantic_runtime=semantic_runtime,
             now_provider=self._now_provider,
+            canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
         )
+        self._semantic_runtime_validated_after_ingress = False
         self._conflict_clarification_processor: ConflictClarificationProcessor | None = None
         if self._conflict_attention_enabled:
             configured_clarification_pipeline = conflict_clarification_pipeline or (
@@ -547,6 +587,32 @@ class ProviderMemoryService:
         self._last_recall_bundle: RecallStateBundle | None = None
         self._last_prefetch_result: ProviderPrefetchResult[ProductionRetrievalDecision] | None = None
 
+    def _ensure_writer_admission_record(self) -> None:
+        if not self._owns_writer_admission_record:
+            return
+        if self._writer_admission_record_initialized:
+            return
+        # A profile-less reopened service owns no replacement identity.  An
+        # existing durable record is authoritative only after `current()`
+        # revalidates its closed admission and ownership manifest.
+        if self._memory_plane.get_record(writer_admission_memory_id()) is not None:
+            self._semantic_writer_admission.current()
+            self._writer_admission_record_initialized = True
+            return
+        self._semantic_writer_admission.create_initial_evidence_only(
+            admission_id="memorii-provider-semantic-writer-v1",
+            writer_implementation_fingerprint="memorii-provider-semantic-evidence-only-v1",
+            graph_schema_fingerprint="memorii-semantic-graph-preactivation-v1",
+        )
+        self._writer_admission_record_initialized = True
+
+    def _new_canonical_evidence_arena(self) -> CanonicalEvidenceArena:
+        """Create one private owner per provider invocation or recovery item."""
+        return CanonicalEvidenceArena(
+            enabled=self._canonical_evidence_enabled,
+            observability_dispatcher=self._canonical_closure_dispatcher,
+        )
+
     def sync_event(
         self,
         *,
@@ -565,25 +631,27 @@ class ProviderMemoryService:
         source_modality: SourceModality | None = None,
         authenticated_host_ingress: AuthenticatedHostIngress | None = None,
     ) -> ProviderSyncResult:
-        event = make_event(
-            event_id=operation_id,
-            operation=operation,
-            content=content,
-            role=role,
-            target=target,
-            action=action,
-            session_id=session_id,
-            task_id=task_id,
-            user_id=user_id,
-            language=language,
-            speaker_id=speaker_id,
-            timestamp=timestamp or self._now_provider(),
-            source_modality=source_modality,
-        )
-        return self._ingest_event(
-            event,
-            authenticated_host_ingress=authenticated_host_ingress,
-        )
+        with CanonicalEvidenceArena(enabled=self._canonical_evidence_enabled, observability_dispatcher=self._canonical_closure_dispatcher) as canonical_evidence_arena:
+            event = make_event(
+                event_id=operation_id,
+                operation=operation,
+                content=content,
+                role=role,
+                target=target,
+                action=action,
+                session_id=session_id,
+                task_id=task_id,
+                user_id=user_id,
+                language=language,
+                speaker_id=speaker_id,
+                timestamp=timestamp or self._now_provider(),
+                source_modality=source_modality,
+            )
+            return self._ingest_event(
+                event,
+                authenticated_host_ingress=authenticated_host_ingress,
+                canonical_evidence_arena=canonical_evidence_arena,
+            )
 
     def _sync_composite_event(
         self,
@@ -615,15 +683,21 @@ class ProviderMemoryService:
             language="en",
             timestamp=self._now_provider(),
         )
-        return self._ingest_event(event, authenticated_host_ingress=authenticated_host_ingress)
+        with CanonicalEvidenceArena(enabled=self._canonical_evidence_enabled, observability_dispatcher=self._canonical_closure_dispatcher) as canonical_evidence_arena:
+            return self._ingest_event(
+                event,
+                authenticated_host_ingress=authenticated_host_ingress,
+                canonical_evidence_arena=canonical_evidence_arena,
+            )
 
     def _ingest_event(
         self,
         event: ProviderEvent,
         *,
         authenticated_host_ingress: AuthenticatedHostIngress | None,
+        canonical_evidence_arena: CanonicalEvidenceArena,
     ) -> ProviderSyncResult:
-        ingress = self._resolve_ingress(authenticated_host_ingress)
+        ingress = self._preflight_ingress(authenticated_host_ingress)
         result, _, evolution_result = self._provider_ingestion.ingest(
             event,
             defer_assertions=event.operation
@@ -632,6 +706,7 @@ class ProviderMemoryService:
                 ProviderOperation.CHAT_ASSISTANT_TURN,
             },
             authenticated_ingress=ingress,
+            canonical_evidence_arena=canonical_evidence_arena,
         )
         self._last_memory_evolution_result = evolution_result
         return result
@@ -643,6 +718,23 @@ class ProviderMemoryService:
             return self._authenticated_ingress_resolver.resolve(host_ingress, self._now_provider())
         except AuthenticatedIngressResolutionError:
             return None
+
+    def _preflight_ingress(self, host_ingress: AuthenticatedHostIngress | None):
+        """Resolve ingress before the sole durable writer-admission boundary."""
+        ingress = self._resolve_ingress(host_ingress)
+        if ingress is not None:
+            self._ensure_writer_admission_record()
+            self._validate_semantic_runtime_after_ingress()
+        return ingress
+
+    def _validate_semantic_runtime_after_ingress(self) -> None:
+        if self._semantic_runtime_validated_after_ingress:
+            return
+        runtime = self._provider_ingestion._semantic_runtime
+        if runtime is None or self._bootstrap_profile is None:
+            return
+        runtime.validate(profile=self._bootstrap_profile, server_time=self._now_provider())
+        self._semantic_runtime_validated_after_ingress = True
 
     def lookup_semantic_ingestion_outcome(
         self,
@@ -771,10 +863,12 @@ class ProviderMemoryService:
             timestamp=timestamp or self._now_provider(),
             source_modality=source_modality,
         )
-        sync_result, _, evolution_result = self._provider_ingestion.ingest(
-            event,
-            authenticated_ingress=self._resolve_ingress(authenticated_host_ingress),
-        )
+        with CanonicalEvidenceArena(enabled=self._canonical_evidence_enabled, observability_dispatcher=self._canonical_closure_dispatcher) as canonical_evidence_arena:
+            sync_result, _, evolution_result = self._provider_ingestion.ingest(
+                event,
+                authenticated_ingress=self._preflight_ingress(authenticated_host_ingress),
+                canonical_evidence_arena=canonical_evidence_arena,
+            )
         self._last_memory_evolution_result = evolution_result
         decision = ProviderWriteDecision(
             blocked_domains=sync_result.blocked_domains,

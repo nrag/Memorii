@@ -3022,16 +3022,22 @@ def _is_bootstrap_graph_v3_checkpoint_write(
     """
     kinds = [item.content.get("semantic_ingestion_kind") for item in governed]
     retry_count = kinds.count("bootstrap_graph_v3_retry_index")
+    retry_recovery_count = kinds.count(
+        "bootstrap_graph_v3_retry_recovery_locator"
+    )
     if (
         len(governed) < 4
         or kinds.count("bootstrap_graph_v3_manifest") != 1
         or kinds.count("bootstrap_graph_v3_idempotency") != 1
         or retry_count not in {0, 1}
-        or kinds.count("bootstrap_graph_v3_member") != len(governed) - 3 - retry_count
+        or retry_recovery_count not in {0, 1}
+        or kinds.count("bootstrap_graph_v3_member")
+        != len(governed) - 3 - retry_count - retry_recovery_count
         or any(
             kind not in {
                 "bootstrap_graph_v3_member", "bootstrap_graph_v3_manifest",
                 "bootstrap_graph_v3_idempotency", "bootstrap_graph_v3_retry_index",
+                "bootstrap_graph_v3_retry_recovery_locator",
                 "preplanning_operation_control",
             }
             for kind in kinds
@@ -3039,6 +3045,12 @@ def _is_bootstrap_graph_v3_checkpoint_write(
     ):
         return False
     try:
+        import json
+
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphRetryRecoveryLocatorV3,
+        )
+
         manifest = next(item for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_manifest")
         index = next(item for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_idempotency")
         control = next(item for item in governed if item.content.get("semantic_ingestion_kind") == "preplanning_operation_control")
@@ -3046,6 +3058,22 @@ def _is_bootstrap_graph_v3_checkpoint_write(
         retry = next(
             (item for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_retry_index"),
             None,
+        )
+        retry_recovery_record = next(
+            (
+                item
+                for item in governed
+                if item.content.get("semantic_ingestion_kind")
+                == "bootstrap_graph_v3_retry_recovery_locator"
+            ),
+            None,
+        )
+        retry_recovery = (
+            None
+            if retry_recovery_record is None
+            else BootstrapGraphRetryRecoveryLocatorV3.model_validate_json(
+                json.dumps(retry_recovery_record.content["locator"])
+            )
         )
         members = [item.content["member"] for item in governed if item.content.get("semantic_ingestion_kind") == "bootstrap_graph_v3_member"]
         expected_members = request["members"]
@@ -3060,11 +3088,38 @@ def _is_bootstrap_graph_v3_checkpoint_write(
             or control.content["control"].get("generation")
             != request["predecessor_generation"]["operation_generation"] + 1
             or (retry is not None) != (request.get("kind") == "bootstrap_graph_retry_checkpoint")
+            or (retry_recovery is not None)
+            != (request.get("kind") == "bootstrap_graph_retry_checkpoint")
             or (
                 retry is not None
                 and (
                     retry.content.get("request_digest") != request.get("request_digest")
                     or retry.content.get("write_digest") != request.get("write_digest")
+                )
+            )
+            or (
+                retry_recovery is not None
+                and (
+                    retry_recovery_record is None
+                    or retry_recovery_record.source_kind
+                    != "semantic_ingestion_bootstrap_graph_v3_retry_recovery_locator"
+                    or retry_recovery_record.memory_id
+                    != (
+                        "semantic_ingestion:bootstrap-graph-v3:retry-recovery:"
+                        + request["operation_fence_binding"]["binding_digest"]
+                    )
+                    or retry_recovery.request_digest != request.get("request_digest")
+                    or retry_recovery.checkpoint_write_digest
+                    != request.get("write_digest")
+                    or retry_recovery.checkpoint_manifest_id != manifest.memory_id
+                    or retry_recovery.operation_fence_binding_digest
+                    != request["operation_fence_binding"]["binding_digest"]
+                    or retry_recovery.normalization_replay_digest
+                    != request.get("normalization_replay_digest")
+                    or retry_recovery.normalization_result_digest
+                    != request.get("normalization_result_digest")
+                    or retry_recovery.checkpoint_request.model_dump(mode="json")
+                    != request
                 )
             )
         ):

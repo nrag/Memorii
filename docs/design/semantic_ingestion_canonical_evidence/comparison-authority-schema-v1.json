@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "memorii.semantic-ingestion.canonical-evidence.comparison-schedule-authority.v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "fixture_hash", "tool_identity", "workload_identity", "environment_identity", "algorithm_identity", "seed", "matrix_order", "execution_order", "warmup_count", "discard_count", "retained_repetitions", "retained_ordinals", "process_isolation", "thresholds"],
+  "properties": {
+    "schema": {"const": "memorii.semantic-ingestion.canonical-evidence.comparison-schedule-authority.v2"},
+    "fixture_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "tool_identity": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "workload_identity": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "environment_identity": {"const": "canonical-evidence-design-vector-environment-v1"},
+    "algorithm_identity": {"const": "canonical-evidence-v4"},
+    "seed": {"const": 173},
+    "matrix_order": {"$ref": "#/$defs/matrix_order"},
+    "execution_order": {"$ref": "#/$defs/matrix_order"},
+    "warmup_count": {"const": 1},
+    "discard_count": {"const": 1},
+    "retained_repetitions": {"const": 20},
+    "retained_ordinals": {"const": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]},
+    "process_isolation": {"const": "fresh_child_per_cell_per_repetition"},
+    "thresholds": {"type": "object", "additionalProperties": false, "required": ["median_reduction_at_least", "p95_to_median_at_most", "child_rss_delta_bytes_at_most"], "properties": {"median_reduction_at_least": {"const": 0.75}, "p95_to_median_at_most": {"const": 1.5}, "child_rss_delta_bytes_at_most": {"const": 134217728}}}
+  },
+  "$defs": {"matrix_order": {"type": "array", "minItems": 8, "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "enum": ["direct/memory", "direct/jsonl", "factory/memory", "factory/jsonl", "filesystem/memory", "filesystem/jsonl", "hermes/memory", "hermes/jsonl"]}}}
+}

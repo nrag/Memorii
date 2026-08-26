@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
+from memorii.core.filesystem_storage.bundle import build_filesystem_provider
 from memorii.core.memory_evolution.admission import (
     SemanticIngestionOutcomeLookupRequest,
     SemanticIngestionOutcomeLookupResponse,
@@ -22,6 +23,7 @@ from memorii.core.memory_evolution.conflict_attention import (
 from memorii.core.memory_evolution.identity_lineage import IdentityLineageAuditView
 from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedHostIngress
 from memorii.core.memory_evolution.retrieval_contracts import GraphAuditRequest
+from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.provider.attention_models import ProviderToolAttentionEnvelope
 from memorii.core.provider.classifier import classify_memory_target
 from memorii.core.provider.factory import build_provider_memory_service_from_env
@@ -32,7 +34,11 @@ from memorii.core.provider.models import (
     normalize_delivery_id,
 )
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.production_authority import (
+    VerifiedProductionHostAuthority,
+)
 from memorii.core.semantic_ingestion.source_normalization_host import SourceNormalizationHostBundleBuilder
+from memorii.domain.enums import SourceModality
 from memorii.integrations.provider_interface import MemoryProviderInterface
 
 
@@ -43,17 +49,75 @@ class HermesMemoryProvider(MemoryProviderInterface):
         host_bootstrap_capability: HostBootstrapCapability | None = None,
         host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
         source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
+        verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
+        memory_plane: MemoryPlaneService | None = None,
+        storage_root: str | None = None,
     ) -> None:
+        if memory_plane is not None and storage_root is not None:
+            raise ValueError("memory plane and filesystem storage root are mutually exclusive")
         if service is not None and (
             host_bootstrap_capability is not None
             or host_bootstrap_material_verifier is not None
             or source_normalization_host_bundle_builder is not None
+            or verified_production_host_authority is not None
+            or memory_plane is not None
+            or storage_root is not None
         ):
             raise ValueError("service and host bootstrap capability are mutually exclusive")
-        self._service = service or build_provider_memory_service_from_env(
-            host_bootstrap_capability=host_bootstrap_capability,
-            host_bootstrap_material_verifier=host_bootstrap_material_verifier,
-            source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+        if service is not None:
+            self._service = service
+        elif storage_root is not None:
+            self._service = build_filesystem_provider(
+                storage_root=storage_root,
+                host_bootstrap_capability=host_bootstrap_capability,
+                host_bootstrap_material_verifier=host_bootstrap_material_verifier,
+                source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+                verified_production_host_authority=verified_production_host_authority,
+            )
+        else:
+            self._service = build_provider_memory_service_from_env(
+                memory_plane=memory_plane,
+                host_bootstrap_capability=host_bootstrap_capability,
+                host_bootstrap_material_verifier=host_bootstrap_material_verifier,
+                source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+                verified_production_host_authority=verified_production_host_authority,
+            )
+
+    def sync_event(
+        self,
+        *,
+        operation: ProviderOperation,
+        content: str,
+        operation_id: str,
+        role: str | None = None,
+        target: str | None = None,
+        action: str | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        user_id: str | None = None,
+        language: str = "en",
+        speaker_id: str | None = None,
+        timestamp: datetime | None = None,
+        source_modality: SourceModality | None = None,
+        authenticated_host_ingress: AuthenticatedHostIngress | None = None,
+    ) -> ProviderSyncResult:
+        """Forward the public event entrypoint for production capture callers."""
+
+        return self._service.sync_event(
+            operation=operation,
+            content=content,
+            operation_id=operation_id,
+            role=role,
+            target=target,
+            action=action,
+            session_id=session_id,
+            task_id=task_id,
+            user_id=user_id,
+            language=language,
+            speaker_id=speaker_id,
+            timestamp=timestamp,
+            source_modality=source_modality,
+            authenticated_host_ingress=authenticated_host_ingress,
         )
 
     def prefetch(

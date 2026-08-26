@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "memorii.semantic-ingestion.canonical-evidence.comparison-result-binding.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "comparison_schedule_authority_hash", "baseline", "candidate"],
+  "properties": {
+    "schema": {"const": "memorii.semantic-ingestion.canonical-evidence.comparison-result-binding.v1"},
+    "comparison_schedule_authority_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "baseline": {"$ref": "#/$defs/side"},
+    "candidate": {"$ref": "#/$defs/side"}
+  },
+  "$defs": {
+    "side": {"type": "object", "additionalProperties": false, "required": ["kind", "authority_lock_hash", "implementation_identity", "source_identity", "execution_lock_hash", "result_lock_hash", "diagnostic_record_hash", "latency_record_hash"], "properties": {"kind": {"enum": ["baseline", "candidate"]}, "authority_lock_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "implementation_identity": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "source_identity": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "execution_lock_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "result_lock_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "diagnostic_record_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "latency_record_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}}
+  }
+}

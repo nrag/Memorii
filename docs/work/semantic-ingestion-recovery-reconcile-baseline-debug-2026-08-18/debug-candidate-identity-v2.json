@@ -1,0 +1,35 @@
+{
+  "format": "memorii.debug-candidate-identity.v2",
+  "created": "2026-08-19",
+  "supersedes": "debug-candidate-identity-v1.json",
+  "revision": {
+    "base_commit": "b9daf00a0e6956e51106756f1baaf23190c688bb",
+    "head_commit": "b9daf00a0e6956e51106756f1baaf23190c688bb",
+    "tree_state": "dirty-local-scoped"
+  },
+  "scope": {
+    "statement": "WA ingress-before-writer correction, its focused proof, v12 production binding map, and the prior V3 fixture-contract correction only. Parent recovery/reconciliation fresh-owner implementation remains excluded and partial.",
+    "path_sha256": {
+      "memorii/memorii/core/provider/service.py": "f3d325d70ebc7ded3ad5cd0aa46c087630d86b4429b058a2f9cda765b6507be3",
+      "memorii/tests/unit/core/semantic_ingestion/test_semantic_provider_composition.py": "7fdfbd1d45600234c1db3fc701e4cb8303c186819670dd508e009befc6068fe3",
+      "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_recovery_replay_v3.py": "1e6be9cad5306aaf39cc887926f285745e1bf2df7c46ec0717709a534e0063cf",
+      "memorii/tests/unit/core/semantic_ingestion/test_bootstrap_v3_recovery_reopen.py": "4ef595dde0805654f5d2ff2e4ff5f25096e5c794ff1fe71469867fdb363254bb",
+      "docs/work/semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md": "b54294b9d7ce319bceab8589fc820105075b302813a1f88be82cd696a99655dd",
+      "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/recovery-reconciliation-fresh-owner-propagation.md": "e3e689271e5e9d3ebadafeb9fc4115d524ab972d78e38085fd5ec96afcc9583a",
+      "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/build_production_entrypoint_bindings_v12.py": "e490751926ccd2ba2da2635eea2f19bff14db5890b1d80d716c9dfb65b6716ce",
+      "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/validate_production_entrypoint_bindings_v12.py": "4fc59c388b4e856db346b5a036b2859ae5be0559c7026b33822dadf31ce10eb0",
+      "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v12.json": "d4fb53bb84bc983d9452cd05e57b09fecafea10ade71a1cae12303f8adf9393c",
+      "docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/production-entrypoint-bindings-v12-validation.json": "317a5b823dec2c7c77df40fa180eb950d3b72cf253a45b76af1f085c90f30072"
+    }
+  },
+  "focused_evidence": {
+    "writer_matrix": "5 passed in 5.23s: memory+JSONL valid preserve/create, absent/rejected no-write, JSONL corrupt fail-closed.",
+    "binding_validation": "v12 passed: six edges, factory caller count 1, Hermes caller count 4.",
+    "static": "Ruff and git diff --check passed."
+  },
+  "closure_record": {
+    "status": "delta_review_pending",
+    "remaining_validated_p1_p2": [],
+    "transferred_findings": ["V3 atomic-store/reconcile fresh-owner propagation remains assigned to the paused parent implementation packet."]
+  }
+}

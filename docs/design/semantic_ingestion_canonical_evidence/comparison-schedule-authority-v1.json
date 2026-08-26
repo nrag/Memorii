@@ -1,0 +1,17 @@
+{
+  "schema": "memorii.semantic-ingestion.canonical-evidence.comparison-schedule-authority.v2",
+  "fixture_hash": "912a4548ff25a7c5f36be386828d75ac15f2bb12c8e531bdb38b5e5e87bc97c7",
+  "tool_identity": "216ef538a3c08e37deb97de1dc911b02b4fe7def23dae8eb26cef5739d4e8492",
+  "workload_identity": "da8b50a684fd42d379fda1c6140abd3305dcd5823426cc0798c0d5c6e2a6273f",
+  "environment_identity": "canonical-evidence-design-vector-environment-v1",
+  "algorithm_identity": "canonical-evidence-v4",
+  "seed": 173,
+  "matrix_order": ["direct/memory", "direct/jsonl", "factory/memory", "factory/jsonl", "filesystem/memory", "filesystem/jsonl", "hermes/memory", "hermes/jsonl"],
+  "execution_order": ["filesystem/jsonl", "direct/memory", "hermes/jsonl", "factory/memory", "direct/jsonl", "filesystem/memory", "factory/jsonl", "hermes/memory"],
+  "warmup_count": 1,
+  "discard_count": 1,
+  "retained_repetitions": 20,
+  "retained_ordinals": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  "process_isolation": "fresh_child_per_cell_per_repetition",
+  "thresholds": {"median_reduction_at_least": 0.75, "p95_to_median_at_most": 1.5, "child_rss_delta_bytes_at_most": 134217728}
+}

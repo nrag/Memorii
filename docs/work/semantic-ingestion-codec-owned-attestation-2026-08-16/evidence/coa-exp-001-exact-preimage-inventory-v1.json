@@ -1,0 +1,219 @@
+{
+  "all_contract_digest_calls": 1898,
+  "ambiguous_digest_identities": [],
+  "candidate_lock_sha256": "24da95523b9a050266034cd6f3b923d52a4d8cc97cf83d32d83c1285bb2d99c3",
+  "canonical_bytes_max_entry": 5650,
+  "canonical_bytes_total_unique": 42773,
+  "certifies_m3_1": false,
+  "content_addressed_call_fraction": 0.6865121180189674,
+  "content_addressed_calls": 1303,
+  "elapsed_seconds": 2.117493679000063,
+  "evidence_stage": "reference_only_feasibility",
+  "exactness_failures": [],
+  "experiment": "COA-EXP-001",
+  "identities": [
+    {
+      "canonical_byte_length": 363,
+      "canonical_bytes_sha256": "cb8e329f6e01c07e9296f957e77c564e62530d9968b96e896b6673ab43209d74",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SemanticProjectionTextArtifact",
+      "digest": "cca26e0b3029ab3f9128790bc656996d4fbdec80c3313507f7cc5c72aa06f5d0",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e73656d616e7469632d70726f6a656374696f6e2d746578742d61727469666163742e7631",
+      "excluded_fields": [],
+      "occurrences": 214
+    },
+    {
+      "canonical_byte_length": 392,
+      "canonical_bytes_sha256": "b8fe98bf8c895d04c4b633882c49b6a9e191ab3b59e6bf30e10aa533b98dd83a",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SegmentLocalTextArtifact",
+      "digest": "f2387de3bba48c0cdc16edf5c037ea9045b03aa227af7e9da9321aef68603768",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e7365676d656e742d6c6f63616c2d746578742d61727469666163742e7631",
+      "excluded_fields": [],
+      "occurrences": 199
+    },
+    {
+      "canonical_byte_length": 357,
+      "canonical_bytes_sha256": "347d87795b66d27810d162eefb971a6c5a4979c0e5646b9501f637cd2b5c67e4",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.RetainedSourceTextArtifact",
+      "digest": "90beff1eab0e3db30013f1fbf31c54f7d63baf16043e5ea69dcd82b135ef5bfc",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e72657461696e65642d736f757263652d746578742d61727469666163742e7631",
+      "excluded_fields": [],
+      "occurrences": 175
+    },
+    {
+      "canonical_byte_length": 707,
+      "canonical_bytes_sha256": "183210fad7183708627f62a3190e8495a8bcd5b9fd0a63fe67ea7a5b542f16e6",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.ProjectionTextSpan",
+      "digest": "957a2f908afc6bf41f4e8bbb8e2d144f5b3fa61929ff487cf37adcfeb317276d",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e70726f6a656374696f6e2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 149
+    },
+    {
+      "canonical_byte_length": 730,
+      "canonical_bytes_sha256": "f1220cffeac31691c499d99df8200dd545e2ff137652787ab7e812dc562b8d00",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SegmentLocalTextSpan",
+      "digest": "49e6df17f7f5948b889e755f13ae79ce678d8c006cb45782bd68de055ef3ef56",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e7365676d656e742d6c6f63616c2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 133
+    },
+    {
+      "canonical_byte_length": 2497,
+      "canonical_bytes_sha256": "8ac3afb264340f41df67b35ff3eac6b87c86a90ead758d3cb60bde77a0a9ee88",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.VerbatimTextArtifactMappingProof",
+      "digest": "b0ec308a4ff0377e054f54e916911cab8b3924b02ec141b7237eae1c771778d0",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e766572626174696d2d746578742d61727469666163742d6d617070696e672d70726f6f662e7631",
+      "excluded_fields": [],
+      "occurrences": 101
+    },
+    {
+      "canonical_byte_length": 697,
+      "canonical_bytes_sha256": "fb7f57b348db92b094be83116ffb9d66ebad1eae25531471c73aba82e3bf9e46",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.RetainedSourceTextSpan",
+      "digest": "2a1599ec5502b4b9a763333a4db56e427218f0ba79225bb34f97ba4e750272ff",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e72657461696e65642d736f757263652d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 89
+    },
+    {
+      "canonical_byte_length": 343,
+      "canonical_bytes_sha256": "b0f0d86a8a0dac01c39cb286251f646fe2aaaab9d47945955229788dadb64949",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.TextPreparationPolicy",
+      "digest": "570cee39ee39c93e17f351a19d65a7b44e21467161c03469849028e14ca91b82",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e746578742d7072657061726174696f6e2d706f6c6963792e7631",
+      "excluded_fields": [],
+      "occurrences": 18
+    },
+    {
+      "canonical_byte_length": 5650,
+      "canonical_bytes_sha256": "005cbbb2a1495ccee085ced0c6874ff9ae7d23cbd57b44f77dcdc366cbb6453b",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SemanticProjectionSegment",
+      "digest": "f28b967fb1221073df442b5c6110686552abd53aa83e4293c83088973bb7f693",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e73656d616e7469632d70726f6a656374696f6e2d7365676d656e742e7631",
+      "excluded_fields": [],
+      "occurrences": 17
+    },
+    {
+      "canonical_byte_length": 708,
+      "canonical_bytes_sha256": "b78780d0ed772a482f8ad6096beaf2c598420e09bcbd55b392751c0aac2bbcb4",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.ProjectionTextSpan",
+      "digest": "16f9f4b0c2d2abac3054d45a43a128f9ba5d58e1ceabf4fea929b7918363e485",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e70726f6a656374696f6e2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 708,
+      "canonical_bytes_sha256": "40f5f17ffe7dd11d3ed169ae01930f7d793491d1da256b8df731deb004ee0acd",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.ProjectionTextSpan",
+      "digest": "4b27f48ff77dca48088263250f4da686fb25b5988ef339a0d2dc825c38bd1385",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e70726f6a656374696f6e2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 707,
+      "canonical_bytes_sha256": "2454e9091c323875e92e7f3cb7f0585326f0f35c8fb67324b95f42e0dabf9b3e",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.ProjectionTextSpan",
+      "digest": "60d80d4c0527f27388e6815740a70737f72e0cd5323317d107f0cc117440ce15",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e70726f6a656374696f6e2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 706,
+      "canonical_bytes_sha256": "685a93712d7b04343571bbddb83573470902cea4219bcefbc573ffa0859cc06b",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.ProjectionTextSpan",
+      "digest": "b2e5070ea7b7c600bafd4b5b72d3238a25d778c11bbb43e3a1a1a43d99036fbc",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e70726f6a656374696f6e2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 731,
+      "canonical_bytes_sha256": "94d96e178340d3a91dcb904775233e3a25079b9d38a5e958e1858c43f2600d8d",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SegmentLocalTextSpan",
+      "digest": "425277884ffe90fbfda56beac66eba7f55d1a98ea96df9b59c0b807507e10a9e",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e7365676d656e742d6c6f63616c2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 730,
+      "canonical_bytes_sha256": "df1ba2a6b71914a238983413a09a2ac31aa8aa028f730e829f8a46ee7cf0c96e",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SegmentLocalTextSpan",
+      "digest": "b2d433eb2d723f5961b5a04ead406c17f99a3f2d09bc6c43c3c161322e5a2e6a",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e7365676d656e742d6c6f63616c2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 731,
+      "canonical_bytes_sha256": "3354fde3c2885e5c53506e9113db926282e9692b9a0cb7c792dea8ea2fcf5784",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SegmentLocalTextSpan",
+      "digest": "e7ae2ecb7af4c3c2333f9d9f160d73aa5ded81a69aba6226e697532d7b761fbf",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e7365676d656e742d6c6f63616c2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 729,
+      "canonical_bytes_sha256": "54bff655094291b18da072c57e3b7cbda8552db66cf632bc9638e868ce194ad7",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SegmentLocalTextSpan",
+      "digest": "ffbbb2f52b3808afe4ca286b528fd5a63945adfb6c78f084b4de49808bf63b15",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e7365676d656e742d6c6f63616c2d746578742d7370616e2e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 5059,
+      "canonical_bytes_sha256": "e3da04f575f370a5fa69a6d403cb072c4be7c72cd554920b4f5ae5616083f008",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SourceSpanReference",
+      "digest": "12950efcc460e09eb0d8c8499ff89ed64d7207d4a983bccc0512f25bdc5934e6",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e736f757263652d7370616e2d7265666572656e63652e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 5059,
+      "canonical_bytes_sha256": "0c56eca2ca5a23fcda051a26ae3847e7e915119c005700c8bb382fe9fcbcda99",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SourceSpanReference",
+      "digest": "30015cab88f9541f69d29a626aee8e7c46ad0ff67cc59183dda74fd91366baac",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e736f757263652d7370616e2d7265666572656e63652e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 5057,
+      "canonical_bytes_sha256": "d5c2eeb65f04c9e7a7c3939845f13e58665e40bac59d0bb860412bcbeab036e8",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SourceSpanReference",
+      "digest": "c83b9dc56fce4e00e044ca1ad7e9778adc656fa6c4357aecf1ea0dd6b06b57be",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e736f757263652d7370616e2d7265666572656e63652e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 5057,
+      "canonical_bytes_sha256": "1d8f2dba307b47e7922a2452cbc252313034626be24e6869b00228fbd64900ec",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SourceSpanReference",
+      "digest": "cd681e985cd03a09398fde21b864ee3645bc530dadb62ce143ec154308276e51",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e736f757263652d7370616e2d7265666572656e63652e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    },
+    {
+      "canonical_byte_length": 5055,
+      "canonical_bytes_sha256": "b62b02cbe57d0fb355393197db232565141abf1d3115cb4b9ae30f6fbcb5db59",
+      "contract_type": "memorii.core.semantic_ingestion.contracts.SourceSpanReference",
+      "digest": "eb901f45a3055d88fc7c39bd02e4237d6cc2539b0eb9be747d3fa8051c379aa7",
+      "domain_hex": "6d656d6f7269692e73656d616e7469632d696e67657374696f6e2e736f757263652d7370616e2d7265666572656e63652e7631",
+      "excluded_fields": [],
+      "occurrences": 16
+    }
+  ],
+  "legacy_fallback": "process_reservation_saturation",
+  "maximum_repetition": 214,
+  "redundant_content_calls": 1281,
+  "schema": "memorii.semantic-ingestion.codec-attestation.exact-preimage-inventory.v1",
+  "unique_content_identities": 22
+}

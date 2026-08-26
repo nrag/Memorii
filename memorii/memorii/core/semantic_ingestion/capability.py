@@ -475,7 +475,6 @@ class BuiltInLocalHostSemanticIngestionCapability:
         if material_profile != bootstrap_profile or not material_profile.enabled:
             return None
         from memorii.core.memory_evolution.writer_admission import (
-            SemanticWriterAdmissionError,
             SemanticWriterAdmissionStore,
             bounded_preplanning_ownership_manifest,
         )
@@ -488,16 +487,6 @@ class BuiltInLocalHostSemanticIngestionCapability:
             bounded_preplanning_ownership_manifest(),
             now_provider=now_provider,
         )
-        try:
-            writers.current()
-        except SemanticWriterAdmissionError as exc:
-            if str(exc) != "semantic writer is unbound":
-                raise
-            writers.create_initial_evidence_only(
-                admission_id="memorii-provider-semantic-writer-v1",
-                writer_implementation_fingerprint="memorii-provider-semantic-evidence-only-v1",
-                graph_schema_fingerprint="memorii-semantic-graph-preactivation-v1",
-            )
         if self.initial_writer_activation is not None:
             if (
                 verified_material.trust_domain != "scenario_test"
@@ -550,7 +539,6 @@ class BuiltInLocalHostSemanticIngestionCapability:
             source_normalization_host_bundle=host_bundle,
             bootstrap_graph_host_bundle=graph_bundle,
         )
-        runtime.validate(profile=bootstrap_profile, server_time=now_provider())
         return runtime
 
 

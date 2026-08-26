@@ -1,0 +1,446 @@
+{
+  "allowed_trigger_ids": [
+    "direct_composite_sync",
+    "direct_memory_write",
+    "direct_sync",
+    "hermes_delegation",
+    "hermes_memory_write",
+    "hermes_pre_compress",
+    "hermes_session_end",
+    "hermes_sync",
+    "hermes_turn"
+  ],
+  "closed_dynamic_dispatch_policy": "dynamic_import_or_getattr_durable_dispatch_forbidden",
+  "composition_branches": {
+    "hermes_filesystem_factory": {
+      "field": "_service",
+      "kind": "factory_call",
+      "owner": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.__init__",
+      "predicate": "storage_root is not None",
+      "required_keywords": {
+        "storage_root": "storage_root",
+        "verified_production_host_authority": "verified_production_host_authority"
+      },
+      "root_id": "hermes_constructor",
+      "source_expression": "build_filesystem_provider",
+      "target_owner": "memorii/memorii/core/provider/service.py::ProviderMemoryService"
+    },
+    "hermes_injected_service": {
+      "expected_annotation": "ProviderMemoryService | None",
+      "field": "_service",
+      "kind": "typed_parameter",
+      "owner": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.__init__",
+      "predicate": "service is not None",
+      "root_id": "hermes_constructor",
+      "source_expression": "service",
+      "target_owner": "memorii/memorii/core/provider/service.py::ProviderMemoryService"
+    },
+    "hermes_provider_factory": {
+      "field": "_service",
+      "kind": "factory_call",
+      "owner": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.__init__",
+      "predicate": "else",
+      "required_keywords": {
+        "verified_production_host_authority": "verified_production_host_authority"
+      },
+      "root_id": "hermes_constructor",
+      "source_expression": "build_provider_memory_service_from_env",
+      "target_owner": "memorii/memorii/core/provider/service.py::ProviderMemoryService"
+    }
+  },
+  "composition_root_anchors": {
+    "filesystem_bundle": [
+      "edge:bundle_factory"
+    ],
+    "filesystem_factory": [
+      "edge:filesystem_bundle"
+    ],
+    "hermes_constructor": [
+      "branch:hermes_injected_service",
+      "branch:hermes_filesystem_factory",
+      "branch:hermes_provider_factory"
+    ],
+    "provider_factory": [
+      "edge:factory_service"
+    ]
+  },
+  "composition_root_ids": [
+    "provider_factory",
+    "filesystem_bundle",
+    "filesystem_factory",
+    "hermes_constructor"
+  ],
+  "composition_root_mappings": {
+    "filesystem_bundle": "memorii/memorii/core/filesystem_storage/bundle.py::FilesystemStorageBundle.build_provider_memory_service",
+    "filesystem_factory": "memorii/memorii/core/filesystem_storage/bundle.py::build_filesystem_provider",
+    "hermes_constructor": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.__init__",
+    "provider_factory": "memorii/memorii/core/provider/factory.py::build_provider_memory_service_from_env"
+  },
+  "composition_root_trigger_bridges": {
+    "filesystem_bundle": [
+      "direct_sync",
+      "direct_composite_sync",
+      "direct_memory_write"
+    ],
+    "filesystem_factory": [
+      "direct_sync",
+      "direct_composite_sync",
+      "direct_memory_write"
+    ],
+    "hermes_constructor": [
+      "hermes_sync",
+      "hermes_turn",
+      "hermes_session_end",
+      "hermes_pre_compress",
+      "hermes_delegation",
+      "hermes_memory_write"
+    ],
+    "provider_factory": [
+      "direct_sync",
+      "direct_composite_sync",
+      "direct_memory_write"
+    ]
+  },
+  "composition_root_trigger_paths": {
+    "filesystem_bundle": [
+      [
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_sync"
+      ],
+      [
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_composite_sync"
+      ],
+      [
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_memory_write"
+      ]
+    ],
+    "filesystem_factory": [
+      [
+        "edge:filesystem_bundle",
+        "instance:filesystem_provider_chain",
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_sync"
+      ],
+      [
+        "edge:filesystem_bundle",
+        "instance:filesystem_provider_chain",
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_composite_sync"
+      ],
+      [
+        "edge:filesystem_bundle",
+        "instance:filesystem_provider_chain",
+        "edge:bundle_factory",
+        "edge:factory_service",
+        "trigger:direct_memory_write"
+      ]
+    ],
+    "hermes_constructor": [
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_sync"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_turn"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_session_end"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_pre_compress"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_delegation"
+      ],
+      [
+        "branch:hermes_injected_service",
+        "field:_service",
+        "trigger:hermes_memory_write"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_sync"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_turn"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_session_end"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_pre_compress"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_delegation"
+      ],
+      [
+        "branch:hermes_filesystem_factory",
+        "field:_service",
+        "trigger:hermes_memory_write"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_sync"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_turn"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_session_end"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_pre_compress"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_delegation"
+      ],
+      [
+        "branch:hermes_provider_factory",
+        "field:_service",
+        "trigger:hermes_memory_write"
+      ]
+    ],
+    "provider_factory": [
+      [
+        "edge:factory_service",
+        "trigger:direct_sync"
+      ],
+      [
+        "edge:factory_service",
+        "trigger:direct_composite_sync"
+      ],
+      [
+        "edge:factory_service",
+        "trigger:direct_memory_write"
+      ]
+    ]
+  },
+  "durable_modules": [
+    "memorii.core.semantic_ingestion.persistence",
+    "memorii.core.memory_evolution.atomic_store"
+  ],
+  "excluded_roots": {
+    "capture_child": "evidence_harness_only_uncalled_in_tree"
+  },
+  "instance_bridges": {
+    "filesystem_provider_chain": {
+      "constructor_expression": "FilesystemStorageBundle.from_root",
+      "method": "build_provider_memory_service",
+      "owner": "memorii/memorii/core/filesystem_storage/bundle.py::build_filesystem_provider",
+      "receiver_mode": "chained_call",
+      "required_constructor_keywords": {
+        "policy": "policy",
+        "storage_root": "storage_root"
+      },
+      "required_method_keywords": {
+        "verified_production_host_authority": "verified_production_host_authority"
+      }
+    }
+  },
+  "required_rows": [
+    "VCC-R01",
+    "VCC-R02",
+    "VCC-R03",
+    "VCC-R04",
+    "VCC-R05",
+    "VCC-R06",
+    "VCC-R07",
+    "VCC-R08",
+    "VCC-R09",
+    "VCC-R10",
+    "VCC-R11",
+    "VCC-R12"
+  ],
+  "schema": "memorii.production-owner-oracle.v7",
+  "semantic_source_contracts": {
+    "arena_call_allowlist": [
+      "CanonicalClosureObservabilityDispatcher",
+      "CanonicalClosureScopeOwner",
+      "CanonicalEvidenceArenaSnapshot",
+      "CanonicalValidationScope",
+      "RuntimeError",
+      "ValueError",
+      "_ACTIVE_ARENA.get",
+      "_ACTIVE_ARENA.reset",
+      "_ACTIVE_ARENA.set",
+      "self._owner.abort",
+      "self._owner.admit",
+      "self._owner.close",
+      "self._owner.lease",
+      "self._owner.look",
+      "self._owner.release_lease",
+      "self._owner.seal",
+      "self.close",
+      "self.close_as_exception",
+      "token_hex"
+    ],
+    "arena_call_multiset": [
+      "CanonicalClosureObservabilityDispatcher",
+      "CanonicalClosureScopeOwner",
+      "CanonicalEvidenceArenaSnapshot",
+      "CanonicalValidationScope",
+      "RuntimeError",
+      "ValueError",
+      "_ACTIVE_ARENA.get",
+      "_ACTIVE_ARENA.reset",
+      "_ACTIVE_ARENA.set",
+      "self._owner.abort",
+      "self._owner.admit",
+      "self._owner.close",
+      "self._owner.close",
+      "self._owner.lease",
+      "self._owner.look",
+      "self._owner.release_lease",
+      "self._owner.seal",
+      "self.close",
+      "self.close_as_exception",
+      "token_hex"
+    ],
+    "arena_class_ast": "ClassDef(name='CanonicalEvidenceArena', bases=[Subscript(value=Name(id='AbstractContextManager', ctx=Load()), slice=Constant(value='CanonicalEvidenceArena'), ctx=Load())], keywords=[], body=[Expr(value=Constant(value=\"One invocation's immutable successful canonical-evidence entries.\")), FunctionDef(name='__init__', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[arg(arg='enabled', annotation=Name(id='bool', ctx=Load())), arg(arg='scope', annotation=BinOp(left=Name(id='CanonicalValidationScope', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='observability_dispatcher', annotation=BinOp(left=Name(id='CanonicalClosureObservabilityDispatcher', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[Constant(value=True), Constant(value=None), Constant(value=None)], defaults=[]), body=[Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_nonce', ctx=Store())], value=Call(func=Name(id='token_hex', ctx=Load()), args=[Constant(value=32)], keywords=[])), Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_scope', ctx=Store())], value=BoolOp(op=Or(), values=[Name(id='scope', ctx=Load()), Call(func=Name(id='CanonicalValidationScope', ctx=Load()), args=[], keywords=[keyword(arg='tenant', value=Constant(value='')), keyword(arg='operation', value=Attribute(value=Name(id='self', ctx=Load()), attr='_nonce', ctx=Load())), keyword(arg='generation', value=Constant(value=0)), keyword(arg='fence', value=Constant(value=0)), keyword(arg='writer', value=Constant(value=''))])])), Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Store())], value=Call(func=Name(id='CanonicalClosureScopeOwner', ctx=Load()), args=[], keywords=[keyword(arg='coordinator', value=Name(id='_PROCESS_RESERVATIONS', ctx=Load())), keyword(arg='scope', value=Attribute(value=Name(id='self', ctx=Load()), attr='_scope', ctx=Load())), keyword(arg='observability_dispatcher', value=BoolOp(op=Or(), values=[Name(id='observability_dispatcher', ctx=Load()), Call(func=Name(id='CanonicalClosureObservabilityDispatcher', ctx=Load()), args=[], keywords=[])])), keyword(arg='enabled', value=Name(id='enabled', ctx=Load()))])), AnnAssign(target=Attribute(value=Name(id='self', ctx=Load()), attr='_activation', ctx=Store()), annotation=BinOp(left=Subscript(value=Name(id='Token', ctx=Load()), slice=BinOp(left=Name(id='CanonicalEvidenceArena', ctx=Load()), op=BitOr(), right=Constant(value=None)), ctx=Load()), op=BitOr(), right=Constant(value=None)), value=Constant(value=None), simple=0)], decorator_list=[], returns=Constant(value=None), type_params=[]), FunctionDef(name='nonce', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Return(value=Attribute(value=Name(id='self', ctx=Load()), attr='_nonce', ctx=Load()))], decorator_list=[Name(id='property', ctx=Load())], returns=Name(id='str', ctx=Load()), type_params=[]), FunctionDef(name='pydantic_context', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Return(value=Dict(keys=[Name(id='_CANONICAL_EVIDENCE_ARENA_CONTEXT_KEY', ctx=Load())], values=[Name(id='self', ctx=Load())]))], decorator_list=[Name(id='property', ctx=Load())], returns=Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='object', ctx=Load()), Name(id='CanonicalEvidenceArena', ctx=Load())], ctx=Load()), ctx=Load()), type_params=[]), FunctionDef(name='closed', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Return(value=Compare(left=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='state', ctx=Load()), ops=[In()], comparators=[Set(elts=[Name(id='_STATE_DISABLED', ctx=Load()), Name(id='_STATE_REJECTED', ctx=Load()), Name(id='_STATE_CLOSED', ctx=Load())])]))], decorator_list=[Name(id='property', ctx=Load())], returns=Name(id='bool', ctx=Load()), type_params=[]), FunctionDef(name='scope', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Return(value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='scope', ctx=Load()))], decorator_list=[Name(id='property', ctx=Load())], returns=Name(id='CanonicalValidationScope', ctx=Load()), type_params=[]), FunctionDef(name='terminal_snapshot', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Return(value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='terminal_snapshot', ctx=Load()))], decorator_list=[Name(id='property', ctx=Load())], returns=BinOp(left=Name(id='CanonicalClosureTerminalSnapshot', ctx=Load()), op=BitOr(), right=Constant(value=None)), type_params=[]), FunctionDef(name='enabled', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Return(value=Compare(left=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='mode', ctx=Load()), ops=[Eq()], comparators=[Name(id='_OP_MODE_ENABLED', ctx=Load())]))], decorator_list=[Name(id='property', ctx=Load())], returns=Name(id='bool', ctx=Load()), type_params=[]), FunctionDef(name='require_active_nonce', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='nonce', annotation=Name(id='str', ctx=Load()))], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[If(test=BoolOp(op=Or(), values=[BoolOp(op=And(), values=[Compare(left=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='state', ctx=Load()), ops=[NotIn()], comparators=[Set(elts=[Name(id='_STATE_DISABLED', ctx=Load()), Name(id='_STATE_REJECTED', ctx=Load())])]), Compare(left=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='state', ctx=Load()), ops=[In()], comparators=[Set(elts=[Name(id='_STATE_CLOSED', ctx=Load()), Name(id='_STATE_CLOSING', ctx=Load())])])]), Compare(left=Name(id='nonce', ctx=Load()), ops=[NotEq()], comparators=[Attribute(value=Name(id='self', ctx=Load()), attr='_nonce', ctx=Load())]), Compare(left=Call(func=Attribute(value=Name(id='_ACTIVE_ARENA', ctx=Load()), attr='get', ctx=Load()), args=[], keywords=[]), ops=[IsNot()], comparators=[Name(id='self', ctx=Load())])]), body=[Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='canonical evidence arena context is stale or substituted')], keywords=[]))], orelse=[])], decorator_list=[], returns=Constant(value=None), type_params=[]), FunctionDef(name='lookup', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[arg(arg='canonical_contract_bytes', annotation=Name(id='bytes', ctx=Load())), arg(arg='concrete_contract_type', annotation=Subscript(value=Name(id='type', ctx=Load()), slice=Name(id='_ContractT', ctx=Load()), ctx=Load())), arg(arg='profile_revision', annotation=Name(id='str', ctx=Load())), arg(arg='codec_revision', annotation=Name(id='str', ctx=Load())), arg(arg='domain', annotation=Name(id='bytes', ctx=Load()))], kw_defaults=[None, None, None, None, None], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='look', ctx=Load()), args=[], keywords=[keyword(arg='concrete_contract_type', value=Name(id='concrete_contract_type', ctx=Load())), keyword(arg='canonical_contract_bytes', value=Name(id='canonical_contract_bytes', ctx=Load())), keyword(arg='profile_revision', value=Name(id='profile_revision', ctx=Load())), keyword(arg='codec_revision', value=Name(id='codec_revision', ctx=Load())), keyword(arg='domain', value=Name(id='domain', ctx=Load()))]))], decorator_list=[], returns=BinOp(left=Subscript(value=Name(id='CanonicalCodecResult', ctx=Load()), slice=Name(id='_ContractT', ctx=Load()), ctx=Load()), op=BitOr(), right=Constant(value=None)), type_params=[]), FunctionDef(name='admit_success', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[arg(arg='canonical_contract_bytes', annotation=Name(id='bytes', ctx=Load())), arg(arg='concrete_contract_type', annotation=Subscript(value=Name(id='type', ctx=Load()), slice=Name(id='_ContractT', ctx=Load()), ctx=Load())), arg(arg='profile_revision', annotation=Name(id='str', ctx=Load())), arg(arg='codec_revision', annotation=Name(id='str', ctx=Load())), arg(arg='domain', annotation=Name(id='bytes', ctx=Load())), arg(arg='result', annotation=Subscript(value=Name(id='ValidatedCanonicalEvidenceResult', ctx=Load()), slice=Name(id='_ContractT', ctx=Load()), ctx=Load()))], kw_defaults=[None, None, None, None, None, None], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='admit', ctx=Load()), args=[], keywords=[keyword(arg='canonical_contract_bytes', value=Name(id='canonical_contract_bytes', ctx=Load())), keyword(arg='concrete_contract_type', value=Name(id='concrete_contract_type', ctx=Load())), keyword(arg='profile_revision', value=Name(id='profile_revision', ctx=Load())), keyword(arg='codec_revision', value=Name(id='codec_revision', ctx=Load())), keyword(arg='domain', value=Name(id='domain', ctx=Load())), keyword(arg='result', value=Name(id='result', ctx=Load()))]))], decorator_list=[], returns=Name(id='bool', ctx=Load()), type_params=[]), FunctionDef(name='seal', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='seal', ctx=Load()), args=[], keywords=[]))], decorator_list=[], returns=Name(id='CanonicalBinding', ctx=Load()), type_params=[]), FunctionDef(name='lease', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[arg(arg='binding', annotation=Name(id='CanonicalBinding', ctx=Load())), arg(arg='scope', annotation=Name(id='CanonicalValidationScope', ctx=Load())), arg(arg='key', annotation=Name(id='str', ctx=Load()))], kw_defaults=[None, None, None], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='lease', ctx=Load()), args=[], keywords=[keyword(arg='binding', value=Name(id='binding', ctx=Load())), keyword(arg='scope', value=Name(id='scope', ctx=Load())), keyword(arg='key', value=Name(id='key', ctx=Load()))]))], decorator_list=[], returns=Name(id='bool', ctx=Load()), type_params=[]), FunctionDef(name='release_lease', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='key', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kwonlyargs=[], kw_defaults=[], defaults=[Constant(value=None)]), body=[Expr(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='release_lease', ctx=Load()), args=[Name(id='key', ctx=Load())], keywords=[]))], decorator_list=[], returns=Constant(value=None), type_params=[]), FunctionDef(name='close', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[If(test=Compare(left=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='state', ctx=Load()), ops=[Eq()], comparators=[Name(id='_STATE_CLOSED', ctx=Load())]), body=[Return()], orelse=[]), Expr(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='close', ctx=Load()), args=[], keywords=[]))], decorator_list=[], returns=Constant(value=None), type_params=[]), FunctionDef(name='close_as_exception', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[If(test=Compare(left=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='state', ctx=Load()), ops=[Eq()], comparators=[Name(id='_STATE_CLOSED', ctx=Load())]), body=[Return()], orelse=[]), Expr(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='close', ctx=Load()), args=[Name(id='_TERMINAL_EXCEPTION', ctx=Load())], keywords=[]))], decorator_list=[], returns=Constant(value=None), type_params=[]), FunctionDef(name='abort', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='reason', annotation=Name(id='_TerminalReason', ctx=Load()))], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[If(test=Compare(left=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='state', ctx=Load()), ops=[Eq()], comparators=[Name(id='_STATE_CLOSED', ctx=Load())]), body=[Return()], orelse=[]), Expr(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='abort', ctx=Load()), args=[Name(id='reason', ctx=Load())], keywords=[]))], decorator_list=[], returns=Constant(value=None), type_params=[]), FunctionDef(name='snapshot', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Assign(targets=[Name(id='terminal_snapshot', ctx=Store())], value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='terminal_snapshot', ctx=Load())), Return(value=Call(func=Name(id='CanonicalEvidenceArenaSnapshot', ctx=Load()), args=[], keywords=[keyword(arg='nonce', value=Attribute(value=Name(id='self', ctx=Load()), attr='_nonce', ctx=Load())), keyword(arg='state', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='state', ctx=Load())), keyword(arg='mode', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='mode', ctx=Load())), keyword(arg='reservation_acquired', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='reservation_acquired', ctx=Load())), keyword(arg='closed', value=Attribute(value=Name(id='self', ctx=Load()), attr='closed', ctx=Load())), keyword(arg='entries', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='entries', ctx=Load())), keyword(arg='charged_bytes', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='charge', ctx=Load())), keyword(arg='hits', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='hits', ctx=Load())), keyword(arg='misses', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='misses', ctx=Load())), keyword(arg='lookups', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='lookups', ctx=Load())), keyword(arg='capacity_fallbacks', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='capacity_refusals', ctx=Load())), keyword(arg='terminal_reason', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='terminal_reason', ctx=Load())), keyword(arg='member_paths', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='member_paths', ctx=Load())), keyword(arg='peak_charged_bytes', value=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='peak_charge', ctx=Load())), keyword(arg='reserved_bytes', value=IfExp(test=Compare(left=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_owner', ctx=Load()), attr='mode', ctx=Load()), ops=[Eq()], comparators=[Name(id='_OP_MODE_ENABLED', ctx=Load())]), body=Name(id='MAX_OPERATION_RESERVED_BYTES', ctx=Load()), orelse=Constant(value=0))), keyword(arg='released', value=IfExp(test=Compare(left=Name(id='terminal_snapshot', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), body=Attribute(value=Name(id='terminal_snapshot', ctx=Load()), attr='released', ctx=Load()), orelse=Constant(value=False)))]))], decorator_list=[], returns=Name(id='CanonicalEvidenceArenaSnapshot', ctx=Load()), type_params=[]), FunctionDef(name='__enter__', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[If(test=Compare(left=Attribute(value=Name(id='self', ctx=Load()), attr='_activation', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), body=[Raise(exc=Call(func=Name(id='RuntimeError', ctx=Load()), args=[Constant(value='canonical evidence arena cannot be re-entered')], keywords=[]))], orelse=[]), Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_activation', ctx=Store())], value=Call(func=Attribute(value=Name(id='_ACTIVE_ARENA', ctx=Load()), attr='set', ctx=Load()), args=[Name(id='self', ctx=Load())], keywords=[])), Return(value=Name(id='self', ctx=Load()))], decorator_list=[], returns=Name(id='CanonicalEvidenceArena', ctx=Load()), type_params=[]), FunctionDef(name='__exit__', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='exc_type', annotation=Name(id='object', ctx=Load())), arg(arg='exc_value', annotation=Name(id='object', ctx=Load())), arg(arg='traceback', annotation=Name(id='object', ctx=Load()))], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Assign(targets=[Name(id='activation', ctx=Store())], value=Attribute(value=Name(id='self', ctx=Load()), attr='_activation', ctx=Load())), Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_activation', ctx=Store())], value=Constant(value=None)), If(test=Compare(left=Name(id='activation', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), body=[Expr(value=Call(func=Attribute(value=Name(id='_ACTIVE_ARENA', ctx=Load()), attr='reset', ctx=Load()), args=[Name(id='activation', ctx=Load())], keywords=[]))], orelse=[]), If(test=Compare(left=Name(id='exc_type', ctx=Load()), ops=[Is()], comparators=[Constant(value=None)]), body=[Expr(value=Call(func=Attribute(value=Name(id='self', ctx=Load()), attr='close', ctx=Load()), args=[], keywords=[]))], orelse=[Expr(value=Call(func=Attribute(value=Name(id='self', ctx=Load()), attr='close_as_exception', ctx=Load()), args=[], keywords=[]))])], decorator_list=[], returns=Constant(value=None), type_params=[])], decorator_list=[], type_params=[])",
+    "filesystem_provider_return_ast": "Return(value=Call(func=Attribute(value=Call(func=Attribute(value=Name(id='FilesystemStorageBundle', ctx=Load()), attr='from_root', ctx=Load()), args=[], keywords=[keyword(arg='storage_root', value=Name(id='storage_root', ctx=Load())), keyword(arg='policy', value=Name(id='policy', ctx=Load()))]), attr='build_provider_memory_service', ctx=Load()), args=[], keywords=[keyword(arg='memory_plane', value=Name(id='memory_plane', ctx=Load())), keyword(arg='semantic_integrity_lifecycle', value=Name(id='semantic_integrity_lifecycle', ctx=Load())), keyword(arg='host_bootstrap_capability', value=Name(id='host_bootstrap_capability', ctx=Load())), keyword(arg='host_bootstrap_material_verifier', value=Name(id='host_bootstrap_material_verifier', ctx=Load())), keyword(arg='source_normalization_host_bundle_builder', value=Name(id='source_normalization_host_bundle_builder', ctx=Load())), keyword(arg='verified_production_host_authority', value=Name(id='verified_production_host_authority', ctx=Load())), keyword(arg='now_provider', value=Name(id='now_provider', ctx=Load()))]))",
+    "hermes_branch_predicates": [
+      "service is not None",
+      "storage_root is not None",
+      "else"
+    ],
+    "hermes_class_ast": "ClassDef(name='HermesMemoryProvider', bases=[Name(id='MemoryProviderInterface', ctx=Load())], keywords=[], body=[FunctionDef(name='__init__', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='service', annotation=BinOp(left=Name(id='ProviderMemoryService', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='host_bootstrap_capability', annotation=BinOp(left=Name(id='HostBootstrapCapability', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='host_bootstrap_material_verifier', annotation=BinOp(left=Name(id='HostBootstrapMaterialVerifier', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='source_normalization_host_bundle_builder', annotation=BinOp(left=Name(id='SourceNormalizationHostBundleBuilder', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='verified_production_host_authority', annotation=BinOp(left=Name(id='VerifiedProductionHostAuthority', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='memory_plane', annotation=BinOp(left=Name(id='MemoryPlaneService', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='storage_root', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kwonlyargs=[], kw_defaults=[], defaults=[Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)]), body=[If(test=BoolOp(op=And(), values=[Compare(left=Name(id='memory_plane', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='storage_root', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)])]), body=[Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='memory plane and filesystem storage root are mutually exclusive')], keywords=[]))], orelse=[]), If(test=BoolOp(op=And(), values=[Compare(left=Name(id='service', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), BoolOp(op=Or(), values=[Compare(left=Name(id='host_bootstrap_capability', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='host_bootstrap_material_verifier', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='source_normalization_host_bundle_builder', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='verified_production_host_authority', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='memory_plane', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='storage_root', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)])])]), body=[Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='service and host bootstrap capability are mutually exclusive')], keywords=[]))], orelse=[]), If(test=Compare(left=Name(id='service', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), body=[Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Store())], value=Name(id='service', ctx=Load()))], orelse=[If(test=Compare(left=Name(id='storage_root', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), body=[Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Store())], value=Call(func=Name(id='build_filesystem_provider', ctx=Load()), args=[], keywords=[keyword(arg='storage_root', value=Name(id='storage_root', ctx=Load())), keyword(arg='host_bootstrap_capability', value=Name(id='host_bootstrap_capability', ctx=Load())), keyword(arg='host_bootstrap_material_verifier', value=Name(id='host_bootstrap_material_verifier', ctx=Load())), keyword(arg='source_normalization_host_bundle_builder', value=Name(id='source_normalization_host_bundle_builder', ctx=Load())), keyword(arg='verified_production_host_authority', value=Name(id='verified_production_host_authority', ctx=Load()))]))], orelse=[Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Store())], value=Call(func=Name(id='build_provider_memory_service_from_env', ctx=Load()), args=[], keywords=[keyword(arg='memory_plane', value=Name(id='memory_plane', ctx=Load())), keyword(arg='host_bootstrap_capability', value=Name(id='host_bootstrap_capability', ctx=Load())), keyword(arg='host_bootstrap_material_verifier', value=Name(id='host_bootstrap_material_verifier', ctx=Load())), keyword(arg='source_normalization_host_bundle_builder', value=Name(id='source_normalization_host_bundle_builder', ctx=Load())), keyword(arg='verified_production_host_authority', value=Name(id='verified_production_host_authority', ctx=Load()))]))])])], decorator_list=[], returns=Constant(value=None), type_params=[]), FunctionDef(name='sync_event', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[arg(arg='operation', annotation=Name(id='ProviderOperation', ctx=Load())), arg(arg='content', annotation=Name(id='str', ctx=Load())), arg(arg='operation_id', annotation=Name(id='str', ctx=Load())), arg(arg='role', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='target', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='action', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='session_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='task_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='user_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='language', annotation=Name(id='str', ctx=Load())), arg(arg='speaker_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='timestamp', annotation=BinOp(left=Name(id='datetime', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='source_modality', annotation=BinOp(left=Name(id='SourceModality', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='authenticated_host_ingress', annotation=BinOp(left=Name(id='AuthenticatedHostIngress', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[None, None, None, Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value='en'), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)], defaults=[]), body=[Expr(value=Constant(value='Forward the public event entrypoint for production capture callers.')), Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='sync_event', ctx=Load()), args=[], keywords=[keyword(arg='operation', value=Name(id='operation', ctx=Load())), keyword(arg='content', value=Name(id='content', ctx=Load())), keyword(arg='operation_id', value=Name(id='operation_id', ctx=Load())), keyword(arg='role', value=Name(id='role', ctx=Load())), keyword(arg='target', value=Name(id='target', ctx=Load())), keyword(arg='action', value=Name(id='action', ctx=Load())), keyword(arg='session_id', value=Name(id='session_id', ctx=Load())), keyword(arg='task_id', value=Name(id='task_id', ctx=Load())), keyword(arg='user_id', value=Name(id='user_id', ctx=Load())), keyword(arg='language', value=Name(id='language', ctx=Load())), keyword(arg='speaker_id', value=Name(id='speaker_id', ctx=Load())), keyword(arg='timestamp', value=Name(id='timestamp', ctx=Load())), keyword(arg='source_modality', value=Name(id='source_modality', ctx=Load())), keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load()))]))], decorator_list=[], returns=Name(id='ProviderSyncResult', ctx=Load()), type_params=[]), FunctionDef(name='prefetch', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='query', annotation=Name(id='str', ctx=Load()))], kwonlyargs=[arg(arg='session_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='task_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='user_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='query_language', annotation=Name(id='str', ctx=Load())), arg(arg='reference_time', annotation=BinOp(left=Name(id='datetime', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[Constant(value=None), Constant(value=None), Constant(value=None), Constant(value='en'), Constant(value=None)], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='prefetch', ctx=Load()), args=[Name(id='query', ctx=Load())], keywords=[keyword(arg='session_id', value=Name(id='session_id', ctx=Load())), keyword(arg='task_id', value=Name(id='task_id', ctx=Load())), keyword(arg='user_id', value=Name(id='user_id', ctx=Load())), keyword(arg='query_language', value=Name(id='query_language', ctx=Load())), keyword(arg='reference_time', value=Name(id='reference_time', ctx=Load()))]))], decorator_list=[], returns=Name(id='str', ctx=Load()), type_params=[]), FunctionDef(name='prefetch_with_attention', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='query', annotation=Name(id='str', ctx=Load()))], kwonlyargs=[arg(arg='authenticated_host_ingress', annotation=Name(id='AuthenticatedHostIngress', ctx=Load())), arg(arg='context_budget_utf8_bytes', annotation=Name(id='int', ctx=Load())), arg(arg='session_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='task_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='user_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='query_language', annotation=Name(id='str', ctx=Load())), arg(arg='reference_time', annotation=BinOp(left=Name(id='datetime', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[None, None, Constant(value=None), Constant(value=None), Constant(value=None), Constant(value='en'), Constant(value=None)], defaults=[]), body=[Assign(targets=[Name(id='envelope', ctx=Store())], value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='prefetch_with_attention', ctx=Load()), args=[Name(id='query', ctx=Load())], keywords=[keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load())), keyword(arg='session_id', value=Name(id='session_id', ctx=Load())), keyword(arg='task_id', value=Name(id='task_id', ctx=Load())), keyword(arg='user_id', value=Name(id='user_id', ctx=Load())), keyword(arg='query_language', value=Name(id='query_language', ctx=Load())), keyword(arg='reference_time', value=Name(id='reference_time', ctx=Load())), keyword(arg='defer_observability', value=Constant(value=True))])), Assign(targets=[Name(id='rendered', ctx=Store())], value=Call(func=Name(id='render_conflict_attention', ctx=Load()), args=[Attribute(value=Attribute(value=Name(id='envelope', ctx=Load()), attr='legacy_result', ctx=Load()), attr='context', ctx=Load()), Attribute(value=Name(id='envelope', ctx=Load()), attr='attention_required', ctx=Load())], keywords=[keyword(arg='context_budget_utf8_bytes', value=Name(id='context_budget_utf8_bytes', ctx=Load()))])), Expr(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='publish_conflict_attention_observability', ctx=Load()), args=[Attribute(value=Name(id='envelope', ctx=Load()), attr='attention_required', ctx=Load())], keywords=[])), Return(value=Name(id='rendered', ctx=Load()))], decorator_list=[], returns=Name(id='str', ctx=Load()), type_params=[]), FunctionDef(name='handle_tool_call_with_attention', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='tool_name', annotation=Name(id='str', ctx=Load())), arg(arg='arguments', annotation=Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='object', ctx=Load())], ctx=Load()), ctx=Load()))], kwonlyargs=[arg(arg='authenticated_host_ingress', annotation=Name(id='AuthenticatedHostIngress', ctx=Load()))], kw_defaults=[None], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='handle_tool_call_with_attention', ctx=Load()), args=[Name(id='tool_name', ctx=Load()), Name(id='arguments', ctx=Load())], keywords=[keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load()))]))], decorator_list=[], returns=Name(id='ProviderToolAttentionEnvelope', ctx=Load()), type_params=[]), FunctionDef(name='get_tool_schemas_with_attention', args=arguments(posonlyargs=[], args=[arg(arg='self')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='get_tool_schemas_with_attention', ctx=Load()), args=[], keywords=[]))], decorator_list=[], returns=Subscript(value=Name(id='list', ctx=Load()), slice=Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='object', ctx=Load())], ctx=Load()), ctx=Load()), ctx=Load()), type_params=[]), FunctionDef(name='read_identity_lineage', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='request', annotation=Name(id='GraphAuditRequest', ctx=Load()))], kwonlyargs=[arg(arg='authenticated_host_ingress', annotation=Name(id='AuthenticatedHostIngress', ctx=Load())), arg(arg='system_time', annotation=BinOp(left=Name(id='datetime', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[None, Constant(value=None)], defaults=[]), body=[Expr(value=Constant(value='Expose the core typed graph-audit result without text reinterpretation.')), Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='read_identity_lineage', ctx=Load()), args=[Name(id='request', ctx=Load())], keywords=[keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load())), keyword(arg='system_time', value=Name(id='system_time', ctx=Load()))]))], decorator_list=[], returns=Name(id='IdentityLineageAuditView', ctx=Load()), type_params=[]), FunctionDef(name='lookup_semantic_ingestion_outcome', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='request', annotation=Name(id='SemanticIngestionOutcomeLookupRequest', ctx=Load()))], kwonlyargs=[arg(arg='authenticated_host_ingress', annotation=Name(id='AuthenticatedHostIngress', ctx=Load()))], kw_defaults=[None], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='lookup_semantic_ingestion_outcome', ctx=Load()), args=[Name(id='request', ctx=Load())], keywords=[keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load()))]))], decorator_list=[], returns=Name(id='SemanticIngestionOutcomeLookupResponse', ctx=Load()), type_params=[]), FunctionDef(name='sync_turn', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='user_content', annotation=Name(id='str', ctx=Load())), arg(arg='assistant_content', annotation=Name(id='str', ctx=Load()))], kwonlyargs=[arg(arg='operation_id', annotation=Name(id='str', ctx=Load())), arg(arg='session_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='task_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='user_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='authenticated_host_ingress', annotation=BinOp(left=Name(id='AuthenticatedHostIngress', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[None, Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)], defaults=[]), body=[Assign(targets=[Name(id='user_result', ctx=Store())], value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='_sync_composite_event', ctx=Load()), args=[], keywords=[keyword(arg='operation', value=Attribute(value=Name(id='ProviderOperation', ctx=Load()), attr='CHAT_USER_TURN', ctx=Load())), keyword(arg='content', value=Name(id='user_content', ctx=Load())), keyword(arg='role', value=Constant(value='user')), keyword(arg='session_id', value=Name(id='session_id', ctx=Load())), keyword(arg='task_id', value=Name(id='task_id', ctx=Load())), keyword(arg='user_id', value=Name(id='user_id', ctx=Load())), keyword(arg='composite_operation_id', value=Call(func=Name(id='_child_operation_id', ctx=Load()), args=[Name(id='operation_id', ctx=Load()), Constant(value='user')], keywords=[])), keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load()))])), Assign(targets=[Name(id='assistant_result', ctx=Store())], value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='_sync_composite_event', ctx=Load()), args=[], keywords=[keyword(arg='operation', value=Attribute(value=Name(id='ProviderOperation', ctx=Load()), attr='CHAT_ASSISTANT_TURN', ctx=Load())), keyword(arg='content', value=Name(id='assistant_content', ctx=Load())), keyword(arg='role', value=Constant(value='assistant')), keyword(arg='session_id', value=Name(id='session_id', ctx=Load())), keyword(arg='task_id', value=Name(id='task_id', ctx=Load())), keyword(arg='user_id', value=Name(id='user_id', ctx=Load())), keyword(arg='composite_operation_id', value=Call(func=Name(id='_child_operation_id', ctx=Load()), args=[Name(id='operation_id', ctx=Load()), Constant(value='assistant')], keywords=[])), keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load()))])), Return(value=Call(func=Name(id='ProviderSyncResult', ctx=Load()), args=[], keywords=[keyword(arg='transcript_ids', value=List(elts=[Starred(value=Attribute(value=Name(id='user_result', ctx=Load()), attr='transcript_ids', ctx=Load()), ctx=Load()), Starred(value=Attribute(value=Name(id='assistant_result', ctx=Load()), attr='transcript_ids', ctx=Load()), ctx=Load())], ctx=Load())), keyword(arg='candidate_ids', value=List(elts=[Starred(value=Attribute(value=Name(id='user_result', ctx=Load()), attr='candidate_ids', ctx=Load()), ctx=Load()), Starred(value=Attribute(value=Name(id='assistant_result', ctx=Load()), attr='candidate_ids', ctx=Load()), ctx=Load())], ctx=Load())), keyword(arg='blocked_domains', value=Call(func=Name(id='sorted', ctx=Load()), args=[BinOp(left=Call(func=Name(id='set', ctx=Load()), args=[Attribute(value=Name(id='user_result', ctx=Load()), attr='blocked_domains', ctx=Load())], keywords=[]), op=BitOr(), right=Call(func=Name(id='set', ctx=Load()), args=[Attribute(value=Name(id='assistant_result', ctx=Load()), attr='blocked_domains', ctx=Load())], keywords=[]))], keywords=[keyword(arg='key', value=Lambda(args=arguments(posonlyargs=[], args=[arg(arg='domain')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=Attribute(value=Name(id='domain', ctx=Load()), attr='value', ctx=Load())))])), keyword(arg='blocked_reasons', value=Dict(keys=[None, None], values=[Attribute(value=Name(id='user_result', ctx=Load()), attr='blocked_reasons', ctx=Load()), Attribute(value=Name(id='assistant_result', ctx=Load()), attr='blocked_reasons', ctx=Load())])), keyword(arg='allowed_candidate_domains', value=Call(func=Name(id='sorted', ctx=Load()), args=[BinOp(left=Call(func=Name(id='set', ctx=Load()), args=[Attribute(value=Name(id='user_result', ctx=Load()), attr='allowed_candidate_domains', ctx=Load())], keywords=[]), op=BitOr(), right=Call(func=Name(id='set', ctx=Load()), args=[Attribute(value=Name(id='assistant_result', ctx=Load()), attr='allowed_candidate_domains', ctx=Load())], keywords=[]))], keywords=[keyword(arg='key', value=Lambda(args=arguments(posonlyargs=[], args=[arg(arg='domain')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=Attribute(value=Name(id='domain', ctx=Load()), attr='value', ctx=Load())))])), keyword(arg='raw_append_domains', value=Call(func=Name(id='sorted', ctx=Load()), args=[BinOp(left=Call(func=Name(id='set', ctx=Load()), args=[Attribute(value=Name(id='user_result', ctx=Load()), attr='raw_append_domains', ctx=Load())], keywords=[]), op=BitOr(), right=Call(func=Name(id='set', ctx=Load()), args=[Attribute(value=Name(id='assistant_result', ctx=Load()), attr='raw_append_domains', ctx=Load())], keywords=[]))], keywords=[keyword(arg='key', value=Lambda(args=arguments(posonlyargs=[], args=[arg(arg='domain')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=Attribute(value=Name(id='domain', ctx=Load()), attr='value', ctx=Load())))])), keyword(arg='blocked_commit_domains', value=Call(func=Name(id='sorted', ctx=Load()), args=[BinOp(left=Call(func=Name(id='set', ctx=Load()), args=[Attribute(value=Name(id='user_result', ctx=Load()), attr='blocked_commit_domains', ctx=Load())], keywords=[]), op=BitOr(), right=Call(func=Name(id='set', ctx=Load()), args=[Attribute(value=Name(id='assistant_result', ctx=Load()), attr='blocked_commit_domains', ctx=Load())], keywords=[]))], keywords=[keyword(arg='key', value=Lambda(args=arguments(posonlyargs=[], args=[arg(arg='domain')], kwonlyargs=[], kw_defaults=[], defaults=[]), body=Attribute(value=Name(id='domain', ctx=Load()), attr='value', ctx=Load())))])), keyword(arg='evolution_outcomes', value=List(elts=[Starred(value=Attribute(value=Name(id='user_result', ctx=Load()), attr='evolution_outcomes', ctx=Load()), ctx=Load()), Starred(value=Attribute(value=Name(id='assistant_result', ctx=Load()), attr='evolution_outcomes', ctx=Load()), ctx=Load())], ctx=Load()))]))], decorator_list=[], returns=Name(id='ProviderSyncResult', ctx=Load()), type_params=[]), FunctionDef(name='on_session_end', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='messages', annotation=BinOp(left=Subscript(value=Name(id='list', ctx=Load()), slice=Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='object', ctx=Load())], ctx=Load()), ctx=Load()), ctx=Load()), op=BitOr(), right=Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load())))], kwonlyargs=[arg(arg='operation_id', annotation=Name(id='str', ctx=Load())), arg(arg='session_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='task_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='user_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='authenticated_host_ingress', annotation=BinOp(left=Name(id='AuthenticatedHostIngress', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[None, Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='sync_event', ctx=Load()), args=[], keywords=[keyword(arg='operation', value=Attribute(value=Name(id='ProviderOperation', ctx=Load()), attr='SESSION_END', ctx=Load())), keyword(arg='content', value=Call(func=Name(id='_messages_to_snapshot_text', ctx=Load()), args=[Name(id='messages', ctx=Load())], keywords=[])), keyword(arg='role', value=Constant(value='system')), keyword(arg='session_id', value=Name(id='session_id', ctx=Load())), keyword(arg='task_id', value=Name(id='task_id', ctx=Load())), keyword(arg='user_id', value=Name(id='user_id', ctx=Load())), keyword(arg='operation_id', value=Name(id='operation_id', ctx=Load())), keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load()))]))], decorator_list=[], returns=Name(id='ProviderSyncResult', ctx=Load()), type_params=[]), FunctionDef(name='on_pre_compress', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='messages', annotation=BinOp(left=Subscript(value=Name(id='list', ctx=Load()), slice=Subscript(value=Name(id='dict', ctx=Load()), slice=Tuple(elts=[Name(id='str', ctx=Load()), Name(id='object', ctx=Load())], ctx=Load()), ctx=Load()), ctx=Load()), op=BitOr(), right=Subscript(value=Name(id='list', ctx=Load()), slice=Name(id='str', ctx=Load()), ctx=Load())))], kwonlyargs=[arg(arg='operation_id', annotation=Name(id='str', ctx=Load())), arg(arg='session_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='task_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='user_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='authenticated_host_ingress', annotation=BinOp(left=Name(id='AuthenticatedHostIngress', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[None, Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='sync_event', ctx=Load()), args=[], keywords=[keyword(arg='operation', value=Attribute(value=Name(id='ProviderOperation', ctx=Load()), attr='PRE_COMPRESS', ctx=Load())), keyword(arg='content', value=Call(func=Name(id='_messages_to_snapshot_text', ctx=Load()), args=[Name(id='messages', ctx=Load())], keywords=[])), keyword(arg='role', value=Constant(value='system')), keyword(arg='session_id', value=Name(id='session_id', ctx=Load())), keyword(arg='task_id', value=Name(id='task_id', ctx=Load())), keyword(arg='user_id', value=Name(id='user_id', ctx=Load())), keyword(arg='operation_id', value=Name(id='operation_id', ctx=Load())), keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load()))]))], decorator_list=[], returns=Name(id='ProviderSyncResult', ctx=Load()), type_params=[]), FunctionDef(name='on_memory_write', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='action', annotation=Name(id='str', ctx=Load())), arg(arg='target', annotation=Name(id='str', ctx=Load())), arg(arg='content', annotation=Name(id='str', ctx=Load()))], kwonlyargs=[arg(arg='operation_id', annotation=Name(id='str', ctx=Load())), arg(arg='session_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='task_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='user_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='authenticated_host_ingress', annotation=BinOp(left=Name(id='AuthenticatedHostIngress', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[None, Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='apply_memory_write', ctx=Load()), args=[], keywords=[keyword(arg='operation', value=Call(func=Name(id='classify_memory_target', ctx=Load()), args=[Name(id='target', ctx=Load())], keywords=[])), keyword(arg='content', value=Name(id='content', ctx=Load())), keyword(arg='action', value=Name(id='action', ctx=Load())), keyword(arg='target', value=Name(id='target', ctx=Load())), keyword(arg='session_id', value=Name(id='session_id', ctx=Load())), keyword(arg='task_id', value=Name(id='task_id', ctx=Load())), keyword(arg='user_id', value=Name(id='user_id', ctx=Load())), keyword(arg='operation_id', value=Name(id='operation_id', ctx=Load())), keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load()))]))], decorator_list=[], returns=Name(id='ProviderWriteDecision', ctx=Load()), type_params=[]), FunctionDef(name='on_delegation', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='task', annotation=Name(id='str', ctx=Load())), arg(arg='result', annotation=Name(id='str', ctx=Load()))], kwonlyargs=[arg(arg='operation_id', annotation=Name(id='str', ctx=Load())), arg(arg='session_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='task_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='user_id', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='authenticated_host_ingress', annotation=BinOp(left=Name(id='AuthenticatedHostIngress', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kw_defaults=[None, Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)], defaults=[]), body=[Return(value=Call(func=Attribute(value=Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Load()), attr='sync_event', ctx=Load()), args=[], keywords=[keyword(arg='operation', value=Attribute(value=Name(id='ProviderOperation', ctx=Load()), attr='DELEGATION_RESULT', ctx=Load())), keyword(arg='content', value=JoinedStr(values=[Constant(value='Task: '), FormattedValue(value=Name(id='task', ctx=Load()), conversion=-1), Constant(value='\\nResult: '), FormattedValue(value=Name(id='result', ctx=Load()), conversion=-1)])), keyword(arg='role', value=Constant(value='system')), keyword(arg='session_id', value=Name(id='session_id', ctx=Load())), keyword(arg='task_id', value=Name(id='task_id', ctx=Load())), keyword(arg='user_id', value=Name(id='user_id', ctx=Load())), keyword(arg='operation_id', value=Name(id='operation_id', ctx=Load())), keyword(arg='authenticated_host_ingress', value=Name(id='authenticated_host_ingress', ctx=Load()))]))], decorator_list=[], returns=Name(id='ProviderSyncResult', ctx=Load()), type_params=[])], decorator_list=[], type_params=[])",
+    "hermes_init_ast": "FunctionDef(name='__init__', args=arguments(posonlyargs=[], args=[arg(arg='self'), arg(arg='service', annotation=BinOp(left=Name(id='ProviderMemoryService', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='host_bootstrap_capability', annotation=BinOp(left=Name(id='HostBootstrapCapability', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='host_bootstrap_material_verifier', annotation=BinOp(left=Name(id='HostBootstrapMaterialVerifier', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='source_normalization_host_bundle_builder', annotation=BinOp(left=Name(id='SourceNormalizationHostBundleBuilder', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='verified_production_host_authority', annotation=BinOp(left=Name(id='VerifiedProductionHostAuthority', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='memory_plane', annotation=BinOp(left=Name(id='MemoryPlaneService', ctx=Load()), op=BitOr(), right=Constant(value=None))), arg(arg='storage_root', annotation=BinOp(left=Name(id='str', ctx=Load()), op=BitOr(), right=Constant(value=None)))], kwonlyargs=[], kw_defaults=[], defaults=[Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None), Constant(value=None)]), body=[If(test=BoolOp(op=And(), values=[Compare(left=Name(id='memory_plane', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='storage_root', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)])]), body=[Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='memory plane and filesystem storage root are mutually exclusive')], keywords=[]))], orelse=[]), If(test=BoolOp(op=And(), values=[Compare(left=Name(id='service', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), BoolOp(op=Or(), values=[Compare(left=Name(id='host_bootstrap_capability', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='host_bootstrap_material_verifier', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='source_normalization_host_bundle_builder', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='verified_production_host_authority', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='memory_plane', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), Compare(left=Name(id='storage_root', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)])])]), body=[Raise(exc=Call(func=Name(id='ValueError', ctx=Load()), args=[Constant(value='service and host bootstrap capability are mutually exclusive')], keywords=[]))], orelse=[]), If(test=Compare(left=Name(id='service', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), body=[Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Store())], value=Name(id='service', ctx=Load()))], orelse=[If(test=Compare(left=Name(id='storage_root', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]), body=[Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Store())], value=Call(func=Name(id='build_filesystem_provider', ctx=Load()), args=[], keywords=[keyword(arg='storage_root', value=Name(id='storage_root', ctx=Load())), keyword(arg='host_bootstrap_capability', value=Name(id='host_bootstrap_capability', ctx=Load())), keyword(arg='host_bootstrap_material_verifier', value=Name(id='host_bootstrap_material_verifier', ctx=Load())), keyword(arg='source_normalization_host_bundle_builder', value=Name(id='source_normalization_host_bundle_builder', ctx=Load())), keyword(arg='verified_production_host_authority', value=Name(id='verified_production_host_authority', ctx=Load()))]))], orelse=[Assign(targets=[Attribute(value=Name(id='self', ctx=Load()), attr='_service', ctx=Store())], value=Call(func=Name(id='build_provider_memory_service_from_env', ctx=Load()), args=[], keywords=[keyword(arg='memory_plane', value=Name(id='memory_plane', ctx=Load())), keyword(arg='host_bootstrap_capability', value=Name(id='host_bootstrap_capability', ctx=Load())), keyword(arg='host_bootstrap_material_verifier', value=Name(id='host_bootstrap_material_verifier', ctx=Load())), keyword(arg='source_normalization_host_bundle_builder', value=Name(id='source_normalization_host_bundle_builder', ctx=Load())), keyword(arg='verified_production_host_authority', value=Name(id='verified_production_host_authority', ctx=Load()))]))])])], decorator_list=[], returns=Constant(value=None), type_params=[])",
+    "hermes_service_annotation": "ProviderMemoryService | None",
+    "python_ast_runtime": {
+      "implementation": "cpython",
+      "major": 3,
+      "minor": 12
+    }
+  },
+  "source_hashes": {
+    "memorii/memorii/core/filesystem_storage/bundle.py": "91c7676ede308ad1f33d27504a7cf328f0a6ed55194b6aeab701503207fa989d",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "f09b5d2551234deef12a1bbac801c2aa62d937aff83bfd2f21a3970d6518e9da",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "af1c7312f4f970e66bfe1bf06e151837a34656bad102f1ee2f4ec2ef63451bcc",
+    "memorii/memorii/core/provider/factory.py": "1987d2d6b78e52ef46ab4294394f3d6421dbe6bcbd54fd8cb0c8f9d5842b605d",
+    "memorii/memorii/core/provider/ingestion.py": "f02eb0a26028a551cfd88585b82f21ff48598bc9521a18f92182c486022d0885",
+    "memorii/memorii/core/provider/service.py": "670f9fe6c80b2db2d1b68cd2bfff032185230081c521304fdbe655a39a9fec81",
+    "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py": "11deb55f364f364752c468b780bec1f7fbde5213368cb4e7f694b03d4e3e7d36",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "e02a94e5689e0bfccb151aa7df847db73546fffebf978abee3164848ac13752c",
+    "memorii/memorii/core/semantic_ingestion/persistence.py": "ce9bafa874b9cf3a00650821680ab73dcf35fd4174b6ab8e7f48fedd138247fd",
+    "memorii/memorii/core/semantic_ingestion/production_capture.py": "ba4ac049e526d96dc561a564e3c11ca15f2a4f1c1f922d4607594bea9d751338",
+    "memorii/memorii/core/semantic_ingestion/source_normalization_execution.py": "f0d0f926277f1a65f57a126b0c69f816243b1bd2a21625a39508a4c77bffe6f6",
+    "memorii/memorii/integrations/hermes_provider.py": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648"
+  },
+  "trigger_edge_anchors": {
+    "direct_composite_sync": [
+      "composite_arena",
+      "composite_ingest"
+    ],
+    "direct_memory_write": [
+      "write_arena",
+      "write_ingest"
+    ],
+    "direct_sync": [
+      "sync_arena",
+      "sync_ingest"
+    ],
+    "hermes_delegation": [
+      "hermes_delegation_edge"
+    ],
+    "hermes_memory_write": [
+      "hermes_memory_edge"
+    ],
+    "hermes_pre_compress": [
+      "hermes_pre_edge"
+    ],
+    "hermes_session_end": [
+      "hermes_session_edge"
+    ],
+    "hermes_sync": [
+      "hermes_sync_edge"
+    ],
+    "hermes_turn": [
+      "hermes_turn_edge"
+    ]
+  },
+  "trigger_ids": [
+    "direct_sync",
+    "direct_composite_sync",
+    "direct_memory_write",
+    "hermes_sync",
+    "hermes_turn",
+    "hermes_session_end",
+    "hermes_pre_compress",
+    "hermes_delegation",
+    "hermes_memory_write"
+  ],
+  "trigger_mappings": {
+    "direct_composite_sync": "memorii/memorii/core/provider/service.py::ProviderMemoryService._sync_composite_event",
+    "direct_memory_write": "memorii/memorii/core/provider/service.py::ProviderMemoryService.apply_memory_write",
+    "direct_sync": "memorii/memorii/core/provider/service.py::ProviderMemoryService.sync_event",
+    "hermes_delegation": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_delegation",
+    "hermes_memory_write": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_memory_write",
+    "hermes_pre_compress": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_pre_compress",
+    "hermes_session_end": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.on_session_end",
+    "hermes_sync": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.sync_event",
+    "hermes_turn": "memorii/memorii/integrations/hermes_provider.py::HermesMemoryProvider.sync_turn"
+  },
+  "trigger_required_rows": {
+    "direct_composite_sync": [
+      "VCC-R01"
+    ],
+    "direct_memory_write": [
+      "VCC-R01"
+    ],
+    "direct_sync": [
+      "VCC-R01"
+    ],
+    "hermes_delegation": [
+      "VCC-R01"
+    ],
+    "hermes_memory_write": [
+      "VCC-R01"
+    ],
+    "hermes_pre_compress": [
+      "VCC-R01"
+    ],
+    "hermes_session_end": [
+      "VCC-R01"
+    ],
+    "hermes_sync": [
+      "VCC-R01"
+    ],
+    "hermes_turn": [
+      "VCC-R01"
+    ]
+  }
+}

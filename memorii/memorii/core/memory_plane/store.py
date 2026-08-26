@@ -378,6 +378,8 @@ class JsonlMemoryPlaneStore:
         # so a second store handle's replace is observed immediately.
         self._validated_batches: list[_PersistedBatch] | None = None
         self._validated_batches_identity: tuple[int, int, int, int] | None = None
+        self._materialized_records: dict[str, CanonicalMemoryRecord] | None = None
+        self._materialized_records_identity: tuple[int, int, int, int] | None = None
 
     @property
     def durable(self) -> bool:
@@ -469,11 +471,11 @@ class JsonlMemoryPlaneStore:
         self, records: tuple[CanonicalMemoryRecord, ...], *, authorization: MemoryPlaneWriteAuthorization | None = None
     ) -> int:
         with self._locked(exclusive=True):
-            batches = self._read_batches_unlocked()
+            batches, current_records = self._current_records_unlocked()
             _validate_governed_write(
                 self._governed_write_policy,
                 records,
-                tuple(_records_from_batches(batches).values()),
+                tuple(current_records.values()),
                 authorization,
             )
             next_revision = batches[-1].revision + 1 if batches else 1
@@ -508,18 +510,18 @@ class JsonlMemoryPlaneStore:
         with self._locked(exclusive=True):
             if transaction_precondition is not None:
                 transaction_precondition()
-            batches = self._read_batches_unlocked()
+            batches, current_records = self._current_records_unlocked()
             actual_revision = batches[-1].revision if batches else 0
             actual_data_revision = batches[-1].data_revision if batches else 0
             if expected_revision is not None and expected_revision != actual_data_revision:
                 raise MemoryPlaneRevisionConflictError(
                     f"memory-plane revision changed: expected {expected_revision}, actual {actual_data_revision}"
                 )
-            _validate_preconditions(_records_from_batches(batches), preconditions)
+            _validate_preconditions(current_records, preconditions)
             _validate_governed_write(
                 self._governed_write_policy,
                 records,
-                tuple(_records_from_batches(batches).values()),
+                tuple(current_records.values()),
                 authorization,
             )
             next_revision = actual_revision + 1
@@ -538,14 +540,15 @@ class JsonlMemoryPlaneStore:
 
     def read_snapshot(self) -> tuple[int, tuple[CanonicalMemoryRecord, ...]]:
         with self._locked(exclusive=False):
-            batches = self._read_batches_unlocked()
-            latest_by_id = _records_from_batches(batches)
+            batches, latest_by_id = self._current_records_unlocked()
             revision = batches[-1].data_revision if batches else 0
             return revision, tuple(_clone_record(record) for record in latest_by_id.values())
 
     def get_record(self, memory_id: str) -> CanonicalMemoryRecord | None:
-        _, records = self.read_snapshot()
-        return next((record for record in records if record.memory_id == memory_id), None)
+        with self._locked(exclusive=False):
+            _, latest_by_id = self._current_records_unlocked()
+            record = latest_by_id.get(memory_id)
+            return _clone_record(record) if record is not None else None
 
     def list_records(
         self,
@@ -555,14 +558,32 @@ class JsonlMemoryPlaneStore:
         source_kind: str | None = None,
     ) -> list[CanonicalMemoryRecord]:
         domain_set = set(domains) if domains is not None else None
-        _, records = self.read_snapshot()
-        return [
-            item
-            for item in records
-            if (status is None or item.status == status)
-            and (domain_set is None or item.domain in domain_set)
-            and (source_kind is None or item.source_kind == source_kind)
-        ]
+        with self._locked(exclusive=False):
+            _, latest_by_id = self._current_records_unlocked()
+            return [
+                _clone_record(item)
+                for item in latest_by_id.values()
+                if (status is None or item.status == status)
+                and (domain_set is None or item.domain in domain_set)
+                and (source_kind is None or item.source_kind == source_kind)
+            ]
+
+    def _current_records_unlocked(self) -> tuple[list[_PersistedBatch], dict[str, CanonicalMemoryRecord]]:
+        try:
+            batches = self._read_batches_unlocked()
+            identity = self._validated_batches_identity
+            if self._materialized_records is not None and self._materialized_records_identity == identity:
+                return batches, self._materialized_records
+            latest_by_id = _records_from_batches(batches)
+        except BaseException:
+            self._validated_batches = None
+            self._validated_batches_identity = None
+            self._materialized_records = None
+            self._materialized_records_identity = None
+            raise
+        self._materialized_records = latest_by_id
+        self._materialized_records_identity = identity
+        return batches, latest_by_id
 
     def _read_batches_unlocked(self) -> list[_PersistedBatch]:
         identity = self._records_identity_unlocked()
@@ -617,6 +638,8 @@ class JsonlMemoryPlaneStore:
         return [line for line in content.splitlines() if line.strip()]
 
     def _replace_batches(self, batches: list[_PersistedBatch]) -> None:
+        detached_batches = [batch.model_copy(deep=True) for batch in batches]
+        materialized_records = _records_from_batches(detached_batches)
         descriptor, temporary_name = tempfile.mkstemp(
             dir=self._base_path,
             prefix=f".{self._records_path.name}.",
@@ -625,22 +648,27 @@ class JsonlMemoryPlaneStore:
         temporary_path = Path(temporary_name)
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                for batch in batches:
+                for batch in detached_batches:
                     handle.write(batch.model_dump_json())
                     handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary_path, self._records_path)
             _fsync_directory(self._base_path)
-            # The caller supplied the exact validated sequence just written.
-            # Refresh identity after replace so subsequent local reads do not
-            # parse it again, while other handles still detect the new inode.
-            self._validated_batches = batches
+            # Serialize and cache the same detached value graph so caller
+            # mutation cannot diverge same-handle reads from durable bytes.
+            # Refresh identity after replace so subsequent local reads reuse
+            # the already prepared map, while other handles detect the inode.
+            self._validated_batches = detached_batches
             self._validated_batches_identity = self._records_identity_unlocked()
+            self._materialized_records = materialized_records
+            self._materialized_records_identity = self._validated_batches_identity
         except BaseException:
             temporary_path.unlink(missing_ok=True)
             self._validated_batches = None
             self._validated_batches_identity = None
+            self._materialized_records = None
+            self._materialized_records_identity = None
             raise
 
     def _locked(self, *, exclusive: bool) -> AbstractContextManager[None]:

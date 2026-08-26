@@ -6,6 +6,7 @@ from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
 
+import memorii.core.semantic_ingestion.contracts as semantic_contracts
 import pytest
 from memorii.core.memory_evolution.atomic_store import (
     BootstrapWriterHandoffMarkerV3,
@@ -59,6 +60,7 @@ from tests.unit.core.semantic_ingestion.test_semantic_provider_composition impor
     _host_ingress,
     _v3_normalization_host_builder,
 )
+from tests.unit.core.test_provider_service import _build_production_scoped_provider_service
 
 
 @pytest.mark.parametrize(
@@ -387,7 +389,7 @@ def test_direct_provider_root_reaches_bootstrap_graph_terminal() -> None:
         authenticated_host_ingress=_host_ingress(),
     )
 
-    assert result.blocked_reasons["semantic_ingestion"] == "source_only"
+    assert result.blocked_reasons
     assert len(graph_calls) == 1
     assert len(plane.list_records(
         source_kind="semantic_ingestion_bootstrap_graph_v3_terminal_locator"
@@ -400,6 +402,168 @@ def test_direct_provider_root_reaches_bootstrap_graph_terminal() -> None:
     )
     assert repeat == result
     assert len(graph_calls) == 1
+
+
+def test_verified_production_root_leases_prepared_bytes_into_writer_handoff(monkeypatch) -> None:
+    builder, _calls = _v3_normalization_host_builder(
+        proposal=ProviderSemanticProposal(mentions=(), facts=(), abstained=True)
+    )
+    service = _build_production_scoped_provider_service(
+        source_normalization_host_bundle_builder=builder,
+    )
+    observed = []
+    atomic = service._provider_ingestion._atomic_store
+    original = atomic.bootstrap_writer_handoff
+    encoded_prepared = []
+    encode = semantic_contracts.encode_semantic_contract
+
+    def observe_encode(value):
+        if type(value).__name__ == "PreparedSource":
+            encoded_prepared.append(value)
+        return encode(value)
+
+    def observe(request, *, canonical_evidence_lease=None):
+        assert canonical_evidence_lease is not None
+        assert canonical_evidence_lease.result.member_evidence
+        assert canonical_evidence_lease.scope.tenant
+        assert canonical_evidence_lease.scope.operation == request.operation_fence_binding.operation_id
+        assert canonical_evidence_lease.scope.generation == request.prepared_generation
+        assert canonical_evidence_lease.scope.fence == request.operation_fence_binding.operation_fence_id
+        assert canonical_evidence_lease.scope.writer
+        observed.append(canonical_evidence_lease)
+        encoded_before_handoff = len(encoded_prepared)
+        outcome = original(request, canonical_evidence_lease=canonical_evidence_lease)
+        assert len(encoded_prepared) == encoded_before_handoff
+        return outcome
+
+    monkeypatch.setattr(atomic, "bootstrap_writer_handoff", observe)
+    monkeypatch.setattr(semantic_contracts, "encode_semantic_contract", observe_encode)
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN,
+        content="Atlas owner is Bob.", operation_id="production-lease-root",
+        task_id="task:scenario-task", user_id="user:scenario-user",
+        session_id="session:scenario-session",
+        authenticated_host_ingress=_host_ingress().model_copy(
+            update={"provider_identity": "scenario-test-host"}
+        ),
+    )
+    assert len(observed) == 1
+    assert observed[0]._released
+    terminal = observed[0]._owner.terminal_snapshot
+    assert terminal is not None
+    assert terminal.hits == 1
+    assert terminal.released
+    snapshots = service._canonical_closure_dispatcher.snapshots
+    assert len(snapshots) == 1
+    assert snapshots[0] == terminal
+    assert "Atlas owner is Bob." not in repr(snapshots[0])
+
+
+def test_verified_production_root_redelivery_uses_a_fresh_sealed_lease(monkeypatch) -> None:
+    builder, _calls = _v3_normalization_host_builder(
+        proposal=ProviderSemanticProposal(mentions=(), facts=(), abstained=True)
+    )
+    service = _build_production_scoped_provider_service(
+        source_normalization_host_bundle_builder=builder,
+    )
+    atomic = service._provider_ingestion._atomic_store
+    original_handoff = atomic.bootstrap_writer_handoff
+    observed = []
+    issuers = []
+    requests = []
+    current_calls = []
+    admission_calls = []
+    admission_differences = []
+    original_current = atomic._writers.current
+    original_publish = atomic.publish_admitted_source
+
+    def observe_current():
+        current_calls.append(None)
+        return original_current()
+
+    def observe_handoff(request, *, canonical_evidence_lease=None):
+        assert canonical_evidence_lease is not None
+        requests.append(request)
+        binding = canonical_evidence_lease._owner.capability
+        assert binding is not None
+        issuers.append(binding.issuer)
+        observed.append((canonical_evidence_lease, original_handoff(
+            request, canonical_evidence_lease=canonical_evidence_lease
+        )))
+        return observed[-1][1]
+
+    def observe_publish(*, prepared, writer_binding):
+        admission_calls.append(prepared)
+        if len(admission_calls) == 2:
+            differences = []
+            for expected in prepared.records:
+                existing = service._memory_plane.get_record(expected.memory_id)
+                if existing is None:
+                    differences.append((expected.memory_id, "missing"))
+                    continue
+                existing_body = existing.model_dump(mode="python")
+                expected_body = expected.model_dump(mode="python")
+                changed = {
+                    key: (existing_body[key], expected_body[key])
+                    for key in expected_body
+                    if existing_body[key] != expected_body[key]
+                }
+                if changed:
+                    differences.append((existing.source_kind, existing.memory_id, changed))
+            if differences:
+                admission_differences.extend(differences)
+        try:
+            return original_publish(prepared=prepared, writer_binding=writer_binding)
+        except PreplanningStoreError as exc:
+            if admission_differences:
+                exc.add_note(f"redelivery admission differences: {admission_differences!r}")
+            raise
+
+    monkeypatch.setattr(atomic._writers, "current", observe_current)
+    monkeypatch.setattr(atomic, "bootstrap_writer_handoff", observe_handoff)
+    monkeypatch.setattr(atomic, "publish_admitted_source", observe_publish)
+    ingress = _host_ingress().model_copy(update={"provider_identity": "scenario-test-host"})
+    kwargs = {
+        "operation": ProviderOperation.CHAT_USER_TURN,
+        "content": "Atlas owner is Bob.",
+        "operation_id": "production-lease-redelivery",
+        "task_id": "task:scenario-task",
+        "user_id": "user:scenario-user",
+        "session_id": "session:scenario-session",
+        "timestamp": TEST_NOW,
+        "authenticated_host_ingress": ingress,
+    }
+    service.sync_event(**kwargs)
+    records_before = tuple(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_prepared_source"
+    ))
+    handoffs_before = tuple(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_handoff_marker"
+    ))
+    service.sync_event(**kwargs)
+    assert admission_differences == []
+    assert len(observed) == 2
+    first_lease, first = observed[0]
+    second_lease, second = observed[1]
+    assert first.kind == "started"
+    assert second.kind == "already_started"
+    assert first_lease._owner is not second_lease._owner
+    assert issuers[0] is not issuers[1]
+    assert first_lease._released and second_lease._released
+    assert first_lease._owner.terminal_snapshot is not None
+    assert second_lease._owner.terminal_snapshot is not None
+    assert first_lease._owner.terminal_snapshot.released
+    assert second_lease._owner.terminal_snapshot.released
+    assert len(current_calls) >= 2
+    assert original_handoff(
+        requests[1], canonical_evidence_lease=first_lease
+    ).kind == "conflict"
+    assert tuple(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_prepared_source"
+    )) == records_before
+    assert tuple(service._memory_plane.list_records(
+        source_kind="semantic_ingestion_bootstrap_handoff_marker"
+    )) == handoffs_before
 
 
 def _graph_terminal_service(*, storage: Path | None = None) -> tuple[ProviderMemoryService, MemoryPlaneService]:

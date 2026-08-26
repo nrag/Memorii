@@ -1,0 +1,14 @@
+{
+  "failures": [],
+  "mutation_results": {
+    "disconnected_owner_edge": true,
+    "missing_durable_writer": true,
+    "missing_fallback_and_proof": true,
+    "wrong_authority_parameter": true,
+    "wrong_row_caller_count": true
+  },
+  "passed": true,
+  "requirement_count": 12,
+  "row_local_caller_count": 5,
+  "schema": "memorii.production-entrypoint-bindings-validation.v3"
+}

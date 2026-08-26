@@ -1,0 +1,98 @@
+{
+  "baseline_run_hash": "0f9dc956c834576bf9b37277f28b2cda71511bb045e9f8da8c354b5234d73500",
+  "candidate_lock_hash": "4b2af56947b56b006c5aa45b715fe95834c44b059665787f74c87fe49d6d0245",
+  "candidate_lock_path": "docs/design/semantic_ingestion_canonical_evidence/candidate-lock-v1.json",
+  "captures": [
+    {
+      "attempt_count": 1,
+      "excluded": true,
+      "execution_order": 0,
+      "ordinal": 0,
+      "phase": "warmup",
+      "retained": false,
+      "wall_ns": 111322722832
+    },
+    {
+      "attempt_count": 1,
+      "excluded": false,
+      "execution_order": 1,
+      "ordinal": 1,
+      "phase": "measured",
+      "retained": true,
+      "wall_ns": 98474527445
+    },
+    {
+      "attempt_count": 1,
+      "excluded": false,
+      "execution_order": 2,
+      "ordinal": 2,
+      "phase": "measured",
+      "retained": true,
+      "wall_ns": 97464857659
+    },
+    {
+      "attempt_count": 1,
+      "excluded": false,
+      "execution_order": 3,
+      "ordinal": 3,
+      "phase": "measured",
+      "retained": true,
+      "wall_ns": 67811318975
+    },
+    {
+      "attempt_count": 1,
+      "excluded": false,
+      "execution_order": 4,
+      "ordinal": 4,
+      "phase": "measured",
+      "retained": true,
+      "wall_ns": 58677999151
+    },
+    {
+      "attempt_count": 1,
+      "excluded": false,
+      "execution_order": 5,
+      "ordinal": 5,
+      "phase": "measured",
+      "retained": true,
+      "wall_ns": 66787216932
+    }
+  ],
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "tests.fixtures.semantic_ingestion.bootstrap_graph_v3_process_runner",
+    "direct",
+    "initial_attempt",
+    "first"
+  ],
+  "command_identity": "semantic_ingestion_canonical_evidence_standard_fixture_v1",
+  "environment": {
+    "cpu_count": 8,
+    "implementation": "memoriia-core",
+    "platform": "macOS-26.6.1-x86_64-i386-64bit",
+    "python": "3.12.14"
+  },
+  "fixture_hash": "a7619358561949fbcf5874c1b59c8a491aeec6c0a465c0ce09d6675ca35ab960",
+  "kind": "baseline",
+  "logical_retained_bytes": 67108864,
+  "revision_hashes": {
+    "binding_map": "e8d3b40cb3858630ebdae71655e8a59e976c2bfd8228d5d22a7c5f18bd64cdcd",
+    "design": "c066bf2f9edd58260b68fa4dddf5d4ffc3290a9201a78c444c6355cc3f8a09ae",
+    "event_schema": "8785b893874c50e312942a2a16a1d725ed97e4dbccfbe5849f3de605dd6a4179",
+    "fixture_manifest": "a7619358561949fbcf5874c1b59c8a491aeec6c0a465c0ce09d6675ca35ab960",
+    "fixture_schema": "b888851bb438361ccaf80697978832b777ff150da353dbb625f6dcdc4826e613",
+    "performance_schema": "0f5e71144b98b8cb929f91a2fe6eca2ee9af6e0425014d40aab31dd40a4bdad9",
+    "receipt_schema": "6c4816b5660829309b683af32e196d8c39f6f19aee619bb3d9b96ac8b92356e8",
+    "verification_contract": "c19605422f6ada0ac94df0425e4abf21e1e8f4ef5fd4efcd4b4998fc93256319",
+    "workplan": "ccac7880a76e65260ee322b452cb107ea29079d9997990eaa2a578e8fd2a7a1b"
+  },
+  "rss": {
+    "delta_bytes": 6000,
+    "platform_units": "darwin_bytes",
+    "post_raw": 23701360,
+    "pre_raw": 23695360,
+    "source": "resource.getrusage(resource.RUSAGE_SELF).ru_maxrss"
+  },
+  "schema": "memorii.semantic-ingestion.canonical-evidence.performance-run.v1"
+}

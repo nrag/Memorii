@@ -19,6 +19,7 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapGraphDependentCoordinatorRequestV3,
     BootstrapGraphDependentCoordinatorResultV3,
     BootstrapGraphDependentPreGraphNonCommitV3,
+    BootstrapGraphDurableRetryProgressV3,
     BootstrapRecoveryReplayRecordV3,
     PreparedSource,
     RequiredOutcomeScopeSet,
@@ -90,6 +91,24 @@ class BootstrapGraphHostBundle:
             operation_fence_binding=operation_fence_binding,
         )
 
+    def reload_retry(
+        self, *, normalization_replay: BootstrapRecoveryReplayRecordV3,
+        authenticated_ingress: AuthenticatedIngressContext,
+        required_outcome_scopes: RequiredOutcomeScopeSet,
+        operation_fence_binding: OperationFenceBinding,
+    ) -> BootstrapGraphDurableRetryProgressV3 | None:
+        reload_method = getattr(
+            self.atomic_store, "reload_bootstrap_graph_retry_by_recovery_v3", None
+        )
+        if reload_method is None:
+            return None
+        return reload_method(
+            normalization_replay=normalization_replay,
+            authenticated_ingress=authenticated_ingress,
+            required_outcome_scopes=required_outcome_scopes,
+            operation_fence_binding=operation_fence_binding,
+        )
+
 
 @dataclass(frozen=True)
 class BootstrapGraphHostBundleBuilder:
@@ -124,7 +143,7 @@ class ScenarioBootstrapGraphHostBundle(BootstrapGraphHostBundle):
             request=execution.request, transition=execution.transition,
         )
         if hasattr(self.authority_provider, "acquire_errors"):
-            errors = getattr(self.authority_provider, "acquire_errors")
+            errors = self.authority_provider.acquire_errors
             if errors is not None and result is not None:
                 if isinstance(result, BootstrapGraphDependentPreGraphNonCommitV3):
                     errors.append(f"coordinator unavailable: reason={result.reason}")

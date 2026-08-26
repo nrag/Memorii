@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "memorii.semantic-ingestion.canonical-evidence.production-receipt.v4",
+  "title": "Serialized projection of an opaque production-origin receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "receipt_digest", "authority_digest", "verified_material_digest", "verification_digest", "trust_domain", "factory_symbol", "verification_symbol", "root_symbol", "root", "backend", "operation_identity", "source_revision", "trace_identity", "integrity_mechanism"],
+  "properties": {
+    "schema": {"const": "memorii.semantic-ingestion.canonical-evidence.production-receipt.v4"},
+    "receipt_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "authority_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "verified_material_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "verification_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "trust_domain": {"const": "production"},
+    "factory_symbol": {"const": "memorii.core.semantic_ingestion.production_authority.build_verified_production_host_authority"},
+    "verification_symbol": {"const": "memorii.core.memory_evolution.bootstrap_profile.HostBootstrapMaterialVerifier.verify"},
+    "root_symbol": {"type": "string", "minLength": 1},
+    "root": {"enum": ["direct", "factory", "filesystem", "hermes"]},
+    "backend": {"enum": ["memory", "jsonl"]},
+    "operation_identity": {"type": "string", "minLength": 1},
+    "source_revision": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "trace_identity": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "integrity_mechanism": {"const": "opaque-object-identity-pre-serialization-plus-frozen-result-lock-v2"}
+  },
+  "$defs": {
+    "terminal_durable_effect_receipt": {"type": "object", "additionalProperties": false, "required": ["schema", "operation_identity", "root", "backend", "source_revision", "transaction_or_memory_durable_identity", "effect_digest", "terminal_status", "replay_identity", "no_duplicate_count"], "properties": {"schema": {"const": "memorii.semantic-ingestion.canonical-evidence.terminal-durable-effect-receipt.v1"}, "operation_identity": {"type": "string", "minLength": 1}, "root": {"enum": ["direct", "factory", "filesystem", "hermes"]}, "backend": {"enum": ["memory", "jsonl"]}, "source_revision": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "transaction_or_memory_durable_identity": {"type": "string", "minLength": 1}, "effect_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "terminal_status": {"const": "successful_durable_terminal"}, "replay_identity": {"type": "string", "minLength": 1}, "no_duplicate_count": {"const": 1}}}
+  }
+}

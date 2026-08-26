@@ -1,0 +1,24 @@
+{
+  "arena_no_write": true,
+  "composition_root_count": 4,
+  "edge_count": 17,
+  "failures": [],
+  "mutation_results": {
+    "R08_relabelled_durable": true,
+    "aliased_durable_sink_source": true,
+    "capture_root": true,
+    "direct_durable_sink_source": true,
+    "disconnected_row": true,
+    "missing_authority_keyword": true,
+    "reversed_constructor": true,
+    "substituted_authority_source": true,
+    "wrong_receiver_source": true,
+    "wrong_target_same_name": true
+  },
+  "passed": true,
+  "read_only_inputs": true,
+  "row_count": 12,
+  "schema": "memorii.production-entrypoint-bindings-validation.v6",
+  "source_hash_count": 12,
+  "trigger_count": 5
+}

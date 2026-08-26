@@ -1,0 +1,23 @@
+{
+  "schema": "memorii.production-owner-oracle.v3",
+  "source_hashes": {
+    "memorii/memorii/core/provider/service.py": "846b487d1b2ebc37f02b377ec2f37b291b71dd1cb1b68480d6545eeb8d9ab831",
+    "memorii/memorii/core/provider/factory.py": "1987d2d6b78e52ef46ab4294394f3d6421dbe6bcbd54fd8cb0c8f9d5842b605d",
+    "memorii/memorii/core/filesystem_storage/bundle.py": "91c7676ede308ad1f33d27504a7cf328f0a6ed55194b6aeab701503207fa989d",
+    "memorii/memorii/integrations/hermes_provider.py": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648",
+    "memorii/memorii/core/semantic_ingestion/canonical_evidence_arena.py": "379fe056ad6d9b171851a6e596f4c9ca879920c8fa337239a9fee406baddabb9",
+    "memorii/memorii/core/provider/ingestion.py": "f02eb0a26028a551cfd88585b82f21ff48598bc9521a18f92182c486022d0885",
+    "memorii/memorii/core/semantic_ingestion/contracts.py": "c86451330398f3649243dd928a31cc6f7ba01985b9387a146315c8a6f681cfcb",
+    "memorii/memorii/core/memory_evolution/ingestion_contracts.py": "af1c7312f4f970e66bfe1bf06e151837a34656bad102f1ee2f4ec2ef63451bcc",
+    "memorii/memorii/core/semantic_ingestion/persistence.py": "ce9bafa874b9cf3a00650821680ab73dcf35fd4174b6ab8e7f48fedd138247fd",
+    "memorii/memorii/core/memory_evolution/atomic_store.py": "f09b5d2551234deef12a1bbac801c2aa62d937aff83bfd2f21a3970d6518e9da",
+    "memorii/memorii/core/semantic_ingestion/source_normalization_execution.py": "f0d0f926277f1a65f57a126b0c69f816243b1bd2a21625a39508a4c77bffe6f6",
+    "memorii/memorii/core/semantic_ingestion/production_capture.py": "ba4ac049e526d96dc561a564e3c11ca15f2a4f1c1f922d4607594bea9d751338"
+  },
+  "allowed_trigger_ids": ["direct_sync", "hermes_sync", "hermes_session_end", "hermes_pre_compress", "hermes_delegation"],
+  "composition_root_ids": ["provider_factory", "filesystem_bundle", "filesystem_factory", "hermes_constructor"],
+  "excluded_roots": {"capture_child": "evidence_harness_only_uncalled_in_tree"},
+  "required_rows": ["VCC-R01", "VCC-R02", "VCC-R03", "VCC-R04", "VCC-R05", "VCC-R06", "VCC-R07", "VCC-R08", "VCC-R09", "VCC-R10", "VCC-R11", "VCC-R12"],
+  "durable_modules": ["memorii.core.semantic_ingestion.persistence", "memorii.core.memory_evolution.atomic_store"]
+}
+

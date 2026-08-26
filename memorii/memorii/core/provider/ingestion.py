@@ -52,6 +52,13 @@ from memorii.core.semantic_ingestion.authorization import (
     SemanticAuthorizationAuthorityRepository,
 )
 from memorii.core.semantic_ingestion.bootstrap_graph_host import BootstrapGraphAuthorityRequestV3
+from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+    CANONICAL_CODEC_REVISION,
+    CANONICAL_PROFILE_REVISION,
+    CanonicalEvidenceArena,
+    CanonicalEvidenceLease,
+    CanonicalValidationScope,
+)
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
     ConflictClarificationSemanticContext,
@@ -61,8 +68,8 @@ from memorii.core.semantic_ingestion.contracts import (
     AuthorizationStageSnapshot,
     AuthorizationUsePoint,
     BootstrapGraphDependentCoordinatorSucceededV3,
-    BootstrapGraphDurableRetryProgressV3,
     BootstrapGraphDependentPreGraphNonCommitV3,
+    BootstrapGraphDurableRetryProgressV3,
     BootstrapGraphFinalizedFailureV3,
     BootstrapRecoveryClaimedV3,
     BootstrapRecoveryFoundV3,
@@ -79,7 +86,7 @@ from memorii.core.semantic_ingestion.contracts import (
     TextPreparationRequest,
     TimeInterval,
     contract_digest,
-    encode_semantic_contract,
+    encode_semantic_contract_result,
 )
 from memorii.core.semantic_ingestion.egress import (
     EgressPolicyProvider,
@@ -284,6 +291,7 @@ class ProviderIngestionCoordinator:
         semantic_candidate_assessor: SemanticCandidateAssessor | None = None,
         semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None,
         now_provider: Callable[[], datetime] | None = None,
+        canonical_evidence_arena_factory: Callable[[], CanonicalEvidenceArena] | None = None,
     ) -> None:
         self._memory_plane = memory_plane
         self._admission_service = admission_service
@@ -300,6 +308,7 @@ class ProviderIngestionCoordinator:
             semantic_runtime.local_proposal_producer if semantic_runtime is not None else None
         )
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        self._canonical_evidence_arena_factory = canonical_evidence_arena_factory
         self._authorization_repository = SemanticAuthorizationAuthorityRepository(
             atomic_store=atomic_store,
             writer_binding_provider=self._current_writer_binding,
@@ -397,6 +406,7 @@ class ProviderIngestionCoordinator:
         *,
         defer_assertions: bool = False,
         authenticated_ingress: AuthenticatedIngressContext | None = None,
+        canonical_evidence_arena: CanonicalEvidenceArena,
     ) -> tuple[ProviderSyncResult, None, None]:
         result, source_records = self._memory_plane.prepare_provider_event(event)
         metadata_poor = event.operation.value in {"session_end", "pre_compress"}
@@ -487,7 +497,10 @@ class ProviderIngestionCoordinator:
             )
         identity = request.delivery_identity
         source_id = f"semantic_ingestion:source:{identity.delivery_key_digest}"
-        retained_at = self._now_provider()
+        # Exact redelivery must reconstruct identical admission evidence. The
+        # caller-owned event timestamp is immutable delivery identity; local
+        # processing time is not.
+        retained_at = event.timestamp
         source_digest = step_one_source_digest(
             source_id=source_id,
             delivery_key_digest=identity.delivery_key_digest,
@@ -585,6 +598,7 @@ class ProviderIngestionCoordinator:
             handoff = self._bootstrap_prepare_and_handoff(
                 prepared_admission=prepared_admission,
                 authenticated_ingress=authenticated_ingress,
+                canonical_evidence_arena=canonical_evidence_arena,
             )
             if handoff is None:
                 return (
@@ -620,6 +634,7 @@ class ProviderIngestionCoordinator:
                         lease_session=None,
                         operation_fence=fence,
                         bootstrap_handoff=handoff,
+                        canonical_evidence_arena=canonical_evidence_arena,
                     )
                 except PreplanningStoreError:
                     terminal = SemanticTerminalOutcome.create(
@@ -666,6 +681,20 @@ class ProviderIngestionCoordinator:
                         None,
                     )
                 if "bootstrap_graph_terminal_persisted" in terminal.reason_codes:
+                    return (
+                        result.model_copy(update={
+                            "transcript_ids": [governed_source.memory_id],
+                            "candidate_ids": [],
+                            "allowed_candidate_domains": [],
+                            "blocked_reasons": {
+                                **result.blocked_reasons,
+                                "semantic_ingestion": "source_only",
+                            },
+                        }),
+                        None,
+                        None,
+                    )
+                if "bootstrap_graph_retry_persisted" in terminal.reason_codes:
                     return (
                         result.model_copy(update={
                             "transcript_ids": [governed_source.memory_id],
@@ -794,6 +823,7 @@ class ProviderIngestionCoordinator:
                         lease_session=lease_session,
                         operation_fence=fence,
                         bootstrap_handoff=handoff,
+                        canonical_evidence_arena=canonical_evidence_arena,
                     )
                     if self._semantic_pipeline is not None and execution_plan is not None
                     else (
@@ -946,14 +976,58 @@ class ProviderIngestionCoordinator:
                 if not authority_prepared:
                     outcomes.append(self._retryable_outcome(control))
                     continue
+                handoff = self._atomic_store.load_bootstrap_writer_handoff_marker_v3(
+                    operation_fence_binding=control.operation_fence
+                )
+                arena_factory = self._canonical_evidence_arena_factory
+                if arena_factory is None:
+                    outcomes.append(self._retryable_outcome(control))
+                    continue
                 try:
-                    terminal, guard = self._run_semantic_ingestion(
-                        operation_id=plan.operation_id,
-                    observation=self._load_admitted_observation(control.operation_fence),
-                        authenticated_ingress=plan.authenticated_ingress,
-                        lease_session=lease_session,
-                        operation_fence=control.operation_fence,
-                    )
+                    with arena_factory() as canonical_evidence_arena:
+                        lease = None
+                        bootstrap_handoff = None
+                        if handoff is not None:
+                            current = self._writer_admission.current()
+                            if (
+                                handoff.writer_commit_binding.admission_digest
+                                != current.admission_digest
+                                or handoff.writer_commit_binding.expected_writer_epoch
+                                != current.writer_epoch
+                            ):
+                                lease_session.checkpoint_retryable(
+                                    stage="writer", failure_kind="writer_unavailable"
+                                )
+                                outcomes.append(self._retryable_outcome(control))
+                                continue
+                            lease = self._stage_recovery_prepared_source(
+                                observation=self._load_admitted_observation(
+                                    control.operation_fence
+                                ),
+                                authenticated_ingress=plan.authenticated_ingress,
+                                handoff_marker=handoff,
+                                canonical_evidence_arena=canonical_evidence_arena,
+                            )
+                            if canonical_evidence_arena.enabled and lease is None:
+                                outcomes.append(self._retryable_outcome(control))
+                                continue
+                            bootstrap_handoff = BootstrapWriterHandoffResult.create(
+                                kind="already_started", marker=handoff
+                            )
+                        try:
+                            terminal, guard = self._run_semantic_ingestion(
+                                operation_id=plan.operation_id,
+                                observation=self._load_admitted_observation(control.operation_fence),
+                                authenticated_ingress=plan.authenticated_ingress,
+                                lease_session=lease_session,
+                                operation_fence=control.operation_fence,
+                                bootstrap_handoff=bootstrap_handoff,
+                                canonical_evidence_arena=canonical_evidence_arena,
+                                canonical_evidence_lease=lease,
+                            )
+                        finally:
+                            if lease is not None:
+                                lease.release()
                 except _SemanticPolicyReadOutage:
                     lease_session.checkpoint_retryable(
                         stage="policy_read", failure_kind="policy_outage"
@@ -1166,6 +1240,7 @@ class ProviderIngestionCoordinator:
         *,
         prepared_admission,
         authenticated_ingress: AuthenticatedIngressContext,
+        canonical_evidence_arena: CanonicalEvidenceArena,
     ) -> BootstrapWriterHandoffResult | None:
         """Bridge admitted Step-1 authority to the only writer-start boundary."""
         profile = self._bootstrap_profile
@@ -1238,14 +1313,37 @@ class ProviderIngestionCoordinator:
         if retry_assertion is None:
             return None
         current = self._writer_admission.current()
-        handoff = self._atomic_store.bootstrap_writer_handoff(
+        staged = encode_semantic_contract_result(
+            published_prepared,
+            canonical_staging=canonical_evidence_arena if canonical_evidence_arena.enabled else None,
+        )
+        lease = None
+        if canonical_evidence_arena.enabled:
+            binding = canonical_evidence_arena.bind_and_seal(CanonicalValidationScope(
+                tenant=authenticated_ingress.delivery_principal_binding.tenant_partition_id,
+                operation=admission.operation_fence_binding.operation_id,
+                generation=prepared_generation,
+                fence=admission.operation_fence_binding.operation_fence_id,
+                writer=f"{current.admission_digest}:{current.writer_epoch}",
+            ))
+            lease = canonical_evidence_arena.lookup_sealed(
+                binding=binding,
+                scope=canonical_evidence_arena.scope,
+                canonical_contract_bytes=staged.canonical_contract_bytes,
+                concrete_contract_type=type(published_prepared),
+                profile_revision=CANONICAL_PROFILE_REVISION,
+                codec_revision=CANONICAL_CODEC_REVISION,
+                domain=staged.domain,
+            )
+            if lease is None:
+                return None
+        try:
+            handoff = self._atomic_store.bootstrap_writer_handoff(
             BootstrapWriterHandoffRequest.create(
                 source_id=admission.source_id,
                 source_digest=admission.source_digest,
                 prepared_generation=prepared_generation,
-                prepared_source_digest=sha256(
-                    encode_semantic_contract(published_prepared)
-                ).hexdigest(),
+                prepared_source_digest=sha256(staged.canonical_contract_bytes).hexdigest(),
                 authority_pin=pin,
                 release_evidence=profile.release_evidence,
                 bootstrap_language_evidence=language_evidence,
@@ -1255,14 +1353,87 @@ class ProviderIngestionCoordinator:
                 current_release_assertion=retry_assertion,
                 expected_writer_admission_digest=current.admission_digest,
                 expected_writer_epoch=current.writer_epoch,
+                ),
+                canonical_evidence_lease=lease,
             )
-        )
+        finally:
+            if lease is not None:
+                lease.release()
         if isinstance(handoff, BootstrapHandoffAccessDenied) or handoff.kind not in {
             "started",
             "already_started",
         }:
             return None
+        marker = handoff.marker
+        if marker is None or marker.operation_fence_binding != admission.operation_fence_binding:
+            return None
+        current = self._writer_admission.current()
+        if (
+            marker.writer_commit_binding.admission_digest != current.admission_digest
+            or marker.writer_commit_binding.expected_writer_epoch != current.writer_epoch
+        ):
+            return None
         return handoff
+
+    def _stage_recovery_prepared_source(
+        self,
+        *,
+        observation: SourceObservation,
+        authenticated_ingress: AuthenticatedIngressContext,
+        handoff_marker,
+        canonical_evidence_arena: CanonicalEvidenceArena,
+    ) -> CanonicalEvidenceLease | None:
+        """Stage one revalidated retained PreparedSource for one recovery owner."""
+        runtime = self._semantic_runtime
+        if runtime is None or runtime.prepared_source_repository is None:
+            return None
+        try:
+            prepared = runtime.prepared_source_repository.load(
+                source_id=observation.source_id,
+                source_digest=observation.source_digest or "",
+            )
+            if prepared is None:
+                return None
+            prepared = type(prepared).model_validate(prepared.model_dump(mode="python"))
+        except (AttributeError, TypeError, ValueError):
+            return None
+        if (
+            prepared.source_id != handoff_marker.source_id
+            or prepared.source_digest != handoff_marker.source_digest
+            or handoff_marker.operation_fence_binding.source_id != observation.source_id
+            or handoff_marker.operation_fence_binding.source_digest != observation.source_digest
+        ):
+            return None
+        current = self._writer_admission.current()
+        if (
+            handoff_marker.writer_commit_binding.admission_digest != current.admission_digest
+            or handoff_marker.writer_commit_binding.expected_writer_epoch != current.writer_epoch
+        ):
+            return None
+        staged = encode_semantic_contract_result(
+            prepared,
+            canonical_staging=canonical_evidence_arena if canonical_evidence_arena.enabled else None,
+        )
+        if not canonical_evidence_arena.enabled:
+            return None
+        binding = canonical_evidence_arena.bind_and_seal(
+            CanonicalValidationScope(
+                tenant=authenticated_ingress.delivery_principal_binding.tenant_partition_id,
+                operation=handoff_marker.operation_fence_binding.operation_id,
+                generation=handoff_marker.prepared_generation,
+                fence=handoff_marker.operation_fence_binding.operation_fence_id,
+                writer=f"{current.admission_digest}:{current.writer_epoch}",
+            )
+        )
+        return canonical_evidence_arena.lookup_sealed(
+            binding=binding,
+            scope=canonical_evidence_arena.scope,
+            canonical_contract_bytes=staged.canonical_contract_bytes,
+            concrete_contract_type=type(prepared),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=staged.domain,
+        )
 
     def _run_semantic_ingestion(
         self, *, operation_id: str, observation: SourceObservation,
@@ -1270,6 +1441,8 @@ class ProviderIngestionCoordinator:
         lease_session: SemanticIngestionLeaseSession | None,
         operation_fence: OperationFenceBinding,
         bootstrap_handoff: BootstrapWriterHandoffResult | None = None,
+        canonical_evidence_arena: CanonicalEvidenceArena | None,
+        canonical_evidence_lease: CanonicalEvidenceLease | None = None,
     ) -> tuple[SemanticTerminalOutcome, _ProviderAuthorizationReadSet | None]:
         """Invoke semantic ingestion only with a current server-owned policy snapshot.
 
@@ -1496,7 +1669,10 @@ class ProviderIngestionCoordinator:
             if graph_bundle is not None:
                 try:
                     replay = self._atomic_store.reload_bootstrap_recovery_replay_v3(
-                        recovery_key_digest=recovery.recovery_key_digest
+                        recovery_key_digest=recovery.recovery_key_digest,
+                        canonical_evidence_lease=canonical_evidence_lease,
+                        handoff_marker=marker,
+                        authenticated_ingress=authenticated_ingress,
                     )
                     graph_reload = graph_bundle.reload_terminal(
                         normalization_replay=replay,
@@ -1517,6 +1693,27 @@ class ProviderIngestionCoordinator:
                         ),
                         candidates=(), temporal_closures=(), attempt_count=0,
                     ), authorization_guard
+                try:
+                    graph_retry = graph_bundle.reload_retry(
+                        normalization_replay=replay,
+                        authenticated_ingress=authenticated_ingress,
+                        required_outcome_scopes=(
+                            prepared_source.governance_carrier_artifact.required_outcome_scopes
+                        ),
+                        operation_fence_binding=operation_fence,
+                    )
+                except (AttributeError, TypeError, ValueError, PreplanningStoreError):
+                    return SemanticTerminalOutcome.create(
+                        operation_id=operation_id,
+                        status="evidence_only",
+                        reason_codes=("graph_transaction_authority_unavailable",),
+                        candidates=(), temporal_closures=(), attempt_count=0,
+                    ), None
+                if graph_retry is not None:
+                    return self._bootstrap_graph_durable_retry_terminal(
+                        operation_id=operation_id,
+                        retry=graph_retry,
+                    ), None
                 if lease_session is None:
                     lease_session = self._semantic_terminal_persistence.open_lease_session(
                         fence=operation_fence
@@ -1556,25 +1753,10 @@ class ProviderIngestionCoordinator:
                         ),
                         candidates=(), temporal_closures=(), attempt_count=0,
                     ), authorization_guard
-                if isinstance(graph_result, BootstrapGraphDurableRetryProgressV3):
-                    if graph_result.reason in {
-                        "related_conflict",
-                        "lease_renewal_required",
-                        "lease_reclaim_required",
-                        "publication_retry",
-                        "storage_retry",
-                    }:
-                        return SemanticTerminalOutcome.create(
-                            operation_id=operation_id,
-                            status="evidence_only",
-                            reason_codes=("source_only",),
-                            candidates=(), temporal_closures=(), attempt_count=0,
-                        ), None
-                    return SemanticTerminalOutcome.create(
+                if graph_result is not None and graph_result.kind == "durable_retry":
+                    return self._bootstrap_graph_durable_retry_terminal(
                         operation_id=operation_id,
-                        status="evidence_only",
-                        reason_codes=("graph_transaction_authority_unavailable",),
-                        candidates=(), temporal_closures=(), attempt_count=0,
+                        retry=graph_result,
                     ), None
                 if isinstance(graph_result, BootstrapGraphDependentPreGraphNonCommitV3):
                     if graph_result.reason == "authority_unavailable":
@@ -1708,7 +1890,10 @@ class ProviderIngestionCoordinator:
                     ), None
             try:
                 replay = self._atomic_store.reload_bootstrap_recovery_replay_v3(
-                    recovery_key_digest=recovery_key.recovery_key_digest
+                    recovery_key_digest=recovery_key.recovery_key_digest,
+                    canonical_evidence_lease=canonical_evidence_lease,
+                    handoff_marker=marker,
+                    authenticated_ingress=authenticated_ingress,
                 )
                 control = self._atomic_store.get_operation(operation_fence)
                 graph_result = graph_bundle.execute(
@@ -1737,6 +1922,23 @@ class ProviderIngestionCoordinator:
                     reason_codes=("bootstrap_graph_terminal_persisted", canonical.final_status),
                     candidates=(), temporal_closures=(), attempt_count=0,
                 ), authorization_guard
+            if graph_result is not None and graph_result.kind == "durable_retry":
+                return self._bootstrap_graph_durable_retry_terminal(
+                    operation_id=operation_id,
+                    retry=graph_result,
+                ), None
+            if isinstance(graph_result, BootstrapGraphDependentPreGraphNonCommitV3):
+                reason = (
+                    "graph_transaction_authority_unavailable"
+                    if graph_result.reason == "authority_unavailable"
+                    else "source_only"
+                )
+                return SemanticTerminalOutcome.create(
+                    operation_id=operation_id,
+                    status="evidence_only",
+                    reason_codes=(reason,),
+                    candidates=(), temporal_closures=(), attempt_count=0,
+                ), None
             return SemanticTerminalOutcome.create(
                 operation_id=operation_id, status="evidence_only",
                 reason_codes=("graph_transaction_authority_unavailable",),
@@ -1952,6 +2154,22 @@ class ProviderIngestionCoordinator:
             fence=fence,
             terminal=terminal,
             authorization_verifier=authorization_guard,
+        )
+
+    @staticmethod
+    def _bootstrap_graph_durable_retry_terminal(
+        *,
+        operation_id: str,
+        retry: BootstrapGraphDurableRetryProgressV3,
+    ) -> SemanticTerminalOutcome:
+        """Keep V3 retry provenance internal until the outer public mapping."""
+        return SemanticTerminalOutcome.create(
+            operation_id=operation_id,
+            status="evidence_only",
+            reason_codes=("bootstrap_graph_retry_persisted", retry.reason),
+            candidates=(),
+            temporal_closures=(),
+            attempt_count=0,
         )
 
     @staticmethod

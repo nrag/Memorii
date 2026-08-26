@@ -59,6 +59,7 @@ from memorii.core.memory_evolution.delivery_coordinate_migration import (
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedHostIngress,
     AuthenticatedIngressContext,
+    AuthenticatedIngressResolutionError,
     AuthenticatedSemanticEgressGovernance,
     AuthenticatedSemanticSourceAuthority,
     AuthenticatedSemanticSourceInterval,
@@ -67,8 +68,10 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     encode_typed_value,
 )
 from memorii.core.memory_evolution.writer_admission import (
+    SemanticWriterAdmissionError,
     SemanticWriterAdmissionStore,
     bounded_preplanning_ownership_manifest,
+    writer_admission_memory_id,
 )
 from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
@@ -547,6 +550,19 @@ class _Resolver:
                 ),
             }
         )
+
+
+class _SwitchingIngressResolver:
+    """Exercise accepted and rejected ingress through one service composition."""
+
+    def __init__(self) -> None:
+        self.reject = False
+        self._accepted = _Resolver()
+
+    def resolve(self, host_ingress: AuthenticatedHostIngress, server_time: datetime):
+        if self.reject:
+            raise AuthenticatedIngressResolutionError("rejected")
+        return self._accepted.resolve(host_ingress, server_time)
 
 
 class _AuthorizedCapability(_TestHostBootstrapCapability):
@@ -1168,10 +1184,10 @@ def _v3_normalization_host_builder(*, proposal: ProviderSemanticProposal | None 
 
 
 def _built_in_local_capability(
-    *, verifier=None, normalization_builder=None, scenario_test=False,
+    *, verifier=None, normalization_builder=None, resolver=None, scenario_test=False,
 ):
     material = _TestHostBootstrapCapability(
-        resolver=_Resolver(),
+        resolver=resolver or _Resolver(),
         trust_domain="scenario_test" if scenario_test else "production",
     ).load_verified_bootstrap_material()
     assert material is not None
@@ -1208,8 +1224,14 @@ def test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_e
         host_bootstrap_capability=_built_in_local_capability(),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
     )
+    factory = build_provider_memory_service_from_env(
+        memory_plane=MemoryPlaneService(),
+        now_provider=lambda: TEST_NOW,
+        host_bootstrap_capability=_built_in_local_capability(),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
 
-    for service in (provider, hermes._service, filesystem):
+    for service in (provider, factory, hermes._service, filesystem):
         assert service._bootstrap_profile is not None
         assert service._provider_ingestion._semantic_runtime is not None
         runtime = service._provider_ingestion._semantic_runtime
@@ -1219,6 +1241,27 @@ def test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_e
         assert runtime.text_preparation_service is not None
         assert runtime.local_proposal_producer is not None
         assert service._semantic_atomic_store._current_bootstrap_release_verifier is not None
+        assert service._memory_plane.get_record(writer_admission_memory_id()) is None
+
+    for service, operation_id in ((provider, "builtin-direct"), (factory, "builtin-factory"), (filesystem, "builtin-filesystem")):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN,
+            content="Atlas owner is Bob.",
+            operation_id=operation_id,
+            task_id="task:one",
+            user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+        assert service._memory_plane.get_record(writer_admission_memory_id()) is not None
+    hermes.sync_turn(
+        "Atlas owner is Bob.",
+        "Noted.",
+        operation_id="builtin-hermes",
+        task_id="task:one",
+        user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert hermes._service._memory_plane.get_record(writer_admission_memory_id()) is not None
 
 
 def test_configured_public_roots_construct_the_real_normalization_execution_owner(tmp_path) -> None:
@@ -2230,54 +2273,214 @@ def test_normal_hermes_clarification_uses_retained_event_and_local_pipeline(
     assert receipts[0].content["receipt"]["committed_outcome"] == expected_outcome, terminal
 
 
-@pytest.mark.parametrize("stage", ["policy_read", "proposal", "analysis"])
-def test_public_jsonl_reconcile_resumes_preplanning_outage_without_redelivery(tmp_path, stage: str) -> None:
-    storage = tmp_path / stage
-    plane, writers, store = _verified_runtime_store(MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage)))
-    failed_capability = _AuthorizedCapability(runtime=_runtime_for_outage(writers=writers, store=store, stage=stage))
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(failed_capability),),
-    ):
-        failed_service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW)
-    failed_service.sync_event(
-        operation=ProviderOperation.CHAT_USER_TURN,
-        content="Atlas owner is Bob.",
-        operation_id=f"semantic-ingestion-reconcile-{stage}",
-        task_id="task:one",
-        user_id="user:alice",
+@pytest.mark.parametrize("durable", (False, True))
+def test_profileless_service_preserves_existing_durable_writer_at_ingress_and_reconcile(
+    tmp_path, durable: bool,
+) -> None:
+    """Fallback ownership validates an existing admission instead of rebinding it."""
+    plane = MemoryPlaneService(
+        record_store=JsonlMemoryPlaneStore(tmp_path / "preserve") if durable else None
+    )
+    writers = SemanticWriterAdmissionStore(
+        plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: TEST_NOW
+    )
+    existing = writers.create_initial_evidence_only(
+        admission_id="existing-writer",
+        writer_implementation_fingerprint="existing-implementation",
+        graph_schema_fingerprint="existing-schema",
+    )
+    before = plane.get_record(writer_admission_memory_id())
+    assert before is not None
+
+    resolver = _SwitchingIngressResolver()
+    service = ProviderMemoryService(
+        memory_plane=plane,
+        now_provider=lambda: TEST_NOW,
+        authenticated_ingress_resolver=resolver,
+    )
+    assert service._bootstrap_profile is None
+    assert plane.get_record(writer_admission_memory_id()) == before
+
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+        operation_id="profileless-existing-writer", task_id="task:one", user_id="user:alice",
         authenticated_host_ingress=_host_ingress(),
     )
-    member_kinds = {
-        record.content["member"]["kind"]
-        for record in plane.list_records()
-        if record.source_kind == "semantic_ingestion_generation_member"
-    }
-    assert "execution_plan" in member_kinds
-    assert "source_result" not in member_kinds
+    assert service.reconcile_memory_evolution() == []
+    assert writers.current() == existing
+    assert plane.get_record(writer_admission_memory_id()) == before
 
-    reopened_plane, reopened_writers, reopened_store = _verified_runtime_store(
-        MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage))
+
+@pytest.mark.parametrize("durable", (False, True))
+def test_profileless_service_waits_for_resolved_ingress_then_creates_default_once(
+    tmp_path, durable: bool,
+) -> None:
+    """Construction is write-free; first authenticated ingress creates one default record."""
+    plane = MemoryPlaneService(
+        record_store=JsonlMemoryPlaneStore(tmp_path / "wait") if durable else None
     )
-    recovered_transport, recovered_capability = _dependencies(
-        writer_admission=reopened_writers, atomic_store=reopened_store
+    resolver = _SwitchingIngressResolver()
+    service = ProviderMemoryService(
+        memory_plane=plane,
+        now_provider=lambda: TEST_NOW,
+        authenticated_ingress_resolver=resolver,
     )
-    with patch(
-        "memorii.core.memory_evolution.bootstrap_profile.entry_points",
-        return_value=(_InstalledCapabilityEntryPoint(recovered_capability),),
-    ):
-        reopened_service = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW)
-    outcomes = reopened_service.reconcile_memory_evolution()
-    assert [outcome.status for outcome in outcomes] == ["evolution_committed"]
-    assert len(recovered_transport.requests) == 1
-    final_kinds = [
-        record.content["member"]["kind"]
-        for record in reopened_plane.list_records()
-        if record.source_kind == "semantic_ingestion_generation_member"
+    assert plane.get_record(writer_admission_memory_id()) is None
+
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+        operation_id="profileless-missing-ingress", task_id="task:one", user_id="user:alice",
+    )
+    assert plane.get_record(writer_admission_memory_id()) is None
+    resolver.reject = True
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+        operation_id="profileless-rejected-ingress", task_id="task:one", user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert plane.get_record(writer_admission_memory_id()) is None
+    resolver.reject = False
+
+    for operation_id in ("profileless-new-writer-one", "profileless-new-writer-two"):
+        service.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+            operation_id=operation_id, task_id="task:one", user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+    records = [
+        record for record in plane.list_records()
+        if record.memory_id == writer_admission_memory_id()
     ]
-    assert final_kinds.count("execution_plan") == 1
-    assert final_kinds.count("recovery_authority_binding") == 1
-    assert final_kinds.count("source_result") == 1
+    assert len(records) == 1
+    current = service._semantic_writer_admission.current()
+    assert current.admission_id == "memorii-provider-semantic-writer-v1"
+    assert current.active_runtime_mode == "evidence_only"
+
+
+@pytest.mark.parametrize("hermes", (False, True))
+def test_memory_write_preflights_ingress_before_writer_creation(hermes: bool) -> None:
+    plane = MemoryPlaneService()
+    resolver = _SwitchingIngressResolver()
+    service = ProviderMemoryService(
+        memory_plane=plane, now_provider=lambda: TEST_NOW,
+        authenticated_ingress_resolver=resolver,
+    )
+    root = HermesMemoryProvider(service) if hermes else service
+    if hermes:
+        def invoke(ingress):
+            return root.on_memory_write("write", "memory", "Atlas", operation_id="write", task_id="task:one", user_id="user:alice", authenticated_host_ingress=ingress)
+    else:
+        def invoke(ingress):
+            return root.apply_memory_write(operation=ProviderOperation.MEMORY_WRITE_USER, content="Atlas", action="write", target="memory", operation_id="write", session_id=None, task_id="task:one", user_id="user:alice", authenticated_host_ingress=ingress)
+    invoke(None)
+    resolver.reject = True
+    invoke(_host_ingress())
+    assert plane.get_record(writer_admission_memory_id()) is None
+    resolver.reject = False
+    invoke(_host_ingress())
+    invoke(_host_ingress())
+    assert len([r for r in plane.list_records() if r.memory_id == writer_admission_memory_id()]) == 1
+
+
+def test_configured_hermes_constructs_write_free_then_creates_once_after_authenticated_turn() -> None:
+    """The service-free Hermes root forwards its verified host composition unchanged."""
+    plane = MemoryPlaneService()
+    resolver = _SwitchingIngressResolver()
+    hermes = HermesMemoryProvider(
+        service=None,
+        memory_plane=plane,
+        host_bootstrap_capability=_built_in_local_capability(resolver=resolver),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+    assert plane.get_record(writer_admission_memory_id()) is None
+
+    resolver.reject = True
+    hermes.sync_turn(
+        "Atlas owner is Bob.", "Noted.", operation_id="configured-hermes-rejected",
+        task_id="task:one", user_id="user:alice", authenticated_host_ingress=_host_ingress(),
+    )
+    assert plane.get_record(writer_admission_memory_id()) is None
+
+    resolver.reject = False
+    hermes.sync_turn(
+        "Atlas owner is Bob.", "Noted.", operation_id="configured-hermes-resolved",
+        task_id="task:one", user_id="user:alice", authenticated_host_ingress=_host_ingress(),
+    )
+    writer_records = [
+        record for record in plane.list_records()
+        if record.memory_id == writer_admission_memory_id()
+    ]
+    assert len(writer_records) == 1
+
+
+def _writer_failure_snapshot(
+    backend: JsonlMemoryPlaneStore,
+    plane: MemoryPlaneService,
+) -> tuple[bytes, tuple[CanonicalMemoryRecord, ...]]:
+    return (
+        backend._records_path.read_bytes(),
+        tuple(sorted(plane.list_records(), key=lambda record: record.memory_id)),
+    )
+
+
+@pytest.mark.parametrize("writer_state", ("corrupt", "foreign_manifest"))
+def test_profileless_service_rejects_invalid_or_foreign_durable_writer_without_writes(
+    tmp_path, writer_state: str,
+) -> None:
+    """Writer validation fails before source ingestion can change the durable JSONL state."""
+    storage = tmp_path / writer_state
+    backend = JsonlMemoryPlaneStore(storage)
+    plane = MemoryPlaneService(record_store=backend)
+    writers = SemanticWriterAdmissionStore(
+        plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: TEST_NOW
+    )
+    writers.create_initial_evidence_only(
+        admission_id="valid-writer",
+        writer_implementation_fingerprint="valid-implementation",
+        graph_schema_fingerprint="valid-schema",
+    )
+    original = plane.get_record(writer_admission_memory_id())
+    assert original is not None
+    if writer_state == "corrupt":
+        replacement = original.model_copy(update={"content": {"corrupt": True}})
+    else:
+        manifest = dict(original.content["manifest"])
+        manifest["manifest_revision"] = "foreign-semantic-generation-v2"
+        manifest["manifest_digest"] = sha256(
+            encode_typed_value(
+                {
+                    "manifest_revision": manifest["manifest_revision"],
+                    "governed_record_kinds": frozenset(manifest["governed_record_kinds"]),
+                    "semantic_store_methods": frozenset(manifest["semantic_store_methods"]),
+                }
+            )
+        ).hexdigest()
+        replacement = original.model_copy(
+            update={"content": original.content | {"manifest": manifest}}
+        )
+    _rewrite_jsonl_snapshot(backend, plane, replacements=(replacement,))
+    reopened = ProviderMemoryService(
+        memory_plane=MemoryPlaneService(record_store=JsonlMemoryPlaneStore(storage)),
+        now_provider=lambda: TEST_NOW,
+        authenticated_ingress_resolver=_Resolver(),
+    )
+    before = _writer_failure_snapshot(backend, reopened._memory_plane)
+    with pytest.raises(SemanticWriterAdmissionError):
+        reopened.sync_event(
+            operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+            operation_id=f"profileless-{writer_state}-writer", task_id="task:one", user_id="user:alice",
+            authenticated_host_ingress=_host_ingress(),
+        )
+    assert _writer_failure_snapshot(backend, reopened._memory_plane) == before
+    writer_records = [
+        record for record in reopened._memory_plane.list_records()
+        if record.memory_id == writer_admission_memory_id()
+    ]
+    assert writer_records == [replacement]
+    assert not [
+        record for record in reopened._memory_plane.list_records()
+        if record.source_kind != "semantic_ingestion_writer_admission"
+    ]
 
 
 @pytest.mark.parametrize("mutation", ["rotate", "revoke", "coordinate"])

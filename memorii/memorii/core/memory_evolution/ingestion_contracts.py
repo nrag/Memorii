@@ -29,6 +29,16 @@ _OUTER_ENVELOPE_BINDING_DIGEST = "39222b18e67ffe8f679943676a46a464c804bb2ef9d0e3
 _DELIVERY_ID_MAX_UTF8_BYTES = 1024
 
 
+@dataclass(frozen=True)
+class CanonicalTypedValueSpan:
+    """One traversal-issued byte range in a canonical typed-value encoding."""
+
+    path: tuple[str | int, ...]
+    begin: int
+    end: int
+    value_type: str
+
+
 class _HashableCtvMap(tuple[tuple[str, Any], ...]):
     """Immutable map-shaped CTV value used only inside decoded set members."""
 
@@ -823,71 +833,180 @@ def encode_typed_value(value: Any, *, check: Callable[[], None] | None = None) -
     )
 
 
-def decode_typed_value(raw: bytes) -> Any:
-    value = _strict_json(raw)
-    if value is None or isinstance(value, (bool, str)):
-        return value
-    if not isinstance(value, dict) or not isinstance(value.get("$type"), str):
-        raise CanonicalTypedValueError("canonical_tag_invalid")
-    tag = value["$type"]
-    if tag == "integer" and set(value) == {"$type", "value"}:
-        result = _integer(value["value"])
-    elif tag == "datetime" and set(value) == {"$type", "value"} and isinstance(value["value"], str):
-        spelling = value["value"]
-        if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z", spelling):
-            raise CanonicalTypedValueError("canonical_datetime_invalid")
-        try:
-            result = datetime.strptime(spelling, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
-        except ValueError as exc:
-            raise CanonicalTypedValueError("canonical_datetime_invalid") from exc
-    elif tag == "duration_microseconds" and set(value) == {"$type", "value"}:
-        microseconds = _integer(value["value"])
-        if not -(2**63) <= microseconds < 2**63:
-            raise CanonicalTypedValueError("canonical_duration_overflow")
-        result = timedelta(microseconds=microseconds)
-    elif tag == "bytes" and set(value) == {"$type", "value"} and isinstance(value["value"], str):
-        try:
-            result = base64.b64decode(value["value"], validate=True)
-        except ValueError as exc:
-            raise CanonicalTypedValueError("canonical_bytes_base64_invalid") from exc
-        if base64.b64encode(result).decode("ascii") != value["value"]:
-            raise CanonicalTypedValueError("canonical_bytes_base64_invalid")
-    elif (
-        tag in {"list", "tuple", "set", "frozenset"}
-        and set(value) == {"$type", "items"}
-        and isinstance(value["items"], list)
-    ):
-        items = [decode_typed_value(_json(item)) for item in value["items"]]
-        if tag in {"set", "frozenset"}:
-            encoded = [encode_typed_value(item) for item in items]
-            if encoded != sorted(encoded) or len(set(encoded)) != len(encoded):
-                raise CanonicalTypedValueError("canonical_set_order_invalid")
-            members = tuple(_hashable_ctv_value(item) for item in items)
-            try:
-                native = frozenset(members)
-            except TypeError:
-                native = None
-            if native is None or len(native) != len(members):
-                result = _TagAwareCtvFrozenSet(members) if tag == "frozenset" else _TagAwareCtvSet(members)
-            else:
-                result = native if tag == "frozenset" else set(native)
+def encode_typed_value_with_spans(value: Any) -> tuple[bytes, tuple[CanonicalTypedValueSpan, ...]]:
+    """Encode once while issuing exact structural paths and byte spans.
+
+    Paths come from the same normalized-tree traversal that writes the bytes.
+    Equal scalar values therefore remain distinct by path; no byte search or
+    second serialization is involved.
+    """
+
+    normalized = _normalized_typed_json(value)
+    spans: list[CanonicalTypedValueSpan] = []
+
+    encoded = bytearray()
+
+    def write(part: bytes) -> None:
+        encoded.extend(part)
+
+    def walk(item: Any, path: tuple[str | int, ...]) -> None:
+        start = len(encoded)
+        if isinstance(item, list):
+            write(b"[")
+            for index, child in enumerate(item):
+                if index:
+                    write(b",")
+                walk(child, path + (index,))
+            write(b"]")
+        elif isinstance(item, dict):
+            write(b"{")
+            keys = sorted(item, key=lambda candidate: _json(candidate))
+            for index, key in enumerate(keys):
+                if index:
+                    write(b",")
+                write(_json(key))
+                write(b":")
+                walk(item[key], path + (key,))
+            write(b"}")
         else:
-            result = tuple(items) if tag == "tuple" else items
-    elif tag == "map" and set(value) == {"$type", "entries"} and isinstance(value["entries"], list):
-        result = {}
-        prior: bytes | None = None
-        for pair in value["entries"]:
-            if not isinstance(pair, list) or len(pair) != 2 or not isinstance(pair[0], str):
-                raise CanonicalTypedValueError("canonical_map_entry_invalid")
-            key_bytes = _json(pair[0])
-            if prior is not None and key_bytes <= prior:
-                raise CanonicalTypedValueError("canonical_map_order_invalid")
-            prior = key_bytes
-            result[pair[0]] = decode_typed_value(_json(pair[1]))
-    else:
-        raise CanonicalTypedValueError("canonical_tag_invalid")
-    if encode_typed_value(result) != raw:
-        raise CanonicalTypedValueError("canonical_reencode_mismatch")
+            write(_json(item))
+        end = len(encoded)
+        spans.append(CanonicalTypedValueSpan(path, start, end, type(item).__name__))
+
+    walk(normalized, ())
+    result = bytes(encoded)
+    if result != _json(normalized):
+        raise RuntimeError("canonical typed-value span encoder diverged")
+    return result, tuple(spans)
+
+
+def decode_typed_value(
+    raw: bytes,
+    *,
+    max_nodes: int | None = None,
+    max_depth: int | None = None,
+) -> Any:
+    """Decode canonical typed JSON into typed Python values with optional limits."""
+
+    def _decode_typed_value(
+        value: Any,
+        *,
+        depth: int,
+        node_budget: int | None,
+        depth_budget: int | None,
+        nodes: list[int],
+    ) -> Any:
+        if node_budget is not None:
+            nodes[0] += 1
+            if nodes[0] > node_budget:
+                raise CanonicalTypedValueError("canonical_typed_value_node_limit")
+        if depth_budget is not None and depth > depth_budget:
+            raise CanonicalTypedValueError("canonical_typed_value_depth_limit")
+        if value is None or isinstance(value, (bool, str)):
+            return value
+        if not isinstance(value, dict) or not isinstance(value.get("$type"), str):
+            raise CanonicalTypedValueError("canonical_tag_invalid")
+        tag = value["$type"]
+        if tag == "integer" and set(value) == {"$type", "value"}:
+            result = _integer(value["value"])
+        elif tag == "datetime" and set(value) == {"$type", "value"} and isinstance(value["value"], str):
+            spelling = value["value"]
+            if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z", spelling):
+                raise CanonicalTypedValueError("canonical_datetime_invalid")
+            try:
+                result = datetime.strptime(spelling, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
+            except ValueError as exc:
+                raise CanonicalTypedValueError("canonical_datetime_invalid") from exc
+        elif tag == "duration_microseconds" and set(value) == {"$type", "value"}:
+            microseconds = _integer(value["value"])
+            if not -(2**63) <= microseconds < 2**63:
+                raise CanonicalTypedValueError("canonical_duration_overflow")
+            result = timedelta(microseconds=microseconds)
+        elif tag == "bytes" and set(value) == {"$type", "value"} and isinstance(value["value"], str):
+            try:
+                result = base64.b64decode(value["value"], validate=True)
+            except ValueError as exc:
+                raise CanonicalTypedValueError("canonical_bytes_base64_invalid") from exc
+            if base64.b64encode(result).decode("ascii") != value["value"]:
+                raise CanonicalTypedValueError("canonical_bytes_base64_invalid")
+        elif (
+            tag in {"list", "tuple", "set", "frozenset"}
+            and set(value) == {"$type", "items"}
+            and isinstance(value["items"], list)
+        ):
+            items = [
+                _decode_typed_value(
+                    item,
+                    depth=depth + 1,
+                    node_budget=node_budget,
+                    depth_budget=depth_budget,
+                    nodes=nodes,
+                )
+                for item in value["items"]
+            ]
+            if tag in {"set", "frozenset"}:
+                encoded = [encode_typed_value(item) for item in items]
+                if encoded != sorted(encoded) or len(set(encoded)) != len(encoded):
+                    raise CanonicalTypedValueError("canonical_set_order_invalid")
+                members = tuple(_hashable_ctv_value(item) for item in items)
+                try:
+                    native = frozenset(members)
+                except TypeError:
+                    native = None
+                if native is None or len(native) != len(members):
+                    result = _TagAwareCtvFrozenSet(members) if tag == "frozenset" else _TagAwareCtvSet(members)
+                else:
+                    result = native if tag == "frozenset" else set(native)
+            else:
+                result = tuple(items) if tag == "tuple" else items
+        elif tag == "map" and set(value) == {"$type", "entries"} and isinstance(value["entries"], list):
+            result = {}
+            prior: bytes | None = None
+            for pair in value["entries"]:
+                if not isinstance(pair, list) or len(pair) != 2 or not isinstance(pair[0], str):
+                    raise CanonicalTypedValueError("canonical_map_entry_invalid")
+                key_bytes = _json(pair[0])
+                if prior is not None and key_bytes <= prior:
+                    raise CanonicalTypedValueError("canonical_map_order_invalid")
+                prior = key_bytes
+                result[pair[0]] = _decode_typed_value(
+                    pair[1],
+                    depth=depth + 1,
+                    node_budget=node_budget,
+                    depth_budget=depth_budget,
+                    nodes=nodes,
+                )
+        else:
+            raise CanonicalTypedValueError("canonical_tag_invalid")
+        return result
+
+    try:
+        value = _strict_json(raw)
+    except RecursionError as exc:
+        raise CanonicalTypedValueError("canonical_typed_value_depth_limit") from exc
+    if not isinstance(max_nodes, int) and max_nodes is not None:
+        raise TypeError("canonical decode node limit must be an int")
+    if not isinstance(max_depth, int) and max_depth is not None:
+        raise TypeError("canonical decode depth limit must be an int")
+    if max_nodes is not None and max_nodes <= 0:
+        raise CanonicalTypedValueError("canonical_typed_value_node_limit")
+    if max_depth is not None and max_depth <= 0:
+        raise CanonicalTypedValueError("canonical_typed_value_depth_limit")
+    try:
+        result = _decode_typed_value(
+            value,
+            depth=0,
+            node_budget=max_nodes,
+            depth_budget=max_depth,
+            nodes=[0],
+        )
+    except RecursionError as exc:
+        raise CanonicalTypedValueError("canonical_typed_value_depth_limit") from exc
+    try:
+        if encode_typed_value(result) != raw:
+            raise CanonicalTypedValueError("canonical_reencode_mismatch")
+    except RecursionError as exc:
+        raise CanonicalTypedValueError("canonical_typed_value_depth_limit") from exc
     return result
 
 

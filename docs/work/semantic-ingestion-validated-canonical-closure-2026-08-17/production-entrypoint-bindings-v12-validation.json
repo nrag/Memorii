@@ -1,0 +1,16 @@
+{
+  "failures": [],
+  "passed": true,
+  "production_roots": {
+    "factory": {
+      "caller_count": 1,
+      "path": "memorii/memorii/core/provider/factory.py"
+    },
+    "hermes": {
+      "caller_count": 4,
+      "path": "memorii/memorii/integrations/hermes_provider.py"
+    }
+  },
+  "schema": "memorii.production-entrypoint-bindings-validation.v12",
+  "validated_edges": 6
+}

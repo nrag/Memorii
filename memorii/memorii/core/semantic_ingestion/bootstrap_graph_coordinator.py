@@ -268,38 +268,47 @@ class BootstrapGraphDependentCoordinatorV3:
                 operation_fence_binding=epoch.operation_fence_binding,
                 control_epoch=epoch,
             )
+            group_checkpoint_request = (
+                BootstrapGraphArtifactAssemblerV3.build_group_result_checkpoint(
+                    construction=construction,
+                    attempt=attempt,
+                    operation_lease_binding=bindings[0],
+                    operation_fence_binding=bindings[1],
+                    writer_commit_binding=bindings[2],
+                    predecessor_generation=group_commit_reload.successor_generation,
+                )
+            )
             try:
                 group_reload = self._plans.publish_and_reload(
-                    request=BootstrapGraphArtifactAssemblerV3.build_group_result_checkpoint(
-                        construction=construction,
-                        attempt=attempt,
-                        operation_lease_binding=bindings[0],
-                        operation_fence_binding=bindings[1],
-                        writer_commit_binding=bindings[2],
-                        predecessor_generation=group_commit_reload.successor_generation,
-                    ),
+                    request=group_checkpoint_request,
                     authenticated_ingress=request.authenticated_ingress,
                     required_outcome_scopes=request.required_outcome_scopes,
                     control_epoch=epoch,
                 )
             except (PreplanningStoreError, ValueError):
-                # The executor has already linearized the group CAS.  Retain its
-                # exact result before reporting a retry so recovery cannot repeat
-                # an effect merely because its checkpoint acknowledgement failed.
-                constructions.append(construction)
-                # A pre-checkpoint CAS cannot determine conflict provenance.
-                # Preserve storage semantics for safe, idempotent recovery.
-                return self._post_effect_retry(
-                    request=request,
-                    epoch=epoch,
-                    attempt=attempt,
-                    plan=compilation.plan,
-                    authorizations=authorizations,
-                    lineage=lineage,
-                    constructions=constructions,
-                    groups=compilation.plan.canonical_group_order,
-                    generation=group_commit_reload.successor_generation,
-                )
+                try:
+                    group_reload = self._plans.publish_and_reload(
+                        request=group_checkpoint_request,
+                        authenticated_ingress=request.authenticated_ingress,
+                        required_outcome_scopes=request.required_outcome_scopes,
+                        control_epoch=epoch,
+                    )
+                except (PreplanningStoreError, ValueError):
+                    # The executor has already linearized the group CAS. Retain
+                    # its exact result before reporting a retry so recovery
+                    # cannot repeat an effect after two checkpoint failures.
+                    constructions.append(construction)
+                    return self._post_effect_retry(
+                        request=request,
+                        epoch=epoch,
+                        attempt=attempt,
+                        plan=compilation.plan,
+                        authorizations=authorizations,
+                        lineage=lineage,
+                        constructions=constructions,
+                        groups=compilation.plan.canonical_group_order,
+                        generation=group_commit_reload.successor_generation,
+                    )
             current_generation = group_reload.checkpoint_receipt.successor_generation
             constructions.append(construction)
         return self._finalize_attempt(

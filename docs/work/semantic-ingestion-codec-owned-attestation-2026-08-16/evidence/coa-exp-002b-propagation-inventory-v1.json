@@ -1,0 +1,809 @@
+{
+  "certifies_m3_1": false,
+  "evidence_stage": "read_only_feasibility",
+  "experiment": "COA-EXP-002B",
+  "runtime_calls_outside_encode_semantic_contract": 706,
+  "runtime_calls_under_encode_semantic_contract": 292,
+  "runtime_origin_count": 82,
+  "runtime_origins": [
+    {
+      "calls": 32,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 1546,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "_load_prepared_source_record",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 32,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 434,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "prepare",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 30,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 1546,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "_load_prepared_source_record",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 30,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 434,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "prepare",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 30,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 1546,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "_load_prepared_source_record",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 30,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 434,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "prepare",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 28,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 1546,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "_load_prepared_source_record",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 28,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 434,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "prepare",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 26,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 1546,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "_load_prepared_source_record",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 26,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 434,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "prepare",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 16,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 926,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 16,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 935,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 16,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 980,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 16,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 1037,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 16,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 1198,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "bootstrap_writer_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 16,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 1252,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 16,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 1271,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 16,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 89,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "publish",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 15,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 926,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 15,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 935,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 15,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 980,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 15,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 1037,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 15,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 1198,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "bootstrap_writer_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 15,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 1252,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 15,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 1271,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 15,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 89,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "publish",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 15,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 926,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 15,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 935,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 15,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 980,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 15,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 1037,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 15,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 1198,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "bootstrap_writer_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 15,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 1252,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 15,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 1271,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 15,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 89,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "publish",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 14,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 926,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 14,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 935,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 14,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 980,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 14,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 1037,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 14,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 1198,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "bootstrap_writer_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 14,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 1252,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 14,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 1271,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 14,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 89,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "publish",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 13,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 926,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 13,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 935,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_prepared_source",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 13,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 980,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 13,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 1037,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "publish_bootstrap_prepared_source_if_absent",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 13,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 1198,
+      "origin_path": "core/memory_evolution/atomic_store.py",
+      "origin_symbol": "bootstrap_writer_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 13,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 1252,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 13,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 1271,
+      "origin_path": "core/provider/ingestion.py",
+      "origin_symbol": "_bootstrap_prepare_and_handoff",
+      "under_encode_semantic_contract": true
+    },
+    {
+      "calls": 13,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 89,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "publish",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 10,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 379,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "_span",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 10,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 379,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "_span",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 10,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 379,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "_span",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 9,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 86,
+      "origin_path": "core/memory_evolution/record_projection.py",
+      "origin_symbol": "_step_one_observation_fields",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 8,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 397,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "_token_spans",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 8,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 402,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "_token_spans",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 8,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 402,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "_token_spans",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 8,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 397,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "_token_spans",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 6,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 86,
+      "origin_path": "core/memory_evolution/record_projection.py",
+      "origin_symbol": "_step_one_observation_fields",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 6,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 86,
+      "origin_path": "core/memory_evolution/record_projection.py",
+      "origin_symbol": "_step_one_observation_fields",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 6,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 86,
+      "origin_path": "core/memory_evolution/record_projection.py",
+      "origin_symbol": "_step_one_observation_fields",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 4,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 281,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "__call__",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 4,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 281,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "__call__",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 3,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 86,
+      "origin_path": "core/memory_evolution/record_projection.py",
+      "origin_symbol": "_step_one_observation_fields",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 2,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 227,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "__call__",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 2,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 233,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "__call__",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 2,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 233,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "__call__",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 2,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 227,
+      "origin_path": "core/semantic_ingestion/source_preparation.py",
+      "origin_symbol": "__call__",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 432,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 438,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "ProjectionTextSpan",
+      "origin_line": 441,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 416,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 429,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "RetainedSourceTextArtifact",
+      "origin_line": 449,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 425,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 435,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "SegmentLocalTextArtifact",
+      "origin_line": 441,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 435,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "SegmentLocalTextSpan",
+      "origin_line": 438,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 420,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 432,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    },
+    {
+      "calls": 1,
+      "contract_type": "SemanticProjectionTextArtifact",
+      "origin_line": 449,
+      "origin_path": "core/memory_evolution/source_admission.py",
+      "origin_symbol": "build_verbatim_step_one_material",
+      "under_encode_semantic_contract": false
+    }
+  ],
+  "runtime_target_validation_calls": 998,
+  "schema": "memorii.semantic-ingestion.codec-attestation.propagation-inventory.v1",
+  "static_inventory": {
+    "all_model_validate_callsites": 400,
+    "context_bearing_model_validate_callsites": 1,
+    "context_free_model_validate_callsites": 399,
+    "direct_target_callsite_count": 18,
+    "direct_target_callsites": [
+      {
+        "contract_type": "ProjectionTextSpan",
+        "has_context": false,
+        "line": 395,
+        "operation": "create",
+        "path": "core/memory_evolution/semantic_analysis/temporal/duckling_adapter.py"
+      },
+      {
+        "contract_type": "ProjectionTextSpan",
+        "has_context": false,
+        "line": 432,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      },
+      {
+        "contract_type": "ProjectionTextSpan",
+        "has_context": false,
+        "line": 585,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      },
+      {
+        "contract_type": "ProjectionTextSpan",
+        "has_context": false,
+        "line": 287,
+        "operation": "create",
+        "path": "core/semantic_ingestion/linguistic_adapters.py"
+      },
+      {
+        "contract_type": "ProjectionTextSpan",
+        "has_context": false,
+        "line": 227,
+        "operation": "create",
+        "path": "core/semantic_ingestion/source_preparation.py"
+      },
+      {
+        "contract_type": "ProjectionTextSpan",
+        "has_context": false,
+        "line": 397,
+        "operation": "create",
+        "path": "core/semantic_ingestion/source_preparation.py"
+      },
+      {
+        "contract_type": "RetainedSourceTextArtifact",
+        "has_context": false,
+        "line": 416,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      },
+      {
+        "contract_type": "RetainedSourceTextArtifact",
+        "has_context": false,
+        "line": 538,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      },
+      {
+        "contract_type": "SegmentLocalTextArtifact",
+        "has_context": false,
+        "line": 425,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      },
+      {
+        "contract_type": "SegmentLocalTextArtifact",
+        "has_context": false,
+        "line": 581,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      },
+      {
+        "contract_type": "SegmentLocalTextSpan",
+        "has_context": false,
+        "line": 401,
+        "operation": "create",
+        "path": "core/memory_evolution/semantic_analysis/temporal/duckling_adapter.py"
+      },
+      {
+        "contract_type": "SegmentLocalTextSpan",
+        "has_context": false,
+        "line": 435,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      },
+      {
+        "contract_type": "SegmentLocalTextSpan",
+        "has_context": false,
+        "line": 586,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      },
+      {
+        "contract_type": "SegmentLocalTextSpan",
+        "has_context": false,
+        "line": 293,
+        "operation": "create",
+        "path": "core/semantic_ingestion/linguistic_adapters.py"
+      },
+      {
+        "contract_type": "SegmentLocalTextSpan",
+        "has_context": false,
+        "line": 233,
+        "operation": "create",
+        "path": "core/semantic_ingestion/source_preparation.py"
+      },
+      {
+        "contract_type": "SegmentLocalTextSpan",
+        "has_context": false,
+        "line": 402,
+        "operation": "create",
+        "path": "core/semantic_ingestion/source_preparation.py"
+      },
+      {
+        "contract_type": "SemanticProjectionTextArtifact",
+        "has_context": false,
+        "line": 420,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      },
+      {
+        "contract_type": "SemanticProjectionTextArtifact",
+        "has_context": false,
+        "line": 545,
+        "operation": "create",
+        "path": "core/memory_evolution/source_admission.py"
+      }
+    ]
+  },
+  "target_contract_types": [
+    "ProjectionTextSpan",
+    "RetainedSourceTextArtifact",
+    "SegmentLocalTextArtifact",
+    "SegmentLocalTextSpan",
+    "SemanticProjectionTextArtifact"
+  ]
+}

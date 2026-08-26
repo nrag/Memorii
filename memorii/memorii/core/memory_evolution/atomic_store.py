@@ -112,6 +112,7 @@ if TYPE_CHECKING:
         PreparedTrustDecayPublication,
         ProjectionScheduler,
     )
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import CanonicalEvidenceLease
     from memorii.core.semantic_ingestion.contracts import (
         SemanticArbitrationPolicyBundle,
         SemanticArtifactClosure,
@@ -1114,7 +1115,7 @@ class SemanticIngestionAtomicStore:
         return prepared, 1
 
     def bootstrap_writer_handoff(
-        self, request: BootstrapWriterHandoffRequest
+        self, request: BootstrapWriterHandoffRequest, *, canonical_evidence_lease: CanonicalEvidenceLease | None = None
     ) -> BootstrapHandoffAccessDenied | BootstrapWriterHandoffResult:
         """Create writer state exactly once after source-owned publication.
 
@@ -1167,15 +1168,6 @@ class SemanticIngestionAtomicStore:
         marker_id = "semantic_ingestion:bootstrap-handoff:" + sha256(
             request.source_id.encode("utf-8") + request.request_digest.encode("ascii")
         ).hexdigest()
-        existing = self._memory_plane.get_record(marker_id)
-        if existing is not None:
-            try:
-                marker = BootstrapWriterHandoffMarkerV3.model_validate(existing.content["marker"])
-            except (KeyError, TypeError, ValueError):
-                return BootstrapWriterHandoffResult.create(kind="conflict")
-            if marker.handoff_request_digest != request.request_digest:
-                return BootstrapWriterHandoffResult.create(kind="conflict")
-            return BootstrapWriterHandoffResult.create(kind="already_started", marker=marker)
         prepared_record = self._memory_plane.get_record(
             "semantic_ingestion:prepared_source:" + sha256(request.source_id.encode("utf-8")).hexdigest()
         )
@@ -1194,15 +1186,46 @@ class SemanticIngestionAtomicStore:
             prepared = self._load_prepared_source_record(prepared_record, request.source_id, request.source_digest)
         except PreplanningStoreError:
             return BootstrapWriterHandoffResult.create(kind="conflict")
-        from memorii.core.semantic_ingestion.contracts import encode_semantic_contract
-        if request.prepared_source_digest != sha256(encode_semantic_contract(prepared)).hexdigest():
-            return BootstrapWriterHandoffResult.create(kind="conflict")
         current = self._writers.current()
         if (
             current.writer_epoch != request.expected_writer_epoch
             or current.admission_digest != request.expected_writer_admission_digest
         ):
             return BootstrapWriterHandoffResult.create(kind="writer_unavailable")
+        if canonical_evidence_lease is None:
+            from memorii.core.semantic_ingestion.contracts import encode_semantic_contract
+            prepared_bytes = encode_semantic_contract(prepared)
+        else:
+            if canonical_evidence_lease._released:
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            evidence = canonical_evidence_lease.result
+            scope = canonical_evidence_lease.scope
+            if (
+                type(evidence.contract) is not type(prepared)
+                or evidence.contract != prepared
+                or scope.operation != request.operation_fence_binding.operation_id
+                or scope.generation != request.prepared_generation
+                or scope.fence != request.operation_fence_binding.operation_fence_id
+                or scope.tenant
+                != request.current_delivery_authorization.ingress.delivery_principal_binding.tenant_partition_id
+                or scope.writer != f"{current.admission_digest}:{current.writer_epoch}"
+                or not evidence.member_evidence
+            ):
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            prepared_bytes = evidence.canonical_contract_bytes
+        if request.prepared_source_digest != sha256(prepared_bytes).hexdigest():
+            return BootstrapWriterHandoffResult.create(kind="conflict")
+        # An idempotent marker still consumes a fresh lease: exact loaded
+        # bytes and current writer authority must be revalidated per delivery.
+        existing = self._memory_plane.get_record(marker_id)
+        if existing is not None:
+            try:
+                marker = BootstrapWriterHandoffMarkerV3.model_validate(existing.content["marker"])
+            except (KeyError, TypeError, ValueError):
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            if marker.handoff_request_digest != request.request_digest:
+                return BootstrapWriterHandoffResult.create(kind="conflict")
+            return BootstrapWriterHandoffResult.create(kind="already_started", marker=marker)
         binding = self._writers.commit_binding(current)
         writer_record = self._writers.require_current(binding)
         writer_authorization = self._writers._authorize_atomic(binding, capability=self._write_capability)
@@ -4137,7 +4160,32 @@ class SemanticIngestionAtomicStore:
             )
         )
 
-    def reload_bootstrap_recovery_replay_v3(self, *, recovery_key_digest: str) -> object | None:
+    def load_bootstrap_writer_handoff_marker_v3(
+        self, *, operation_fence_binding: OperationFenceBinding
+    ) -> BootstrapWriterHandoffMarkerV3 | None:
+        """Load exactly one persisted V3 marker for an already-admitted fence."""
+        matches: list[BootstrapWriterHandoffMarkerV3] = []
+        for record in self._memory_plane.list_records(
+            source_kind="semantic_ingestion_bootstrap_handoff_marker"
+        ):
+            try:
+                marker = BootstrapWriterHandoffMarkerV3.model_validate(
+                    record.content["marker"]
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+            if marker.operation_fence_binding == operation_fence_binding:
+                matches.append(marker)
+        return matches[0] if len(matches) == 1 else None
+
+    def reload_bootstrap_recovery_replay_v3(
+        self,
+        *,
+        recovery_key_digest: str,
+        canonical_evidence_lease: CanonicalEvidenceLease | None = None,
+        handoff_marker: BootstrapWriterHandoffMarkerV3 | None = None,
+        authenticated_ingress: object | None = None,
+    ) -> object | None:
         """Reload one exact found normalization closure; never scan generations."""
         from memorii.core.semantic_ingestion.contracts import (
             BootstrapRecoveryFoundV3,
@@ -4148,6 +4196,15 @@ class SemanticIngestionAtomicStore:
             decode_semantic_contract,
             encode_semantic_contract,
         )
+        if canonical_evidence_lease is not None:
+            if handoff_marker is None or authenticated_ingress is None:
+                return None
+            if not self._validate_recovery_prepared_lease(
+                canonical_evidence_lease=canonical_evidence_lease,
+                handoff_marker=handoff_marker,
+                authenticated_ingress=authenticated_ingress,
+            ):
+                return None
         record = self._memory_plane.get_record(_bootstrap_v3_recovery_id(recovery_key_digest))
         if record is None or record.source_kind != "semantic_ingestion_bootstrap_v3_recovery_index":
             return None
@@ -4175,8 +4232,18 @@ class SemanticIngestionAtomicStore:
             _generation, _request_digest, result_digest, members = recovered
             request_member = next(item for item in members if item.kind == "bootstrap_source_normalization_request")
             result_member = next(item for item in members if item.kind == "bootstrap_source_normalization_result")
-            request = decode_semantic_contract(request_member.canonical_payload, BootstrapSourceNormalizationRequestV3)
-            result = decode_semantic_contract(result_member.canonical_payload, BootstrapSourceNormalizationResultV3)
+            request = decode_semantic_contract(
+                request_member.canonical_payload,
+                BootstrapSourceNormalizationRequestV3,
+                max_nodes=20_000,
+                max_depth=128,
+            )
+            result = decode_semantic_contract(
+                result_member.canonical_payload,
+                BootstrapSourceNormalizationResultV3,
+                max_nodes=20_000,
+                max_depth=128,
+            )
             if (
                 encode_semantic_contract(request) != request_member.canonical_payload
                 or encode_semantic_contract(result) != result_member.canonical_payload
@@ -4194,6 +4261,70 @@ class SemanticIngestionAtomicStore:
             )
         except (KeyError, StopIteration, TypeError, ValueError):
             return None
+
+    def _validate_recovery_prepared_lease(
+        self,
+        *,
+        canonical_evidence_lease: CanonicalEvidenceLease,
+        handoff_marker: BootstrapWriterHandoffMarkerV3,
+        authenticated_ingress: object,
+    ) -> bool:
+        """Validate a fresh recovery lease against retained prepared authority."""
+        from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+            CANONICAL_CODEC_REVISION,
+            CANONICAL_PROFILE_REVISION,
+        )
+        from memorii.core.semantic_ingestion.contracts import decode_semantic_contract
+
+        if canonical_evidence_lease._released:
+            return False
+        try:
+            tenant = authenticated_ingress.delivery_principal_binding.tenant_partition_id
+            current = self._writers.current()
+            scope = canonical_evidence_lease.scope
+            evidence = canonical_evidence_lease.result
+            prepared_record = self._memory_plane.get_record(
+                "semantic_ingestion:prepared_source:"
+                + sha256(handoff_marker.source_id.encode("utf-8")).hexdigest()
+            )
+            if prepared_record is None:
+                return False
+            prepared = self._load_prepared_source_record(
+                prepared_record, handoff_marker.source_id, handoff_marker.source_digest
+            )
+            leased_prepared = decode_semantic_contract(
+                evidence.canonical_contract_bytes,
+                type(prepared),
+                max_nodes=20_000,
+                max_depth=128,
+            )
+        except (AttributeError, PreplanningStoreError, TypeError, ValueError):
+            return False
+        return (
+            type(evidence.contract) is type(prepared)
+            and evidence.contract == prepared
+            and leased_prepared == prepared
+            and evidence.canonical_member_index.canonical_digest
+            == sha256(evidence.canonical_contract_bytes).hexdigest()
+            and bool(evidence.member_evidence)
+            and all(
+                member.profile_revision == CANONICAL_PROFILE_REVISION
+                and member.codec_revision == CANONICAL_CODEC_REVISION
+                for member in evidence.member_evidence
+            )
+            and evidence.domain
+            and scope.tenant == tenant
+            and scope.operation == handoff_marker.operation_fence_binding.operation_id
+            and scope.generation == handoff_marker.prepared_generation
+            and scope.fence == handoff_marker.operation_fence_binding.operation_fence_id
+            and scope.writer == f"{current.admission_digest}:{current.writer_epoch}"
+            and handoff_marker.writer_commit_binding.admission_digest
+            == current.admission_digest
+            and handoff_marker.writer_commit_binding.expected_writer_epoch
+            == current.writer_epoch
+            and handoff_marker.prepared_source_digest
+            == sha256(evidence.canonical_contract_bytes).hexdigest()
+        )
 
     def reload_bootstrap_graph_normalization_authority_v3(
         self, *, normalization_replay: object,
@@ -4223,6 +4354,8 @@ class SemanticIngestionAtomicStore:
             )
             authority = decode_semantic_contract(
                 member.canonical_payload, BootstrapGraphNormalizationAuthorityMemberV3,
+                max_nodes=20_000,
+                max_depth=128,
             )
             authority_payload = encode_semantic_contract(authority)
             if (
@@ -4281,11 +4414,16 @@ class SemanticIngestionAtomicStore:
                 if item.kind == "bootstrap_semantic_reduction_authority"
             )
             core = decode_semantic_contract(
-                core_member.canonical_payload, BootstrapNormalizationRequestCoreV3
+                core_member.canonical_payload,
+                BootstrapNormalizationRequestCoreV3,
+                max_nodes=20_000,
+                max_depth=128,
             )
             authority = decode_semantic_contract(
                 authority_member.canonical_payload,
                 BootstrapSemanticReductionAuthorityMemberV3,
+                max_nodes=20_000,
+                max_depth=128,
             )
             core_payload = encode_semantic_contract(core)
             if (
@@ -8343,6 +8481,12 @@ class SemanticIngestionAtomicStore:
                 found_type=BootstrapGraphControlEpochFoundV3,
                 advanced_type=BootstrapGraphControlEpochAdvancedV3,
             )
+        with linearization.exclusive():
+            return self._transition_or_find_bootstrap_graph_control_epoch_v3_linearized(
+                request=request,
+                found_type=BootstrapGraphControlEpochFoundV3,
+                advanced_type=BootstrapGraphControlEpochAdvancedV3,
+            )
 
     def load_bootstrap_graph_control_epoch_v3(
         self, *, request_core_digest: str
@@ -8375,12 +8519,6 @@ class SemanticIngestionAtomicStore:
             return _bootstrap_graph_v3_epoch_from_record(epoch_record)
         except (TypeError, ValueError, KeyError):
             return None
-        with linearization.exclusive():
-            return self._transition_or_find_bootstrap_graph_control_epoch_v3_linearized(
-                request=request,
-                found_type=BootstrapGraphControlEpochFoundV3,
-                advanced_type=BootstrapGraphControlEpochAdvancedV3,
-            )
 
     def _transition_or_find_bootstrap_graph_control_epoch_v3_linearized(
         self, *, request: object, found_type: type, advanced_type: type
@@ -8711,6 +8849,17 @@ class SemanticIngestionAtomicStore:
             if request.kind == "bootstrap_graph_retry_checkpoint"
             else None
         )
+        retry_recovery = (
+            _bootstrap_graph_v3_retry_recovery_record(
+                request=request,
+                authenticated_ingress=authenticated_ingress,
+                required_outcome_scopes=required_outcome_scopes,
+                manifest_id=manifest.memory_id,
+                timestamp=timestamp,
+            )
+            if request.kind == "bootstrap_graph_retry_checkpoint"
+            else None
+        )
         writer_record = self._writers.require_current(request.writer_commit_binding)
         authorization = self._writers._authorize_atomic(
             request.writer_commit_binding,
@@ -8725,6 +8874,7 @@ class SemanticIngestionAtomicStore:
                 manifest,
                 index,
                 *((retry_index,) if retry_index is not None else ()),
+                *((retry_recovery,) if retry_recovery is not None else ()),
             )
             self._memory_plane.conditionally_write_records(
                 written,
@@ -8738,7 +8888,7 @@ class SemanticIngestionAtomicStore:
                             ownership_epoch=request.operation_lease_binding.ownership_epoch,
                         ),
                     ),
-                    *(RecordAbsentPrecondition(memory_id=item.memory_id) for item in (*members, manifest, index, *((retry_index,) if retry_index is not None else ()))),
+                    *(RecordAbsentPrecondition(memory_id=item.memory_id) for item in (*members, manifest, index, *((retry_index,) if retry_index is not None else ()), *((retry_recovery,) if retry_recovery is not None else ()))),
                 ),
                 authorization=authorization,
             )
@@ -8840,6 +8990,72 @@ class SemanticIngestionAtomicStore:
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
         )
+
+    def reload_bootstrap_graph_retry_by_recovery_v3(
+        self, *, normalization_replay: object, authenticated_ingress: object,
+        required_outcome_scopes: object, operation_fence_binding: object,
+    ) -> object | None:
+        """Recover sealed retry progress without requiring a live operation lease."""
+        from memorii.core.semantic_ingestion.contracts import (
+            BootstrapGraphRetryRecoveryLocatorV3,
+        )
+
+        record = self._memory_plane.get_record(
+            _bootstrap_graph_v3_retry_recovery_id(
+                operation_fence_binding.binding_digest
+            )
+        )
+        if record is None:
+            return None
+        if (
+            record.source_kind
+            != "semantic_ingestion_bootstrap_graph_v3_retry_recovery_locator"
+            or record.content.get("semantic_ingestion_kind")
+            != "bootstrap_graph_v3_retry_recovery_locator"
+        ):
+            raise PreplanningStoreError("bootstrap graph retry recovery locator is corrupt")
+        try:
+            locator = BootstrapGraphRetryRecoveryLocatorV3.model_validate(
+                record.content["locator"], strict=False
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise PreplanningStoreError(
+                "bootstrap graph retry recovery locator is corrupt"
+            ) from exc
+        if (
+            locator.operation_fence_binding_digest
+            != operation_fence_binding.binding_digest
+            or locator.normalization_replay_digest != normalization_replay.replay_digest
+            or locator.normalization_result_digest
+            != normalization_replay.source_normalization_result.result_digest
+            or locator.delivery_principal_binding_digest
+            != authenticated_ingress.delivery_principal_binding.binding_digest
+            or locator.required_scope_set_digest
+            != required_outcome_scopes.required_scope_set_digest
+        ):
+            raise PreplanningStoreError("bootstrap graph retry recovery authority is substituted")
+        manifest = self._memory_plane.get_record(locator.checkpoint_manifest_id)
+        index = self._memory_plane.get_record(
+            _bootstrap_graph_v3_idempotency_id(locator.checkpoint_write_digest)
+        )
+        retry_index = self._memory_plane.get_record(
+            _bootstrap_graph_v3_retry_id(locator.request_digest)
+        )
+        if (
+            manifest is None
+            or manifest.source_kind != "semantic_ingestion_bootstrap_graph_v3_manifest"
+            or index is None
+            or index.source_kind != "semantic_ingestion_bootstrap_graph_v3_idempotency"
+            or retry_index is None
+            or retry_index.source_kind
+            != "semantic_ingestion_bootstrap_graph_v3_retry_index"
+            or retry_index.content.get("write_digest")
+            != locator.checkpoint_write_digest
+            or manifest.content.get("request")
+            != locator.checkpoint_request.model_dump(mode="json")
+        ):
+            raise PreplanningStoreError("bootstrap graph retry recovery closure is corrupt")
+        return locator.progress
 
     def reload_bootstrap_graph_terminal_v3(
         self,
@@ -11955,6 +12171,10 @@ def _bootstrap_graph_v3_terminal_recovery_id(recovery_key_digest: str) -> str:
     return "semantic_ingestion:bootstrap-graph-v3:terminal-recovery:" + recovery_key_digest
 
 
+def _bootstrap_graph_v3_retry_recovery_id(operation_fence_binding_digest: str) -> str:
+    return "semantic_ingestion:bootstrap-graph-v3:retry-recovery:" + operation_fence_binding_digest
+
+
 def _bootstrap_graph_v3_terminal_control_id(locator_digest: str) -> str:
     return "semantic_ingestion:bootstrap-graph-v3:terminal-control:" + locator_digest
 
@@ -13003,6 +13223,66 @@ def _bootstrap_graph_v3_retry_record(
         },
         status=CommitStatus.COMMITTED,
         source_kind="semantic_ingestion_bootstrap_graph_v3_retry_index",
+        timestamp=timestamp,
+        visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
+    )
+
+
+def _bootstrap_graph_v3_retry_recovery_record(
+    *, request: object, authenticated_ingress: object,
+    required_outcome_scopes: object, manifest_id: str, timestamp: datetime,
+) -> CanonicalMemoryRecord:
+    from memorii.core.semantic_ingestion.contracts import (
+        BootstrapGraphDurableRetryProgressV3,
+        BootstrapGraphRetryRecoveryLocatorV3,
+        decode_bootstrap_graph_atomic_member_payload_v3,
+    )
+
+    progress_members = tuple(
+        member
+        for member in request.members
+        if member.kind == "bootstrap_graph_retry_progress"
+    )
+    if len(progress_members) != 1:
+        raise PreplanningStoreError("bootstrap graph retry recovery progress is ambiguous")
+    try:
+        progress = BootstrapGraphDurableRetryProgressV3.model_validate(
+            decode_bootstrap_graph_atomic_member_payload_v3(
+                kind=progress_members[0].kind,
+                raw=progress_members[0].canonical_payload,
+            )
+        )
+        locator = BootstrapGraphRetryRecoveryLocatorV3.create(
+            kind="bootstrap_graph_retry_recovery_locator",
+            operation_fence_binding_digest=request.operation_fence_binding.binding_digest,
+            normalization_replay_digest=request.normalization_replay_digest,
+            normalization_result_digest=request.normalization_result_digest,
+            delivery_principal_binding_digest=(
+                authenticated_ingress.delivery_principal_binding.binding_digest
+            ),
+            required_scope_set_digest=required_outcome_scopes.required_scope_set_digest,
+            request_digest=request.request_digest,
+            checkpoint_write_digest=request.write_digest,
+            checkpoint_manifest_id=manifest_id,
+            checkpoint_request=request,
+            progress=progress,
+        )
+    except (TypeError, ValueError) as exc:
+        raise PreplanningStoreError(
+            "bootstrap graph retry recovery progress is invalid"
+        ) from exc
+    return CanonicalMemoryRecord(
+        memory_id=_bootstrap_graph_v3_retry_recovery_id(
+            request.operation_fence_binding.binding_digest
+        ),
+        domain=MemoryDomain.EXECUTION,
+        text="",
+        content={
+            "semantic_ingestion_kind": "bootstrap_graph_v3_retry_recovery_locator",
+            "locator": locator.model_dump(mode="json"),
+        },
+        status=CommitStatus.COMMITTED,
+        source_kind="semantic_ingestion_bootstrap_graph_v3_retry_recovery_locator",
         timestamp=timestamp,
         visibility=MemoryRecordVisibility.INTERNAL_CONTROL,
     )

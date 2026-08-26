@@ -1,0 +1,48 @@
+{
+  "behavioral_evidence": "test_builtin_local_capability_wires_provider_hermes_and_filesystem_without_entrypoint_patch; writer ingress matrix",
+  "caller_counts": {
+    "factory": 1,
+    "filesystem": 1,
+    "hermes": 11
+  },
+  "edges": [
+    [
+      "service_resolve",
+      "memorii/memorii/core/provider/service.py",
+      "ingress = self._resolve_ingress(authenticated_host_ingress)"
+    ],
+    [
+      "service_gate",
+      "memorii/memorii/core/provider/service.py",
+      "if ingress is not None:\n            self._ensure_writer_admission_record()"
+    ],
+    [
+      "capability_deferred",
+      "memorii/memorii/core/semantic_ingestion/capability.py",
+      "writers = SemanticWriterAdmissionStore("
+    ],
+    [
+      "factory",
+      "memorii/memorii/core/provider/factory.py",
+      "ProviderMemoryService("
+    ],
+    [
+      "hermes",
+      "memorii/memorii/integrations/hermes_provider.py",
+      "authenticated_host_ingress=authenticated_host_ingress"
+    ],
+    [
+      "filesystem",
+      "memorii/memorii/core/filesystem_storage/bundle.py",
+      "build_provider_memory_service_from_env("
+    ]
+  ],
+  "schema": "memorii.production-entrypoint-bindings.v13",
+  "source_hashes": {
+    "memorii/memorii/core/filesystem_storage/bundle.py": "91c7676ede308ad1f33d27504a7cf328f0a6ed55194b6aeab701503207fa989d",
+    "memorii/memorii/core/provider/factory.py": "1987d2d6b78e52ef46ab4294394f3d6421dbe6bcbd54fd8cb0c8f9d5842b605d",
+    "memorii/memorii/core/provider/service.py": "7dae2d44c56bc7a904137e9976080f6b44264683e38850bc9b4fb58aac5244b3",
+    "memorii/memorii/core/semantic_ingestion/capability.py": "9026cc5399f47151f65b168bf1aa1fb89820d68b6359187a031980ec40b0f948",
+    "memorii/memorii/integrations/hermes_provider.py": "36f72ec99822bf7d6ca49f3ec25a4addc472f722b6b3a43d18598e1218565648"
+  }
+}

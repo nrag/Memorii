@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "memorii.semantic-ingestion.canonical-evidence.production-trace-frame.v2",
+  "title": "Production-issued canonical evidence trace frame",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["order", "symbol", "source_path", "source_sha256", "status", "authority_digest", "operation_identity"],
+  "properties": {
+    "order": {"type": "integer", "minimum": 0, "maximum": 6},
+    "symbol": {"type": "string", "minLength": 1},
+    "source_path": {"type": "string", "pattern": "^memorii/memorii/"},
+    "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "status": {"enum": ["call", "return"]},
+    "authority_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "operation_identity": {"type": "string", "minLength": 1}
+  }
+}

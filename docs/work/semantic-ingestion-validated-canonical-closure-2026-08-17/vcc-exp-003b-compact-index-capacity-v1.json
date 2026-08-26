@@ -1,0 +1,117 @@
+{
+  "cells": [
+    {
+      "evidence": 18786,
+      "name": "all_paths_reconstruct_exactly",
+      "passed": true
+    },
+    {
+      "evidence": "76db0686fd01f746954dfd5414ad51489d71cc2a15e07ce1cea967bc53d8bf02",
+      "name": "input_order_independent",
+      "passed": true
+    },
+    {
+      "evidence": 238,
+      "name": "root_count_limit",
+      "passed": true
+    },
+    {
+      "evidence": 914013,
+      "name": "per_root_byte_limit",
+      "passed": true
+    },
+    {
+      "evidence": 18786,
+      "name": "member_path_limit",
+      "passed": true
+    },
+    {
+      "evidence": 13484545,
+      "name": "operation_charge_limit",
+      "passed": true
+    },
+    {
+      "evidence": 67108864,
+      "name": "four_operation_process_reservation",
+      "passed": true
+    },
+    {
+      "evidence": 83886080,
+      "name": "fifth_operation_declined",
+      "passed": true
+    },
+    {
+      "evidence": 197,
+      "name": "bounded_type_table",
+      "passed": true
+    },
+    {
+      "evidence": 31763,
+      "name": "bounded_trie",
+      "passed": true
+    },
+    {
+      "evidence": 0.7465744788193113,
+      "name": "metadata_reduced",
+      "passed": true
+    },
+    {
+      "evidence": 3292671,
+      "name": "positive_operation_headroom",
+      "passed": true
+    }
+  ],
+  "certifies_m3_1": false,
+  "compact_metadata_charge": 1834984,
+  "decision": "compact deterministic member index fits the unchanged operation and process limits",
+  "evidence_stage": "reference_only_compact_index_capacity",
+  "experiment": "VCC-EXP-003B",
+  "largest_root_bytes": 914013,
+  "limits": {
+    "maximum_member_paths": 32768,
+    "maximum_operation_charged_bytes": 16777216,
+    "maximum_process_reserved_bytes": 67108864,
+    "maximum_root_bytes": 2097152,
+    "maximum_roots": 512
+  },
+  "measured": {
+    "all_paths_reconstruct_exactly": true,
+    "binding_records": 143,
+    "global_metadata_charge": 29371,
+    "interned_codecs": 1,
+    "interned_domains": 143,
+    "interned_profiles": 1,
+    "interned_types": 197,
+    "logical_index_sha256": "76db0686fd01f746954dfd5414ad51489d71cc2a15e07ce1cea967bc53d8bf02",
+    "member_paths": 18786,
+    "metadata_charge": 1834984,
+    "operation_charge": 13484545,
+    "root_bytes": 11649561,
+    "root_count": 238,
+    "root_metadata_charge": 1805613,
+    "trie_nodes": 31763
+  },
+  "metadata_reduction_fraction": 0.7465744788193113,
+  "naive_metadata_charge": 7240723,
+  "operation_headroom_bytes": 3292671,
+  "passed": true,
+  "passed_cells": 12,
+  "production_implementation_changed": false,
+  "representation": {
+    "binding_record_bytes": 32,
+    "intern_length_bytes": 4,
+    "member_record_bytes": 64,
+    "operation_header_bytes": 4096,
+    "paths": "per-root parent-index trie with interned string segments",
+    "root_record_bytes": 128,
+    "trie_node_bytes": 16,
+    "type_ids": "operation-wide sorted intern table"
+  },
+  "schema": "memorii.semantic-ingestion.vcc-exp-003b.v1",
+  "sources": {
+    "path_proof_sha256": "5dddd53d0c39beb677178f451df7cbbbf8321def3e83c99098914a65e9eae6ed",
+    "prior_capacity_sha256": "2a001807be4f9d43808ded292dce6e3bb102499cebb998f0af10c08d683414f4"
+  },
+  "tests_changed": false,
+  "total_cells": 12
+}

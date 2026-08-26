@@ -17,6 +17,10 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapRecoveryKeyV3,
     BootstrapRecoveryProbeV3,
     BootstrapRecoveryUnavailableV3,
+    ProviderEntityObject,
+    ProviderFact,
+    ProviderMention,
+    ProviderSemanticProposal,
     contract_digest,
 )
 from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
@@ -26,6 +30,37 @@ from tests.unit.core.semantic_ingestion.test_semantic_provider_composition impor
     _host_ingress,
     _v3_normalization_host_builder,
 )
+
+
+def _atlas_owner_proposal() -> ProviderSemanticProposal:
+    """The complete V3 proposal required for Found/consumed recovery cases."""
+    return ProviderSemanticProposal(
+        mentions=(
+            ProviderMention(
+                local_id="atlas",
+                mention_quote="Atlas",
+                mention_context_quote="Atlas owner is Bob.",
+            ),
+            ProviderMention(
+                local_id="bob",
+                mention_quote="Bob",
+                mention_context_quote="Atlas owner is Bob.",
+            ),
+        ),
+        facts=(
+            ProviderFact(
+                local_id="owner",
+                predicate_id="owner_is",
+                subject_entity_ref="atlas",
+                object=ProviderEntityObject(entity_ref="bob"),
+                assertion_quote="Atlas owner is Bob.",
+                predicate_anchor_quote="owner",
+                polarity="positive",
+                commitment="asserted",
+            ),
+        ),
+        abstained=False,
+    )
 
 
 def _service(*, storage, builder) -> ProviderMemoryService:
@@ -220,7 +255,7 @@ def test_jsonl_crash_before_publish_cas_keeps_only_the_live_claim(tmp_path) -> N
 
 def test_jsonl_consumed_claim_cannot_renew_after_found(tmp_path) -> None:
     """The claim consumed by generation-three publication has no replay path."""
-    builder, calls = _v3_normalization_host_builder()
+    builder, calls = _v3_normalization_host_builder(proposal=_atlas_owner_proposal())
     recording_authority = _RecordingBootstrapDerivationAuthority(builder.authority_provider)
     service = _service(
         storage=tmp_path / "consumed-claim",
@@ -241,7 +276,9 @@ def test_jsonl_consumed_claim_cannot_renew_after_found(tmp_path) -> None:
 
 def test_jsonl_fresh_provider_reopens_v3_found_without_reinvoking_any_lane(tmp_path) -> None:
     """A lost acknowledgement reuses byte-identical V3 and terminal closures."""
-    first_builder, first_calls = _v3_normalization_host_builder()
+    first_builder, first_calls = _v3_normalization_host_builder(
+        proposal=_atlas_owner_proposal()
+    )
     first = _service(storage=tmp_path / "plane", builder=first_builder)
     first_result = _sync(first)
     assert first_calls == {
@@ -262,7 +299,9 @@ def test_jsonl_fresh_provider_reopens_v3_found_without_reinvoking_any_lane(tmp_p
 
     # A new store handle and service instance simulate process loss after the
     # first commit but before its caller receives the acknowledgement.
-    second_builder, second_calls = _v3_normalization_host_builder()
+    second_builder, second_calls = _v3_normalization_host_builder(
+        proposal=_atlas_owner_proposal()
+    )
     second = _service(storage=tmp_path / "plane", builder=second_builder)
     second_result = _sync(second)
 

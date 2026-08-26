@@ -1,0 +1,89 @@
+{
+  "schema": "memorii.semantic-ingestion.canonical-evidence.candidate-lock.v9",
+  "immutable_path": "docs/design/semantic_ingestion_canonical_evidence/candidate-lock-v1.json",
+  "algorithm": "sha256",
+  "supersedes": "0731a9ef2753a8fd3908af27901f3def58de91db2c443d6b83bc159e4eddbdaf",
+  "scope": "frozen design and every runner/validator/pre-import consumed authority, concrete pre-capture schedule, post-capture result-binding schema, terminal durable-effect receipt contract, execution lock, and result-lock schema; excludes this lock and WorkPlans",
+  "artifacts": {
+    "design": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence_performance.md",
+      "sha256": "01619fd9c2e67385ce4b433cb200c83da06627e2473f4e9f374fb6286bc776fe"
+    },
+    "verification_contract": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/verification-contract-v1.json",
+      "sha256": "fdcd97f2a93c9fb82b46714c20aff75f4723feac10d870a414692c4042515d93"
+    },
+    "binding_map": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/production-entrypoint-bindings-v1.json",
+      "sha256": "a6fcea628b15908fa9f7f1fc5929f646c4550442a482168bf6b1588560ec0b78"
+    },
+    "performance_schema": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/performance-run-schema-v1.json",
+      "sha256": "b12d307bcd4ca24fe24f065295cc531a528bfd450a7e1278634fb30a14712b8a"
+    },
+    "standard_fixture_schema": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/standard-fixture-schema-v1.json",
+      "sha256": "ef324f0549a500ac22e9ca80f71759a0f7a3a48ea3f3c8c70712664fb7af59ef"
+    },
+    "fixture_manifest": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/standard-fixture-manifest-v1.json",
+      "sha256": "912a4548ff25a7c5f36be386828d75ac15f2bb12c8e531bdb38b5e5e87bc97c7"
+    },
+    "production_sources": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/production-source-manifest-v1.json",
+      "sha256": "ee88fd9c0c038ccc83e5449152062619507c620cf461cd01e793f2f9cd4f7713"
+    },
+    "event_schema": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/event-schema-v1.json",
+      "sha256": "c34a55af1d342357dcd5636b61c5fe06003d014c8b05625baebbc0bff08f74c2"
+    },
+    "receipt_schema": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/receipt-schema-v1.json",
+      "sha256": "f75b321b8578e5b734d839be7e0af81c615ec6bb9315aada4c15dd8bb5865210"
+    },
+    "runner": {
+      "path": "memorii/tests/fixtures/semantic_ingestion/canonical_evidence_performance_runner.py",
+      "sha256": "216ef538a3c08e37deb97de1dc911b02b4fe7def23dae8eb26cef5739d4e8492"
+    },
+    "recipe": {
+      "path": "memorii/tests/fixtures/semantic_ingestion/canonical_evidence_production_matrix.py",
+      "sha256": "da8b50a684fd42d379fda1c6140abd3305dcd5823426cc0798c0d5c6e2a6273f"
+    },
+    "artifact_validator": {
+      "path": "memorii/tests/fixtures/semantic_ingestion/canonical_evidence_artifact_validator.py",
+      "sha256": "19cc94f6a4bbc9adf66cff4986e6dc6d69d8465a9253ce2b9e6c9c8b89c0fcc3"
+    },
+    "lock_resolver": {
+      "path": "memorii/tests/fixtures/semantic_ingestion/canonical_evidence_lock_resolver.py",
+      "sha256": "75c361342b30c0723e33d1b5fd2e96bfd1565766d55109e692af858654e5260e"
+    },
+    "thin_fixture_grammar": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/thin-fixture-ast-grammar-v1.json",
+      "sha256": "f4aea3ad11c4d8cb1385e8412d1b2080856606592cec1f99a64af491efff2095"
+    },
+    "preimport_launcher": {
+      "path": "memorii/tests/fixtures/semantic_ingestion/canonical_evidence_preimport_gate.sh",
+      "sha256": "aab521a391b27f2c632ffd79cabe330cca4631ae5a78acc335e7be46614d72fe"
+    },
+    "evidence_manifest_schema": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/evidence-manifest-schema-v1.json",
+      "sha256": "714fedfbdf7297a9d7c2e6a59f4a5b3ab012ba7d61457b1bf56665d364060d71"
+    },
+    "result_lock_schema": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/result-lock-schema-v1.json",
+      "sha256": "9bf9692fbbd49c2822626f885f145b30381dcc7844abde3058005f778bc85b8a"
+    },
+    "comparison_authority_schema": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/comparison-authority-schema-v1.json",
+      "sha256": "40fc94a44969ece1cfac90950ae2adc40e42ce80060532827dd100b1bdea9011"
+    },
+    "comparison_schedule_authority": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/comparison-schedule-authority-v1.json",
+      "sha256": "2d91fbc5cf0388b09adb814dc62aa4c8753d3fb589b3c34a1df31067d127a23c"
+    },
+    "comparison_result_binding_schema": {
+      "path": "docs/design/semantic_ingestion_canonical_evidence/comparison-result-binding-schema-v1.json",
+      "sha256": "d3691ddc2bf6732fe37e586f9d3251c8a2b3611863dc051f1ce716006ef6eaac"
+    }
+  }
+}

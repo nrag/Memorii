@@ -1,6 +1,8 @@
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import pytest
 from memorii.core.llm_config import LLMRuntimeConfig
@@ -20,8 +22,10 @@ from memorii.core.provider.models import (
     ProviderEvolutionOutcome,
     ProviderOperation,
     ProviderStoredRecord,
+    ProviderSyncResult,
 )
 from memorii.core.provider.service import ProviderMemoryService
+from memorii.core.semantic_ingestion.capability import BuiltInLocalHostSemanticIngestionCapability
 from memorii.domain.enums import (
     ExtractionRunStatus,
     FinalExtractionSource,
@@ -31,6 +35,14 @@ from memorii.domain.enums import (
 )
 from memorii.integrations.hermes_provider import HermesMemoryProvider
 from pydantic import ValidationError
+from tests.fixtures.semantic_ingestion.host_bootstrap_authority import (
+    DeterministicTestHostBootstrapMaterialVerifier,
+    build_test_host_verified_bootstrap_release_evidence,
+    present_authenticated_host_bootstrap_material,
+)
+from tests.fixtures.semantic_ingestion.scenario_fixture_authority import (
+    build_scenario_test_host_capability,
+)
 
 
 class _FailFirstTurnExtractor(EnglishRuleMemoryExtractor):
@@ -44,6 +56,44 @@ class _FailFirstTurnExtractor(EnglishRuleMemoryExtractor):
         return super().extract(observations)
 
 
+def _build_production_scoped_provider_service(
+    *, source_normalization_host_bundle_builder=None, bootstrap_graph_host_bundle_builder=None,
+) -> ProviderMemoryService:
+    scenario_capability = build_scenario_test_host_capability()
+    scenario_material = scenario_capability.bootstrap_material_presentation.material
+    production_material = replace(
+        scenario_material,
+        release_evidence=build_test_host_verified_bootstrap_release_evidence(
+            metadata=scenario_material.release_metadata,
+            external_root_digest=scenario_material.release_evidence.external_root_digest,
+            active_lifecycle_snapshot_digest=(
+                scenario_material.release_evidence.active_lifecycle_snapshot_digest
+            ),
+            verified_at=scenario_material.release_evidence.verified_at,
+            trust_domain="production",
+        ),
+        trust_domain="production",
+    )
+    return ProviderMemoryService(
+        host_bootstrap_capability=BuiltInLocalHostSemanticIngestionCapability(
+            bootstrap_material_presentation=present_authenticated_host_bootstrap_material(
+                production_material
+            ),
+            authorization_bytes=scenario_capability.authorization_bytes,
+            authorization_verifier=scenario_capability.authorization_verifier,
+            policy_provider=scenario_capability.policy_provider,
+            current_bootstrap_release_verifier=scenario_capability.current_bootstrap_release_verifier,
+            # Production capabilities cannot carry the scenario-only writer
+            # activation authority. A production writer must already be
+            # activated by its own durable migration path.
+            initial_writer_activation=None,
+            source_normalization_host_bundle_builder=source_normalization_host_bundle_builder,
+            bootstrap_graph_host_bundle_builder=bootstrap_graph_host_bundle_builder,
+        ),
+        host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
+    )
+
+
 def test_default_provider_composition_is_source_admission_only() -> None:
     service = ProviderMemoryService()
 
@@ -54,12 +104,107 @@ def test_default_provider_composition_is_source_admission_only() -> None:
         task_id="task:default-evolution",
     )
 
+    snapshots = service._canonical_closure_dispatcher.snapshots
+    assert len(snapshots) == 1
+    assert snapshots[0].mode == "disabled_full_path"
+    assert snapshots[0].terminal_reason == "feature-disabled"
+    assert snapshots[0].released
+    assert "Atlas migration owner is Bob." not in repr(snapshots[0])
+
     with pytest.raises(
         RuntimeError,
         match=re.escape("memory evolution is unavailable in the governed-source admission source-only configuration"),
     ):
         _ = service.memory_evolution_service
     assert service.last_memory_evolution_result() is None
+
+
+def test_sync_event_default_path_keeps_canonical_arena_disabled() -> None:
+    service = ProviderMemoryService()
+    observed: list[bool] = []
+
+    def _fake_ingest(*args, **kwargs):
+        del args
+        observed.append(kwargs["canonical_evidence_arena"].enabled)
+        return ProviderSyncResult(), None, None
+
+    with patch.object(service._provider_ingestion, "ingest", side_effect=_fake_ingest):
+        service.sync_event(
+            operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+            content="Atlas migration owner is Bob.",
+            operation_id="test:disabled-sync-event",
+            task_id="task:disabled-sync-event",
+        )
+
+    assert observed == [False]
+
+
+def test_apply_memory_write_default_path_keeps_canonical_arena_disabled() -> None:
+    service = ProviderMemoryService()
+    observed: list[bool] = []
+
+    def _fake_ingest(*args, **kwargs):
+        del args
+        observed.append(kwargs["canonical_evidence_arena"].enabled)
+        return ProviderSyncResult(), None, None
+
+    with patch.object(service._provider_ingestion, "ingest", side_effect=_fake_ingest):
+        service.apply_memory_write(
+            operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+            content="Atlas migration owner is Bob.",
+            session_id=None,
+            task_id="test:disabled-memory-write",
+            user_id=None,
+            action="upsert",
+            target="memory",
+            operation_id="test:disabled-memory-write",
+        )
+
+    assert observed == [False]
+
+
+def test_sync_event_production_profile_path_enables_canonical_evidence_arena() -> None:
+    service = _build_production_scoped_provider_service()
+    observed: list[bool] = []
+
+    def _fake_ingest(*args, **kwargs):
+        del args
+        observed.append(kwargs["canonical_evidence_arena"].enabled)
+        return ProviderSyncResult(), None, None
+
+    with patch.object(service._provider_ingestion, "ingest", side_effect=_fake_ingest):
+        service.sync_event(
+            operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+            content="Atlas migration owner is Bob.",
+            operation_id="test:enabled-sync-event",
+            task_id="task:enabled-sync-event",
+        )
+
+    assert observed == [True]
+
+
+def test_apply_memory_write_production_profile_path_enables_canonical_evidence_arena() -> None:
+    service = _build_production_scoped_provider_service()
+    observed: list[bool] = []
+
+    def _fake_ingest(*args, **kwargs):
+        del args
+        observed.append(kwargs["canonical_evidence_arena"].enabled)
+        return ProviderSyncResult(), None, None
+
+    with patch.object(service._provider_ingestion, "ingest", side_effect=_fake_ingest):
+        service.apply_memory_write(
+            operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+            content="Atlas migration owner is Bob.",
+            session_id=None,
+            task_id="test:enabled-memory-write",
+            user_id=None,
+            action="upsert",
+            target="memory",
+            operation_id="test:enabled-memory-write",
+        )
+
+    assert observed == [True]
 
 
 def test_provider_preserves_caller_owned_event_time() -> None:
