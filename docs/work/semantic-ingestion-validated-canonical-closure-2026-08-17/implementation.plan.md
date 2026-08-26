@@ -3,7 +3,7 @@
 ## Operation And Baseline
 
 - Work type: `implementation`.
-- Status: `in progress; canonical-closure remediation reopened after ambient-authority and capacity defects`.
+- Status: `in progress; recovery/reconciliation milestone resumed 2026-08-26 after linked debugging closure`.
 - Repository: `Memorii`.
 - Approved design:
   `docs/design/semantic_ingestion_validated_canonical_closure.md`.
@@ -26,7 +26,11 @@
 - Active milestone packet:
   `docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/recovery-reconciliation-fresh-owner-propagation.md`.
 - Active linked operation:
-  `docs/work/semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md`.
+  `docs/work/semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md`
+  (complete 2026-08-26; closure reviewed by `spec_auditor`,
+  `correctness_reviewer`, and `test_reviewer` with
+  `remaining_validated_p1_p2: []`; follow-ups transferred into the active
+  milestone packet and the later trigger-family milestone).
 
 ## Objective
 
@@ -125,7 +129,7 @@ Excluded:
 | Readiness and production-path map | One revision-bound map of owners, callers, tests, gates, dirty-tree ownership, and exact validation commands; no writer starts before approval | All | complete |
 | Direct ingress closure slice | Prepared-source `sync_event` stages, seals, leases, and reaches atomic handoff | R02-R10 partial; R03/R04/R07/R08/R11/R12 locally supported | active remediation |
 | Complete trigger and durable-path propagation | Direct prepared-source handoff is evidenced; composite, memory-write, Hermes, recovery, replay, and other durable consumers remain unproven | R02-R10, R11-R12 | active remediation / partial |
-| Recovery/reconciliation fresh-owner propagation | `reconcile_memory_evolution -> reconcile -> _run_semantic_ingestion -> reload_bootstrap_recovery_replay_v3`; fresh-owner wiring is present, but public recovery/replay baseline failures require linked causal isolation | R02/R03/R05-R12; R01 measurement contribution only | paused / linked debugging operation active |
+| Recovery/reconciliation fresh-owner propagation | `reconcile_memory_evolution -> reconcile -> _run_semantic_ingestion -> reload_bootstrap_recovery_replay_v3`; fresh-owner wiring is present, blockers cleared by linked debugging closure, focused matrix running | R02/R03/R05-R12; R01 measurement contribution only | active |
 | Performance, rollout, gates, and final closure | Full acceptance matrix, 90 percent production-bound reduction, capacity/concurrency/privacy attacks, rollback equivalence, docs, CI, frozen revision, and final whole-branch review | All | pending |
 
 Milestone labels organize work only and may not appear in production or test
@@ -362,5 +366,6 @@ resolved inside this WorkPlan.
 
 ## Next Action
 
-Await the linked debugging operation's causal signatures before resuming the
-paused recovery/reconciliation implementation milestone.
+Run the resumed recovery/reconciliation milestone's deterministic validation
+matrix through the public recovery root, then absorb its transferred
+follow-ups before extending closure to the remaining trigger families.

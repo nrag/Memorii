@@ -2,10 +2,10 @@
 
 - Work ID: `semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18`
 - Work type: `debugging`
-- Status: `under-review`
+- Status: `complete; closure record appended 2026-08-26`
 - Coordinator: Codex sole writer
 - Created: `2026-08-18`
-- Last updated: `2026-08-19`
+- Last updated: `2026-08-26`
 - Parent WorkPlan: `../semantic-ingestion-validated-canonical-closure-2026-08-17/implementation.plan.md`
 - Related WorkPlans: `../semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/recovery-reconciliation-fresh-owner-propagation.md`
 - Canonical inputs: root `AGENTS.md`, `.agents/PLANS.md`,
@@ -321,9 +321,11 @@ failure is not explained by a current-tree byte-codec drift.
 | Test-review consultation | test reviewer | unavailable due inappropriate freeze gating; parent acceptance matrix retained | unavailable |
 | Correctness-reviewer Phase-5 refusal | correctness reviewer | candidate freeze is Phase 8, while Phase 5 was pre-fix causal isolation | unsupported; not a root-cause finding |
 
-## Next Action
+## Next Action (superseded 2026-08-19)
 
-Run independent delta review against debug candidate v3.
+Run independent delta review against debug candidate v3. Superseded by the
+later evidence rounds and the 2026-08-26 closure record; the review ran
+against `debug-candidate-identity-v4.json`.
 
 ## Closure-Finding Reconciliation Round 2
 
@@ -406,10 +408,11 @@ Run independent delta review against debug candidate v3.
   this bounded test-only slice; it establishes regression evidence but does
   not claim the parent runtime/persistence milestone complete.
 
-## Next Action
+## Next Action (superseded 2026-08-26)
 
 Run independent delta review against debug candidate v3, including this
-writer-admission evidence update.
+writer-admission evidence update. Superseded by the closure record: the review
+ran against `debug-candidate-identity-v4.json`.
 
 ## V14 Production-Binding Evidence
 
@@ -426,5 +429,105 @@ writer-admission evidence update.
   pre-resolution order, and unrelated fake caller count. The validator also
   pins hashes for service, capability, production authority, factory, Hermes,
   filesystem, production capture, and the focused composition tests.
-- This refresh is evidence only. `debug-candidate-identity-v3.json` remains
-  unfrozen and was intentionally not regenerated.
+- This refresh is evidence only. At the time it was written,
+  `debug-candidate-identity-v3.json` remained unfrozen and was intentionally
+  not regenerated; the closure review later ran against
+  `debug-candidate-identity-v4.json` (see the closure record).
+
+## Closure Record (2026-08-26)
+
+### Candidate Freeze
+
+- Review candidate: `debug-candidate-identity-v4.json`, superseding v1-v3.
+- Reviewed revision: `5bd516bf4b576d927f1a32edb01531b6f18419e6` (clean tree;
+  the untracked candidate artifact itself follows the established
+  self-exclusion convention).
+- Scope: the WA correction slice in
+  `memorii/memorii/core/provider/service.py`, the V3 replay/reopen
+  test-contract corrections, `capability.py`, and the v14 binding artifacts.
+  Parent-operation arena changes in the same files remain out of scope.
+- Freeze evidence rerun at the pinned revision from `memorii/`:
+  - Writer-admission focused matrix (5 functions, parametrized): `9 passed in
+    17.95s` (`../.venv/bin/python3.12 -W error -m pytest ... -p
+    no:cacheprovider`).
+  - `test_bootstrap_recovery_replay_v3.py` plus
+    `test_bootstrap_v3_recovery_reopen.py`: `9 passed in 752.70s`.
+
+### Review Log
+
+Reviewers (concurrent, read-only, independent): `spec_auditor`,
+`correctness_reviewer`, `test_reviewer`. All three independently verified the
+candidate hashes and v14 binding artifacts; the correctness and test reviewers
+independently reran focused tests (all green) and mutation-verified regression
+causality.
+
+| Reviewer | Verdict | Key confirmations |
+| --- | --- | --- |
+| `spec_auditor` | approve closure; no P1/P2; no blocks/changes-required | WA authority chain preserves fail-closed semantics with no schema/event change; deletion of the legacy outage test defensible; v14 binding ledger conformant |
+| `correctness_reviewer` | approve closure; no P1/P2; no blocks/changes-required | WA root-cause model confirmed for the complete public-root equivalence class (ordering, construction write-freedom, exactly-once init, fail-closed on both backends); VR abstention closure structurally confirmed with production code untouched |
+| `test_reviewer` | approve closure; no P1/P2; no blocks/changes-required | All six WA regression tests mutation-verified non-vacuous; VR fixture correction causally pinned; no identity leakage or gate weakening |
+
+Coordinator finding reconciliation (all dispositions `confirmed`; none
+`changes_required` or `blocks_approval`; product-priority findings are all
+`P3/follow_up`, governance findings `Not applicable/follow_up`):
+
+| Finding (source) | Classification | Disposition |
+| --- | --- | --- |
+| Deleted outage test leaves the resume-with-exactly-once-redelivery class unproven (`spec_auditor` F1; `test_reviewer` F7) | P3 / follow_up / verification | duplicate of each other; confirmed; transferred to parent recovery packet |
+| Runtime-validation deferral and evidence-only bootstrap of runtime-writer compositions diverge from base and need parent ratification plus a focused test (`spec_auditor` F3; `correctness_reviewer` F2; `test_reviewer` F5) | P3 / follow_up / runtime behavior | confirmed as one family; transferred to parent recovery packet |
+| WA family proof gaps: existing-record and absent-ingress cells unproven for factory/Hermes/filesystem roots; JSONL variants and no-runtime construction assertion missing; foreign-manifest case relies on defense-in-depth (`test_reviewer` F1, F2, F3, F4, F6) | P3 / follow_up / verification | confirmed; transferred to parent trigger-family milestone |
+| `_owns_writer_admission_record` is a vestigial no-op flag (`correctness_reviewer` F1) | P3 / follow_up / architecture | confirmed; cleanup rides the next parent-owned service.py edit |
+| Plan hygiene: stale v3 references, superseded test names in evidence commands, duplicate Next Action headers (`spec_auditor` F2; `correctness_reviewer` F3; `test_reviewer` F8, F9) | Not applicable / follow_up / governance | confirmed; corrected in this closure record (headers marked superseded, references annotated) |
+
+### Closure Record
+
+```yaml
+base_revision: b9daf00a0e6956e51106756f1baaf23190c688bb
+reviewed_revision: 5bd516bf4b576d927f1a32edb01531b6f18419e6
+tested_revision: 5bd516bf4b576d927f1a32edb01531b6f18419e6
+tested_tree_digest: 5bd516bf4b576d927f1a32edb01531b6f18419e6 (clean; one
+  untracked self-excluded review artifact debug-candidate-identity-v4.json)
+tree_state: clean
+changed_surface_inventory_complete: true
+scope_delta_resolved: true (parent arena changes in shared files explicitly
+  excluded and owned by the parent operation)
+authority_chains_complete: true (v14 binding ledger current with exact
+  callsite/authority chains and nonzero caller census)
+required_local_jobs: [writer-admission focused matrix, replay/reopen modules,
+  ruff on changed python files]
+passed_local_jobs: [writer-admission focused matrix 9 passed in 17.95s,
+  replay/reopen modules 9 passed in 752.70s, ruff clean]
+known_local_failures: [pre-existing test_semantic_provider_composition module
+  failures and test_provider_service.py::test_provider_preserves_caller_owned_event_time]
+failure_exclusions: [pre-existing at clean base b9daf00 verified in an
+  isolated worktree 2026-08-26; module went 45->43 failed between base and
+  reviewed revision, i.e. net improvement; these belong to the parent
+  operation's broad-gate reconciliation]
+workflow_identities: []
+ci_event: not_applicable (local revision-bound closure; no CI claim made)
+ci_executed_sha: not_applicable
+ci_executed_ref: not_applicable
+remaining_validated_p1_p2: []
+remaining_blocks_approval: []
+remaining_changes_required: []
+local_ci_parity: not_applicable
+acceptance_gate_inventory: []
+github_run_urls: []
+pr_head_sha: not_applicable
+pr_base_sha: not_applicable
+merge_base_sha: not_applicable
+required_checks_green: not_applicable
+```
+
+Both causal families are closed: the WA correction is confirmed as the
+smallest correct fix with mutation-verified regressions, and the VR failure
+family is confirmed as a baseline fixture-contract mismatch corrected in tests
+only. No code, tests, fixtures, generated artifacts, dependencies, or
+workflows in this operation's scope change after this record.
+
+## Next Action
+
+The debugging operation is complete. The parent operation resumes its paused
+recovery/reconciliation milestone under
+`docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/recovery-reconciliation-fresh-owner-propagation.md`,
+absorbing the transferred follow-ups recorded above.

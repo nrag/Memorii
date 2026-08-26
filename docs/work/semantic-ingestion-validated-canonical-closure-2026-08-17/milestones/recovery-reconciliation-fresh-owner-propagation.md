@@ -1,10 +1,11 @@
 # Recovery/Reconciliation Fresh-Owner Propagation
 
 - Parent WorkPlan: `../implementation.plan.md`
-- Status: paused; linked debugging operation owns baseline causal isolation
-- Linked debugging WorkPlan:
+- Status: active; resumed 2026-08-26 after linked debugging closure
+- Linked debugging WorkPlan (complete):
   `../../semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md`
-- Base revision: `b9daf00a0e6956e51106756f1baaf23190c688bb` plus the active dirty-tree remediation state
+- Base revision: `5bd516bf4b576d927f1a32edb01531b6f18419e6` (closure commit of
+  the linked debugging operation; supersedes `b9daf00a` plus dirty tree)
 - Prior implementation candidate: `implementation-candidate-manifest-v1.json` is superseded; no current implementation candidate is claimed
 
 ## Objective
@@ -160,7 +161,41 @@ until that operation records a causal result.
 - Round-3 debug work confirms writer-admission construction safety is resolved;
   only the transferred V3 authority/reconcile scope remains for this packet.
 
-## Next Action
+## Next Action (superseded 2026-08-26)
 
 Await the linked debugging operation's causal signatures before resuming this
 implementation milestone.
+
+## Resumption Record (2026-08-26)
+
+- The linked debugging operation completed with all three independent
+  reviewers approving closure (`remaining_validated_p1_p2: []`); its closure
+  record and candidate `debug-candidate-identity-v4.json` are at revision
+  `5bd516bf4b576d927f1a32edb01531b6f18419e6`.
+- Both former blockers are cleared: the writer-admission reopen conflict is
+  corrected in the linked operation, and the no-lease V3 replay reload family
+  is a corrected test contract (complete Atlas/Bob proposal for Found/consumed;
+  abstained stays claimed/no-replay). The focused recovery/replay proofs this
+  packet planned are now reachable.
+- Transferred review follow-ups absorbed into this milestone's matrix:
+  1. Resume-after-recovered-outage with exactly-once redelivery and
+     `evolution_committed` has no remaining proof after the legacy outage test
+     deletion; this packet's durable/replay identity row must add that class
+     with a governing-doc citation for the V3 ordering contract.
+  2. The deferred `_validate_semantic_runtime_after_ingress` behavior
+     (validation at first resolved ingress instead of construction, and
+     evidence-only bootstrap of runtime-writer compositions over planes with
+     no writer record) must be ratified against governing documents and pinned
+     by a focused test; the `_provider_ingestion._semantic_runtime` private
+     bridge should be removed in favor of a stored constructor reference.
+- Remaining transferred follow-ups owned by the later trigger-family
+  milestone (not this packet): WA family-proof gaps across
+  factory/Hermes/filesystem roots and JSONL variants, the no-runtime
+  construction no-write assertion, the foreign-manifest defense-in-depth
+  pin, and the vestigial `_owns_writer_admission_record` cleanup.
+
+## Next Action
+
+Run this packet's planned deterministic validation matrix against the current
+revision, starting with the fresh-owner-per-recovery-invocation and
+stage-then-bind/seal ordering proofs through the public recovery root.
