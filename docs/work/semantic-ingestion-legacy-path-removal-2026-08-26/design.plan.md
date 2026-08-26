@@ -1,8 +1,9 @@
 # Semantic Ingestion Legacy-Path Removal Design WorkPlan
 
 - Work type: `design` (substantial revision; `$build-design` process).
-- Status: `active; user decision recorded, census complete, slice plan
-  drafted; implementation not started`.
+- Status: `complete; user decision recorded, census complete, slice plan
+  approved. Execution runs in the linked implementation WorkPlan
+  `implementation.plan.md` (opened 2026-08-26; this plan was not converted).`
 - Created: `2026-08-26`.
 - Related operations:
   - `../semantic-ingestion-suite-reconciliation-2026-08-26/design.plan.md`
@@ -102,4 +103,5 @@ normalization publication. Production surfaces carrying the legacy path:
 
 ## Next Action
 
-Confirm this plan (or amend slices), then execute slice 1.
+None for this design plan; the operation is executed in the linked
+`implementation.plan.md` (its next action: slice 1).
