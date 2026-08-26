@@ -3,7 +3,7 @@
 ## Operation And Baseline
 
 - Work type: `implementation`.
-- Status: `in progress; recovery/reconciliation milestone resumed 2026-08-26 after linked debugging closure`.
+- Status: `in progress; trigger-family and recovery milestones complete 2026-08-26; performance milestone active`.
 - Repository: `Memorii`.
 - Approved design:
   `docs/design/semantic_ingestion_validated_canonical_closure.md`.
@@ -24,7 +24,13 @@
 - Parent design WorkPlan:
   `docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/design.plan.md`.
 - Active milestone packet:
-  `docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/recovery-reconciliation-fresh-owner-propagation.md`.
+  `docs/work/semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/performance-rollout-gates-and-final-closure.md`
+  (to be created at performance-milestone start; until then the recovery and
+  trigger-family packets record the latest completed evidence).
+- Completed milestone packets: `direct-ingress-closure-slice.md`,
+  `complete-trigger-and-durable-path-propagation.md` (family-proof closure
+  2026-08-26), and `recovery-reconciliation-fresh-owner-propagation.md`
+  (redelivery-door closure 2026-08-26, reconcile-branch disposition pending).
 - Active linked operation:
   `docs/work/semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md`
   (complete 2026-08-26; closure reviewed by `spec_auditor`,
@@ -109,28 +115,28 @@ Excluded:
 
 | Requirement | Implementation | Tests | Other evidence | Status |
 | --- | --- | --- | --- | --- |
-| `VCC-R01` digest reduction | None | None | Approved reference counterfactual | not started |
-| `VCC-R02` one-pass canonical result | prepared-source staging is explicit; other families remain unproven | production-root focused proof | remediation slice | partial |
-| `VCC-R03` typed non-ambient authority | explicit sealed-only binding; no nonce/ambient owner edge | arena tests + v11 | remediation slice | supported locally/partial production |
+| `VCC-R01` digest reduction | substitution wired at writer handoff and replay reload for all families; codec-level child-slice reuse and production-bound measurement not started | None | Approved reference counterfactual (42,955 baseline vs 176 counterfactual) | not started (performance milestone is next) |
+| `VCC-R02` one-pass canonical result | prepared-source staging is explicit through every trigger family; lease reaches both durable consumers | family + recovery production-root proofs | milestone packets | supported in production for all families |
+| `VCC-R03` typed non-ambient authority | explicit sealed-only binding; fresh arena per delivery through every family root | arena tests, v11, family proofs | milestone packets | supported in production for all families |
 | `VCC-R04` exact path/span identity | traversal-issued member evidence including equal-value paths | arena tests | remediation slice | supported locally |
-| `VCC-R05` complete semantic validation | prepared-source family retains validation before staging; other families incomplete | production-root proof | remediation slice | partial |
-| `VCC-R06` fresh writer admission | prepared-source atomic handoff checks fresh writer | production-root proof | remediation slice | partial |
-| `VCC-R07` scope and provenance rejection | five-coordinate sealed checks | arena tests + v11 | remediation slice | supported locally/partial production |
+| `VCC-R05` complete semantic validation | staging occurs only after preparation/publication validation on every family path | family + recovery production-root proofs | milestone packets | supported in production for all families |
+| `VCC-R06` fresh writer admission | atomic handoff and replay reload recheck current writer on every family path | family + recovery production-root proofs | milestone packets | supported in production for all families |
+| `VCC-R07` scope and provenance rejection | five-coordinate sealed checks at both lease consumers | arena tests + v11 + production mutation proof (`test_redelivery_recovery_rejects_mutated_lease_coordinates`) | milestone packets | supported in production |
 | `VCC-R08` bounded coherent capacity and lease drain | four reservations/fifth refusal/reacquisition; unique lease tokens drain after close | 29 focused arena tests | remediation slice | supported locally |
-| `VCC-R09` persistence and replay identity | prepared-source redelivery preserves prepared/marker bytes and reloads through atomic handoff; replay incomplete | production-root redelivery proof | remediation slice | partial |
-| `VCC-R10` complete production reachability | one real prepared-source root proven; other roots incomplete | production-root proof + v11 | remediation slice | partial |
-| `VCC-R11` content-free observability | service-owned retaining dispatcher; typed terminal snapshots; unavailable parity | arena terminal tests plus enabled/disabled production-root tests | remediation slice | supported locally/partial production |
-| `VCC-R12` disabled/rejected rollback | local disabled/refused full-path behavior | arena tests | remediation slice | supported locally |
+| `VCC-R09` persistence and replay identity | redelivery recovery preserves prepared/marker bytes, reloads through the leased atomic consumer, and matches enabled/disabled outcomes and durable projections | redelivery recovery proofs (fresh-owner, mutation, mode-parity) | recovery packet | supported in production for the redelivery family |
+| `VCC-R10` complete production reachability | direct, composite, memory-write, Hermes turn/write, and redelivery recovery roots all stage, seal, lease, and consume | family production-root proofs (4 cases), recovery proofs (3 cases) | milestone packets | supported in production for all mapped families; reconcile-door structural finding recorded |
+| `VCC-R11` content-free observability | service-owned retaining dispatcher emits exactly one content-free terminal snapshot per delivery on every family | arena terminal tests plus per-family production-root assertions | milestone packets | supported in production for all families |
+| `VCC-R12` disabled/rejected rollback | local disabled/refused full-path behavior; redelivery mode-parity proof (outcomes, durable projections, idempotence) | arena tests + mode-parity production proof | recovery packet | supported locally plus redelivery parity |
 
 ## Milestone Roadmap
 
 | Milestone | Observable vertical outcome | Requirements | Status |
 | --- | --- | --- | --- |
 | Readiness and production-path map | One revision-bound map of owners, callers, tests, gates, dirty-tree ownership, and exact validation commands; no writer starts before approval | All | complete |
-| Direct ingress closure slice | Prepared-source `sync_event` stages, seals, leases, and reaches atomic handoff | R02-R10 partial; R03/R04/R07/R08/R11/R12 locally supported | active remediation |
-| Complete trigger and durable-path propagation | Direct prepared-source handoff is evidenced; composite, memory-write, Hermes, recovery, replay, and other durable consumers remain unproven | R02-R10, R11-R12 | active remediation / partial |
-| Recovery/reconciliation fresh-owner propagation | `reconcile_memory_evolution -> reconcile -> _run_semantic_ingestion -> reload_bootstrap_recovery_replay_v3`; fresh-owner wiring is present, blockers cleared by linked debugging closure, focused matrix running | R02/R03/R05-R12; R01 measurement contribution only | active |
-| Performance, rollout, gates, and final closure | Full acceptance matrix, 90 percent production-bound reduction, capacity/concurrency/privacy attacks, rollback equivalence, docs, CI, frozen revision, and final whole-branch review | All | pending |
+| Direct ingress closure slice | Prepared-source `sync_event` stages, seals, leases, and reaches atomic handoff | R02-R10 partial; R03/R04/R07/R08/R11/R12 locally supported | complete |
+| Complete trigger and durable-path propagation | Direct, composite, memory-write, and Hermes hooks each proven to stage, seal, lease, and consume at both durable consumers | R02-R12 | complete (2026-08-26, `02502eb`); builder-blocked writer-preservation cells recorded as follow-ups |
+| Recovery/reconciliation fresh-owner propagation | V3 mid-ingestion recovery proven through the redelivery door with fresh owner, sealed lease into the replay reload, five-coordinate rejection, and enabled/disabled parity; reconcile branch structural finding recorded with pending repair-or-remove decision | R02/R03/R05-R12; R01 measurement contribution only | complete for the redelivery door (2026-08-26, `4560d29`); reconcile branch disposition pending |
+| Performance, rollout, gates, and final closure | Full acceptance matrix, 90 percent production-bound reduction, capacity/concurrency/privacy attacks, rollback equivalence, docs, CI, frozen revision, and final whole-branch review | All | active |
 
 Milestone labels organize work only and may not appear in production or test
 filenames, symbols, schemas, fixtures, artifacts, diagnostics, or workflow jobs.
@@ -163,14 +169,15 @@ adapter protocols.
 
 | Trigger family | Composition root and ingress | Required closure outcome | Status |
 | --- | --- | --- | --- |
-| `direct_sync` | `ProviderMemoryService.sync_event` | prepared-source stage/seal/lease/handoff, exact redelivery, and service-owned terminal snapshot | partial; two focused production-root proofs plus current v11 32-mutation validation |
-| `direct_composite_sync` | `ProviderMemoryService._sync_composite_event` | no family-specific sealed proof | incomplete |
-| `direct_memory_write` | `ProviderMemoryService.apply_memory_write` | no family-specific sealed proof | incomplete |
-| `hermes_sync` through `hermes_memory_write` | `HermesMemoryProvider` hooks | no per-hook sealed proof | incomplete |
+| `direct_sync` | `ProviderMemoryService.sync_event` | prepared-source stage/seal/lease/handoff, exact redelivery, and service-owned terminal snapshot | proven: writer-handoff lease proof, fresh-redelivery-lease proof, and the recovery packet's redelivery family (fresh owner, mutation rejection, mode parity) |
+| `direct_composite_sync` | `ProviderMemoryService._sync_composite_event` | per-child stage/seal/lease into both durable consumers with exactly-once terminal snapshots | proven: `test_every_trigger_family_stages_seals_and_leases_prepared_bytes[composite]` (2026-08-26, `02502eb`) |
+| `direct_memory_write` | `ProviderMemoryService.apply_memory_write` | stage/seal/lease into both durable consumers with exactly-once terminal snapshots | proven: same family proof `[memory_write]` plus Hermes `[hermes_write]` |
+| `hermes_sync` through `hermes_memory_write` | `HermesMemoryProvider` hooks | per-hook sealed proof through composite fan-out and direct write | proven: same family proof `[hermes_turn]` (both composite children) and `[hermes_write]`; 4 cases passed in 923s |
+| redelivery recovery (cross-family) | `ProviderMemoryService.sync_event` over a retained marker + found index | fresh owner and sealed lease into `reload_bootstrap_recovery_replay_v3` | proven by the recovery packet's three production-root proofs; the reconcile-door variant is structurally unreachable (finding recorded in the recovery packet) |
 
-All non-`direct_sync` rows are incomplete because they lack a family-specific
-sealed capability proof. Historical “implemented” text is superseded by the
-active remediation packet.
+Historical “implemented”/“incomplete” text is superseded by the 2026-08-26
+family-proof closure in the M2 packet and the recovery packet's validation
+matrix results.
 
 Validation checkpoint note:
 - `milestones/source-bound-production-entrypoint-map.md` was produced at revision `b9daf00a0e6956e51106756f1baaf23190c688bb`.
@@ -205,7 +212,7 @@ success-shaped fallback, or test-only composition root fails readiness.
 
 | Surface | Identity | Class | Decision and proof |
 | --- | --- | --- | --- |
-| Production runtime identities | `ProviderMemoryService`, its private retaining dispatcher, `ProviderIngestionCoordinator`, `CanonicalEvidenceArena`, tokenized `CanonicalEvidenceLease`, `SemanticIngestionAtomicStore` | behavioral | Direct prepared-source family only; token uniqueness and enabled/disabled root snapshots are focused-tested; source/test/validator evidence is in the remediation packet |
+| Production runtime identities | `ProviderMemoryService`, its private retaining dispatcher, `ProviderIngestionCoordinator`, `CanonicalEvidenceArena`, tokenized `CanonicalEvidenceLease`, `SemanticIngestionAtomicStore`, `_composed_semantic_runtime` | behavioral | Proven for every mapped family and the redelivery recovery door at `4560d29`/`02502eb`; token uniqueness, enabled/disabled root snapshots, and content-free terminal snapshots are focused-tested; see milestone packets |
 | Evidence identities | `canonical_evidence_arena.py`, `canonical_evidence_lock_resolver.py`, `canonical_evidence_performance_runner.py`, `test_canonical_evidence_arena.py` and fixture helpers | behavioral | Behavioral fixture names and helper modules are not planning/evidence coordinate names; validated by `milestones/readiness-identity-ledger.md` |
 | Persisted/public values | `CanonicalCodecResult`, `CanonicalMemberIndex`, `ValidatedCanonicalClosure` | behavioral | No persisted/public identity drift introduced; governed by canonical contract files noted in `changed-surface-ownership-ledger.md` |
 | Traceability coordinates | `VCC-R01` through `VCC-R12` | planning/evidence (non-behavioral) | Allowed only in WorkPlan, design, evidence, and review records; explicitly excluded from production tests, fixtures, symbols, workflow jobs, and serialized outputs |
@@ -269,9 +276,9 @@ fast unit suite.
 | --- | --- | --- |
 | Design and operation contract | specified and approved | unchanged approved baseline |
 | Codec/span, capacity, security, rollback references | locally verified reference | corroborated by production implementation tests |
-| Production binding | locally verified static design evidence | implemented, source-bound, nonzero callers, focused path proof |
+| Production binding | implemented and focused-proven for every mapped family (direct, composite, memory-write, Hermes turn/write, redelivery recovery) at revisions `4560d29`/`02502eb` | unchanged: implemented, source-bound, nonzero callers, focused path proof |
 | Digest reduction | locally verified reference counterfactual | locally verified production-bound implementation evidence and required CI if workflow-owned |
-| Lifecycle and observability | locally verified reference | deterministic implementation tests including concurrency/privacy |
+| Lifecycle and observability | deterministic implementation tests including per-family exactly-once terminal snapshots; concurrency/privacy remain arena-local | deterministic implementation tests including concurrency/privacy at production roots |
 | CI | not claimed | exact applicable required jobs passing at reviewed revision |
 | Live and operational | not claimed | separately identified; not inflated from local evidence |
 
@@ -282,16 +289,38 @@ Current known facts:
 - The current production path exhibits severe duplicate reconstruction/digest
   cost; the frozen reference family records 42,955 full computations and the
   approved counterfactual records 176.
-- Existing `CanonicalEvidenceArena` is not the approved closure implementation.
+- The arena is the approved closure owner for lifecycle/leases; codec-level
+  child-slice reuse and the production-bound digest counter are not yet
+  implemented (performance milestone).
 - Candidate v12 reference evidence passes but is not production proof.
-- The remaining implementation follow-ups are recovery/all-root propagation,
-  replay proof, performance reduction, candidate refreeze, and independent
-  review. Close idempotence, tokenized multi-lease draining, reason latching,
-  privacy, and sink isolation have focused evidence only.
-- Focused implementation commands have run; broad gates, CI, performance, and
-  operational evidence remain unclaimed.
-- Dirty-tree ownership, exact base revision, existing failures, workflow gates,
-  and current test runtime remain readiness-preflight outputs.
+- Remaining implementation follow-ups: performance reduction, broad-gate
+  baseline reconciliation, candidate refreeze, and independent review.
+- Focused evidence recorded 2026-08-26 at `4560d29`/`02502eb`: family proofs
+  `4 passed in 923.04s`; recovery proofs
+  (`test_redelivery_recovery_uses_fresh_owner_and_leases_exact_prepared_bytes`,
+  `test_redelivery_recovery_rejects_mutated_lease_coordinates`,
+  `test_redelivery_recovery_outcomes_are_identical_across_enabled_and_disabled_modes`)
+  each passing (~2-4 minutes each); replay/reopen modules `9 passed in
+  752.70s` at `5bd516b`; arena `29 passed`; writer-admission focused matrix
+  `9 passed`; provider-service module `39 passed` with one pre-existing
+  failure; ruff clean on all changed files.
+- Pre-existing broad failures verified against clean base
+  `b9daf00a0e6956e51106756f1baaf23190c688bb` (isolated worktree, 2026-08-26):
+  `test_semantic_provider_composition.py` failed 45 of 59 at base vs 43 of 65
+  on the current branch (this work net-fixed 8);
+  `test_bootstrap_graph_coordinator_v3.py` has 4 failures verified pre-existing
+  at `5f61c9c` via stash-revert; `test_provider_service.py::
+  test_provider_preserves_caller_owned_event_time` is pre-existing. These
+  belong to broad-gate reconciliation, not to closure-feature regressions.
+- `memorii.tools.identity_hygiene` currently fails during allowlist
+  validation: two `legacy_rejection_vector` exceptions pin exact
+  line:column locations in `test_semantic_ingestion_pipeline.py` (modified by
+  this branch's original dirty tree, commit `5bd516b`) and
+  `test_semantic_pipeline.py` that no longer match
+  (`legacy rejection exception requires an exact rejecting test proof`). The
+  allowlist itself is unmodified since `eb70c9d`. Reconciling the pinned
+  locations (or the field-aware identity gate follow-up below) belongs to
+  broad-gate reconciliation.
 
 No existing failure may be dismissed without identical clean-baseline evidence;
 no broad suite should run repeatedly during construction.
@@ -331,8 +360,29 @@ resolved inside this WorkPlan.
   reference evidence to production maturity.
 - `2026-08-17`: Four vertical milestones selected; no production/test edit or
   implementation validation has run.
+- `2026-08-26`: Linked debugging operation closed under independent review
+  (`remaining_validated_p1_p2: []`); its writer-admission and V3 replay
+  corrections are the accepted baseline (commit `5f61c9c`).
+- `2026-08-26`: Recovery milestone closed through the redelivery door
+  (commit `4560d29`): the sealed lease now propagates from the writer handoff
+  through `_run_semantic_ingestion` into the replay reload on the direct V3
+  path; three production-root proofs (fresh owner, five-coordinate mutation
+  rejection, enabled/disabled parity) pass. Decision recorded, not unilateral:
+  the reconcile leased branch is retained unchanged because repairing it
+  requires persisting a V3 execution plan (a durable record-content change
+  that returns to `$build-design`) while removal is behavior-neutral cleanup;
+  the coordinator defers that disposition to the user.
+- `2026-08-26`: Trigger-family milestone closed (commit `02502eb`): composite,
+  memory-write, and both Hermes hooks have family-specific sealed proofs; the
+  writer-admission family gaps for Hermes/factory/filesystem roots are covered
+  and the runtime-validation bridge cleanup landed with a focused deferral
+  test. Builder-blocked cells (factory/filesystem existing-record preservation
+  and JSONL variants) are recorded as follow-ups in the M2 packet.
 
 ## Remediation Reopening (2026-08-18)
+
+(Historical record as of 2026-08-18; the "remain unproven" claims below were
+superseded on 2026-08-26 by the family-proof and recovery milestones.)
 
 - Coverage: the bounded lifecycle/dispatcher correction is recorded in
   `milestones/sealed-authority-lifecycle-remediation.md`; it supports local
@@ -362,10 +412,14 @@ resolved inside this WorkPlan.
   fifth reservation refuses; every sealed lookup now has a unique token; close
   drains without aliasing; the service-owned dispatcher records content-free
   snapshots for enabled and disabled roots; v11 passed its current 32-mutation
-  contract. Recovery, all-root, replay, and performance evidence remains partial.
+  contract. Recovery, all-root, and replay evidence is now production-proven
+  (2026-08-26 sections above); performance evidence remains the open item.
 
 ## Next Action
 
-Run the resumed recovery/reconciliation milestone's deterministic validation
-matrix through the public recovery root, then absorb its transferred
-follow-ups before extending closure to the remaining trigger families.
+Start the performance milestone: instrument the production-bound full-digest
+counter, implement codec-level child-slice reuse per the approved design's
+cross-root reuse contract, and measure the capture matrix against the 90
+percent repeated-digest gate with enabled/disabled byte-and-outcome identity.
+The user decision on the unreachable reconcile branch disposition may proceed
+in parallel.

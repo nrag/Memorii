@@ -1,15 +1,14 @@
 # Complete Trigger And Durable-Path Propagation
 
 - Parent WorkPlan: `../implementation.plan.md`.
-- Status: active remediation; reopened 2026-08-18.
+- Status: complete (family-proof closure 2026-08-26, commit `02502eb`);
+  follow-ups recorded in the Family-Proof Closure section.
 - Requirements: direct prepared-source evidence for `VCC-R02` through `VCC-R10`;
-  lifecycle/observability evidence for `VCC-R08` and `VCC-R11`; all-root and
-  replay requirements remain partial.
-- Started: `2026-08-18`.
-- Completed: not complete.
-- Scope: direct `sync_event` prepared-source propagation plus the private owner
-  lifecycle. Composite, memory-write, Hermes, recovery, replay, and other
-  durable families are deliberately outside this bounded proof.
+  lifecycle/observability evidence for `VCC-R08` and `VCC-R11`.
+- Started: `2026-08-18`; completed: `2026-08-26`.
+- Scope: direct `sync_event` prepared-source propagation, the private owner
+  lifecycle, and per-family sealed proofs for composite, memory-write, and
+  Hermes hooks. Recovery/replay is owned by the recovery packet.
 
 ## Objective
 
@@ -27,10 +26,10 @@ persistence semantics:
 | Trigger | Primary composed owner | Typed closure owner | Evidence and outcome
 | --- | --- | --- | --- |
 | `sync_event` prepared source | `ProviderMemoryService._ingest_event` | `CanonicalEvidenceArena` + `ProviderIngestionCoordinator.ingest` | staged, sealed, leased exact prepared bytes enter `SemanticIngestionAtomicStore.bootstrap_writer_handoff`; focused production-root proof |
-| `_sync_composite_event` | `ProviderMemoryService._sync_composite_event` | arena construction only | incomplete: no family-specific stage/seal/lease consumer proof |
-| `apply_memory_write` | `ProviderMemoryService.apply_memory_write` | arena construction only | incomplete: no family-specific stage/seal/lease consumer proof |
-| Hermes and recovery/replay | Hermes hooks and coordinator recovery seams | none proven | incomplete: no fresh owner/lease or persisted-safe handoff proof |
-| Other graph/persistence consumers | normalization/graph/persistence owners | none proven | incomplete: no exact certified-byte consumer proof |
+| `_sync_composite_event` | `ProviderMemoryService._sync_composite_event` | arena construction + sealed lease | proven 2026-08-26: `test_every_trigger_family_stages_seals_and_leases_prepared_bytes[composite]` |
+| `apply_memory_write` | `ProviderMemoryService.apply_memory_write` | arena construction + sealed lease | proven 2026-08-26: same family proof `[memory_write]` and `[hermes_write]` |
+| Hermes hooks | `HermesMemoryProvider.sync_turn`/`on_memory_write` | arena construction + sealed lease per child | proven 2026-08-26: same family proof `[hermes_turn]` (both composite children) and `[hermes_write]` |
+| Recovery/replay consumers | redelivery door (recovery packet) | fresh owner + sealed lease into the replay reload | proven in the recovery packet; the reconcile-door variant is structurally unreachable (finding there) |
 
 ## Current Remediation Record
 

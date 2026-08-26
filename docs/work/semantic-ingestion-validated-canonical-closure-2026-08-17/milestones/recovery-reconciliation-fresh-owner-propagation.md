@@ -1,7 +1,9 @@
 # Recovery/Reconciliation Fresh-Owner Propagation
 
 - Parent WorkPlan: `../implementation.plan.md`
-- Status: active; resumed 2026-08-26 after linked debugging closure
+- Status: complete for the redelivery recovery door (2026-08-26, commit
+  `4560d29`); the reconcile-door variant is structurally unreachable and its
+  repair-or-remove disposition is pending a user decision
 - Linked debugging WorkPlan (complete):
   `../../semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md`
 - Base revision: `5bd516bf4b576d927f1a32edb01531b6f18419e6` (closure commit of
@@ -16,30 +18,33 @@ bytes, binds/seals only at the authoritative durable boundary, and carries a
 leased exact result to an approved durable or replay consumer without reusing a
 sibling or persisted capability.
 
-The exact production path under investigation is:
+The production path this packet originally targeted was the reconcile loop;
+the validation matrix established that the reachable recovery door for V3
+mid-ingestion interruption is exact redelivery through the direct root (see
+the Structural Finding section), and the proofs below close that door:
 
 ```text
-ProviderMemoryService.reconcile_memory_evolution
-  -> ProviderIngestionCoordinator.reconcile
-  -> _run_semantic_ingestion
-  -> durable/replay consumers
+ProviderMemoryService.sync_event (same operation id, retained marker + found index)
+  -> _bootstrap_prepare_and_handoff (fresh arena, stage, bind/seal, lease)
+  -> _run_semantic_ingestion (canonical_evidence_lease)
+  -> reload_bootstrap_recovery_replay_v3 (lease validation and substitution)
 ```
 
 ## Allocated Requirements
 
-| Requirement | Allocation in this packet | Initial state |
+| Requirement | Allocation in this packet | Final state (2026-08-26) |
 | --- | --- | --- |
-| `VCC-R01` | Measurement contribution only; no acceptance claim without the required production reduction evidence | partial / not started |
-| `VCC-R02` | Revalidated retained-source canonical result for the recovery family | not started |
-| `VCC-R03` | Fresh explicit sealed authority; no ambient or persisted capability | not started |
-| `VCC-R05` | Existing semantic/provenance validation remains mandatory before staging | not started |
-| `VCC-R06` | Current recovery-local writer admission remains mandatory | not started |
-| `VCC-R07` | Exact tenant, operation, generation, fence, and writer checks at the consumer | not started |
-| `VCC-R08` | Fresh reservation, tokenized lease drain, and capacity fallback behavior | not started |
-| `VCC-R09` | Durable/replay bytes, outcome, and reload identity for this family | not started |
-| `VCC-R10` | Non-test production caller reaches the fresh owner and consumer | not started |
-| `VCC-R11` | One content-free terminal snapshot per recovery invocation | not started |
-| `VCC-R12` | Disabled/refused recovery remains on the full validated path | not started |
+| `VCC-R01` | Measurement contribution only; no acceptance claim without the required production reduction evidence | not claimed (performance milestone owns it) |
+| `VCC-R02` | Revalidated retained-source canonical result for the recovery family | proven: redelivery stages the retained prepared source and reuses leased bytes downstream |
+| `VCC-R03` | Fresh explicit sealed authority; no ambient or persisted capability | proven: one fresh arena per recovery delivery; drained lease cannot re-authorize |
+| `VCC-R05` | Existing semantic/provenance validation remains mandatory before staging | proven: staging follows preparation/publication validation; zero plain re-encodes after the lease reaches the consumer |
+| `VCC-R06` | Current recovery-local writer admission remains mandatory | proven: lease and consumer recheck current admission digest and epoch |
+| `VCC-R07` | Exact tenant, operation, generation, fence, and writer checks at the consumer | proven by the five-coordinate mutation proof |
+| `VCC-R08` | Fresh reservation, tokenized lease drain, and capacity fallback behavior | lease drain proven at the consumer; capacity fallback remains arena-local evidence |
+| `VCC-R09` | Durable/replay bytes, outcome, and reload identity for this family | proven: mode-parity outcomes, durable projections, found-state identity, idempotent third delivery |
+| `VCC-R10` | Non-test production caller reaches the fresh owner and consumer | proven for the redelivery door; reconcile door structurally unreachable (finding) |
+| `VCC-R11` | One content-free terminal snapshot per recovery invocation | proven: exactly one `enabled/completed` snapshot, content-free |
+| `VCC-R12` | Disabled/refused recovery remains on the full validated path | proven for disabled mode via the parity proof; capacity-refused remains arena-local evidence |
 
 ## Explicit Non-Goals
 
@@ -61,15 +66,16 @@ finding, not evidence that substitution is currently permitted.
 
 ## Expected Production Entrypoint Binding Ledger
 
-| Trigger family | Non-test composition/root | Required authority and consumer proof | Status |
+Superseded 2026-08-26 by the Updated Production Entrypoint Binding Ledger
+below: the first three rows' reconcile-door wiring is implemented but
+structurally unreachable, and the proven recovery door is redelivery.
+
+| Trigger family | Non-test composition/root | Required authority and consumer proof | Status at packet start |
 | --- | --- | --- | --- |
 | `reconcile_memory_evolution` | `ProviderMemoryService.reconcile_memory_evolution` | fresh private arena created per recovered operation and injected through the coordinator | implemented / focused proof blocked |
 | `_run_semantic_ingestion` recovery handoff | `ProviderIngestionCoordinator.reconcile` | retained V3 marker is loaded by exact fence; scope derives from ingress, marker generation/fence, and current writer; bind-and-seal follows staging | implemented / focused proof blocked |
 | selected durable/replay consumer | `SemanticIngestionAtomicStore.reload_bootstrap_recovery_replay_v3` | object-identity lease is decoded and checked against the loaded prepared source, marker, tenant, writer, and exact bytes before replay reconstruction | implemented / focused proof blocked |
 | disabled/capacity-refused recovery | same real recovery root | no sealed substitution; ordinary validated path produces the same durable/public outcome | preflight required |
-
-Only the first three rows have implementation changes. None has sufficient
-focused production evidence while the recorded baseline failures remain.
 
 ## Planned Deterministic Validation Matrix
 
@@ -85,15 +91,15 @@ focused production evidence while the recorded baseline failures remain.
 
 ## Evidence Maturity
 
-| Evidence | Maturity |
+| Evidence | Maturity (updated 2026-08-26) |
 | --- | --- |
-| Production path/caller map | mapped by read-only explorer |
-| Authoritative-coordinate map | mapped in source; focused proof blocked |
-| Durable/replay consumer selection | mapped; focused proof blocked |
-| Focused deterministic tests | blocked by pre-existing public-root/replay failures |
+| Production path/caller map | mapped; the redelivery door is the proven recovery path; the reconcile door is mapped and proven unreachable |
+| Authoritative-coordinate map | proven by the five-coordinate mutation rejection at the reload consumer |
+| Durable/replay consumer selection | proven: `reload_bootstrap_recovery_replay_v3` receives and validates the sealed lease |
+| Focused deterministic tests | three production-root proofs passing at `4560d29` (fresh owner, mutations, mode parity) |
 | v11 source-shape update | regenerated; validator passed 32 mutations |
-| Performance contribution | not started |
-| Candidate freeze/review/CI | not started |
+| Performance contribution | not claimed (performance milestone owns it) |
+| Candidate freeze/review/CI | not claimed |
 
 ## Delegation Ledger
 
