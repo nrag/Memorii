@@ -2,8 +2,14 @@
 
 - Parent WorkPlan: `../implementation.plan.md`
 - Status: complete for the redelivery recovery door (2026-08-26, commit
-  `4560d29`); the reconcile-door variant is structurally unreachable and its
-  repair-or-remove disposition is pending a user decision
+  `4560d29`); user decision recorded 2026-08-26: host-independent recovery is
+  required because Memorii must function as a tool without agent-harness
+  changes, so the unreachable reconcile branch is promoted to a required
+  `$build-design` repair round (reachability, recovery-ingress authority,
+  and an internal reconcile trigger owned by Memorii adapters or the
+  service; no production invoker of `reconcile_memory_evolution` exists
+  today). The redelivery proofs remain the redelivery-safety leg of the
+  contract per SIA-R23.
 - Linked debugging WorkPlan (complete):
   `../../semantic-ingestion-recovery-reconcile-baseline-debug-2026-08-18/debug.plan.md`
 - Base revision: `5bd516bf4b576d927f1a32edb01531b6f18419e6` (closure commit of
