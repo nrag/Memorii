@@ -618,121 +618,69 @@ class ProviderIngestionCoordinator:
                 )
             handoff, canonical_evidence_lease = handoff_with_lease
             fence = prepared_admission.operation_fence_binding
-            # V3 binds the handoff's exact generation-one predecessor into its
-            # recovery probe.  Acquiring the ordinary pipeline lease here
-            # would advance that control before the probe can linearize its
-            # ready control and claim.  Run the V3 normalization boundary
-            # first; it creates the ordinary session only after publication.
+            # Every handoff marker is the V3 marker: the atomic store mints
+            # and reloads only that type.  The V3 normalization boundary runs
+            # before any lease session so the recovery probe can linearize
+            # its ready control and claim first.
+            try:
+                terminal, authorization_guard = self._run_semantic_ingestion(
+                    operation_id=fence.operation_id,
+                    observation=self._load_admitted_observation(fence),
+                    authenticated_ingress=authenticated_ingress,
+                    lease_session=None,
+                    operation_fence=fence,
+                    bootstrap_handoff=handoff,
+                    canonical_evidence_arena=canonical_evidence_arena,
+                    canonical_evidence_lease=canonical_evidence_lease,
+                )
+            except PreplanningStoreError:
+                terminal = SemanticTerminalOutcome.create(
+                    operation_id=fence.operation_id,
+                    status="evidence_only",
+                    reason_codes=("graph_transaction_authority_unavailable",),
+                    candidates=(),
+                    temporal_closures=(),
+                    attempt_count=0,
+                )
+                authorization_guard = None
+            except (OSError, SemanticAnalysisOutage):
+                terminal = None
+                authorization_guard = None
+            finally:
+                if canonical_evidence_lease is not None:
+                    canonical_evidence_lease.release()
             if (
-                handoff.marker is not None
-                and hasattr(handoff.marker, "recovery_key_digest")
+                terminal is None
+                or "source_alignment_authority_unavailable" in terminal.reason_codes
             ):
-                try:
-                    terminal, authorization_guard = self._run_semantic_ingestion(
-                        operation_id=fence.operation_id,
-                        observation=self._load_admitted_observation(fence),
-                        authenticated_ingress=authenticated_ingress,
-                        lease_session=None,
-                        operation_fence=fence,
-                        bootstrap_handoff=handoff,
-                        canonical_evidence_arena=canonical_evidence_arena,
-                        canonical_evidence_lease=canonical_evidence_lease,
-                    )
-                except PreplanningStoreError:
-                    terminal = SemanticTerminalOutcome.create(
-                        operation_id=fence.operation_id,
-                        status="evidence_only",
-                        reason_codes=("graph_transaction_authority_unavailable",),
-                        candidates=(),
-                        temporal_closures=(),
-                        attempt_count=0,
-                    )
-                    authorization_guard = None
-                except (OSError, SemanticAnalysisOutage):
-                    terminal = None
-                    authorization_guard = None
-                finally:
-                    if canonical_evidence_lease is not None:
-                        canonical_evidence_lease.release()
-                if (
-                    terminal is None
-                    or "source_alignment_authority_unavailable" in terminal.reason_codes
-                ):
-                    return (
-                        result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "source_alignment_authority_unavailable",
-                            },
-                        }),
-                        None,
-                        None,
-                    )
-                if "graph_transaction_authority_unavailable" in terminal.reason_codes:
-                    return (
-                        result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "graph_transaction_authority_unavailable",
-                            },
-                        }),
-                        None,
-                        None,
-                    )
-                if "bootstrap_graph_terminal_persisted" in terminal.reason_codes:
-                    return (
-                        result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "source_only",
-                            },
-                        }),
-                        None,
-                        None,
-                    )
-                if "bootstrap_graph_retry_persisted" in terminal.reason_codes:
-                    return (
-                        result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "source_only",
-                            },
-                        }),
-                        None,
-                        None,
-                    )
-                try:
-                    self._persist_semantic_terminal(
-                        fence,
-                        terminal,
-                        authorization_guard=authorization_guard,
-                    )
-                except (OSError, SemanticAuthorizationReadSetError):
-                    return (
-                        result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "retryable_outage",
-                            },
-                        }),
-                        None,
-                        None,
-                    )
+                return (
+                    result.model_copy(update={
+                        "transcript_ids": [governed_source.memory_id],
+                        "candidate_ids": [],
+                        "allowed_candidate_domains": [],
+                        "blocked_reasons": {
+                            **result.blocked_reasons,
+                            "semantic_ingestion": "source_alignment_authority_unavailable",
+                        },
+                    }),
+                    None,
+                    None,
+                )
+            if "graph_transaction_authority_unavailable" in terminal.reason_codes:
+                return (
+                    result.model_copy(update={
+                        "transcript_ids": [governed_source.memory_id],
+                        "candidate_ids": [],
+                        "allowed_candidate_domains": [],
+                        "blocked_reasons": {
+                            **result.blocked_reasons,
+                            "semantic_ingestion": "graph_transaction_authority_unavailable",
+                        },
+                    }),
+                    None,
+                    None,
+                )
+            if "bootstrap_graph_terminal_persisted" in terminal.reason_codes:
                 return (
                     result.model_copy(update={
                         "transcript_ids": [governed_source.memory_id],
@@ -746,139 +694,27 @@ class ProviderIngestionCoordinator:
                     None,
                     None,
                 )
-            elif canonical_evidence_lease is not None:
-                # A non-V3 handoff cannot reach the recovery reload consumer;
-                # release the writer-boundary lease before the ordinary path.
-                canonical_evidence_lease.release()
-            execution_plan = self._semantic_terminal_persistence.recover_execution_plan(
-                fence=fence
-            )
-            if execution_plan is not None:
-                self._validate_execution_plan_source(
-                    plan=execution_plan,
-                    fence=fence,
-                    expected_source_utf8=governed_source.text.encode("utf-8"),
+            if "bootstrap_graph_retry_persisted" in terminal.reason_codes:
+                return (
+                    result.model_copy(update={
+                        "transcript_ids": [governed_source.memory_id],
+                        "candidate_ids": [],
+                        "allowed_candidate_domains": [],
+                        "blocked_reasons": {
+                            **result.blocked_reasons,
+                            "semantic_ingestion": "source_only",
+                        },
+                    }),
+                    None,
+                    None,
                 )
-            lease_session = self._semantic_terminal_persistence.open_lease_session(
-                fence=fence
-            )
-            if lease_session.closed:
-                return (result.model_copy(update={"transcript_ids": [governed_source.memory_id], "candidate_ids": [], "allowed_candidate_domains": [], "blocked_reasons": {**result.blocked_reasons, "semantic_ingestion": "source_only"}}), None, None)
-            if self._semantic_pipeline is not None:
-                if execution_plan is None:
-                    execution_plan, deployment_state = self._build_execution_plan(
-                        fence=fence,
-                        source_text=governed_source.text,
-                        authenticated_ingress=authenticated_ingress,
-                    )
-                    lease_session.checkpoint_execution_plan(execution_plan)
-                    if deployment_state == "outage":
-                        lease_session.checkpoint_retryable(
-                            stage="policy_read", failure_kind="policy_outage",
-                        )
-                        return (result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id], "candidate_ids": [],
-                            "allowed_candidate_domains": [], "blocked_reasons": {
-                                **result.blocked_reasons, "semantic_ingestion": "retryable_outage",
-                            },
-                        }), None, None)
-                    if deployment_state == "denied":
-                        denied_terminal = SemanticTerminalOutcome.create(
-                            operation_id=event.event_id, status="evidence_only",
-                            reason_codes=("deployment_authorization_unavailable",), candidates=(),
-                            temporal_closures=(), attempt_count=0,
-                        )
-                        self._semantic_terminal_persistence.persist(
-                            fence=fence, terminal=denied_terminal,
-                        )
-                        return (result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id], "candidate_ids": [],
-                            "allowed_candidate_domains": [], "blocked_reasons": {
-                                **result.blocked_reasons, "semantic_ingestion": "source_only",
-                            },
-                        }), None, None)
-                else:
-                    try:
-                        authority_prepared = self._prepare_recovery_authority(
-                            plan=execution_plan,
-                            fence=fence,
-                            lease_session=lease_session,
-                        )
-                    except _SemanticPolicyReadOutage:
-                        authority_prepared = False
-                    if not authority_prepared:
-                        return (result.model_copy(update={
-                            "transcript_ids": [governed_source.memory_id], "candidate_ids": [],
-                            "allowed_candidate_domains": [], "blocked_reasons": {
-                                **result.blocked_reasons, "semantic_ingestion": "retryable_outage",
-                            },
-                        }), None, None)
-            recovered_terminal = self._semantic_terminal_persistence.recover_terminal_artifact(
-                fence=fence
-            )
             try:
-                terminal_with_guard = (
-                    (
-                        recovered_terminal,
-                        self._authorization_guard_for_terminal(
-                            recovered_terminal, fence
-                        ),
-                    )
-                    if recovered_terminal is not None
-                    else self._run_semantic_ingestion(
-                        operation_id=execution_plan.operation_id,
-                        observation=self._load_admitted_observation(fence),
-                        authenticated_ingress=execution_plan.authenticated_ingress,
-                        lease_session=lease_session,
-                        operation_fence=fence,
-                        bootstrap_handoff=handoff,
-                        canonical_evidence_arena=canonical_evidence_arena,
-                    )
-                    if self._semantic_pipeline is not None and execution_plan is not None
-                    else (
-                        SemanticTerminalOutcome.create(
-                            operation_id=event.event_id, status="evidence_only",
-                            reason_codes=("semantic_runtime_unauthorized",), candidates=(),
-                            temporal_closures=(), attempt_count=0,
-                        ),
-                        None,
-                    )
+                self._persist_semantic_terminal(
+                    fence,
+                    terminal,
+                    authorization_guard=authorization_guard,
                 )
-            except _SemanticPolicyReadOutage:
-                lease_session.checkpoint_retryable(
-                    stage="policy_read", failure_kind="policy_outage",
-                )
-                return (
-                    result.model_copy(update={
-                        "transcript_ids": [governed_source.memory_id],
-                        "candidate_ids": [], "allowed_candidate_domains": [],
-                        "blocked_reasons": {
-                            **result.blocked_reasons,
-                            "semantic_ingestion": "retryable_outage",
-                        },
-                    }),
-                    None, None,
-                )
-            except SemanticAnalysisOutage:
-                lease_session.checkpoint_retryable(
-                    stage="analysis", failure_kind="transport_outage",
-                )
-                return (
-                    result.model_copy(update={
-                        "transcript_ids": [governed_source.memory_id],
-                        "candidate_ids": [], "allowed_candidate_domains": [],
-                        "blocked_reasons": {
-                            **result.blocked_reasons,
-                            "semantic_ingestion": "retryable_outage",
-                        },
-                    }),
-                    None, None,
-                )
-            except OSError:
-                lease_session.checkpoint_retryable(
-                    stage="proposal",
-                    failure_kind="transport_outage",
-                )
+            except (OSError, SemanticAuthorizationReadSetError):
                 return (
                     result.model_copy(update={
                         "transcript_ids": [governed_source.memory_id],
@@ -892,53 +728,19 @@ class ProviderIngestionCoordinator:
                     None,
                     None,
                 )
-            terminal, authorization_guard = terminal_with_guard
-            if "source_alignment_authority_unavailable" in terminal.reason_codes:
-                # A graph-free normalization non-commit is intentionally not a
-                # semantic terminal.  Persisting it would create a terminal
-                # bypass around the mandatory source-alignment checkpoint.
-                return (
-                    result.model_copy(
-                        update={
-                            "transcript_ids": [governed_source.memory_id],
-                            "candidate_ids": [],
-                            "allowed_candidate_domains": [],
-                            "blocked_reasons": {
-                                **result.blocked_reasons,
-                                "semantic_ingestion": "source_alignment_authority_unavailable",
-                            },
-                        }
-                    ),
-                    None,
-                    None,
-                )
-            try:
-                self._persist_semantic_terminal(
-                    fence,
-                    terminal,
-                    authorization_guard=authorization_guard,
-                )
-            except SemanticAuthorizationReadSetError:
-                lease_session.checkpoint_retryable(
-                    stage="group",
-                    failure_kind="policy_outage",
-                    terminal=terminal,
-                )
-            except _SemanticPolicyReadOutage:
-                lease_session.checkpoint_retryable(
-                    stage="group",
-                    failure_kind="policy_outage",
-                    terminal=terminal,
-                )
-            except OSError:
-                control = self._atomic_store.get_operation(
-                    fence
-                )
-                lease_session.checkpoint_retryable(
-                    stage=("finalization" if control.group_result_digests else "planning"),
-                    failure_kind="store_outage",
-                    terminal=terminal,
-                )
+            return (
+                result.model_copy(update={
+                    "transcript_ids": [governed_source.memory_id],
+                    "candidate_ids": [],
+                    "allowed_candidate_domains": [],
+                    "blocked_reasons": {
+                        **result.blocked_reasons,
+                        "semantic_ingestion": "source_only",
+                    },
+                }),
+                None,
+                None,
+            )
         return (result.model_copy(update={"transcript_ids": [governed_source.memory_id], "candidate_ids": [], "allowed_candidate_domains": [], "blocked_reasons": {**result.blocked_reasons, "semantic_ingestion": "source_only"}}), None, None)
 
     def reconcile(self) -> list[ProviderEvolutionOutcome]:
@@ -1121,66 +923,6 @@ class ProviderIngestionCoordinator:
                     else FinalExtractionSource.NONE
                 ),
             )
-
-    def _build_execution_plan(
-        self,
-        *,
-        fence: OperationFenceBinding,
-        source_text: str,
-        authenticated_ingress: AuthenticatedIngressContext,
-    ) -> tuple[SemanticExecutionRetryPlan, Literal["verified", "outage", "denied"]]:
-        runtime = self._semantic_runtime
-        profile = self._bootstrap_profile
-        if runtime is None or profile is None:
-            raise ValueError("authorized semantic ingestion runtime is unavailable for retry planning")
-        state: Literal["verified", "outage", "denied"]
-        try:
-            deployment = runtime.verify_authorization(
-                profile=profile, use_point="stage_start", server_time=self._now_provider()
-            )
-        except OSError:
-            deployment = None
-            state = "outage"
-        else:
-            state = "verified" if deployment is not None else "denied"
-        authority_scope_id = self._authorization_repository.scope_id(
-            source_id=fence.source_id, source_digest=fence.source_digest
-        )
-        current_authority = self._atomic_store.authorization_authority(authority_scope_id)
-        plan = SemanticExecutionRetryPlan.create(
-            operation_id=fence.operation_id,
-            operation_fence_binding_digest=fence.binding_digest,
-            source_id=fence.source_id,
-            source_digest=fence.source_digest,
-            source_utf8_bytes=source_text.encode("utf-8"),
-            authenticated_ingress=authenticated_ingress,
-            prompt_reference="semantic_ingestion_proposal:v1",
-            policy_source_id=fence.source_id,
-            policy_source_digest=fence.source_digest,
-            bootstrap_selection_digest=profile.selection_digest,
-            bootstrap_verification_digest=profile.verification_digest,
-            deployment_authorization_state="verified" if deployment is not None else "unavailable",
-            deployment_authorization_digest=(
-                deployment.authorization_digest
-                if deployment is not None else sha256(runtime.authorization_bytes).hexdigest()
-            ),
-            deployment_active_epoch=deployment.active_epoch if deployment is not None else None,
-            deployment_decision_digest=deployment.decision_digest if deployment is not None else None,
-            authorization_authority_scope_id=authority_scope_id,
-            expected_authority_revision=(
-                current_authority[0].authority_revision if current_authority is not None else 0
-            ),
-            expected_authority_coordinates_digest=(
-                current_authority[0].coordinates_digest if current_authority is not None else None
-            ),
-            authorization_secret_reference=(
-                "semantic-deployment-authorization:"
-                + sha256(runtime.authorization_bytes).hexdigest()
-            ),
-            attempt_budget=3,
-        )
-        plan.validate_for_fence(fence)
-        return plan, state
 
     def _validate_execution_plan_source(
         self,

@@ -156,6 +156,7 @@ Maintained per slice; final reconciliation against the live diff before closure.
 | 43 failures in `test_semantic_provider_composition.py` | pre-existing at merge base (verified in the suite-reconciliation operation); resolved by this removal (ordinary-pipeline families deleted/re-targeted) + slice 6 (V3-era families) |
 | 4 failures in `test_bootstrap_graph_coordinator_v3.py` | pre-existing; slice 6 V3-era family repairs |
 | pyright ~374 pre-existing errors in `contracts.py` | out of scope; expected to drop with legacy contract deletion; no opportunistic fixes |
+| 9 ruff errors at clean HEAD (`b258e91` worktree-verified 2026-08-26) in `memory_evolution/__init__.py`, `test_event_replay.py`, `test_bootstrap_text_preparation_producer.py`, `test_bootstrap_graph_v3_fixture.py`, `semantic_terminal_test_support.py`, `test_semantic_ingestion_pipeline.py` | pre-existing; all in legacy-test/fixture surfaces scheduled for migration or deletion in slices 3-6; final revision must be ruff-clean |
 
 ## Requirement Coverage Ledger
 
@@ -197,27 +198,102 @@ conflict stops the operation per AGENTS.md.
 
 ## Current State
 
-Branch `semantic-indexing-m4` at `c0bbc8e`, clean tree. Production preflight
-complete for `ingestion.py`, `source_normalization_execution.py`,
-`source_normalization_stage.py`, `source_normalization_host.py`, `pipeline.py`,
-`egress.py`, `capability.py`, `authorization.py`, `local_analyzer.py`, and the
-semantic wiring of `provider/service.py`. A delegated test census is in flight
-(see Delegation Ledger).
+Branch `semantic-indexing-m4` (slice commits appended after `b258e91`). The
+delegated read-only census completed 2026-08-26 (agent output recorded in the
+Delegation Ledger; coordinator validated the load-bearing claims directly in
+code). Production preflight findings, all verified in source:
 
-Preflight discoveries beyond the design census:
-
-- A third `pipeline.run` consumer exists: `ConflictClarificationSemanticPipelineAdapter`
-  in `capability.py` (Hermes conflict-clarification lane; local proposals, no
-  egress). Its disposition is decided in slice 5 with the census evidence.
+- `ingest`'s ordinary nested path (`ingestion.py` ~749-941) is **already
+  unreachable dead code**: `bootstrap_writer_handoff` only ever returns
+  `BootstrapWriterHandoffMarkerV3` markers (existing markers validated as V3 at
+  `atomic_store.py:1223`; new markers created as V3 at `:1284`), so the V3
+  marker guard at `ingestion.py:626` is always true when a handoff exists.
+  Slice 1 is dead-code removal, not behavior change.
+- A third `pipeline.run` consumer exists: `ConflictClarificationSemanticPipelineAdapter.process_clarification`
+  (`capability.py:178`), installed as the default clarification pipeline by
+  `provider/service.py:564` (Hermes conflict-clarification lane; local
+  proposals, no egress). Disposition (slice 5): removed with the pipeline —
+  the lane is ordinary-pipeline machinery; the conflict-attention
+  retention/submission machinery survives; service stops default-constructing
+  the adapter and clarifications remain pending (fail-closed, no fabricated
+  outcomes). The failing hermes-clarification family (×3) asserted the removed
+  semantic-evaluation leg and is deleted with justification.
 - `ProductionLocalSemanticAnalyzer` is pinned by the verified bootstrap-profile
-  contract (`bootstrap_profile.py` `local_analyzer_symbol` and module/class
-  verification pairs), so the class is retained even after its pipeline
-  consumers die.
-- `GraphFreeSourceNormalizationInvocation` is shared by the V3 flow (it is the
-  execution-owner input type); it survives the legacy-stage deletion.
-- `SourceNormalizationHostBundleBuilder` mixes legacy-only fields (stanza/spacy/
-  predicate/duckling lanes, reservation limits, locale/timezone) with V3-shared
-  fields (`resolve_quote`, `projection_quote_verifier`, trusted time).
+  contract (`bootstrap_profile.py:479,505,904,951`); the class survives; only
+  its ordinary-pipeline consumers die. Its span/owner-pair statics live on
+  `SemanticIngestionPipeline` (`_analysis_spans_are_valid`,
+  `_is_protected_scenario_owner_pair`) and are used by
+  `test_scenario_public_ingress_runner.py` — they move to a surviving owner in
+  slice 5.
+- `GraphFreeSourceNormalizationInvocation` is shared by the V3 flow; it
+  survives the legacy-stage deletion.
+- Same-name hazard: `SourceNormalizationEvidenceManifest`/`Entry` also exist in
+  `memory_evolution/semantic_analysis/decision_contracts.py` (distinct classes
+  used by the publication-coordinate family); the ingestion-contracts versions
+  are deleted, the decision-contracts versions get their own orphan census in
+  slice 4. `SourceNormalizationPublicationCoordinate` (decision_contracts) is
+  used by V3 authority members and survives.
+- `semantic_terminal_test_support.py` is the runtime-fixture hub for 8
+  surviving suites (terminal persistence, graph planning, policy migration,
+  transaction group plans, graph record support, event replay, generation
+  transactions, identity lineage); it must be migrated before pipeline
+  deletion (slice 5).
+- Traceability registry/checkers: decoupled from every deleted symbol.
+- CI coupling: `memorii/tests/ci/unit-test-durations.json` carries 43 stale
+  node IDs for `test_semantic_provider_composition.py`; regenerate after test
+  removals (slice 6).
+
+### Test disposition census (from the delegated census, coordinator-validated)
+
+| Test file | Disposition |
+| --------- | ----------- |
+| `test_source_normalization_stage.py` (3) | delete — subject is the removed legacy stage; V3 stage has its own suites |
+| `test_source_normalization_normal_vector.py` (2) | delete — legacy canonical-request vectors |
+| `test_source_proposal_run_contracts.py` (9) | delete — subject contract `SemanticProposalRun` is removed |
+| `test_semantic_pipeline.py` (13) | delete with the pipeline; `test_production_local_analyzer_requires_and_consumes_prepared_source_authority` migrates to the analyzer suite; allowlist-pinned `test_closed_codec_round_trip_rejects_legacy_and_wrong_contract_kind` dies with the file (rejection proof re-anchored if the codec surface retains a legacy-bytes vector) |
+| `tests/integration/test_semantic_ingestion_pipeline.py` (~30) | delete — organized around the pipeline engine; allowlist-pinned `test_legacy_rejects_preclosure_terminal_bytes` dies with the file |
+| `test_prompt_and_egress_authority.py` | split — egress repository/CAS/lifecycle tests survive; the four pipeline-egress boundary tests re-anchor with the ×18 mutation family (slice 5) |
+| `test_semantic_provider_composition.py` | ordinary families (egress ×18 re-anchor; analyzer, accepted-control, stops-before-owner, untyped-normalization ×2, hermes ×3, deployment-denial ×4, same-pipeline ×1 — delete with justification); V3-era families repair in slice 6 |
+| `semantic_terminal_test_support.py` + 8 consumers | migrate hub construction off the removed runtime fields |
+| `test_scenario_public_ingress_runner.py` | migrate — pipeline statics move to a surviving owner |
+| `test_source_normalization_repository.py` | legacy publish/reload tests (3) die with the legacy repository branch; V3 tests survive |
+| `test_consensus_contract_codecs.py`, `test_source_group_plan_contracts.py` | re-target alignment fixtures to surviving types per slice-4 census |
+| `test_bootstrap_text_preparation_producer.py` | analyzer tests survive; pipeline-engine helper gets a replacement |
+| `tests/fixtures/semantic_ingestion/source_normalization_fixture_builder.py` | legacy tower builder; dying consumers delete; V3 consumers (`test_bootstrap_v3_payload_contracts.py`, `test_bootstrap_v3_native_lane_contracts.py`, composition V3 tests) migrate to V3 builders |
+
+### Failing-test baseline (43 + 4)
+
+Ordinary-pipeline families (26, resolved by removal): egress mutation ×18
+(`test_public_coordinator_rejects_every_egress_authority_mutation_without_wire`
+parametrized over tenant_id, source_id, source_digest, segment_id,
+classification, provider, model, region, retention_mode, training_use,
+signature, signer, expiry, outage, policy_id, policy_revision,
+policy_fingerprint, decision_digest); local analyzer ×1
+(`test_ordinary_provider_root_uses_production_local_analyzer_without_wire`);
+accepted control ×1 (`test_normal_provider_accepted_control_commits_complete_effect_group`);
+stops-before-owner ×1; untyped normalization ×2
+(`test_normal_provider_root_rejects_untyped_or_missing_normalization_result_before_terminal`);
+hermes clarification ×3
+(`test_normal_hermes_clarification_uses_retained_event_and_local_pipeline`);
+deployment denial ×4 (`test_external_deployment_authorization_failure_is_zero_wire`);
+same-pipeline ×1 (`test_hermes_and_filesystem_roots_use_the_same_semantic_pipeline`).
+
+V3-era families (17 + 4, slice 6): lost-ack ×3
+(`test_public_jsonl_lost_ack_reopens_without_duplicate_effects`);
+recovery-authority-change ×3 + foreign plan ×1
+(`test_jsonl_recovery_authority_change_is_zero_learned_calls`,
+`test_foreign_recovery_plan_is_rejected_before_lease_or_learned_calls`);
+redelivery-rotation ×1
+(`test_identical_redelivery_after_authority_rotation_reuses_plan_without_calls`);
+reconcile ×~3 + exhaustion ×1; frozen-wire ×1
+(`test_public_jsonl_service_matches_frozen_wire_and_member_bytes_across_reopen`);
+corruption recovery ×1
+(`test_real_filesystem_hermes_corruption_recovery_restart_and_racing_write`);
+coordinator module ×4 (corruption-reopen ×2
+`test_terminal_request_reload_rejects_in_memory_corrupt_closure` /
+`..._corrupt_jsonl_closure_after_reopen`; graph-terminal
+`test_direct_provider_root_reaches_bootstrap_graph_terminal` and one of the
+verified-production-root pair — exact nodes confirmed at repair time).
 
 ## Assumptions And Open Questions
 
@@ -280,6 +356,24 @@ Broad gate (once, at the final revision):
 - 2026-08-26 (preflight): `ProductionLocalSemanticAnalyzer` is retained because
   the verified bootstrap profile pins its symbol; only its ordinary-pipeline
   consumers die. Evidence: `bootstrap_profile.py:479,505,904,951`.
+- 2026-08-26 (retained-state mapping, slice 2 design): the marker-keyed
+  reconcile drives the **found** path only. Evidence: the found path's every
+  ingress consumption is redundant with retained records — graph host and store
+  read only `delivery_principal_binding.binding_digest` (already on
+  `OperationFenceBinding`, `ingestion_contracts.py:506`) and the canonical-lease
+  tenant (retained in the prepared source's
+  `governance_carrier_artifact.required_outcome_scopes.tenant_partition_id`);
+  the claimed path's `GraphFreeSourceNormalizationInvocation.source_authority_evidence`
+  is NOT reconstructable from retained records (authority body survives only as
+  digests per the governance derivation), so completing an unpublished
+  normalization remains the redelivery door's job (SIA-R23), which the design
+  gate ("marker + found index + loadable prepared source + current writer")
+  already reflects. No `AuthenticatedIngressContext` is ever fabricated for
+  recovery (user decision); instead the graph request/reload contracts are
+  narrowed to fence-derived binding digest + retained tenant/scope values
+  ("recovery repair convergence"). The bounded maintenance tick beyond the
+  existing explicit `reconcile_memory_evolution` entry point remains the parent
+  operation's repair-round scope, not this removal's.
 
 ## Review Log
 
