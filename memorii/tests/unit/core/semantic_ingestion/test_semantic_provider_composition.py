@@ -3098,3 +3098,74 @@ def test_public_jsonl_service_matches_frozen_wire_and_member_bytes_across_reopen
         reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW)
     assert reopened.reconcile_memory_evolution() == []
     assert (storage / "memory_records.jsonl").read_bytes() == before
+
+
+def test_hermes_root_preserves_existing_durable_writer_and_skips_writes_without_ingress(
+    tmp_path,
+) -> None:
+    """The Hermes fan-out root keeps the fallback writer-admission contract."""
+    plane = MemoryPlaneService(
+        record_store=JsonlMemoryPlaneStore(tmp_path / "hermes-family")
+    )
+    writers = SemanticWriterAdmissionStore(
+        plane, bounded_preplanning_ownership_manifest(), now_provider=lambda: TEST_NOW
+    )
+    existing = writers.create_initial_evidence_only(
+        admission_id="existing-writer",
+        writer_implementation_fingerprint="existing-implementation",
+        graph_schema_fingerprint="existing-schema",
+    )
+    before = plane.get_record(writer_admission_memory_id())
+    assert before is not None
+
+    resolver = _SwitchingIngressResolver()
+    service = ProviderMemoryService(
+        memory_plane=plane,
+        now_provider=lambda: TEST_NOW,
+        authenticated_ingress_resolver=resolver,
+    )
+    hermes = HermesMemoryProvider(service=service)
+
+    # Absent ingress through the Hermes root writes nothing.
+    hermes.sync_turn(
+        "Atlas owner is Bob.", "Atlas owner is Bob.",
+        operation_id="hermes-family-absent", task_id="task:one", user_id="user:alice",
+    )
+    assert plane.get_record(writer_admission_memory_id()) == before
+    hermes.on_memory_write(
+        content="Atlas owner is Bob.", action="upsert", target="memory",
+        operation_id="hermes-family-absent-write",
+        session_id=None, task_id="task:one", user_id="user:alice",
+    )
+    assert plane.get_record(writer_admission_memory_id()) == before
+
+    # A resolved authenticated turn preserves the existing record exactly.
+    hermes.sync_turn(
+        "Atlas owner is Bob.", "Atlas owner is Bob.",
+        operation_id="hermes-family-resolved", task_id="task:one", user_id="user:alice",
+        authenticated_host_ingress=_host_ingress(),
+    )
+    assert service.reconcile_memory_evolution() == []
+    assert writers.current() == existing
+    assert plane.get_record(writer_admission_memory_id()) == before
+
+
+@pytest.mark.parametrize("root", ("factory", "filesystem"))
+def test_composed_roots_write_nothing_without_resolved_ingress(root, tmp_path) -> None:
+    """Factory and filesystem roots stay write-free at absent ingress."""
+    plane = MemoryPlaneService(
+        record_store=JsonlMemoryPlaneStore(tmp_path / root)
+    )
+    if root == "factory":
+        service = build_provider_memory_service_from_env(
+            memory_plane=plane, now_provider=lambda: TEST_NOW
+        )
+    else:
+        service = build_filesystem_provider(
+            tmp_path / "storage", memory_plane=plane, now_provider=lambda: TEST_NOW
+        )
+    service.sync_event(
+        operation=ProviderOperation.CHAT_USER_TURN, content="Atlas owner is Bob.",
+        operation_id=f"{root}-absent-ingress", task_id="task:one", user_id="user:alice",
+    )
+    assert plane.get_record(writer_admission_memory_id()) is None

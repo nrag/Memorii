@@ -822,3 +822,68 @@ def test_prefetch_trace_exposes_score_breakdown_and_deterministic_ranks() -> Non
     assert isinstance(top.lexical_score, float)
     assert isinstance(top.recency_score, float)
     assert isinstance(top.scope_score, float)
+
+
+def test_semantic_runtime_validates_exactly_once_at_first_resolved_ingress(monkeypatch) -> None:
+    from memorii.core.semantic_ingestion.capability import (
+        AuthorizedSemanticIngestionRuntime,
+    )
+    from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
+        _host_ingress,
+    )
+
+    service = _build_production_scoped_provider_service()
+    runtime = service._composed_semantic_runtime
+    assert runtime is not None
+    validate_calls: list[dict] = []
+    original_validate = AuthorizedSemanticIngestionRuntime.validate
+
+    def counting(self, *, profile, server_time):
+        validate_calls.append({"profile": profile, "server_time": server_time})
+        return original_validate(self, profile=profile, server_time=server_time)
+
+    monkeypatch.setattr(AuthorizedSemanticIngestionRuntime, "validate", counting)
+    plane = service._memory_plane
+
+    # Absent ingress resolves to nothing: no runtime validation and no
+    # durable writer record may exist yet.
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas owner is Bob.",
+        operation_id="test:runtime-deferral-absent",
+        task_id="test:runtime-deferral-absent",
+    )
+    assert validate_calls == []
+    assert not plane.list_records(
+        source_kind="semantic_ingestion_writer_admission"
+    )
+
+    # The first resolved authenticated ingress validates the composed
+    # runtime exactly once and initializes the durable writer record.
+    resolved = _host_ingress().model_copy(
+        update={"provider_identity": "scenario-test-host"}
+    )
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas owner is Bob.",
+        operation_id="test:runtime-deferral-resolved",
+        task_id="test:runtime-deferral-resolved",
+        authenticated_host_ingress=resolved,
+    )
+    assert len(validate_calls) == 1
+    assert len(plane.list_records(
+        source_kind="semantic_ingestion_writer_admission"
+    )) == 1
+
+    # Later resolved ingresses never re-validate the runtime.
+    service.sync_event(
+        operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+        content="Atlas owner is Bob.",
+        operation_id="test:runtime-deferral-again",
+        task_id="test:runtime-deferral-again",
+        authenticated_host_ingress=resolved,
+    )
+    assert len(validate_calls) == 1
+    assert len(plane.list_records(
+        source_kind="semantic_ingestion_writer_admission"
+    )) == 1

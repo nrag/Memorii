@@ -1106,3 +1106,110 @@ def test_redelivery_recovery_outcomes_are_identical_across_enabled_and_disabled_
         source_kind="semantic_ingestion_bootstrap_v3_recovery_index"
     )[0].content
     assert enabled_index["state"] == disabled_index["state"] == "found"
+
+
+@pytest.mark.parametrize("root", ("composite", "memory_write", "hermes_turn", "hermes_write"))
+def test_every_trigger_family_stages_seals_and_leases_prepared_bytes(root, monkeypatch) -> None:
+    from memorii.core.semantic_ingestion.canonical_evidence_arena import (
+        CanonicalEvidenceArena,
+    )
+    from memorii.integrations.hermes_provider import HermesMemoryProvider
+
+    service = _production_recovery_service()
+    plane = service._memory_plane
+    hermes = HermesMemoryProvider(service=service)
+    ingress = _host_ingress().model_copy(
+        update={"provider_identity": "scenario-test-host"}
+    )
+    operation_id = f"family-lease-{root}"
+    expected_deliveries = 2 if root == "hermes_turn" else 1
+
+    def deliver():
+        if root == "composite":
+            return service._sync_composite_event(
+                operation=ProviderOperation.CHAT_USER_TURN,
+                content="Atlas owner is Bob.",
+                composite_operation_id="composite:v1:" + operation_id,
+                task_id="task:one", user_id="user:alice",
+                authenticated_host_ingress=ingress,
+            )
+        if root == "memory_write":
+            return service.apply_memory_write(
+                operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
+                content="Atlas owner is Bob.",
+                session_id=None, task_id="task:one", user_id="user:alice",
+                action="upsert", target="memory", operation_id=operation_id,
+                authenticated_host_ingress=ingress,
+            )
+        if root == "hermes_turn":
+            # Both child turns must carry pipeline-eligible content so each
+            # composite child reaches its own writer handoff.
+            return hermes.sync_turn(
+                "Atlas owner is Bob.", "Atlas owner is Bob.",
+                operation_id=operation_id, task_id="task:one", user_id="user:alice",
+                authenticated_host_ingress=ingress,
+            )
+        return hermes.on_memory_write(
+            content="Atlas owner is Bob.",
+            action="upsert", target="memory", operation_id=operation_id,
+            session_id=None, task_id="task:one", user_id="user:alice",
+            authenticated_host_ingress=ingress,
+        )
+
+    constructed: list[CanonicalEvidenceArena] = []
+    original_init = CanonicalEvidenceArena.__init__
+
+    def observe_init(self, *args, **kwargs):
+        constructed.append(self)
+        return original_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(CanonicalEvidenceArena, "__init__", observe_init)
+
+    atomic = service._provider_ingestion._atomic_store
+    handoff_leases: list[object] = []
+    reload_leases: list[object] = []
+    original_handoff = atomic.bootstrap_writer_handoff
+    original_reload = atomic.reload_bootstrap_recovery_replay_v3
+
+    def observe_handoff(request, *, canonical_evidence_lease=None):
+        handoff_leases.append(canonical_evidence_lease)
+        return original_handoff(request, canonical_evidence_lease=canonical_evidence_lease)
+
+    def observe_reload(*, recovery_key_digest, canonical_evidence_lease=None,
+                       handoff_marker=None, authenticated_ingress=None):
+        reload_leases.append(canonical_evidence_lease)
+        return original_reload(
+            recovery_key_digest=recovery_key_digest,
+            canonical_evidence_lease=canonical_evidence_lease,
+            handoff_marker=handoff_marker,
+            authenticated_ingress=authenticated_ingress,
+        )
+
+    monkeypatch.setattr(atomic, "bootstrap_writer_handoff", observe_handoff)
+    monkeypatch.setattr(atomic, "reload_bootstrap_recovery_replay_v3", observe_reload)
+
+    snapshots_before = len(service._canonical_closure_dispatcher.snapshots)
+    result = deliver()
+
+    assert result is not None
+    assert len(constructed) == expected_deliveries
+    assert len(handoff_leases) == expected_deliveries
+    for lease in handoff_leases:
+        assert lease is not None
+        assert lease.result.member_evidence
+        assert lease._released
+    assert reload_leases and all(lease is not None for lease in reload_leases)
+    snapshots = service._canonical_closure_dispatcher.snapshots
+    assert len(snapshots) == snapshots_before + expected_deliveries
+    for snapshot in snapshots[snapshots_before:]:
+        assert snapshot.mode == "enabled"
+        assert snapshot.terminal_reason == "completed"
+        assert snapshot.released
+        assert "Atlas owner is Bob." not in repr(snapshot)
+    controls = plane.list_records(
+        source_kind="semantic_ingestion_preplanning_control"
+    )
+    assert controls
+    assert all(
+        control.content["control"]["state"] == "terminal" for control in controls
+    )

@@ -73,7 +73,39 @@ persistence semantics:
 - `remaining_blocks_approval: []` for this bounded correction only.
 - `remaining_changes_required: [all-root/recovery/replay proof, performance reduction, candidate refreeze and independent review]`.
 
+## Family-Proof Closure (2026-08-26)
+
+Every trigger family now has a focused production-root sealed-capability proof:
+
+| Trigger family | Proof | Result |
+| --- | --- | --- |
+| `direct_sync` | existing `test_verified_production_root_leases_prepared_bytes_into_writer_handoff` and redelivery proof | passing (pre-existing plus the recovery milestone's proofs) |
+| `direct_composite_sync`, `direct_memory_write`, `hermes_sync`/`hermes_memory_write` | `test_every_trigger_family_stages_seals_and_leases_prepared_bytes` in `test_bootstrap_graph_coordinator_v3.py`: composite child, direct memory write, Hermes `sync_turn` (both composite children), and Hermes `on_memory_write` each construct a fresh arena per delivery, consume an unreleased sealed lease with member evidence at `bootstrap_writer_handoff` and `reload_bootstrap_recovery_replay_v3`, release it, and emit exactly one content-free `enabled/completed` terminal snapshot; controls reach terminal | `4 passed in 923.04s` |
+
+Writer-admission family gaps from the debug closure review (TR-F1/F2 for
+Hermes and composed roots) are covered by
+`test_hermes_root_preserves_existing_durable_writer_and_skips_writes_without_ingress`
+and `test_composed_roots_write_nothing_without_resolved_ingress`
+(`3 passed in 15.46s`). Still remaining from that review (follow-up class):
+existing-record preservation and JSONL variants for the factory/filesystem
+roots are blocked on those builders not exposing an ingress-resolver
+passthrough, the no-runtime construction no-write assertion (TR-F4), and the
+foreign-manifest defense-in-depth pin (TR-F6).
+
+The transferred runtime-validation follow-up is closed: the
+`_provider_ingestion._semantic_runtime` private bridge is replaced by the
+service's stored `_composed_semantic_runtime` composition reference, and
+`test_semantic_runtime_validates_exactly_once_at_first_resolved_ingress`
+pins deferral (no validation or writer record at absent ingress, exactly
+one validation and record at first resolved ingress, no re-validation on
+later ingresses). Ratification against the governing profile/runtime
+contract is recorded as accepted: both directions fail closed and the
+deferral is the same authority boundary the ingress-first correction
+established.
+
 ## Next Action
 
-Map one recovery or replay root with a fresh private owner and an exact durable
-consumer before extending the closure to the remaining trigger families.
+Record the milestone outcome in the parent index and proceed to the
+performance milestone (VCC-R01): instrument the production-bound digest
+counter, implement codec-level child-slice reuse, and measure the capture
+matrix against the 90 percent gate.

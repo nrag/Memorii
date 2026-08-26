@@ -444,6 +444,9 @@ class ProviderMemoryService:
                     )
             except (ImportError, OSError, RuntimeError, TypeError, ValueError):
                 semantic_runtime = None
+        # Post-ingress runtime validation reads this stored composition
+        # reference instead of reaching into the coordinator's privates.
+        self._composed_semantic_runtime = semantic_runtime
         self._work_state_service = work_state_service
         self._work_state_selector = WorkStateSelector(work_state_service)
         self._solver_frontier_planner = solver_frontier_planner
@@ -730,7 +733,7 @@ class ProviderMemoryService:
     def _validate_semantic_runtime_after_ingress(self) -> None:
         if self._semantic_runtime_validated_after_ingress:
             return
-        runtime = self._provider_ingestion._semantic_runtime
+        runtime = self._composed_semantic_runtime
         if runtime is None or self._bootstrap_profile is None:
             return
         runtime.validate(profile=self._bootstrap_profile, server_time=self._now_provider())
