@@ -102,6 +102,7 @@ from memorii.core.semantic_ingestion.canonical_evidence_arena import (
     CanonicalMemberEvidence,
     CanonicalMemberIndex,
     ValidatedCanonicalEvidenceResult,
+    current_digest_verification_scope,
 )
 
 Commitment = Literal[
@@ -185,6 +186,28 @@ def _build_validated_semantic_contract_result(
 
 def contract_digest(domain: bytes, value: object) -> str:
     return sha256(domain + b"\0" + encode_typed_value(canonical_contract_value(value))).hexdigest()
+
+
+def _digest_verification_hit(instance: object, declared: str) -> bool:
+    """True when an operation-proven verification covers this exact content.
+
+    Reuse requires the same concrete type and declared digest plus full
+    structural equality with the certified instance, so a forged declaration
+    can never inherit an entry and always falls through to the full
+    computation.
+    """
+
+    scope = current_digest_verification_scope()
+    if scope is None:
+        return False
+    certified = scope.lookup_verified(type(instance), declared)
+    return certified is not None and type(certified) is type(instance) and certified == instance
+
+
+def _record_digest_verification(instance: object, declared: str) -> None:
+    scope = current_digest_verification_scope()
+    if scope is not None:
+        scope.record_verified(type(instance), declared, instance)
 
 
 class CandidateTransportError(ValueError):
@@ -2297,9 +2320,12 @@ class SegmentGovernanceBinding(BaseModel):
 
     @model_validator(mode="after")
     def validate_binding(self) -> SegmentGovernanceBinding:
+        if _digest_verification_hit(self, self.binding_digest):
+            return self
         body = self.model_dump(mode="python", exclude={"binding_digest"})
         if self.binding_digest != contract_digest(b"memorii.semantic-ingestion.segment-governance-binding.v1", body):
             raise ValueError("segment governance binding digest mismatch")
+        _record_digest_verification(self, self.binding_digest)
         return self
 
     @classmethod
@@ -2325,11 +2351,14 @@ class SegmentGovernanceCarrierSet(BaseModel):
             raise ValueError("segment governance bindings must be canonical")
         if len({binding.segment_id for binding in self.bindings}) != len(self.bindings):
             raise ValueError("segment governance bindings must name each segment once")
+        if _digest_verification_hit(self, self.carrier_set_digest):
+            return self
         body = self.model_dump(mode="python", exclude={"carrier_set_digest"})
         if self.carrier_set_digest != contract_digest(
             b"memorii.semantic-ingestion.segment-governance-carrier-set.v1", body
         ):
             raise ValueError("segment governance carrier set digest mismatch")
+        _record_digest_verification(self, self.carrier_set_digest)
         return self
 
     @classmethod
@@ -2399,11 +2428,14 @@ class MessageAdmissionIdentity(BaseModel):
 
     @model_validator(mode="after")
     def validate_identity(self) -> MessageAdmissionIdentity:
+        if _digest_verification_hit(self, self.message_admission_key_digest):
+            return self
         body = self.model_dump(mode="python", exclude={"message_admission_key_digest"})
         if self.message_admission_key_digest != contract_digest(
             b"memorii.semantic-ingestion.message-admission-identity.v1", body
         ):
             raise ValueError("message admission identity digest mismatch")
+        _record_digest_verification(self, self.message_admission_key_digest)
         return self
 
     @classmethod
@@ -4549,13 +4581,17 @@ class _ContentAddressedContract(BaseModel):
 
     @model_validator(mode="after")
     def validate_content_digest(self) -> _ContentAddressedContract:
+        declared = getattr(self, self._digest_field)
+        if _digest_verification_hit(self, declared):
+            return self
         body = {
             name: getattr(self, name)
             for name in type(self).model_fields
             if name != self._digest_field and name not in self._digest_excluded_fields
         }
-        if getattr(self, self._digest_field) != contract_digest(self._digest_domain, body):
+        if declared != contract_digest(self._digest_domain, body):
             raise ValueError(f"{self._digest_field} mismatch")
+        _record_digest_verification(self, declared)
         return self
 
     @classmethod
@@ -8693,11 +8729,14 @@ class BootstrapAnalysisProvenanceV1(BaseModel):
 
     @model_validator(mode="after")
     def validate_provenance(self) -> BootstrapAnalysisProvenanceV1:
+        if _digest_verification_hit(self, self.provenance_digest):
+            return self
         if self.provenance_digest != contract_digest(
             b"memorii.semantic-ingestion.bootstrap-analysis-provenance.v1",
             self.model_dump(mode="python", exclude={"provenance_digest"}),
         ):
             raise ValueError("bootstrap analysis provenance digest mismatch")
+        _record_digest_verification(self, self.provenance_digest)
         return self
 
     @classmethod

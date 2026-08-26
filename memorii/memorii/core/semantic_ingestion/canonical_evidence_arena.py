@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from secrets import token_hex
 from threading import Lock
+from threading import local as threading_local
 from typing import Generic, Literal, TypeVar
 
 from pydantic import BaseModel
@@ -140,6 +141,87 @@ class CanonicalEvidenceLease(Generic[_ContractT]):
 
 
 ValidatedCanonicalEvidenceResult = CanonicalCodecResult
+
+
+class CanonicalDigestVerificationScope:
+    """Operation-local reuse of verified content-addressed contract digests.
+
+    The codec's content-addressed validator recomputes the full canonical
+    digest on every construction and revalidation of a frozen contract. Within
+    one enabled operation the same logical artifacts are reconstructed many
+    times; an entry certifies that one exact instance's declared digest was
+    already verified, and a later structurally equal instance of the same
+    type and declared digest reuses that proven verification. The scope holds
+    strong references (so object identity cannot be recycled), is bounded,
+    and dies with its arena; it never crosses operations, threads, or
+    processes and carries no authority over bytes it has not already
+    verified.
+    """
+
+    def __init__(self) -> None:
+        self._verified: dict[tuple[type, str], object] = {}
+        self._reuses = 0
+        self._records = 0
+
+    @property
+    def reuses(self) -> int:
+        return self._reuses
+
+    @property
+    def records(self) -> int:
+        return self._records
+
+    def lookup_verified(self, contract_type: type, declared_digest: str) -> object | None:
+        certified = self._verified.get((contract_type, declared_digest))
+        if certified is not None:
+            self._reuses += 1
+        return certified
+
+    def record_verified(self, contract_type: type, declared_digest: str, instance: object) -> None:
+        if len(self._verified) >= MAX_ARENA_ENTRIES:
+            return
+        self._verified[(contract_type, declared_digest)] = instance
+        self._records += 1
+
+    def purge(self) -> None:
+        self._verified.clear()
+
+
+_CURRENT_DIGEST_VERIFICATION_SCOPES = threading_local()
+
+
+def current_digest_verification_scope() -> CanonicalDigestVerificationScope | None:
+    """Return the innermost active operation scope, if any."""
+
+    stack: list[CanonicalDigestVerificationScope] | None = getattr(
+        _CURRENT_DIGEST_VERIFICATION_SCOPES, "stack", None
+    )
+    if not stack:
+        return None
+    return stack[-1]
+
+
+def _push_digest_verification_scope(
+    scope: CanonicalDigestVerificationScope,
+) -> None:
+    stack: list[CanonicalDigestVerificationScope] | None = getattr(
+        _CURRENT_DIGEST_VERIFICATION_SCOPES, "stack", None
+    )
+    if stack is None:
+        stack = []
+        _CURRENT_DIGEST_VERIFICATION_SCOPES.stack = stack
+    stack.append(scope)
+
+
+def _pop_digest_verification_scope(
+    scope: CanonicalDigestVerificationScope,
+) -> None:
+    stack: list[CanonicalDigestVerificationScope] | None = getattr(
+        _CURRENT_DIGEST_VERIFICATION_SCOPES, "stack", None
+    )
+    if stack is None or not stack or stack[-1] is not scope:
+        raise RuntimeError("digest verification scope stack is unbalanced")
+    stack.pop()
 
 
 @dataclass(frozen=True)
@@ -629,6 +711,8 @@ class CanonicalEvidenceArena(AbstractContextManager["CanonicalEvidenceArena"]):
     ) -> None:
         self._nonce = token_hex(32)
         self._scope = scope
+        self._digest_verification_scope = CanonicalDigestVerificationScope()
+        self._digest_verification_active = False
         self._owner = CanonicalClosureScopeOwner(
             coordinator=_PROCESS_RESERVATIONS,
             scope=self._scope,
@@ -663,6 +747,14 @@ class CanonicalEvidenceArena(AbstractContextManager["CanonicalEvidenceArena"]):
     @property
     def enabled(self) -> bool:
         return self._owner.mode == _OP_MODE_ENABLED
+
+    @property
+    def digest_verification_reuses(self) -> int:
+        return self._digest_verification_scope.reuses
+
+    @property
+    def digest_verification_records(self) -> int:
+        return self._digest_verification_scope.records
 
     def require_active_nonce(self, nonce: str) -> None:
         if (
@@ -716,7 +808,7 @@ class CanonicalEvidenceArena(AbstractContextManager["CanonicalEvidenceArena"]):
         domain: bytes,
         result: ValidatedCanonicalEvidenceResult[_ContractT],
     ) -> bool:
-        return self._owner.admit(
+        admitted = self._owner.admit(
             canonical_contract_bytes=canonical_contract_bytes,
             concrete_contract_type=concrete_contract_type,
             profile_revision=profile_revision,
@@ -724,12 +816,24 @@ class CanonicalEvidenceArena(AbstractContextManager["CanonicalEvidenceArena"]):
             domain=domain,
             result=result,
         )
+        self._inert_verification_scope_after_refusal()
+        return admitted
 
     def seal(self) -> CanonicalBinding:
-        return self._owner.seal()
+        binding = self._owner.seal()
+        self._inert_verification_scope_after_refusal()
+        return binding
 
     def bind_and_seal(self, scope: CanonicalValidationScope) -> CanonicalBinding:
-        return self._owner.bind_and_seal(scope)
+        binding = self._owner.bind_and_seal(scope)
+        self._inert_verification_scope_after_refusal()
+        return binding
+
+    def _inert_verification_scope_after_refusal(self) -> None:
+        if self._owner.state == _STATE_REJECTED:
+            # Capacity refusal selects the full path: no proven verification
+            # may be reused for the remainder of the operation.
+            self._digest_verification_scope.purge()
 
     def lease(
         self,
@@ -782,9 +886,18 @@ class CanonicalEvidenceArena(AbstractContextManager["CanonicalEvidenceArena"]):
         )
 
     def __enter__(self) -> CanonicalEvidenceArena:
+        if self._owner.mode == _OP_MODE_ENABLED:
+            _push_digest_verification_scope(self._digest_verification_scope)
+            self._digest_verification_active = True
         return self
 
     def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        if self._digest_verification_active:
+            _pop_digest_verification_scope(self._digest_verification_scope)
+            self._digest_verification_active = False
+        # The verification memo never outlives its operation, including on
+        # rejection paths that otherwise keep the arena object reachable.
+        self._digest_verification_scope.purge()
         if exc_type is None:
             self.close()
         else:

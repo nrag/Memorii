@@ -1,0 +1,191 @@
+{
+  "censuses": [
+    {
+      "blocked_semantic": "source_only",
+      "elapsed_seconds": 173.692,
+      "mode": "enabled",
+      "repeated_digest_calls": 1722,
+      "repeated_fraction": 0.838364,
+      "top_callsites": [
+        [
+          "contracts.py:2384",
+          365
+        ],
+        [
+          "contracts.py:4612",
+          282
+        ],
+        [
+          "contracts.py:4592",
+          238
+        ],
+        [
+          "contracts.py:9984",
+          210
+        ],
+        [
+          "contracts.py:2465",
+          143
+        ],
+        [
+          "contracts.py:2394",
+          123
+        ],
+        [
+          "contracts.py:9405",
+          69
+        ],
+        [
+          "contracts.py:2720",
+          67
+        ],
+        [
+          "contracts.py:2517",
+          64
+        ],
+        [
+          "contracts.py:8542",
+          51
+        ],
+        [
+          "contracts.py:2756",
+          45
+        ],
+        [
+          "contracts.py:8493",
+          42
+        ]
+      ],
+      "top_repetitions": [
+        {
+          "count": 142,
+          "digest": "23d4408108c93a64"
+        },
+        {
+          "count": 122,
+          "digest": "7cee2063d6261863"
+        },
+        {
+          "count": 122,
+          "digest": "8f10e526007fd267"
+        },
+        {
+          "count": 122,
+          "digest": "ce5445624b50ad3b"
+        },
+        {
+          "count": 122,
+          "digest": "943d59883e4163ec"
+        },
+        {
+          "count": 105,
+          "digest": "f2eeb85ce82b2e28"
+        },
+        {
+          "count": 105,
+          "digest": "df982ad891d27922"
+        },
+        {
+          "count": 69,
+          "digest": "7efe0ab210d9b8b5"
+        }
+      ],
+      "total_digest_calls": 2054,
+      "unique_digest_outputs": 332
+    },
+    {
+      "blocked_semantic": "source_only",
+      "elapsed_seconds": 491.09,
+      "mode": "disabled",
+      "repeated_digest_calls": 48730,
+      "repeated_fraction": 0.993395,
+      "top_callsites": [
+        [
+          "contracts.py:4592",
+          44290
+        ],
+        [
+          "contracts.py:8734",
+          2597
+        ],
+        [
+          "contracts.py:4612",
+          282
+        ],
+        [
+          "contracts.py:2384",
+          240
+        ],
+        [
+          "contracts.py:9984",
+          210
+        ],
+        [
+          "contracts.py:2326",
+          184
+        ],
+        [
+          "contracts.py:2434",
+          184
+        ],
+        [
+          "contracts.py:2357",
+          140
+        ],
+        [
+          "contracts.py:2465",
+          140
+        ],
+        [
+          "contracts.py:2394",
+          121
+        ],
+        [
+          "contracts.py:9405",
+          69
+        ],
+        [
+          "contracts.py:2720",
+          65
+        ]
+      ],
+      "top_repetitions": [
+        {
+          "count": 5515,
+          "digest": "564a3d964dff0267"
+        },
+        {
+          "count": 5489,
+          "digest": "0983f77154df357e"
+        },
+        {
+          "count": 5444,
+          "digest": "844be4b9e387adbf"
+        },
+        {
+          "count": 3613,
+          "digest": "8328385ebe9c82ac"
+        },
+        {
+          "count": 3586,
+          "digest": "df74ba11475b79d7"
+        },
+        {
+          "count": 2745,
+          "digest": "9436c411681fa15e"
+        },
+        {
+          "count": 2726,
+          "digest": "74ea01a344869865"
+        },
+        {
+          "count": 2598,
+          "digest": "9abe454bee683806"
+        }
+      ],
+      "total_digest_calls": 49054,
+      "unique_digest_outputs": 324
+    }
+  ],
+  "started": "2026-08-26T19:18:04.325715+00:00"
+}

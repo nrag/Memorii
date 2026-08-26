@@ -468,3 +468,103 @@ def test_capacity_refusal_emits_one_content_free_snapshot_and_unavailable_sink_p
     assert failing_arena.snapshot().terminal_reason == "completed"
     assert failing_arena.snapshot().released
     assert unavailable.calls == 1
+
+
+def _count_contract_digest(monkeypatch):
+    import memorii.core.semantic_ingestion.contracts as _contracts
+
+    calls = {"n": 0}
+    original = _contracts.contract_digest
+
+    def counted(domain, value):
+        calls["n"] += 1
+        return original(domain, value)
+
+    monkeypatch.setattr(_contracts, "contract_digest", counted)
+    return calls
+
+
+def _equal_copy(value: RetainedSourceTextArtifact) -> RetainedSourceTextArtifact:
+    return RetainedSourceTextArtifact.model_validate(value.model_dump(mode="python"))
+
+
+def test_enabled_arena_reuses_verified_digest_within_operation(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True) as arena:
+        first = _artifact(artifact_id="reuse-me")
+        baseline = calls["n"]
+        assert baseline >= 1
+        copies = [_equal_copy(first) for _ in range(20)]
+        assert all(copy == first for copy in copies)
+        assert calls["n"] == baseline
+        assert arena.digest_verification_reuses >= 20
+        assert arena.digest_verification_records >= 1
+    assert _equal_copy(first) == first
+
+
+def test_digest_verification_scope_does_not_survive_arena_close(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    with CanonicalEvidenceArena(enabled=True):
+        first = _artifact(artifact_id="closed-scope")
+        baseline = calls["n"]
+        _equal_copy(first)
+        assert calls["n"] == baseline
+    _equal_copy(first)
+    assert calls["n"] > baseline
+
+
+def test_disabled_arena_keeps_full_digest_verification(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    with CanonicalEvidenceArena(enabled=False) as arena:
+        first = _artifact(artifact_id="disabled-scope")
+        baseline = calls["n"]
+        _equal_copy(first)
+        assert calls["n"] > baseline
+        assert arena.digest_verification_reuses == 0
+
+
+def test_no_arena_keeps_full_digest_verification(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    first = _artifact(artifact_id="no-scope")
+    baseline = calls["n"]
+    _equal_copy(first)
+    assert calls["n"] > baseline
+
+
+def test_forged_digest_declaration_fails_closed_inside_active_scope() -> None:
+    with CanonicalEvidenceArena(enabled=True):
+        good = _artifact(artifact_id="forged-target")
+        forged_body = dict(good.model_dump(mode="python"))
+        forged_body["content_digest"] = "1" * 64
+        with pytest.raises(ValueError, match="artifact_digest mismatch"):
+            RetainedSourceTextArtifact.model_validate(forged_body)
+
+
+def test_capacity_refusal_inerts_verified_digest_reuse(monkeypatch) -> None:
+    calls = _count_contract_digest(monkeypatch)
+    arena = CanonicalEvidenceArena(enabled=True)
+    with arena:
+        first = _artifact(artifact_id="refused-scope")
+        baseline = calls["n"]
+        _equal_copy(first)
+        assert calls["n"] == baseline
+        oversized = ValidatedCanonicalEvidenceResult(
+            contract=first,
+            canonical_contract_bytes=b"x" * (MAX_CANONICAL_BYTES_PER_ENTRY + 1),
+            canonical_member_index=CanonicalMemberIndex(
+                contract_type="test",
+                member_paths=1,
+                canonical_digest="0" * 64,
+            ),
+            validation_provenance=("test",),
+        )
+        assert not arena.admit_success(
+            canonical_contract_bytes=oversized.canonical_contract_bytes,
+            concrete_contract_type=type(first),
+            profile_revision=CANONICAL_PROFILE_REVISION,
+            codec_revision=CANONICAL_CODEC_REVISION,
+            domain=b"domain",
+            result=oversized,
+        )
+        _equal_copy(first)
+        assert calls["n"] > baseline
