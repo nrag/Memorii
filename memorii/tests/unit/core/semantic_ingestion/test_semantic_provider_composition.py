@@ -1645,7 +1645,7 @@ def test_public_coordinator_rejects_every_egress_authority_mutation_without_wire
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW)
+        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -1999,7 +1999,7 @@ def test_normal_provider_accepted_control_commits_complete_effect_group() -> Non
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW)
+        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -2050,7 +2050,7 @@ def test_ordinary_provider_root_uses_production_local_analyzer_without_wire() ->
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW)
+        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -2497,7 +2497,7 @@ def test_jsonl_recovery_authority_change_is_zero_learned_calls(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(failed_capability),),
     ):
-        failed_service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW)
+        failed_service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     failed_service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -2551,7 +2551,7 @@ def test_jsonl_recovery_authority_change_is_zero_learned_calls(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW)
+        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     outcomes = reopened.reconcile_memory_evolution()
     assert [outcome.status for outcome in outcomes] == ["evolution_pending"]
     assert transport.requests == []
@@ -2575,7 +2575,7 @@ def test_foreign_recovery_plan_is_rejected_before_lease_or_learned_calls(tmp_pat
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(foreign_capability),),
     ):
-        foreign_service = ProviderMemoryService(memory_plane=foreign_plane, now_provider=lambda: TEST_NOW)
+        foreign_service = ProviderMemoryService(memory_plane=foreign_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     foreign_service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -2607,7 +2607,7 @@ def test_foreign_recovery_plan_is_rejected_before_lease_or_learned_calls(tmp_pat
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(target_capability),),
     ):
-        target_service = ProviderMemoryService(memory_plane=target_plane, now_provider=lambda: TEST_NOW)
+        target_service = ProviderMemoryService(memory_plane=target_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     target_service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -2630,7 +2630,7 @@ def test_foreign_recovery_plan_is_rejected_before_lease_or_learned_calls(tmp_pat
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW)
+        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     with (
         patch.object(
             reopened._provider_ingestion._semantic_terminal_persistence,
@@ -2654,7 +2654,7 @@ def test_identical_redelivery_after_authority_rotation_reuses_plan_without_calls
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW)
+        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     event_kwargs = {
         "operation": ProviderOperation.CHAT_USER_TURN,
         "content": "Atlas owner is Bob.",
@@ -2707,7 +2707,7 @@ def test_identical_redelivery_after_authority_rotation_reuses_plan_without_calls
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(recovered_capability),),
     ):
-        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW)
+        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     result = reopened.sync_event(**event_kwargs)
     assert result.blocked_reasons["semantic_ingestion"] == "retryable_outage"
     assert transport.requests == []
@@ -2729,7 +2729,7 @@ def test_public_reconcile_persists_retry_exhaustion_within_attempt_budget(tmp_pa
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW)
+        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     service.sync_event(
         operation=ProviderOperation.CHAT_USER_TURN,
         content="Atlas owner is Bob.",
@@ -2775,7 +2775,7 @@ def test_public_jsonl_lost_ack_reopens_without_duplicate_effects(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(capability),),
     ):
-        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW)
+        service = ProviderMemoryService(memory_plane=plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     original = getattr(store, boundary)
     failed = False
 
@@ -2817,7 +2817,7 @@ def test_public_jsonl_lost_ack_reopens_without_duplicate_effects(
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(reopened_capability),),
     ):
-        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW)
+        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     reopened.reconcile_memory_evolution()
     assert failed is True
     assert reopened_transport.requests == []
@@ -3095,7 +3095,7 @@ def test_public_jsonl_service_matches_frozen_wire_and_member_bytes_across_reopen
         "memorii.core.memory_evolution.bootstrap_profile.entry_points",
         return_value=(_InstalledCapabilityEntryPoint(reopened_capability),),
     ):
-        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW)
+        reopened = ProviderMemoryService(memory_plane=reopened_plane, now_provider=lambda: TEST_NOW, host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier())
     assert reopened.reconcile_memory_evolution() == []
     assert (storage / "memory_records.jsonl").read_bytes() == before
 

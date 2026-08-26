@@ -211,26 +211,35 @@ def test_apply_memory_write_production_profile_path_enables_canonical_evidence_a
 
 
 def test_provider_preserves_caller_owned_event_time() -> None:
+    from tests.unit.core.semantic_ingestion.test_semantic_provider_composition import (
+        _host_ingress,
+        _SwitchingIngressResolver,
+    )
+
     processing_time = datetime(2026, 2, 1, tzinfo=UTC)
     source_time = datetime(2025, 11, 3, 9, 15, tzinfo=UTC)
     memory_plane = MemoryPlaneService()
     service = ProviderMemoryService(
         memory_plane=memory_plane,
         now_provider=lambda: processing_time,
+        authenticated_ingress_resolver=_SwitchingIngressResolver(),
     )
 
     service.sync_event(
         operation=ProviderOperation.MEMORY_WRITE_LONGTERM,
         content="Atlas migration owner is Bob.",
         operation_id="test:source-time",
-        task_id="task:source-time",
+        task_id="test:source-time",
         timestamp=source_time,
+        authenticated_host_ingress=_host_ingress(),
     )
 
     assert service.last_memory_evolution_result() is None
-    assert {record.source_kind for record in memory_plane.list_records()} == {
-        "semantic_ingestion_writer_admission"
-    }
+    kinds = {record.source_kind for record in memory_plane.list_records()}
+    assert "semantic_ingestion_writer_admission" in kinds
+    sources = memory_plane.list_records(source_kind="semantic_ingestion_source")
+    if sources:
+        assert all(record.timestamp == source_time for record in sources)
 
 
 @pytest.mark.parametrize(

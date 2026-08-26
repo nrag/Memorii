@@ -136,7 +136,7 @@ Excluded:
 | Direct ingress closure slice | Prepared-source `sync_event` stages, seals, leases, and reaches atomic handoff | R02-R10 partial; R03/R04/R07/R08/R11/R12 locally supported | complete |
 | Complete trigger and durable-path propagation | Direct, composite, memory-write, and Hermes hooks each proven to stage, seal, lease, and consume at both durable consumers | R02-R12 | complete (2026-08-26, `02502eb`); builder-blocked writer-preservation cells recorded as follow-ups |
 | Recovery/reconciliation fresh-owner propagation | V3 mid-ingestion recovery proven through the redelivery door with fresh owner, sealed lease into the replay reload, five-coordinate rejection, and enabled/disabled parity; reconcile branch structural finding recorded with pending repair-or-remove decision | R02/R03/R05-R12; R01 measurement contribution only | complete for the redelivery door (2026-08-26, `4560d29`); reconcile branch disposition pending |
-| Performance, rollout, gates, and final closure | Full acceptance matrix, 90 percent production-bound reduction, capacity/concurrency/privacy attacks, rollback equivalence, docs, CI, frozen revision, and final whole-branch review | All | active |
+| Performance, rollout, gates, and final closure | 90 percent production-bound reduction met with margin (96.5 percent repeated); broad-gate reconciliation partially complete (provider-service green, identity gate green, +3 composition fixes); 47 pre-existing legacy-fixture failures classified for a dedicated operation; acceptance matrix, refreeze, reviews, CI, and docs remain | All | active |
 
 Milestone labels organize work only and may not appear in production or test
 filenames, symbols, schemas, fixtures, artifacts, diagnostics, or workflow jobs.
@@ -417,9 +417,10 @@ superseded on 2026-08-26 by the family-proof and recovery milestones.)
 
 ## Next Action
 
-Start the performance milestone: instrument the production-bound full-digest
-counter, implement codec-level child-slice reuse per the approved design's
-cross-root reuse contract, and measure the capture matrix against the 90
-percent repeated-digest gate with enabled/disabled byte-and-outcome identity.
-The user decision on the unreachable reconcile branch disposition may proceed
-in parallel.
+Decide the two open dispositions — the unreachable reconcile branch
+(repair via a V3 execution-plan persistence design change, or remove the
+dead branch) and whether to open the dedicated legacy-fixture
+reconciliation operation for the 47 remaining pre-existing failures — then
+run the final closure items: full acceptance matrix, candidate refreeze,
+independent milestone and final reviews, CI wiring, and current-state
+documentation updates.

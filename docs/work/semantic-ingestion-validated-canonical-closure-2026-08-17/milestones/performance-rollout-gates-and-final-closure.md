@@ -72,8 +72,50 @@ for the gate): the per-child scope-set digest comprehension
 (`contracts.py` required-outcome-scope loop) and the identity-cluster digest
 still recompute; converting them would push the reduction beyond 97 percent.
 
+## Broad-Gate Baseline Reconciliation (2026-08-26, partial)
+
+Completed:
+
+- `test_provider_service.py` is fully green (`41 passed`): the stale
+  `test_provider_preserves_caller_owned_event_time` expectation was corrected
+  to the ingress-gated writer-admission contract (resolved ingress creates
+  the record; retained sources must carry the caller timestamp).
+- `memorii.tools.identity_hygiene` passes (exit 0): the drifted
+  `legacy_rejection_vector` location pin in
+  `test_semantic_ingestion_pipeline.py` was updated from line 415 to the
+  current line 450 (this branch's original dirty tree shifted the line; the
+  rejecting test itself is unchanged).
+- Fourteen bare `ProviderMemoryService(memory_plane=..., now_provider=...)`
+  constructions in `test_semantic_provider_composition.py` now pass
+  `host_bootstrap_material_verifier`, restoring installed-capability
+  composition (profile, resolver, and runtime engage). Net effect on the
+  module: 25 passing vs 22 before.
+
+Explicitly remaining (not repairable by the shared-cause pattern):
+
+- 43 failures in `test_semantic_provider_composition.py` (dominated by the
+  18-case egress-mutation family) and 4 in
+  `test_bootstrap_graph_coordinator_v3.py` are verified pre-existing at
+  clean base `b9daf00a` and at every branch revision, with the branch's
+  production changes reverted (stash and parent-commit file isolation both
+  reproduce them). They fail because legacy fixtures encode composition
+  expectations (ordinary-path checkpoints, hand-built minimal runtimes,
+  resolver-less ingress) that predate the current V3/ingress-gated
+  contracts. Each family needs its own causal fixture work; a hand-built
+  minimal runtime, for example, engages composition but produces no
+  preplanning control without the full local runtime parts.
+- pyright on `contracts.py`/`canonical_evidence_arena.py` reports 374
+  pre-existing errors with zero added by this branch (verified by
+  parent-commit file isolation); repo-wide pyright debt predates this work.
+- Disposition: the remaining legacy-fixture reconciliation is a dedicated
+  debugging or test-architecture operation (`$debug-problem` or
+  `$design-tests`), not a closure-feature defect; no product behavior
+  evidence links these failures to the validated-closure changes.
+
 ## Next Action
 
-Run the broad-gate baseline reconciliation: triage and fix or explicitly
-classify the pre-existing unit failures and the identity-hygiene allowlist
-drift, then rerun the full broad gate set at one frozen revision.
+Decide whether to open the dedicated legacy-fixture reconciliation
+operation for the 47 remaining pre-existing failures, then proceed to the
+final closure items: full acceptance-matrix run, candidate refreeze,
+independent milestone and final reviews, CI wiring, and current-state
+documentation updates.
