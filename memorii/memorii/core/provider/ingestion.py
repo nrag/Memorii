@@ -595,12 +595,12 @@ class ProviderIngestionCoordinator:
             )
         prepared_admission = self._admit_with_writer_retry(prepare)
         if outcome == "selected_pipeline_pending":
-            handoff = self._bootstrap_prepare_and_handoff(
+            handoff_with_lease = self._bootstrap_prepare_and_handoff(
                 prepared_admission=prepared_admission,
                 authenticated_ingress=authenticated_ingress,
                 canonical_evidence_arena=canonical_evidence_arena,
             )
-            if handoff is None:
+            if handoff_with_lease is None:
                 return (
                     result.model_copy(
                         update={
@@ -616,6 +616,7 @@ class ProviderIngestionCoordinator:
                     None,
                     None,
                 )
+            handoff, canonical_evidence_lease = handoff_with_lease
             fence = prepared_admission.operation_fence_binding
             # V3 binds the handoff's exact generation-one predecessor into its
             # recovery probe.  Acquiring the ordinary pipeline lease here
@@ -635,6 +636,7 @@ class ProviderIngestionCoordinator:
                         operation_fence=fence,
                         bootstrap_handoff=handoff,
                         canonical_evidence_arena=canonical_evidence_arena,
+                        canonical_evidence_lease=canonical_evidence_lease,
                     )
                 except PreplanningStoreError:
                     terminal = SemanticTerminalOutcome.create(
@@ -649,6 +651,9 @@ class ProviderIngestionCoordinator:
                 except (OSError, SemanticAnalysisOutage):
                     terminal = None
                     authorization_guard = None
+                finally:
+                    if canonical_evidence_lease is not None:
+                        canonical_evidence_lease.release()
                 if (
                     terminal is None
                     or "source_alignment_authority_unavailable" in terminal.reason_codes
@@ -741,6 +746,10 @@ class ProviderIngestionCoordinator:
                     None,
                     None,
                 )
+            elif canonical_evidence_lease is not None:
+                # A non-V3 handoff cannot reach the recovery reload consumer;
+                # release the writer-boundary lease before the ordinary path.
+                canonical_evidence_lease.release()
             execution_plan = self._semantic_terminal_persistence.recover_execution_plan(
                 fence=fence
             )
@@ -1241,8 +1250,13 @@ class ProviderIngestionCoordinator:
         prepared_admission,
         authenticated_ingress: AuthenticatedIngressContext,
         canonical_evidence_arena: CanonicalEvidenceArena,
-    ) -> BootstrapWriterHandoffResult | None:
-        """Bridge admitted Step-1 authority to the only writer-start boundary."""
+    ) -> tuple[BootstrapWriterHandoffResult, CanonicalEvidenceLease | None] | None:
+        """Bridge admitted Step-1 authority to the only writer-start boundary.
+
+        On success the sealed lease stays open for the caller's semantic
+        ingestion pass, mirroring the recovery loop's lease lifetime; every
+        failure path releases it exactly once.
+        """
         profile = self._bootstrap_profile
         runtime = self._semantic_runtime
         if profile is None or runtime is None:
@@ -1353,27 +1367,34 @@ class ProviderIngestionCoordinator:
                 current_release_assertion=retry_assertion,
                 expected_writer_admission_digest=current.admission_digest,
                 expected_writer_epoch=current.writer_epoch,
-                ),
+            ),
                 canonical_evidence_lease=lease,
             )
-        finally:
+        except BaseException:
             if lease is not None:
                 lease.release()
+            raise
         if isinstance(handoff, BootstrapHandoffAccessDenied) or handoff.kind not in {
             "started",
             "already_started",
         }:
+            if lease is not None:
+                lease.release()
             return None
         marker = handoff.marker
         if marker is None or marker.operation_fence_binding != admission.operation_fence_binding:
+            if lease is not None:
+                lease.release()
             return None
         current = self._writer_admission.current()
         if (
             marker.writer_commit_binding.admission_digest != current.admission_digest
             or marker.writer_commit_binding.expected_writer_epoch != current.writer_epoch
         ):
+            if lease is not None:
+                lease.release()
             return None
-        return handoff
+        return handoff, lease
 
     def _stage_recovery_prepared_source(
         self,

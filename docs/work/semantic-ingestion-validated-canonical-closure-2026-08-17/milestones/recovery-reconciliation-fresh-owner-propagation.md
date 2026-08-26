@@ -194,8 +194,75 @@ implementation milestone.
   construction no-write assertion, the foreign-manifest defense-in-depth
   pin, and the vestigial `_owns_writer_admission_record` cleanup.
 
+## Validation Matrix Results (2026-08-26)
+
+Three focused production-root proofs were added to
+`memorii/tests/unit/core/semantic_ingestion/test_bootstrap_graph_coordinator_v3.py`
+and pass at the current revision:
+
+| Matrix row | Proof | Result |
+| --- | --- | --- |
+| Fresh owner per recovery invocation | `test_redelivery_recovery_uses_fresh_owner_and_leases_exact_prepared_bytes`: crash-after-handoff interruption, recovery by exact redelivery through the public root; one new arena per delivery; scope coordinates equal marker/ingress/writer; lease released; exactly one content-free `enabled/completed` terminal snapshot; zero plain-path PreparedSource encodes after the lease reaches the reload consumer; third delivery is an idempotent lost-ack replay | passed |
+| Five-coordinate integrity | `test_redelivery_recovery_rejects_mutated_lease_coordinates`: foreign generation, fence, operation, writer, and tenant each fail closed at `reload_bootstrap_recovery_replay_v3` before reconstruction; the drained lease cannot re-authorize | passed |
+| Durable/replay identity across modes | `test_redelivery_recovery_outcomes_are_identical_across_enabled_and_disabled_modes`: identical public outcomes, idempotent third deliveries, identical durable kind projections, and equal found-state recovery indexes across enabled and disabled modes on JSONL | passed |
+
+## Structural Finding: Reconcile Leased Branch Is Unreachable (2026-08-26)
+
+Running the matrix exposed that the milestone's assumed recovery door is
+structurally unreachable:
+
+- `ProviderIngestionCoordinator.reconcile` enters its fresh-owner/lease branch
+  only when `recover_execution_plan(fence)` returns a persisted
+  `execution_plan` generation member and a handoff marker exists.
+- The only production writer of `execution_plan` members is
+  `lease_session.checkpoint_execution_plan` at `ingestion.py` (ordinary path),
+  which V3 bootstrap operations never reach: they return through the V3
+  handoff fast path before ordinary checkpointing. V3 operations therefore
+  persist markers without plans, and ordinary operations persist plans
+  without markers. The conjunction never occurs, so the implemented
+  per-recovery-item arena factory, `_stage_recovery_prepared_source`, and the
+  reconcile lease plumbing have no production caller.
+- The reachable V3 mid-ingestion recovery door is exact redelivery through
+  the direct root (marker `already_started`), consistent with the governing
+  SIA-R23 redelivery/replay contract and the marker's own idempotence design
+  ("an idempotent marker still consumes a fresh lease").
+
+Disposition: the redelivery door is now wired and proven (below). The
+unreachable reconcile branch is retained unchanged pending an explicit
+decision: repairing it requires persisting a V3 execution plan (a durable
+record-content change that returns to `$build-design`), while removing it is
+behavior-neutral dead-code cleanup. This packet does not decide that
+unilaterally.
+
+## Lease Propagation Correction (2026-08-26)
+
+The redelivery door had its own gap: `_bootstrap_prepare_and_handoff`
+released its sealed lease at the writer handoff, so `_run_semantic_ingestion`
+reached `reload_bootstrap_recovery_replay_v3` with no lease and the reload
+validation/substitution wiring was dead on the direct path too. Corrected:
+
+- `_bootstrap_prepare_and_handoff` now returns the handoff result together
+  with the still-open lease and releases it on every failure exit.
+- The V3 fast path passes `canonical_evidence_lease` into
+  `_run_semantic_ingestion` and releases it in a `finally`, mirroring the
+  recovery loop's intended lease lifetime; the non-V3 fall-through releases
+  it before the ordinary path.
+- `reload_bootstrap_recovery_replay_v3` now receives an unreleased lease on
+  first delivery and redelivery; its `_validate_recovery_prepared_lease`
+  checks (decode-and-compare against retained prepared bytes, marker,
+  ingress, writer, digest, and member evidence) execute in production.
+
+## Updated Production Entrypoint Binding Ledger
+
+| Trigger family | Non-test composition/root | Required authority and consumer proof | Status |
+| --- | --- | --- | --- |
+| `reconcile_memory_evolution` | `ProviderMemoryService.reconcile_memory_evolution` | per-item fresh arena, marker load by exact fence, stage/bind/seal, lease into reload | implemented but structurally unreachable; see the finding above; disposition pending |
+| Exact redelivery recovery | `ProviderMemoryService.sync_event` (same operation id) over a retained marker + found index | fresh private arena and sealed lease through `_bootstrap_prepare_and_handoff` into `bootstrap_writer_handoff` and `reload_bootstrap_recovery_replay_v3`; five-coordinate and drained-lease rejection; enabled/disabled parity | proven by the three focused production-root proofs above |
+| disabled/capacity-refused recovery | same real roots in disabled mode | no sealed substitution; ordinary validated path produces the same durable/public outcome | proven for the redelivery family (mode-parity proof); capacity-refused variant remains covered by arena unit evidence |
+
 ## Next Action
 
-Run this packet's planned deterministic validation matrix against the current
-revision, starting with the fresh-owner-per-recovery-invocation and
-stage-then-bind/seal ordering proofs through the public recovery root.
+Decide the unreachable reconcile branch disposition (repair via a V3
+execution-plan persistence design change, or remove the dead branch), then
+close this milestone's remaining transferred follow-up (runtime-validation
+ratification) before extending proofs to the remaining trigger families.
