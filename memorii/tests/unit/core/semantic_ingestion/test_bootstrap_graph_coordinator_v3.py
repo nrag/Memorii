@@ -162,7 +162,9 @@ def test_coordinator_persists_retry_or_terminal_once(monkeypatch, outcome_kind: 
     fixture = build_persisted_bootstrap_graph_replay_fixture(
         recovery_repository=atomic,
         recovery_key_digest=recovery_key,
-        authenticated_ingress=ingress,
+        delivery_principal_binding_digest=(
+            ingress.delivery_principal_binding.binding_digest
+        ),
         required_outcome_scopes=source.governance_carrier_artifact.required_outcome_scopes,
         operation_fence_binding=marker.operation_fence_binding,
         operation_lease_binding=lease,
@@ -666,7 +668,6 @@ def _reload_terminal_by_recovery(service: ProviderMemoryService, plane: MemoryPl
     assert ingress is not None and source is not None
     return atomic.reload_bootstrap_graph_terminal_by_recovery_v3(
         normalization_replay=replay,
-        authenticated_ingress=ingress,
         required_outcome_scopes=source.governance_carrier_artifact.required_outcome_scopes,
         operation_fence_binding=marker.operation_fence_binding,
     )
@@ -882,16 +883,16 @@ def test_redelivery_recovery_uses_fresh_owner_and_leases_exact_prepared_bytes(
     original_reload = atomic.reload_bootstrap_recovery_replay_v3
 
     def observe_reload(*, recovery_key_digest, canonical_evidence_lease=None,
-                       handoff_marker=None, authenticated_ingress=None):
+                       handoff_marker=None, tenant_partition_id=None):
         reload_captures.append(
-            (canonical_evidence_lease, handoff_marker, authenticated_ingress)
+            (canonical_evidence_lease, handoff_marker, tenant_partition_id)
         )
         encodes_at_lease.append(len(prepared_encodes))
         return original_reload(
             recovery_key_digest=recovery_key_digest,
             canonical_evidence_lease=canonical_evidence_lease,
             handoff_marker=handoff_marker,
-            authenticated_ingress=authenticated_ingress,
+            tenant_partition_id=tenant_partition_id,
         )
 
     monkeypatch.setattr(
@@ -915,16 +916,13 @@ def test_redelivery_recovery_uses_fresh_owner_and_leases_exact_prepared_bytes(
     assert recovered.blocked_reasons["semantic_ingestion"] == "source_only"
     assert len(constructed) == 1
     assert len(reload_captures) == 1
-    lease, marker, ingress = reload_captures[0]
-    assert lease is not None and marker is not None and ingress is not None
+    lease, marker, tenant = reload_captures[0]
+    assert lease is not None and marker is not None and tenant is not None
     assert lease.result.member_evidence
     assert lease.scope.operation == marker.operation_fence_binding.operation_id
     assert lease.scope.generation == marker.prepared_generation
     assert lease.scope.fence == marker.operation_fence_binding.operation_fence_id
-    assert (
-        lease.scope.tenant
-        == ingress.delivery_principal_binding.tenant_partition_id
-    )
+    assert lease.scope.tenant == tenant
     current = service._provider_ingestion._writer_admission.current()
     assert lease.scope.writer == f"{current.admission_digest}:{current.writer_epoch}"
     assert lease._released
@@ -964,27 +962,27 @@ def test_redelivery_recovery_rejects_mutated_lease_coordinates(monkeypatch) -> N
     drained: list[tuple[object, object, object]] = []
     original_reload = atomic.reload_bootstrap_recovery_replay_v3
 
-    def probe(recovery_key_digest, lease, marker, ingress):
+    def probe(recovery_key_digest, lease, marker, tenant):
         return original_reload(
             recovery_key_digest=recovery_key_digest,
             canonical_evidence_lease=lease,
             handoff_marker=marker,
-            authenticated_ingress=ingress,
+            tenant_partition_id=tenant,
         )
 
     def observe_reload(*, recovery_key_digest, canonical_evidence_lease=None,
-                       handoff_marker=None, authenticated_ingress=None):
+                       handoff_marker=None, tenant_partition_id=None):
         # Every foreign-coordinate probe must fail closed before any replay
         # reconstruction; these probes run while the lease is still held.
         marker = handoff_marker
-        ingress = authenticated_ingress
+        tenant = tenant_partition_id
         fence = marker.operation_fence_binding
         probes = {
             "foreign_generation": (
                 marker.model_copy(
                     update={"prepared_generation": marker.prepared_generation + 1}
                 ),
-                ingress,
+                tenant,
             ),
             "foreign_fence": (
                 marker.model_copy(update={
@@ -992,7 +990,7 @@ def test_redelivery_recovery_rejects_mutated_lease_coordinates(monkeypatch) -> N
                         update={"operation_fence_id": fence.operation_fence_id + ":foreign"}
                     )
                 }),
-                ingress,
+                tenant,
             ),
             "foreign_operation": (
                 marker.model_copy(update={
@@ -1000,7 +998,7 @@ def test_redelivery_recovery_rejects_mutated_lease_coordinates(monkeypatch) -> N
                         update={"operation_id": fence.operation_id + ":foreign"}
                     )
                 }),
-                ingress,
+                tenant,
             ),
             "foreign_writer": (
                 marker.model_copy(update={
@@ -1008,30 +1006,21 @@ def test_redelivery_recovery_rejects_mutated_lease_coordinates(monkeypatch) -> N
                         update={"admission_digest": "0" * 64}
                     )
                 }),
-                ingress,
+                tenant,
             ),
-            "foreign_tenant": (
-                marker,
-                ingress.model_copy(update={
-                    "delivery_principal_binding": (
-                        ingress.delivery_principal_binding.model_copy(
-                            update={"tenant_partition_id": "foreign-tenant"}
-                        )
-                    )
-                }),
-            ),
+            "foreign_tenant": (marker, "foreign-tenant"),
         }
-        for name, (marker_override, ingress_override) in probes.items():
+        for name, (marker_override, tenant_override) in probes.items():
             probe_results[name] = probe(
                 recovery_key_digest, canonical_evidence_lease,
-                marker_override, ingress_override,
+                marker_override, tenant_override,
             )
-        drained.append((canonical_evidence_lease, handoff_marker, authenticated_ingress))
+        drained.append((canonical_evidence_lease, handoff_marker, tenant_partition_id))
         return original_reload(
             recovery_key_digest=recovery_key_digest,
             canonical_evidence_lease=canonical_evidence_lease,
             handoff_marker=handoff_marker,
-            authenticated_ingress=authenticated_ingress,
+            tenant_partition_id=tenant_partition_id,
         )
 
     monkeypatch.setattr(
@@ -1043,7 +1032,7 @@ def test_redelivery_recovery_rejects_mutated_lease_coordinates(monkeypatch) -> N
     assert probe_results and all(
         result is None for result in probe_results.values()
     ), probe_results
-    lease, marker, ingress = drained[0]
+    lease, marker, tenant = drained[0]
     assert lease._released
 
     # The drained lease itself can no longer authorize a replay reload.
@@ -1054,7 +1043,7 @@ def test_redelivery_recovery_rejects_mutated_lease_coordinates(monkeypatch) -> N
         recovery_key_digest=recovery_index["recovery_key_digest"],
         canonical_evidence_lease=lease,
         handoff_marker=marker,
-        authenticated_ingress=ingress,
+        tenant_partition_id=tenant,
     ) is None
 
 
@@ -1176,13 +1165,13 @@ def test_every_trigger_family_stages_seals_and_leases_prepared_bytes(root, monke
         return original_handoff(request, canonical_evidence_lease=canonical_evidence_lease)
 
     def observe_reload(*, recovery_key_digest, canonical_evidence_lease=None,
-                       handoff_marker=None, authenticated_ingress=None):
+                       handoff_marker=None, tenant_partition_id=None):
         reload_leases.append(canonical_evidence_lease)
         return original_reload(
             recovery_key_digest=recovery_key_digest,
             canonical_evidence_lease=canonical_evidence_lease,
             handoff_marker=handoff_marker,
-            authenticated_ingress=authenticated_ingress,
+            tenant_partition_id=tenant_partition_id,
         )
 
     monkeypatch.setattr(atomic, "bootstrap_writer_handoff", observe_handoff)

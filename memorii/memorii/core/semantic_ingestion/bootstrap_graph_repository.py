@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from memorii.core.memory_evolution.ingestion_contracts import AuthenticatedIngressContext
 from memorii.core.semantic_ingestion.contracts import (
     BootstrapCanonicalIdentityAuthorityWriteRequestV3,
     BootstrapCanonicalIdentityBindingAllocationReloadV3,
@@ -36,7 +35,7 @@ class _BootstrapGraphAtomicStoreV3(Protocol):
         self,
         *,
         recovery_key_digest: str,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         operation_fence_binding: object,
     ) -> BootstrapGraphTransactionAuthorityReloadV3 | None: ...
@@ -57,7 +56,7 @@ class _BootstrapGraphAtomicStoreV3(Protocol):
         self,
         *,
         request: BootstrapGraphPlanAtomicWriteRequestV3,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         control_epoch: BootstrapGraphControlEpochV3,
     ) -> BootstrapGraphPlanAtomicReloadV3: ...
@@ -65,7 +64,7 @@ class _BootstrapGraphAtomicStoreV3(Protocol):
     def load_bootstrap_graph_current_generation_v3(
         self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
         control_epoch: BootstrapGraphControlEpochV3,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
     ) -> BootstrapGraphCurrentGenerationV3: ...
 
@@ -73,7 +72,7 @@ class _BootstrapGraphAtomicStoreV3(Protocol):
         self,
         *,
         request: BootstrapGraphPlanAtomicWriteRequestV3,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         control_epoch: BootstrapGraphControlEpochV3,
     ) -> BootstrapGraphPlanAtomicReloadV3: ...
@@ -82,7 +81,7 @@ class _BootstrapGraphAtomicStoreV3(Protocol):
         self,
         *,
         request: BootstrapGraphDependentCoordinatorRequestV3,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         control_epoch: BootstrapGraphControlEpochV3,
     ) -> BootstrapGraphPlanAtomicReloadV3 | None: ...
@@ -155,7 +154,7 @@ class AtomicStoreBootstrapGraphControlEpochRepositoryV3:
             transition=transition,
             normalization_replay=request.normalization_replay,
             graph_authority=request.graph_authority,
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             operation_fence=current_epoch.operation_fence_binding,
             operation_lease=lease,
@@ -188,13 +187,13 @@ class AtomicStoreBootstrapGraphTransactionAuthorityRepositoryV3:
         self,
         *,
         recovery_key_digest: str,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         operation_fence_binding: object,
     ) -> BootstrapGraphTransactionAuthorityReloadV3 | None:
         return self._atomic_store.reload_bootstrap_graph_transaction_authority_for_recovery_v3(
             recovery_key_digest=recovery_key_digest,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             operation_fence_binding=operation_fence_binding,
         )
@@ -239,7 +238,7 @@ class AtomicStoreBootstrapGraphPlanRepositoryV3:
         self,
         *,
         request: BootstrapGraphPlanAtomicWriteRequestV3,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         control_epoch: BootstrapGraphControlEpochV3,
     ) -> BootstrapGraphPlanAtomicReloadV3:
@@ -248,7 +247,7 @@ class AtomicStoreBootstrapGraphPlanRepositoryV3:
         )
         return self._atomic_store.checkpoint_bootstrap_graph_transaction_v3(
             request=validated,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
         )
@@ -256,12 +255,12 @@ class AtomicStoreBootstrapGraphPlanRepositoryV3:
     def load_current_generation(
         self, *, request: BootstrapGraphDependentCoordinatorRequestV3,
         control_epoch: BootstrapGraphControlEpochV3,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
     ) -> BootstrapGraphCurrentGenerationV3:
         return self._atomic_store.load_bootstrap_graph_current_generation_v3(
             request=request, control_epoch=control_epoch,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
         )
 
@@ -269,7 +268,7 @@ class AtomicStoreBootstrapGraphPlanRepositoryV3:
         self,
         *,
         request: BootstrapGraphPlanAtomicWriteRequestV3,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         control_epoch: BootstrapGraphControlEpochV3,
     ) -> BootstrapGraphPlanAtomicReloadV3:
@@ -278,7 +277,7 @@ class AtomicStoreBootstrapGraphPlanRepositoryV3:
         )
         return self._atomic_store.reload_bootstrap_graph_transaction_v3(
             request=validated,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
         )
@@ -287,13 +286,13 @@ class AtomicStoreBootstrapGraphPlanRepositoryV3:
         self,
         *,
         request: BootstrapGraphDependentCoordinatorRequestV3,
-        authenticated_ingress: AuthenticatedIngressContext,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         control_epoch: BootstrapGraphControlEpochV3,
     ) -> BootstrapGraphPlanAtomicReloadV3 | None:
         return self._atomic_store.reload_bootstrap_graph_retry_by_request_v3(
             request=request,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
         )

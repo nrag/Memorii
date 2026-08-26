@@ -29,11 +29,9 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticArtifactClosure,
     SemanticAuthorizationReadSetVerifier,
     SemanticEffectGroupResult,
-    SemanticExecutionRetryPlan,
     SemanticGraphDelta,
     SemanticLifecycleTransition,
     SemanticObservationDelta,
-    SemanticRecoveryAuthorityBinding,
     SemanticRetryableProgress,
     SemanticTerminalOutcome,
     TransactionSemanticGroupPlan,
@@ -137,51 +135,6 @@ class SemanticTerminalPersistenceService:
                 raise ValueError("semantic ingestion terminal artifact operation binding is invalid")
             return terminal
         return None
-
-    def recover_execution_plan(
-        self,
-        *,
-        fence: OperationFenceBinding,
-    ) -> SemanticExecutionRetryPlan | None:
-        """Reload the unique authenticated plan used for no-redelivery recovery."""
-
-        control = self._store.get_operation(fence)
-        recovered: SemanticExecutionRetryPlan | None = None
-        for generation in range(2, control.generation + 1):
-            plans = tuple(
-                member
-                for member in self._store.generation_members(fence, generation)
-                if member.kind == "execution_plan"
-            )
-            if not plans:
-                continue
-            if len(plans) != 1 or recovered is not None:
-                raise ValueError("semantic ingestion operation has no unique execution retry plan")
-            recovered = decode_semantic_contract(plans[0].canonical_payload, SemanticExecutionRetryPlan)
-            recovered.validate_for_fence(fence)
-        return recovered
-
-    def recover_recovery_authority_binding(
-        self,
-        *,
-        fence: OperationFenceBinding,
-    ) -> SemanticRecoveryAuthorityBinding | None:
-        control = self._store.get_operation(fence)
-        recovered: SemanticRecoveryAuthorityBinding | None = None
-        for generation in range(2, control.generation + 1):
-            bindings = tuple(
-                member
-                for member in self._store.generation_members(fence, generation)
-                if member.kind == "recovery_authority_binding"
-            )
-            if not bindings:
-                continue
-            if len(bindings) != 1 or recovered is not None:
-                raise ValueError("semantic ingestion operation has no unique recovery authority binding")
-            recovered = decode_semantic_contract(bindings[0].canonical_payload, SemanticRecoveryAuthorityBinding)
-            if recovered.operation_id != fence.operation_id:
-                raise ValueError("semantic ingestion recovery authority binding operation is invalid")
-        return recovered
 
     def persist(
         self,
@@ -906,98 +859,6 @@ class SemanticIngestionLeaseSession:
     @property
     def closed(self) -> bool:
         return self._control.state in {"terminal", "lease_recovery_exhausted"}
-
-    def checkpoint_execution_plan(self, plan: SemanticExecutionRetryPlan) -> None:
-        plan.validate_for_fence(self._fence)
-        existing = SemanticTerminalPersistenceService(
-            atomic_store=self._store,
-            writer_binding_provider=self._writer_binding_provider,
-            authorization_repository=None,
-        ).recover_execution_plan(fence=self._fence)
-        if existing is not None:
-            if existing != plan:
-                raise ValueError("semantic ingestion redelivery execution plan differs from persisted plan")
-            return
-        self.heartbeat()
-        plan_bytes = encode_semantic_contract(plan)
-        progress_bytes = encode_typed_value(
-            {"stage": "execution_plan", "artifact_digest": sha256(plan_bytes).hexdigest()}
-        )
-        members = (
-            AtomicGenerationMember(
-                member_id="semantic-ingestion-00-execution-plan",
-                kind="execution_plan",
-                canonical_payload=plan_bytes,
-                payload_digest=sha256(plan_bytes).hexdigest(),
-            ),
-            AtomicGenerationMember(
-                member_id="semantic-ingestion-01-progress",
-                kind="progress",
-                canonical_payload=progress_bytes,
-                payload_digest=sha256(progress_bytes).hexdigest(),
-            ),
-        )
-        request = SourceCheckpointAtomicWriteRequest(
-            operation_fence_binding=self._fence,
-            operation_lease_binding=self._store.lease_binding(self._control),
-            writer_commit_binding=self._writer,
-            expected_operation_generation=self._control.generation,
-            expected_artifact_generation=self._control.generation,
-            members=members,
-            required_artifact_digests=(),
-            request_digest="0" * 64,
-            progress_state="preplanning",
-        )
-        self._store.checkpoint_source_progress(SemanticTerminalPersistenceService._seal(request))
-        self._control = self._store.get_operation(self._fence)
-
-    def checkpoint_recovery_authority_binding(
-        self,
-        binding: SemanticRecoveryAuthorityBinding,
-    ) -> None:
-        service = SemanticTerminalPersistenceService(
-            atomic_store=self._store,
-            writer_binding_provider=self._writer_binding_provider,
-            authorization_repository=None,
-        )
-        existing = service.recover_recovery_authority_binding(fence=self._fence)
-        if existing is not None:
-            if existing != binding:
-                raise ValueError("semantic ingestion recovery authority binding changed")
-            return
-        self.heartbeat()
-        payload = encode_semantic_contract(binding)
-        member = AtomicGenerationMember(
-            member_id="semantic-ingestion-00-recovery-authority-binding",
-            kind="recovery_authority_binding",
-            canonical_payload=payload,
-            payload_digest=sha256(payload).hexdigest(),
-        )
-        progress_payload = encode_typed_value(
-            {
-                "stage": "recovery_authority_bound",
-                "artifact_digest": binding.binding_digest,
-            }
-        )
-        progress = AtomicGenerationMember(
-            member_id="semantic-ingestion-01-progress",
-            kind="progress",
-            canonical_payload=progress_payload,
-            payload_digest=sha256(progress_payload).hexdigest(),
-        )
-        request = SourceCheckpointAtomicWriteRequest(
-            operation_fence_binding=self._fence,
-            operation_lease_binding=self._store.lease_binding(self._control),
-            writer_commit_binding=self._writer,
-            expected_operation_generation=self._control.generation,
-            expected_artifact_generation=self._control.generation,
-            members=(member, progress),
-            required_artifact_digests=(),
-            request_digest="0" * 64,
-            progress_state="preplanning",
-        )
-        self._store.checkpoint_source_progress(SemanticTerminalPersistenceService._seal(request))
-        self._control = self._store.get_operation(self._fence)
 
     def heartbeat(self) -> None:
         if self.closed:

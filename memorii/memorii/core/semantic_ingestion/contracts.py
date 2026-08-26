@@ -10652,7 +10652,7 @@ class BootstrapGraphAuthorityGenerationV3(_BootstrapV3Contract):
 
 class BootstrapGraphTransactionAuthorityWriteRequestV3(_BootstrapV3Contract):
     authority_projection: BootstrapGraphTransactionAuthorityProjectionV3
-    authenticated_ingress: AuthenticatedIngressContext
+    delivery_principal_binding_digest: str
     required_outcome_scopes: RequiredOutcomeScopeSet
     operation_fence_binding: OperationFenceBinding
     operation_lease_binding: OperationLeaseBinding
@@ -10671,7 +10671,7 @@ class BootstrapGraphTransactionAuthorityWriteRequestV3(_BootstrapV3Contract):
             or graph.operation_lease_binding != self.operation_lease_binding
             or graph.writer_commit_binding != self.writer_commit_binding
             or graph.required_scope_set_digest != self.required_outcome_scopes.required_scope_set_digest
-            or graph.delivery_principal_binding_digest != self.authenticated_ingress.delivery_principal_binding.binding_digest
+            or graph.delivery_principal_binding_digest != self.delivery_principal_binding_digest
             or self.expected_normalization_operation_generation != self.authority_projection.normalization_authority.normalization_operation_generation
             or self.expected_normalization_artifact_generation != self.authority_projection.normalization_authority.normalization_artifact_generation
         ):
@@ -10761,7 +10761,7 @@ class BootstrapGraphControlEpochTransitionRequestV3(_BootstrapV3Contract):
     transition: Literal["initial", "lease_renewed", "lease_reclaimed"]
     normalization_replay: BootstrapRecoveryReplayRecordV3
     graph_authority: BootstrapGraphSnapshotAuthorityV3
-    authenticated_ingress: AuthenticatedIngressContext
+    delivery_principal_binding_digest: str
     required_outcome_scopes: RequiredOutcomeScopeSet
     operation_fence: OperationFenceBinding
     operation_lease: OperationLeaseBinding
@@ -10786,7 +10786,7 @@ class BootstrapGraphControlEpochTransitionRequestV3(_BootstrapV3Contract):
             or self.writer_commit != authority.writer_commit_binding
             or self.required_outcome_scopes.required_scope_set_digest
             != authority.required_scope_set_digest
-            or self.authenticated_ingress.delivery_principal_binding.binding_digest != authority.delivery_principal_binding_digest
+            or self.delivery_principal_binding_digest != authority.delivery_principal_binding_digest
             or (self.transition == "initial") != (self.expected_epoch_digest is None)
         ):
             raise ValueError("bootstrap graph epoch transition authority is invalid")
@@ -10837,7 +10837,7 @@ class BootstrapGraphDependentCoordinatorRequestV3(_BootstrapV3Contract):
     normalization_replay: BootstrapRecoveryReplayRecordV3
     source_alignment: BootstrapSourceProposalAlignmentV3
     source_dependency_groups: tuple[BootstrapSourceDependencyGroupV3, ...]
-    authenticated_ingress: AuthenticatedIngressContext
+    delivery_principal_binding_digest: str
     required_outcome_scopes: RequiredOutcomeScopeSet
     graph_authority: BootstrapGraphSnapshotAuthorityV3
     request_core_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -10866,7 +10866,7 @@ class BootstrapGraphDependentCoordinatorRequestV3(_BootstrapV3Contract):
             "normalization_replay": self.normalization_replay,
             "source_alignment": self.source_alignment,
             "source_dependency_groups": self.source_dependency_groups,
-            "authenticated_ingress": self.authenticated_ingress,
+            "delivery_principal_binding_digest": self.delivery_principal_binding_digest,
             "required_outcome_scopes": self.required_outcome_scopes,
             "graph_authority": self.graph_authority,
         }
@@ -11587,7 +11587,7 @@ class BootstrapCanonicalIdentityAuthorityWriteRequestV3(_BootstrapV3Contract):
     operation_fence_binding: OperationFenceBinding
     operation_lease_binding: OperationLeaseBinding
     writer_commit_binding: SemanticWriterCommitBinding
-    authenticated_ingress: AuthenticatedIngressContext
+    delivery_principal_binding_digest: str
     required_outcome_scopes: RequiredOutcomeScopeSet
     write_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     _digest_domain = b"memorii.bootstrap-graph.canonical-identity-authority-write.v3"
@@ -12741,7 +12741,7 @@ class BootstrapGraphTerminalPublicationRequestV3(_BootstrapV3Contract):
     publication_intent: BootstrapGraphTerminalPublicationIntentV3
     handoff: BootstrapGraphTerminalPersistenceHandoffV3
     predecessor_generation: BootstrapGraphCurrentGenerationV3
-    authenticated_ingress: AuthenticatedIngressContext
+    delivery_principal_binding_digest: str
     required_outcome_scopes: RequiredOutcomeScopeSet
     operation_lease_binding: OperationLeaseBinding
     operation_fence_binding: OperationFenceBinding
@@ -13011,7 +13011,7 @@ class BootstrapGraphGroupCommitRequestV3(_BootstrapV3Contract):
     operation_fence_binding: OperationFenceBinding
     operation_lease_binding: OperationLeaseBinding
     writer_commit_binding: SemanticWriterCommitBinding
-    authenticated_ingress: AuthenticatedIngressContext
+    delivery_principal_binding_digest: str
     required_outcome_scopes: RequiredOutcomeScopeSet
     expected_generation: BootstrapGraphCurrentGenerationV3
     ordered_operation_inputs: tuple[BootstrapGraphOperationStoreMaterializationInputV3, ...]

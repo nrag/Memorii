@@ -119,7 +119,7 @@ class BootstrapGraphDependentCoordinatorV3:
             epoch = refreshed.epoch
         retry_reload = self._plans.reload_retry_by_request(
             request=request,
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             control_epoch=epoch,
         )
@@ -140,20 +140,20 @@ class BootstrapGraphDependentCoordinatorV3:
                     raw=progress_member.canonical_payload,
                 )
             )
-        generation = self._plans.load_current_generation(request=request, control_epoch=epoch, authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes)
+        generation = self._plans.load_current_generation(request=request, control_epoch=epoch, delivery_principal_binding_digest=request.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes)
         compilation = self._compiler.compile(request=request, control_epoch=epoch)
         if isinstance(compilation, BootstrapGraphV3ProducerUnavailable):
             return self._unavailable(request, "planning_unavailable")
         bindings = epoch.operation_lease_binding, epoch.operation_fence_binding, epoch.writer_commit_binding
-        plan_reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_plan_checkpoint(compilation=compilation, operation_lease_binding=bindings[0], operation_fence_binding=bindings[1], writer_commit_binding=bindings[2], predecessor_generation=generation), authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
+        plan_reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_plan_checkpoint(compilation=compilation, operation_lease_binding=bindings[0], operation_fence_binding=bindings[1], writer_commit_binding=bindings[2], predecessor_generation=generation), delivery_principal_binding_digest=request.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
         authorizations = self._authorizer.authorize(request=request, control_epoch=epoch, reloaded_plan=plan_reload)
         if isinstance(authorizations, BootstrapGraphV3ProducerUnavailable):
             return self._unavailable(request, "authorization_unavailable")
         authority = BootstrapGraphArtifactAssemblerV3.initial_attempt_authority(authorizations=authorizations, plan=compilation.plan, request_digest=request.request_digest, control_epoch_digest=epoch.epoch_digest)
         attempt = BootstrapGraphArtifactAssemblerV3.build_initial_attempt(inputs=compilation.attempt_construction_inputs, authority=authority, plan=compilation.plan, source_dependency_group_digests=tuple(item.group_id for item in request.source_dependency_groups), capability_binding_digests=tuple(item.binding_digest for item in self._host.capability_bindings), reservation_use_authorization_digests=tuple(sorted({item.reservation_use_authority.authority_digest for item in authorizations.authorizations})), operation_lease_binding_digest=bindings[0].binding_digest, operation_fence_binding_digest=bindings[1].binding_digest, writer_commit_binding_digest=bindings[2].binding_digest, observed_counters_digest=compilation.attempt_construction_inputs.graph_snapshot_digest)
-        attempt_reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_attempt_checkpoint(attempt=attempt, inputs=compilation.attempt_construction_inputs, authority=authority, plan=compilation.plan, authorizations=authorizations, operation_lease_binding=bindings[0], operation_fence_binding=bindings[1], writer_commit_binding=bindings[2], predecessor_generation=plan_reload.checkpoint_receipt.successor_generation), authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
+        attempt_reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_attempt_checkpoint(attempt=attempt, inputs=compilation.attempt_construction_inputs, authority=authority, plan=compilation.plan, authorizations=authorizations, operation_lease_binding=bindings[0], operation_fence_binding=bindings[1], writer_commit_binding=bindings[2], predecessor_generation=plan_reload.checkpoint_receipt.successor_generation), delivery_principal_binding_digest=request.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
         lineage = BootstrapGraphArtifactAssemblerV3.build_initial_lineage(attempt=attempt, plan=compilation.plan, authorizations=authorizations, source_id=epoch.source_id, source_digest=epoch.source_digest, preparation_fingerprint=epoch.preparation_fingerprint)
-        lineage_reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_authorized_lineage_checkpoint(attempt=attempt, authorizations=authorizations, lineage=lineage.entries, operation_lease_binding=bindings[0], operation_fence_binding=bindings[1], writer_commit_binding=bindings[2], predecessor_generation=attempt_reload.checkpoint_receipt.successor_generation), authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
+        lineage_reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_authorized_lineage_checkpoint(attempt=attempt, authorizations=authorizations, lineage=lineage.entries, operation_lease_binding=bindings[0], operation_fence_binding=bindings[1], writer_commit_binding=bindings[2], predecessor_generation=attempt_reload.checkpoint_receipt.successor_generation), delivery_principal_binding_digest=request.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
         return self._execute_attempt(
             request=request,
             epoch=epoch,
@@ -281,7 +281,7 @@ class BootstrapGraphDependentCoordinatorV3:
             try:
                 group_reload = self._plans.publish_and_reload(
                     request=group_checkpoint_request,
-                    authenticated_ingress=request.authenticated_ingress,
+                    delivery_principal_binding_digest=request.delivery_principal_binding_digest,
                     required_outcome_scopes=request.required_outcome_scopes,
                     control_epoch=epoch,
                 )
@@ -289,7 +289,7 @@ class BootstrapGraphDependentCoordinatorV3:
                 try:
                     group_reload = self._plans.publish_and_reload(
                         request=group_checkpoint_request,
-                        authenticated_ingress=request.authenticated_ingress,
+                        delivery_principal_binding_digest=request.delivery_principal_binding_digest,
                         required_outcome_scopes=request.required_outcome_scopes,
                         control_epoch=epoch,
                     )
@@ -352,7 +352,7 @@ class BootstrapGraphDependentCoordinatorV3:
                 writer_commit_binding=bindings[2],
                 predecessor_generation=current_generation,
             ),
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             control_epoch=epoch,
         )
@@ -429,7 +429,7 @@ class BootstrapGraphDependentCoordinatorV3:
                 writer_commit_binding=bindings[2],
                 predecessor_generation=plan_reload.checkpoint_receipt.successor_generation,
             ),
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             control_epoch=epoch,
         )
@@ -449,7 +449,7 @@ class BootstrapGraphDependentCoordinatorV3:
                 writer_commit_binding=bindings[2],
                 predecessor_generation=attempt_reload.checkpoint_receipt.successor_generation,
             ),
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             control_epoch=epoch,
         )
@@ -526,7 +526,7 @@ class BootstrapGraphDependentCoordinatorV3:
                     writer_commit_binding=bindings[2],
                     predecessor_generation=current_generation,
                 ),
-                authenticated_ingress=request.authenticated_ingress,
+                delivery_principal_binding_digest=request.delivery_principal_binding_digest,
                 required_outcome_scopes=request.required_outcome_scopes,
                 control_epoch=epoch,
             )
@@ -625,7 +625,7 @@ class BootstrapGraphDependentCoordinatorV3:
             ),
             reason=reason,
         )
-        reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_retry_checkpoint(progress=progress, attempt=attempt, plan=plan, authorizations=authorizations, lineage=lineage, completed_group_results=tuple(constructions), operation_lease_binding=epoch.operation_lease_binding, operation_fence_binding=epoch.operation_fence_binding, writer_commit_binding=epoch.writer_commit_binding, predecessor_generation=generation), authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
+        reload = self._plans.publish_and_reload(request=BootstrapGraphArtifactAssemblerV3.build_retry_checkpoint(progress=progress, attempt=attempt, plan=plan, authorizations=authorizations, lineage=lineage, completed_group_results=tuple(constructions), operation_lease_binding=epoch.operation_lease_binding, operation_fence_binding=epoch.operation_fence_binding, writer_commit_binding=epoch.writer_commit_binding, predecessor_generation=generation), delivery_principal_binding_digest=request.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes, control_epoch=epoch)
         progress_member = next(
             (
                 member for member in reload.core.members

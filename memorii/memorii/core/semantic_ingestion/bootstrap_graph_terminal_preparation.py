@@ -280,7 +280,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             or host_authority.governance_carrier_artifact != manifest.governance_carrier_artifact
             or host_authority.required_outcome_scopes != request.required_outcome_scopes
             or host_authority.delivery_principal_binding_digest
-            != request.authenticated_ingress.delivery_principal_binding.binding_digest
+            != request.delivery_principal_binding_digest
             or host_authority.operation_fence_binding != request.initial_control_epoch.operation_fence_binding
         ):
             raise ValueError("bootstrap graph terminal host authority is substituted")
@@ -466,7 +466,7 @@ class DeterministicBootstrapGraphTerminalPreparationV3:
             canonical_source_result_input=canonical_input, handoff_core=handoff_core,
             publication_intent=publication_intent, handoff=handoff,
             predecessor_generation=current_generation,
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             operation_lease_binding=control_epoch.operation_lease_binding,
             operation_fence_binding=control_epoch.operation_fence_binding,

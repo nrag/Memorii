@@ -7,7 +7,6 @@ from typing import Protocol
 
 from memorii.core.memory_evolution.atomic_store import OperationLeaseBinding
 from memorii.core.memory_evolution.ingestion_contracts import (
-    AuthenticatedIngressContext,
     OperationFenceBinding,
     SemanticWriterCommitBinding,
 )
@@ -30,7 +29,6 @@ from memorii.core.semantic_ingestion.contracts import (
 class BootstrapGraphAuthorityRequestV3:
     normalization_replay: BootstrapRecoveryReplayRecordV3
     prepared_source: PreparedSource
-    authenticated_ingress: AuthenticatedIngressContext
     required_outcome_scopes: RequiredOutcomeScopeSet
     operation_fence_binding: OperationFenceBinding
     operation_lease_binding: OperationLeaseBinding
@@ -75,7 +73,6 @@ class BootstrapGraphHostBundle:
 
     def reload_terminal(
         self, *, normalization_replay: BootstrapRecoveryReplayRecordV3,
-        authenticated_ingress: AuthenticatedIngressContext,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         operation_fence_binding: OperationFenceBinding,
     ) -> object | None:
@@ -86,14 +83,15 @@ class BootstrapGraphHostBundle:
             return None
         return reload_method(
             normalization_replay=normalization_replay,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=(
+                operation_fence_binding.delivery_principal_binding_digest
+            ),
             required_outcome_scopes=required_outcome_scopes,
             operation_fence_binding=operation_fence_binding,
         )
 
     def reload_retry(
         self, *, normalization_replay: BootstrapRecoveryReplayRecordV3,
-        authenticated_ingress: AuthenticatedIngressContext,
         required_outcome_scopes: RequiredOutcomeScopeSet,
         operation_fence_binding: OperationFenceBinding,
     ) -> BootstrapGraphDurableRetryProgressV3 | None:
@@ -104,7 +102,9 @@ class BootstrapGraphHostBundle:
             return None
         return reload_method(
             normalization_replay=normalization_replay,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=(
+                operation_fence_binding.delivery_principal_binding_digest
+            ),
             required_outcome_scopes=required_outcome_scopes,
             operation_fence_binding=operation_fence_binding,
         )

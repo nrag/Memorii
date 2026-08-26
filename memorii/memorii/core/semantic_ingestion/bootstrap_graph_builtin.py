@@ -32,8 +32,8 @@ from memorii.core.semantic_ingestion.bootstrap_graph_terminal_preparation import
 from memorii.core.semantic_ingestion.contracts import (
     CANONICAL_INGESTION_EXECUTION_GRAPH,
     BootstrapGraphAttemptConstructionInputsV3,
-    BootstrapGraphControlEpochUnavailableV3,
     BootstrapGraphControlEpochTransitionRequestV3,
+    BootstrapGraphControlEpochUnavailableV3,
     BootstrapGraphDependentCoordinatorRequestV3,
     BootstrapGraphExecutionManifestGroupInputV3,
     BootstrapGraphOperationReductionV3,
@@ -295,7 +295,7 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
         )
         authority_reload = authority_repository.reload_for_recovery(
             recovery_key_digest=request.normalization_replay.recovery_key_digest,
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             operation_fence_binding=request.operation_fence_binding,
         )
@@ -326,7 +326,7 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
                 source_alignment_digest=request.normalization_replay.source_normalization_request.source_alignment.alignment_digest,
                 snapshot=snapshot, base_read_set_digest=snapshot.base_read_set.read_set_digest,
                 required_scope_set_digest=request.required_outcome_scopes.required_scope_set_digest,
-                delivery_principal_binding_digest=request.authenticated_ingress.delivery_principal_binding.binding_digest,
+                delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest,
                 execution_policy=policy, capability_registry_snapshot=capabilities,
                 operation_lease_binding=request.operation_lease_binding,
                 operation_fence_binding=request.operation_fence_binding, writer_commit_binding=request.writer_commit_binding,
@@ -343,7 +343,7 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
             authority_reload = authority_repository.publish_or_reload(
                 request=BootstrapGraphTransactionAuthorityWriteRequestV3.create(
                     authority_projection=authority_projection,
-                    authenticated_ingress=request.authenticated_ingress,
+                    delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest,
                     required_outcome_scopes=request.required_outcome_scopes,
                     operation_fence_binding=request.operation_fence_binding,
                     operation_lease_binding=request.operation_lease_binding,
@@ -360,7 +360,9 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
         core = {"schema_version": 3, "normalization_replay": request.normalization_replay,
                 "source_alignment": request.normalization_replay.source_normalization_request.source_alignment,
                 "source_dependency_groups": request.normalization_replay.source_normalization_request.source_alignment.source_dependency_groups,
-                "graph_authority": authority, "authenticated_ingress": request.authenticated_ingress,
+                "graph_authority": authority, "delivery_principal_binding_digest": (
+                    request.operation_fence_binding.delivery_principal_binding_digest
+                ),
                 "required_outcome_scopes": request.required_outcome_scopes}
         request_core_digest = contract_digest(b"memorii.semantic-ingestion.bootstrap-graph-request-core.v3", core)
         epochs = AtomicStoreBootstrapGraphControlEpochRepositoryV3(atomic_store=atomic_store)
@@ -372,7 +374,7 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
             transition = BootstrapGraphControlEpochTransitionRequestV3.create(
                 request_core_digest=request_core_digest, expected_epoch_digest=None, transition="initial",
                 normalization_replay=request.normalization_replay, graph_authority=authority,
-                authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes,
+                delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes,
                 operation_fence=authority.operation_fence_binding,
                 operation_lease=authority.operation_lease_binding,
                 writer_commit=authority.writer_commit_binding,
@@ -382,7 +384,7 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
             coordinator_request = BootstrapGraphDependentCoordinatorRequestV3.create(
                 normalization_replay=request.normalization_replay,
                 source_alignment=source_alignment, source_dependency_groups=groups,
-                authenticated_ingress=request.authenticated_ingress,
+                delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest,
                 required_outcome_scopes=request.required_outcome_scopes,
                 graph_authority=authority, request_core_digest=request_core_digest,
                 initial_control_epoch=current_epoch,
@@ -396,7 +398,7 @@ class _BuiltInBootstrapGraphExecutionBuilderV3:
         coordinator_request = BootstrapGraphDependentCoordinatorRequestV3.create(
             normalization_replay=request.normalization_replay,
             source_alignment=source_alignment, source_dependency_groups=groups,
-            authenticated_ingress=request.authenticated_ingress, required_outcome_scopes=request.required_outcome_scopes,
+            delivery_principal_binding_digest=request.operation_fence_binding.delivery_principal_binding_digest, required_outcome_scopes=request.required_outcome_scopes,
             graph_authority=authority, request_core_digest=request_core_digest, initial_control_epoch=epoch,
         )
         compilation = _compile(request=coordinator_request, epoch=epoch,

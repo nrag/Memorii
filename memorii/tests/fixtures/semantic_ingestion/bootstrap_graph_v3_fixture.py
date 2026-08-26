@@ -523,7 +523,7 @@ class DeterministicBootstrapGraphPlanningAuthorizerV3:
             self.compilation.request_digest != request.request_digest
             or reload_core.control_epoch_digest != control_epoch.epoch_digest
             or reload_core.delivery_principal_binding_digest
-            != request.authenticated_ingress.delivery_principal_binding.binding_digest
+            != request.delivery_principal_binding_digest
             or reload_core.required_scope_set_digest
             != request.required_outcome_scopes.required_scope_set_digest
         ):
@@ -579,12 +579,12 @@ class DeterministicBootstrapGraphUnavailableExecutorV3:
         *,
         request: object,
         control_epoch: object,
-        authenticated_ingress: object,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
     ) -> BootstrapGraphV3ProducerUnavailable:
         if (
             request.control_epoch_digest != control_epoch.epoch_digest
-            or authenticated_ingress.delivery_principal_binding.binding_digest
+            or delivery_principal_binding_digest
             != control_epoch.delivery_principal_binding_digest
             or required_outcome_scopes.required_scope_set_digest
             != control_epoch.required_scope_set_digest
@@ -615,9 +615,9 @@ class DeterministicBootstrapGraphSuccessfulExecutorV3:
     current_scope_digest: Callable[[], str] | None = None
 
     def execute_cas(self, *, request: object, control_epoch: object,
-                    authenticated_ingress: object, required_outcome_scopes: object) -> BootstrapGraphGroupExecutionResultV3:
+                    delivery_principal_binding_digest: str, required_outcome_scopes: object) -> BootstrapGraphGroupExecutionResultV3:
         if (request.control_epoch_digest != control_epoch.epoch_digest
-                or authenticated_ingress.delivery_principal_binding.binding_digest
+                or delivery_principal_binding_digest
                 != self.host_authority.delivery_principal_binding_digest
                 or required_outcome_scopes != self.host_authority.required_outcome_scopes):
             raise ValueError("bootstrap graph successful executor authority is substituted")
@@ -781,7 +781,7 @@ class PersistedBootstrapGraphReplayFixture:
     """Exact replay and current authority supplied by the publication owner."""
 
     replay: BootstrapRecoveryReplayRecordV3
-    authenticated_ingress: object
+    delivery_principal_binding_digest: str
     required_outcome_scopes: object
     operation_fence_binding: object
     operation_lease_binding: object
@@ -791,7 +791,7 @@ class PersistedBootstrapGraphReplayFixture:
 
 def build_persisted_bootstrap_graph_replay_fixture(
     *, recovery_repository: object, recovery_key_digest: str,
-    authenticated_ingress: object, required_outcome_scopes: object,
+    delivery_principal_binding_digest: str, required_outcome_scopes: object,
     operation_fence_binding: object,
     operation_lease_binding: object, writer_commit_binding: object,
     control_epoch: object,
@@ -803,7 +803,7 @@ def build_persisted_bootstrap_graph_replay_fixture(
     if replay is None:
         raise ValueError("bootstrap graph fixture replay is absent or corrupt")
     return PersistedBootstrapGraphReplayFixture(
-        replay=replay, authenticated_ingress=authenticated_ingress,
+        replay=replay, delivery_principal_binding_digest=delivery_principal_binding_digest,
         required_outcome_scopes=required_outcome_scopes,
         operation_fence_binding=operation_fence_binding,
         operation_lease_binding=operation_lease_binding,
@@ -823,7 +823,7 @@ def build_graph_epoch_transition_request(
         or graph_authority.writer_commit_binding != fixture.writer_commit_binding
         or graph_authority.required_scope_set_digest
         != fixture.required_outcome_scopes.required_scope_set_digest
-        or fixture.authenticated_ingress.delivery_principal_binding.binding_digest
+        or fixture.delivery_principal_binding_digest
         != graph_authority.delivery_principal_binding_digest
     ):
         raise ValueError("bootstrap graph fixture authority is substituted")
@@ -833,7 +833,7 @@ def build_graph_epoch_transition_request(
         "source_alignment": source_alignment,
         "source_dependency_groups": source_alignment.source_dependency_groups,
         "graph_authority": graph_authority,
-        "authenticated_ingress": fixture.authenticated_ingress,
+        "delivery_principal_binding_digest": fixture.delivery_principal_binding_digest,
         "required_outcome_scopes": fixture.required_outcome_scopes,
     }
     request_core_digest = contract_digest(
@@ -843,7 +843,7 @@ def build_graph_epoch_transition_request(
         request_core_digest=request_core_digest, expected_epoch_digest=None,
         transition="initial", normalization_replay=fixture.replay,
         graph_authority=graph_authority,
-        authenticated_ingress=fixture.authenticated_ingress,
+        delivery_principal_binding_digest=fixture.delivery_principal_binding_digest,
         required_outcome_scopes=fixture.required_outcome_scopes,
         operation_fence=fixture.operation_fence_binding,
         operation_lease=fixture.operation_lease_binding,
@@ -861,7 +861,7 @@ def build_graph_coordinator_request(
     core = {
         "schema_version": 3, "normalization_replay": fixture.replay,
         "source_alignment": source_alignment, "source_dependency_groups": groups,
-        "authenticated_ingress": fixture.authenticated_ingress,
+        "delivery_principal_binding_digest": fixture.delivery_principal_binding_digest,
         "required_outcome_scopes": fixture.required_outcome_scopes,
         "graph_authority": graph_authority,
     }
@@ -877,7 +877,7 @@ def build_graph_coordinator_request(
     return BootstrapGraphDependentCoordinatorRequestV3.create(
         normalization_replay=fixture.replay, source_alignment=source_alignment,
         source_dependency_groups=groups,
-        authenticated_ingress=fixture.authenticated_ingress,
+        delivery_principal_binding_digest=fixture.delivery_principal_binding_digest,
         required_outcome_scopes=fixture.required_outcome_scopes,
         graph_authority=graph_authority, request_core_digest=request_core_digest,
         initial_control_epoch=initial_control_epoch,
@@ -1010,12 +1010,12 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
             snapshot_record = atomic_store.graph_state_snapshot()
             fixture = PersistedBootstrapGraphReplayFixture(
                 replay=request.normalization_replay,
-                authenticated_ingress=request.authenticated_ingress,
+                delivery_principal_binding_digest=request.delivery_principal_binding_digest,
                 required_outcome_scopes=request.required_outcome_scopes,
                 operation_fence_binding=request.operation_fence_binding,
                 operation_lease_binding=request.operation_lease_binding,
                 writer_commit_binding=request.writer_commit_binding,
-                control_epoch=request.authenticated_ingress,
+                control_epoch=request.delivery_principal_binding_digest,
             )
             replay = request.normalization_replay
             normalization_authority = atomic_store.reload_bootstrap_graph_normalization_authority_v3(
@@ -1066,7 +1066,7 @@ class DeterministicBootstrapGraphAuthorityProviderV3:
                 base_read_set_digest=snapshot.base_read_set.read_set_digest,
                 required_scope_set_digest=request.required_outcome_scopes.required_scope_set_digest,
                 delivery_principal_binding_digest=(
-                    request.authenticated_ingress.delivery_principal_binding.binding_digest
+                    request.delivery_principal_binding_digest
                 ),
                 execution_policy=policy,
                 capability_registry_snapshot=capabilities,

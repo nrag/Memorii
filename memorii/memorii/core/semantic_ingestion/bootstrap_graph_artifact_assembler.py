@@ -788,7 +788,7 @@ class BootstrapGraphArtifactAssemblerV3:
         canonical_source_result_input: object, handoff_core: BootstrapGraphTerminalHandoffCoreV3,
         publication_intent: BootstrapGraphTerminalPublicationIntentV3,
         handoff: BootstrapGraphTerminalPersistenceHandoffV3, predecessor_generation: object,
-        authenticated_ingress: object, required_outcome_scopes: object,
+        delivery_principal_binding_digest: str, required_outcome_scopes: object,
         operation_lease_binding: object, operation_fence_binding: object,
         writer_commit_binding: object,
     ) -> BootstrapGraphTerminalPublicationRequestV3:
@@ -837,7 +837,7 @@ class BootstrapGraphArtifactAssemblerV3:
             canonical_source_result_input=canonical_source_result_input,
             handoff_core=handoff_core, publication_intent=publication_intent, handoff=handoff,
             predecessor_generation=predecessor_generation,
-            authenticated_ingress=authenticated_ingress, required_outcome_scopes=required_outcome_scopes,
+            delivery_principal_binding_digest=delivery_principal_binding_digest, required_outcome_scopes=required_outcome_scopes,
             operation_lease_binding=operation_lease_binding, operation_fence_binding=operation_fence_binding,
             writer_commit_binding=writer_commit_binding,
         )
@@ -927,7 +927,7 @@ class BootstrapGraphArtifactAssemblerV3:
             operation_fence_binding=control_epoch.operation_fence_binding,
             operation_lease_binding=control_epoch.operation_lease_binding,
             writer_commit_binding=control_epoch.writer_commit_binding,
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             expected_generation=current_generation,
             ordered_operation_inputs=operation_inputs,

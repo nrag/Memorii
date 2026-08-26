@@ -4184,7 +4184,7 @@ class SemanticIngestionAtomicStore:
         recovery_key_digest: str,
         canonical_evidence_lease: CanonicalEvidenceLease | None = None,
         handoff_marker: BootstrapWriterHandoffMarkerV3 | None = None,
-        authenticated_ingress: object | None = None,
+        tenant_partition_id: str | None = None,
     ) -> object | None:
         """Reload one exact found normalization closure; never scan generations."""
         from memorii.core.semantic_ingestion.contracts import (
@@ -4197,12 +4197,12 @@ class SemanticIngestionAtomicStore:
             encode_semantic_contract,
         )
         if canonical_evidence_lease is not None:
-            if handoff_marker is None or authenticated_ingress is None:
+            if handoff_marker is None or tenant_partition_id is None:
                 return None
             if not self._validate_recovery_prepared_lease(
                 canonical_evidence_lease=canonical_evidence_lease,
                 handoff_marker=handoff_marker,
-                authenticated_ingress=authenticated_ingress,
+                tenant_partition_id=tenant_partition_id,
             ):
                 return None
         record = self._memory_plane.get_record(_bootstrap_v3_recovery_id(recovery_key_digest))
@@ -4267,7 +4267,7 @@ class SemanticIngestionAtomicStore:
         *,
         canonical_evidence_lease: CanonicalEvidenceLease,
         handoff_marker: BootstrapWriterHandoffMarkerV3,
-        authenticated_ingress: object,
+        tenant_partition_id: str,
     ) -> bool:
         """Validate a fresh recovery lease against retained prepared authority."""
         from memorii.core.semantic_ingestion.canonical_evidence_arena import (
@@ -4279,7 +4279,7 @@ class SemanticIngestionAtomicStore:
         if canonical_evidence_lease._released:
             return False
         try:
-            tenant = authenticated_ingress.delivery_principal_binding.tenant_partition_id
+            tenant = tenant_partition_id
             current = self._writers.current()
             scope = canonical_evidence_lease.scope
             evidence = canonical_evidence_lease.result
@@ -4634,20 +4634,18 @@ class SemanticIngestionAtomicStore:
         self,
         *,
         recovery_key_digest: str,
-        authenticated_ingress: object,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
         operation_fence_binding: object,
     ) -> object | None:
         """Authorized, non-disclosing recovery lookup for a pre-epoch projection."""
         from memorii.core.memory_evolution.ingestion_contracts import (
-            AuthenticatedIngressContext,
             OperationFenceBinding,
         )
         from memorii.core.semantic_ingestion.contracts import RequiredOutcomeScopeSet
 
         if (
-            not isinstance(authenticated_ingress, AuthenticatedIngressContext)
-            or not isinstance(required_outcome_scopes, RequiredOutcomeScopeSet)
+            not isinstance(required_outcome_scopes, RequiredOutcomeScopeSet)
             or not isinstance(operation_fence_binding, OperationFenceBinding)
         ):
             return None
@@ -4680,7 +4678,7 @@ class SemanticIngestionAtomicStore:
                 or graph.required_scope_set_digest
                 != required_outcome_scopes.required_scope_set_digest
                 or graph.delivery_principal_binding_digest
-                != authenticated_ingress.delivery_principal_binding.binding_digest
+                != delivery_principal_binding_digest
             ):
                 return None
             matches.append(reloaded)
@@ -8557,7 +8555,7 @@ class SemanticIngestionAtomicStore:
                 or authority.required_scope_set_digest
                 != request.required_outcome_scopes.required_scope_set_digest
                 or authority.delivery_principal_binding_digest
-                != request.authenticated_ingress.delivery_principal_binding.binding_digest
+                != request.delivery_principal_binding_digest
             ):
                 return _bootstrap_graph_v3_epoch_unavailable(request, "ingress_unavailable")
             head_record = self._memory_plane.get_record(
@@ -8617,7 +8615,7 @@ class SemanticIngestionAtomicStore:
                 epoch=epoch_number,
                 predecessor_epoch_digest=predecessor,
                 transition=request.transition,
-                delivery_principal_binding_digest=request.authenticated_ingress.delivery_principal_binding.binding_digest,
+                delivery_principal_binding_digest=request.delivery_principal_binding_digest,
                 required_scope_set_digest=(
                     request.required_outcome_scopes.required_scope_set_digest
                 ),
@@ -8679,7 +8677,7 @@ class SemanticIngestionAtomicStore:
         self,
         *,
         request: object,
-        authenticated_ingress: object,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
         control_epoch: object,
     ) -> object:
@@ -8712,7 +8710,7 @@ class SemanticIngestionAtomicStore:
         if linearization is None:
             return self._checkpoint_bootstrap_graph_transaction_v3_linearized(
                 request=request,
-                authenticated_ingress=authenticated_ingress,
+                delivery_principal_binding_digest=delivery_principal_binding_digest,
                 required_outcome_scopes=required_outcome_scopes,
                 control_epoch=control_epoch,
                 current_generation_type=BootstrapGraphCurrentGenerationV3,
@@ -8723,7 +8721,7 @@ class SemanticIngestionAtomicStore:
         with linearization.exclusive():
             return self._checkpoint_bootstrap_graph_transaction_v3_linearized(
                 request=request,
-                authenticated_ingress=authenticated_ingress,
+                delivery_principal_binding_digest=delivery_principal_binding_digest,
                 required_outcome_scopes=required_outcome_scopes,
                 control_epoch=control_epoch,
                 current_generation_type=BootstrapGraphCurrentGenerationV3,
@@ -8733,7 +8731,7 @@ class SemanticIngestionAtomicStore:
             )
 
     def load_bootstrap_graph_current_generation_v3(
-        self, *, request: object, control_epoch: object, authenticated_ingress: object,
+        self, *, request: object, control_epoch: object, delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
     ) -> object:
         """Return the sealed predecessor snapshot; callers cannot supply scalars."""
@@ -8745,7 +8743,7 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("bootstrap graph control epoch is invalid")
         if (
             request.request_core_digest != control_epoch.request_core_digest
-            or authenticated_ingress.delivery_principal_binding.binding_digest
+            or delivery_principal_binding_digest
             != control_epoch.delivery_principal_binding_digest
             or required_outcome_scopes.required_scope_set_digest
             != control_epoch.required_scope_set_digest
@@ -8767,7 +8765,7 @@ class SemanticIngestionAtomicStore:
         self,
         *,
         request: object,
-        authenticated_ingress: object,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
         control_epoch: object,
         current_generation_type: type,
@@ -8785,7 +8783,7 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("bootstrap graph reload member is not native") from exc
         self._validate_bootstrap_graph_v3_current_authority(
             request=request,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
         )
@@ -8797,7 +8795,7 @@ class SemanticIngestionAtomicStore:
         if existing is not None:
             return self._reload_bootstrap_graph_transaction_v3(
                 request=request,
-                authenticated_ingress=authenticated_ingress,
+                delivery_principal_binding_digest=delivery_principal_binding_digest,
                 required_outcome_scopes=required_outcome_scopes,
                 control_epoch=control_epoch,
                 current_generation_type=current_generation_type,
@@ -8852,7 +8850,7 @@ class SemanticIngestionAtomicStore:
         retry_recovery = (
             _bootstrap_graph_v3_retry_recovery_record(
                 request=request,
-                authenticated_ingress=authenticated_ingress,
+                delivery_principal_binding_digest=delivery_principal_binding_digest,
                 required_outcome_scopes=required_outcome_scopes,
                 manifest_id=manifest.memory_id,
                 timestamp=timestamp,
@@ -8897,7 +8895,7 @@ class SemanticIngestionAtomicStore:
                 raise PreplanningStoreError("bootstrap graph checkpoint CAS conflicted") from exc
         return self._reload_bootstrap_graph_transaction_v3(
             request=request,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
             current_generation_type=current_generation_type,
@@ -8910,7 +8908,7 @@ class SemanticIngestionAtomicStore:
         self,
         *,
         request: object,
-        authenticated_ingress: object,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
         control_epoch: object,
     ) -> object:
@@ -8927,7 +8925,7 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("bootstrap graph reload has an invalid type")
         return self._reload_bootstrap_graph_transaction_v3(
             request=request,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
             current_generation_type=BootstrapGraphCurrentGenerationV3,
@@ -8940,7 +8938,7 @@ class SemanticIngestionAtomicStore:
         self,
         *,
         request: object,
-        authenticated_ingress: object,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
         control_epoch: object,
     ) -> object | None:
@@ -8986,13 +8984,13 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("bootstrap graph retry checkpoint is substituted")
         return self.reload_bootstrap_graph_transaction_v3(
             request=retry_request,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
         )
 
     def reload_bootstrap_graph_retry_by_recovery_v3(
-        self, *, normalization_replay: object, authenticated_ingress: object,
+        self, *, normalization_replay: object, delivery_principal_binding_digest: str,
         required_outcome_scopes: object, operation_fence_binding: object,
     ) -> object | None:
         """Recover sealed retry progress without requiring a live operation lease."""
@@ -9029,7 +9027,7 @@ class SemanticIngestionAtomicStore:
             or locator.normalization_result_digest
             != normalization_replay.source_normalization_result.result_digest
             or locator.delivery_principal_binding_digest
-            != authenticated_ingress.delivery_principal_binding.binding_digest
+            != delivery_principal_binding_digest
             or locator.required_scope_set_digest
             != required_outcome_scopes.required_scope_set_digest
         ):
@@ -9061,7 +9059,7 @@ class SemanticIngestionAtomicStore:
         self,
         *,
         handoff: object,
-        authenticated_ingress: object,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
         control_epoch: object,
     ) -> object:
@@ -9091,7 +9089,7 @@ class SemanticIngestionAtomicStore:
             or core.writer_commit_binding.binding_digest
             != intent.writer_commit_binding_digest
             or core.control_epoch_digest != intent.control_epoch_digest
-            or authenticated_ingress.delivery_principal_binding.binding_digest
+            or delivery_principal_binding_digest
             != intent.delivery_principal_binding_digest
             or required_outcome_scopes.required_scope_set_digest
             != intent.required_scope_set_digest
@@ -9214,7 +9212,7 @@ class SemanticIngestionAtomicStore:
             record.content.get("coordinator_request_digest") != request.request_digest
             or record.content.get("locator_digest") != reload.atomic_write_locator_digest
             or reload.delivery_principal_binding_digest
-            != request.authenticated_ingress.delivery_principal_binding.binding_digest
+            != request.delivery_principal_binding_digest
             or reload.required_scope_set_digest
             != request.required_outcome_scopes.required_scope_set_digest
             or reload.operation_fence_binding_digest
@@ -9227,7 +9225,7 @@ class SemanticIngestionAtomicStore:
             expected_request_digest=request.request_digest,
             expected_normalization_replay_digest=request.normalization_replay.replay_digest,
             expected_delivery_principal_binding_digest=(
-                request.authenticated_ingress.delivery_principal_binding.binding_digest
+                request.delivery_principal_binding_digest
             ),
             expected_required_scope_set_digest=(
                 request.required_outcome_scopes.required_scope_set_digest
@@ -9236,7 +9234,7 @@ class SemanticIngestionAtomicStore:
         )
 
     def reload_bootstrap_graph_terminal_by_recovery_v3(
-        self, *, normalization_replay: object, authenticated_ingress: object,
+        self, *, normalization_replay: object, delivery_principal_binding_digest: str,
         required_outcome_scopes: object, operation_fence_binding: object,
     ) -> object | None:
         """Recover a terminal graph result from the exact normalization replay key."""
@@ -9271,7 +9269,7 @@ class SemanticIngestionAtomicStore:
             or record.content.get("locator_digest") != reload.atomic_write_locator_digest
             or canonical.normalization_replay_digest != normalization_replay.replay_digest
             or reload.delivery_principal_binding_digest
-            != authenticated_ingress.delivery_principal_binding.binding_digest
+            != delivery_principal_binding_digest
             or reload.required_scope_set_digest
             != required_outcome_scopes.required_scope_set_digest
             or reload.operation_fence_binding_digest != operation_fence_binding.binding_digest
@@ -9282,7 +9280,7 @@ class SemanticIngestionAtomicStore:
             expected_reload=reload,
             expected_normalization_replay_digest=normalization_replay.replay_digest,
             expected_delivery_principal_binding_digest=(
-                authenticated_ingress.delivery_principal_binding.binding_digest
+                delivery_principal_binding_digest
             ),
             expected_required_scope_set_digest=(
                 required_outcome_scopes.required_scope_set_digest
@@ -9306,7 +9304,7 @@ class SemanticIngestionAtomicStore:
         # the operation control or epoch head, while a found terminal locator
         # can subsequently prove its historical completed lease.
         if (
-            request.authenticated_ingress.delivery_principal_binding.binding_digest
+            request.delivery_principal_binding_digest
             != intent.delivery_principal_binding_digest
             or request.required_outcome_scopes.required_scope_set_digest
             != intent.required_scope_set_digest
@@ -9318,7 +9316,7 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("bootstrap graph terminal authority is substituted")
         self._validate_bootstrap_graph_v3_current_authority(
             request=_TerminalAuthorityRequest(request),
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             control_epoch=request.control_epoch,
         )
@@ -9460,7 +9458,7 @@ class SemanticIngestionAtomicStore:
         """Validate a terminal locator and every persisted immutable join."""
         intent = request.publication_intent
         if (
-            request.authenticated_ingress.delivery_principal_binding.binding_digest != intent.delivery_principal_binding_digest
+            request.delivery_principal_binding_digest != intent.delivery_principal_binding_digest
             or request.required_outcome_scopes.required_scope_set_digest
             != intent.required_scope_set_digest
             or request.operation_fence_binding.binding_digest != intent.operation_fence_binding_digest
@@ -9476,7 +9474,7 @@ class SemanticIngestionAtomicStore:
                 request.coordinator_request.normalization_replay.replay_digest
             ),
             expected_delivery_principal_binding_digest=(
-                request.authenticated_ingress.delivery_principal_binding.binding_digest
+                request.delivery_principal_binding_digest
             ),
             expected_required_scope_set_digest=(
                 request.required_outcome_scopes.required_scope_set_digest
@@ -9656,7 +9654,7 @@ class SemanticIngestionAtomicStore:
         self,
         *,
         request: object,
-        authenticated_ingress: object,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
         control_epoch: object,
         current_generation_type: type,
@@ -9674,7 +9672,7 @@ class SemanticIngestionAtomicStore:
             raise PreplanningStoreError("bootstrap graph reload member is not native") from exc
         self._validate_bootstrap_graph_v3_current_authority(
             request=request,
-            authenticated_ingress=authenticated_ingress,
+            delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes,
             control_epoch=control_epoch,
             allow_terminal_recovery=True,
@@ -9718,7 +9716,7 @@ class SemanticIngestionAtomicStore:
             members=request.members,
             required_member_digests=request.required_member_digests,
             delivery_principal_binding_digest=(
-                authenticated_ingress.delivery_principal_binding.binding_digest
+                delivery_principal_binding_digest
             ),
             required_scope_set_digest=required_outcome_scopes.required_scope_set_digest,
             operation_fence_binding_digest=request.operation_fence_binding.binding_digest,
@@ -9748,7 +9746,7 @@ class SemanticIngestionAtomicStore:
         self,
         *,
         request: object,
-        authenticated_ingress: object,
+        delivery_principal_binding_digest: str,
         required_outcome_scopes: object,
         control_epoch: object,
         allow_terminal_recovery: bool = False,
@@ -9763,7 +9761,7 @@ class SemanticIngestionAtomicStore:
             or request.operation_fence_binding != control_epoch.operation_fence_binding
             or request.writer_commit_binding != control_epoch.writer_commit_binding
             or request.operation_lease_binding != control_epoch.operation_lease_binding
-            or authenticated_ingress.delivery_principal_binding.binding_digest
+            or delivery_principal_binding_digest
             != control_epoch.delivery_principal_binding_digest
             or required_outcome_scopes.required_scope_set_digest
             != control_epoch.required_scope_set_digest
@@ -9828,7 +9826,7 @@ class SemanticIngestionAtomicStore:
             )
         self._validate_bootstrap_graph_v3_current_authority(
             request=request,
-            authenticated_ingress=request.authenticated_ingress,
+            delivery_principal_binding_digest=request.delivery_principal_binding_digest,
             required_outcome_scopes=request.required_outcome_scopes,
             control_epoch=request.control_epoch,
         )
@@ -10180,7 +10178,7 @@ class SemanticIngestionAtomicStore:
     def reload_exact_bootstrap_graph_group_v3(
         self, *, source_operation_id: str, transaction_group_id: str,
         operation_ids: tuple[str, ...], request_ctv_digest: str,
-        authenticated_ingress: object, required_outcome_scopes: object,
+        delivery_principal_binding_digest: str, required_outcome_scopes: object,
         operation_fence_binding: object,
     ) -> object | None:
         """Reload one group primary only after caller authority is authenticated."""
@@ -10192,13 +10190,13 @@ class SemanticIngestionAtomicStore:
             return None
         request = _bootstrap_graph_v3_group_commit_request_from_record(record)
         if (
-            request.authenticated_ingress != authenticated_ingress
+            request.delivery_principal_binding_digest != delivery_principal_binding_digest
             or request.required_outcome_scopes != required_outcome_scopes
             or request.operation_fence_binding != operation_fence_binding
         ):
             raise PreplanningStoreError("bootstrap graph group commit reload authority is substituted")
         self._validate_bootstrap_graph_v3_current_authority(
-            request=request, authenticated_ingress=authenticated_ingress,
+            request=request, delivery_principal_binding_digest=delivery_principal_binding_digest,
             required_outcome_scopes=required_outcome_scopes, control_epoch=request.control_epoch,
             allow_terminal_recovery=True,
         )
@@ -13229,7 +13227,7 @@ def _bootstrap_graph_v3_retry_record(
 
 
 def _bootstrap_graph_v3_retry_recovery_record(
-    *, request: object, authenticated_ingress: object,
+    *, request: object, delivery_principal_binding_digest: str,
     required_outcome_scopes: object, manifest_id: str, timestamp: datetime,
 ) -> CanonicalMemoryRecord:
     from memorii.core.semantic_ingestion.contracts import (
@@ -13258,7 +13256,7 @@ def _bootstrap_graph_v3_retry_recovery_record(
             normalization_replay_digest=request.normalization_replay_digest,
             normalization_result_digest=request.normalization_result_digest,
             delivery_principal_binding_digest=(
-                authenticated_ingress.delivery_principal_binding.binding_digest
+                delivery_principal_binding_digest
             ),
             required_scope_set_digest=required_outcome_scopes.required_scope_set_digest,
             request_digest=request.request_digest,
