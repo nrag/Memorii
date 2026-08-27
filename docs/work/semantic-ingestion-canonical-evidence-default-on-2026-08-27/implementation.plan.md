@@ -91,9 +91,9 @@ claims; any reopening of the legacy-path removal's slices.
 
 | Milestone | Observable outcome | Status |
 | --------- | ------------------ | ------ |
-| Enable-by-default | every verified runtime substitutes; explicit `canonical_evidence_enabled=False` is the only off path; arena + service + parity suites green | in progress |
-| Parity gate | fewer-than-ten diametric nodes, slow-tier workflow cadence, gate-change log recorded | not started |
-| H8 removal | single prepare-and-publish per ingestion; family proofs green | not started |
+| Enable-by-default | every verified runtime substitutes; explicit `canonical_evidence_enabled=False` is the only off path; arena + service + parity suites green | complete (commit `b33a171`) |
+| Parity gate | fewer-than-ten diametric nodes, slow-tier workflow cadence, gate-change log recorded | wired (module + workflow + shard exclusion; module green run pending) |
+| H8 removal | single prepare-and-publish per ingestion; family proofs green | complete (47 passed) |
 | Re-profile | frozen-scenario numbers with ON+H8 recorded; H7 scoped or closed | not started |
 
 ## Progress Log
@@ -102,6 +102,29 @@ claims; any reopening of the legacy-path removal's slices.
   record (above); M1 edit applied (`service.py`: override kwarg added; the
   flag no longer depends on the construction's trust domain). Verification
   (arena 29, provider service, both redelivery parity proofs) running.
+
+- 2026-08-27 (M3 done): the duplicate Step-2 lifecycle work is removed —
+  `_run_semantic_ingestion` no longer re-prepares and re-publishes the
+  prepared source; the validated repository load is the single prepared-source
+  authority on that path (the bootstrap handoff or the prior delivery owns the
+  one publication). Evidence: provider service + replay suite + fresh-owner
+  recovery proof + reopen proof = 47 passed in 8:56 at the fix revision.
+- 2026-08-27 (M2 wired): dedicated diametric parity module
+  `test_canonical_evidence_mode_parity.py` (two nodes: redelivery recovery and
+  direct delivery, each running both modes against identical durable
+  projections); the redelivery node moved out of the coordinator module so the
+  PR shard shrinks; module excluded from `unit-shards.json` (shard plan
+  verifies: 3439 collected); scheduled workflow
+  `.github/workflows/canonical-evidence-parity-scheduled.yml` runs every four
+  hours with an exact-collection-count check of 2. Gate change record: unique
+  failure signal = opposed-mode outcome/projection/idempotence divergence;
+  moved node preserves its proof, PR-shard wall time decreases by the moved
+  node's ~8 minutes; growth path (composite/memory-write/hermes diametric
+  nodes) recorded as follow-up within the <10 budget.
+- 2026-08-27 (fixture repair): the slice-5 WIP had dead-coded the V3 authority
+  extraction inside a raise branch of the normalization fixture
+  (`build_source_normalization_authority_bundle`); restored, all three
+  redelivery proofs pass under default-on (20:38).
 
 ## Next Action
 

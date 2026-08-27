@@ -1039,21 +1039,13 @@ class ProviderIngestionCoordinator:
                 reason_codes=("semantic_runtime_unauthorized",),
                 candidates=(), temporal_closures=(), attempt_count=0,
             ), None
-        preparation = self._semantic_runtime.text_preparation_service
         prepared_repository = self._semantic_runtime.prepared_source_repository
-        preparation_policy = self._semantic_runtime.text_preparation_policy
-        if preparation is None or prepared_repository is None or preparation_policy is None:
-            return SemanticTerminalOutcome.create(
-                operation_id=operation_id,
-                status="evidence_only",
-                reason_codes=("prepared_source_authority_unavailable",),
-                candidates=(), temporal_closures=(), attempt_count=0,
-            ), None
-        try:
-            preparation.prepare_and_publish(
-                TextPreparationRequest(observation=observation, policy=preparation_policy)
-            )
-        except ValueError:
+        # The prepared source is published exactly once, by the bootstrap
+        # handoff (or by the earlier delivery that retained the marker this
+        # recovery re-enters through).  Re-preparing here duplicated the
+        # Step-2 lifecycle work; the validated repository load below is the
+        # single authority for the prepared source on this path.
+        if prepared_repository is None:
             return SemanticTerminalOutcome.create(
                 operation_id=operation_id,
                 status="evidence_only",

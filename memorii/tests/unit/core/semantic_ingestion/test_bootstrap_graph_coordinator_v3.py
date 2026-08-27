@@ -1048,54 +1048,6 @@ def test_redelivery_recovery_rejects_mutated_lease_coordinates(monkeypatch) -> N
     ) is None
 
 
-def test_redelivery_recovery_outcomes_are_identical_across_enabled_and_disabled_modes(
-    monkeypatch, tmp_path,
-) -> None:
-    enabled_plane = MemoryPlaneService(
-        record_store=JsonlMemoryPlaneStore(tmp_path / "enabled")
-    )
-    disabled_plane = MemoryPlaneService(
-        record_store=JsonlMemoryPlaneStore(tmp_path / "disabled")
-    )
-    enabled_service = _production_recovery_service(plane=enabled_plane)
-    disabled_service = _scenario_recovery_service(plane=disabled_plane)
-    _interrupt_after_handoff(monkeypatch, enabled_service, "recovery-mode-parity")
-    _interrupt_after_handoff(monkeypatch, disabled_service, "recovery-mode-parity")
-
-    enabled_recovered = _delivery(enabled_service, "recovery-mode-parity")
-    disabled_recovered = _delivery(disabled_service, "recovery-mode-parity")
-    assert (
-        enabled_recovered.blocked_reasons["semantic_ingestion"]
-        == disabled_recovered.blocked_reasons["semantic_ingestion"]
-        == "source_only"
-    )
-    enabled_again = _delivery(enabled_service, "recovery-mode-parity")
-    disabled_again = _delivery(disabled_service, "recovery-mode-parity")
-    assert enabled_again == enabled_recovered
-    assert disabled_again == disabled_recovered
-
-    def durable_projection(plane: MemoryPlaneService):
-        projection: dict[str, object] = {}
-        for record in plane.list_records():
-            projection.setdefault(record.source_kind, 0)
-            projection[record.source_kind] += 1
-        return projection
-
-    enabled_projection = durable_projection(enabled_plane)
-    disabled_projection = durable_projection(disabled_plane)
-    assert enabled_projection == disabled_projection
-    # Record bytes embed material-derived identities (source ids, preparation
-    # fingerprints), so cross-material byte equality is not a well-formed
-    # claim; structural, outcome, and idempotence parity above carry the
-    # mode-equivalence projection, and byte-level substitution equality is
-    # proven inside the lease consumers of the sibling recovery proofs.
-    enabled_index = enabled_plane.list_records(
-        source_kind="semantic_ingestion_bootstrap_v3_recovery_index"
-    )[0].content
-    disabled_index = disabled_plane.list_records(
-        source_kind="semantic_ingestion_bootstrap_v3_recovery_index"
-    )[0].content
-    assert enabled_index["state"] == disabled_index["state"] == "found"
 
 
 @pytest.mark.parametrize("root", ("composite", "memory_write", "hermes_turn", "hermes_write"))
