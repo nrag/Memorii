@@ -496,6 +496,19 @@ Broad gate (once, at the final revision):
   that resolution, and the parent's "Final branch review" milestone inherits
   this operation's broad-gate evidence.
 
+- 2026-08-26 (slice 6 input, verified): the `test_conflict_clarification.py`
+  failures (10+ tests failing at `verifier.bind` with zero admitted sources)
+  are PRE-EXISTING at slice-4 `f83a1f4` and therefore at the branch base —
+  the same `eb70c9d` governance contract family as the 47 but outside that
+  census's two files. Root cause: the suite's `_Resolver()` builds an ingress
+  without `semantic_egress_governance` (and likely `semantic_source_authority`),
+  so `derive_source_governance_material` returns nonpromoting
+  (`semantic_egress_governance_unavailable`) and the user-turn source is
+  never admitted. Repair: extend the suite's resolver/ingress fixture to
+  supply both authenticated metadata members (mirroring composition's
+  `_host_ingress()`), not a governance change. The three adapter-lane tests
+  in that file were already deleted with the adapter (slice 5).
+
 ## Next Action
 
 Execute slice 5 per the prepared plan in the Progress Log (pipeline/egress
