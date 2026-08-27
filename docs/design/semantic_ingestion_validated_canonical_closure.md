@@ -155,6 +155,8 @@ The repository-owned sink returns `recorded` or `unavailable`; unavailability
 cannot change validation, persistence, replay, durable state, or public outcome.
 No arbitrary host callback executes inside the closure authority boundary.
 
+AMENDED 2026-08-27 by user decision: the substitution is enabled by default for every verified runtime; the construction-trust-domain condition is removed, an explicit `canonical_evidence_enabled=False` constructor request is the only disabled path, and rollback remains migration-free through that switch.
+
 The switch is selected privately before operation scope creation and is immutable
 for that operation. Disabled mode creates no evidence capability or allocation
 and executes the existing full-validation path. Capacity rejection occurs before

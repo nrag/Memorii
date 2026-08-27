@@ -534,9 +534,19 @@ Broad gate (once, at the final revision):
   transactions) was still executing at this entry; record its numbers in
   the closure row before the slice-5 commit.
 
+- 2026-08-27: PAUSED at the slice-5 WIP boundary by user decision — the
+  canonical-evidence default-on operation
+  (`../semantic-ingestion-canonical-evidence-default-on-2026-08-27/implementation.plan.md`)
+  lands first. Resume state is unchanged: production migration complete and
+  committed; hub batch finished 130 failed / 246 passed with the failure list
+  lost to output truncation (3 policy-migration failures identified; fast-file
+  rerun with saved output is the classification step); slice-5 commit awaits
+  that classification, then slice 6.
+
 ## Next Action
 
-Execute slice 5 per the prepared plan in the Progress Log (pipeline/egress
+PAUSED (user decision 2026-08-27). Resume by classifying the 130-failure
+batch (fast files first, output saved), then complete slice 5. See the plan in the Progress Log (pipeline/egress
 removal from composition; re-anchor the 18 egress mutation tests to the
 authorization read-set boundary; allowlist update with the dying test files),
 then slice 6 (V3-era family repairs + full broad gate + WorkPlan closures).

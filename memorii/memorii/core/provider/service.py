@@ -246,9 +246,11 @@ class ProviderMemoryService:
         host_bootstrap_material_verifier: HostBootstrapMaterialVerifier | None = None,
         source_normalization_host_bundle_builder: SourceNormalizationHostBundleBuilder | None = None,
         verified_production_host_authority: VerifiedProductionHostAuthority | None = None,
+        canonical_evidence_enabled: bool | None = None,
         _host_construction: object | None = None,
     ) -> None:
         self._memory_plane = memory_plane or MemoryPlaneService()
+        self._canonical_evidence_requested = canonical_evidence_enabled
         verified_material = None
         verified_ingress_resolver = None
         if verified_production_host_authority is not None:
@@ -351,7 +353,14 @@ class ProviderMemoryService:
             )
             try:
                 self._bootstrap_profile = verify_bootstrap_profile(verified_material)
-                self._canonical_evidence_enabled = required_domain == "production"
+                # The canonical-evidence substitution is the default for every
+                # verified runtime; an explicit request is the only way off
+                # (parity proofs and rollback).
+                self._canonical_evidence_enabled = (
+                    True
+                    if self._canonical_evidence_requested is None
+                    else self._canonical_evidence_requested
+                )
             except BootstrapProfileVerificationError as exc:
                 self._bootstrap_profile = None
                 self._bootstrap_unavailable_reason = exc.reason.value

@@ -1,0 +1,109 @@
+# Canonical-Evidence Default-On Enablement Implementation WorkPlan
+
+- Work ID: `semantic-ingestion-canonical-evidence-default-on-2026-08-27`
+- Work type: `implementation`
+- Status: `active`
+- Coordinator: sole writer (main thread)
+- Created: `2026-08-27`
+- Parent WorkPlan:
+  `../semantic-ingestion-validated-canonical-closure-2026-08-17/implementation.plan.md`
+  (this operation delivers its performance milestone's enablement leg and the
+  H8 remediation its linked debug operation confirmed)
+- Related WorkPlans:
+  - `../semantic-ingestion-canonical-evidence-production-performance-2026-08-16/debug.plan.md`
+    (H1-H9 hypotheses; H8 confirmed, H7 dominant-cost, H9 disproves
+    exact-reference reuse)
+  - `../semantic-ingestion-legacy-path-removal-2026-08-26/implementation.plan.md`
+    (paused at its slice-5 WIP boundary pending this operation)
+- Canonical inputs:
+  - `docs/design/semantic_ingestion_validated_canonical_closure.md`
+  - `docs/design/semantic_ingestion_canonical_evidence_performance.md` (M3.1
+    certification contract)
+  - User decisions of 2026-08-27 (below)
+- Expected outputs: substitution enabled for every verified runtime; a small
+  diametric parity gate on a slow cadence; the duplicate Step-2 lifecycle work
+  removed; fresh production-bound profiling that scopes the remaining
+  persistence-composition cost.
+
+## User Decisions (2026-08-27)
+
+1. The canonical-evidence substitution (the cache) is ON by default for every
+   verified runtime; an explicit switch remains for rollback and the parity
+   gate.
+2. Validation strategy: fewer than ten diametric ON/OFF parity tests on a
+   slow GitHub cadence (roughly every few hours); every other test runs with
+   the cache ON. No cross-test purge machinery is expected (arenas are
+   per-operation and released in `finally`); verify, don't assume.
+3. The duplicate prepare-and-publish (debug H8) is fixed now.
+4. The persistence-composition churn (debug H7) is addressed after
+   re-profiling with the cache ON and H8 fixed — scope it from fresh numbers,
+   not from the superseded cumulative attribution (debug H4).
+
+These decisions amend the rollout contract in
+`docs/design/semantic_ingestion_validated_canonical_closure.md` ("private
+disabled-by-default rollout"); the amendment is recorded there with this date.
+Rollback remains migration-free: pass `canonical_evidence_enabled=False`.
+
+## Coordinator Correction (2026-08-27, verified in source)
+
+The coordinator's earlier statement to the user — "the switch is OFF in the
+shipped default; everywhere else (including every test) the old full path
+runs" — was wrong in substance. Verified: `service.py` enabled the arena for
+every ordinary construction whose verified material passed profile
+verification in the production trust domain (which is how the main V3 suites
+and real deployments construct the service); it was disabled only for the
+scenario-test fixture path (`_from_scenario_test_host`) and for services with
+no verified material (which have no semantic runtime at all). What remains
+true: the measured reduction evidence (parent `VCC-R01`) was never produced,
+the 96.5-99.9% figures were reference/counterfactual counts, H8 and H7 are
+unremediated, and no certified wall-clock improvement exists anywhere.
+
+## Objective
+
+Every verified runtime executes the substituted path by default; the parity
+contract is enforced by a small diametric gate on a slow cadence; the
+confirmed duplicate Step-2 work is gone; and the next profiling run measures
+the real remaining cost so H7 work targets reality.
+
+## Completion Contract
+
+1. every test that builds a verified runtime executes with the substitution
+   ON unless it is one of fewer-than-ten explicit parity nodes;
+2. the parity gate proves byte-identical outcomes on diametric cases across
+   ON/OFF and runs in the repository's slow tier on a scheduled cadence;
+3. `_run_semantic_ingestion` no longer re-prepares and re-publishes the
+   prepared source (H8), with a regression proof that the persisted reload
+   path alone sustains every family;
+4. a fresh profile of the frozen diagnostic scenario runs with ON+H8 and its
+   numbers are recorded here, scoping (or closing) H7;
+5. the affected design documents record the amended rollout contract; the
+   removal operation's resume state is preserved untouched.
+
+## Scope
+
+Included: the service-level enablement change and its explicit override; the
+parity gate module and its workflow cadence; the H8 deletion with focused
+proofs; one profiling run and its recorded numbers. Excluded: H7 remediation
+beyond scoping (separate unit once measured); benchmark/live certification
+claims; any reopening of the legacy-path removal's slices.
+
+## Milestones
+
+| Milestone | Observable outcome | Status |
+| --------- | ------------------ | ------ |
+| Enable-by-default | every verified runtime substitutes; explicit `canonical_evidence_enabled=False` is the only off path; arena + service + parity suites green | in progress |
+| Parity gate | fewer-than-ten diametric nodes, slow-tier workflow cadence, gate-change log recorded | not started |
+| H8 removal | single prepare-and-publish per ingestion; family proofs green | not started |
+| Re-profile | frozen-scenario numbers with ON+H8 recorded; H7 scoped or closed | not started |
+
+## Progress Log
+
+- 2026-08-27: Opened after the user's decisions; corrected the enablement
+  record (above); M1 edit applied (`service.py`: override kwarg added; the
+  flag no longer depends on the construction's trust domain). Verification
+  (arena 29, provider service, both redelivery parity proofs) running.
+
+## Next Action
+
+Land M1: consume the verification run, then wire the parity gate (M2) with
+its explicit-OFF fixture pattern.

@@ -854,6 +854,7 @@ def _scenario_recovery_service(*, plane):
         host_bootstrap_capability=_built_in_local_capability(scenario_test=True),
         host_bootstrap_material_verifier=DeterministicTestHostBootstrapMaterialVerifier(),
         source_normalization_host_bundle_builder=builder,
+        canonical_evidence_enabled=False,
     )
     return service
 
