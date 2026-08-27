@@ -795,11 +795,73 @@ Broad gate (once, at the final revision):
   test restructured to claim once and replay the same claimed image on
   reopen) and under verification.
 
+- 2026-08-27 (slice 6a policy redesign, ROUND 2 — exact continuation
+  state): the decisive finding is that the catch-up/race/substitution
+  tests' subject is ONE NORMAL EVENT, not a clarification — the original
+  fabricated commit was merely the cheapest graph-advancing write.
+  `_persist_one_normal_event` (policy file) now plays that role (one
+  handoff + ordinary accepted terminal persist), restoring the
+  single-partition catch-up shape. The post-cutover
+  `_commit_clarification_terminal` keeps the lifecycle; `_claim_canonical_clarification`
+  now accepts `terminal_kwargs` forwarded from the caller (post-cutover,
+  the contest claims must carry the SAME policy characteristics as the
+  answer: rank-10 contest terminals under an active rank-20 policy fail
+  the persist preflight). Stale-effect asserts narrowed to semantic-effect
+  records (a rejected stale clarification still admits its contest
+  sources — `_semantic_effect_record_ids`). CURRENT state (5 failing /
+  23 passing, /tmp/pol_round4.log): trust + temporal tests fail at
+  `terminal semantic conflict authority preflight failed`
+  (atomic_store.py:8323, inside the POST-CUTOVER `_commit_clarification_terminal`
+  — the kwargs forwarding did NOT clear it; next step is chaining that
+  preflight's cause with the contest now rank-20, suspect the temporal
+  policy fingerprint or the reopened-resolver state) and the temporal
+  test also shows `ValidationError for TemporalProjectionRecord` (new);
+  the race pair fails at record-equality asserts (policy_migration.py:1974
+  and the `assert not True` at ~1915 — winner/cutover outcome identity);
+  substitution GREEN. All edits ruff-clean.
+
+- 2026-08-27 (slice 6a conflict-clarification classified): the 12
+  failures in `tests/unit/core/test_conflict_clarification.py` (12
+  failed / 8 passed, /tmp/conflict_clar.log) share ONE signature:
+  `conflict_resolution_unavailable` where the tests expect specific
+  outcomes (`invalid_source_user_event` ×6,
+  `invalid_user_confirmation_receipt` ×4, `operator_action_required`,
+  one bare assert). This is the WorkPlan's recorded conflict-attention
+  canonical-bridge family (the Hermes resolution path — same lifecycle
+  as the terminal-persistence helper). Distinct bounded sub-family; not
+  yet started.
+
+- 2026-08-27 (slice 6b seam chain — 8 seams fixed, 1 open): the scenario
+  V3 composition has been driven forward seam by seam (each verified by
+  probe): (1) writer epoch creation on fresh stores (capability.py);
+  (2) scenario tests' missing `host_bootstrap_material_verifier`;
+  (3) proposal-transport text bridge (authority round records the
+  prepared source's text; transport derives the analyzer proposal from
+  it); (4) proposal entity references must resolve through declared
+  mention local-ids (both subject and object roles);
+  (5) the normalization bundle's `server_time` must be the service's own
+  clock — the composition suite's TEST_NOW issues leases the scenario
+  store immediately expires; (6) the graph fixture provider read
+  `request.delivery_principal_binding_digest`, which moved to
+  `request.operation_fence_binding.delivery_principal_binding_digest`
+  (fixed in bootstrap_graph_v3_fixture.py, EXCEPT the
+  coordinator-request site at ~526 where the digest remains a direct
+  field — already correct); (7) the fixture's recording group-commit
+  wrapper called `self._run_before_compare_and_as` bound to the provider
+  instead of the recording class (fixed via `type(inner_self)`);
+  (8) NEXT OPEN SEAM: the graph group commit now fails with
+  "committed generation manifest is absent" (atomic_store.py:11717) —
+  the fixture's graph commit path expects durable generation state the
+  scenario V3 flow has not created; continue from
+  `_execute_attempt` (bootstrap_graph_coordinator.py:232) →
+  `commit_or_reload` → `_read_generation_members`.
+
 ## Next Action
 
-Continue slice 6a policy-migration from the recorded state below: the
-terminal-persistence clarification families are GREEN and committed; the
-policy-migration suite needs its per-test migration-coverage assertions
-redesigned for the lifecycle's three-write shape (exact findings in the
-2026-08-27 slice-6a policy entry), then 6b's composition wiring completed
-(normalization builder onto the capability seam), then 6c/6d.
+Continue slice 6a policy: chain the post-cutover preflight cause
+(atomic_store.py:8323) with rank-20 contest terminals (suspect temporal
+policy fingerprint mismatch or reopened-resolver state), then the
+temporal ValidationError, then the race outcome-identity asserts; then
+the conflict-clarification family (one signature, 12 tests); then 6b's
+open seam (atomic_store.py:11717 generation manifest); then 6c and the
+6d gates.
