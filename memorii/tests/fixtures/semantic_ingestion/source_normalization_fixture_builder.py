@@ -624,12 +624,12 @@ def build_source_normalization_authority_bundle(
         raise ValueError("the legacy proposal request path is retired")
     if bootstrap_v3_runtime_authority is None:
         raise ValueError("fixture authority requires a V3 runtime authority")
-        v3_request = bootstrap_v3_runtime_authority.proposal_requests[0]
-        proposer_fingerprint = v3_request.proposer_manifest.runtime_fingerprint
-        proposer_manifest_digest = v3_request.proposer_manifest.manifest_digest
-        prompt_registration_digest = v3_request.registered_prompt.prompt_registration_digest
-        semantic_request_fingerprint = v3_request.request_digest
-        action_catalog_fingerprint = v3_request.action_proposal_catalog.catalog_schema_fingerprint
+    v3_request = bootstrap_v3_runtime_authority.proposal_requests[0]
+    proposer_fingerprint = v3_request.proposer_manifest.runtime_fingerprint
+    proposer_manifest_digest = v3_request.proposer_manifest.manifest_digest
+    prompt_registration_digest = v3_request.registered_prompt.prompt_registration_digest
+    semantic_request_fingerprint = v3_request.request_digest
+    action_catalog_fingerprint = v3_request.action_proposal_catalog.catalog_schema_fingerprint
     authority_body = {
         "source_id": source.source_id, "source_digest": source.source_digest,
         "preparation_fingerprint": source.preparation_fingerprint,
