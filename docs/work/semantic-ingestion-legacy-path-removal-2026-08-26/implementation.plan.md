@@ -715,6 +715,20 @@ Broad gate (once, at the final revision):
   completeness contract changed), not the claim lifecycle. This is a
   separate bounded sub-family inside slice 6a.
 
+- 2026-08-27 (slice 6a event-replay GREEN, commits `58a8028` +
+  follow-up): the shared `_graph_delta` builder now derives the digest
+  from the model's persisted representation — carrier variants are
+  rebuilt through `SemanticTerminalOutcome.create` and committed via
+  the `SemanticGraphDelta.create` factory; the records-based delta and
+  its tail sibling digest the `model_construct` dump (the discriminated
+  carrier union serializes to a mapping a hand-built body cannot
+  reproduce). One pre-existing B007 rename fixed in the same file.
+  Full suite 64 passed; file ruff-clean; identity gate green.
+  Remaining repo-wide ruff findings: 17, all in the 6d-cleanup files
+  named by the known-failure ledger (bootstrap_graph_v3_fixture ×8,
+  test_bootstrap_graph_v3_fixture ×2, canonical-evidence-mode-parity,
+  and the B904/F841 singles).
+
 - 2026-08-27 (slice 6a FAMILY COMMIT `f5d9792`): the terminal-persistence
   clarification family is green and committed (helper geometry, canonical
   submission, retry assertions, v2-domain rehash, lifecycle counts — the
