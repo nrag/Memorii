@@ -56,7 +56,11 @@ from memorii.core.memory_plane.models import CanonicalMemoryRecord
 from memorii.core.memory_plane.service import MemoryPlaneService
 from memorii.core.memory_plane.store import JsonlMemoryPlaneStore, _PersistedBatch
 from memorii.core.provider.service import ProviderMemoryService
-from memorii.core.semantic_ingestion.contracts import SemanticGraphDelta, contract_digest
+from memorii.core.semantic_ingestion.contracts import (
+    SemanticGraphDelta,
+    SemanticTerminalOutcome,
+    contract_digest,
+)
 from memorii.core.semantic_ingestion.event_replay import (
     EventBatchLogPosition,
     FileSemanticEventRepository,
@@ -599,24 +603,43 @@ def test_clean_replay_verification_rejects_missing_or_empty_authority_sources() 
 
 def _graph_delta(*, version: int = 1, statement: str = "first") -> SemanticGraphDelta:
     terminal = accepted_terminal(operation_id="operation")
-    carrier = terminal.accepted_carriers[0]
     if version != 1 or statement != "first":
+        # Distinct carrier variants still commit through the terminal's own
+        # factory: the delta digest covers the discriminated carrier union's
+        # persisted representation, which a hand-built body cannot reproduce.
+        carrier = terminal.accepted_carriers[0]
         values = carrier.model_dump(mode="python", exclude={"record_digest"})
         values.update({"record_version": version, "statement_digest": _digest(statement)})
-        carrier = type(carrier)(
+        revised = type(carrier)(
             **values,
             record_digest=contract_digest(b"memorii.semantic-ingestion.temporal-carrier.v1", values),
         )
-    body = {
-        "kind": "semantic_graph_delta",
-        "operation_id": terminal.operation_id,
-        "carriers": (carrier,),
-        "terminal_binding_sets": terminal.terminal_binding_sets,
-    }
-    return SemanticGraphDelta(
-        **body,
-        delta_digest=contract_digest(b"memorii.semantic-ingestion.graph-delta.v1", body),
-    )
+        carrier_artifact_digest = contract_digest(
+            b"memorii.semantic-ingestion.terminal-carrier-artifact.v1",
+            {
+                "operation_id": terminal.operation_id,
+                "sealed_operations": terminal.sealed_operations,
+                "accepted_carriers": (revised,),
+                "terminal_binding_sets": terminal.terminal_binding_sets,
+            },
+        )
+        terminal = SemanticTerminalOutcome.create(
+            operation_id=terminal.operation_id,
+            status=terminal.status,
+            reason_codes=terminal.reason_codes,
+            candidates=terminal.candidates,
+            source_analyses=terminal.source_analyses,
+            arbitration_policy_bundle=terminal.arbitration_policy_bundle,
+            authorization_read_set=terminal.authorization_read_set,
+            execution_lineage=terminal.execution_lineage,
+            temporal_closures=terminal.temporal_closures,
+            carrier_artifact_digest=carrier_artifact_digest,
+            sealed_operations=terminal.sealed_operations,
+            accepted_carriers=(revised,),
+            terminal_binding_sets=terminal.terminal_binding_sets,
+            attempt_count=terminal.attempt_count,
+        )
+    return SemanticGraphDelta.create(terminal)
 
 
 def _batch(
@@ -2014,10 +2037,16 @@ def test_all_graph_record_kinds_survive_signed_checkpoint_tail_and_genesis_repla
         ),
         "terminal_binding_sets": (),
     }
+    # Derive the digest from the model's persisted representation, exactly
+    # as the accepted-terminal factory does: the discriminated carrier union
+    # serializes to a mapping a hand-built body cannot reproduce.
     delta = SemanticGraphDelta(
         **delta_body,
         delta_digest=contract_digest(
-            b"memorii.semantic-ingestion.graph-delta.v1", delta_body
+            b"memorii.semantic-ingestion.graph-delta.v1",
+            SemanticGraphDelta.model_construct(
+                **delta_body, delta_digest="0" * 64
+            ).model_dump(mode="python", exclude={"delta_digest"}),
         ),
     )
     genesis = SemanticReplayState.genesis("repository")
@@ -2061,7 +2090,10 @@ def test_all_graph_record_kinds_survive_signed_checkpoint_tail_and_genesis_repla
     tail_delta = SemanticGraphDelta(
         **tail_body,
         delta_digest=contract_digest(
-            b"memorii.semantic-ingestion.graph-delta.v1", tail_body
+            b"memorii.semantic-ingestion.graph-delta.v1",
+            SemanticGraphDelta.model_construct(
+                **tail_body, delta_digest="0" * 64
+            ).model_dump(mode="python", exclude={"delta_digest"}),
         ),
     )
     second = _batch(
@@ -2414,12 +2446,12 @@ def _semantic_conflict_replay_binding(
 
     if not records:
         return SemanticConflictReplayBinding.genesis("semantic_ingestion")
+    from semantic_terminal_test_support import handoff
     from tests.unit.core.semantic_ingestion.test_semantic_terminal_persistence import (
         AUTHORIZATION,
         _activate,
         _setup,
     )
-    from semantic_terminal_test_support import handoff
 
     plane, writers, store, binding, fence, service, repository = _setup(
         verified=True,
