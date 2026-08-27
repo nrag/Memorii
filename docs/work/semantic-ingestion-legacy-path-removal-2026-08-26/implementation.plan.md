@@ -543,6 +543,24 @@ Broad gate (once, at the final revision):
   rerun with saved output is the classification step); slice-5 commit awaits
   that classification, then slice 6.
 
+- 2026-08-27 (resumed, classification progress): the fast hub-consumer
+  files rerun with saved output: transaction-group-plan, generation-
+  transactions, and text-preparation suites are GREEN (8 failures / 36
+  passed were all in `test_scenario_public_ingress_runner.py`). All 8
+  scenario-runner failures share one signature — `SemanticWriterAdmissionError:
+  semantic writer is unbound` at the SERVICE-level writer store — verified
+  pre-existing at the pre-M1 commit (same signature reproduced at the
+  capability level in a clean worktree during the perf work; the debug
+  operation's no-auto-create writer change was never migrated into the
+  scenario harness). The capability-level activation fixture now creates
+  the initial evidence-only epoch when the store is fresh (committed);
+  the service-level binding migration is slice-6 scope. Remaining
+  classification: rerun the five slow hub files (terminal persistence,
+  event replay, identity lineage, graph planning, policy migration) — many
+  of the original 130 likely resolved with the `proposer_fingerprint` and
+  resolver fixture fixes already landed; then conflict-attention's 12
+  canonical-bridge failures.
+
 ## Next Action
 
 PAUSED (user decision 2026-08-27). Resume by classifying the 130-failure
