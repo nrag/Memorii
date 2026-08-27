@@ -94,7 +94,7 @@ claims; any reopening of the legacy-path removal's slices.
 | Enable-by-default | every verified runtime substitutes; explicit `canonical_evidence_enabled=False` is the only off path; arena + service + parity suites green | complete (commit `b33a171`) |
 | Parity gate | fewer-than-ten diametric nodes, slow-tier workflow cadence, gate-change log recorded | wired (module + workflow + shard exclusion; module green run pending) |
 | H8 removal | single prepare-and-publish per ingestion; family proofs green | complete (47 passed) |
-| Re-profile | frozen-scenario numbers with ON+H8 recorded; H7 scoped or closed | not started |
+| Re-profile | frozen-scenario numbers with ON+H8 recorded; H7 scoped or closed | complete (63.7% wall-clock reduction measured; H7 budget = residual ~36s) |
 
 ## Progress Log
 
@@ -138,11 +138,31 @@ claims; any reopening of the legacy-path removal's slices.
   substitution ON and H8 removed to scope what actually remains. Record both
   JSON outputs here and close or open the H7 unit from those numbers.
 
+- 2026-08-27 (M4 complete, measured): PBD-EXP-014
+  (`../semantic-ingestion-canonical-evidence-production-performance-2026-08-16/evidence/pbd-exp-014-default-on-wall-clock-v1.json`,
+  commit `e8dd06c`) — five shuffled samples per mode through the public
+  sync_event root on the current tree, full V3 composition, post-H8
+  accounting asserted per child:
+  **disabled median 99.92s / 43,756 content-digest calls; enabled (default)
+  median 36.22s / 237 calls** — **63.7% wall-clock reduction and 99.46%
+  digest-call reduction**, both deterministic across samples. The disabled
+  leg reproduces the original ~43k-validation pathology. Finding for H7
+  scoping: 237 digest calls cannot account for the remaining ~36s, so the
+  residual is almost entirely non-digest work (typed reconstruction,
+  persistence composition, graph transaction) — that is H7's budget, to be
+  attacked as its own unit from these numbers. Measurement caveats recorded
+  in the evidence JSON: durable bytes vary cross-process by design
+  (per-delivery unique identities), so parity is carried by the diametric
+  gate; the 2026-08-16 frozen-scenario rendering no longer exists, so the
+  historical 0.90s anchor is context, not a controlled comparison. Also
+  recorded: the scenario harness's initial-writer activation fails on a
+  fresh writer store (pre-existing on this branch, independent of this
+  operation) — the measurement uses the production-domain composition
+  instead.
+
 ## Next Action
 
-Run the M4 re-profile per the recorded procedure (exp_004 then exp_003),
-record the numbers, and scope H7 from them. (M1-M3 are landed; the prior
-next action is preserved below for history.)
-
-Land M1: consume the verification run, then wire the parity gate (M2) with
-its explicit-OFF fixture pattern.
+All four milestones are complete. Resume the paused legacy-path removal
+operation (slice-5 failure classification first), and open the H7 unit
+(persistence-composition kernel, ~36s residual per delivery) as its own
+linked operation when ready.
