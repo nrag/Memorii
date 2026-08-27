@@ -591,6 +591,27 @@ Broad gate (once, at the final revision):
   linguistic environmental disposition, full broad gate, durations regen,
   and the three WorkPlan closures.
 
+- 2026-08-27 (slice 6a diagnosis complete; fixture construction remains):
+  the 134 failing tests call `commit_conflict_clarification_transaction`
+  with the PRE-eb70c9d signature (no `clarification_cas`), and **no test in
+  the repository drives the real CAS today** — the four passing processor
+  tests use an in-file fake pipeline that never touches the store
+  transaction. The repair is new fixture construction through the real
+  owners, in `_commit_accepted_clarification`
+  (`test_semantic_terminal_persistence.py:638`) and its policy-migration /
+  event-replay siblings:
+  1. create an active semantic conflict in projection history (the record
+     family behind `_projection_history._current_semantic_conflicts()`),
+  2. `submit_canonical_conflict_clarification` for the proposal,
+  3. claim it (`AtomicStoreConflictClarificationProcessingRepository.claim_next_clarification`
+     with a real lease/owner token),
+  4. `store.build_conflict_clarification_cas_input(claim)`,
+  5. pass `clarification_cas=` plus the existing arguments to
+     `commit_conflict_clarification_transaction`.
+  The `processing_operation_id` in the CAS must match the helper's. The 12
+  conflict-attention service-level failures follow the same lifecycle via
+  the Hermes resolution path.
+
 ## Next Action
 
 Repair the clarification-CAS family (134 tests): make
