@@ -53,7 +53,7 @@ from memorii.core.semantic_ingestion.event_replay import (
     SemanticEventReplayError,
     decode_semantic_replay_state,
 )
-from memorii.core.semantic_ingestion.pipeline import TemporalEvidenceResolver
+from memorii.core.semantic_ingestion.temporal_evidence_resolution import TemporalEvidenceResolver
 from memorii.domain.enums import CommitStatus, MemoryDomain, MemoryRecordVisibility
 
 MigrationKind = Literal["temporal", "trust"]

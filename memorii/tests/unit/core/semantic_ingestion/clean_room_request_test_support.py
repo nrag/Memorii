@@ -1,5 +1,6 @@
 """Clean-room strict request fixture shared by semantic-ingestion tests."""
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
 
@@ -36,7 +37,6 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticCandidate,
     SemanticProjectionSegment,
     SemanticProjectionTextArtifact,
-    SemanticProposalRequest,
     SemanticProposerManifest,
     SourceAuthority,
     SourceAuthorityEvidence,
@@ -60,13 +60,31 @@ def _digest(label: str) -> str:
     return sha256(label.encode("ascii")).hexdigest()
 
 
-def build_clean_room_semantic_proposal_request(
+@dataclass(frozen=True)
+class CleanRoomRequestMaterial:
+    """One complete clean-room source/proposal authority set for fixtures."""
+
+    owned_text: SourceSpanReference
+    segment_governance: SegmentGovernanceBinding
+    segment_id: str
+    preparation_fingerprint: str
+    message_admission_identity: MessageAdmissionIdentity
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    language_route: SegmentLanguageRoute
+    proposal_capability_fingerprint: str
+    predicate_catalog: PredicateProposalCatalog
+    action_proposal_catalog: ActionProposalCatalog
+    registered_prompt: RegisteredSemanticPromptBinding
+    proposer_manifest: SemanticProposerManifest
+
+
+def build_clean_room_proposal_catalogs(
     *,
     source_id: str = "clean-room-source",
     source_digest: str | None = None,
     source_text: str | None = None,
     require_text_digest: bool = True,
-) -> SemanticProposalRequest:
+) -> CleanRoomRequestMaterial:
     """Build without importing a test module or production encoding helpers."""
     text = source_text if source_text is not None else "Alice starts project Atlas. " * 4
     source_digest = source_digest or _digest(text)
@@ -96,7 +114,20 @@ def build_clean_room_semantic_proposal_request(
     actions = ActionProposalCatalog.create(vocabulary_namespace="vector", proposal_capability_fingerprint=capability, roles=(ActionProposalRoleContract(role_id="actor", endpoint_kind="actor", description="Actor", grounding_requirement="verbatim_source_mention"),), states=(ActionProposalStateContract(state_id="started", description="Started", allowed_role_ids=("actor",), required_state_anchor=True),), catalog_schema_fingerprint=_ACTION_SCHEMA)
     prompt = RegisteredSemanticPromptBinding(prompt_ref="semantic-proposal-v1", prompt_registration_digest=_digest("registration"), prompt_content_digest=_digest("content"), output_schema_fingerprint=_digest("schema"), owner_fingerprint=_digest("owner"), visibility_policy_digest=_digest("visibility"), redaction_policy_digest=_digest("redaction"))
     manifest = SemanticProposerManifest.create(proposer_id="local-vector", proposer_kind="local", runtime_fingerprint=_digest("runtime"), model_artifact_fingerprint=_digest("model"), tokenizer_or_template_fingerprint=_digest("tokenizer"), structured_output_capability_fingerprint=capability)
-    return SemanticProposalRequest.create(source_id=source_id, source_digest=source_digest, semantic_context_fingerprint=governance.message_semantic_context_digest, preparation_fingerprint=_digest("preparation"), segment_id=child, segment_governance=governance, message_admission_identity=admission, governance_carrier_artifact=artifact, owned_text=span, context_text=span, segment_text=text, language_route=route, provider_egress_decision_digest=None, proposal_capability_fingerprint=capability, predicate_catalog=predicates, action_proposal_catalog=actions, registered_prompt=prompt, proposer_manifest=manifest)
+    return CleanRoomRequestMaterial(
+        owned_text=span,
+        segment_governance=governance,
+        segment_id=child,
+        preparation_fingerprint=_digest("preparation"),
+        message_admission_identity=admission,
+        governance_carrier_artifact=artifact,
+        language_route=route,
+        proposal_capability_fingerprint=capability,
+        predicate_catalog=predicates,
+        action_proposal_catalog=actions,
+        registered_prompt=prompt,
+        proposer_manifest=manifest,
+    )
 
 
 def build_prepared_source_authority(
@@ -104,7 +135,7 @@ def build_prepared_source_authority(
     preparation_policy: TextPreparationPolicy | None = None,
 ) -> PreparedSource:
     """Return the canonical one-segment retained-source authority for tests."""
-    request = build_clean_room_semantic_proposal_request(
+    request = build_clean_room_proposal_catalogs(
         source_id=source_id,
         source_digest=source_digest,
         source_text=source_text,
@@ -189,7 +220,7 @@ def build_prepared_independent_source_analysis(
     preparation_fingerprint: str | None = None,
 ) -> IndependentSourceAnalysis:
     """Build a strict independent analysis closed over one prepared route."""
-    request = build_clean_room_semantic_proposal_request(
+    request = build_clean_room_proposal_catalogs(
         source_id=source_id,
         source_digest=source_digest,
         source_text=source_text,

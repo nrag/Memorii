@@ -139,7 +139,6 @@ from memorii.core.semantic_ingestion.canonical_evidence_arena import (
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
     BuiltInLocalHostSemanticIngestionCapability,
-    ConflictClarificationSemanticPipelineAdapter,
     HostSemanticIngestionRuntimeBuilder,
 )
 from memorii.core.semantic_ingestion.production_authority import (
@@ -539,38 +538,21 @@ class ProviderMemoryService:
             bootstrap_unavailable_reason=self._bootstrap_unavailable_reason,
             atomic_store=self._semantic_atomic_store,
             writer_admission=self._semantic_writer_admission,
-            semantic_pipeline=semantic_runtime.pipeline if semantic_runtime is not None else None,
             semantic_policy_provider=semantic_runtime.policy_provider if semantic_runtime is not None else None,
-            semantic_egress_policy_provider=(
-                semantic_runtime.egress_policy_provider if semantic_runtime is not None else None
-            ),
-            semantic_candidate_assessor=(
-                semantic_runtime.candidate_assessor if semantic_runtime is not None else None
-            ),
             semantic_runtime=semantic_runtime,
             now_provider=self._now_provider,
             canonical_evidence_arena_factory=self._new_canonical_evidence_arena,
         )
         self._semantic_runtime_validated_after_ingress = False
         self._conflict_clarification_processor: ConflictClarificationProcessor | None = None
-        if self._conflict_attention_enabled:
-            configured_clarification_pipeline = conflict_clarification_pipeline or (
-                semantic_runtime.conflict_clarification_pipeline
-                if semantic_runtime is not None
-                else None
-            )
-            configured_clarification_pipeline = (
-                configured_clarification_pipeline
-                or ConflictClarificationSemanticPipelineAdapter(
-                    self._semantic_atomic_store,
-                    context_provider=self._provider_ingestion,
-                )
-            )
+        if self._conflict_attention_enabled and conflict_clarification_pipeline is not None:
+            # Clarification processing requires an explicitly supplied host
+            # pipeline; without one, submitted clarifications stay pending.
             self._conflict_clarification_processor = ConflictClarificationProcessor(
                 AtomicStoreConflictClarificationProcessingRepository(
                     self._semantic_atomic_store
                 ),
-                configured_clarification_pipeline,
+                conflict_clarification_pipeline,
             )
         self._work_state_memory_projector = WorkStateMemoryProjector(
             memory_plane=self._memory_plane,

@@ -443,7 +443,7 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
     V3 proposal request and factories consumed by the configured host bundle.
     """
     from tests.unit.core.semantic_ingestion.clean_room_request_test_support import (
-        build_clean_room_semantic_proposal_request,
+        build_clean_room_proposal_catalogs,
     )
 
     if len(source.segments) != 1 or len(source.segment_language_routes.routes) != 1:
@@ -451,7 +451,7 @@ def build_bootstrap_v3_fixture_authority(*, source: PreparedSource) -> Bootstrap
     route = source.segment_language_routes.routes[0]
     if not isinstance(route, BootstrapDeclaredSegmentLanguageRoute):
         raise ValueError("bootstrap V3 fixture requires a declared bootstrap route")
-    base = build_clean_room_semantic_proposal_request(
+    base = build_clean_room_proposal_catalogs(
         source_id=source.source_id,
         source_digest=source.source_digest,
         source_text=source.semantic_text,

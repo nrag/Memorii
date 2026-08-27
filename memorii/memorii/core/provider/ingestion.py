@@ -21,7 +21,6 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     BootstrapAdmissionPin,
     VerifiedBootstrapProfile,
 )
-from memorii.core.memory_evolution.conflict_attention import AgentClarificationProposal
 from memorii.core.memory_evolution.ingestion_contracts import (
     AuthenticatedIngressContext,
     DeliveryIdentity,
@@ -59,7 +58,6 @@ from memorii.core.semantic_ingestion.canonical_evidence_arena import (
 )
 from memorii.core.semantic_ingestion.capability import (
     AuthorizedSemanticIngestionRuntime,
-    ConflictClarificationSemanticContext,
 )
 from memorii.core.semantic_ingestion.contracts import (
     AuthenticatedSourceIntervalEvidence,
@@ -76,7 +74,8 @@ from memorii.core.semantic_ingestion.contracts import (
     BootstrapSourceNormalizationResultV3,
     SemanticArbitrationPolicyBundle,
     SemanticAuthorizationReadSet,
-    SemanticEgressAuthorizationBinding,
+    SemanticPipelinePolicyProvider,
+    SemanticTerminalOutcome,
     SourceAuthority,
     SourceAuthorityEvidence,
     TextPreparationRequest,
@@ -84,22 +83,10 @@ from memorii.core.semantic_ingestion.contracts import (
     contract_digest,
     encode_semantic_contract_result,
 )
-from memorii.core.semantic_ingestion.egress import (
-    EgressPolicyProvider,
-    ProviderEgressBinding,
-    verify_current_egress,
-)
 from memorii.core.semantic_ingestion.persistence import (
     SemanticAuthorizationReadSetError,
     SemanticIngestionLeaseSession,
     SemanticTerminalPersistenceService,
-)
-from memorii.core.semantic_ingestion.pipeline import (
-    SemanticAnalysisOutage,
-    SemanticCandidateAssessor,
-    SemanticIngestionPipeline,
-    SemanticPipelinePolicyProvider,
-    SemanticTerminalOutcome,
 )
 from memorii.core.semantic_ingestion.source_normalization_execution import (
     SourceNormalizationNonCommit,
@@ -132,8 +119,6 @@ class _ProviderAuthorizationReadSet:
         runtime: AuthorizedSemanticIngestionRuntime,
         profile: VerifiedBootstrapProfile,
         policy_provider: SemanticPipelinePolicyProvider,
-        egress_policy_provider: EgressPolicyProvider | None,
-        egress_binding: ProviderEgressBinding | None,
         source_id: str,
         source_digest: str,
         now_provider: Callable[[], datetime],
@@ -143,8 +128,6 @@ class _ProviderAuthorizationReadSet:
         self._runtime = runtime
         self._profile = profile
         self._policy_provider = policy_provider
-        self._egress_policy_provider = egress_policy_provider
-        self._egress_binding = egress_binding
         self._source_id = source_id
         self._source_digest = source_digest
         self._now_provider = now_provider
@@ -191,36 +174,13 @@ class _ProviderAuthorizationReadSet:
             raise _SemanticPolicyReadOutage("deployment authorization is unavailable") from exc
         if deployment is None:
             return None
-        current_egress = None
-        if self._egress_binding is not None:
-            current_egress = verify_current_egress(
-                self._egress_policy_provider,
-                binding=self._egress_binding,
-                at=server_now,
-            )
-            if current_egress is None:
-                return None
         read_set = SemanticAuthorizationReadSet.create(
             policy_bundle=policy_bundle,
-            egress_policy_revision=(
-                current_egress.policy_revision if current_egress is not None else None
-            ),
-            egress_decision_digest=(
-                current_egress.decision_digest if current_egress is not None else None
-            ),
-            egress_binding=(
-                SemanticEgressAuthorizationBinding.model_validate(
-                    self._egress_binding.model_dump(mode="python")
-                )
-                if self._egress_binding is not None else None
-            ),
             deployment_authorization_digest=deployment.authorization_digest,
             deployment_active_epoch=deployment.active_epoch,
             deployment_decision_digest=deployment.decision_digest,
         )
         valid_until = deployment.expires_at
-        if current_egress is not None and current_egress.expires_at < valid_until:
-            valid_until = current_egress.expires_at
         try:
             precondition = self._authority_repository.observe_verified(
                 authority_scope_id=self._authority_scope_id,
@@ -234,15 +194,6 @@ class _ProviderAuthorizationReadSet:
             use_point=use_point,
             server_now=server_now,
             read_set=read_set,
-            egress_policy_id=(
-                current_egress.policy_id if current_egress is not None else None
-            ),
-            egress_policy_fingerprint=(
-                current_egress.policy_fingerprint if current_egress is not None else None
-            ),
-            egress_expires_at=(
-                current_egress.expires_at if current_egress is not None else None
-            ),
             deployment_expires_at=deployment.expires_at,
             authority_record_id=precondition.authority_record_id,
             authority_revision=precondition.expected_authority_revision,
@@ -279,10 +230,7 @@ class ProviderIngestionCoordinator:
         bootstrap_unavailable_reason: str,
         atomic_store: SemanticIngestionAtomicStore,
         writer_admission: SemanticWriterAdmissionStore,
-        semantic_pipeline: SemanticIngestionPipeline | None = None,
         semantic_policy_provider: SemanticPipelinePolicyProvider | None = None,
-        semantic_egress_policy_provider: EgressPolicyProvider | None = None,
-        semantic_candidate_assessor: SemanticCandidateAssessor | None = None,
         semantic_runtime: AuthorizedSemanticIngestionRuntime | None = None,
         now_provider: Callable[[], datetime] | None = None,
         canonical_evidence_arena_factory: Callable[[], CanonicalEvidenceArena] | None = None,
@@ -293,14 +241,8 @@ class ProviderIngestionCoordinator:
         self._bootstrap_unavailable_reason = bootstrap_unavailable_reason
         self._atomic_store = atomic_store
         self._writer_admission = writer_admission
-        self._semantic_pipeline = semantic_pipeline
         self._semantic_policy_provider = semantic_policy_provider
-        self._semantic_egress_policy_provider = semantic_egress_policy_provider
-        self._semantic_candidate_assessor = semantic_candidate_assessor
         self._semantic_runtime = semantic_runtime
-        self._semantic_local_proposal_producer = (
-            semantic_runtime.local_proposal_producer if semantic_runtime is not None else None
-        )
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
         self._canonical_evidence_arena_factory = canonical_evidence_arena_factory
         self._authorization_repository = SemanticAuthorizationAuthorityRepository(
@@ -312,86 +254,6 @@ class ProviderIngestionCoordinator:
             atomic_store=atomic_store,
             writer_binding_provider=self._current_writer_binding,
             authorization_repository=self._authorization_repository,
-        )
-
-    def resolve_context(
-        self, proposal: AgentClarificationProposal
-    ) -> ConflictClarificationSemanticContext | None:
-        """Rebuild ordinary local semantic inputs from the retained user event."""
-
-        from memorii.core.memory_evolution.conflict_attention import (
-            RetainedConflictClarificationContext,
-        )
-
-        try:
-            validated = AgentClarificationProposal.model_validate(
-                proposal.model_dump(mode="python")
-            )
-        except (AttributeError, TypeError, ValueError):
-            return None
-        retained_value = self._atomic_store.resolve_conflict_clarification_context(
-            validated
-        )
-        if retained_value is None:
-            return None
-        try:
-            retained = RetainedConflictClarificationContext.model_validate(
-                retained_value.model_dump(mode="python")
-            )
-        except (AttributeError, TypeError, ValueError):
-            return None
-        ingress = retained.authenticated_ingress
-        if (
-            ingress.delivery_principal_binding.principal_subject_id
-            != validated.agent_principal_id
-            or self._semantic_policy_provider is None
-            or self._semantic_runtime is None
-            or self._bootstrap_profile is None
-            or self._semantic_candidate_assessor is None
-            or self._semantic_local_proposal_producer is None
-        ):
-            return None
-        policy = self._semantic_policy_provider.current_policy(
-            source_id=retained.source_user_event_id,
-            source_digest=retained.source_user_event_digest,
-        )
-        if policy is None:
-            return None
-        evidence = self._authenticated_source_evidence(
-            source_id=retained.source_user_event_id,
-            source_digest=retained.source_user_event_digest,
-            authenticated_ingress=ingress,
-        )
-        if evidence is None:
-            return None
-        authority, interval = evidence
-        local_proposals = self._semantic_local_proposal_producer.propose(
-            source_id=retained.source_user_event_id,
-            source_digest=retained.source_user_event_digest,
-            source_text=retained.source_text,
-        )
-        authorization_guard = _ProviderAuthorizationReadSet(
-            runtime=self._semantic_runtime,
-            profile=self._bootstrap_profile,
-            policy_provider=self._semantic_policy_provider,
-            egress_policy_provider=self._semantic_egress_policy_provider,
-            egress_binding=None,
-            source_id=retained.source_user_event_id,
-            source_digest=retained.source_user_event_digest,
-            now_provider=self._now_provider,
-            authority_repository=self._authorization_repository,
-        )
-        return ConflictClarificationSemanticContext(
-            source_id=retained.source_user_event_id,
-            source_digest=retained.source_user_event_digest,
-            source_text=retained.source_text,
-            policy_bundle=policy.arbitration_bundle,
-            source_authority_evidence=authority,
-            source_interval_evidence=interval,
-            authorization_read_set_provider=authorization_guard,
-            independent_assessor=self._semantic_candidate_assessor,
-            local_proposals=local_proposals,
-            current_time_provider=self._now_provider,
         )
 
     def ingest(
@@ -637,7 +499,7 @@ class ProviderIngestionCoordinator:
                     attempt_count=0,
                 )
                 authorization_guard = None
-            except (OSError, SemanticAnalysisOutage):
+            except OSError:
                 terminal = None
                 authorization_guard = None
             finally:
@@ -822,7 +684,7 @@ class ProviderIngestionCoordinator:
                     finally:
                         if lease is not None:
                             lease.release()
-            except (OSError, SemanticAnalysisOutage):
+            except OSError:
                 outcomes.append(self._retryable_outcome(control))
                 continue
             if "source_alignment_authority_unavailable" in terminal.reason_codes:
@@ -892,16 +754,10 @@ class ProviderIngestionCoordinator:
             or self._semantic_policy_provider is None
         ):
             return None
-        binding = (
-            ProviderEgressBinding.model_validate(read_set.egress_binding.model_dump(mode="python"))
-            if read_set.egress_binding is not None else None
-        )
         return _ProviderAuthorizationReadSet(
             runtime=self._semantic_runtime,
             profile=self._bootstrap_profile,
             policy_provider=self._semantic_policy_provider,
-            egress_policy_provider=self._semantic_egress_policy_provider,
-            egress_binding=binding,
             source_id=fence.source_id,
             source_digest=fence.source_digest,
             now_provider=self._now_provider,
@@ -1235,8 +1091,6 @@ class ProviderIngestionCoordinator:
             runtime=self._semantic_runtime,
             profile=self._bootstrap_profile,
             policy_provider=self._semantic_policy_provider,
-            egress_policy_provider=self._semantic_egress_policy_provider,
-            egress_binding=None,
             source_id=observation.source_id,
             source_digest=observation.source_digest or "",
             now_provider=self._now_provider,

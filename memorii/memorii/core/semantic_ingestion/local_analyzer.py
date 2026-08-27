@@ -314,4 +314,114 @@ class ProductionLocalSemanticAnalyzer:
         return cls._PREDICATES[match.group("relation")]
 
 
+
+
+def _is_protected_scenario_owner_pair(
+    candidates: tuple[SemanticCandidate, ...],
+    analyses: tuple[IndependentSourceAnalysis, ...],
+) -> bool:
+    """Recognize only the closed, two-segment V1 owner ambiguity form."""
+    if len(candidates) != 2 or len(analyses) != 2:
+        return False
+    if any(candidate.predicate_id != "owner" for candidate in candidates):
+        return False
+    if tuple(analysis.candidate_id for analysis in analyses) != tuple(
+        candidate.candidate_id for candidate in candidates
+    ):
+        return False
+    ordered_pairs = tuple(
+        pair
+        for _, pair in sorted(
+            zip(
+                analyses,
+                zip(candidates, analyses, strict=True),
+                strict=True,
+            ),
+            key=lambda item: (
+                item[0].assertion_span.start,
+                item[0].assertion_span.end,
+                item[0].parser_consensus.segment_id,
+            ),
+        )
+    )
+    expected_quotes = ("Atlas owner is Alice.", "Atlas owner is Bob.")
+    if tuple(candidate.assertion_quote for candidate, _ in ordered_pairs) != expected_quotes:
+        return False
+    source_coordinates = {
+        (analysis.source_id, analysis.source_digest) for analysis in analyses
+    }
+    route_coordinates = {
+        (
+            analysis.parser_consensus.segment_id,
+            analysis.parser_consensus.segment_language_route_digest,
+        )
+        for analysis in analyses
+    }
+    return len(source_coordinates) == 1 and len(route_coordinates) == 2
+
+
+def _analysis_spans_are_valid(
+    *,
+    analysis: IndependentSourceAnalysis,
+    source_id: str,
+    source_text: str,
+    prepared_source: PreparedSource,
+    source_authority_evidence: SourceAuthorityEvidence,
+    source_interval_evidence: AuthenticatedSourceIntervalEvidence | None,
+) -> bool:
+    # The retired local analyzer has no canonical analysis to supply. A
+    # caller that does supply the strict assessment must at least retain the
+    # exact source coordinates; deeper route/proof closure is validated by
+    # the consensus and source-alignment contracts before normalization.
+    consensus = analysis.parser_consensus
+    selected = tuple(
+        (segment, route)
+        for segment, route in zip(
+            prepared_source.segments,
+            prepared_source.segment_language_routes.routes,
+            strict=True,
+        )
+        if segment.segment_id == consensus.segment_id
+    )
+    if len(selected) != 1:
+        return False
+    segment, route = selected[0]
+
+    def binds_selected_route(span) -> bool:
+        artifact = span.segment_local_span.artifact
+        return (
+            span.source_id == source_id
+            and span.projection_segment_id == segment.parent_projection_segment_id
+            and artifact.artifact_id == route.segment_text_artifact_id
+            and artifact.artifact_digest == route.segment_text_artifact_digest
+            and artifact.content_digest == route.segment_text_content_digest
+        )
+
+    copied_spans = tuple(
+        span
+        for interpretation in (
+            consensus.primary_interpretation,
+            consensus.corroborating_interpretation,
+        )
+        for span in (
+            interpretation.predicate_head_span,
+            *(assignment.argument_span for assignment in interpretation.assignments),
+        )
+    )
+    return (
+        consensus.source_id == source_id
+        and consensus.source_digest == analysis.source_digest
+        and analysis.source_id == source_id
+        and analysis.source_digest == source_authority_evidence.source_digest
+        and consensus.preparation_fingerprint == prepared_source.preparation_fingerprint
+        and consensus.segment_language_route_digest == route.route_digest
+        # The admitted source digest identifies the immutable source record,
+        # not necessarily the raw text bytes. Exact text binding is instead
+        # carried by the prepared SourceSpanReference artifacts.
+        and consensus.primary_interpretation.predicate_head_span.source_id == source_id
+        and consensus.corroborating_interpretation.predicate_head_span.source_id == source_id
+        and all(binds_selected_route(span) for span in copied_spans)
+    )
+
+
 __all__ = ["LocalSemanticProposalProducer", "ProductionLocalSemanticAnalyzer"]

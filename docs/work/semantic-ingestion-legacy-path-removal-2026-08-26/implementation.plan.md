@@ -435,6 +435,67 @@ Broad gate (once, at the final revision):
   when their pinned test files die. Focused: egress + authorization suites +
   provider service + coordinator selection.
 
+- 2026-08-26 (slice 5, IN PROGRESS — production complete, test migration
+  remains; working tree carries the WIP): production surface is fully migrated
+  and the package imports: `TemporalEvidenceResolver` extracted to
+  `temporal_evidence_resolution.py` (policy_migration + projection_history
+  repointed); the scenario-runner predicates moved onto `local_analyzer.py`;
+  `capability.py` lost the clarification adapter/context/protocol and the
+  runtime `pipeline`/`egress_policy_provider`/`candidate_assessor`/
+  `local_proposal_producer`/clarification fields (builder identity composition
+  was pipeline-only and is gone); `ingestion.py` lost `resolve_context`, the
+  pipeline/egress/assessor constructor params, and the guard's egress inputs
+  (`SemanticAnalysisOutage` deleted; its two except clauses are now plain
+  `except OSError`); `service.py` passes only policy+runtime to the
+  coordinator and constructs a clarification processor only for an explicitly
+  supplied host pipeline (clarifications otherwise stay pending);
+  `SemanticProposal` owns its member-closure validators (monkey-patch gone);
+  `pipeline.py`, `source_alignment.py`, and the deferred contracts
+  (`SemanticProposalRun`, `SourceProposalAlignment`,
+  `GraphFreeInterpretationBundle`, `UnresolvedPredicateEvent`,
+  `CoveredPredicateEvent`, `PredicateEventDisposition`, `SemanticProposalRequest`,
+  `SemanticProposalRequestArtifact`, `ProposalCoverageAudit`) are deleted.
+  RETAINED: `SemanticTerminalBindingSet` (live field of the retained
+  `SemanticTerminalOutcome`). The clean-room test hub now exposes
+  `CleanRoomRequestMaterial`/`build_clean_room_proposal_catalogs`.
+  REMAINING (in order): (1) `semantic_terminal_test_support.py` — its
+  `SemanticIngestionPipeline(...).run(...)` engine (line ~676) must be
+  replaced with direct `seal_semantic_operation` + `compile_accepted_carriers`
+  outcome construction (the eight consumer suites test persistence/replay,
+  not the engine); drop the runtime kwargs at ~262. (2)
+  `test_scenario_public_ingress_runner.py` statics -> local_analyzer.
+  (3) `test_temporal_trust_resolution.py` imports -> contracts +
+  `temporal_evidence_resolution`. (4) `test_bootstrap_text_preparation_producer.py`
+  pipeline-engine helper -> analyzer-direct. (5) `test_prompt_and_egress_authority.py`
+  re-anchor (see below). (6) `test_semantic_provider_composition.py`: delete the
+  ordinary families (analyzer, accepted-control, stops-before-owner successors,
+  untyped-normalization, hermes clarification, deployment-denial, same-pipeline)
+  and re-anchor the 18-mode mutation test against
+  `SemanticAuthorizationReadSet.create(egress_policy_revision=...,
+  egress_decision_digest=...)` + `authorization.py` `_matches` equality +
+  `verify_current_egress` rejection modes (binding field mutations, signature,
+  signer, expiry, outage, policy id/revision/fingerprint, decision digest),
+  asserting no egress decision may enter an authority record whose read-set
+  digest disagrees. (7) `test_consensus_contract_codecs.py`/
+  `test_source_group_plan_contracts.py` trim deleted-type fixtures.
+  (8) fixture builder residual `SemanticProposalRequest` annotations
+  (lines ~609/634/831/965 in `build_source_normalization_authority_bundle`'s
+  V3 path — pass-through only; retype to the material or V3 request).
+  (9) Allowlist: remove the two `legacy_rejection_vector` entries (their files
+  are deleted). (10) Gates: egress+authorization suites, provider service,
+  coordinator selection; then slice 6.
+
+- 2026-08-26 (user follow-up): after slices 5-6, revisit the parent
+  operation's recovery milestone packet
+  (`../semantic-ingestion-validated-canonical-closure-2026-08-17/milestones/recovery-reconciliation-fresh-owner-propagation.md`,
+  the "M3.1 packet") — its pending reconcile-branch disposition
+  ("repair via V3 execution-plan persistence, or remove") is resolved by this
+  operation's slice 2 (marker-keyed retained-state admission, no plan
+  persistence, no reconstructed ingress); the packet and the parent
+  implementation plan's roadmap/next-action rows must be updated to record
+  that resolution, and the parent's "Final branch review" milestone inherits
+  this operation's broad-gate evidence.
+
 ## Next Action
 
 Execute slice 5 per the prepared plan in the Progress Log (pipeline/egress

@@ -6,12 +6,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import sha256
-from typing import Literal, Protocol, cast
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from memorii.core.memory_evolution.atomic_store import (
-    PreplanningStoreError,
     SemanticIngestionAtomicStore,
 )
 from memorii.core.memory_evolution.bootstrap_profile import (
@@ -21,43 +20,19 @@ from memorii.core.memory_evolution.bootstrap_profile import (
     VerifiedBootstrapProfile,
     verify_bootstrap_profile,
 )
-from memorii.core.memory_evolution.conflict_attention import (
-    AgentClarificationProposal,
-    ClarificationFailureClass,
-    ConflictClarificationAttemptResult,
-    ConflictClarificationClaim,
-    ConflictClarificationProcessingReceipt,
-    ConflictClarificationSemanticPipeline,
-)
-from memorii.core.memory_evolution.conflict_attention_repository import (
-    ClarificationPipelineError,
-)
 from memorii.core.memory_evolution.writer_admission import (
     SemanticConflictAuthorityAdministrationGrant,
     SemanticWriterAdmissionStore,
 )
-from memorii.core.memory_plane.store import MemoryPlaneRevisionConflictError
 from memorii.core.semantic_ingestion.bootstrap_graph_host import (
     BootstrapGraphHostBundle,
     BootstrapGraphHostBundleBuilder,
 )
 from memorii.core.semantic_ingestion.contracts import (
-    AuthenticatedSourceIntervalEvidence,
-    SemanticArbitrationPolicyBundle,
-    SemanticAuthorizationReadSetProvider,
-    SemanticCandidate,
-    SemanticCandidateAssessor,
     SemanticPipelinePolicyProvider,
-    SourceAuthorityEvidence,
     TextPreparationPolicy,
     contract_digest,
 )
-from memorii.core.semantic_ingestion.egress import EgressPolicyProvider
-from memorii.core.semantic_ingestion.local_analyzer import (
-    LocalSemanticProposalProducer,
-    ProductionLocalSemanticAnalyzer,
-)
-from memorii.core.semantic_ingestion.pipeline import SemanticIngestionPipeline
 from memorii.core.semantic_ingestion.source_normalization_host import (
     SourceNormalizationHostBundle,
     SourceNormalizationHostBundleBuilder,
@@ -67,160 +42,6 @@ from memorii.core.semantic_ingestion.source_preparation import (
     PreparedSourceRepository,
     TextPreparationService,
 )
-
-
-@dataclass(frozen=True)
-class ConflictClarificationSemanticContext:
-    """Host-resolved ordinary semantic-ingestion inputs for one clarification."""
-
-    source_id: str
-    source_digest: str
-    source_text: str
-    prepared_source_repository: PreparedSourceRepository
-    policy_bundle: SemanticArbitrationPolicyBundle
-    source_authority_evidence: SourceAuthorityEvidence
-    authorization_read_set_provider: SemanticAuthorizationReadSetProvider
-    independent_assessor: SemanticCandidateAssessor
-    local_proposals: tuple[SemanticCandidate, ...]
-    source_interval_evidence: AuthenticatedSourceIntervalEvidence | None = None
-    current_time_provider: Callable[[], datetime] | None = None
-
-
-class ConflictClarificationSemanticContextProvider(Protocol):
-    def resolve_context(
-        self, proposal: AgentClarificationProposal
-    ) -> ConflictClarificationSemanticContext | None: ...
-
-
-class ConflictClarificationSemanticPipelineAdapter:
-    """Production adapter to the atomic semantic transaction/receipt owner."""
-
-    def __init__(
-        self,
-        atomic_store: SemanticIngestionAtomicStore,
-        semantic_pipeline: SemanticIngestionPipeline | None = None,
-        context_provider: ConflictClarificationSemanticContextProvider | None = None,
-    ) -> None:
-        self._store = atomic_store
-        self._semantic_pipeline = semantic_pipeline or SemanticIngestionPipeline(
-            transport=None
-        )
-        self._context_provider = context_provider
-
-    def resolve_processing_receipt(
-        self, processing_operation_id: str
-    ) -> ConflictClarificationProcessingReceipt | None:
-        return self._store.resolve_conflict_clarification_receipt(processing_operation_id)
-
-    def process_clarification(
-        self,
-        proposal: AgentClarificationProposal,
-        *,
-        processing_operation_id: str,
-        policy_fingerprint: str,
-        current_claim: Callable[[], ConflictClarificationClaim],
-    ) -> ConflictClarificationProcessingReceipt | ConflictClarificationAttemptResult:
-        def commit(
-            *,
-            committed_outcome: Literal["accepted", "rejected", "insufficient"],
-            semantic_result_digest: str,
-            semantic_terminal=None,
-        ) -> ConflictClarificationProcessingReceipt | ConflictClarificationAttemptResult:
-            # Do this at the commit boundary, not at pipeline invocation: a
-            # heartbeat may have advanced the fenced work revision meanwhile.
-            claim = current_claim()
-            if claim.proposal != proposal or claim.work.processing_operation_id != processing_operation_id:
-                raise ClarificationPipelineError(ClarificationFailureClass.TERMINAL)
-            clarification_cas = self._store.build_conflict_clarification_cas_input(claim)
-            resulting_conflict_revision = contract_digest(
-                b"memorii.conflict-clarification-semantic-result.v1",
-                {
-                    "submitted_pointer_revision": clarification_cas.expected_pointer_revision,
-                    "submitted_conflict_revision": clarification_cas.expected_conflict_revision,
-                    "proposal_digest": proposal.proposal_digest,
-                    "processing_operation_id": processing_operation_id,
-                    "committed_outcome": committed_outcome,
-                    "semantic_result_digest": semantic_result_digest,
-                },
-            )
-            return self._store.commit_conflict_clarification_transaction(
-                proposal=proposal,
-                processing_operation_id=processing_operation_id,
-                resulting_conflict_revision=resulting_conflict_revision,
-                policy_fingerprint=policy_fingerprint,
-                committed_outcome=committed_outcome,
-                semantic_result_digest=semantic_result_digest,
-                semantic_terminal=semantic_terminal,
-                clarification_cas=clarification_cas,
-            )
-        try:
-            context = (
-                self._context_provider.resolve_context(proposal)
-                if self._context_provider is not None
-                else None
-            )
-            if context is None:
-                return commit(
-                    committed_outcome="insufficient",
-                    semantic_result_digest=contract_digest(
-                        b"memorii.conflict-clarification-insufficient.v1",
-                        {
-                            "proposal_digest": proposal.proposal_digest,
-                            "source_user_event_digest": proposal.source_user_event_digest,
-                        },
-                    ),
-                )
-            if (
-                context.source_id != proposal.source_user_event_id
-                or context.source_digest != proposal.source_user_event_digest
-            ):
-                raise ClarificationPipelineError(ClarificationFailureClass.TERMINAL)
-            terminal = self._semantic_pipeline.run(
-                operation_id=processing_operation_id,
-                source_id=context.source_id,
-                source_digest=context.source_digest,
-                source_text=context.source_text,
-                prepared_source_repository=context.prepared_source_repository,
-                policy_bundle=context.policy_bundle,
-                source_authority_evidence=context.source_authority_evidence,
-                source_interval_evidence=context.source_interval_evidence,
-                authorization_read_set_provider=(
-                    context.authorization_read_set_provider
-                ),
-                independent_assessor=context.independent_assessor,
-                local_proposals=context.local_proposals,
-                current_time_provider=context.current_time_provider,
-            )
-            committed_outcome: Literal["accepted", "rejected", "insufficient"]
-            if terminal.status == "accepted":
-                committed_outcome = "accepted"
-            elif terminal.status == "rejected":
-                committed_outcome = "rejected"
-            else:
-                committed_outcome = "insufficient"
-            return commit(
-                committed_outcome=committed_outcome,
-                semantic_result_digest=terminal.terminal_digest,
-                semantic_terminal=terminal,
-            )
-        except ClarificationPipelineError:
-            raise
-        except (MemoryPlaneRevisionConflictError, OSError, TimeoutError) as exc:
-            raise ClarificationPipelineError(
-                ClarificationFailureClass.RETRYABLE
-            ) from exc
-        except PreplanningStoreError as exc:
-            reason = str(exc)
-            failure_class = (
-                ClarificationFailureClass.RETRYABLE
-                if (
-                    "contention" in reason
-                    or "race" in reason
-                    or "stale" in reason
-                )
-                else ClarificationFailureClass.TERMINAL
-            )
-            raise ClarificationPipelineError(failure_class) from exc
 
 
 class SemanticDeploymentAuthorizationUse(BaseModel):
@@ -301,22 +122,14 @@ class SemanticDeploymentAuthorizationVerifier(Protocol):
 class AuthorizedSemanticIngestionRuntime:
     authorization_bytes: bytes
     authorization_verifier: SemanticDeploymentAuthorizationVerifier
-    pipeline: SemanticIngestionPipeline
     policy_provider: SemanticPipelinePolicyProvider
-    egress_policy_provider: EgressPolicyProvider | None
-    candidate_assessor: SemanticCandidateAssessor
     text_preparation_service: TextPreparationService | None = None
     prepared_source_repository: PreparedSourceRepository | None = None
     text_preparation_policy: TextPreparationPolicy | None = None
-    local_proposal_producer: LocalSemanticProposalProducer | None = None
     source_normalization_host_bundle: SourceNormalizationHostBundle | None = None
     bootstrap_graph_host_bundle: BootstrapGraphHostBundle | None = None
     writer_admission: SemanticWriterAdmissionStore | None = None
     atomic_store: SemanticIngestionAtomicStore | None = None
-    conflict_clarification_context_provider: (
-        ConflictClarificationSemanticContextProvider | None
-    ) = None
-    conflict_clarification_pipeline: ConflictClarificationSemanticPipeline | None = None
     _conflict_authority_administration_grant: (
         SemanticConflictAuthorityAdministrationGrant | None
     ) = field(default=None, init=False, repr=False, compare=False)
@@ -550,11 +363,6 @@ def build_authorized_local_semantic_runtime(
     writer_admission: SemanticWriterAdmissionStore | None = None,
     atomic_store: SemanticIngestionAtomicStore | None = None,
     bootstrap_profile: VerifiedBootstrapProfile | None = None,
-    conflict_clarification_context_provider: (
-        ConflictClarificationSemanticContextProvider | None
-    ) = None,
-    identity_operation_resolver: object | None = None,
-    identity_decision_authority_verifier: object | None = None,
     source_normalization_host_bundle: SourceNormalizationHostBundle | None = None,
     bootstrap_graph_host_bundle: BootstrapGraphHostBundle | None = None,
 ) -> AuthorizedSemanticIngestionRuntime:
@@ -562,72 +370,6 @@ def build_authorized_local_semantic_runtime(
 
     if (writer_admission is None) != (atomic_store is None):
         raise ValueError("local semantic runtime writer and atomic store must be supplied together")
-    analyzer = ProductionLocalSemanticAnalyzer()
-    identity_lineage_compiler = None
-    identity_operation_planner = None
-    if atomic_store is not None:
-        from memorii.core.memory_evolution.identity_lineage import (
-            AtomicStoreAcceptedIdentityOperationPlanner,
-            ProductionIdentityLineageCompiler,
-            TrustedAcceptedIdentityOperationResolver,
-            TrustedIdentityDecisionAuthorityVerifier,
-        )
-        from memorii.core.memory_evolution.transaction_coordinator import (
-            SemanticIngestionTransactionCoordinator,
-        )
-
-        coordinator = SemanticIngestionTransactionCoordinator(atomic_store)
-        identity_lineage_compiler = ProductionIdentityLineageCompiler(
-            coordinator,
-            atomic_store,
-        )
-        identity_capabilities = (
-            identity_operation_resolver,
-            identity_decision_authority_verifier,
-        )
-        if any(value is not None for value in identity_capabilities) and not all(
-            value is not None for value in identity_capabilities
-        ):
-            raise ValueError("identity operation authority composition is incomplete")
-        if identity_operation_resolver is not None:
-            if writer_admission is None:
-                raise ValueError("identity operation planner requires writer authority")
-            if not callable(
-                getattr(
-                    identity_operation_resolver,
-                    "resolve_accepted_identity_operation",
-                    None,
-                )
-            ) or not callable(
-                getattr(
-                    identity_decision_authority_verifier,
-                    "verify_identity_decision_authority",
-                    None,
-                )
-            ):
-                raise ValueError("identity operation authority capability is invalid")
-            if (
-                atomic_store.identity_decision_authority_verifier
-                is not identity_decision_authority_verifier
-            ):
-                raise ValueError(
-                    "identity operation authority verifier is not store-owned"
-                )
-            identity_operation_planner = AtomicStoreAcceptedIdentityOperationPlanner(
-                coordinator,
-                atomic_store,
-                writer_admission,
-                cast(TrustedAcceptedIdentityOperationResolver, identity_operation_resolver),
-                cast(
-                    TrustedIdentityDecisionAuthorityVerifier,
-                    atomic_store.identity_decision_authority_verifier,
-                ),
-            )
-    pipeline = SemanticIngestionPipeline(
-        transport=None,
-        identity_lineage_compiler=identity_lineage_compiler,
-        identity_operation_planner=identity_operation_planner,
-    )
     prepared_source_repository = None
     text_preparation_service = None
     text_preparation_policy = None
@@ -655,40 +397,20 @@ def build_authorized_local_semantic_runtime(
     return AuthorizedSemanticIngestionRuntime(
         authorization_bytes=authorization_bytes,
         authorization_verifier=authorization_verifier,
-        pipeline=pipeline,
         policy_provider=policy_provider,
-        egress_policy_provider=None,
-        candidate_assessor=analyzer,
         text_preparation_service=text_preparation_service,
         prepared_source_repository=prepared_source_repository,
         text_preparation_policy=text_preparation_policy,
-        local_proposal_producer=analyzer,
         source_normalization_host_bundle=source_normalization_host_bundle,
         bootstrap_graph_host_bundle=bootstrap_graph_host_bundle,
         writer_admission=writer_admission,
         atomic_store=atomic_store,
-        conflict_clarification_context_provider=(
-            conflict_clarification_context_provider
-        ),
-        conflict_clarification_pipeline=(
-            ConflictClarificationSemanticPipelineAdapter(
-                atomic_store,
-                semantic_pipeline=pipeline,
-                context_provider=conflict_clarification_context_provider,
-            )
-            if atomic_store is not None
-            and conflict_clarification_context_provider is not None
-            else None
-        ),
     )
 
 
 __all__ = [
     "AuthorizedSemanticIngestionRuntime",
     "BuiltInLocalHostSemanticIngestionCapability",
-    "ConflictClarificationSemanticContext",
-    "ConflictClarificationSemanticContextProvider",
-    "ConflictClarificationSemanticPipelineAdapter",
     "HostSemanticIngestionRuntimeBuilder",
     "HostSemanticWriterActivation",
     "SemanticDeploymentAuthorizationUse",

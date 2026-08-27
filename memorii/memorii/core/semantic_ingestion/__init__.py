@@ -113,7 +113,6 @@ from memorii.core.semantic_ingestion.contracts import (
     PreparedSource,
     PrePlanningSourceIngestionProgress,
     ProjectionTextSpan,
-    ProposalCoverageAudit,
     ProposedActionRecordSelector,
     ProposedActionRoleBinding,
     ProposedActionRoleParticipant,
@@ -176,10 +175,7 @@ from memorii.core.semantic_ingestion.contracts import (
     SemanticProposal,
     SemanticProposalAttempt,
     SemanticProposalAttemptIdentity,
-    SemanticProposalRequest,
-    SemanticProposalRequestArtifact,
     SemanticProposalResponseArtifact,
-    SemanticProposalRun,
     SemanticProposerManifest,
     SemanticRecoveryAuthorityBinding,
     SemanticScopeConsensus,
@@ -193,7 +189,6 @@ from memorii.core.semantic_ingestion.contracts import (
     SourceLocalIdentityResolution,
     SourceMention,
     SourcePrePartitionMention,
-    SourceProposalAlignment,
     SourceSemanticContext,
     SourceSemanticTextProjection,
     SourceSpanReference,
@@ -240,28 +235,6 @@ from memorii.core.semantic_ingestion.local_analyzer import (
     ProductionLocalSemanticAnalyzer,
 )
 from memorii.core.semantic_ingestion.persistence import SemanticTerminalPersistenceService
-from memorii.core.semantic_ingestion.pipeline import (
-    AnalyzerRoleInterpretation,
-    CandidateTransportError,
-    IdentityLineageCompiler,
-    OperationTemporalAttachmentBinding,
-    OperationTemporalDecisionBinding,
-    ParserConsensusAssessment,
-    SemanticCandidate,
-    SemanticIngestionPipeline,
-    SemanticPipelinePolicy,
-    SemanticPipelinePolicyProvider,
-    SemanticTerminalOutcome,
-    SourceAuthority,
-    SourceLocalIdentityEvidence,
-    SourceSpan,
-    TemporalEvidenceCandidate,
-    TemporalEvidenceDecisionClosure,
-    TemporalEvidenceResolver,
-    TemporalPolicySnapshot,
-    TimeInterval,
-    TrustPolicySnapshot,
-)
 from memorii.core.semantic_ingestion.prompt_authority import SemanticPromptAuthority
 from memorii.core.semantic_ingestion.proposal_adapter import (
     ProjectionQuoteVerificationAuthority,
@@ -304,6 +277,9 @@ from memorii.core.semantic_ingestion.source_preparation import (
     PreparedSourceRepository,
     TextPreparationService,
 )
+from memorii.core.semantic_ingestion.temporal_evidence_resolution import (
+    TemporalEvidenceResolver,
+)
 from memorii.core.semantic_ingestion.transaction_group_plan_repository import (
     TRANSACTION_SEMANTIC_GROUP_PLAN_REPOSITORY_CONTRACT_FINGERPRINT,
     TRANSACTION_SEMANTIC_GROUP_PLAN_REPOSITORY_ID,
@@ -312,6 +288,7 @@ from memorii.core.semantic_ingestion.transaction_group_plan_repository import (
 )
 
 __all__ = [
+    "TemporalEvidenceResolver",
     "CandidateTransportError",
     "IdentityLineageCompiler",
     "SemanticAuthorizationAuthorityError",
@@ -413,7 +390,6 @@ __all__ = [
     "SourceLocalIdentityPartitionEvidence",
     "SourceLocalIdentityResolution",
     "SourcePrePartitionMention",
-    "ProposalCoverageAudit",
     "OperationAlignment",
     "OperationTemporalAttachmentConsensusSet",
     "TypedLiteral",
@@ -481,11 +457,9 @@ __all__ = [
     "ProposedCorrection",
     "ProposedRetraction",
     "SemanticProposal",
-    "SemanticProposalRequest",
     "SemanticProposerManifest",
     "SemanticProposalAttempt",
     "SemanticProposalAttemptIdentity",
-    "SemanticProposalRequestArtifact",
     "SemanticProposalResponseArtifact",
     "AnalyzerManifest",
     "SegmentAnalysisInput",
@@ -508,11 +482,9 @@ __all__ = [
     "ClauseAnalysis",
     "LinguisticAnalysis",
     "SegmentProposalOutcome",
-    "SemanticProposalRun",
     "PreAlignmentSemanticOperationSubject",
     "expand_pre_alignment_subjects",
     "OperationCarrierMembership",
-    "SourceProposalAlignment",
     "SegmentGovernanceBinding",
     "SegmentGovernanceCarrierSet",
     "TransactionGroupPlanLineageEntry",
@@ -565,7 +537,6 @@ __all__ = [
     "SourceTemporalEvidenceSet",
     "TemporalEvidenceCandidate",
     "TemporalEvidenceDecisionClosure",
-    "TemporalEvidenceResolver",
     "TemporalReferenceEvidence",
     "TemporalPolicySnapshot",
     "TimeInterval",

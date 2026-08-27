@@ -2807,137 +2807,12 @@ class SourceLocalIdentityResolution(BaseModel):
         )
 
 
-class CoveredPredicateEvent(BaseModel):
-    kind: Literal["covered"] = "covered"
-    event_id: str = Field(min_length=1)
-    proposal_ids: tuple[str, ...]
-    operation_ids: tuple[str, ...]
-    alignment_digests: tuple[str, ...]
-    disposition_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_disposition(self) -> CoveredPredicateEvent:
-        for values, label in (
-            (self.proposal_ids, "proposal ids"),
-            (self.operation_ids, "operation ids"),
-            (self.alignment_digests, "alignment digests"),
-        ):
-            if not values or values != tuple(sorted(set(values))) or any(not value for value in values):
-                raise ValueError(f"covered predicate event {label} must be nonempty and canonical")
-        body = self.model_dump(mode="python", exclude={"disposition_digest"})
-        if self.disposition_digest != contract_digest(b"memorii.semantic-ingestion.covered-predicate-event.v1", body):
-            raise ValueError("covered predicate event digest mismatch")
-        return self
-
-    @classmethod
-    def create(cls, **values: object) -> CoveredPredicateEvent:
-        body = {"kind": "covered", **values}
-        return cls(
-            **body,
-            disposition_digest=contract_digest(b"memorii.semantic-ingestion.covered-predicate-event.v1", body),
-        )
 
 
-class UnresolvedPredicateEvent(BaseModel):
-    kind: Literal["unresolved"] = "unresolved"
-    event_id: str = Field(min_length=1)
-    reason: Literal[
-        "proposal_omitted",
-        "proposal_abstained",
-        "alignment_failed",
-        "parser_disagreement",
-        "scope_disagreement",
-        "temporal_attachment_disagreement",
-        "unsupported_construction",
-    ]
-    related_proposal_ids: tuple[str, ...]
-    evidence_spans: tuple[SourceSpan, ...]
-    disposition_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_disposition(self) -> UnresolvedPredicateEvent:
-        if self.related_proposal_ids != tuple(sorted(set(self.related_proposal_ids))) or any(
-            not value for value in self.related_proposal_ids
-        ):
-            raise ValueError("unresolved predicate event proposal ids must be canonical")
-        if self.evidence_spans != _canonical_values(self.evidence_spans) or len(set(self.evidence_spans)) != len(
-            self.evidence_spans
-        ):
-            raise ValueError("unresolved predicate event evidence spans must be canonical")
-        body = self.model_dump(mode="python", exclude={"disposition_digest"})
-        if self.disposition_digest != contract_digest(
-            b"memorii.semantic-ingestion.unresolved-predicate-event.v1", body
-        ):
-            raise ValueError("unresolved predicate event digest mismatch")
-        return self
-
-    @classmethod
-    def create(cls, **values: object) -> UnresolvedPredicateEvent:
-        body = {"kind": "unresolved", **values}
-        return cls(
-            **body,
-            disposition_digest=contract_digest(b"memorii.semantic-ingestion.unresolved-predicate-event.v1", body),
-        )
 
 
-PredicateEventDisposition = Annotated[CoveredPredicateEvent | UnresolvedPredicateEvent, Field(discriminator="kind")]
 
 
-class ProposalCoverageAudit(BaseModel):
-    source_id: str = Field(min_length=1)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    segment_language_routes: SegmentLanguageRouteSet
-    proposal_run_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    predicate_event_inventory_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    predicate_event_ids: tuple[str, ...]
-    dispositions: tuple[PredicateEventDisposition, ...]
-    covered_event_ids: tuple[str, ...]
-    unresolved_event_ids: tuple[str, ...]
-    status: Literal["complete", "unresolved", "failed"]
-    coverage_policy_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    audit_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_audit(self) -> ProposalCoverageAudit:
-        if (
-            self.source_id != self.segment_language_routes.source_id
-            or self.source_digest != self.segment_language_routes.source_digest
-        ):
-            raise ValueError("proposal coverage route source mismatch")
-        if (
-            not self.predicate_event_ids
-            or self.predicate_event_ids != tuple(sorted(set(self.predicate_event_ids)))
-            or any(not event_id for event_id in self.predicate_event_ids)
-        ):
-            raise ValueError("predicate event inventory membership must be nonempty and canonical")
-        ids = tuple(disposition.event_id for disposition in self.dispositions)
-        if ids != tuple(sorted(ids)) or len(set(ids)) != len(ids) or ids != self.predicate_event_ids:
-            raise ValueError("proposal coverage dispositions must be canonical")
-        covered = tuple(disposition.event_id for disposition in self.dispositions if disposition.kind == "covered")
-        unresolved = tuple(
-            disposition.event_id for disposition in self.dispositions if disposition.kind == "unresolved"
-        )
-        if self.covered_event_ids != covered or self.unresolved_event_ids != unresolved:
-            raise ValueError("proposal coverage event ids must exactly cover dispositions")
-        expected_status = "failed" if not self.dispositions else "unresolved" if unresolved else "complete"
-        if self.status != expected_status:
-            raise ValueError("proposal coverage status must match dispositions")
-        body = self.model_dump(mode="python", exclude={"audit_digest"})
-        if self.audit_digest != contract_digest(b"memorii.semantic-ingestion.proposal-coverage-audit.v1", body):
-            raise ValueError("proposal coverage audit digest mismatch")
-        return self
-
-    @classmethod
-    def create(cls, **values: object) -> ProposalCoverageAudit:
-        return cls(
-            **values, audit_digest=contract_digest(b"memorii.semantic-ingestion.proposal-coverage-audit.v1", values)
-        )
 
 
 class OperationAlignment(BaseModel):
@@ -3008,220 +2883,6 @@ class SourceDependencyGroup(BaseModel):
         return cls(**values, group_id=contract_digest(b"memorii.semantic-ingestion.source-dependency-group.v2", values))
 
 
-class SourceProposalAlignment(BaseModel):
-    schema_version: Literal[2]
-    source_id: str = Field(min_length=1)
-    segment_language_routes: SegmentLanguageRouteSet
-    operation_alignments: tuple[OperationAlignment, ...]
-    parser_consensus: tuple[ParserConsensusAssessment, ...]
-    scope_consensus: tuple[SemanticScopeConsensus, ...]
-    temporal_attachment_consensus: tuple[TemporalAttachmentConsensus, ...]
-    source_local_identity: SourceLocalIdentityResolution
-    source_dependency_groups: tuple[SourceDependencyGroup, ...]
-    proposal_coverage: ProposalCoverageAudit
-    predicate_event_inventory_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    temporal_resolution_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    status: Literal["complete", "unsupported", "failed"]
-    reason_codes: tuple[str, ...]
-    source_alignment_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_alignment(self) -> SourceProposalAlignment:
-        routes = self.segment_language_routes
-        if self.source_id != routes.source_id or self.source_local_identity.source_id != self.source_id:
-            raise ValueError("source proposal alignment source mismatch")
-        if (
-            self.proposal_coverage.segment_language_routes != routes
-            or self.proposal_coverage.source_id != self.source_id
-        ):
-            raise ValueError("source proposal alignment coverage mismatch")
-        if self.predicate_event_inventory_fingerprint != self.proposal_coverage.predicate_event_inventory_fingerprint:
-            raise ValueError("source proposal alignment predicate inventory fingerprint mismatch")
-        if self.operation_alignments != tuple(
-            sorted(self.operation_alignments, key=lambda alignment: alignment.operation_id)
-        ) or len({alignment.operation_id for alignment in self.operation_alignments}) != len(self.operation_alignments):
-            raise ValueError("source proposal operation alignments must be canonical")
-        route_by_segment = {route.segment_id: route.route_digest for route in routes.routes}
-        parser_by_digest = {item.assessment_digest: item for item in self.parser_consensus}
-        scope_by_digest = {item.consensus_digest: item for item in self.scope_consensus}
-        temporal_by_digest = {item.consensus_digest: item for item in self.temporal_attachment_consensus}
-        if (
-            self.parser_consensus != tuple(sorted(self.parser_consensus, key=lambda item: item.operation_id))
-            or self.scope_consensus != tuple(sorted(self.scope_consensus, key=lambda item: item.operation_id))
-            or self.temporal_attachment_consensus
-            != tuple(sorted(self.temporal_attachment_consensus, key=lambda item: item.operation_id))
-            or len({item.operation_id for item in self.parser_consensus}) != len(self.parser_consensus)
-            or len({item.operation_id for item in self.scope_consensus}) != len(self.scope_consensus)
-            or len({(item.operation_id, item.temporal_role) for item in self.temporal_attachment_consensus})
-            != len(self.temporal_attachment_consensus)
-            or len(parser_by_digest) != len(self.parser_consensus)
-            or len(scope_by_digest) != len(self.scope_consensus)
-            or len(temporal_by_digest) != len(self.temporal_attachment_consensus)
-        ):
-            raise ValueError("source proposal consensus digests must be unique")
-        for alignment in self.operation_alignments:
-            if route_by_segment.get(alignment.segment_id) != alignment.segment_language_route_digest:
-                raise ValueError("operation alignment route mismatch")
-            route = next(route for route in routes.routes if route.segment_id == alignment.segment_id)
-            parser = parser_by_digest.get(alignment.parser_consensus_digest)
-            if parser is None:
-                raise ValueError("operation alignment parser consensus is absent")
-            scope = scope_by_digest.get(alignment.scope_consensus_digest)
-            temporal_rows = tuple(
-                item
-                for item in self.temporal_attachment_consensus
-                if (
-                    item.operation_id == alignment.operation_id
-                    and item.proposal_id == alignment.proposal_id
-                    and item.segment_id == alignment.segment_id
-                    and item.segment_language_route_digest == alignment.segment_language_route_digest
-                )
-            )
-            temporal = temporal_rows[0] if temporal_rows else None
-            if temporal_rows:
-                temporal_set = OperationTemporalAttachmentConsensusSet.create(
-                    operation_id=alignment.operation_id,
-                    proposal_id=alignment.proposal_id,
-                    segment_id=alignment.segment_id,
-                    segment_language_route_digest=alignment.segment_language_route_digest,
-                    role_consensus_digests=tuple(
-                        (item.temporal_role, item.consensus_digest)
-                        for item in sorted(temporal_rows, key=lambda item: item.temporal_role)
-                    ),
-                )
-                if alignment.temporal_attachment_consensus_set_digest != temporal_set.consensus_set_digest:
-                    raise ValueError("operation alignment temporal consensus set is absent or substituted")
-            if (
-                parser.source_id != self.source_id
-                or parser.source_digest != routes.source_digest
-                or parser.segment_id != alignment.segment_id
-                or parser.proposal_id != alignment.proposal_id
-                or parser.operation_id != alignment.operation_id
-                or parser.segment_language_route_digest != alignment.segment_language_route_digest
-                or scope is None
-                or temporal is None
-                or scope.source_id != self.source_id
-                or scope.source_digest != routes.source_digest
-                or temporal.source_id != self.source_id
-                or temporal.source_digest != routes.source_digest
-                or scope.segment_id != alignment.segment_id
-                or temporal.segment_id != alignment.segment_id
-                or scope.proposal_id != alignment.proposal_id
-                or temporal.proposal_id != alignment.proposal_id
-                or scope.operation_id != alignment.operation_id
-                or temporal.operation_id != alignment.operation_id
-                or scope.segment_language_route_digest != alignment.segment_language_route_digest
-                or temporal.segment_language_route_digest != alignment.segment_language_route_digest
-                or parser.preparation_fingerprint != scope.preparation_fingerprint
-                or parser.preparation_fingerprint != temporal.preparation_fingerprint
-            ):
-                raise ValueError("operation alignment consensus mismatch")
-            parser_spans = tuple(
-                span
-                for interpretation in (parser.primary_interpretation, parser.corroborating_interpretation)
-                for span in (
-                    interpretation.predicate_head_span,
-                    *(item.argument_span for item in interpretation.assignments),
-                )
-            )
-            scope_spans = tuple(
-                span
-                for observation in (scope.primary_observation, scope.corroborating_observation)
-                for interpretation in (observation.interpretation,)
-                for span in (
-                    interpretation.predicate_head_span,
-                    *interpretation.governing_clause_spans,
-                    *(
-                        (interpretation.attribution_bearer_span,)
-                        if interpretation.attribution_bearer_span is not None
-                        else ()
-                    ),
-                    *(
-                        item
-                        for check in (interpretation.polarity, interpretation.commitment, interpretation.attribution)
-                        for item in check.evidence_spans
-                    ),
-                )
-            ) + tuple(
-                span
-                for stable in (scope.stable_scope,)
-                if stable is not None
-                for span in (
-                    *stable.governing_clause_spans,
-                    *((stable.attribution_bearer_span,) if stable.attribution_bearer_span is not None else ()),
-                )
-            )
-            temporal_spans = tuple(
-                span
-                for temporal_item in temporal_rows
-                for observation in (temporal_item.primary_attachment, temporal_item.corroborating_attachment)
-                for attachment in (observation.attachment,)
-                for span in (attachment.predicate_head_span, *attachment.attachment_spans)
-            )
-            try:
-                for span in (*parser_spans, *scope_spans, *temporal_spans):
-                    _validate_route_span(span, route, self.source_id)
-            except ValueError as exc:
-                raise ValueError("operation alignment consensus span closure mismatch") from exc
-        alignment_by_digest = {alignment.alignment_digest: alignment for alignment in self.operation_alignments}
-        for disposition in self.proposal_coverage.dispositions:
-            if disposition.kind != "covered":
-                continue
-            referenced = tuple(alignment_by_digest.get(digest) for digest in disposition.alignment_digests)
-            if any(item is None for item in referenced):
-                raise ValueError("covered predicate event references an unknown operation alignment")
-            assert all(item is not None for item in referenced)
-            if (
-                tuple(sorted(item.proposal_id for item in referenced)) != disposition.proposal_ids
-                or tuple(sorted(item.operation_id for item in referenced)) != disposition.operation_ids
-            ):
-                raise ValueError("covered predicate event references must exactly match operation alignments")
-        if self.source_dependency_groups != tuple(
-            sorted(self.source_dependency_groups, key=lambda group: group.group_id)
-        ):
-            raise ValueError("source proposal dependency groups must be canonical")
-        grouped_operations = tuple(
-            operation_id for group in self.source_dependency_groups for operation_id in group.operation_ids
-        )
-        operation_ids = tuple(alignment.operation_id for alignment in self.operation_alignments)
-        if tuple(sorted(grouped_operations)) != operation_ids or len(grouped_operations) != len(
-            set(grouped_operations)
-        ):
-            raise ValueError("source proposal dependency groups must exactly cover operations")
-        if any(not set(group.segment_ids).issubset(route_by_segment) for group in self.source_dependency_groups):
-            raise ValueError("source proposal dependency group segment is absent")
-        if self.reason_codes != tuple(sorted(set(self.reason_codes))) or any(not code for code in self.reason_codes):
-            raise ValueError("source proposal alignment reason codes must be canonical")
-        all_complete = self.proposal_coverage.status == "complete" and all(
-            group.status == "complete" for group in self.source_dependency_groups
-        )
-        expected_status = (
-            "complete"
-            if all_complete and not self.reason_codes
-            else "failed"
-            if self.proposal_coverage.status == "failed"
-            else "unsupported"
-        )
-        if self.status != expected_status:
-            raise ValueError("source proposal alignment status is not reproducible")
-        body = self.model_dump(mode="python", exclude={"source_alignment_fingerprint"})
-        if self.source_alignment_fingerprint != contract_digest(
-            b"memorii.semantic-ingestion.source-proposal-alignment.v2", body
-        ):
-            raise ValueError("source proposal alignment fingerprint mismatch")
-        return self
-
-    @classmethod
-    def create(cls, **values: object) -> SourceProposalAlignment:
-        values = {"schema_version": 2, **values}
-        return cls(
-            **values,
-            source_alignment_fingerprint=contract_digest(
-                b"memorii.semantic-ingestion.source-proposal-alignment.v2", values
-            ),
-        )
 
 
 class OperationCarrierMembership(BaseModel):
@@ -6034,417 +5695,6 @@ class SemanticProposal(_ContentAddressedContract):
         self._validate_member_closure()
         return self
 
-
-class SemanticProposalRequest(_ContentAddressedContract):
-    source_id: str = Field(min_length=1)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    semantic_context_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    segment_id: str = Field(min_length=1)
-    segment_governance: SegmentGovernanceBinding
-    message_admission_identity: MessageAdmissionIdentity | None
-    governance_carrier_artifact: GovernanceCarrierArtifact
-    owned_text: SourceSpanReference
-    context_text: SourceSpanReference
-    segment_text: str
-    language_route: SegmentLanguageRoute
-    provider_egress_decision_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
-    proposal_capability_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    predicate_catalog: PredicateProposalCatalog
-    action_proposal_catalog: ActionProposalCatalog
-    registered_prompt: RegisteredSemanticPromptBinding
-    proposer_manifest: SemanticProposerManifest
-    semantic_request_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.semantic-proposal-request.v1"
-    _digest_field = "semantic_request_fingerprint"
-
-    @model_validator(mode="after")
-    def validate_request(self) -> SemanticProposalRequest:
-        route = self.language_route
-        if (
-            route.decision != "selected"
-            or (self.source_id, self.source_digest, self.segment_id)
-            != (route.source_id, route.source_digest, route.segment_id)
-            or self.segment_governance.segment_id != route.parent_projection_segment_id
-            or self.owned_text.projection_segment_id != route.parent_projection_segment_id
-            or self.context_text.projection_segment_id != route.parent_projection_segment_id
-            or self.predicate_catalog.proposal_capability_fingerprint != self.proposal_capability_fingerprint
-            or self.action_proposal_catalog.proposal_capability_fingerprint != self.proposal_capability_fingerprint
-            or self.proposer_manifest.structured_output_capability_fingerprint != self.proposal_capability_fingerprint
-            or (self.proposer_manifest.proposer_kind == "local") != (self.provider_egress_decision_digest is None)
-        ):
-            raise ValueError("semantic proposal request authorities must be exact and selected")
-        if (
-            self.semantic_context_fingerprint != self.segment_governance.message_semantic_context_digest
-            or self.message_admission_identity is not None
-            and self.message_admission_identity.segment_governance_binding_digest
-            != self.segment_governance.binding_digest
-            or self.segment_governance not in self.governance_carrier_artifact.segment_governance.bindings
-            or self.message_admission_identity is not None
-            and self.message_admission_identity not in self.governance_carrier_artifact.message_admissions.identities
-        ):
-            raise ValueError("semantic proposal request context and governance closure mismatch")
-        for span in (self.owned_text, self.context_text):
-            if (
-                span.source_id != self.source_id
-                or span.projection_segment_id != route.parent_projection_segment_id
-                or span.segment_local_span.artifact.artifact_id != route.segment_text_artifact_id
-                or span.segment_local_span.artifact.artifact_digest != route.segment_text_artifact_digest
-                or span.segment_local_span.artifact.content_digest != route.segment_text_content_digest
-            ):
-                raise ValueError("semantic proposal request text must bind its exact route parent and artifact")
-        if (
-            not _reference_contains(self.context_text, self.owned_text)
-            or self.owned_text.projection_digest != self.context_text.projection_digest
-            or self.owned_text.retained_text_artifact != self.context_text.retained_text_artifact
-            or self.owned_text.text_mapping_proof != self.context_text.text_mapping_proof
-            or len(self.segment_text)
-            != self.context_text.segment_local_span.end - self.context_text.segment_local_span.start
-            or sha256(self.segment_text.encode("utf-8")).hexdigest()
-            != self.context_text.segment_local_span.substring_digest
-        ):
-            raise ValueError("semantic proposal request text must be the exact context slice")
-        return self
-
-
-class SemanticProposalRequestArtifact(_ContentAddressedContract):
-    request_bytes: bytes
-    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.semantic-proposal-request-artifact.v1"
-    _digest_field = "artifact_digest"
-
-    @model_validator(mode="after")
-    def validate_request(self) -> SemanticProposalRequestArtifact:
-        try:
-            request = decode_semantic_contract(self.request_bytes, SemanticProposalRequest)
-        except SemanticContractCodecError as exc:
-            raise ValueError("proposal request artifact must contain one strict request") from exc
-        if (
-            encode_semantic_contract(request) != self.request_bytes
-            or self.request_digest != sha256(self.request_bytes).hexdigest()
-        ):
-            raise ValueError("proposal request artifact bytes digest mismatch")
-        return self
-
-    @classmethod
-    def create(cls, *, request_bytes: bytes) -> SemanticProposalRequestArtifact:
-        return super().create(request_bytes=request_bytes, request_digest=sha256(request_bytes).hexdigest())
-
-
-class SemanticProposalResponseArtifact(_ContentAddressedContract):
-    raw_output_bytes: bytes
-    raw_output_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.semantic-proposal-response-artifact.v1"
-    _digest_field = "artifact_digest"
-
-    @model_validator(mode="after")
-    def validate_response(self) -> SemanticProposalResponseArtifact:
-        if self.raw_output_digest != sha256(self.raw_output_bytes).hexdigest():
-            raise ValueError("proposal response artifact bytes digest mismatch")
-        return self
-
-    @classmethod
-    def create(cls, *, raw_output_bytes: bytes) -> SemanticProposalResponseArtifact:
-        return super().create(raw_output_bytes=raw_output_bytes, raw_output_digest=sha256(raw_output_bytes).hexdigest())
-
-
-class SemanticProposalAttemptIdentity(_ContentAddressedContract):
-    source_id: str = Field(min_length=1)
-    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    segment_id: str = Field(min_length=1)
-    segment_governance: SegmentGovernanceBinding
-    message_admission_identity: MessageAdmissionIdentity | None
-    governance_carrier_artifact: GovernanceCarrierArtifact
-    owned_text: SourceSpanReference
-    context_text: SourceSpanReference
-    language_route: SegmentLanguageRoute
-    proposer_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    proposer_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    prompt_registration_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    semantic_request_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    attempt_payload_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    attempt_number: int = Field(ge=0)
-    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    request_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    attempt_identity_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.semantic-proposal-attempt-identity.v1"
-    _digest_field = "attempt_identity_digest"
-
-    @model_validator(mode="after")
-    def validate_identity(self) -> SemanticProposalAttemptIdentity:
-        if (
-            self.segment_governance.source_id != self.source_id
-            or self.segment_governance.segment_id != self.language_route.parent_projection_segment_id
-            or self.language_route.source_id != self.source_id
-            or self.language_route.segment_id != self.segment_id
-        ):
-            raise ValueError("proposal attempt identity authorities must bind exact source and segment")
-        if self.message_admission_identity is not None and (
-            self.message_admission_identity.segment_governance_binding_digest != self.segment_governance.binding_digest
-        ):
-            raise ValueError("proposal attempt identity message admission must bind segment governance")
-        artifact = self.governance_carrier_artifact
-        if (
-            artifact.segment_governance.source_id != self.source_id
-            or self.segment_governance not in artifact.segment_governance.bindings
-            or (
-                self.message_admission_identity is not None
-                and self.message_admission_identity not in artifact.message_admissions.identities
-            )
-        ):
-            raise ValueError("proposal attempt identity governance artifact does not contain its authorities")
-        for span in (self.owned_text, self.context_text):
-            if (
-                span.source_id != self.source_id
-                or span.projection_segment_id != self.language_route.parent_projection_segment_id
-            ):
-                raise ValueError("proposal attempt identity text spans must bind exact source and segment")
-        if (
-            self.owned_text.projection_digest != self.context_text.projection_digest
-            or self.owned_text.retained_text_artifact != self.context_text.retained_text_artifact
-            or self.owned_text.segment_local_span.artifact != self.context_text.segment_local_span.artifact
-            or self.owned_text.projection_span.start < self.context_text.projection_span.start
-            or self.owned_text.projection_span.end > self.context_text.projection_span.end
-        ):
-            raise ValueError("proposal attempt identity owned text must be contained by context text")
-        artifact = self.context_text.segment_local_span.artifact
-        if (
-            self.language_route.segment_text_artifact_id != artifact.artifact_id
-            or self.language_route.segment_text_artifact_digest != artifact.artifact_digest
-            or self.language_route.segment_text_content_digest != artifact.content_digest
-        ):
-            raise ValueError("proposal attempt identity route must bind exact segment text")
-        return self
-
-
-class SemanticProposalAttempt(_ContentAddressedContract):
-    identity: SemanticProposalAttemptIdentity
-    raw_output_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
-    response_artifact_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
-    status: Literal["complete", "partial", "abstained", "evidence_only", "failed"]
-    diagnostics: tuple[str, ...]
-    attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.semantic-proposal-attempt.v1"
-    _digest_field = "attempt_digest"
-
-    @model_validator(mode="after")
-    def validate_attempt(self) -> SemanticProposalAttempt:
-        has_response = self.raw_output_digest is not None and self.response_artifact_digest is not None
-        if (self.raw_output_digest is None) != (self.response_artifact_digest is None):
-            raise ValueError("proposal attempt response digest and artifact must agree")
-        if self.status in {"complete", "partial", "abstained"} and not has_response:
-            raise ValueError("proposal attempt terminal provider status requires response artifact")
-        if self.status == "evidence_only" and has_response:
-            raise ValueError("evidence-only proposal attempt forbids response artifact")
-        if self.diagnostics != tuple(sorted(set(self.diagnostics))) or any(not item for item in self.diagnostics):
-            raise ValueError("proposal attempt diagnostics must be canonical")
-        return self
-
-
-class SegmentProposalOutcome(_ContentAddressedContract):
-    segment_id: str = Field(min_length=1)
-    segment_language_route_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    status: Literal["complete", "abstained", "evidence_only", "failed"]
-    proposal_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
-    attempt_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
-    reason_codes: tuple[str, ...]
-    outcome_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.segment-proposal-outcome.v1"
-    _digest_field = "outcome_digest"
-
-    @model_validator(mode="after")
-    def validate_outcome(self) -> SegmentProposalOutcome:
-        if self.reason_codes != tuple(sorted(set(self.reason_codes))) or any(not value for value in self.reason_codes):
-            raise ValueError("segment proposal outcome reason codes must be canonical")
-        if (self.status in {"complete", "abstained"}) != (self.proposal_digest is not None):
-            raise ValueError("segment proposal outcome proposal digest must match promotable status")
-        if self.status in {"complete", "abstained", "failed"} and self.attempt_digest is None:
-            raise ValueError("route-selected terminal proposal outcome requires attempt digest")
-        if self.status == "evidence_only" and self.proposal_digest is not None:
-            raise ValueError("evidence-only proposal outcome forbids proposal digest")
-        return self
-
-
-class SemanticProposalRun(_ContentAddressedContract):
-    source_id: str = Field(min_length=1)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    segment_governance_carriers: SegmentGovernanceCarrierSet
-    message_admission_carriers: MessageAdmissionCarrierSet
-    governance_carrier_artifact: GovernanceCarrierArtifact
-    segment_language_routes: SegmentLanguageRouteSet
-    expected_segment_ids: tuple[str, ...]
-    segment_attempts: tuple[SemanticProposalAttempt, ...]
-    validated_segments: tuple[SemanticProposal, ...]
-    segment_outcomes: tuple[SegmentProposalOutcome, ...]
-    status: Literal["complete", "evidence_only", "abstained", "incomplete", "failed"]
-    run_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    diagnostics: tuple[str, ...]
-    _digest_domain = b"memorii.semantic-ingestion.semantic-proposal-run.v1"
-    _digest_field = "run_fingerprint"
-
-    @model_validator(mode="after")
-    def validate_run(self) -> SemanticProposalRun:
-        expected = self.expected_segment_ids
-        if not expected or len(set(expected)) != len(expected):
-            raise ValueError("proposal run expected segments must be nonempty and unique")
-        if (
-            self.segment_governance_carriers.source_id != self.source_id
-            or self.message_admission_carriers.source_id != self.source_id
-            or self.segment_language_routes.source_id != self.source_id
-            or self.segment_language_routes.source_digest != self.source_digest
-            or self.governance_carrier_artifact.segment_governance != self.segment_governance_carriers
-            or self.governance_carrier_artifact.message_admissions != self.message_admission_carriers
-        ):
-            raise ValueError("proposal run source authorities must agree")
-        routes = self.segment_language_routes.routes
-        if tuple(route.segment_id for route in routes) != expected:
-            raise ValueError("proposal run routes must be an ordered expected-segment bijection")
-        parent_order = tuple(dict.fromkeys(route.parent_projection_segment_id for route in routes))
-        governance_by_parent = {binding.segment_id: binding for binding in self.segment_governance_carriers.bindings}
-        if tuple(binding.segment_id for binding in self.segment_governance_carriers.bindings) != parent_order or set(
-            governance_by_parent
-        ) != set(parent_order):
-            raise ValueError("proposal run governance carriers must be unique route parents")
-        attempts = self.segment_attempts
-        if tuple(attempt.identity.segment_id for attempt in attempts) != tuple(
-            sorted((attempt.identity.segment_id for attempt in attempts), key=expected.index)
-        ):
-            raise ValueError("proposal run attempts must be grouped in expected-segment order")
-        if tuple(outcome.segment_id for outcome in self.segment_outcomes) != expected:
-            raise ValueError("proposal run outcomes must be an ordered expected-segment bijection")
-        route_by_segment = dict(zip(expected, routes, strict=True))
-        attempts_by_segment: dict[str, tuple[SemanticProposalAttempt, ...]] = {
-            segment_id: tuple(item for item in attempts if item.identity.segment_id == segment_id)
-            for segment_id in expected
-        }
-        if any(item.identity.segment_id not in route_by_segment for item in attempts):
-            raise ValueError("proposal run attempt names an unexpected segment")
-        for segment_id, history in attempts_by_segment.items():
-            route = route_by_segment[segment_id]
-            if route.decision == "selected":
-                if not history:
-                    raise ValueError("selected proposal route requires final attempt history")
-                if tuple(item.identity.attempt_number for item in history) != tuple(range(len(history))):
-                    raise ValueError("proposal attempts must have contiguous numbers")
-                if len({item.identity.attempt_identity_digest for item in history}) != len(history):
-                    raise ValueError("proposal attempt identities must be unique")
-                if any(item.identity.language_route != route for item in history):
-                    raise ValueError("proposal attempts must copy their exact selected route")
-                if any(
-                    item.identity.source_id != self.source_id
-                    or item.identity.preparation_fingerprint != self.preparation_fingerprint
-                    or item.identity.segment_governance != governance_by_parent[route.parent_projection_segment_id]
-                    or item.identity.governance_carrier_artifact != self.governance_carrier_artifact
-                    for item in history
-                ):
-                    raise ValueError("proposal attempts must copy exact run governance")
-                for previous, current in zip(history, history[1:], strict=False):
-                    if (
-                        previous.status in {"partial", "failed"}
-                        and previous.raw_output_digest is not None
-                        and current.identity.attempt_payload_fingerprint
-                        == previous.identity.attempt_payload_fingerprint
-                    ):
-                        raise ValueError(
-                            "repair after artifact-bearing partial or failure needs new payload fingerprint"
-                        )
-            elif history:
-                raise ValueError("blocked proposal route cannot have attempts")
-        proposal_by_segment: dict[str, SemanticProposal] = {}
-        for proposal in self.validated_segments:
-            if proposal.segment_id in proposal_by_segment or proposal.segment_id not in attempts_by_segment:
-                raise ValueError("proposal run validated proposals must name unique expected segments")
-            history = attempts_by_segment[proposal.segment_id]
-            attempt = history[-1] if history else None
-            route = route_by_segment[proposal.segment_id]
-            if (
-                proposal.source_id != self.source_id
-                or proposal.source_digest != self.source_digest
-                or proposal.language_route != route
-                or proposal.preparation_fingerprint != self.preparation_fingerprint
-                or proposal.segment_governance != governance_by_parent[route.parent_projection_segment_id]
-                or proposal.message_admission_identity
-                != next(
-                    (
-                        identity
-                        for identity in self.message_admission_carriers.identities
-                        if attempt is not None
-                        and identity.segment_governance_binding_digest
-                        == attempt.identity.segment_governance.binding_digest
-                    ),
-                    None,
-                )
-                or attempt is None
-                or attempt.status != proposal.status
-                or attempt.status not in {"complete", "abstained"}
-                or proposal.originating_attempt_digest != attempt.attempt_digest
-                or proposal.owned_text != attempt.identity.owned_text
-                or proposal.context_text != attempt.identity.context_text
-                or proposal.proposer_fingerprint != attempt.identity.proposer_fingerprint
-                or proposal.proposer_manifest_digest != attempt.identity.proposer_manifest_digest
-                or proposal.prompt_registration_digest != attempt.identity.prompt_registration_digest
-                or proposal.semantic_request_fingerprint != attempt.identity.semantic_request_fingerprint
-                or proposal.attempt_payload_fingerprint != attempt.identity.attempt_payload_fingerprint
-            ):
-                raise ValueError("proposal run validated proposal must exactly match its attempt coordinate")
-            proposal_by_segment[proposal.segment_id] = proposal
-        for outcome in self.segment_outcomes:
-            history = attempts_by_segment[outcome.segment_id]
-            attempt = history[-1] if history else None
-            route = route_by_segment[outcome.segment_id]
-            proposal = proposal_by_segment.get(outcome.segment_id)
-            if (
-                outcome.attempt_digest != (None if attempt is None else attempt.attempt_digest)
-                or outcome.segment_language_route_digest != route.route_digest
-            ):
-                raise ValueError("proposal outcome must copy its exact attempt and route")
-            if proposal is None:
-                if outcome.proposal_digest is not None:
-                    raise ValueError("proposal outcome cannot reference an unvalidated proposal")
-                expected_status = (
-                    "evidence_only"
-                    if attempt is None or attempt.status in {"partial", "evidence_only"}
-                    else "failed"
-                    if attempt.status == "failed"
-                    else None
-                )
-                if outcome.status != expected_status:
-                    raise ValueError("proposal outcome status must derive from its final attempt")
-            elif outcome.proposal_digest != proposal.proposal_digest or outcome.status != proposal.status:
-                raise ValueError("proposal outcome must copy its exact validated proposal status and digest")
-            if route.decision != "selected" and (outcome.status != "evidence_only" or proposal is not None):
-                raise ValueError("non-selected route must remain evidence-only")
-        outcome_statuses = tuple(outcome.status for outcome in self.segment_outcomes)
-        if self.status == "abstained" and any(
-            route.decision == "selected"
-            and proposal_by_segment.get(route.segment_id) is None
-            or route.decision == "selected"
-            and proposal_by_segment[route.segment_id].status != "abstained"
-            for route in routes
-        ):
-            raise ValueError("abstained proposal run requires abstained validated selected routes")
-        if all(status == "evidence_only" for status in outcome_statuses):
-            derived_status = "evidence_only"
-        elif any(status == "failed" for status in outcome_statuses):
-            derived_status = "failed"
-        elif all(
-            route.decision != "selected"
-            or proposal_by_segment.get(route.segment_id) is not None
-            and proposal_by_segment[route.segment_id].status == "abstained"
-            for route in routes
-        ):
-            derived_status = "abstained"
-        elif all(status in {"complete", "abstained", "evidence_only"} for status in outcome_statuses):
-            derived_status = "complete"
-        else:
-            derived_status = "incomplete"
-        if self.status != derived_status:
-            raise ValueError("proposal run status must be derived from exact outcomes")
-        return self
-
     def _validate_member_closure(self) -> None:
         """Close every persisted member over this proposal's exact source authority."""
         mention_digests = tuple(member.mention_digest for member in self.mentions)
@@ -6585,6 +5835,146 @@ class SemanticProposalRun(_ContentAddressedContract):
         return self.language_route.route_digest
 
 
+
+
+
+class SemanticProposalResponseArtifact(_ContentAddressedContract):
+    raw_output_bytes: bytes
+    raw_output_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.semantic-proposal-response-artifact.v1"
+    _digest_field = "artifact_digest"
+
+    @model_validator(mode="after")
+    def validate_response(self) -> SemanticProposalResponseArtifact:
+        if self.raw_output_digest != sha256(self.raw_output_bytes).hexdigest():
+            raise ValueError("proposal response artifact bytes digest mismatch")
+        return self
+
+    @classmethod
+    def create(cls, *, raw_output_bytes: bytes) -> SemanticProposalResponseArtifact:
+        return super().create(raw_output_bytes=raw_output_bytes, raw_output_digest=sha256(raw_output_bytes).hexdigest())
+
+
+class SemanticProposalAttemptIdentity(_ContentAddressedContract):
+    source_id: str = Field(min_length=1)
+    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    segment_id: str = Field(min_length=1)
+    segment_governance: SegmentGovernanceBinding
+    message_admission_identity: MessageAdmissionIdentity | None
+    governance_carrier_artifact: GovernanceCarrierArtifact
+    owned_text: SourceSpanReference
+    context_text: SourceSpanReference
+    language_route: SegmentLanguageRoute
+    proposer_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    proposer_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    prompt_registration_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    semantic_request_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_payload_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_number: int = Field(ge=0)
+    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    request_artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_identity_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.semantic-proposal-attempt-identity.v1"
+    _digest_field = "attempt_identity_digest"
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> SemanticProposalAttemptIdentity:
+        if (
+            self.segment_governance.source_id != self.source_id
+            or self.segment_governance.segment_id != self.language_route.parent_projection_segment_id
+            or self.language_route.source_id != self.source_id
+            or self.language_route.segment_id != self.segment_id
+        ):
+            raise ValueError("proposal attempt identity authorities must bind exact source and segment")
+        if self.message_admission_identity is not None and (
+            self.message_admission_identity.segment_governance_binding_digest != self.segment_governance.binding_digest
+        ):
+            raise ValueError("proposal attempt identity message admission must bind segment governance")
+        artifact = self.governance_carrier_artifact
+        if (
+            artifact.segment_governance.source_id != self.source_id
+            or self.segment_governance not in artifact.segment_governance.bindings
+            or (
+                self.message_admission_identity is not None
+                and self.message_admission_identity not in artifact.message_admissions.identities
+            )
+        ):
+            raise ValueError("proposal attempt identity governance artifact does not contain its authorities")
+        for span in (self.owned_text, self.context_text):
+            if (
+                span.source_id != self.source_id
+                or span.projection_segment_id != self.language_route.parent_projection_segment_id
+            ):
+                raise ValueError("proposal attempt identity text spans must bind exact source and segment")
+        if (
+            self.owned_text.projection_digest != self.context_text.projection_digest
+            or self.owned_text.retained_text_artifact != self.context_text.retained_text_artifact
+            or self.owned_text.segment_local_span.artifact != self.context_text.segment_local_span.artifact
+            or self.owned_text.projection_span.start < self.context_text.projection_span.start
+            or self.owned_text.projection_span.end > self.context_text.projection_span.end
+        ):
+            raise ValueError("proposal attempt identity owned text must be contained by context text")
+        artifact = self.context_text.segment_local_span.artifact
+        if (
+            self.language_route.segment_text_artifact_id != artifact.artifact_id
+            or self.language_route.segment_text_artifact_digest != artifact.artifact_digest
+            or self.language_route.segment_text_content_digest != artifact.content_digest
+        ):
+            raise ValueError("proposal attempt identity route must bind exact segment text")
+        return self
+
+
+class SemanticProposalAttempt(_ContentAddressedContract):
+    identity: SemanticProposalAttemptIdentity
+    raw_output_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
+    response_artifact_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
+    status: Literal["complete", "partial", "abstained", "evidence_only", "failed"]
+    diagnostics: tuple[str, ...]
+    attempt_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.semantic-proposal-attempt.v1"
+    _digest_field = "attempt_digest"
+
+    @model_validator(mode="after")
+    def validate_attempt(self) -> SemanticProposalAttempt:
+        has_response = self.raw_output_digest is not None and self.response_artifact_digest is not None
+        if (self.raw_output_digest is None) != (self.response_artifact_digest is None):
+            raise ValueError("proposal attempt response digest and artifact must agree")
+        if self.status in {"complete", "partial", "abstained"} and not has_response:
+            raise ValueError("proposal attempt terminal provider status requires response artifact")
+        if self.status == "evidence_only" and has_response:
+            raise ValueError("evidence-only proposal attempt forbids response artifact")
+        if self.diagnostics != tuple(sorted(set(self.diagnostics))) or any(not item for item in self.diagnostics):
+            raise ValueError("proposal attempt diagnostics must be canonical")
+        return self
+
+
+class SegmentProposalOutcome(_ContentAddressedContract):
+    segment_id: str = Field(min_length=1)
+    segment_language_route_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: Literal["complete", "abstained", "evidence_only", "failed"]
+    proposal_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt_digest: str | None = Field(pattern=r"^[0-9a-f]{64}$")
+    reason_codes: tuple[str, ...]
+    outcome_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    _digest_domain = b"memorii.semantic-ingestion.segment-proposal-outcome.v1"
+    _digest_field = "outcome_digest"
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> SegmentProposalOutcome:
+        if self.reason_codes != tuple(sorted(set(self.reason_codes))) or any(not value for value in self.reason_codes):
+            raise ValueError("segment proposal outcome reason codes must be canonical")
+        if (self.status in {"complete", "abstained"}) != (self.proposal_digest is not None):
+            raise ValueError("segment proposal outcome proposal digest must match promotable status")
+        if self.status in {"complete", "abstained", "failed"} and self.attempt_digest is None:
+            raise ValueError("route-selected terminal proposal outcome requires attempt digest")
+        if self.status == "evidence_only" and self.proposal_digest is not None:
+            raise ValueError("evidence-only proposal outcome forbids proposal digest")
+        return self
+
+
+
+
 def _reference_contains(outer: SourceSpanReference, inner: SourceSpanReference) -> bool:
     return (
         outer.projection_span.artifact == inner.projection_span.artifact
@@ -6599,8 +5989,6 @@ def _reference_contains(outer: SourceSpanReference, inner: SourceSpanReference) 
 # The member closure is intentionally shared with the normalized proposal after
 # the attempt/run contracts; assigning it here keeps its source-span helper
 # available without creating a second closure implementation.
-SemanticProposal._validate_member_closure = SemanticProposalRun._validate_member_closure
-SemanticProposal.segment_language_route_digest = SemanticProposalRun.segment_language_route_digest
 
 
 class ParserConsensusPolicy(_ContentAddressedContract):
@@ -7782,41 +7170,6 @@ SegmentLanguageRoute.model_rebuild()
 BootstrapDeclaredSegmentLanguageRoute.model_rebuild()
 
 
-class GraphFreeInterpretationBundle(_ContentAddressedContract):
-    """Sealed source-wide, graph-free interpretation authority."""
-
-    schema_version: Literal[2]
-    source_id: str = Field(min_length=1)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    proposal_run_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    analysis_bundle_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    temporal_resolution_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    subject_sets: tuple[PreAlignmentSemanticOperationSubjectSet, ...]
-    scope_observations: tuple[AnalyzerScopeObservation, ...]
-    temporal_attachment_observations: tuple[AnalyzerTemporalAttachmentObservation, ...]
-    identity_partition_evidence: SourceLocalIdentityPartitionEvidence
-    bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.graph-free-interpretation-bundle.v2"
-    _digest_field = "bundle_digest"
-
-    @model_validator(mode="after")
-    def validate_bundle(self) -> GraphFreeInterpretationBundle:
-        if self.identity_partition_evidence.schema_version != 2:
-            raise ValueError("graph-free interpretation requires schema-version-2 identity evidence")
-        subjects = tuple(subject for item in self.subject_sets for subject in item.subjects)
-        keys = {
-            (item.operation_id, item.proposal_id, item.segment_id, item.segment_language_route_digest)
-            for item in subjects
-        }
-        if not subjects or len(keys) != len(subjects):
-            raise ValueError("graph-free interpretation subjects must be complete and unique")
-        scope_keys = {(item.operation_id, item.analyzer_role) for item in self.scope_observations}
-        if len(scope_keys) != len(self.scope_observations) or scope_keys != {
-            (subject.operation_id, role) for subject in subjects for role in ("primary", "corroborating")
-        }:
-            raise ValueError("graph-free interpretation scope observations must be exactly two per subject")
-        return self
 
 
 # V3 recovery is intentionally independent of the retired request/context
@@ -13370,10 +12723,8 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     SemanticScopeConsensus: "semantic_scope_consensus",
     TemporalAttachmentConsensus: "temporal_attachment_consensus",
     SourceLocalIdentityResolution: "source_local_identity_resolution",
-    ProposalCoverageAudit: "proposal_coverage_audit",
     OperationAlignment: "operation_alignment",
     OperationTemporalAttachmentConsensusSet: "operation_temporal_attachment_consensus_set",
-    GraphFreeInterpretationBundle: "graph_free_interpretation_bundle",
     BootstrapSourceNormalizationAtomicWriteRequestV3: "bootstrap_source_normalization_atomic_write_request_v3",
     BootstrapSegmentAnalysisInputV3: "bootstrap_segment_analysis_input_v3",
     BootstrapSemanticProposalRequestV3: "bootstrap_semantic_proposal_request_v3",
@@ -13570,7 +12921,6 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     BootstrapCoveredPredicateEventV3: "bootstrap_covered_predicate_event_v3",
     BootstrapUnresolvedPredicateEventV3: "bootstrap_unresolved_predicate_event_v3",
     BootstrapProposalCoverageAuditV3: "bootstrap_proposal_coverage_audit_v3",
-    SourceProposalAlignment: "source_proposal_alignment",
     SourceDependencyGroup: "source_dependency_group",
     TransactionSemanticGroup: "transaction_semantic_group",
     PlannedTransactionGroupExecution: "planned_transaction_group_execution",
@@ -13620,13 +12970,10 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     ProposedReferenceAssignment: "proposed_reference_assignment",
     ProposedIdentityOperation: "proposed_identity_operation",
     SemanticProposal: "semantic_proposal",
-    SemanticProposalRequest: "semantic_proposal_request",
-    SemanticProposalRequestArtifact: "semantic_proposal_request_artifact",
     SemanticProposalResponseArtifact: "semantic_proposal_response_artifact",
     SemanticProposalAttemptIdentity: "semantic_proposal_attempt_identity",
     SemanticProposalAttempt: "semantic_proposal_attempt",
     SegmentProposalOutcome: "segment_proposal_outcome",
-    SemanticProposalRun: "semantic_proposal_run",
     LinguisticFeature: "linguistic_feature",
     LinguisticToken: "linguistic_token",
     DependencyArc: "dependency_arc",
@@ -13833,14 +13180,8 @@ __all__ = [
     "SourceLocalIdentityAssertion",
     "SourceLocalIdentityPartitionEvidence",
     "SourceLocalIdentityResolution",
-    "CoveredPredicateEvent",
-    "UnresolvedPredicateEvent",
-    "PredicateEventDisposition",
-    "ProposalCoverageAudit",
     "OperationAlignment",
     "OperationTemporalAttachmentConsensusSet",
-    "GraphFreeInterpretationBundle",
-    "SourceNormalizationRecoveryUnavailableReason",
     "BootstrapAnalysisProvenanceV1",
     "BootstrapAnalysisRouteProjection",
     "BootstrapSegmentAnalysisInputV3",
@@ -14086,13 +13427,10 @@ __all__ = [
     "ProposedReferenceAssignment",
     "ProposedIdentityOperation",
     "SemanticProposal",
-    "SemanticProposalRequest",
-    "SemanticProposalRequestArtifact",
     "SemanticProposalResponseArtifact",
     "SemanticProposalAttemptIdentity",
     "SemanticProposalAttempt",
     "SegmentProposalOutcome",
-    "SemanticProposalRun",
     "LinguisticFeature",
     "LinguisticToken",
     "DependencyArc",
@@ -14132,7 +13470,6 @@ __all__ = [
     "LanguageConstructionPolicyAuthority",
     "LanguageConstructionPolicyAuthorityBundle",
     "expand_pre_alignment_subjects",
-    "SourceProposalAlignment",
     "PlannedTransactionGroupExecution",
     "GroupIndependenceCertificate",
     "TransactionSemanticGroupPlan",

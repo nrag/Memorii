@@ -6056,7 +6056,7 @@ def _typed_claim_projection_records(
     if (temporal_policy_override is None) != (trust_policy_override is None):
         raise ProjectionHistoryError("projection_history_integrity_error")
     if temporal_policy_override is not None and trust_policy_override is not None:
-        from memorii.core.semantic_ingestion.pipeline import TemporalEvidenceResolver
+        from memorii.core.semantic_ingestion.temporal_evidence_resolution import TemporalEvidenceResolver
 
         candidates = tuple(
             sorted(
