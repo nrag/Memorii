@@ -577,10 +577,26 @@ Broad gate (once, at the final revision):
   linked unit if it proves larger than a family repair); it is NOT a
   regression of this operation's slices 1-5.
 
+- 2026-08-27 (SLICE 5 CLOSED): production migration (pipeline/egress/clarification-adapter
+  removal, deferred contract deletions) and test migration (hub engine,
+  fixture builder, clean-room hub, codec suites, egress re-anchor, composition
+  trim, allowlist) are complete and committed across the WIP series
+  (`dee4e89`..`12b6a67`). Boundary evidence: hub-consumer suites green
+  except the two commit-verified pre-existing families (134 clarification-CAS
+  + 8 scenario writer binding — both slice-6 scope, neither a slice-1..5
+  regression); identity/graph/transaction/generation/text-prep fully green;
+  ruff, identity gate, and full collection green throughout. Slice 6 now
+  owns: the clarification-CAS family repair, the scenario-harness service
+  binding migration, the composition/coordinator V3-era families (17+4), the
+  linguistic environmental disposition, full broad gate, durations regen,
+  and the three WorkPlan closures.
+
 ## Next Action
 
-PAUSED (user decision 2026-08-27). Resume by classifying the 130-failure
-batch (fast files first, output saved), then complete slice 5. See the plan in the Progress Log (pipeline/egress
+Repair the clarification-CAS family (134 tests): make
+`_commit_accepted_clarification` and its siblings create the canonical
+conflict attention record and retained context the CAS requires, beginning
+from `atomic_store.py:6391`. in the Progress Log (pipeline/egress
 removal from composition; re-anchor the 18 egress mutation tests to the
 authorization read-set boundary; allowlist update with the dying test files),
 then slice 6 (V3-era family repairs + full broad gate + WorkPlan closures).
