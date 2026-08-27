@@ -52,7 +52,32 @@ cannot reach the target, record what remains and stop.
 
 - 2026-08-27: opened from the PBD-EXP-014 residual; profile recorded above.
 
+- 2026-08-27 (landed, commit `91814ba`): string fast path + single-encoded
+  dict keys; byte identity gated by 123 passing frozen-suite tests
+  (consensus codecs, proposal vector, provider compatibility, arena,
+  provider service).
+- 2026-08-27 (measured, with variance caveat): back-to-back paired probes at
+  the same machine state show **enabled 45.7s -> 35.9s (~21%) and disabled
+  135.2s -> 58.9s (~56%)**. The subsequent 5-sample batch re-run
+  (pbd-exp-014 evidence file, overwritten in the working tree; the pre-fix
+  JSON is preserved at commit `e8dd06c`) measured enabled median 43.7s /
+  disabled 94.8s under heavy concurrent load — batch medians are NOT
+  comparable across runs on a loaded machine; the paired probes are the
+  cleaner A/B signal. Digest accounting unchanged (237 / 43,756).
+- 2026-08-27 (what the fresh profile says remains): `_json` still runs 4.6M
+  calls (set-member sorting encodes, per-member encodes), ~121 with-spans
+  encodes of ~4,800-node trees per delivery, and 3,105 pydantic
+  `validate_python` calls cost ~21s cumulative under the profiler — the
+  model_validate(model_dump()) revalidation pattern. Reaching <5s requires
+  design-scale work, not micro-fixes: (a) member-level canonical reuse
+  (encode each unique member once and embed — the parent VCC operation's
+  cross-root-reuse design), and (b) eliminating redundant pydantic
+  revalidation of unchanged contracts. Both change hot code paths across
+  persistence/graph owners and need their own reviewed operation.
+
 ## Next Action
 
-Implement the string fast path and single-encode dict keys in
-`memorii/core/memory_evolution/ingestion_contracts.py`.
+This bounded unit is complete (fix landed, gated, measured). The <5s target
+needs the member-reuse + revalidation-reduction design work as its own
+operation; open it from the parent VCC operation's cross-root-reuse design
+when ready.

@@ -10,21 +10,21 @@
   "digest_call_reduction_fraction": 0.9945835999634336,
   "distributions_seconds": {
     "disabled": {
-      "maximum": 106.32357594199857,
-      "mean": 98.94726743479987,
-      "median": 99.9152239699979,
-      "minimum": 93.34359663000214,
-      "population_stdev": 4.594084319255886
+      "maximum": 98.02518054599932,
+      "mean": 88.69143354719999,
+      "median": 94.83782955999777,
+      "minimum": 60.98516104500595,
+      "population_stdev": 13.917353763291676
     },
     "enabled": {
-      "maximum": 37.180525276999106,
-      "mean": 36.21525110279909,
-      "median": 36.220395122996706,
-      "minimum": 35.42692632700346,
-      "population_stdev": 0.6011006474115647
+      "maximum": 47.647046365003916,
+      "mean": 44.652364436601054,
+      "median": 43.70768963799492,
+      "minimum": 43.37025717900542,
+      "population_stdev": 1.6376826433750897
     }
   },
-  "enabled_median_reduction_fraction": 0.6374887261037137,
+  "enabled_median_reduction_fraction": 0.539132328936905,
   "experiment": "PBD-EXP-014",
   "historical_anchor": {
     "note": "Pre-H8 tree, frozen 2026-08-16 scenario: safe_reference median 0.9046s with 833 content-digest validations; persisted-reload counterfactual median 0.8073s with 777 (pbd-exp-004-duplicate-step2-v1.json). The 2026-08-16 runner rendering no longer exists; this harness is not a controlled comparison against that tree."
@@ -88,27 +88,27 @@
     "samples_per_mode": 5,
     "script_sha256": "33b4e2baf96ec80a7a81f362970586bd924c4240792bb6cb799a4552a8a048da"
   },
-  "measures": "One deterministic corpus delivery through the public sync_event root on the current tree: default substituted path versus explicitly disabled full-validation path; deterministic content-digest accounting and the post-H8 lifecycle shape asserted in every child. Durable record bytes vary across processes by design (per-delivery unique identities), so byte stability is not asserted; mode equivalence is carried by the diametric parity gate.",
+  "measures": "One deterministic corpus delivery through the public sync_event root on the current tree: default substituted path versus explicitly disabled full-validation path; identical durable outputs and post-H8 lifecycle accounting asserted in every child.",
   "output_sha256_samples": [
-    "2f9adf49b43f356138cdcc8a583cc8bf4309cb564fbb79df8269969b1c97d369",
-    "43d9ae9b7949e21ac3e4da5f7e532f6466b2ef49b4bbb5c455877af7f7ce371a",
-    "600aa74215380f8be40a2d05871e262dabbe39e8952c499d505c2143bb75eba5",
-    "9ccdf4fcf9f3495e7699b4de5566950912091d5a2252f803b378f8c1226123c9",
-    "a976279a9f295e7af34e0d918772826c7ccb33a1d26f5a791688cd4671dccbba",
-    "adb04260855a0cc16119772d93e39ddd47dc572a5cfec1ed52522851bd8f2173",
-    "c116a968e0265470589816c3e1ca5496ed179575bfffb8dc9a9f8c45cc5a50b9",
-    "dbb2565f229832071714e50173f69ca0b72d5ed27943767141c5dc83ca7600b6",
-    "e459527a8829a96ac5573cd5910d513d35568a3e008fd57b397751c2cccfddef",
-    "f07970aefc2fdf0bb75ac16eb55e6e60f0f79e6fe9f76cdf39eb1a4e633ffb2a"
+    "0bf8b47fb7706d282e2d21efc4aab8364d0b1490d35c406a3194b170998c3d27",
+    "0e027c2c9deb97cf8039a4dfa69dfadd045eda1a5166aa351e2a39b9e5ca1903",
+    "1f849d7df5bb25d75c8514a4758ebeff9393ba947a0a67a3bd7cd4e539a26030",
+    "20e98db1efdac9826d15f463da461c2cf5060d01d98c5453bbac1e13d2160fda",
+    "514eb57982e9f40f00f0eda84a5d66276cf9bb231ecdb654194250590211b327",
+    "7318313dc71c33fedd485abbd7123e5a853bc3061f1790eb0d8ede9b835089c3",
+    "878c2559967acc2d4099b7f4ff5ff8798bec90ba2a6e5dd0425c626c26ca54eb",
+    "b17da68516d32e8e1d157a2b228723c2bc1e858fd8e47d440068630c7ab96202",
+    "c0f5ffe0f6035520dfc471c8483aaa08167a14aa0d8643463c2e14bda8eeb0bf",
+    "c4c9f258f154e94c58e8f6292f04545e9e19bef18bb8633787bfd8e59f0c97ea"
   ],
   "runs": [
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 106.32357594199857,
+      "elapsed_seconds": 60.98516104500595,
       "mode": "disabled",
       "ordinal": 0,
-      "output_sha256": "43d9ae9b7949e21ac3e4da5f7e532f6466b2ef49b4bbb5c455877af7f7ce371a",
+      "output_sha256": "20e98db1efdac9826d15f463da461c2cf5060d01d98c5453bbac1e13d2160fda",
       "producer_calls": 1,
       "sample": 4,
       "semantic_publish_calls": 0
@@ -116,10 +116,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 93.34359663000214,
+      "elapsed_seconds": 94.83782955999777,
       "mode": "disabled",
       "ordinal": 1,
-      "output_sha256": "600aa74215380f8be40a2d05871e262dabbe39e8952c499d505c2143bb75eba5",
+      "output_sha256": "514eb57982e9f40f00f0eda84a5d66276cf9bb231ecdb654194250590211b327",
       "producer_calls": 1,
       "sample": 0,
       "semantic_publish_calls": 0
@@ -127,10 +127,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 99.9152239699979,
+      "elapsed_seconds": 95.57586226399872,
       "mode": "disabled",
       "ordinal": 2,
-      "output_sha256": "e459527a8829a96ac5573cd5910d513d35568a3e008fd57b397751c2cccfddef",
+      "output_sha256": "1f849d7df5bb25d75c8514a4758ebeff9393ba947a0a67a3bd7cd4e539a26030",
       "producer_calls": 1,
       "sample": 2,
       "semantic_publish_calls": 0
@@ -138,10 +138,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 37.180525276999106,
+      "elapsed_seconds": 45.165871393001,
       "mode": "enabled",
       "ordinal": 3,
-      "output_sha256": "2f9adf49b43f356138cdcc8a583cc8bf4309cb564fbb79df8269969b1c97d369",
+      "output_sha256": "c4c9f258f154e94c58e8f6292f04545e9e19bef18bb8633787bfd8e59f0c97ea",
       "producer_calls": 1,
       "sample": 3,
       "semantic_publish_calls": 0
@@ -149,10 +149,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 36.220395122996706,
+      "elapsed_seconds": 43.70768963799492,
       "mode": "enabled",
       "ordinal": 4,
-      "output_sha256": "c116a968e0265470589816c3e1ca5496ed179575bfffb8dc9a9f8c45cc5a50b9",
+      "output_sha256": "c0f5ffe0f6035520dfc471c8483aaa08167a14aa0d8643463c2e14bda8eeb0bf",
       "producer_calls": 1,
       "sample": 2,
       "semantic_publish_calls": 0
@@ -160,10 +160,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 35.780115531000774,
+      "elapsed_seconds": 43.370957608000026,
       "mode": "enabled",
       "ordinal": 5,
-      "output_sha256": "dbb2565f229832071714e50173f69ca0b72d5ed27943767141c5dc83ca7600b6",
+      "output_sha256": "7318313dc71c33fedd485abbd7123e5a853bc3061f1790eb0d8ede9b835089c3",
       "producer_calls": 1,
       "sample": 0,
       "semantic_publish_calls": 0
@@ -171,10 +171,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 94.8361098910027,
+      "elapsed_seconds": 94.03313432099822,
       "mode": "disabled",
       "ordinal": 6,
-      "output_sha256": "a976279a9f295e7af34e0d918772826c7ccb33a1d26f5a791688cd4671dccbba",
+      "output_sha256": "0bf8b47fb7706d282e2d21efc4aab8364d0b1490d35c406a3194b170998c3d27",
       "producer_calls": 1,
       "sample": 3,
       "semantic_publish_calls": 0
@@ -182,10 +182,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 43756,
-      "elapsed_seconds": 100.31783074099803,
+      "elapsed_seconds": 98.02518054599932,
       "mode": "disabled",
       "ordinal": 7,
-      "output_sha256": "f07970aefc2fdf0bb75ac16eb55e6e60f0f79e6fe9f76cdf39eb1a4e633ffb2a",
+      "output_sha256": "b17da68516d32e8e1d157a2b228723c2bc1e858fd8e47d440068630c7ab96202",
       "producer_calls": 1,
       "sample": 1,
       "semantic_publish_calls": 0
@@ -193,10 +193,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 35.42692632700346,
+      "elapsed_seconds": 47.647046365003916,
       "mode": "enabled",
       "ordinal": 8,
-      "output_sha256": "adb04260855a0cc16119772d93e39ddd47dc572a5cfec1ed52522851bd8f2173",
+      "output_sha256": "878c2559967acc2d4099b7f4ff5ff8798bec90ba2a6e5dd0425c626c26ca54eb",
       "producer_calls": 1,
       "sample": 1,
       "semantic_publish_calls": 0
@@ -204,10 +204,10 @@
     {
       "bootstrap_publish_calls": 1,
       "content_digest_calls": 237,
-      "elapsed_seconds": 36.46829325599538,
+      "elapsed_seconds": 43.37025717900542,
       "mode": "enabled",
       "ordinal": 9,
-      "output_sha256": "9ccdf4fcf9f3495e7699b4de5566950912091d5a2252f803b378f8c1226123c9",
+      "output_sha256": "0e027c2c9deb97cf8039a4dfa69dfadd045eda1a5166aa351e2a39b9e5ca1903",
       "producer_calls": 1,
       "sample": 4,
       "semantic_publish_calls": 0
