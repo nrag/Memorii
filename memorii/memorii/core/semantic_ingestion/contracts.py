@@ -21,7 +21,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_valid
 from memorii.core.memory_evolution.atomic_store import (
     AtomicGenerationRequest,
     OperationLeaseBinding,
-    SourceCheckpointAtomicWriteRequest,
     generation_request_digest,
 )
 from memorii.core.memory_evolution.bootstrap_profile import BootstrapSegmentGrammarProof
@@ -33,7 +32,6 @@ from memorii.core.memory_evolution.graph_records import (
     SourceAuthority,
 )
 from memorii.core.memory_evolution.ingestion_contracts import (
-    AuthenticatedIngressContext,
     OperationFenceBinding,
     SemanticWriterCommitBinding,
     decode_typed_value,
@@ -41,9 +39,6 @@ from memorii.core.memory_evolution.ingestion_contracts import (
     encode_typed_value_with_spans,
 )
 from memorii.core.memory_evolution.models import ClaimValueType, ExtractionTriggerMode, MemoryScope, SourceObservation
-from memorii.core.memory_evolution.semantic_analysis.decision_contracts import (
-    SourceNormalizationPublicationCoordinate,
-)
 from memorii.core.memory_evolution.semantic_analysis.policies import (
     ConstructionFamily,
     PredicateSemanticPolicy,
@@ -1859,149 +1854,6 @@ class SemanticRetryableProgress(BaseModel):
         return cls(
             **body,
             progress_digest=contract_digest(b"memorii.semantic-ingestion.retryable-progress.v1", body),
-        )
-
-
-class SemanticExecutionRetryPlan(BaseModel):
-    """Authenticated, secret-free inputs needed to resume before learned stages."""
-
-    operation_id: str = Field(min_length=1)
-    operation_fence_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    source_id: str = Field(min_length=1)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    source_utf8_bytes: bytes
-    admitted_source_id: str = Field(min_length=1)
-    admitted_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    admitted_source_bytes_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    admitted_source_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    authenticated_ingress: AuthenticatedIngressContext
-    prompt_reference: str = Field(min_length=1)
-    policy_source_id: str = Field(min_length=1)
-    policy_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    bootstrap_selection_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    bootstrap_verification_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    deployment_authorization_state: Literal["verified", "unavailable"]
-    deployment_authorization_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    deployment_active_epoch: int | None = Field(default=None, ge=1)
-    deployment_decision_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    authorization_authority_scope_id: str = Field(min_length=1)
-    authorization_authority_record_id: str = Field(min_length=1)
-    expected_authority_revision: int = Field(ge=0)
-    expected_authority_coordinates_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
-    authority_reference_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    authorization_secret_reference: str = Field(min_length=1)
-    attempt_budget: int = Field(ge=1, le=10)
-    plan_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    @model_validator(mode="after")
-    def validate_plan(self) -> SemanticExecutionRetryPlan:
-        if (
-            self.admitted_source_id != self.source_id
-            or self.admitted_source_digest != self.source_digest
-            or self.admitted_source_bytes_digest != sha256(self.source_utf8_bytes).hexdigest()
-        ):
-            raise ValueError("semantic ingestion retry plan admitted source binding is invalid")
-        admitted_source = {
-            "operation_fence_binding_digest": self.operation_fence_binding_digest,
-            "admitted_source_id": self.admitted_source_id,
-            "admitted_source_digest": self.admitted_source_digest,
-            "admitted_source_bytes_digest": self.admitted_source_bytes_digest,
-        }
-        if self.admitted_source_binding_digest != contract_digest(
-            b"memorii.semantic-ingestion.admitted-source-binding.v1", admitted_source
-        ):
-            raise ValueError("semantic ingestion retry plan admitted source digest mismatch")
-        if self.policy_source_id != self.source_id or self.policy_source_digest != self.source_digest:
-            raise ValueError("semantic ingestion retry plan policy coordinates do not bind its source")
-        if self.deployment_authorization_state == "verified":
-            if self.deployment_active_epoch is None or self.deployment_decision_digest is None:
-                raise ValueError("verified semantic ingestion retry plan lacks deployment coordinates")
-        elif self.deployment_active_epoch is not None or self.deployment_decision_digest is not None:
-            raise ValueError("unavailable semantic ingestion retry plan invents deployment coordinates")
-        expected_record_id = (
-            "semantic_ingestion:authorization:"
-            + sha256(self.authorization_authority_scope_id.encode("utf-8")).hexdigest()
-        )
-        if self.authorization_authority_record_id != expected_record_id:
-            raise ValueError("semantic ingestion retry plan authority record does not bind its scope")
-        reference = {
-            "authorization_authority_scope_id": self.authorization_authority_scope_id,
-            "authorization_authority_record_id": self.authorization_authority_record_id,
-            "expected_authority_revision": self.expected_authority_revision,
-            "expected_authority_coordinates_digest": self.expected_authority_coordinates_digest,
-        }
-        if self.authority_reference_digest != contract_digest(
-            b"memorii.semantic-ingestion.authorization-authority-reference.v1", reference
-        ):
-            raise ValueError("semantic ingestion retry plan authority reference digest mismatch")
-        body = self.model_dump(mode="python", exclude={"plan_digest"})
-        if self.plan_digest != contract_digest(b"memorii.semantic-ingestion.execution-retry-plan.v1", body):
-            raise ValueError("semantic ingestion execution retry plan digest mismatch")
-        return self
-
-    def validate_for_fence(self, fence: OperationFenceBinding) -> None:
-        """Reject a foreign operation, principal, allocation, or source fence."""
-        if (
-            self.operation_id != fence.operation_id
-            or self.operation_fence_binding_digest != fence.binding_digest
-            or self.authenticated_ingress.delivery_principal_binding.binding_digest
-            != fence.delivery_principal_binding_digest
-            or self.admitted_source_id != fence.source_id
-            or self.admitted_source_digest != fence.source_digest
-            or self.source_id != fence.source_id
-            or self.source_digest != fence.source_digest
-        ):
-            raise ValueError("semantic ingestion execution retry plan fence/source binding is invalid")
-
-    @classmethod
-    def create(cls, **values: object) -> SemanticExecutionRetryPlan:
-        scope_id = values["authorization_authority_scope_id"]
-        if not isinstance(scope_id, str):
-            raise TypeError("authorization authority scope must be a string")
-        values = {
-            **values,
-            "authorization_authority_record_id": (
-                "semantic_ingestion:authorization:" + sha256(scope_id.encode("utf-8")).hexdigest()
-            ),
-        }
-        reference = {
-            key: values.get(key)
-            for key in (
-                "authorization_authority_scope_id",
-                "authorization_authority_record_id",
-                "expected_authority_revision",
-                "expected_authority_coordinates_digest",
-            )
-        }
-        values["authority_reference_digest"] = contract_digest(
-            b"memorii.semantic-ingestion.authorization-authority-reference.v1", reference
-        )
-        source_id = values.get("source_id")
-        source_digest = values.get("source_digest")
-        source_bytes = values.get("source_utf8_bytes")
-        fence_digest = values.get("operation_fence_binding_digest")
-        if (
-            not isinstance(source_id, str)
-            or not isinstance(source_digest, str)
-            or not isinstance(source_bytes, bytes)
-            or not isinstance(fence_digest, str)
-        ):
-            raise TypeError("semantic ingestion retry plan source/fence inputs are invalid")
-        admitted_source = {
-            "operation_fence_binding_digest": fence_digest,
-            "admitted_source_id": source_id,
-            "admitted_source_digest": source_digest,
-            "admitted_source_bytes_digest": sha256(source_bytes).hexdigest(),
-        }
-        values.update(admitted_source)
-        values["admitted_source_binding_digest"] = contract_digest(
-            b"memorii.semantic-ingestion.admitted-source-binding.v1", admitted_source
-        )
-        return cls(
-            **values,
-            plan_digest=contract_digest(b"memorii.semantic-ingestion.execution-retry-plan.v1", values),
         )
 
 
@@ -6831,31 +6683,6 @@ class ConsensusPolicySelection(_ContentAddressedContract):
         return self
 
 
-class ConsensusPolicySelectionBundle(_ContentAddressedContract):
-    schema_version: Literal[2]
-    selections: tuple[ConsensusPolicySelection, ...]
-    bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.consensus-policy-selection-bundle.v2"
-    _digest_field = "bundle_digest"
-
-    @model_validator(mode="after")
-    def validate_bundle(self):
-        keys = tuple(
-            (
-                value.kind,
-                value.operation_id,
-                value.proposal_id,
-                value.segment_id,
-                value.segment_language_route_digest,
-                value.temporal_role or "",
-            )
-            for value in self.selections
-        )
-        if keys != tuple(sorted(keys)) or len(set(keys)) != len(keys):
-            raise ValueError("consensus policy selections must be canonical and coordinate-unique")
-        return self
-
-
 class FactOperationSemanticPolicyKey(BaseModel):
     kind: Literal["fact"]
     predicate_id: str = Field(min_length=1)
@@ -7701,140 +7528,6 @@ class LinguisticAnalysis(_ContentAddressedContract):
         return self
 
 
-class SegmentLinguisticAnalysisBundle(_ContentAddressedContract):
-    source_id: str
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    segment_id: str
-    segment_language_route_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    primary: LinguisticAnalysis | None
-    corroborating: LinguisticAnalysis | None
-    lane_outcomes: tuple[SegmentLanguageLaneOutcome, ...]
-    status: _AnalysisStatus
-    bundle_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    diagnostics: tuple[str, ...]
-    _digest_domain = b"memorii.semantic-ingestion.segment-linguistic-analysis-bundle.v1"
-    _digest_field = "bundle_fingerprint"
-
-    @model_validator(mode="after")
-    def validate_bundle(self) -> SegmentLinguisticAnalysisBundle:
-        if tuple(item.lane for item in self.lane_outcomes) != (
-            "stanza",
-            "spacy",
-        ) or self.status != _segment_parser_status(self.lane_outcomes):
-            raise ValueError("segment linguistic bundle lanes and status must be derived")
-        if any(item.preparation_fingerprint != self.preparation_fingerprint for item in self.lane_outcomes):
-            raise ValueError("segment linguistic bundle preparation fingerprint must join both lanes")
-        for analysis, lane in ((self.primary, "stanza"), (self.corroborating, "spacy")):
-            outcome = next(item for item in self.lane_outcomes if item.lane == lane)
-            if (outcome.segment_id, outcome.segment_language_route_digest) != (
-                self.segment_id,
-                self.segment_language_route_digest,
-            ):
-                raise ValueError("parser lane outcome must bind exact segment route")
-            if analysis is None:
-                if outcome.artifact_digest is not None:
-                    raise ValueError("missing parser analysis cannot retain artifact digest")
-            elif (
-                analysis.status not in {"complete", "partial"}
-                or (
-                    analysis.source_id,
-                    analysis.source_digest,
-                    analysis.segment_id,
-                    analysis.segment_language_route_digest,
-                    analysis.analysis_digest,
-                )
-                != (
-                    self.source_id,
-                    self.source_digest,
-                    self.segment_id,
-                    self.segment_language_route_digest,
-                    outcome.artifact_digest,
-                )
-                or analysis.preparation_fingerprint != self.preparation_fingerprint
-                or outcome.preparation_fingerprint != self.preparation_fingerprint
-            ):
-                raise ValueError("parser analysis must exactly match its lane outcome")
-        if self.status == "complete" and (
-            self.primary is None
-            or self.corroborating is None
-            or self.primary.status != "complete"
-            or self.corroborating.status != "complete"
-            or self.primary.analyzer_fingerprint == self.corroborating.analyzer_fingerprint
-        ):
-            raise ValueError("complete parser bundle requires distinct complete analyses")
-        return self
-
-
-class LinguisticAnalysisBundle(_ContentAddressedContract):
-    source_id: str
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    segment_language_routes: SegmentLanguageRouteSet
-    segment_bundles: tuple[SegmentLinguisticAnalysisBundle, ...]
-    segment_outcomes: tuple[SegmentLanguageLaneOutcome, ...]
-    status: _AnalysisStatus
-    bundle_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    diagnostics: tuple[str, ...]
-    _digest_domain = b"memorii.semantic-ingestion.linguistic-analysis-bundle.v1"
-    _digest_field = "bundle_fingerprint"
-
-    @model_validator(mode="after")
-    def validate_bundle(self) -> LinguisticAnalysisBundle:
-        routes = self.segment_language_routes.routes
-        if (
-            self.source_id != self.segment_language_routes.source_id
-            or self.source_digest != self.segment_language_routes.source_digest
-            or tuple(item.segment_id for item in self.segment_bundles) != tuple(route.segment_id for route in routes)
-            or self.segment_outcomes
-            != tuple(outcome for bundle in self.segment_bundles for outcome in bundle.lane_outcomes)
-        ):
-            raise ValueError("linguistic bundle must be exact route and outcome bijection")
-        if self.status != _aggregate_status(self.segment_bundles):
-            raise ValueError("linguistic bundle status must be derived")
-        for route, bundle in zip(routes, self.segment_bundles, strict=True):
-            if (bundle.source_id, bundle.source_digest, bundle.segment_id, bundle.segment_language_route_digest) != (
-                self.source_id,
-                self.source_digest,
-                route.segment_id,
-                route.route_digest,
-            ):
-                raise ValueError("linguistic bundle segment coordinate must match route")
-            if bundle.preparation_fingerprint != self.preparation_fingerprint or any(
-                outcome.preparation_fingerprint != self.preparation_fingerprint for outcome in bundle.lane_outcomes
-            ):
-                raise ValueError("linguistic bundle preparation fingerprint must join every segment outcome")
-            _validate_selected_lane_outcomes((route,), bundle.lane_outcomes)
-            for analysis, lane in ((bundle.primary, "stanza"), (bundle.corroborating, "spacy")):
-                if analysis is None:
-                    continue
-                binding = route.resource_binding
-                if (
-                    binding is None
-                    or analysis.language != route.selected_language
-                    or analysis.analyzer_manifest_digest
-                    != (
-                        binding.stanza_analyzer_manifest_digest
-                        if lane == "stanza"
-                        else binding.spacy_analyzer_manifest_digest
-                    )
-                ):
-                    raise ValueError("parser analysis manifest and language must match route")
-                if analysis.preparation_fingerprint != self.preparation_fingerprint:
-                    raise ValueError("parser analysis preparation fingerprint must match its aggregate")
-                spans = [token.source_span for token in analysis.tokens]
-                spans.extend(
-                    token.multi_word_token_span for token in analysis.tokens if token.multi_word_token_span is not None
-                )
-                spans.extend(mention.source_span for mention in analysis.mentions)
-                for clause in analysis.clauses:
-                    spans.extend((clause.source_span, clause.predicate_span))
-                    spans.extend(argument.source_span for argument in clause.arguments)
-                for span in spans:
-                    _validate_route_span(span, route, self.source_id)
-        return self
-
-
 class PredicateEventCandidate(_ContentAddressedContract):
     event_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     segment_id: str
@@ -8124,312 +7817,6 @@ class GraphFreeInterpretationBundle(_ContentAddressedContract):
         }:
             raise ValueError("graph-free interpretation scope observations must be exactly two per subject")
         return self
-
-
-class SourceNormalizationEvidenceEntry(_ContentAddressedContract):
-    schema_version: Literal[2]
-    kind: Literal["parser", "scope", "temporal_attachment"]
-    operation_id: str = Field(min_length=1)
-    proposal_id: str = Field(min_length=1)
-    segment_id: str = Field(min_length=1)
-    segment_language_route_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    temporal_role: TemporalRole | None
-    artifact_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    selection_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    retention: Literal["aligned", "terminal_unaligned"]
-    entry_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.source-normalization-evidence-entry.v2"
-    _digest_field = "entry_digest"
-
-
-class SourceNormalizationEvidenceManifest(_ContentAddressedContract):
-    schema_version: Literal[2]
-    source_id: str = Field(min_length=1)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    source_normalization_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    consensus_policy_selection_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    language_construction_policy_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    interpretation_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    identity_partition_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    publication_coordinate: SourceNormalizationPublicationCoordinate
-    retained_entries: tuple[SourceNormalizationEvidenceEntry, ...]
-    completeness: Literal["complete"]
-    bijection_verified: Literal[True]
-    manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.source-normalization-evidence-manifest.v2"
-    _digest_field = "manifest_digest"
-
-    @model_validator(mode="after")
-    def validate_manifest(self) -> SourceNormalizationEvidenceManifest:
-        if self.retained_entries != tuple(sorted(self.retained_entries, key=lambda entry: entry.entry_digest)):
-            raise ValueError("source-normalization evidence entries must be canonical")
-        if len({entry.entry_digest for entry in self.retained_entries}) != len(self.retained_entries):
-            raise ValueError("source-normalization evidence entries must be unique")
-        return self
-
-
-class SourceNormalizationRequest(_ContentAddressedContract):
-    schema_version: Literal[2]
-    source: PreparedSource
-    proposal_run: SemanticProposalRun
-    analyses: LinguisticAnalysisBundle
-    interpretation_bundle: GraphFreeInterpretationBundle
-    predicate_events: PredicateEventInventory
-    temporal_resolution: TemporalResolution
-    consensus_policy_selections: ConsensusPolicySelectionBundle
-    language_construction_policies: LanguageConstructionPolicyAuthorityBundle
-    publication_coordinate: SourceNormalizationPublicationCoordinate
-    temporal_policy: TemporalPolicySnapshot
-    trust_policy: TrustPolicySnapshot
-    arbitration_as_of: datetime
-    capability_registry: CapabilityRegistrySnapshot
-    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.source-normalization-request.v2"
-    _digest_field = "request_digest"
-
-
-class SourceNormalizationResult(_ContentAddressedContract):
-    schema_version: Literal[2]
-    source_alignment: SourceProposalAlignment
-    evidence_manifest: SourceNormalizationEvidenceManifest
-    interpretation_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    identity_partition_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    capability_selections: tuple[CapabilityRegistrySnapshot, ...]
-    trust_policy_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    arbitration_as_of: datetime
-    result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    _digest_domain = b"memorii.semantic-ingestion.source-normalization-result.v2"
-    _digest_field = "result_digest"
-
-    @model_validator(mode="after")
-    def validate_result(self) -> SourceNormalizationResult:
-        if self.source_alignment.schema_version != 2 or self.evidence_manifest.schema_version != 2:
-            raise ValueError("source-normalization result requires schema-version-2 closure")
-        return self
-
-
-class SourceNormalizationRecoveryInvocationBinding(BaseModel):
-    """Call-scoped, scalar-only recovery authority from the live invocation."""
-
-    source_id: str = Field(min_length=1)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    operation_id: str = Field(min_length=1)
-    operation_fence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_binding(self) -> SourceNormalizationRecoveryInvocationBinding:
-        if self.binding_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-invocation-binding.v1",
-            self.model_dump(mode="python", exclude={"binding_digest"}),
-        ):
-            raise ValueError("source-normalization recovery invocation binding digest mismatch")
-        return self
-
-
-class SourceNormalizationRecoveryHandoffBinding(BaseModel):
-    """Scalar projection of one successful bootstrap writer handoff."""
-
-    kind: Literal["started", "already_started"]
-    source_id: str = Field(min_length=1)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    handoff_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    prepared_generation: int = Field(ge=1)
-    prepared_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    authority_pin_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    release_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    bootstrap_language_evidence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    delivery_identity_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    operation_fence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    writer_commit_binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    pending_operation_id: str = Field(min_length=1)
-    pending_operation_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    marker_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    handoff_result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_binding(self) -> SourceNormalizationRecoveryHandoffBinding:
-        if self.binding_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-handoff-binding.v1",
-            self.model_dump(mode="python", exclude={"binding_digest"}),
-        ):
-            raise ValueError("source-normalization recovery handoff binding digest mismatch")
-        return self
-
-
-class SourceNormalizationRecoveryAuthorityBinding(BaseModel):
-    derivation_authority_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    publication_authority_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    publication_coordinate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    authority_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    expected_operation_generation: int = Field(ge=1)
-    expected_artifact_generation: int = Field(ge=1)
-    binding_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_binding(self) -> SourceNormalizationRecoveryAuthorityBinding:
-        if self.binding_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-authority-binding.v1",
-            self.model_dump(mode="python", exclude={"binding_digest"}),
-        ):
-            raise ValueError("source-normalization recovery authority binding digest mismatch")
-        return self
-
-
-class SourceNormalizationRecoveryValidationContext(BaseModel):
-    invocation: SourceNormalizationRecoveryInvocationBinding
-    handoff: SourceNormalizationRecoveryHandoffBinding
-    authority: SourceNormalizationRecoveryAuthorityBinding
-    context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_context(self) -> SourceNormalizationRecoveryValidationContext:
-        if self.context_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-context.v1",
-            self.model_dump(mode="python", exclude={"context_digest"}),
-        ):
-            raise ValueError("source-normalization recovery context digest mismatch")
-        return self
-
-
-class SourceNormalizationRecoveryRequest(BaseModel):
-    source_id: str = Field(min_length=1)
-    source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    preparation_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    operation_id: str = Field(min_length=1)
-    operation_fence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    expected_operation_generation: int = Field(ge=1)
-    expected_artifact_generation: int = Field(ge=1)
-    derivation_authority_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    publication_coordinate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    request_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
-    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_request(self) -> SourceNormalizationRecoveryRequest:
-        body = self.model_dump(mode="python", exclude={"request_identity", "request_digest"})
-        if self.request_identity != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-identity.v1", body
-        ):
-            raise ValueError("source-normalization recovery request identity mismatch")
-        if self.request_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-request.v1",
-            self.model_dump(mode="python", exclude={"request_digest"}),
-        ):
-            raise ValueError("source-normalization recovery request digest mismatch")
-        return self
-
-
-class SourceNormalizationRecoveryFound(BaseModel):
-    kind: Literal["found"]
-    request_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
-    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    publication_generation: int = Field(ge=1)
-    recovery_index_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    atomic_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    result: SourceNormalizationResult
-    response_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_found(self) -> SourceNormalizationRecoveryFound:
-        if self.result.result_digest != self.result_digest or self.response_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-found.v1",
-            self.model_dump(mode="python", exclude={"response_digest"}),
-        ):
-            raise ValueError("source-normalization recovery found closure is invalid")
-        return self
-
-
-class SourceNormalizationRecoveryAbsent(BaseModel):
-    kind: Literal["absent"]
-    request_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
-    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    expected_operation_generation: int = Field(ge=1)
-    expected_artifact_generation: int = Field(ge=1)
-    observed_operation_generation: int = Field(ge=1)
-    observed_artifact_generation: int = Field(ge=1)
-    store_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    index_absence_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    response_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_absent(self) -> SourceNormalizationRecoveryAbsent:
-        if (
-            self.expected_operation_generation != self.observed_operation_generation
-            or self.expected_artifact_generation != self.observed_artifact_generation
-        ):
-            raise ValueError("source-normalization recovery absence generation is stale")
-        index_body = {
-            "request_identity": self.request_identity,
-            "observed_operation_generation": self.observed_operation_generation,
-            "observed_artifact_generation": self.observed_artifact_generation,
-            "store_snapshot_digest": self.store_snapshot_digest,
-        }
-        if self.index_absence_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-index-absence.v1", index_body
-        ) or self.response_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-absent.v1",
-            self.model_dump(mode="python", exclude={"response_digest"}),
-        ):
-            raise ValueError("source-normalization recovery absence digest mismatch")
-        return self
-
-
-SourceNormalizationRecoveryUnavailableReason: TypeAlias = Literal[
-    "request_invalid",
-    "context_mismatch",
-    "stale_generation",
-    "storage_unavailable",
-    "index_ambiguous",
-    "generation_incomplete",
-    "generation_corrupt",
-]
-
-
-class SourceNormalizationRecoveryUnavailable(BaseModel):
-    kind: Literal["publication_unavailable"]
-    request_identity: str = Field(pattern=r"^[0-9a-f]{64}$")
-    request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    reason: SourceNormalizationRecoveryUnavailableReason
-    reason_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    response_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_unavailable(self) -> SourceNormalizationRecoveryUnavailable:
-        reason_body = self.model_dump(mode="python", include={"kind", "request_identity", "request_digest", "reason"})
-        if self.reason_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-unavailable.v1", reason_body
-        ) or self.response_digest != contract_digest(
-            b"memorii.semantic-ingestion.source-normalization-recovery-unavailable-response.v1",
-            self.model_dump(mode="python", exclude={"response_digest"}),
-        ):
-            raise ValueError("source-normalization recovery unavailable digest mismatch")
-        return self
-
-
-SourceNormalizationRecoveryResult: TypeAlias = Annotated[
-    SourceNormalizationRecoveryFound | SourceNormalizationRecoveryAbsent | SourceNormalizationRecoveryUnavailable,
-    Field(discriminator="kind"),
-]
 
 
 # V3 recovery is intentionally independent of the retired request/context
@@ -13550,82 +12937,6 @@ BootstrapGraphDependentCoordinatorResultV3: TypeAlias = Annotated[
 ]
 
 
-class SourceNormalizationAtomicWriteRequest(SourceCheckpointAtomicWriteRequest):
-    """The sole sealed atomic publication request for source normalization."""
-
-    schema_version: Literal[2]
-    kind: Literal["source_normalization_checkpoint"]
-    progress_state: Literal["preplanning"]
-    publication_generation: int = Field(ge=1)
-    source_normalization_request: SourceNormalizationRequest
-    source_normalization_request_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    source_normalization_result: SourceNormalizationResult
-    source_normalization_result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    evidence_manifest: SourceNormalizationEvidenceManifest
-    evidence_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    graph_dependent_execution_policy: GraphDependentExecutionPolicy
-    graph_dependent_execution_policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    consensus_policy_selection_bundle: ConsensusPolicySelectionBundle
-    consensus_policy_selection_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    language_construction_policy_bundle: LanguageConstructionPolicyAuthorityBundle
-    language_construction_policy_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    @model_validator(mode="after")
-    def validate_source_normalization_closure(self) -> SourceNormalizationAtomicWriteRequest:
-        if (
-            self.source_normalization_request.request_digest != self.source_normalization_request_digest
-            or self.source_normalization_result.result_digest != self.source_normalization_result_digest
-            or self.evidence_manifest.manifest_digest != self.evidence_manifest_digest
-            or self.consensus_policy_selection_bundle.bundle_digest != self.consensus_policy_selection_bundle_digest
-            or self.language_construction_policy_bundle.bundle_digest != self.language_construction_policy_bundle_digest
-        ):
-            raise ValueError("source-normalization atomic request digest binding mismatch")
-        categories = (
-            "progress",
-            "source_normalization_request",
-            "bootstrap_analysis_provenance",
-            "graph_free_interpretation_bundle",
-            "source_local_identity_partition_evidence",
-            "parser_consensus",
-            "semantic_scope_consensus",
-            "temporal_attachment_consensus",
-            "source_local_identity_resolution",
-            "source_proposal_alignment",
-            "source_dependency_groups",
-            "source_normalization_result",
-            "source_normalization_evidence_manifest",
-            "graph_dependent_execution_policy",
-            "consensus_policy_selection_bundle",
-            "language_construction_policy_bundle",
-        )
-        positions = {kind: index for index, kind in enumerate(categories)}
-        kinds = tuple(member.kind for member in self.members)
-        if (
-            any(kind not in positions for kind in kinds)
-            or tuple(sorted(kinds, key=lambda kind: positions[kind])) != kinds
-            or len({member.member_id for member in self.members}) != len(self.members)
-            or any(member.payload_digest != sha256(member.canonical_payload).hexdigest() for member in self.members)
-        ):
-            raise ValueError("source-normalization atomic member order or digest is invalid")
-        for kind in categories:
-            count = kinds.count(kind)
-            if kind in {"parser_consensus", "semantic_scope_consensus", "temporal_attachment_consensus"}:
-                if count < 1:
-                    raise ValueError("source-normalization atomic consensus run is incomplete")
-            elif kind == "bootstrap_analysis_provenance":
-                if count > 1:
-                    raise ValueError("source-normalization atomic V3 provenance is duplicated")
-            elif count != 1:
-                raise ValueError("source-normalization atomic member closure is incomplete")
-        if self.required_artifact_digests != tuple(member.payload_digest for member in self.members):
-            raise ValueError("source-normalization required artifact closure is not exact")
-        if self.request_digest != generation_request_digest(self):
-            raise ValueError("source-normalization atomic request digest is invalid")
-        return self
-
-
 class BootstrapSourceNormalizationAtomicWriteRequestV3(AtomicGenerationRequest):
     """Closed bootstrap publication wire; deliberately not a V2 checkpoint.
 
@@ -14008,9 +13319,6 @@ for _source_normalization_model in (
     BootstrapGraphPlanAtomicWriteRequestV3,
     BootstrapGraphPlanAtomicReloadCoreV3,
     BootstrapGraphPlanAtomicReloadV3,
-    SourceNormalizationRequest,
-    SourceNormalizationResult,
-    SourceNormalizationAtomicWriteRequest,
 ):
     _source_normalization_model.model_rebuild(
         _types_namespace=_SOURCE_NORMALIZATION_TYPES,
@@ -14022,7 +13330,6 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     SemanticAuthorizationReadSet: "authorization_read_set",
     SemanticLifecycleTransition: "lifecycle_transition",
     SemanticRetryableProgress: "retryable_progress",
-    SemanticExecutionRetryPlan: "execution_retry_plan",
     SemanticRecoveryAuthorityBinding: "recovery_authority_binding",
     SemanticArtifactClosure: "artifact_closure",
     SemanticGraphDelta: "graph_delta",
@@ -14067,11 +13374,6 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     OperationAlignment: "operation_alignment",
     OperationTemporalAttachmentConsensusSet: "operation_temporal_attachment_consensus_set",
     GraphFreeInterpretationBundle: "graph_free_interpretation_bundle",
-    SourceNormalizationEvidenceEntry: "source_normalization_evidence_entry",
-    SourceNormalizationEvidenceManifest: "source_normalization_evidence_manifest",
-    SourceNormalizationRequest: "source_normalization_request",
-    SourceNormalizationResult: "source_normalization_result",
-    SourceNormalizationAtomicWriteRequest: "source_normalization_atomic_write_request",
     BootstrapSourceNormalizationAtomicWriteRequestV3: "bootstrap_source_normalization_atomic_write_request_v3",
     BootstrapSegmentAnalysisInputV3: "bootstrap_segment_analysis_input_v3",
     BootstrapSemanticProposalRequestV3: "bootstrap_semantic_proposal_request_v3",
@@ -14334,8 +13636,6 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     ClauseAnalysis: "clause_analysis",
     SegmentLanguageLaneOutcome: "segment_language_lane_outcome",
     LinguisticAnalysis: "linguistic_analysis",
-    SegmentLinguisticAnalysisBundle: "segment_linguistic_analysis_bundle",
-    LinguisticAnalysisBundle: "linguistic_analysis_bundle",
     PredicateEventCandidate: "predicate_event_candidate",
     PredicateEventInventory: "predicate_event_inventory",
     ResolvedTemporalCandidate: "resolved_temporal_candidate",
@@ -14352,7 +13652,6 @@ _CONTRACT_KINDS: dict[type[BaseModel], str] = {
     ScopeConsensusPolicy: "scope_consensus_policy",
     TemporalAttachmentConsensusPolicy: "temporal_attachment_consensus_policy",
     ConsensusPolicySelection: "consensus_policy_selection",
-    ConsensusPolicySelectionBundle: "consensus_policy_selection_bundle",
     PredicateSemanticPolicyBinding: "predicate_semantic_policy_binding",
     FactOperationSemanticPolicyKey: "fact_operation_semantic_policy_key",
     CorrectionOperationSemanticPolicyKey: "correction_operation_semantic_policy_key",
@@ -14541,20 +13840,7 @@ __all__ = [
     "OperationAlignment",
     "OperationTemporalAttachmentConsensusSet",
     "GraphFreeInterpretationBundle",
-    "SourceNormalizationEvidenceEntry",
-    "SourceNormalizationEvidenceManifest",
-    "SourceNormalizationRequest",
-    "SourceNormalizationResult",
-    "SourceNormalizationRecoveryInvocationBinding",
-    "SourceNormalizationRecoveryHandoffBinding",
-    "SourceNormalizationRecoveryAuthorityBinding",
-    "SourceNormalizationRecoveryValidationContext",
-    "SourceNormalizationRecoveryRequest",
-    "SourceNormalizationRecoveryFound",
-    "SourceNormalizationRecoveryAbsent",
-    "SourceNormalizationRecoveryUnavailable",
     "SourceNormalizationRecoveryUnavailableReason",
-    "SourceNormalizationRecoveryResult",
     "BootstrapAnalysisProvenanceV1",
     "BootstrapAnalysisRouteProjection",
     "BootstrapSegmentAnalysisInputV3",
@@ -14755,7 +14041,6 @@ __all__ = [
     "BootstrapGraphExecutionManifestConstructionV3",
     "BootstrapGraphPreExecutionGroupEvidenceV3",
     "BootstrapGraphPlanAtomicReloadV3",
-    "SourceNormalizationAtomicWriteRequest",
     "TypedLiteral",
     "ConstructionFamily",
     "Commitment",
@@ -14817,8 +14102,6 @@ __all__ = [
     "ClauseAnalysis",
     "SegmentLanguageLaneOutcome",
     "LinguisticAnalysis",
-    "SegmentLinguisticAnalysisBundle",
-    "LinguisticAnalysisBundle",
     "PredicateEventCandidate",
     "PredicateEventInventory",
     "ResolvedTemporalCandidate",
@@ -14837,7 +14120,6 @@ __all__ = [
     "TemporalAttachmentConsensusPolicy",
     "ConsensusPolicy",
     "ConsensusPolicySelection",
-    "ConsensusPolicySelectionBundle",
     "FactOperationSemanticPolicyKey",
     "CorrectionOperationSemanticPolicyKey",
     "RetractionOperationSemanticPolicyKey",

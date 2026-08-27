@@ -25,7 +25,6 @@ from memorii.core.memory_evolution.semantic_analysis.policies import (
 from memorii.core.semantic_ingestion.contracts import (
     ActionStateOperationSemanticPolicyKey,
     ConsensusPolicySelection,
-    ConsensusPolicySelectionBundle,
     CorrectionOperationSemanticPolicyKey,
     FactOperationSemanticPolicyKey,
     IdentityOperationSemanticPolicyKey,
@@ -201,6 +200,8 @@ def _key_values() -> tuple[object, ...]:
     )
 
 
+
+
 def _codec_values() -> tuple[object, ...]:
     family, path, quote, role, scope, predicate = _leaves()
     fact_key = FactOperationSemanticPolicyKey(kind="fact", predicate_id=predicate.predicate_id)
@@ -227,7 +228,7 @@ def _codec_values() -> tuple[object, ...]:
     return (
         family, UdPathStep(direction="up", dependency_label="nsubj", ordinal=None), path, quote, scope, role, predicate,
         ParserConsensusPolicy.create(), ScopeConsensusPolicy.create(), TemporalAttachmentConsensusPolicy.create(),
-        *selections, ConsensusPolicySelectionBundle.create(schema_version=2, selections=selections), *(_key_values()), binding,
+        *selections, *(_key_values()), binding,
         parser, scope_authority, LanguageConstructionPolicyAuthorityBundle.create(policies=(parser, scope_authority)),
     )
 
@@ -344,60 +345,8 @@ def test_scope_and_predicate_policy_fixed_vector_canonicalizes_two_maps_and_two_
     assert first_policy.policy_fingerprint == "620d41ca16e3b464bd1e411cb306e17c419b5656fe95a30094cb61c4c8427df1"
 
 
-def test_consensus_selection_is_exact_v2_role_keyed_content_addressed_witness() -> None:
-    rule = ParserConsensusPolicy.create()
-    selection = ConsensusPolicySelection.create(
-        schema_version=2, kind="parser", operation_id=_hex("operation"), proposal_id="proposal", segment_id="segment",
-        segment_language_route_digest=_hex("route"), request_dependency_kind="analyses",
-        temporal_role=None,
-        request_dependency_fingerprint=_hex("analyses"), selected_policy_fingerprint=rule.policy_fingerprint,
-        selected_policy=rule,
-    )
-    assert decode_semantic_contract(encode_semantic_contract(selection), ConsensusPolicySelection) == selection
-    with pytest.raises(ValidationError, match="dependency kind"):
-        ConsensusPolicySelection.create(
-            schema_version=2, kind="parser", operation_id=_hex("operation"), proposal_id="proposal", segment_id="segment",
-            segment_language_route_digest=_hex("route"), request_dependency_kind="temporal_resolution",
-            temporal_role=None,
-            request_dependency_fingerprint=_hex("analyses"), selected_policy_fingerprint=rule.policy_fingerprint,
-            selected_policy=rule,
-        )
-    with pytest.raises(ValidationError, match="canonical"):
-        ConsensusPolicySelectionBundle.create(schema_version=2, selections=(selection, selection))
 
 
-def test_correction_temporal_selections_require_two_distinct_roles() -> None:
-    replacement = _selection("temporal_attachment", "correction", temporal_role="replacement")
-    transition = _selection("temporal_attachment", "correction", temporal_role="transition")
-    bundle = ConsensusPolicySelectionBundle.create(
-        schema_version=2,
-        selections=(replacement, transition),
-    )
-    assert decode_semantic_contract(encode_semantic_contract(bundle), ConsensusPolicySelectionBundle) == bundle
-    with pytest.raises(ValidationError, match="canonical"):
-        ConsensusPolicySelectionBundle.create(
-            schema_version=2,
-            selections=(transition, replacement),
-        )
-    with pytest.raises(ValidationError, match="unique"):
-        ConsensusPolicySelectionBundle.create(
-            schema_version=2,
-            selections=(replacement, replacement),
-        )
-    with pytest.raises(ValidationError, match="requires a temporal role"):
-        ConsensusPolicySelection.create(
-            schema_version=2,
-            kind="temporal_attachment",
-            operation_id=_hex("correction"),
-            proposal_id="proposal",
-            segment_id="segment",
-            segment_language_route_digest=_hex("route"),
-            temporal_role=None,
-            request_dependency_kind="temporal_resolution",
-            request_dependency_fingerprint=_hex("temporal"),
-            selected_policy_fingerprint=TemporalAttachmentConsensusPolicy.create().policy_fingerprint,
-            selected_policy=TemporalAttachmentConsensusPolicy.create(),
-        )
 
 
 def test_operation_policy_authorities_bind_exact_policy_material() -> None:
@@ -685,22 +634,6 @@ def test_closed_union_discriminators_reject_unknown_rule_and_policy_key_shapes()
         decode_semantic_contract(encode_typed_value(bad_key), ParserOperationPolicyAuthority)
 
 
-def test_consensus_selections_cover_scope_and_temporal_and_reject_bundle_permutations() -> None:
-    selections = tuple(
-        _selection(
-            kind,
-            f"operation-{kind}",
-            temporal_role="assertion" if kind == "temporal_attachment" else None,
-        )
-        for kind in ("parser", "scope", "temporal_attachment")
-    )
-    assert {selection.kind for selection in selections} == {"parser", "scope", "temporal_attachment"}
-    bundle = ConsensusPolicySelectionBundle.create(schema_version=2, selections=selections)
-    assert decode_semantic_contract(encode_semantic_contract(bundle), ConsensusPolicySelectionBundle) == bundle
-    with pytest.raises(ValidationError, match="canonical"):
-        ConsensusPolicySelectionBundle.create(schema_version=2, selections=tuple(reversed(selections)))
-    with pytest.raises(ValidationError, match="unique"):
-        ConsensusPolicySelectionBundle.create(schema_version=2, selections=(selections[0], selections[0]))
 
 
 def _parser_authority_for(key: object, bindings: tuple[PredicateSemanticPolicyBinding, ...], role_schemas: tuple[UdRoleSchema, ...] = ()) -> ParserOperationPolicyAuthority:
