@@ -561,6 +561,22 @@ Broad gate (once, at the final revision):
   resolver fixture fixes already landed; then conflict-attention's 12
   canonical-bridge failures.
 
+- 2026-08-27 (classification COMPLETE): slow-batch rerun (output saved,
+  1:11:50): terminal-persistence 72 + event-replay 43 + policy-migration 7
+  failed; identity-lineage and graph-planning GREEN. Together with the 12
+  conflict-attention failures, **134 failures share one root-cause family:
+  the canonical conflict-clarification transaction CAS bridge**
+  (`commit_conflict_clarification_transaction` -> "clarification semantic
+  transaction requires canonical CAS") — verified PRE-EXISTING at the
+  pre-operation commit `c0bbc8e` (worktree, 1-test probe). This is the
+  eb70c9d-era contract change that was never migrated into the
+  clarification fixtures: the canonical CAS expects a canonical conflict
+  attention record and canonical retained context that the test fixtures do
+  not create. Non-clarification tests in those files (210) pass. Repair
+  belongs to the canonical conflict bridge family (slice 6, or a dedicated
+  linked unit if it proves larger than a family repair); it is NOT a
+  regression of this operation's slices 1-5.
+
 ## Next Action
 
 PAUSED (user decision 2026-08-27). Resume by classifying the 130-failure
